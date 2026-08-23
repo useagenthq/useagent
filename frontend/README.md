@@ -39,7 +39,7 @@ The frontend is the product UI for useAgent. It runs on `:3400` by default, uses
 The frontend uses three different event flows:
 
 - The lightweight chat surface sends text to `POST /api/chat` and renders the streamed response plus read-only retrieval citations.
-- The session surface opens one SSE connection per root thread through `useThreadStream`, decodes frames with `@skynet/agent-client`, and feeds them into the thread store.
+- The session surface opens one SSE connection per root thread through `useThreadStream`, decodes frames with `@useagent/agent-client`, and feeds them into the thread store.
 - Ambient management surfaces share one reference-counted `EventSource` on `GET /api/runs/changes`. Run, artifact, Automation, and provider-connection invalidations trigger authoritative API refetches instead of carrying record or credential payloads.
 
 That separation is deliberate:

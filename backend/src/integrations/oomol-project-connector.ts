@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type {
   IntegrationActionCatalogEntry,
   IntegrationConnectionAccount,
-} from "@skynet/agent-client/integrations";
+} from "@useagent/agent-client/integrations";
 import { Connector, ProjectConnector } from "@oomol-lab/connector";
 import type { DelegatedConnectionBackend, IntegrationActorScope } from "./backend";
 

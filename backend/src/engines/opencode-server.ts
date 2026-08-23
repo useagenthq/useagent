@@ -40,7 +40,7 @@ import {
   normalizeOpencodeCommands,
   type CanonicalCommand,
   type HarnessSession,
-} from "@skynet/agent-harness/canonical";
+} from "@useagent/agent-harness/canonical";
 import {
   providerDriverUnsupported,
   type HarnessResult,
@@ -48,7 +48,7 @@ import {
   type ProviderResumeRequest,
   type ProviderStartRequest,
   type ProviderSteerRequest,
-} from "@skynet/agent-harness/control";
+} from "@useagent/agent-harness/control";
 import {
   establishProviderSession,
   providerSessionStartedEvent,

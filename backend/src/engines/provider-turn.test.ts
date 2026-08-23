@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeNegotiatedCapabilities, type HarnessSession } from "@skynet/agent-harness/canonical";
-import type { ProviderDriver } from "@skynet/agent-harness/control";
+import { normalizeNegotiatedCapabilities, type HarnessSession } from "@useagent/agent-harness/canonical";
+import type { ProviderDriver } from "@useagent/agent-harness/control";
 import {
   establishProviderSession,
   providerSessionStartedEvent,

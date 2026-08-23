@@ -15,7 +15,7 @@ import {
   type DeckBlock,
   type DeckSlide,
   type PresentationDeck,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useRef } from "react";
 
 /** A reference-px length as container-query-height units (1080px ref = 100cqh). */

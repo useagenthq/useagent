@@ -6,7 +6,7 @@ import {
   migrateHtmlToDocument,
   migrateSlidesToDeck,
   type Workbook,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import {
   columnName,
   computeLineDiff,

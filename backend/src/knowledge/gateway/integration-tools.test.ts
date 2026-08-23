@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { IntegrationActionCatalogEntry } from "@skynet/agent-client/integrations";
+import type { IntegrationActionCatalogEntry } from "@useagent/agent-client/integrations";
 import {
   executeIntegrationTool,
   setIntegrationToolServiceForTest,

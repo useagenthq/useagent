@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { ArtifactWorkpieceProposalDescriptor } from "@skynet/agent-client";
-import { csvToWorkbook } from "@skynet/artifact-workspace";
+import type { ArtifactWorkpieceProposalDescriptor } from "@useagent/agent-client";
+import { csvToWorkbook } from "@useagent/artifact-workspace";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   askAgentRedoMessage,

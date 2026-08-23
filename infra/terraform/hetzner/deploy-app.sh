@@ -46,7 +46,7 @@ ENV
 chown -R skynet:skynet /opt/skynet
 
 # Link the file: workspace packages so their inter-deps and subpath exports
-# (e.g. @skynet/agent-harness/canonical) resolve during the frontend type-check.
+# (e.g. @useagent/agent-harness/canonical) resolve during the frontend type-check.
 for p in /opt/skynet/packages/*/; do
   [ -f "${p}package.json" ] && sudo -u skynet bash -lc "cd '$p' && bun install"
 done

@@ -1,7 +1,7 @@
 "use client";
 
 import { RiArrowLeftLine, RiCodeSSlashLine, RiDownloadLine, RiEyeLine, RiSaveLine } from "@remixicon/react";
-import type { ArtifactDescriptor } from "@skynet/agent-client";
+import type { ArtifactDescriptor } from "@useagent/agent-client";
 import Link from "next/link";
 import { useState } from "react";
 import { WorkpieceProposalReview } from "@/components/artifacts/workpiece-proposal-review";

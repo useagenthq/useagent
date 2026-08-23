@@ -1,7 +1,7 @@
 import type {
   ConnectionProjection,
   IntegrationActionCatalogEntry,
-} from "@skynet/agent-client/integrations";
+} from "@useagent/agent-client/integrations";
 import {
   claimIntegrationConnectSession,
   createIntegrationConnectState,

@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { ArtifactWorkpieceResult } from "@skynet/agent-client";
+import type { ArtifactWorkpieceResult } from "@useagent/agent-client";
 import {
   DEFAULT_DOCUMENT_THEME,
   migrateHtmlToDocument,
   normalizeArtifactRichHtml,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import {
   artifactEditorMode,
   parseCsv,

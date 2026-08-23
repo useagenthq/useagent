@@ -1,4 +1,4 @@
-import type { CanonicalChildState } from "@skynet/agent-harness/canonical";
+import type { CanonicalChildState } from "@useagent/agent-harness/canonical";
 import {
   type CanonicalEventLike,
   collectToolLifecycles,

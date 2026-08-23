@@ -17,7 +17,7 @@ import {
   type SheetCell,
   type Workbook,
   type Worksheet,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import type { DiffLine } from "@/components/session-ui/file-diff-view";
 
 /** Above this line-product the O(m*n) LCS is skipped for a coarse block diff, so
@@ -87,7 +87,7 @@ export function countLineChanges(lines: readonly DiffLine[]): {
 
 /** A1-style column name: 0 -> A, 25 -> Z, 26 -> AA. Re-exported from the shared
  * A1 helpers so the review and its tests share one implementation. */
-export { columnLabel as columnName } from "@skynet/artifact-workspace";
+export { columnLabel as columnName } from "@useagent/artifact-workspace";
 
 export interface SheetCellChange {
   /** The worksheet name the cell lives on (workbooks are multi-sheet). */

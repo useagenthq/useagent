@@ -6,7 +6,7 @@ import {
   type ArtifactProposalStatus,
   type ArtifactWorkpieceKind,
   type ArtifactWorkpieceProposalDescriptor,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import { db } from "../db/client";
 import { artifacts, artifactWorkpieceProposals } from "../db/schema";
 import { getArtifactForOrg, type ArtifactRecord } from "./repo";

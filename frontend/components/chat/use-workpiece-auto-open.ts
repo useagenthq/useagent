@@ -1,6 +1,6 @@
 "use client";
 
-import { decodeArtifactResult } from "@skynet/agent-client";
+import { decodeArtifactResult } from "@useagent/agent-client";
 import { useEffect, useRef } from "react";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";

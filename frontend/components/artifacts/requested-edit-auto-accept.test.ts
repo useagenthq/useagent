@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ArtifactWorkpieceProposalDescriptor } from "@skynet/agent-client";
+import type { ArtifactWorkpieceProposalDescriptor } from "@useagent/agent-client";
 import {
   type AutoAcceptGate,
   performUndoAutoAccept,

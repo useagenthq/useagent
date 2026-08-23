@@ -12,7 +12,7 @@ import {
   SESSION_STARTED_EVENT_TYPE,
   parseAcpAvailableCommands,
   type CanonicalCommand,
-} from "@skynet/agent-harness/canonical";
+} from "@useagent/agent-harness/canonical";
 import { sessionCapabilities } from "./capabilities";
 import { parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
 import { checkoutPullRequestResources, prepareRepos, shq } from "./repo-prep";

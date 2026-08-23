@@ -1,4 +1,4 @@
-# @skynet/agent-client
+# @useagent/agent-client
 
 The browser/runtime-neutral useAgent thread client. Understands ONLY the useAgent product API
 plus canonical/thread events. Knows nothing about OpenCode, ACP, Claude, Codex, Daytona,
@@ -14,12 +14,12 @@ typed API, the reconnect/replay connection, the canonical reducer, and selectors
 
 | Subpath | Contents |
 |---|---|
-| `@skynet/agent-client/api` | `createAgentClient` (typed API over injected fetch: createRun / reply / cancel / getThread / connectThread), `AgentClientError` (classified http/network/decode). |
-| `@skynet/agent-client/artifacts` | Durable `ArtifactDescriptor` validation and artifact response decoders. |
-| `@skynet/agent-client/connection` | `createThreadConnection` - the pure SSE reconnect / health / fallback-poll state machine. |
-| `@skynet/agent-client/events` | The thread SSE frame vocabulary + `CanonicalThreadEvent` wire type + the pure `decodeFrame`. |
-| `@skynet/agent-client/store` | `createCanonicalThreadStore` - the pure canonical reducer (dedupe by eventId/latest-revision, order by deliverySeq, batch, stable snapshots). |
-| `@skynet/agent-client/selectors` | `selectAssistantText` / `selectToolCalls` / `selectLatestUsage` / `selectContextMarkers` / `selectRunIds`. |
+| `@useagent/agent-client/api` | `createAgentClient` (typed API over injected fetch: createRun / reply / cancel / getThread / connectThread), `AgentClientError` (classified http/network/decode). |
+| `@useagent/agent-client/artifacts` | Durable `ArtifactDescriptor` validation and artifact response decoders. |
+| `@useagent/agent-client/connection` | `createThreadConnection` - the pure SSE reconnect / health / fallback-poll state machine. |
+| `@useagent/agent-client/events` | The thread SSE frame vocabulary + `CanonicalThreadEvent` wire type + the pure `decodeFrame`. |
+| `@useagent/agent-client/store` | `createCanonicalThreadStore` - the pure canonical reducer (dedupe by eventId/latest-revision, order by deliverySeq, batch, stable snapshots). |
+| `@useagent/agent-client/selectors` | `selectAssistantText` / `selectToolCalls` / `selectLatestUsage` / `selectContextMarkers` / `selectRunIds`. |
 | `.` (barrel) | All of the above. |
 
 ## Contract rules

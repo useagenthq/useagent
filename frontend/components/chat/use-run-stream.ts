@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { backendFetch } from "@/lib/backend-fetch";
-import { createThreadConnection, type EventSourceLike, type ThreadConnection } from "@skynet/agent-client";
+import { createThreadConnection, type EventSourceLike, type ThreadConnection } from "@useagent/agent-client";
 import type { ApiRun, ApiStep, RunStatus } from "./types";
 import { isLiveStatus } from "./types";
 import { createNativeStore, type NativeSnapshot, type NativeStore } from "./native-store";

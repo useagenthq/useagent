@@ -2,7 +2,7 @@ import {
   type ConnectionProjection,
   decodeConnectionProjection,
   decodeIntegrationConnectionAccount,
-} from "@skynet/agent-client/integrations";
+} from "@useagent/agent-client/integrations";
 
 export const INTEGRATION_BACKENDS = ["native", "openconnector", "mcp"] as const;
 export type IntegrationBackend = (typeof INTEGRATION_BACKENDS)[number];

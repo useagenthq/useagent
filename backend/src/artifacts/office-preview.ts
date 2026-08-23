@@ -4,7 +4,7 @@ import {
   normalizeArtifactContentType,
   PPTX_CONTENT_TYPE,
   XLSX_CONTENT_TYPE,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import { sandboxProvider, sandboxProviderApiKey } from "../sandboxes/provider";
 
 /** The Office binary content types LibreOffice can render to a PDF preview. */

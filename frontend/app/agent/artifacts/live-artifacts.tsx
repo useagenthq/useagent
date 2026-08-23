@@ -10,7 +10,7 @@ import {
 import {
   ARTIFACT_AUTHORING_PROFILES,
   type ArtifactWorkpieceKind,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {

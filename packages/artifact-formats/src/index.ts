@@ -52,7 +52,7 @@ import {
   type SheetNumberFormat,
   type Workbook,
   type Worksheet,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 
 /** The concrete slide object pptxgenjs hands back from `addSlide()`. */
 type PptxSlide = ReturnType<InstanceType<typeof PptxGenJS>["addSlide"]>;

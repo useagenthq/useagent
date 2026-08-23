@@ -8,7 +8,7 @@
  * `unsupported_capability` result; it must never silently no-op or throw an
  * unclassified exception.
  *
- * Extracted from `backend/src/engines/types.ts` into `@skynet/agent-harness` so
+ * Extracted from `backend/src/engines/types.ts` into `@useagent/agent-harness` so
  * both the backend and a future independent consumer can depend on the control
  * contract without importing Skynet product code. `types.ts` keeps the Skynet-
  * specific engine surface (EmitStep, EngineRunContext, EngineAdapter, prompt

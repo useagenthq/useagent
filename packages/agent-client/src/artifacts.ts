@@ -11,7 +11,7 @@ import {
   type ArtifactWorkpieceProposalDescriptor,
   type ArtifactWorkpieceResult,
   type ArtifactWorkpieceState,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 
 export { ARTIFACT_WORKPIECE_ACTIONS, artifactWorkpieceExports };
 
@@ -44,7 +44,7 @@ export type {
   SheetNumberFormat,
   Workbook,
   Worksheet,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)

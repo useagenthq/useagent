@@ -12,7 +12,7 @@ import type {
   ArtifactWorkpieceKind,
   ArtifactWorkpieceProposalDescriptor,
   ArtifactWorkpieceState,
-} from "@skynet/agent-client";
+} from "@useagent/agent-client";
 import { useEffect, useMemo, useState } from "react";
 import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { useSessionLatestRun } from "@/components/chat/session-run-context";

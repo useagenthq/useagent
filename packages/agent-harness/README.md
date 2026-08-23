@@ -1,4 +1,4 @@
-# @skynet/agent-harness
+# @useagent/agent-harness
 
 Server-side agent-harness contracts. Translates native harnesses (OpenCode, Claude ACP,
 Codex ACP, future) into ONE provider-neutral canonical event vocabulary and exposes a
@@ -11,16 +11,16 @@ database, Daytona, or the React UI.
 
 | Subpath | Contents |
 |---|---|
-| `@skynet/agent-harness/canonical` | The pure `CanonicalAgentEvent` vocabulary (`CanonicalEventBase` + `CanonicalEventBody`), `NegotiatedCapabilities`, `HarnessSession`, `assertNeverEvent`. **Zero dependencies** - the ONLY subpath the browser-facing `@skynet/agent-client` may import. |
-| `@skynet/agent-harness/control` | The pure control contracts: legacy `HarnessAdapter` types plus the fuller `ProviderDriver` lifecycle descriptor (`start`/`resume`/`steer`/`cancel`, model capability, tool gateway, unsupported-capability result, and conformance helper). |
-| `@skynet/agent-harness/opencode` | The OpenCode -> canonical translator + its `OpenCodeFrame`/`OpenCodeStep` shapes. |
+| `@useagent/agent-harness/canonical` | The pure `CanonicalAgentEvent` vocabulary (`CanonicalEventBase` + `CanonicalEventBody`), `NegotiatedCapabilities`, `HarnessSession`, `assertNeverEvent`. **Zero dependencies** - the ONLY subpath the browser-facing `@useagent/agent-client` may import. |
+| `@useagent/agent-harness/control` | The pure control contracts: legacy `HarnessAdapter` types plus the fuller `ProviderDriver` lifecycle descriptor (`start`/`resume`/`steer`/`cancel`, model capability, tool gateway, unsupported-capability result, and conformance helper). |
+| `@useagent/agent-harness/opencode` | The OpenCode -> canonical translator + its `OpenCodeFrame`/`OpenCodeStep` shapes. |
 | `.` (barrel) | All of the above. |
 
 ## Where it fits
 
 ```
 OpenCode native ─┐
-Claude ACP ───────┼─> @skynet/agent-harness -> CanonicalAgentEvent -> useAgent backend
+Claude ACP ───────┼─> @useagent/agent-harness -> CanonicalAgentEvent -> useAgent backend
 Codex ACP ────────┘        (translate + control)   (persist -> thread SSE)
 ```
 

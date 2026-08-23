@@ -1,5 +1,5 @@
 import { createPrivateKey, createSign } from "node:crypto";
-import type { IntegrationConnectionStatus } from "@skynet/agent-client/integrations";
+import type { IntegrationConnectionStatus } from "@useagent/agent-client/integrations";
 import type {
   DelegatedConnectionBackend,
   DelegatedConnectionResult,

@@ -1,4 +1,4 @@
 export {
   canPreviewInline,
   contentTypeForName,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";

@@ -7,7 +7,7 @@
 // without a backend. The click-to-open flow is the real WorkspaceOpenProvider ->
 // ArtifactRow context path used in a live session.
 
-import type { ArtifactDescriptor } from "@skynet/agent-client";
+import type { ArtifactDescriptor } from "@useagent/agent-client";
 import {
   contentTypeForName,
   DECK_THEME_PRESETS,
@@ -17,7 +17,7 @@ import {
   type DocumentTheme,
   type PresentationDeck,
   type Workbook,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import { useEffect, useRef, useState } from "react";
 import {
   DeckSurface,

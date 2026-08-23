@@ -2,12 +2,12 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import PptxGenJS from "pptxgenjs";
-import * as artifactFormats from "@skynet/artifact-formats";
+import * as artifactFormats from "@useagent/artifact-formats";
 import {
   csvToWorkbook,
   migrateHtmlToDocument,
   migrateSlidesToDeck,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import type { ArtifactDescriptor } from "../src/artifacts/repo";
 import { setArtifactStorageForTest } from "../src/artifacts/storage";
 import { setOfficePreviewConverterForTest } from "../src/artifacts/office-preview";

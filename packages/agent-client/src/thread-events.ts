@@ -5,7 +5,7 @@
 // own native-lane projection; the client library owns only the transport decode + the
 // canonical lane (the provider-neutral render source).
 
-import type { CanonicalAgentEvent } from "@skynet/agent-harness/canonical";
+import type { CanonicalAgentEvent } from "@useagent/agent-harness/canonical";
 
 /** The `event:` names on the thread SSE. Kept in sync with the backend publisher. */
 export const THREAD_FRAME_TYPES = [
@@ -24,7 +24,7 @@ export type ThreadFrameType = (typeof THREAD_FRAME_TYPES)[number];
  *  Skynet delivery fields the reducer needs - `deliverySeq` (a bigserial >= 1 that
  *  totally orders the run's canonical lane) and `revision` (>= 0; a higher revision of
  *  the same `eventId` supersedes). These are Skynet delivery metadata, not part of the
- *  provider-neutral vocabulary, so they live here rather than in @skynet/agent-harness. */
+ *  provider-neutral vocabulary, so they live here rather than in @useagent/agent-harness. */
 export type CanonicalThreadEvent = CanonicalAgentEvent & {
   readonly deliverySeq: number;
   readonly revision: number;

@@ -4,7 +4,7 @@ import {
   type ConnectionProjection,
   type IntegrationConnectionAccount,
   type IntegrationConnectionStatus,
-} from "@skynet/agent-client/integrations";
+} from "@useagent/agent-client/integrations";
 import type {
   IntegrationConnectionAuthMethod,
   IntegrationConnectionOwnerType,

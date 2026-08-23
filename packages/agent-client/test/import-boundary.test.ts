@@ -10,8 +10,8 @@ import { join } from "node:path";
 
 const SRC_DIR = join(import.meta.dir, "..", "src");
 const ALLOWED_BARE = new Set([
-  "@skynet/agent-harness/canonical",
-  "@skynet/artifact-workspace",
+  "@useagent/agent-harness/canonical",
+  "@useagent/artifact-workspace",
 ]);
 
 function specifiersOf(source: string): string[] {

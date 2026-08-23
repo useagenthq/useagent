@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { decodeOrgChange } from "@skynet/agent-client/org-changes";
+import { decodeOrgChange } from "@useagent/agent-client/org-changes";
 import { clientOrgChangeForUser, type OrgChange } from "./org-signals";
 
 const internalChange = {

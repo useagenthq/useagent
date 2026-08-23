@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { isArtifactWorkpieceState, PRESENTATION_SCHEMA_VERSION } from "@skynet/artifact-workspace";
+import { isArtifactWorkpieceState, PRESENTATION_SCHEMA_VERSION } from "@useagent/artifact-workspace";
 import type { ArtifactDescriptor } from "../../artifacts/repo";
 import { env } from "../../env";
 import {
