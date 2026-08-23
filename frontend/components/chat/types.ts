@@ -35,6 +35,11 @@ export interface ApiRun {
   org_id: string | null;
   user_id: string | null;
   parent_run_id?: string | null;
+  /** True when this run is a gateway CHILD SESSION - a deferred serial thread
+   *  turn the parent agent spawned via child_session_create. The conversation
+   *  folds it under its parent turn's subagent group instead of rendering a
+   *  top-level user turn. Optional so pre-flag payloads still parse. */
+  child_session?: boolean;
   prompt: string;
   model: string;
   engine: EngineId;

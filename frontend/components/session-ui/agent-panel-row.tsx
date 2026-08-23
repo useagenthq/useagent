@@ -57,7 +57,7 @@ export interface AgentPanelRowModel {
 const isActiveStatus = (status: ChildStatus): boolean =>
   status === "pending" || status === "running" || status === "waiting";
 
-const STATUS_TONE: Record<ChildStatus, DotTone> = {
+export const STATUS_TONE: Record<ChildStatus, DotTone> = {
   pending: "info",
   running: "info",
   waiting: "info",

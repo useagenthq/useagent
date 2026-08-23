@@ -135,6 +135,134 @@ describe("child derivation equivalence (synthetic task frames)", () => {
   });
 });
 
+// The opencode frames genuinely carry child state: session lifecycle title, task
+// tool metadata (child sessionId, model.modelID, input.subagent_type) and child
+// step-finish token/cost counters. These tests pin that the translator populates
+// CanonicalChildState from those REAL fields (and only those - model/role stay
+// absent when the frames omit them).
+describe("opencode child state fidelity (real frame fields only)", () => {
+  const child = (over: Partial<OpenCodeFrame["native"]> = {}): OpenCodeFrame["native"] => ({
+    sessionId: "ses_child", parentSessionId: null, messageId: "m2", partId: "p_c", callId: null, ...over,
+  });
+  const taskState = {
+    title: "Research pricing",
+    input: { description: "Research pricing", prompt: "compare pages", subagent_type: "researcher" },
+    metadata: { parentSessionId: "ses_p", sessionId: "ses_child", model: { modelID: "claude-sonnet-5", providerID: "anthropic" } },
+  };
+  const frames: OpenCodeFrame[] = [
+    { eventId: "life", seq: 1, provider: "opencode", eventType: "session.created",
+      native: { sessionId: "ses_child", parentSessionId: "ses_p", messageId: null, partId: null, callId: null },
+      payload: { id: "ses_child", parentID: "ses_p", title: "Compare pricing pages" } },
+    { eventId: "task-run", seq: 2, provider: "opencode", eventType: "part.tool.running",
+      native: { sessionId: "ses_p", parentSessionId: null, messageId: "m1", partId: "p_t", callId: "call_1" },
+      payload: { type: "tool", tool: "task", state: { status: "running", ...taskState } } },
+    { eventId: "child-tool", seq: 3, provider: "opencode", eventType: "part.tool.completed",
+      native: child({ partId: "p_w", callId: "call_w" }),
+      payload: { type: "tool", tool: "webfetch", state: { status: "completed", title: "Fetch pricing page", output: "prices..." } } },
+    { eventId: "finish-1", seq: 4, provider: "opencode", eventType: "part.step-finish",
+      native: child({ partId: "p_f1" }),
+      payload: { type: "step-finish", reason: "tool-calls", cost: 0.125, tokens: { input: 100, output: 40, reasoning: 8, cache: { read: 25, write: 5 } } } },
+    { eventId: "finish-2", seq: 5, provider: "opencode", eventType: "part.step-finish",
+      native: child({ partId: "p_f2" }),
+      payload: { type: "step-finish", reason: "stop", cost: 0.125, tokens: { input: 50, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } } },
+    { eventId: "task-done", seq: 6, provider: "opencode", eventType: "part.tool.completed",
+      native: { sessionId: "ses_p", parentSessionId: null, messageId: "m1", partId: "p_t", callId: "call_1" },
+      payload: { type: "tool", tool: "task", state: { status: "completed", ...taskState,
+        output: '<task id="ses_child" state="completed"><task_result>done answer</task_result></task>' } } },
+  ];
+  const { events: ev } = translateOpenCode(frames, CTX);
+  const updates = ev.filter((e) => e.kind === "child.updated");
+
+  test("session-established child.started carries title + pre-scanned role/model", () => {
+    expect(ev[0]).toMatchObject({
+      kind: "child.started",
+      childId: "ses_child",
+      parentChildId: "ses_p",
+      title: "Compare pricing pages",
+      state: { role: "researcher", model: "claude-sonnet-5" },
+    });
+  });
+
+  test("task launch resolves the child id from metadata.sessionId before any output marker", () => {
+    const launch = ev.find((e) => e.kind === "child.started" && e.launchToolCallId === "call_1");
+    expect(launch).toMatchObject({
+      childId: "ses_child",
+      title: "Research pricing",
+      state: { status: "running", role: "researcher", model: "claude-sonnet-5" },
+    });
+  });
+
+  test("child tool activity emits child.updated with real summary + lastToolName", () => {
+    expect(updates.find((e) => e.identity.nativePartId === "p_w")).toMatchObject({
+      childId: "ses_child",
+      status: "Fetch pricing page",
+      state: {
+        summary: "Fetch pricing page",
+        lastToolName: "webfetch",
+        role: "researcher",
+        model: "claude-sonnet-5",
+      },
+    });
+  });
+
+  test("child step-finish keeps message.completed AND accumulates cumulative typed usage", () => {
+    expect(ev.filter((e) => e.kind === "message.completed" && e.messageId === "m2").length).toBe(2);
+    const first = updates.find((e) => e.identity.nativePartId === "p_f1");
+    const second = updates.find((e) => e.identity.nativePartId === "p_f2");
+    expect(first?.kind === "child.updated" ? first.state?.usage : undefined).toEqual({
+      inputTokens: 100, outputTokens: 40, reasoningOutputTokens: 8, cachedInputTokens: 25, costUsd: 0.125,
+    });
+    // cumulative totals, and the earlier emitted snapshot is NOT mutated by later frames
+    expect(second?.kind === "child.updated" ? second.state?.usage : undefined).toEqual({
+      inputTokens: 150, outputTokens: 50, reasoningOutputTokens: 8, cachedInputTokens: 25, costUsd: 0.25,
+    });
+  });
+
+  test("child.completed carries the fully merged real state", () => {
+    expect(ev.find((e) => e.kind === "child.completed")).toMatchObject({
+      childId: "ses_child",
+      status: "ok",
+      result: "done answer",
+      state: {
+        status: "completed",
+        summary: "Fetch pricing page",
+        lastToolName: "webfetch",
+        usage: { inputTokens: 150, outputTokens: 50, reasoningOutputTokens: 8, cachedInputTokens: 25, costUsd: 0.25 },
+        role: "researcher",
+        model: "claude-sonnet-5",
+      },
+    });
+  });
+
+  test("an empty (synthesized) step-finish fabricates no usage and no child.updated", () => {
+    const result = translateOpenCode([
+      { eventId: "life-2", seq: 1, provider: "opencode", eventType: "session.updated",
+        native: { sessionId: "ses_kid", parentSessionId: "ses_p", messageId: null, partId: null, callId: null },
+        payload: {} },
+      { eventId: "finish-empty", seq: 2, provider: "opencode", eventType: "part.step-finish",
+        native: { sessionId: "ses_kid", parentSessionId: null, messageId: "m9", partId: "p9", callId: null },
+        payload: {} },
+    ], CTX);
+    expect(result.events.map((e) => e.kind)).toEqual(["child.started", "session.metadata", "message.completed"]);
+    const started = result.events[0];
+    expect(started).toMatchObject({ kind: "child.started", childId: "ses_kid", parentChildId: "ses_p" });
+    expect(started?.kind === "child.started" ? started.state : null).toBeUndefined();
+    expect(started?.kind === "child.started" ? started.title : null).toBeUndefined();
+  });
+
+  test("root-session tool parts and step-finish emit no child.updated", () => {
+    const result = translateOpenCode([
+      { eventId: "root-tool", seq: 1, provider: "opencode", eventType: "part.tool.completed",
+        native: { sessionId: "ses_root", parentSessionId: null, messageId: "m1", partId: "p1", callId: "c1" },
+        payload: { type: "tool", tool: "bash", state: { status: "completed", output: "ok" } } },
+      { eventId: "root-finish", seq: 2, provider: "opencode", eventType: "part.step-finish",
+        native: { sessionId: "ses_root", parentSessionId: null, messageId: "m1", partId: "p2", callId: null },
+        payload: { type: "step-finish", cost: 0.1, tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } } },
+    ], CTX);
+    expect(result.events.some((e) => e.kind === "child.updated")).toBe(false);
+  });
+});
+
 describe("provider-neutral native lifecycle identity", () => {
   const providers = ["codex", "claude", "opencode", "pi", "acp"] as const;
 

@@ -3,7 +3,7 @@ import { and, eq, isNotNull, isNull, like } from "drizzle-orm";
 import "../../index";
 import { commands, providerEvents, runs } from "../../db/schema";
 import { db } from "../../db/client";
-import { createRun, setRunEngineSession, setRunStatus } from "../../runs/repo";
+import { createRun, setRunStatus } from "../../runs/repo";
 import { recordProviderEvent } from "../../runs/provider-events";
 import { createGatewayApp } from "../../gateway-app";
 import { executeRegisteredGatewayTool } from "./operation-registry";
@@ -65,7 +65,6 @@ afterEach(async () => {
 
 async function fixture(
   engine: "opencode" | "claude" | "codex" = "opencode",
-  options: { readonly t3?: boolean } = {},
 ): Promise<ToolTokenClaims> {
   const orgId = `org-child-session-${crypto.randomUUID()}`;
   const runId = crypto.randomUUID();
@@ -89,7 +88,6 @@ async function fixture(
     repos: [],
     memoryScope: "org",
   });
-  if (options.t3) await setRunEngineSession(runId, `skynet-thread-${runId}`);
   await setRunStatus(runId, "running");
   return {
     orgId,
@@ -136,23 +134,27 @@ describe("child session gateway tools", () => {
       "child_session_create",
     );
 
-    const runtimeCodexClaims = await fixture("codex", { t3: true });
-    const runtimeCodexToken = mintToolToken(runtimeCodexClaims, 60_000);
-    const runtimeCodex = await app.request("/api/mcp/knowledge", {
+    // Gateway child sessions are engine-independent: a plain ACP codex run (no
+    // runtime `skynet-thread-*` session id) is granted the tools too.
+    const acpCodexClaims = await fixture("codex");
+    const acpCodexToken = mintToolToken(acpCodexClaims, 60_000);
+    const acpCodex = await app.request("/api/mcp/knowledge", {
       method: "POST",
       headers: {
-        authorization: `Bearer ${runtimeCodexToken}`,
+        authorization: `Bearer ${acpCodexToken}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
     });
-    const runtimeCodexBody = (await runtimeCodex.json()) as {
+    const acpCodexBody = (await acpCodex.json()) as {
       result: { tools: Array<{ name: string }> };
     };
-    expect(runtimeCodexBody.result.tools.map((tool) => tool.name)).toContain(
+    expect(acpCodexBody.result.tools.map((tool) => tool.name)).toContain(
       "child_session_create",
     );
 
+    // claude is NOT dispatch-ready in this env (absent from ENABLED_ENGINES), so
+    // readiness - not engine capability - withholds the tools.
     const disabledClaims = await fixture("claude");
     const disabledToken = mintToolToken(disabledClaims, 60_000);
     const disabled = await app.request("/api/mcp/knowledge", {

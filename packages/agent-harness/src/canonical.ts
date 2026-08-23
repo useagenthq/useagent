@@ -248,7 +248,14 @@ export interface NegotiatedCapabilities {
   plans: boolean;
   toolProgress: boolean;
   fileDiffs: boolean;
-  childSessions: boolean;
+  /** Engine-NATIVE child/subagent projection (task fan-out translated from native frames into
+   *  child.started/updated/completed). Real only where the provider actually emits child
+   *  sessions (OpenCode protocol, canonical runtime adapter). */
+  nativeChildProjection: boolean;
+  /** The Skynet gateway `child_session_*` tools. These spawn DEFERRED serial thread turns
+   *  through the product command lane - engine-independent, so ACP claude/codex sessions are
+   *  granted them too (they never require a native child-session emitter). */
+  gatewayChildSessions: boolean;
   approvals: boolean;
   questions: boolean;
   usage: boolean;
@@ -383,7 +390,8 @@ export interface AcpCommandsFramePayload {
 export const SESSION_STARTED_EVENT_TYPE = "session.started";
 
 const CAP_KEYS: readonly (keyof NegotiatedCapabilities)[] = [
-  "streamingText", "reasoning", "plans", "toolProgress", "fileDiffs", "childSessions", "approvals",
+  "streamingText", "reasoning", "plans", "toolProgress", "fileDiffs", "nativeChildProjection",
+  "gatewayChildSessions", "approvals",
   "questions", "usage", "modelSelection", "commands", "directTerminal", "resume", "load", "close",
   "stop", "reconcile", "desktop", "nativeEmbed", "knowledgeTools",
 ];
@@ -395,6 +403,12 @@ export function normalizeNegotiatedCapabilities(raw: unknown): NegotiatedCapabil
   const rec = (raw ?? {}) as Record<string, unknown>;
   const out = {} as Record<keyof NegotiatedCapabilities, boolean>;
   for (const k of CAP_KEYS) out[k] = rec[k] === true;
+  // Legacy persisted frames (pre-split) carried one `childSessions` bit covering both the
+  // native projection and the gateway tools; honor it so replayed old runs keep their truth.
+  if (rec.childSessions === true) {
+    if (rec.nativeChildProjection === undefined) out.nativeChildProjection = true;
+    if (rec.gatewayChildSessions === undefined) out.gatewayChildSessions = true;
+  }
   return out as NegotiatedCapabilities;
 }
 

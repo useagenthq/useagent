@@ -13,7 +13,7 @@ import {
 import { firingKey } from "../src/schedules/fire";
 import type { RunCommandInput, RunCommandIntent } from "../src/commands/types";
 import { claimNextRun, settleCommandForRun } from "../src/commands/dispatch";
-import { completeRun } from "../src/runs/repo";
+import { completeRun, getRunWithSteps, getThreadForRun } from "../src/runs/repo";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
 import { createChildSession } from "../src/runs/child-sessions";
 
@@ -268,6 +268,50 @@ describe("durable command lane", () => {
     expect(row?.origin).toBe("internal:t3-parity");
     await retire(parentId);
     await retire(child.child.id);
+  });
+
+  test("the thread projection marks gateway child sessions, and only them", async () => {
+    const parentId = crypto.randomUUID();
+    await acceptRunCommand(
+      commandForTest(parentId, `parent:${crypto.randomUUID()}`, runIntentForTest("root turn")),
+    );
+    const child = await createChildSession({
+      orgId: ORG,
+      actorId: null,
+      parentRunId: parentId,
+      threadId: parentId,
+      prompt: "delegated audit",
+      engine: "mock",
+      model: "claude-opus-5",
+      repos: [],
+      memoryScope: "org",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    expect(child.status).toBe("created");
+    if (child.status === "conflict") throw new Error("unexpected conflict");
+    // An ordinary REPLY also carries parent_run_id - it must NOT be marked.
+    const replyId = crypto.randomUUID();
+    const replyInput = commandForTest(replyId, `reply:${crypto.randomUUID()}`, {
+      ...runIntentForTest("plain reply"),
+      parentRunId: parentId,
+    });
+    await acceptRunCommand({
+      ...replyInput,
+      run: { ...replyInput.run, threadId: parentId },
+    });
+
+    const thread = await getThreadForRun(ORG, parentId);
+    expect(thread).not.toBeNull();
+    const byId = new Map(thread!.map((r) => [r.id, r]));
+    expect(byId.get(parentId)?.child_session).toBe(false);
+    expect(byId.get(child.child.id)?.child_session).toBe(true);
+    expect(byId.get(replyId)?.child_session).toBe(false);
+    // The single-run projection (the thread SSE `run` frame) carries the same mark.
+    expect((await getRunWithSteps(ORG, child.child.id))?.child_session).toBe(true);
+
+    await retire(parentId);
+    await retire(child.child.id);
+    await retire(replyId);
   });
 
   test("replays an accepted key even after provider readiness changes", async () => {

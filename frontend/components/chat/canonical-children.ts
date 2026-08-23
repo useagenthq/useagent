@@ -1,8 +1,18 @@
 import type { CanonicalChildState } from "@skynet/agent-harness/canonical";
-import type { CanonicalEventLike } from "./canonical-timeline";
+import {
+  type CanonicalEventLike,
+  collectToolLifecycles,
+  projectToolLifecycle,
+} from "./canonical-timeline";
 import { type ChildUsage, mergeChildUsage, normalizeChildUsage } from "./child-usage";
-import type { ChildFidelity, ChildStatus } from "./native-events";
-import type { SubagentCard, SubagentModel } from "./subagents";
+import {
+  type ChildFidelity,
+  type ChildStatus,
+  deriveChildFidelity,
+  type NativeFrame,
+} from "./native-events";
+import { deriveSubagents, nativeOf, type SubagentCard, type SubagentModel } from "./subagents";
+import type { ApiStep } from "./types";
 
 export type CanonicalChildStateLike = Readonly<CanonicalChildState>;
 
@@ -232,4 +242,159 @@ export function legacySpawnStepIdForCanonical(
 ): string | null {
   const aliases = new Set(canonicalCard.aliases);
   return legacy.cards.find((card) => card.aliases.some((alias) => aliases.has(alias)))?.id ?? null;
+}
+
+// ── The ONE merged children projection (rail + inline fold read the same view) ──
+
+/** Canonical fidelity when the canonical lane carries the child; the legacy
+ *  native-frame fidelity otherwise. Canonical-only fields stay optional. */
+export type MergedChildFidelity = ChildFidelity &
+  Partial<Pick<CanonicalChildFidelity, "model" | "role" | "resumable">>;
+
+export interface ChildrenView {
+  readonly cards: readonly SubagentCard[];
+  /** stepId -> owning card id, for every durable step attributed to a child. */
+  readonly ownerByStep: ReadonlyMap<string, string>;
+  /** Keyed by every card alias (call id + child session id). */
+  readonly fidelity: ReadonlyMap<string, MergedChildFidelity>;
+  /** The legacy step projection, kept so spawn-step lookups stay exact. */
+  readonly legacy: SubagentModel;
+}
+
+const TERMINAL_STATUSES = new Set<ChildStatus>(["completed", "failed", "cancelled", "interrupted"]);
+
+/** Canonical wins field-by-field; the native lane fills what canonical does not
+ *  carry (result text, usage, activity). A native TERMINAL status corrects a
+ *  canonical child that never saw its completion frame - never the reverse. */
+function mergeFidelity(
+  canonical: CanonicalChildFidelity | undefined,
+  native: ChildFidelity | undefined,
+): MergedChildFidelity | undefined {
+  if (!canonical) return native;
+  if (!native) return canonical;
+  const status =
+    !TERMINAL_STATUSES.has(canonical.status) && TERMINAL_STATUSES.has(native.status)
+      ? native.status
+      : canonical.status;
+  return {
+    ...canonical,
+    status,
+    resultText: canonical.resultText ?? native.resultText,
+    progress: canonical.progress ?? native.progress,
+    lastToolName: canonical.lastToolName ?? native.lastToolName,
+    recentActivity:
+      canonical.recentActivity.length > 0 ? canonical.recentActivity : native.recentActivity,
+    usage: canonical.usage ?? native.usage,
+  };
+}
+
+/**
+ * Merge the three child lanes into ONE view: canonical lifecycle events name the
+ * cards when present (legacy spawn steps otherwise); durable steps attribute to
+ * cards by exact native child-session match (canonical cards included); fidelity
+ * is canonical-first with the native lane as fallback, so a child whose result
+ * only exists in native frames still reads truthfully.
+ */
+export function deriveChildrenView(
+  steps: readonly ApiStep[],
+  frames: readonly NativeFrame[],
+  canonicalEvents: readonly CanonicalChildEventLike[],
+): ChildrenView {
+  const canonical = deriveCanonicalChildren(canonicalEvents);
+  const legacy = deriveSubagents(steps);
+  const native = deriveChildFidelity(frames);
+
+  if (canonical.cards.length === 0) {
+    return { cards: legacy.cards, ownerByStep: legacy.ownerByStep, fidelity: native, legacy };
+  }
+
+  // Exact legacy attribution remapped onto canonical ids, then canonical's own
+  // child-session attribution for steps the legacy projection had no card for
+  // (ACP/canonical-only runs never emit a legacy spawn step).
+  const ownerByStep = new Map(remapCanonicalOwnerByStep(canonical.cards, legacy));
+  const cardByChildSession = new Map(
+    canonical.cards.flatMap((card) =>
+      card.childSessionId ? [[card.childSessionId, card.id] as const] : [],
+    ),
+  );
+  for (const step of steps) {
+    if (ownerByStep.has(step.id)) continue;
+    const sessionId = nativeOf(step)?.sessionID;
+    const cardId = sessionId ? cardByChildSession.get(sessionId) : undefined;
+    if (cardId) ownerByStep.set(step.id, cardId);
+  }
+
+  const fidelity = new Map<string, MergedChildFidelity>();
+  for (const card of canonical.cards) {
+    const canonicalFidelity = card.aliases
+      .map((alias) => canonical.fidelity.get(alias))
+      .find((value): value is CanonicalChildFidelity => value !== undefined);
+    const nativeFidelity = card.aliases
+      .map((alias) => native.get(alias))
+      .find((value): value is ChildFidelity => value !== undefined);
+    const merged = mergeFidelity(canonicalFidelity, nativeFidelity);
+    if (merged) for (const alias of card.aliases) fidelity.set(alias, merged);
+  }
+
+  return { cards: canonical.cards, ownerByStep, fidelity, legacy };
+}
+
+// ── Child timeline (the subagent detail pane's real activity) ────────────────
+
+export type ChildTimelineEntry =
+  | { readonly kind: "tool"; readonly key: string; readonly step: ApiStep }
+  | { readonly kind: "text"; readonly key: string; readonly text: string };
+
+/**
+ * The REAL activity of one child, from the canonical events identified as that
+ * child session's own (tool lifecycles + assistant text). Durable sidecar steps
+ * are preferred for tool detail (same rule as buildTimelineFromCanonical);
+ * events the run never persisted still render from their canonical projection.
+ */
+export function deriveChildTimeline(
+  events: readonly CanonicalChildEventLike[],
+  stepsById: ReadonlyMap<string, ApiStep>,
+  childSessionId: string | null,
+): ChildTimelineEntry[] {
+  if (!childSessionId) return [];
+  const owned = events
+    .filter((event) => event.identity?.nativeSessionId === childSessionId)
+    .toSorted((a, b) => a.seq - b.seq);
+  if (owned.length === 0) return [];
+
+  const lifecycles = collectToolLifecycles(owned);
+  const entries: { entry: ChildTimelineEntry; seq: number }[] = [];
+  const seenTextPart = new Set<string>();
+
+  for (const event of owned) {
+    if (event.kind === "message.delta") {
+      if (!event.text?.trim()) continue;
+      const key = event.identity?.nativePartId ?? event.identity?.nativeEventId ?? String(event.seq);
+      if (seenTextPart.has(key)) continue;
+      seenTextPart.add(key);
+      entries.push({
+        entry: { kind: "text", key: `child-text-${key}`, text: event.text },
+        seq: event.seq,
+      });
+      continue;
+    }
+    if (
+      (event.kind === "tool.started" ||
+        event.kind === "tool.progress" ||
+        event.kind === "tool.completed") &&
+      event.toolCallId
+    ) {
+      const lifecycle = lifecycles.get(event.toolCallId);
+      if (!lifecycle || event.seq !== lifecycle.lastSeq) continue;
+      const step =
+        lifecycle.nativeEventIds
+          .toReversed()
+          .map((id) => stepsById.get(id))
+          .find((candidate): candidate is ApiStep => candidate !== undefined) ??
+        projectToolLifecycle(lifecycle, event);
+      entries.push({ entry: { kind: "tool", key: step.id, step }, seq: lifecycle.firstSeq });
+    }
+  }
+
+  return entries.toSorted((a, b) => a.seq - b.seq).map(({ entry }) => entry);
 }

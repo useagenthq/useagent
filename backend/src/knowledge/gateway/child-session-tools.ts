@@ -4,7 +4,6 @@ import type { ToolTokenClaims } from "./token";
 import { getRunForOrg } from "../../runs/repo";
 import { engineModelReadyForDispatch } from "../../runs/engine-readiness";
 import { sessionCapabilities } from "../../engines/capabilities";
-import { isRuntimeThreadSessionId } from "../../engines/runtime-orchestration";
 import {
   childSessionEventLimit,
   childSessionLimit,
@@ -22,7 +21,7 @@ export const CHILD_SESSION_TOOLS = [
   {
     name: "child_session_create",
     description:
-      "Create a durable child session under the current live run. Identity, thread, engine, model, repositories, and memory scope are derived only from the signed gateway capability and current run. Creation is idempotent by idempotencyKey.",
+      "Create a durable child session under the current live run. Children do NOT run in parallel with this turn: each child is queued as a deferred serial thread turn that starts only after the current turn settles, so plan to finish this turn and read child results in a later turn (via child_session_list/events/gather). Identity, thread, engine, model, repositories, and memory scope are derived only from the signed gateway capability and current run. Creation is idempotent by idempotencyKey.",
     inputSchema: {
       type: "object",
       properties: {
@@ -158,13 +157,15 @@ export async function childSessionToolsEnabled(
 ): Promise<boolean> {
   const run = await getRunForOrg(claims.orgId, claims.runId);
   if (!run || run.status !== "running") return false;
+  // Gateway child sessions are engine-independent (deferred serial thread turns through the
+  // product command lane), so no runtime-session-id requirement: any live run on a
+  // dispatch-ready engine/model gets them, ACP claude/codex included.
   const capabilities = sessionCapabilities(run.engine, {
     desktop: Boolean(run.sandboxId),
     knowledgeTools: true,
-    runtimeOrchestration: isRuntimeThreadSessionId(run.engineSessionId ?? ""),
   });
   return (
-    capabilities.childSessions &&
+    capabilities.gatewayChildSessions &&
     engineModelReadyForDispatch(run.engine, run.model)
   );
 }
@@ -181,7 +182,7 @@ async function create(
   const run = await currentRun(claims);
   if (!run || !(await childSessionToolsEnabled(claims))) {
     return errorResult(
-      "Child sessions are not enabled for the current live run; they require an active turn on an engine that supports them (claude or codex).",
+      "Child sessions are not enabled for the current live run; they work on every engine but require an active live turn with a dispatch-ready engine and model.",
     );
   }
   const idempotencyKey = cleanString(args.idempotencyKey);
@@ -224,7 +225,7 @@ async function list(
 ): Promise<ToolCallResult> {
   if (!(await childSessionToolsEnabled(claims))) {
     return errorResult(
-      "Child sessions are not enabled for the current live run; they require an active turn on an engine that supports them (claude or codex).",
+      "Child sessions are not enabled for the current live run; they work on every engine but require an active live turn with a dispatch-ready engine and model.",
     );
   }
   const children = await listChildSessions({

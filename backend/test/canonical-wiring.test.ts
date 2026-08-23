@@ -201,7 +201,8 @@ describe("canonical wiring: a deliberately selected generic ACP run populates ca
       expect(session.capabilities.streamingText).toBe(true);
       expect(session.capabilities.toolProgress).toBe(true);
       expect(session.capabilities.reasoning).toBe(false);
-      expect(session.capabilities.childSessions).toBe(false);
+      expect(session.capabilities.nativeChildProjection).toBe(false);
+      expect(session.capabilities.gatewayChildSessions).toBe(false);
       expect(session.capabilities.approvals).toBe(false);
       expect(session.capabilities.usage).toBe(false);
     }

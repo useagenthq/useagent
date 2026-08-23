@@ -9,7 +9,7 @@ import {
 } from "../commands/service";
 import type { RunCommandIntent } from "../commands/types";
 import { getNativeFramesSince, type NativeFrame } from "./native-events";
-import { getRunForOrg } from "./repo";
+import { CHILD_SESSION_IDEMPOTENCY_PREFIX, getRunForOrg } from "./repo";
 import { createRunResourceAuthorization } from "../resources/authorization";
 import {
   legacyParentResources,
@@ -17,7 +17,9 @@ import {
 } from "../resources/run-intake";
 import { isInternalRunOrigin } from "./origin";
 
-export const CHILD_SESSION_IDEMPOTENCY_PREFIX = "child-session";
+// The namespace lives in repo.ts (the projection also reads it to mark
+// `child_session` on the wire); re-exported here for existing importers.
+export { CHILD_SESSION_IDEMPOTENCY_PREFIX };
 
 const MAX_CHILD_LIMIT = 20;
 const MAX_EVENT_LIMIT = 50;

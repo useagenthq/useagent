@@ -8,19 +8,15 @@ import {
 } from "@remixicon/react";
 import { useEffect, useState } from "react";
 import {
-  type CanonicalChildFidelity,
-  deriveCanonicalChildren,
+  type ChildTimelineEntry,
+  deriveChildrenView,
+  deriveChildTimeline,
   legacySpawnStepIdForCanonical,
-  remapCanonicalOwnerByStep,
+  type MergedChildFidelity,
 } from "@/components/chat/canonical-children";
 import type { CanonicalEventLike } from "@/components/chat/canonical-timeline";
-import {
-  type ChildFidelity,
-  type ChildStatus,
-  deriveChildFidelity,
-  type NativeFrame,
-} from "@/components/chat/native-events";
-import { deriveSubagents, type SubagentCard } from "@/components/chat/subagents";
+import type { ChildStatus, NativeFrame } from "@/components/chat/native-events";
+import type { SubagentCard } from "@/components/chat/subagents";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
 import { type ApiStep, deriveTrace, formatDuration } from "@/components/chat/types";
 import { formatSubagentTokenCount, AgentPanelRow } from "@/components/session-ui/agent-panel-row";
@@ -33,14 +29,14 @@ import { cx as cn } from "@/utils/cx";
  * token usage when known, result preview once settled — and, crucially, its OWN
  * run-state.
  *
- * Cards + nested activity are derived from the ordered step stream via
- * `deriveSubagents` (native child-session attribution, not display order). Each
- * card's status (running/completed/failed) and returned answer come from the
- * native event lane via `deriveChildFidelity`, keyed by the parent's task-tool
- * call id — so a failed child reads failed while its siblings complete, instead
- * of every card sharing the parent run's liveness. When no native frame is
- * available (pre-native runs, or before the lane loads) status falls back to the
- * run's liveness. See `native-events.ts` and `subagents.ts`.
+ * Cards, step attribution, and per-child fidelity all come from the ONE merged
+ * projection (`deriveChildrenView`): canonical child lifecycle events name the
+ * cards when present (legacy spawn steps otherwise), durable steps attribute by
+ * exact native child session, and fidelity is canonical-first with the native
+ * frame lane as fallback — so a failed child reads failed while its siblings
+ * complete, instead of every card sharing the parent run's liveness. When no
+ * lane carries a status, it falls back to the run's liveness. The inline
+ * conversation fold (`subagents-fold.tsx`) reads the same projection.
  *
  * Cards are openable: selecting one swaps this rail to a detail view of THAT
  * subagent — objective, status, its returned answer, and only its own
@@ -79,11 +75,11 @@ export function childElapsedMs(
 
 /** Resolve a card's authoritative status: native fidelity first, else fall back
  *  to the parent run's liveness (pre-native runs / before the lane loads). */
-function statusOf(fidelity: ChildFidelity | undefined, runLive: boolean): ChildStatus {
+function statusOf(fidelity: RailChildFidelity | undefined, runLive: boolean): ChildStatus {
   return fidelity?.status ?? (runLive ? "running" : "completed");
 }
 
-const isChildActive = (status: ChildStatus): boolean =>
+export const isChildActive = (status: ChildStatus): boolean =>
   status === "pending" || status === "running" || status === "waiting";
 
 export const childStatusLabel = (status: ChildStatus, resumable: boolean | null = null): string => {
@@ -110,8 +106,7 @@ export const childStatusLabel = (status: ChildStatus, resumable: boolean | null 
   }
 };
 
-type RailChildFidelity = ChildFidelity &
-  Partial<Pick<CanonicalChildFidelity, "model" | "role" | "resumable">>;
+type RailChildFidelity = MergedChildFidelity;
 
 function fidelityFor(
   card: SubagentCard,
@@ -189,6 +184,7 @@ function AgentDetail({
   steps,
   ownerByStep,
   spawnStepId,
+  canonicalEvents,
   onBack,
 }: {
   card: SubagentCard;
@@ -197,6 +193,7 @@ function AgentDetail({
   steps: ApiStep[];
   ownerByStep: ReadonlyMap<string, string>;
   spawnStepId: string;
+  canonicalEvents: readonly CanonicalEventLike[];
   onBack: () => void;
 }) {
   const status = statusOf(fidelity, runLive);
@@ -207,6 +204,21 @@ function AgentDetail({
   const spawn = steps.find((s) => s.id === spawnStepId);
   const objective = spawn ? deriveTrace(spawn).detail : null;
   const activity = steps.filter((s) => ownerByStep.get(s.id) === card.id);
+  // The child's REAL canonical activity (its own tool lifecycles + text). When
+  // present it IS the pane's timeline - durable-attributed steps already resolve
+  // into it (same sidecar rule as the conversation), so nothing renders twice.
+  const stepsById = new Map(steps.map((s) => [s.id, s]));
+  const timeline: ChildTimelineEntry[] = deriveChildTimeline(
+    canonicalEvents,
+    stepsById,
+    card.childSessionId,
+  );
+  const hasActivity = timeline.length > 0 || activity.length > 0;
+  const hasAnyChildData =
+    hasActivity ||
+    (fidelity?.recentActivity.length ?? 0) > 0 ||
+    Boolean(fidelity?.resultText) ||
+    Boolean(fidelity?.usage);
 
   return (
     <div className="flex h-full flex-col">
@@ -294,13 +306,29 @@ function AgentDetail({
           </div>
         )}
 
-        {activity.length === 0 && (fidelity?.recentActivity.length ?? 0) === 0 ? (
-          <p className="text-body-2-regular text-text-tertiary py-6 text-center">
-            {live
-              ? "Waiting for the first native activity…"
-              : childStatusLabel(status, fidelity?.resumable ?? null)}
-          </p>
-        ) : (
+        {timeline.length > 0 ? (
+          /* The child's own canonical timeline: its tool calls and returned text
+             in true order - never a bare status line when real activity exists. */
+          <div className="space-y-2.5">
+            {timeline.map((entry, i) =>
+              entry.kind === "text" ? (
+                <p
+                  key={entry.key}
+                  className="text-body-2-regular text-text-secondary whitespace-pre-wrap break-words"
+                >
+                  {entry.text}
+                </p>
+              ) : (
+                <ToolStepRow
+                  key={entry.key}
+                  step={entry.step}
+                  state={live && i === timeline.length - 1 ? "running" : "done"}
+                  nested={false}
+                />
+              ),
+            )}
+          </div>
+        ) : activity.length > 0 || (fidelity?.recentActivity.length ?? 0) > 0 ? (
           <div className="space-y-2.5">
             {fidelity?.recentActivity.map((entry, index) => (
               <div
@@ -319,6 +347,15 @@ function AgentDetail({
               />
             ))}
           </div>
+        ) : live ? (
+          <p className="text-body-2-regular text-text-tertiary py-6 text-center">
+            Waiting for the first native activity…
+          </p>
+        ) : hasAnyChildData ? null : (
+          /* Truly nothing known beyond the terminal state - only then a status line. */
+          <p className="text-body-2-regular text-text-tertiary py-6 text-center">
+            {childStatusLabel(status, fidelity?.resumable ?? null)}
+          </p>
         )}
       </div>
     </div>
@@ -336,14 +373,13 @@ export function AgentsRail({
   frames?: readonly NativeFrame[];
   canonicalEvents?: readonly CanonicalEventLike[];
 }) {
-  const canonical = deriveCanonicalChildren(canonicalEvents);
-  const legacy = deriveSubagents(steps);
-  const hasCanonicalChildren = canonical.cards.length > 0;
-  const cards = hasCanonicalChildren ? canonical.cards : legacy.cards;
-  const ownerByStep = hasCanonicalChildren
-    ? remapCanonicalOwnerByStep(canonical.cards, legacy)
-    : legacy.ownerByStep;
-  const fidelity = hasCanonicalChildren ? canonical.fidelity : deriveChildFidelity(frames);
+  // ONE merged projection (canonical + legacy steps + native frames) - the same
+  // view the inline conversation fold reads, so the two surfaces never disagree.
+  const { cards, ownerByStep, fidelity, legacy } = deriveChildrenView(
+    steps,
+    frames,
+    canonicalEvents,
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Fallback liveness for cards without a native status frame: the run is live
   // and hasn't emitted its terminal `done` step.
@@ -363,9 +399,9 @@ export function AgentsRail({
   const selected = selectedId ? cards.find((c) => c.id === selectedId) : null;
   if (selected) {
     const f = fidelityFor(selected, fidelity);
-    const spawnStepId = hasCanonicalChildren
-      ? (legacySpawnStepIdForCanonical(selected, legacy) ?? selected.id)
-      : selected.id;
+    // A legacy card's id IS its spawn step; a canonical card resolves through the
+    // legacy projection's aliases (falling back to its own id when none matches).
+    const spawnStepId = legacySpawnStepIdForCanonical(selected, legacy) ?? selected.id;
     return (
       <AgentDetail
         card={selected}
@@ -374,6 +410,7 @@ export function AgentsRail({
         steps={steps}
         ownerByStep={ownerByStep}
         spawnStepId={spawnStepId}
+        canonicalEvents={canonicalEvents}
         onBack={() => setSelectedId(null)}
       />
     );
