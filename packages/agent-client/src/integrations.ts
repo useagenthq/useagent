@@ -58,8 +58,8 @@ export interface IntegrationConnectionChange {
 
 export interface IntegrationActionCatalogEntry {
   readonly catalogVersion: 1;
-  readonly runtimeVersion: "1.4.0";
-  readonly runtimeCommit: "96fb6afe8c244c7d6f3a8351df06d7b04137f6a6";
+  readonly runtimeVersion: string;
+  readonly runtimeCommit: string | null;
   readonly provider: string;
   readonly actionId: string;
   readonly publicName: string;
@@ -226,10 +226,12 @@ export function decodeIntegrationActionCatalogEntry(
   const provider = nonEmptyString(value.provider);
   const actionId = nonEmptyString(value.actionId);
   const publicName = nonEmptyString(value.publicName);
+  const runtimeVersion = nonEmptyString(value.runtimeVersion);
+  const runtimeCommit = nullableString(value.runtimeCommit);
   if (
     value.catalogVersion !== 1 ||
-    value.runtimeVersion !== "1.4.0" ||
-    value.runtimeCommit !== "96fb6afe8c244c7d6f3a8351df06d7b04137f6a6" ||
+    !runtimeVersion ||
+    runtimeCommit === undefined ||
     !provider ||
     !actionId ||
     !publicName ||
@@ -245,8 +247,8 @@ export function decodeIntegrationActionCatalogEntry(
   }
   return {
     catalogVersion: value.catalogVersion,
-    runtimeVersion: value.runtimeVersion,
-    runtimeCommit: value.runtimeCommit,
+    runtimeVersion,
+    runtimeCommit,
     provider,
     actionId,
     publicName,

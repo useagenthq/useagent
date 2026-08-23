@@ -37,7 +37,10 @@ export interface Run {
 }
 
 export async function fetchRuns(signal?: AbortSignal): Promise<Run[]> {
-  const res = await backendFetch('/api/runs', { cache: 'no-store', signal });
+  const res = await backendFetch('/api/runs?view=summary&limit=100&include_active=1', {
+    cache: 'no-store',
+    signal,
+  });
   if (!res.ok) throw new Error(`runs request failed: ${res.status}`);
   const data = (await res.json()) as { runs?: Run[] };
   return data.runs ?? [];

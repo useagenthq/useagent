@@ -6,11 +6,13 @@ import {
   integrationConnectSessions,
 } from "../src/db/schema";
 import {
+  claimIntegrationConnectSession,
   consumeIntegrationConnectSession,
   createIntegrationConnectSession,
   findActiveIntegrationConnectSession,
   hashIntegrationConnectState,
   normalizeIntegrationReturnTo,
+  releaseIntegrationConnectSessionClaim,
 } from "../src/integrations/connect-sessions";
 import {
   createIntegrationConnection,
@@ -28,13 +30,14 @@ describe("integration persistence", () => {
     const otherOrgId = uid("integration-other-org");
     const ownerUserId = uid("integration-owner");
     const otherUserId = uid("integration-other-user");
+    const externalSuffix = uid("external");
 
     const orgConnection = await createIntegrationConnection({
       orgId,
       owner: { type: "org" },
       provider: "linear",
       runtimeBindingId: "runtime-1",
-      externalConnectionId: "external-org",
+      externalConnectionId: `external-org-${externalSuffix}`,
       status: "connected",
       authMethod: "oauth2",
       account: { displayName: "Acme", accessToken: "must-not-persist" },
@@ -46,7 +49,7 @@ describe("integration persistence", () => {
       owner: { type: "user", userId: ownerUserId },
       provider: "notion",
       runtimeBindingId: "runtime-1",
-      externalConnectionId: "external-user",
+      externalConnectionId: `external-user-${externalSuffix}`,
       status: "connected",
       authMethod: "oauth2",
       account: { email: "owner@example.com", refreshToken: "must-not-persist" },
@@ -88,6 +91,7 @@ describe("integration persistence", () => {
       managedBackends: [],
       delegatedBackends: [{
         kind: "delegated",
+        disconnectSupported: true,
         runtimeBindingId: "runtime-1",
         supports: (provider) => provider === "linear",
         async listConnectableProviders() { return ["linear"]; },
@@ -112,15 +116,16 @@ describe("integration persistence", () => {
     expect(JSON.stringify(stored)).not.toContain("must-not-persist");
   });
 
-  test("enforces owner invariants and qualified external identity uniqueness", async () => {
+  test("enforces owner invariants and global external identity uniqueness", async () => {
     const orgId = uid("integration-constraint-org");
     const userId = uid("integration-constraint-user");
+    const externalSuffix = uid("external");
     const base = {
       orgId,
       owner: { type: "org" } as const,
       provider: "linear",
       runtimeBindingId: "runtime-constraint",
-      externalConnectionId: "external-constraint",
+      externalConnectionId: `external-constraint-${externalSuffix}`,
       status: "connected" as const,
       authMethod: "oauth2" as const,
       account: {},
@@ -131,11 +136,11 @@ describe("integration persistence", () => {
     await expect(createIntegrationConnection(base)).rejects.toThrow();
     await expect(
       createIntegrationConnection({ ...base, orgId: uid("integration-distinct-org") }),
-    ).resolves.toBeTruthy();
+    ).rejects.toThrow();
     await expect(
       createIntegrationConnection({
         ...base,
-        externalConnectionId: "external-empty-user-owner",
+        externalConnectionId: `external-empty-user-owner-${externalSuffix}`,
         owner: { type: "user", userId: "" },
       }),
     ).rejects.toThrow("owner.userId is required");
@@ -147,7 +152,7 @@ describe("integration persistence", () => {
         ownerUserId: userId,
         provider: "linear",
         runtimeBindingId: "runtime-invalid-owner",
-        externalConnectionId: "external-invalid-owner",
+        externalConnectionId: `external-invalid-owner-${externalSuffix}`,
         status: "connected",
         authMethod: "oauth2",
         accountMetadata: {},
@@ -231,6 +236,38 @@ describe("integration persistence", () => {
       .toMatchObject({ id: created.id, consumedAt: null });
   });
 
+  test("leases connect completion so callback and polling cannot complete concurrently", async () => {
+    const orgId = uid("integration-lease-org");
+    const actorUserId = uid("integration-lease-user");
+    const created = await createIntegrationConnectSession({
+      orgId,
+      actorUserId,
+      owner: { type: "user", userId: actorUserId },
+      provider: "linear",
+      runtimeBindingId: "runtime-lease",
+      backendSessionRef: "pending-lease",
+      returnTo: "/settings#integrations",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const first = await claimIntegrationConnectSession({
+      orgId,
+      actorUserId,
+      state: created.state,
+    });
+    expect(first?.session.id).toBe(created.id);
+    expect(
+      await claimIntegrationConnectSession({ orgId, actorUserId, state: created.state }),
+    ).toBeNull();
+    await releaseIntegrationConnectSessionClaim({
+      sessionId: created.id,
+      claimToken: first!.claimToken,
+    });
+    expect(
+      await claimIntegrationConnectSession({ orgId, actorUserId, state: created.state }),
+    ).toMatchObject({ session: { id: created.id } });
+  });
+
   test("accepts only same-origin relative return paths", () => {
     expect(normalizeIntegrationReturnTo("/settings/integrations?provider=linear")).toBe(
       "/settings/integrations?provider=linear",
@@ -250,9 +287,11 @@ describe("integration persistence", () => {
   test("keeps connect state retryable until the delegated backend confirms completion", async () => {
     const orgId = uid("integration-service-org");
     const userId = uid("integration-service-user");
+    const externalConnectionId = uid("linear-account");
     let ready = false;
     const backend: DelegatedConnectionBackend = {
       kind: "delegated",
+      disconnectSupported: true,
       runtimeBindingId: "fake:runtime",
       supports: (provider) => provider === "linear",
       async listConnectableProviders() { return ["linear"]; },
@@ -268,7 +307,7 @@ describe("integration persistence", () => {
         if (!ready) throw new Error("integration authorization is not complete");
         return {
           runtimeBindingId: "fake:runtime",
-          externalConnectionId: "linear-account-1",
+          externalConnectionId,
           externalConnectionName: "work",
           authMethod: "oauth2",
           account: { displayName: "Acme Linear" },
@@ -305,7 +344,7 @@ describe("integration persistence", () => {
       account: { displayName: "Acme Linear" },
     });
     await expect(service.completeConnect({ orgId, userId, state: started.state })).rejects.toThrow(
-      "invalid or expired",
+      "invalid, busy, or expired",
     );
   });
 });

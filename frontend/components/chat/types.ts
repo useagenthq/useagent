@@ -137,8 +137,8 @@ export const MODELS: { value: string; label: string; tint: string }[] = [
     tint: "text-cyan-500",
   },
   {
-    value: "google/gemini-2.5-flash",
-    label: "Gemini 2.5 Flash · Fast",
+    value: "google/gemini-3.7-flash",
+    label: "Gemini 3.7 Flash · Fast",
     tint: "text-blue-500",
   },
   { value: "claude-opus-5", label: "Opus 5", tint: "text-orange-500" },

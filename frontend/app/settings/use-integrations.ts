@@ -41,6 +41,45 @@ export function useIntegrations() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("integration") === "connected" && window.opener) {
+      window.opener.postMessage(
+        {
+          type: "useagent:integration-connected",
+          provider: params.get("integration_provider"),
+        },
+        window.location.origin,
+      );
+      window.close();
+      return;
+    }
+    const state = params.get("state")?.trim();
+    if (!state) return;
+    const callback = Object.fromEntries(
+      [...params.entries()].filter(([key]) => key !== "state"),
+    );
+    let cancelled = false;
+    void (async () => {
+      setBusyProvider(params.has("installation_id") ? "github" : "integration");
+      setActionError(null);
+      try {
+        const connection = await completeIntegrationConnect(state, callback);
+        if (!connection || cancelled) return;
+        await load();
+        window.history.replaceState({}, "", `${window.location.pathname}#integrations`);
+        if (window.opener) window.close();
+      } catch {
+        if (!cancelled) setActionError("Couldn't complete the connection flow.");
+      } finally {
+        if (!cancelled) setBusyProvider(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
   useOrgChanges((change) => {
     if (change.type === "integration_connection") void load();
   });
@@ -61,12 +100,15 @@ export function useIntegrations() {
         const deadline = Number.isFinite(expiresAt) ? expiresAt : Date.now() + 10 * 60_000;
         while (Date.now() < deadline) {
           await delay(POLL_INTERVAL_MS);
-          if (await completeIntegrationConnect(started.state)) {
+          if (popup.closed) {
+            await load();
+            return;
+          }
+          if (provider !== "github" && provider !== "slack" && await completeIntegrationConnect(started.state)) {
             popup.close();
             await load();
             return;
           }
-          if (popup.closed) break;
         }
         throw new Error("authorization did not complete");
       } catch {

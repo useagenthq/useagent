@@ -3,22 +3,40 @@ import type {
   IntegrationActionCatalogEntry,
 } from "@skynet/agent-client/integrations";
 import {
+  claimIntegrationConnectSession,
+  createIntegrationConnectState,
   createIntegrationConnectSession,
   finalizeIntegrationConnectSession,
-  findActiveIntegrationConnectSession,
+  releaseIntegrationConnectSessionClaim,
+  type IntegrationConnectSessionRecord,
 } from "./connect-sessions";
 import {
   findVisibleIntegrationConnectionRecord,
+  listVisibleIntegrationConnectionRecords,
   listVisibleIntegrationConnections,
-  updateOwnedIntegrationConnection,
+  projectIntegrationConnection,
+  revokeOwnedIntegrationConnection,
 } from "./connection-repo";
 import type {
   DelegatedConnectionBackend,
   IntegrationActorScope,
+  IntegrationConnectCallback,
   ManagedConnectionBackend,
 } from "./backend";
 import { managedConnectionBackends } from "./managed-backends";
+import {
+  createGithubDelegatedConnectionBackend,
+  githubNativeConnectionConfigFromEnv,
+} from "./github-native-backend";
+import {
+  createOomolProjectConnectorBackend,
+  oomolProjectConnectorConfigFromEnv,
+} from "./oomol-project-connector";
 import { createOpenConnectorBackend, openConnectorConfigFromEnv } from "./open-connector";
+import {
+  createSlackDelegatedConnectionBackend,
+  slackNativeConnectionConfigFromEnv,
+} from "./slack-native-backend";
 import { publishOrgChange } from "../runs/org-signals";
 
 export interface IntegrationSummary {
@@ -46,6 +64,16 @@ export interface IntegrationServiceDependencies {
 
 const DELEGATED_INTEGRATION_CATALOG = [
   {
+    provider: "github",
+    displayName: "GitHub",
+    description: "Native repository discovery, cloning, and pull request workflows.",
+  },
+  {
+    provider: "slack",
+    displayName: "Slack",
+    description: "Native events, threads, files, and streaming cards.",
+  },
+  {
     provider: "linear",
     displayName: "Linear",
     description: "Issues, projects, and team workflows.",
@@ -57,9 +85,19 @@ const DELEGATED_INTEGRATION_CATALOG = [
 
 function defaultDependencies(): IntegrationServiceDependencies {
   const openConnector = openConnectorConfigFromEnv();
+  const oomol = oomolProjectConnectorConfigFromEnv();
+  const github = githubNativeConnectionConfigFromEnv();
+  const slack = slackNativeConnectionConfigFromEnv();
   return {
-    managedBackends: managedConnectionBackends,
-    delegatedBackends: openConnector ? [createOpenConnectorBackend(openConnector)] : [],
+    managedBackends: managedConnectionBackends.filter(
+      (backend) => !(github && backend.provider === "github") && !(slack && backend.provider === "slack"),
+    ),
+    delegatedBackends: [
+      ...(github ? [createGithubDelegatedConnectionBackend(github)] : []),
+      ...(slack ? [createSlackDelegatedConnectionBackend(slack)] : []),
+      ...(oomol ? [createOomolProjectConnectorBackend(oomol)] : []),
+      ...(openConnector ? [createOpenConnectorBackend(openConnector)] : []),
+    ],
   };
 }
 
@@ -77,18 +115,71 @@ function ownerForRecord(record: { ownerType: "org" | "user"; ownerUserId: string
     : ({ type: "user", userId: record.ownerUserId! } as const);
 }
 
+function integrationBackend(provider: string): IntegrationSummary["backend"] {
+  return provider === "github" || provider === "slack" ? "native" : "openconnector";
+}
+
 export function createIntegrationService(
   deps: IntegrationServiceDependencies = defaultDependencies(),
 ) {
-  function delegatedBackend(provider: string): DelegatedConnectionBackend | null {
+  function backendForNewConnect(provider: string): DelegatedConnectionBackend | null {
     return deps.delegatedBackends.find((backend) => backend.supports(provider)) ?? null;
+  }
+
+  function backendForBinding(runtimeBindingId: string): DelegatedConnectionBackend | null {
+    return deps.delegatedBackends.find(
+      (backend) => backend.runtimeBindingId === runtimeBindingId,
+    ) ?? null;
+  }
+
+  async function completeClaimedConnect(input: {
+    readonly state: string;
+    readonly claimToken: string;
+    readonly session: IntegrationConnectSessionRecord;
+    readonly callback?: IntegrationConnectCallback;
+  }) {
+    const backend = backendForBinding(input.session.runtimeBindingId);
+    if (!backend) throw new Error("integration backend is unavailable");
+    try {
+      const result = await backend.completeConnect({
+        orgId: input.session.orgId,
+        userId: input.session.actorUserId,
+        provider: input.session.provider,
+        backendSessionRef: input.session.backendSessionRef,
+        callback: input.callback,
+      });
+      const connection = await finalizeIntegrationConnectSession({
+        orgId: input.session.orgId,
+        actorUserId: input.session.actorUserId,
+        state: input.state,
+        claimToken: input.claimToken,
+        result,
+      });
+      if (!connection) throw new Error("integration connect session was already consumed");
+      publishOrgChange(input.session.orgId, {
+        type: "integration_connection",
+        action: "created",
+        connectionId: connection.id,
+        provider: connection.provider,
+        ...(connection.owner.type === "user"
+          ? { targetUserId: connection.owner.userId }
+          : {}),
+      });
+      return connection;
+    } catch (error) {
+      await releaseIntegrationConnectSessionClaim({
+        sessionId: input.session.id,
+        claimToken: input.claimToken,
+      });
+      throw error;
+    }
   }
 
   return {
     async listIntegrations(scope: IntegrationActorScope): Promise<IntegrationSummary[]> {
       const [managed, connections, connectableProviders] = await Promise.all([
         Promise.all(deps.managedBackends.map((backend) => backend.readStatus(scope))),
-        listVisibleIntegrationConnections(scope),
+        listVisibleIntegrationConnectionRecords(scope),
         Promise.all(
           deps.delegatedBackends.map((backend) =>
             backend.listConnectableProviders().catch(() => []),
@@ -97,7 +188,7 @@ export function createIntegrationService(
       ]);
       const connectionProviders = new Set(connections.map((connection) => connection.provider));
       const availableDelegated = DELEGATED_INTEGRATION_CATALOG.filter(
-        (item) => !connectionProviders.has(item.provider) && delegatedBackend(item.provider),
+        (item) => !connectionProviders.has(item.provider) && backendForNewConnect(item.provider),
       );
       return [
         ...managed.map((status): IntegrationSummary => ({
@@ -116,26 +207,26 @@ export function createIntegrationService(
           provider: item.provider,
           displayName: item.displayName,
           description: item.description,
-          backend: "openconnector",
+          backend: integrationBackend(item.provider),
           managed: false,
           connectAvailable: connectableProviders.has(item.provider),
           disconnectAvailable: false,
           status: "unavailable",
           connection: null,
         })),
-        ...connections.map((connection): IntegrationSummary => ({
-          provider: connection.provider,
-          displayName: displayName(connection.provider),
-          description: `${displayName(connection.provider)} account connection.`,
-          backend: connection.provider === "github" || connection.provider === "slack"
-            ? "native"
-            : "openconnector",
+        ...connections.map((record): IntegrationSummary => ({
+          provider: record.provider,
+          displayName: displayName(record.provider),
+          description: `${displayName(record.provider)} account connection.`,
+          backend: integrationBackend(record.provider),
           managed: false,
-          connectAvailable: delegatedBackend(connection.provider) !== null,
-          disconnectAvailable: connection.status !== "revoked",
-          status: connection.status,
-          account: connection.account,
-          connection,
+          connectAvailable: backendForNewConnect(record.provider) !== null,
+          disconnectAvailable:
+            record.status !== "revoked" &&
+            backendForBinding(record.runtimeBindingId)?.disconnectSupported === true,
+          status: record.status,
+          account: projectIntegrationConnection(record).account,
+          connection: projectIntegrationConnection(record),
         })),
       ];
     },
@@ -147,13 +238,14 @@ export function createIntegrationService(
         | { readonly type: "org" }
         | { readonly type: "user"; readonly userId: string };
     }) {
-      const backend = delegatedBackend(input.provider);
+      const backend = backendForNewConnect(input.provider);
       if (!backend) throw new Error("integration provider is not connectable");
       const connectable = await backend.listConnectableProviders();
       if (!connectable.includes(input.provider)) {
         throw new Error("integration provider OAuth is not configured");
       }
-      const started = await backend.startConnect(input);
+      const state = createIntegrationConnectState();
+      const started = await backend.startConnect({ ...input, state });
       const session = await createIntegrationConnectSession({
         orgId: input.orgId,
         actorUserId: input.userId,
@@ -163,6 +255,7 @@ export function createIntegrationService(
         backendSessionRef: started.backendSessionRef,
         returnTo: input.returnTo,
         expiresAt: started.expiresAt,
+        state,
       });
       return {
         redirectUrl: started.redirectUrl,
@@ -171,38 +264,45 @@ export function createIntegrationService(
       };
     },
 
-    async completeConnect(input: IntegrationActorScope & { readonly state: string }) {
-      const sessionScope = {
+    async completeConnect(input: IntegrationActorScope & {
+      readonly state: string;
+      readonly callback?: IntegrationConnectCallback;
+    }) {
+      const claimed = await claimIntegrationConnectSession({
         orgId: input.orgId,
         actorUserId: input.userId,
         state: input.state,
-      };
-      const pending = await findActiveIntegrationConnectSession(sessionScope);
-      if (!pending) throw new Error("integration connect session is invalid or expired");
-      const backend = delegatedBackend(pending.provider);
-      if (!backend || backend.runtimeBindingId !== pending.runtimeBindingId) {
-        throw new Error("integration backend is unavailable");
+      });
+      if (!claimed) throw new Error("integration connect session is invalid, busy, or expired");
+      return completeClaimedConnect({
+        state: input.state,
+        claimToken: claimed.claimToken,
+        session: claimed.session,
+        callback: input.callback,
+      });
+    },
+
+    async completePublicCallback(input: {
+      readonly provider: string;
+      readonly state: string;
+      readonly callback: IntegrationConnectCallback;
+    }) {
+      const claimed = await claimIntegrationConnectSession({ state: input.state });
+      if (!claimed) throw new Error("integration connect session is invalid, busy, or expired");
+      if (claimed.session.provider !== input.provider) {
+        await releaseIntegrationConnectSessionClaim({
+          sessionId: claimed.session.id,
+          claimToken: claimed.claimToken,
+        });
+        throw new Error("integration provider mismatch");
       }
-      const result = await backend.completeConnect({
-        ...input,
-        provider: pending.provider,
-        backendSessionRef: pending.backendSessionRef,
-      });
-      const connection = await finalizeIntegrationConnectSession({
-        orgId: input.orgId,
-        actorUserId: input.userId,
+      const connection = await completeClaimedConnect({
         state: input.state,
-        result,
+        claimToken: claimed.claimToken,
+        session: claimed.session,
+        callback: input.callback,
       });
-      if (!connection) throw new Error("integration connect session was already consumed");
-      publishOrgChange(input.orgId, {
-        type: "integration_connection",
-        action: "created",
-        connectionId: connection.id,
-        provider: connection.provider,
-        ...(connection.owner.type === "user" ? { targetUserId: connection.owner.userId } : {}),
-      });
-      return connection;
+      return { connection, returnTo: claimed.session.returnTo };
     },
 
     async disconnect(input: IntegrationActorScope & {
@@ -221,17 +321,16 @@ export function createIntegrationService(
       if (record.ownerType === "org" && !input.allowOrgOwner) {
         throw new Error("organization admin route required");
       }
-      const backend = delegatedBackend(record.provider);
-      if (!backend || backend.runtimeBindingId !== record.runtimeBindingId) {
+      const backend = backendForBinding(record.runtimeBindingId);
+      if (!backend) {
         throw new Error("integration backend is unavailable");
       }
       await backend.disconnect({ ...input, connection: record });
       const owner = ownerForRecord(record);
-      const connection = await updateOwnedIntegrationConnection({
+      const connection = await revokeOwnedIntegrationConnection({
         orgId: input.orgId,
         owner,
         id: record.id,
-        status: "revoked",
         account: record.accountMetadata,
         scopes: record.scopes,
         externalConnectionName: record.externalConnectionName,
@@ -260,8 +359,8 @@ export function createIntegrationService(
             id: connection.id,
           });
           if (!record) return [];
-          const backend = delegatedBackend(record.provider);
-          if (!backend || backend.runtimeBindingId !== record.runtimeBindingId) return [];
+          const backend = backendForBinding(record.runtimeBindingId);
+          if (!backend) return [];
           const actions = await backend.listActions({ ...scope, connection: record });
           return actions.map((entry) => ({ connectionId: connection.id, entry }));
         }),
@@ -283,8 +382,8 @@ export function createIntegrationService(
       if (!record || record.status !== "connected") {
         throw new Error("integration connection is not connected");
       }
-      const backend = delegatedBackend(record.provider);
-      if (!backend || backend.runtimeBindingId !== record.runtimeBindingId) {
+      const backend = backendForBinding(record.runtimeBindingId);
+      if (!backend) {
         throw new Error("integration backend is unavailable");
       }
       const actions = await backend.listActions({ ...input, connection: record });

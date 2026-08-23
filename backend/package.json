@@ -18,6 +18,7 @@
     "@anthropic-ai/sdk": "^0.115.0",
     "@daytona/sdk": "^0.203.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@oomol-lab/connector": "1.1.0",
     "@skynet/agent-client": "file:../packages/agent-client",
     "@skynet/agent-harness": "file:../packages/agent-harness",
     "@skynet/artifact-formats": "file:../packages/artifact-formats",

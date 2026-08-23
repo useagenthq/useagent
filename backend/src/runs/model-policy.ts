@@ -4,7 +4,7 @@ import { chatModel } from "../chat/stream";
 
 export const KIMI_K3_MODEL = "moonshotai/kimi-k3";
 export const DEEPSEEK_V4_FLASH_MODEL = "deepseek/deepseek-v4-flash";
-export const GEMINI_FLASH_MODEL = "google/gemini-2.5-flash";
+export const GEMINI_FLASH_MODEL = "google/gemini-3.7-flash";
 export const FAST_OPENCODE_MODEL = "openai/gpt-5.6-luna";
 export const FAST_CODEX_MODEL = "gpt-5.6-luna";
 export const CODEX_ALLOWED_MODELS = [

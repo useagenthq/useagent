@@ -124,6 +124,7 @@ export async function executeSlackTool(
   // Durable delivery reads the SAME immutable bytes as the browser endpoint.
   await enqueueUploadFile({
     idempotencyKey: `slack-upload:${claims.threadId}:${artifact.id}:${thread.channel}:${thread.threadTs}`,
+    teamId: thread.teamId,
     channel: thread.channel,
     threadTs: thread.threadTs,
     filename: artifact.name,

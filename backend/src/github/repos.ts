@@ -1,11 +1,10 @@
-import {
-  githubAppConfig,
-  githubAuthSource,
-  githubConfig,
-  githubConfigured,
-  githubTenantOrgId,
-} from "../env";
+import { githubConfigured, githubTenantOrgId } from "../env";
 import { resolveGithubCatalogAuth, type GithubAuth } from "./auth";
+import { findConnectedOrgIntegrationRecord } from "../integrations/connection-repo";
+import {
+  GITHUB_NATIVE_RUNTIME_BINDING_ID,
+  githubNativeConnectionConfigFromEnv,
+} from "../integrations/github-native-backend";
 
 // ---------------------------------------------------------------------------
 // Real GitHub repository listing — the source for the New Task composer's repo
@@ -59,17 +58,12 @@ const cache = new Map<string, { at: number; listing: RepoListing }>();
 /** Cache key from product tenant + sync config only — never mints a token. The
  *  App path's rotating installation token does not change the scope, so it is
  *  intentionally absent from the key. */
-function scopeKey(orgId: string): string {
-  const source = githubAppConfig() ? "app" : githubAuthSource();
-  const owner =
-    githubConfig().owner ??
-    (source === "app" ? githubAppConfig()?.org ?? null : null);
-  return `${orgId}|${owner ?? ""}|${source}`;
+function scopeKey(orgId: string, auth: GithubAuth): string {
+  return `${orgId}|${auth.owner ?? ""}|${auth.source}`;
 }
 
-/** Return the reason this product org cannot use the deployment-wide GitHub
- *  connection, or null when it owns the connection. Callers must evaluate this
- *  before resolving credentials or consulting caches. */
+/** Legacy deployment-wide credential ownership check. Tenant GitHub App
+ * connections use {@link githubOrgAccessErrorForOrg} instead. */
 export function githubOrgAccessError(orgId: string): string | null {
   const tenantOrgId = githubTenantOrgId();
   if (!tenantOrgId) {
@@ -82,6 +76,22 @@ export function githubOrgAccessError(orgId: string): string | null {
     return "GitHub repository access is not available to this organization";
   }
   return null;
+}
+
+/** Accept an org-owned customer App installation before consulting the legacy
+ * deployment-wide credential boundary. */
+export async function githubOrgAccessErrorForOrg(orgId: string): Promise<string | null> {
+  if (githubNativeConnectionConfigFromEnv()) {
+    const tenant = await findConnectedOrgIntegrationRecord({
+      orgId,
+      provider: "github",
+      runtimeBindingId: GITHUB_NATIVE_RUNTIME_BINDING_ID,
+    });
+    if (tenant) return null;
+  }
+  return githubConfigured() || process.env.GITHUB_TENANT_ORG_ID?.trim()
+    ? githubOrgAccessError(orgId)
+    : null;
 }
 
 function ghHeaders(token: string | null): Record<string, string> {
@@ -200,22 +210,17 @@ async function fetchRepos(auth: GithubAuth): Promise<RepoInfo[]> {
  * rather than breaking the page.
  */
 export async function listRepos(orgId: string): Promise<RepoListing> {
-  if (!githubConfigured()) return { configured: false, repos: [] };
-  const accessError = githubOrgAccessError(orgId);
-  if (accessError) return { configured: true, repos: [], error: accessError };
-
-  const key = scopeKey(orgId);
   const now = Date.now();
-  const hit = cache.get(key);
-  if (hit && now - hit.at < CACHE_TTL_MS) {
-    return hit.listing;
-  }
-
+  let key: string | null = null;
   try {
-    const auth = await resolveGithubCatalogAuth();
+    const auth = await resolveGithubCatalogAuth(orgId);
+    if (!auth.token && !auth.owner) return { configured: false, repos: [] };
+    key = scopeKey(orgId, auth);
+    const hit = cache.get(key);
+    if (hit && now - hit.at < CACHE_TTL_MS) return hit.listing;
     const repos = await fetchRepos(auth);
     const listing: RepoListing = { configured: true, repos };
-    cache.set(key, { at: now, listing });
+    if (key) cache.set(key, { at: now, listing });
     return listing;
   } catch (err) {
     const listing: RepoListing = {
@@ -225,7 +230,7 @@ export async function listRepos(orgId: string): Promise<RepoListing> {
     };
     // Cache the failure briefly too, so a hard-down GitHub doesn't get hammered
     // on every keystroke; the short TTL means it recovers within minutes.
-    cache.set(key, { at: now, listing });
+    if (key) cache.set(key, { at: now, listing });
     return listing;
   }
 }
@@ -288,18 +293,14 @@ export async function listBranches(
   fullName: string,
   orgId: string,
 ): Promise<BranchListing> {
-  if (!githubConfigured()) return { configured: false, branches: [] };
-  const accessError = githubOrgAccessError(orgId);
-  if (accessError) {
-    return { configured: true, branches: [], error: accessError };
-  }
+  const listing = await listRepos(orgId);
+  if (!listing.configured) return { configured: false, branches: [] };
   if (!isValidRepoRef(fullName)) {
     return { configured: true, branches: [], error: "invalid repo reference" };
   }
 
   // Only branches for a repo we actually offer — this scopes the proxy AND gives
   // us the default_branch to echo back.
-  const listing = await listRepos(orgId);
   const known = listing.repos.find((r) => r.full_name === fullName);
   if (!known) {
     return {
@@ -309,13 +310,23 @@ export async function listBranches(
     };
   }
 
-  const key = `${scopeKey(orgId)}|${fullName}`;
+  let auth: GithubAuth;
+  try {
+    auth = await resolveGithubCatalogAuth(orgId);
+  } catch (error) {
+    return {
+      configured: true,
+      branches: [],
+      default_branch: known.default_branch,
+      error: error instanceof Error ? error.message : "github auth failed",
+    };
+  }
+  const key = `${scopeKey(orgId, auth)}|${fullName}`;
   const now = Date.now();
   const hit = branchCache.get(key);
   if (hit && now - hit.at < CACHE_TTL_MS) return hit.listing;
 
   try {
-    const auth = await resolveGithubCatalogAuth();
     const branches = await fetchBranches(fullName, auth.token);
     const result: BranchListing = {
       configured: true,
