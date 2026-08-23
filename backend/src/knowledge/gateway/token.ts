@@ -3,7 +3,7 @@ import { authSecretMaterial } from "../../security/runtime-secrets";
 
 // ---------------------------------------------------------------------------
 // Run-scoped tool token — THE trust boundary for the agent-callable knowledge
-// gateway (mem_op.md 0.2 / new_prompt.md "Trusted Tool Gateway").
+// gateway (mem_op.md 0.2).
 //
 // The untrusted sandbox NEVER holds DB/embedding/tenant credentials. It holds
 // ONLY this short-lived, signed token. The gateway derives the authorized

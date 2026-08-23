@@ -10,9 +10,10 @@ Skynet, rebuilt. Two standalone apps (no workspace/turbo):
   one-shot per run, worker + SSE, better-auth org scoping. The harness lives OUTSIDE the
   sandbox; the UI renders the event log, never a live process.
 
-**Read `codex-author/HANDOFF.md` first** — it records the settled decisions (do not re-litigate: no
-engine-UI iframes, no harness-in-sandbox, threading is backend truth) and the working
-protocol. Architecture source of truth: `~/Documents/skynet-saas/ARCHITECTURE.md`.
+**Settled decisions (do not re-litigate):** no engine-UI iframes, no harness-in-sandbox,
+threading is backend truth. Architecture source of truth:
+`~/Documents/skynet-saas/ARCHITECTURE.md`. The doctrine docs cited by code
+comments (`mem_op.md`, `final_fix.md`, `new_mem_prompt.md`) live in `docs/architecture/`.
 
 ## Branches (2026-08-05 decisions)
 - `rebuild/skynet-a` (main line): NATIVE React chat is the primary surface — we

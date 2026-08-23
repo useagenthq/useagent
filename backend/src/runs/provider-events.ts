@@ -181,7 +181,7 @@ async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): 
       },
       // A revision always mints a HIGHER seq (the counter only grows), so this
       // guard is normally true; it stays as defense against a stale write ever
-      // arriving after a re-seeded counter (new_prompt.md audit).
+      // arriving after a re-seeded counter.
       setWhere: sql`${providerEvents.seq} < ${assignedSeq}`,
     });
 
