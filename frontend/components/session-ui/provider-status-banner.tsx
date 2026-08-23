@@ -25,14 +25,16 @@ import { ENGINES, type EngineId } from "@/components/chat/types";
 
 /**
  * The display label to warn about, or null when there is nothing honest to say:
- * the manifest lists the engine, or the manifest is EMPTY (not resolved yet -
- * an unknown manifest must never flag an engine as unavailable).
+ * the manifest lists the engine, or readiness has not resolved yet. The engine
+ * hook uses a conservative OpenCode-only fallback while loading, so the
+ * explicit readiness bit—not the fallback contents—distinguishes unknown state.
  */
 export function unavailableEngineLabel(
   engine: EngineId,
   enabledEngines: readonly EngineId[],
+  readinessKnown: boolean,
 ): string | null {
-  if (enabledEngines.length === 0) return null;
+  if (!readinessKnown) return null;
   if (enabledEngines.includes(engine)) return null;
   return ENGINES.find((e) => e.id === engine)?.label ?? engine;
 }

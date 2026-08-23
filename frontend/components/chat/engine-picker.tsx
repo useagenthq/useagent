@@ -41,15 +41,19 @@ export function useEnabledEngineConfig(): {
   /** True once GET /api/config resolved (or failed): before that the engines
    * list is the conservative fallback and must not demote a richer default. */
   loaded: boolean;
+  /** True only when the server returned an engines manifest. */
+  readinessKnown: boolean;
 } {
   const [config, setConfig] = useState<{
     engines: EngineId[];
     models: EngineModelCatalog;
     loaded: boolean;
+    readinessKnown: boolean;
   }>({
     engines: ["opencode"],
     models: { opencode: selectableModelsForEngine("opencode").map((m) => m.value) },
     loaded: false,
+    readinessKnown: false,
   });
   useEffect(() => {
     let cancelled = false;
@@ -65,9 +69,18 @@ export function useEnabledEngineConfig(): {
             )
           : [];
         if (engines.length) {
-          setConfig({ engines, models: parseEngineModelCatalog(j.models), loaded: true });
+          setConfig({
+            engines,
+            models: parseEngineModelCatalog(j.models),
+            loaded: true,
+            readinessKnown: true,
+          });
         } else {
-          setConfig((c) => ({ ...c, loaded: true }));
+          setConfig((c) => ({
+            ...c,
+            loaded: true,
+            readinessKnown: Array.isArray(j.engines),
+          }));
         }
       } catch {
         // network/backend down: keep the safe OpenCode-only default, but mark

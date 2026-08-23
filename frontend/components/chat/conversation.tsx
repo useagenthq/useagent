@@ -23,7 +23,7 @@ import {
   shouldUseCanonicalTimeline,
 } from "@/components/chat/canonical-timeline";
 import { Composer, type ComposerSubmit } from "@/components/chat/composer";
-import { useEnabledEngines } from "@/components/chat/engine-picker";
+import { useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { GatewayApprovalCard } from "@/components/chat/gateway-approval-card";
 import { InboundAttachments } from "@/components/chat/inbound-attachments";
 import { NativeApprovalCard } from "@/components/chat/native-approval-card";
@@ -936,10 +936,12 @@ export const Conversation = memo(function Conversation({
     bumpDismissTick((t) => t + 1);
   };
 
-  // Provider banner: flag the thread's engine only when a NON-EMPTY manifest
-  // omits it (empty manifest means not yet resolved, never a warning).
-  const enabledEngines = useEnabledEngines();
-  const engineUnavailable = unavailableEngineLabel(defaultEngine, enabledEngines) !== null;
+  // Provider banner: wait for the server manifest before treating the hook's
+  // conservative loading fallback as evidence that an engine is unavailable.
+  const engineConfig = useEnabledEngineConfig();
+  const engineUnavailable =
+    unavailableEngineLabel(defaultEngine, engineConfig.engines, engineConfig.readinessKnown) !==
+    null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
