@@ -93,7 +93,13 @@ async function DashboardSummary() {
         <StatCard stat={{ icon: RiBookOpenLine, label: "Knowledge records", value: compactNumber(summary.counts.knowledge) }} />
         <StatCard stat={{ icon: RiSparkling2Line, label: "Skills", value: compactNumber(summary.counts.skills) }} />
       </StatCards>
-      {summary.stats.total > 0 && <AnalyticsBand daily={summary.daily} combo={summary.weekly} />}
+      {summary.stats.total > 0 && (
+        <AnalyticsBand
+          daily={summary.daily}
+          combo={summary.weekly}
+          settlementHistoryFrom={summary.settlementHistoryFrom}
+        />
+      )}
     </>
   );
 }

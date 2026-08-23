@@ -43,8 +43,12 @@ describe("recent dashboard runs", () => {
         counts: { skills: 1_734, knowledge: 120 },
         daily: [{ key: "2026-08-24", label: "Aug 24", total: 3, completed: 2, failed: 1 }],
         weekly: [{ key: "2026-08-24", label: "Aug 24", runs: 5 }],
+        settlement_history_from: "2026-08-24T01:02:03.000Z",
         timezone: "UTC",
-      })?.stats.total,
-    ).toBe(1_005);
+      }),
+    ).toMatchObject({
+      stats: { total: 1_005 },
+      settlementHistoryFrom: "2026-08-24T01:02:03.000Z",
+    });
   });
 });

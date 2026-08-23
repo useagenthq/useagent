@@ -175,6 +175,7 @@ export interface DashboardSummary {
   counts: { skills: number; knowledge: number };
   daily: DayBucket[];
   weekly: WeekComboPoint[];
+  settlementHistoryFrom: string | null;
   timezone: "UTC";
 }
 
@@ -205,6 +206,8 @@ export function extractDashboardSummary(data: unknown): DashboardSummary | null 
     counts: { skills, knowledge },
     daily: value.daily as DayBucket[],
     weekly: value.weekly as WeekComboPoint[],
+    settlementHistoryFrom:
+      typeof value.settlement_history_from === "string" ? value.settlement_history_from : null,
     timezone: "UTC",
   };
 }
