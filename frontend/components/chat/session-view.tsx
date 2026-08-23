@@ -635,7 +635,10 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     const containerMax = bodyRef.current
       ? Math.min(bodyRef.current.getBoundingClientRect().width * 0.6, RAIL_MAX)
       : RAIL_MAX;
-    const current = railWidth ?? Math.min(RAIL_DEFAULT, containerMax);
+    const ratioDefault = bodyRef.current
+      ? Math.round(bodyRef.current.getBoundingClientRect().width * 0.286)
+      : RAIL_DEFAULT;
+    const current = railWidth ?? Math.min(ratioDefault, containerMax);
     const next = railWidthForKey({ key, current, maximum: containerMax });
     if (next === null) return;
     const rounded = Math.round(next);
@@ -1025,7 +1028,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                   // before any committed state); 360px is the uncustomized default.
                   // The calc ceiling pairs with the conversation's md:min-w-80
                   // floor so a persisted width can never overflow the split.
-                  "md:w-[var(--rail-w,360px)] md:max-w-[calc(100%-20rem)] md:shrink-0",
+                  "md:w-[var(--rail-w,28.6%)] md:max-w-[calc(100%-20rem)] md:shrink-0",
             )}
           >
             <div className="border-border-button-default/50 flex h-12 shrink-0 items-center gap-2 border-b px-2">
