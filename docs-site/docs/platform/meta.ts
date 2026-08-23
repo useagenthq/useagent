@@ -3,7 +3,7 @@ import { defineMeta } from "blume";
 export default defineMeta({
   title: "Platform",
   icon: "layers",
-  order: 5,
+  order: 6,
   pages: [
     "index",
     "provider-connections-and-models",

@@ -1,0 +1,80 @@
+---
+title: The workspace
+description: A real Linux workstation per thread. Repositories, terminal, a visible desktop with browser automation and recording, injected secrets, artifacts, and editable workpieces.
+sidebar:
+  order: 6
+---
+
+Agents do real work only when they have a real computer. Every UseAgent thread
+gets an **isolated Linux workstation**: a filesystem that persists across
+turns, a terminal, a desktop you can watch, and the repositories and secrets
+the task needs. The backend drives it from outside and records everything it
+observes.
+
+## One workstation per thread
+
+A thread acquires one sandbox and one working directory, retained and reused
+across its runs on a per-thread lease. The lease checks liveness and required
+labels before reuse and re-provisions when the retained sandbox is stale
+(`backend/src/engines/thread-sandbox.ts`). Replies therefore land in the same
+checkout with the same state, which is what makes multi-turn engineering work
+feel continuous instead of starting over.
+
+The sandbox vendor sits behind a provider-neutral contract: **Daytona** and
+**Cube** expose the same process, filesystem, PTY, preview, and lifecycle
+boundary, and code above the contract does not branch on the provider. Warm
+pools keep prepared sandboxes ready so a new run avoids most cold-start work.
+
+## A desktop you can watch
+
+The workstation includes a visible XFCE and Chromium desktop served through
+noVNC, with strict readiness (the noVNC page, RFB, XFCE, browser CDP, and both
+CDP relays must all come up before it counts as ready). An engine drives it
+through the desktop computer-use tools with screenshots, and **desktop
+recording publishes a real MP4 artifact** into the run. A guarded ephemeral
+login tool exists for flows that need it, advertised only when enabled for
+the run. See [Sandboxes and desktop](/concepts/sandboxes-and-desktop).
+
+## Repositories without pasted tokens
+
+GitHub arrives through the platform integration, not through secrets pasted
+into a prompt. The org's repositories are listed and cloned in-run through
+gateway tools (`github_repositories`, `github_clone_repository`), with
+pull-request and issue reads bound to the run's repository. Provider
+credentials stay on the trusted side; the sandbox receives what a clone needs,
+when it needs it. Details in [GitHub
+integration](/platform/github-integration).
+
+## Secrets, injected and announced
+
+Organization secrets configured for the engine's own tooling are injected into
+the sandbox environment at run start, and the timeline records a names-only
+`secrets.injected` marker. The values are write-only upstream and encrypted at
+rest; see [Trust and control](/features/trust-and-control).
+
+## Everything the run produces is kept
+
+<CardGroup cols={2}>
+  <Card title="Artifacts" icon="package">
+    Files and outputs published from a run with absolute links, browsable
+    later at /artifacts. Large tool output and diffs travel as artifact
+    references with bounded previews, fetched lazily.
+  </Card>
+  <Card title="Workpieces" icon="file-pen">
+    Editable documents (deck, sheet, document, PDF) that a run creates and
+    proposes edits to through `workpiece_*` tools, opened in real editors in
+    the product. Release parity exercises all four kinds.
+  </Card>
+</CardGroup>
+
+The session view's side rail makes the workstation visible while it works:
+browser, terminal, files, diff, agents, editor, and workspace panes, all
+rendered from the same durable evidence the log carries. See [Session
+view](/product/session-view).
+
+:::note
+**Honest scope.** The sandbox contract does not expose pause, checkpoint, or
+snapshot operations. Continuity comes from the durable thread lease and the
+event log, and [recovery](/features/reliability) re-probes and adopts rather
+than resuming from a saved image.
+:::

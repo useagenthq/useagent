@@ -3,7 +3,7 @@ import { defineMeta } from "blume";
 export default defineMeta({
   title: "Product",
   icon: "layout-dashboard",
-  order: 2,
+  order: 3,
   pages: [
     "index",
     "task-composer",

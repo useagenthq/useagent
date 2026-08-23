@@ -3,6 +3,6 @@ import { defineMeta } from "blume";
 export default defineMeta({
   title: "Channels",
   icon: "radio",
-  order: 7,
+  order: 8,
   pages: ["index", "slack"],
 });

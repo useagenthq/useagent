@@ -1,0 +1,130 @@
+---
+title: Trust and control
+description: Autonomy with a hard boundary. Capability tokens, a gateway on a restricted database role, one-shot human approvals, write-only encrypted secrets, and org scoping enforced below the application.
+sidebar:
+  order: 3
+---
+
+An autonomous agent is only as trustworthy as the worst thing its sandbox can
+do. UseAgent's answer is structural: the sandbox is **untrusted by design**,
+holds no platform credentials, and everything privileged happens on the
+trusted side of a boundary it cannot cross.
+
+<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "10px" }}>
+  <img
+    src="/diagrams/gateway-trust-boundary.svg"
+    alt="Trust boundary diagram: the untrusted sandbox calls the gateway process with MCP tools/call and a Bearer tool token; the gateway reaches Postgres through a restricted role, provider APIs with server-side keys, GitHub, GCS, and Slack; an approval loop turns a pending request into a one-shot argument-bound capability."
+    style={{ width: "100%", display: "block", borderRadius: "8px" }}
+  />
+</div>
+
+*The only surface a sandbox can reach is the gateway. Credentials never cross
+the boundary; human approval mints one-shot capabilities.*
+
+## The harness lives outside the sandbox
+
+This is the founding decision. The event log, the workers, org scoping,
+knowledge, and secrets all live in the backend; the sandbox runs the engine
+and the work. The UI renders the durable log, never a live process. Everything
+below follows from it. See [Architecture](/architecture) for why the
+alternatives were rejected.
+
+## A gateway, not an open backend
+
+Privileged work (reading a repository, publishing an artifact, using a
+provider account) goes through a **separate gateway process**, not a route in
+the product backend (`backend/src/gateway.ts`):
+
+- It mounts exactly two capability-authenticated surfaces,
+  `/api/mcp/knowledge` and `/api/provider`, and deliberately has no session
+  auth, no org APIs, no runs, no secrets routes, and no CORS
+  (`backend/src/gateway-app.ts`).
+- It can connect to Postgres through a **restricted database role** with
+  explicit grants and no DDL, so the trust boundary is enforced at the
+  database, not only in application code.
+- The role's grants are reconciled from a manifest in code on every boot, so a
+  migration that adds a gateway-written table ships its grant in the same
+  commit.
+
+## Capability tokens, scoped and short-lived
+
+A run cannot mint its own authority. Two signed token families exist:
+
+| Token | What it authorizes | What it binds |
+| --- | --- | --- |
+| Tool token | MCP tool calls | Organization, user, thread, run, scope, expiry (`backend/src/knowledge/gateway/token.ts`) |
+| Provider token | LLM traffic | All of the above plus the engine and provider (`backend/src/provider-gateway/token.ts`) |
+
+Scope is `run` or `thread`; thread scope exists because a resident engine
+session spans queued turns by the same user. Outside a live turn, **both
+scopes fail closed**.
+
+## Humans mint the dangerous capabilities
+
+Destructive or outward-facing gated operations pause for a person:
+
+<Steps>
+  <Step title="The agent asks">
+    A run calls `approval_request` for a gated operation.
+  </Step>
+  <Step title="A card renders in the timeline">
+    The approval card appears in the session view, the only approval surface
+    today.
+  </Step>
+  <Step title="One transition, exactly once">
+    A pending request moves to approved, denied, or expired exactly once;
+    every transition is guarded on `status = 'pending'` in the database.
+  </Step>
+  <Step title="A one-shot capability is issued">
+    The agent receives a one-shot, **argument-bound** capability through
+    `approval_poll`. It authorizes that operation with those arguments, once,
+    and can never be self-issued from inside a run.
+  </Step>
+</Steps>
+
+The lane is live and exercised by the guarded release: a destructive gateway
+tool pauses for the card and resumes with the capability. The full tool
+surface and its per-run filtering are covered in [Gateway, tools, and
+approvals](/concepts/gateway-tools-and-approvals).
+
+## Secrets are write-only, and injection is visible
+
+Organization secrets follow three rules (`backend/src/secrets/`):
+
+1. **Encrypted at rest.** Values are sealed with AES-256-GCM under a key
+   derived by HKDF-SHA256 from operator key material, with a fresh random IV
+   per seal and a versioned ciphertext envelope that supports key rotation
+   (`crypto.ts`).
+2. **Write-only through the API.** Metadata is visible; the value is never
+   returned to any client, and provider API keys are resolved inside the
+   signed provider gateway, never handed to a sandbox.
+3. **Injection is intentional and announced.** Secrets an organization
+   configures for the engine's own tooling are injected into the sandbox
+   environment, and the timeline shows a names-only `secrets.injected`
+   marker, so a reviewer can see what was available without ever seeing a
+   value.
+
+## The tenant boundary is not client-side
+
+Every resource (runs, skills, knowledge, secrets, integrations) belongs to
+exactly one organization, and scoping is enforced by the backend auth layer
+and the database, not by the client. Memory adds its own discipline: a run's
+memory scope is **server-persisted**, never taken from the sandbox or the
+prompt at recall time, and a personal-scope run with no authenticated user
+**fails closed** (`backend/src/db/schema.ts`).
+
+## Control means stopping, too
+
+A stop is not a UI gesture; it is a durable `run.cancel` command through the
+same single door as run creation, so a cancel survives the same way the work
+does. And when a gated tool declines, the refusal names its remedy: the exact
+skill, environment variable, or approval path that would unblock it, so an
+agent self-corrects instead of fabricating a result.
+
+:::note
+**Honest scope.** Engines currently run without per-action permission prompts
+inside the sandbox; the human gate sits at the gateway's privileged
+operations, the approval lane, and the review queues. Slack delivery of
+approval cards is deliberately deferred; the session timeline is the approval
+surface.
+:::
