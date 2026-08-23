@@ -76,6 +76,7 @@ export type CanonicalChildUsage = Readonly<Record<string, number>>;
  *  richer consumers do not have to infer lifecycle state from display summaries. */
 export interface CanonicalChildState {
   status?: string;
+  prompt?: string;
   summary?: string;
   lastToolName?: string;
   usage?: CanonicalChildUsage;

@@ -389,6 +389,18 @@ describe("run threading", () => {
 
   test("engine context preamble walks the thread without nesting", async () => {
     const root = await runToCompletion({ prompt: "first ask" });
+    const queuedId = crypto.randomUUID();
+    await db.insert(runs).values({
+      id: queuedId,
+      orgId: root.org_id,
+      userId: root.user_id,
+      prompt: "queued sibling must stay out of history",
+      model: root.model,
+      engine: root.engine,
+      status: "queued",
+      parentRunId: root.id,
+      threadId: root.thread_id,
+    });
     const reply = await runToCompletion({
       prompt: "second ask",
       parent_run_id: root.id,
@@ -405,12 +417,23 @@ describe("run threading", () => {
     );
     expect(preamble).toContain(`You replied: ${root.summary}`);
     expect(preamble).toContain(`You replied: ${reply.summary}`);
+    expect(preamble).not.toContain("queued sibling must stay out of history");
     // No recursive "Follow-up to a previous task…" nesting anywhere.
     expect(preamble).not.toContain("Follow-up to a previous task");
 
     // A root run gets NO preamble (nothing prior).
     expect(await buildThreadPreamble(root.thread_id, reply.id)).toContain(
       "User: first ask",
+    );
+    const laterReply = await runToCompletion({
+      prompt: "third ask",
+      parent_run_id: reply.id,
+    });
+    const replyPreamble = await buildThreadPreamble(root.thread_id, reply.id);
+    expect(replyPreamble).toContain("User: first ask");
+    expect(replyPreamble).not.toContain("User: third ask");
+    expect(await buildThreadPreamble(root.thread_id, laterReply.id)).toContain(
+      "User: second ask",
     );
     const soloRoot = await runToCompletion({ prompt: "solo" });
     expect(await buildThreadPreamble(soloRoot.thread_id, soloRoot.id)).toBe("");

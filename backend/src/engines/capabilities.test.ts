@@ -27,7 +27,7 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
     expect(oc.modelSelection).toBe(true); // opencode is an any-model sandbox
     expect(oc.close).toBe(false); // opencode stays resident
     expect(oc.nativeChildProjection).toBe(true);
-    expect(oc.gatewayChildSessions).toBe(true);
+    expect(oc.gatewayChildSessions).toBe(false);
     expect(oc.reasoning).toBe(true);
     expect(oc.fileDiffs).toBe(true);
 
@@ -42,7 +42,7 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
       expect(c.reconcile).toBe(false); // ACP control adapter is unsupported
       expect(c.close).toBe(true);
       expect(c.nativeChildProjection).toBe(false); // no native child-session emitter
-      expect(c.gatewayChildSessions).toBe(true); // gateway tools are engine-independent
+      expect(c.gatewayChildSessions).toBe(false);
       expect(c.reasoning).toBe(false);
       expect(c.fileDiffs).toBe(false);
     }
@@ -73,6 +73,7 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
     const capabilities = sessionCapabilities("codex", {
       ...res,
       runtimeOrchestration: true,
+      knowledgeTools: true,
     });
     expect(capabilities).toMatchObject({
       approvals: true,
@@ -85,5 +86,18 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
       reconcile: true,
       nativeEmbed: false,
     });
+  });
+
+  test("gateway child sessions follow actual gateway-tool provisioning", () => {
+    expect(sessionCapabilities("codex", {
+      desktop: false,
+      knowledgeTools: false,
+      runtimeOrchestration: true,
+    }).gatewayChildSessions).toBe(false);
+    expect(sessionCapabilities("codex", {
+      desktop: false,
+      knowledgeTools: true,
+      runtimeOrchestration: true,
+    }).gatewayChildSessions).toBe(true);
   });
 });

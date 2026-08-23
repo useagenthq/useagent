@@ -12,15 +12,24 @@ import {
   type NativeFrame,
 } from "./native-events";
 import { deriveSubagents, nativeOf, type SubagentCard, type SubagentModel } from "./subagents";
-import type { ApiStep } from "./types";
+import {
+  type ApiStep,
+  asRecord,
+  isRenderableTimelineStep,
+  parseStepCode,
+} from "./types";
 
 export type CanonicalChildStateLike = Readonly<CanonicalChildState>;
 
 export type CanonicalChildEventLike = CanonicalEventLike & {
+  /** Durable product run id. Gateway children use this as their child identity;
+   * provider-native children use identity.nativeSessionId instead. */
+  readonly runId?: string;
   readonly state?: CanonicalChildStateLike;
 };
 
 export interface CanonicalChildFidelity extends ChildFidelity {
+  readonly prompt: string | null;
   readonly model: string | null;
   readonly role: string | null;
   readonly resumable: boolean | null;
@@ -37,6 +46,7 @@ interface MutableChild {
   progress: string | null;
   resultText: string | null;
   recentActivity: { at: string; summary: string }[];
+  prompt: string | null;
   lastToolName: string | null;
   usage: ChildUsage | null;
   model: string | null;
@@ -82,6 +92,7 @@ function appendActivity(
 function applyState(child: MutableChild, state: CanonicalChildStateLike | undefined): void {
   if (!state) return;
   child.status = statusFromUpdate(state.status, child.status);
+  child.prompt = state.prompt?.trim() || child.prompt;
   child.lastToolName = state.lastToolName?.trim() || child.lastToolName;
   child.usage = mergeChildUsage(child.usage, normalizeChildUsage(state.usage));
   child.model = state.model?.trim() || child.model;
@@ -104,6 +115,7 @@ function childFromEvent(
     progress: summary,
     resultText: null,
     recentActivity: appendActivity([], startedAt, summary),
+    prompt: null,
     lastToolName: null,
     usage: null,
     model: null,
@@ -115,12 +127,13 @@ function childFromEvent(
       childSessionId: childId,
       callId,
       aliases: [...new Set([callId, childId])],
-      status: cardStatus,
+      status: null,
       startedAt,
       lastActivityAt: startedAt,
     },
   };
   applyState(child, event.state);
+  child.card.status = cardStatus;
   return child;
 }
 
@@ -133,6 +146,7 @@ function fidelityOf(child: MutableChild): CanonicalChildFidelity {
     progress: child.progress,
     lastToolName: child.lastToolName,
     recentActivity: child.recentActivity,
+    prompt: child.prompt,
     usage: child.usage,
     model: child.model,
     role: child.role,
@@ -163,8 +177,10 @@ export function deriveCanonicalChildren(
     }
 
     let child = children.get(childId);
+    let synthesizedFromCompletion = false;
     if (!child) {
       if (event.kind !== "child.completed") continue;
+      synthesizedFromCompletion = true;
       child = childFromEvent(
         event,
         childId,
@@ -176,11 +192,16 @@ export function deriveCanonicalChildren(
     const at = timestampOf(event);
 
     if (event.kind === "child.updated") {
-      const progress = event.state?.summary?.trim() || event.status?.trim() || null;
       applyState(child, event.state);
       if (!event.state?.status) child.status = statusFromUpdate(event.status, child.status);
+      // Structured state separates lifecycle status from semantic summary. Old
+      // canonical rows without a state object used `status` for both, so retain
+      // that legacy fallback only for those rows.
+      const progress = event.state
+        ? (event.state.summary?.trim() || null)
+        : (event.status?.trim() || null);
       child.progress = progress;
-      child.card.status = progress;
+      if (progress) child.card.status = progress;
       child.card.lastActivityAt = at;
       child.recentActivity = appendActivity(child.recentActivity, at, progress);
       continue;
@@ -191,7 +212,7 @@ export function deriveCanonicalChildren(
       child.status = statusFromCompletion(event.status);
       child.resultText = event.result?.trim() || event.state?.summary?.trim() || null;
       if (child.resultText) {
-        child.card.status ??= child.resultText;
+        if (synthesizedFromCompletion || !child.card.status) child.card.status = child.resultText;
         child.recentActivity = appendActivity(child.recentActivity, at, child.resultText);
       }
       child.card.lastActivityAt = at;
@@ -249,7 +270,7 @@ export function legacySpawnStepIdForCanonical(
 /** Canonical fidelity when the canonical lane carries the child; the legacy
  *  native-frame fidelity otherwise. Canonical-only fields stay optional. */
 export type MergedChildFidelity = ChildFidelity &
-  Partial<Pick<CanonicalChildFidelity, "model" | "role" | "resumable">>;
+  Partial<Pick<CanonicalChildFidelity, "prompt" | "model" | "role" | "resumable">>;
 
 export interface ChildrenView {
   readonly cards: readonly SubagentCard[];
@@ -320,7 +341,8 @@ export function deriveChildrenView(
   for (const step of steps) {
     if (ownerByStep.has(step.id)) continue;
     const sessionId = nativeOf(step)?.sessionID;
-    const cardId = sessionId ? cardByChildSession.get(sessionId) : undefined;
+    const cardId = cardByChildSession.get(step.run_id) ??
+      (sessionId ? cardByChildSession.get(sessionId) : undefined);
     if (cardId) ownerByStep.set(step.id, cardId);
   }
 
@@ -345,6 +367,17 @@ export type ChildTimelineEntry =
   | { readonly kind: "tool"; readonly key: string; readonly step: ApiStep }
   | { readonly kind: "text"; readonly key: string; readonly text: string };
 
+function isMeaningfulChildTool(step: ApiStep): boolean {
+  if (!isRenderableTimelineStep(step)) return false;
+  const code = asRecord(parseStepCode(step));
+  const tool = typeof code?.tool === "string" ? code.tool.toLocaleLowerCase() : null;
+  // Collaboration wrappers are transport receipts. The child lifecycle and
+  // child-owned canonical events are the semantic source; never render a second
+  // generic tool row for the wrapper itself.
+  if (tool === "collab_agent_tool_call") return false;
+  return true;
+}
+
 /**
  * The REAL activity of one child, from the canonical events identified as that
  * child session's own (tool lifecycles + assistant text). Durable sidecar steps
@@ -358,7 +391,10 @@ export function deriveChildTimeline(
 ): ChildTimelineEntry[] {
   if (!childSessionId) return [];
   const owned = events
-    .filter((event) => event.identity?.nativeSessionId === childSessionId)
+    .filter(
+      (event) =>
+        event.runId === childSessionId || event.identity?.nativeSessionId === childSessionId,
+    )
     .toSorted((a, b) => a.seq - b.seq);
   if (owned.length === 0) return [];
 
@@ -392,6 +428,7 @@ export function deriveChildTimeline(
           .map((id) => stepsById.get(id))
           .find((candidate): candidate is ApiStep => candidate !== undefined) ??
         projectToolLifecycle(lifecycle, event);
+      if (!isMeaningfulChildTool(step)) continue;
       entries.push({ entry: { kind: "tool", key: step.id, step }, seq: lifecycle.firstSeq });
     }
   }
