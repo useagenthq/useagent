@@ -204,3 +204,235 @@ function level(count: number, max: number): HeatCell['level'] {
   if (ratio > 0.25) return 2;
   return 1;
 }
+
+/* ---------------------------------------------------------------------------
+ * Analytics band aggregates — plain JSON derived server-side and handed to the
+ * client AnalyticsBand (format functions cannot cross the RSC boundary, data
+ * can). Every number is a real count off the runs snapshot; no demo values.
+ */
+
+/** Monday 00:00 local of the week containing `ms`. */
+function mondayOf(ms: number): number {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() - ((d.getDay() + 6) % 7) * DAY_MS;
+}
+
+/** Index signature matches the chart cards' `{label} & Record<string, ...>` rows. */
+export interface WeekComboPoint {
+  [key: string]: number | string;
+  label: string;
+  runs: number;
+  /** % of settled runs (completed+failed) that completed; 0 on idle weeks. */
+  success: number;
+}
+
+/** Monday-anchored week buckets, oldest → newest, for the combo card. */
+export function weeklyCombo(
+  runs: readonly DashRun[],
+  weeks = 8,
+  now: number = Date.now(),
+): WeekComboPoint[] {
+  const fmt = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' });
+  const thisMonday = mondayOf(now);
+  const buckets = Array.from({ length: weeks }, (_, i) => ({
+    label: fmt.format(thisMonday - (weeks - 1 - i) * 7 * DAY_MS),
+    runs: 0,
+    completed: 0,
+    failed: 0,
+  }));
+  for (const run of runs) {
+    const ts = timestamp(run.created_at);
+    if (!ts) continue;
+    const idx = weeks - 1 - Math.round((thisMonday - mondayOf(ts)) / (7 * DAY_MS));
+    const bucket = buckets[idx];
+    if (!bucket) continue;
+    bucket.runs += 1;
+    if (run.status === 'completed') bucket.completed += 1;
+    else if (run.status === 'failed') bucket.failed += 1;
+  }
+  return buckets.map(({ label, runs: total, completed, failed }) => ({
+    label,
+    runs: total,
+    success: completed + failed > 0 ? Math.round((100 * completed) / (completed + failed)) : 0,
+  }));
+}
+
+export interface StatusSlice {
+  label: string;
+  value: number;
+  color?: string;
+  activeColor?: string;
+}
+
+/** Status mix for the radial rings — ascending so the rings nest correctly. */
+export function statusSlices(stats: RunStats): StatusSlice[] {
+  const slices: StatusSlice[] = [
+    { label: 'Queued', value: stats.queued, color: 'var(--color-chart-5)', activeColor: 'var(--color-chart-5-active)' },
+    { label: 'Running', value: stats.running, color: 'var(--color-chart-6)', activeColor: 'var(--color-chart-6-active)' },
+    { label: 'Failed', value: stats.failed, color: 'var(--color-red-500)', activeColor: 'var(--color-red-600)' },
+    { label: 'Completed', value: stats.completed, color: 'var(--color-chart-7)', activeColor: 'var(--color-chart-7-active)' },
+  ];
+  return slices.filter((s) => s.value > 0).toSorted((a, b) => a.value - b.value);
+}
+
+export interface FlowNode {
+  name: string;
+  color?: string;
+  activeColor?: string;
+}
+export interface FlowLink {
+  source: number;
+  target: number;
+  value: number;
+}
+export interface EngineFlow {
+  nodes: FlowNode[];
+  links: FlowLink[];
+}
+
+const STATUS_LABEL: Record<RunStatus, string> = {
+  completed: 'Completed',
+  failed: 'Failed',
+  running: 'Running',
+  queued: 'Queued',
+};
+const FLOW_TONES = [4, 7, 5, 8, 3] as const;
+
+/**
+ * Engine → outcome ribbons for the Sankey card: top engines by volume as
+ * coloured sources, outcome statuses as neutral sinks. Sinks with no inbound
+ * ribbon are dropped (Recharts rejects orphan nodes).
+ */
+export function engineFlow(runs: readonly DashRun[], maxEngines = 5): EngineFlow {
+  const engineTotals = new Map<string, number>();
+  const pairs = new Map<string, number>();
+  for (const run of runs) {
+    const engine = run.engine ?? 'unknown';
+    engineTotals.set(engine, (engineTotals.get(engine) ?? 0) + 1);
+    const key = `${engine} ${run.status}`;
+    pairs.set(key, (pairs.get(key) ?? 0) + 1);
+  }
+  const engines = [...engineTotals.entries()]
+    .toSorted((a, b) => b[1] - a[1])
+    .slice(0, maxEngines)
+    .map(([name]) => name);
+  const statuses = (Object.keys(STATUS_LABEL) as RunStatus[]).filter((status) =>
+    engines.some((engine) => (pairs.get(`${engine} ${status}`) ?? 0) > 0),
+  );
+  const nodes: FlowNode[] = [
+    ...engines.map((name, i) => {
+      const tone = FLOW_TONES[i % FLOW_TONES.length];
+      return {
+        name,
+        color: `var(--color-chart-${tone})`,
+        activeColor: `var(--color-chart-${tone}-active)`,
+      };
+    }),
+    ...statuses.map((status) => ({ name: STATUS_LABEL[status] })),
+  ];
+  const links: FlowLink[] = [];
+  engines.forEach((engine, ei) => {
+    statuses.forEach((status, si) => {
+      const value = pairs.get(`${engine} ${status}`) ?? 0;
+      if (value > 0) links.push({ source: ei, target: engines.length + si, value });
+    });
+  });
+  return { nodes, links };
+}
+
+export interface ScatterPointData {
+  x: number;
+  y: number;
+  label?: string;
+}
+export interface ScatterSeriesData {
+  label: string;
+  points: ScatterPointData[];
+  color?: string;
+  activeColor?: string;
+}
+
+/** Settled-run durations by local hour of day: one dot per run, newest first. */
+export function durationScatter(
+  runs: readonly DashRun[],
+  days = 14,
+  cap = 150,
+  now: number = Date.now(),
+): ScatterSeriesData[] {
+  const cutoff = now - days * DAY_MS;
+  const completed: ScatterPointData[] = [];
+  const failed: ScatterPointData[] = [];
+  for (const run of recentRuns(runs, runs.length)) {
+    if (run.duration_ms == null || run.duration_ms <= 0) continue;
+    if (run.status !== 'completed' && run.status !== 'failed') continue;
+    const ts = timestamp(run.created_at);
+    if (ts < cutoff) continue;
+    const bucket = run.status === 'completed' ? completed : failed;
+    if (bucket.length >= cap) continue;
+    const d = new Date(ts);
+    bucket.push({
+      x: Math.round((d.getHours() + d.getMinutes() / 60) * 10) / 10,
+      y: Math.max(0.1, Math.round(run.duration_ms / 6000) / 10),
+      label: run.prompt ? run.prompt.slice(0, 48) : run.id.slice(0, 8),
+    });
+  }
+  const series: ScatterSeriesData[] = [];
+  if (completed.length > 0)
+    series.push({
+      label: 'Completed',
+      points: completed,
+      color: 'var(--color-chart-7)',
+      activeColor: 'var(--color-chart-7-active)',
+    });
+  if (failed.length > 0)
+    series.push({
+      label: 'Failed',
+      points: failed,
+      color: 'var(--color-red-500)',
+      activeColor: 'var(--color-red-600)',
+    });
+  return series;
+}
+
+/** Run counts by repository, top `limit`; repo-less runs grouped together. */
+export function repoLeaders(
+  runs: readonly DashRun[],
+  limit = 7,
+): { label: string; value: number }[] {
+  const counts = new Map<string, number>();
+  for (const run of runs) {
+    const label = run.repo ?? 'No repository';
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .toSorted((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([label, value]) => ({ label, value }));
+}
+
+export interface WeekdayPoint {
+  [key: string]: number | string;
+  label: string;
+  current: number;
+  previous: number;
+}
+
+/** Mon→Sun run counts, this week vs last, for the radar card. */
+export function weekdayRadar(runs: readonly DashRun[], now: number = Date.now()): WeekdayPoint[] {
+  const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const currentMonday = mondayOf(now);
+  const previousMonday = currentMonday - 7 * DAY_MS;
+  const points = labels.map((label) => ({ label, current: 0, previous: 0 }));
+  for (const run of runs) {
+    const ts = timestamp(run.created_at);
+    if (!ts) continue;
+    const week = mondayOf(ts);
+    if (week !== currentMonday && week !== previousMonday) continue;
+    const point = points[Math.floor((ts - week) / DAY_MS)];
+    if (!point) continue;
+    if (week === currentMonday) point.current += 1;
+    else point.previous += 1;
+  }
+  return points;
+}

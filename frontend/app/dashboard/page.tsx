@@ -6,13 +6,21 @@ import {
 } from "@remixicon/react";
 import type { Metadata } from "next";
 import { ContributionsCard } from "@/components/dashboard/contributions-card";
+import { AnalyticsBand } from "@/components/dashboard/analytics-band";
+import { AuroraBackdrop } from "@/components/dashboard/aurora-backdrop";
 import {
   buildHeatmap,
   computeStats,
+  durationScatter,
+  engineFlow,
   extractCount,
   extractRuns,
   recentRuns,
+  repoLeaders,
   runsPerDay,
+  statusSlices,
+  weekdayRadar,
+  weeklyCombo,
 } from "@/components/dashboard/dashboard-data";
 import { DashboardLiveRefresh } from "@/components/dashboard/dashboard-live-refresh";
 import { RecentRunsTable } from "@/components/dashboard/recent-runs-table";
@@ -75,6 +83,13 @@ export default async function DashboardPage() {
   const fortnightTotal = fortnight.reduce((n, d) => n + d.total, 0);
   const recent = recentRuns(runs);
 
+  const combo = weeklyCombo(runs);
+  const status = statusSlices(stats);
+  const flow = engineFlow(runs);
+  const durations = durationScatter(runs);
+  const repos = repoLeaders(runs);
+  const weekdays = weekdayRadar(runs);
+
   const statItems: StatItem[] = [
     {
       icon: RiPlayCircleLine,
@@ -105,7 +120,8 @@ export default async function DashboardPage() {
   return (
     <AppShell sidebar={<ThreadSidebar active="dashboard" />}>
       <DashboardLiveRefresh />
-      <div className="mx-auto flex max-w-[1200px] flex-col gap-6 p-6 lg:p-8">
+      <AuroraBackdrop />
+      <div className="relative mx-auto flex max-w-[1200px] flex-col gap-6 p-6 lg:p-8">
         <WelcomeHeader liveCount={stats.running} />
         <StatCards stats={statItems} />
 
@@ -113,6 +129,17 @@ export default async function DashboardPage() {
           <RunsBarChartCard data={week} total={weekTotal} />
           <RunsTrendCard data={fortnight} tokensLabel={estimatedTokens(fortnightTotal)} />
         </div>
+
+        {stats.total > 0 && (
+          <AnalyticsBand
+            combo={combo}
+            status={status}
+            flow={flow}
+            durations={durations}
+            repos={repos}
+            weekdays={weekdays}
+          />
+        )}
 
         <section className="flex flex-col gap-3">
           <h2 className="text-headline-medium text-text-primary">Limits</h2>
