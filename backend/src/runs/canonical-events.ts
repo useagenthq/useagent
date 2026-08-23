@@ -1,5 +1,5 @@
 /**
- * Canonical agent-event lane persistence (final_harness Phase 1, slice 3).
+ * Canonical agent-event lane persistence.
  *
  * The durable home of the provider-neutral canonical events (src/engines/canonical.ts).
  * Invariants:

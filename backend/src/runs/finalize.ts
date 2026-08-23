@@ -217,7 +217,7 @@ export async function finalizeRun(
       }
     }
 
-    // Canonical lane (final_harness Phase 1): enqueue canonicalization durably IN this
+    // Canonical lane: enqueue canonicalization durably IN this
     // transaction, so the intent to translate commits ATOMICALLY with the terminal run
     // - a crash never leaves a settled run with no canonical history. A background
     // outbox worker translates with a source-watermark stability check + retry, and

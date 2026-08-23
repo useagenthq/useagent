@@ -1,5 +1,5 @@
 /**
- * Real OpenCode session-surface E2E (final_harness Phase 0 exit gate).
+ * Real OpenCode session-surface E2E.
  *
  * Replaces the shallow phase0-render check (timeline-exists + child-count + a
  * textarea) with REAL UI-surface assertions on a settled multi-turn OpenCode run:
