@@ -139,6 +139,7 @@ describe("command-lane restart recovery", () => {
 
     expect((await getRun(legacy))?.status).toBe("failed");
     expect((await getRun(legacy))?.summary).toBe(STALE_SUMMARY);
+    expect((await getRun(legacy))?.settledAt).toBeInstanceOf(Date);
     expect(res.failed).toBeGreaterThanOrEqual(1);
   });
 });
