@@ -453,30 +453,37 @@
   .dark {
     --brand-orbit: 212.06 100% 60%; /* #3392ff BoardUI accent (blue-400) */
     /* -------------------------------------------------------------------
-     * BoardUI dark theme.
+     * Midnight - Tokyo Night dark theme (the product default dark ramp).
      *
-     * The BoardUI gray scale mapped through the existing inverted dark ramp:
-     * canvas = neutral-925 #121212 (bg-white-0), raised = neutral-800 #262626
-     * (bg-sub-300), chrome = neutral-900 #171717 (bg-soft-200/bg-weak-50),
-     * text = neutral-50 #fafafa. Components continue to consume semantic
-     * bg/text/stroke/status tokens rather than page-specific colors.
+     * The Tokyo Night palette mapped through the inverted dark ramp:
+     * canvas = #1a1b26 (bg-white-0), chrome = #16161e (bg-soft-200/bg-weak-50,
+     * the darker sidebar surface), raised = #1e202e (bg-sub-300), text =
+     * #c0caf5 lavender (text-strong-950), muted text = #787c99 (text-sub-600),
+     * border = #292e42 (stroke-soft-200). The interactive accent stays the
+     * STANDARD blue ramp (below) - personality lives in surfaces + text, per
+     * the harbor decision (2026-08-23); the orange/red/green/purple/sky/pink/
+     * teal primitives already carry Tokyo Night status/syntax hues. Components
+     * consume semantic bg/text/stroke/status tokens, never page-specific
+     * colors. Hex in comments is the sRGB value each HSL triple encodes; keep
+     * in sync with the .theme-swatch-dark preview and the un-layered `.dark`
+     * BoardUI-semantic override in the themes section below.
      * ------------------------------------------------------------------- */
     --neutral-0: 0 0% 100%;
-    --neutral-50: 0 0% 98.04%; /* #fafafa - primary text */
-    --neutral-100: 0 0% 63.14%; /* #a1a1a1 - inverted surface / faded-dark */
-    --neutral-200: 0 0% 45.1%; /* #737373 - BoardUI dark text/secondary */
-    --neutral-300: 0 0% 32.16%; /* #525252 - BoardUI dark text/tertiary */
-    --neutral-400: 0 0% 25.1%; /* #404040 - BoardUI dark border/default */
-    --neutral-500: 0 0% 45.1%; /* #737373 */
-    --neutral-600: 0 0% 32.16%; /* #525252 */
-    --neutral-700: 0 0% 14.9%; /* #262626 - raised surface */
-    --neutral-800: 0 0% 7.06%; /* #121212 - canvas (BoardUI neutral-925) */
-    --neutral-900: 0 0% 9.02%; /* #171717 - chrome */
-    --neutral-950: 0 0% 3.92%; /* #0a0a0a */
+    --neutral-50: 228.68 72.6% 85.69%; /* #c0caf5 - primary text (Tokyo Night fg, lavender) */
+    --neutral-100: 229.33 35.43% 75.1%; /* #a9b1d6 - secondary text (Tokyo Night fg_dark; derived) */
+    --neutral-200: 232.73 13.92% 53.53%; /* #787c99 - muted text */
+    --neutral-300: 229.41 22.87% 43.73%; /* #565f89 - soft text (Tokyo Night comment; derived) */
+    --neutral-400: 229.23 23.08% 33.14%; /* #414868 - stronger border / disabled (Tokyo Night terminal-black; derived) */
+    --neutral-500: 230 21.74% 27.06%; /* #363b54 - surface step (derived) */
+    --neutral-600: 229.57 24.21% 18.63%; /* #24283b - surface step (derived) */
+    --neutral-700: 232.5 21.05% 14.9%; /* #1e202e - raised surface */
+    --neutral-800: 235 18.75% 12.55%; /* #1a1b26 - canvas (Tokyo Night bg) */
+    --neutral-900: 240 15.38% 10.2%; /* #16161e - chrome (Tokyo Night bg_dark) */
+    --neutral-950: 240 11.11% 7.06%; /* #101014 - darkest (derived) */
 
-    --neutral-alpha-24: 0 0% 45.1% / 24%;
-    --neutral-alpha-16: 0 0% 45.1% / 16%;
-    --neutral-alpha-10: 0 0% 45.1% / 10%;
+    --neutral-alpha-24: 232.73 13.92% 53.53% / 24%; /* #787c99 muted-lavender wash */
+    --neutral-alpha-16: 232.73 13.92% 53.53% / 16%;
+    --neutral-alpha-10: 232.73 13.92% 53.53% / 10%;
 
     /* BoardUI's accent primitives are theme-invariant; only the -100/-50 tint
        steps go translucent so light-pastel chips don't glow on the dark canvas. */
@@ -572,18 +579,18 @@
     --bg-surface-800: var(--neutral-100);
     --bg-sub-300: var(--neutral-700);
     --bg-soft-200: var(--neutral-900);
-    --bg-weak-50: 0 0% 9.02%; /* #171717 - BoardUI dark background/secondary */
+    --bg-weak-50: 240 15.38% 10.2%; /* #16161e - Tokyo Night chrome/surface (matches bg-soft-200) */
     --bg-white-0: var(--neutral-800);
 
     --text-strong-950: var(--neutral-50);
-    --text-sub-600: var(--neutral-200); /* #737373 - BoardUI dark text/secondary */
-    --text-soft-400: var(--neutral-300); /* #525252 - BoardUI dark text/tertiary */
+    --text-sub-600: var(--neutral-200); /* #787c99 - Tokyo Night muted text */
+    --text-soft-400: var(--neutral-300); /* #565f89 - Tokyo Night soft text */
     --text-disabled-300: var(--neutral-400);
     --text-white-0: var(--neutral-800);
 
     --stroke-strong-950: var(--neutral-50);
     --stroke-sub-300: var(--neutral-400);
-    --stroke-soft-200: 0 0% 14.9%; /* #262626 - BoardUI dark separator */
+    --stroke-soft-200: 228 23.36% 20.98%; /* #292e42 - Tokyo Night border */
     --stroke-white-0: var(--neutral-800);
 
     --faded-dark: var(--neutral-100);
@@ -636,7 +643,7 @@
     --stable-light: var(--teal-alpha-24);
     --stable-lighter: var(--teal-alpha-16);
 
-    --overlay: 0 0% 3.92% / 72%; /* #0a0a0a scrim */
+    --overlay: 240 11.11% 7.06% / 72%; /* #101014 scrim (Tokyo Night darkest) */
 
     --social-apple: 0 0% 100%;
     --social-twitter: 0 0% 100%;
@@ -860,8 +867,9 @@
      * SAME semantic token slots the `.dark`/`.aura` blocks use (canvas ->
      * bg-white-0, raised -> bg-sub-300, accent -> the blue/primary ramp), so
      * components keep consuming semantic tokens and never key on a theme name.
-     * The source palette gives canvas == chrome, so the chrome/weak/darkest
-     * steps below canvas are derived to keep the surface ladder monotonic. The
+     * The weak/muted row uses the source sidebar #10141c (a subtle raised fill
+     * ABOVE canvas); the chrome + darkest steps below canvas are derived to
+     * keep the surface ladder monotonic below the source floor #0b0e14. The
      * accent (soft periwinkle) is too light for 7:1 white text, so the primary
      * button base is a deeper blue; the success ramp is a derived harbor teal
      * (the source had no distinct green). `color-scheme` is pinned dark so
@@ -981,7 +989,7 @@
     --bg-surface-800: var(--neutral-100);
     --bg-sub-300: var(--neutral-700);
     --bg-soft-200: var(--neutral-900);
-    --bg-weak-50: 222.85 39.94% 3.6%; /* #06080d - Harbor muted row */
+    --bg-weak-50: 220 27.27% 8.63%; /* #10141c - Harbor weak/muted row (source sidebar; true-up from too-dark #06080d) */
     --bg-white-0: var(--neutral-800);
 
     --text-strong-950: var(--neutral-50);
@@ -1904,7 +1912,112 @@
  *              aura/harbor.
  * MUST stay un-layered: theme.css's `:root` semantic block is un-layered, and
  * an @layer'd override would lose to it regardless of specificity.
+ *
+ * `.dark` (Midnight) is included here too, but for a DIFFERENT reason than the
+ * standalone themes: `.dark` DOES inherit theme.css's `.dark` semantic block,
+ * but that block maps every surface/text/border to the FLAT BoardUI neutral
+ * ramp (--color-neutral-925 #121212 / -900 #171717 / -800 #262626 ...), which
+ * reads brownish-gray. The block below re-points ONLY the neutral-driven
+ * surface/text/border/foreground slots at Midnight's Tokyo Night AlignUI ramp
+ * (the layered `.dark` block in @layer base), so the canvas/chrome/cards/text
+ * become true Tokyo Night blue-purple. Slots it does NOT declare (interactive
+ * accent, status discs, badges, calendar chips, error/danger) fall through to
+ * theme.css's `.dark`, keeping the accent the STANDARD blue ramp and status
+ * colors standard - personality lives in surfaces + text only (harbor
+ * decision, 2026-08-23). Hardcoded #292e42 = Tokyo Night border; the neutral
+ * stop per slot mirrors the .harbor block so brightness roles stay identical.
  * ========================================================================= */
+.dark {
+  /* Foreground (neutral-driven; icon-error / disabled-danger keep theme.css red) */
+  --color-foreground-full:            hsl(var(--neutral-400));
+  --color-foreground-icon-primary:    hsl(var(--neutral-50));
+  --color-foreground-icon-hover:      hsl(var(--neutral-0));
+  --color-foreground-icon-tertiary:   hsl(var(--neutral-200));
+  --color-foreground-icon-quaternary: hsl(var(--neutral-300));
+  --color-foreground-icon-disabled:   hsl(228 23.36% 20.98%); /* #292e42 */
+  --color-foreground-disabled:        hsl(var(--neutral-400));
+  --color-input-disabled-foreground:  hsl(var(--neutral-300));
+  --color-icon-button-disabled-foreground: hsl(var(--neutral-200));
+  --color-button-primary-disabled-foreground: hsl(var(--neutral-200));
+
+  /* Text (secondary is not in theme.css's .dark; set it so it lands lavender) */
+  --color-text-primary:   hsl(var(--neutral-50));
+  --color-text-secondary: hsl(var(--neutral-100));
+  --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-disabled:  hsl(228 23.36% 20.98%); /* #292e42 */
+  --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
+
+  /* Background */
+  --color-background-full:              hsl(var(--neutral-800)); /* #1a1b26 canvas */
+  --color-background-primary-default:   hsl(var(--neutral-700)); /* #1e202e raised */
+  --color-background-inner-default:     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+  --color-background-primary-hover:     color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-background-primary-active:    hsl(var(--neutral-700));
+  --color-background-primary-disabled:  hsl(var(--neutral-700));
+  --color-input-disabled-background:    color-mix(in srgb, hsl(var(--neutral-700)) 30%, transparent);
+  --color-switch-off-chip-start:        var(--color-background-tertiary-default);
+  --color-switch-off-chip-end:          var(--color-background-tertiary-default);
+  --color-background-secondary-default: hsl(var(--neutral-900)); /* #16161e chrome */
+  --color-background-secondary-hover:   hsl(var(--neutral-700));
+  --color-background-tertiary-default:  hsl(var(--neutral-700));
+  --color-background-tertiary-hover:    hsl(var(--neutral-400));
+  --color-background-quaternary-default: hsl(var(--neutral-400));
+  --color-background-quaternary-hover:   hsl(var(--neutral-300));
+  --color-background-recent-hire-role:  color-mix(in srgb, hsl(var(--neutral-900)) 60%, transparent);
+  --color-avatar-neutral-background:    var(--color-background-primary-default);
+  --color-file-upload-icon-background:  hsl(var(--neutral-300));
+  --color-file-upload-icon-foreground:  hsl(var(--neutral-100));
+  --color-file-upload-icon-foreground-hover: hsl(var(--neutral-50));
+  --color-stat-card-icon-background:    hsl(var(--neutral-700));
+  --color-segmented-control-background:          hsl(var(--neutral-800));
+  --color-segmented-control-selected-background: hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-background:       hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-selected-background: hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-background:       hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-hover-background: hsl(var(--neutral-300));
+  --color-agent-progress-ring:                   color-mix(in srgb, hsl(var(--neutral-0)) 50%, transparent);
+  --color-dropdown-item-hover-background:        color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-kbd-background:                        hsl(var(--neutral-400));
+  --color-kbd-foreground:                        hsl(var(--neutral-100));
+  --color-docs-code-background:                  var(--color-background-full);
+  --color-docs-install-rail:                     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+
+  /* Neutral surfaces nested inside otherwise-colored groups */
+  --color-badge-neutral-background:       hsl(var(--neutral-700));
+  --color-team-menu-count-background:     hsl(var(--neutral-400));
+  --color-team-menu-count-foreground:     hsl(var(--neutral-100));
+  --color-notification-center-background: hsl(var(--neutral-900));
+  --color-pill-tab-blue-hover-background: hsl(var(--neutral-700));
+
+  /* Borders and separators (error border keeps theme.css red) */
+  --color-border-button-default:   hsl(var(--neutral-400));
+  --color-border-button-hover:     hsl(var(--neutral-200));
+  --color-border-button-active:    hsl(var(--neutral-300));
+  --color-border-button-white:     hsl(228 23.36% 20.98%); /* #292e42 */
+  --color-border-checkbox-default: hsl(var(--neutral-400));
+  --color-border-checkbox-hover:   hsl(var(--neutral-200));
+  --color-border-checkbox-active:  hsl(var(--neutral-200));
+  --color-border-component-detail-container: hsl(228 23.36% 20.98%);
+  --color-border-ai-profile-card:  hsl(228 23.36% 20.98%);
+  --color-border-table:            hsl(228 23.36% 20.98%);
+  --color-border-button-group:     color-mix(in srgb, hsl(var(--neutral-300)) 60%, transparent);
+  --color-border-sidebar-profile-hover: hsl(var(--neutral-300));
+  --color-separator-border:        hsl(228 23.36% 20.98%); /* #292e42 Tokyo Night border */
+  --color-separator-border-strong: color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+
+  /* Charts: neutral structure only (categorical/status bars keep theme.css) */
+  --color-chart-track:   hsl(var(--neutral-700));
+  --color-chart-cursor:  hsl(var(--neutral-400));
+  --color-chart-neutral: hsl(var(--neutral-700));
+
+  /* Disabled primary CTA: neutral fill (danger gradient keeps theme.css red) */
+  --gradient-button-primary-disabled: linear-gradient(
+    180deg,
+    hsl(var(--neutral-400)) 0%,
+    hsl(var(--neutral-700)) 100%
+  );
+}
+
 .aura {
   /* Accent ramp -> Aura violet. Re-points everything accent-driven (primary
    * button gradients, focus ring, nav-selected/checkbox shadows, switch-on
@@ -3169,7 +3282,7 @@
   --swatch-accent: #3392ff;
 }
 .theme-swatch-dark {
-  --swatch-canvas: #121212;
+  --swatch-canvas: #1a1b26;
   --swatch-accent: #2b7fff;
 }
 .theme-swatch-aura {
@@ -3499,9 +3612,13 @@
   }
 }
 
-/* Dark neutral ladder lives in the `.dark` block inside @layer base above —
- * single source of truth (#17181a base, soft border deltas). Do not add a
- * second `.dark` override here; un-layered rules would silently win. */
+/* The AlignUI legacy dark ladder lives in the layered `.dark` block inside
+ * @layer base above (Tokyo Night: #1a1b26 canvas, #16161e chrome, #1e202e
+ * raised). Midnight's BoardUI-semantic surface/text/border override is the
+ * un-layered `.dark` block up in the "BoardUI semantic tokens" section (beside
+ * .aura/.harbor); it deliberately wins over theme.css's un-layered `.dark`
+ * (which maps surfaces to the flat BoardUI neutral ramp). Keep both, plus the
+ * .theme-swatch-dark preview, in sync. */
 
 /* ===========================================================================
  * BoardUI foundations support CSS — copied from styles/globals.css (the
