@@ -5,11 +5,9 @@ import {
   RiSparkling2Line,
 } from "@remixicon/react";
 import type { Metadata } from "next";
-import { ContributionsCard } from "@/components/dashboard/contributions-card";
 import { Suspense } from "react";
 import { AnalyticsBand } from "@/components/dashboard/analytics-band";
 import {
-  buildHeatmap,
   computeStats,
   extractCount,
   extractRuns,
@@ -36,7 +34,7 @@ import { FleetLimits } from "@/components/fleet/fleet-limits";
 import { AppShell } from "@/components/shell/app-shell";
 import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import { backendFetch } from "@/lib/backend-fetch";
-import { compactNumber, estimatedTokens } from "@/utils/format";
+import { compactNumber } from "@/utils/format";
 
 export const metadata: Metadata = {
   title: "Dashboard - useAgent",
@@ -98,7 +96,6 @@ export default async function DashboardPage() {
 
   const stats = computeStats(runs);
   const fortnight = runsPerDay(runs, 14);
-  const heat = buildHeatmap(runs, 26);
   const recent = recentRuns(runs);
   const combo = weeklyCombo(runs);
 
@@ -143,8 +140,6 @@ export default async function DashboardPage() {
           <h2 className="text-headline-medium text-text-primary">Limits</h2>
           <FleetLimits />
         </section>
-
-        <ContributionsCard cells={heat.cells} total={heat.total} />
 
         <RecentRunsTable runs={recent} />
 
