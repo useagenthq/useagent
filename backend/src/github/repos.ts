@@ -1,6 +1,9 @@
 import { githubConfigured, githubTenantOrgId } from "../env";
 import { resolveGithubCatalogAuth, type GithubAuth } from "./auth";
-import { findConnectedOrgIntegrationRecord } from "../integrations/connection-repo";
+import {
+  findConnectedOrgIntegrationRecord,
+  findLatestOrgIntegrationRecord,
+} from "../integrations/connection-repo";
 import {
   GITHUB_NATIVE_RUNTIME_BINDING_ID,
   githubNativeConnectionConfigFromEnv,
@@ -81,13 +84,23 @@ export function githubOrgAccessError(orgId: string): string | null {
 /** Accept an org-owned customer App installation before consulting the legacy
  * deployment-wide credential boundary. */
 export async function githubOrgAccessErrorForOrg(orgId: string): Promise<string | null> {
-  if (githubNativeConnectionConfigFromEnv()) {
-    const tenant = await findConnectedOrgIntegrationRecord({
-      orgId,
-      provider: "github",
-      runtimeBindingId: GITHUB_NATIVE_RUNTIME_BINDING_ID,
-    });
-    if (tenant) return null;
+  const tenant = await findConnectedOrgIntegrationRecord({
+    orgId,
+    provider: "github",
+    runtimeBindingId: GITHUB_NATIVE_RUNTIME_BINDING_ID,
+  });
+  if (tenant) {
+    return githubNativeConnectionConfigFromEnv()
+      ? null
+      : "GitHub tenant integration backend is unavailable";
+  }
+  const latest = await findLatestOrgIntegrationRecord({
+    orgId,
+    provider: "github",
+    runtimeBindingId: GITHUB_NATIVE_RUNTIME_BINDING_ID,
+  });
+  if (latest?.status === "revoked") {
+    return "GitHub integration has been revoked for this organization";
   }
   return githubConfigured() || process.env.GITHUB_TENANT_ORG_ID?.trim()
     ? githubOrgAccessError(orgId)
