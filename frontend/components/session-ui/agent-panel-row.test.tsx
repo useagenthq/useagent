@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   type AgentPanelRowModel,
   agentPanelActivityText,
+  formatSubagentCostUsd,
   formatSubagentModelLabel,
   formatSubagentTokenCount,
   AgentPanelRow,
@@ -70,6 +71,13 @@ describe("formatSubagentTokenCount", () => {
   });
 });
 
+describe("formatSubagentCostUsd", () => {
+  test("keeps ordinary and sub-cent child costs readable", () => {
+    expect(formatSubagentCostUsd(0.031)).toBe("$0.03");
+    expect(formatSubagentCostUsd(0.0042)).toBe("$0.0042");
+  });
+});
+
 describe("formatSubagentModelLabel", () => {
   test("compacts model ids and appends effort", () => {
     expect(formatSubagentModelLabel("claude-sonnet-5[1m]", "high")).toBe("sonnet-5[1m] · high");
@@ -106,7 +114,7 @@ describe("AgentPanelRow", () => {
           role: "reviewer",
           model: "claude-sonnet-5",
           result: "Found 3 issues in checkout",
-          usage: { totalTokens: 41200, toolUses: 7 },
+          usage: { totalTokens: 41200, toolUses: 7, costUsd: 0.031 },
           elapsed: "1m 5s",
         }}
         onOpen={() => {}}
@@ -115,6 +123,7 @@ describe("AgentPanelRow", () => {
     expect(html).toContain("Found 3 issues in checkout");
     expect(html).toContain("41.2k tok");
     expect(html).toContain("7 tools");
+    expect(html).toContain("$0.03");
     expect(html).toContain("sonnet-5");
     expect(html).toContain("reviewer");
     expect(html).toContain("text-lime-600");

@@ -115,6 +115,10 @@ export function formatSubagentTokenCount(totalTokens: number): string {
   return `${(totalTokens / 1_000_000).toFixed(1)}M`;
 }
 
+export function formatSubagentCostUsd(costUsd: number): string {
+  return `$${costUsd < 0.01 ? costUsd.toFixed(4) : costUsd.toFixed(2)}`;
+}
+
 /**
  * The T3 fleet row bound to our child model: three fixed grid lines (identity,
  * activity, metrics) whose height never changes as data streams in, wrapped in
@@ -136,6 +140,7 @@ export function AgentPanelRow({
   const metadata = [
     formatSubagentModelLabel(agent.model, null),
     agent.usage ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok` : null,
+    agent.usage?.costUsd !== undefined ? formatSubagentCostUsd(agent.usage.costUsd) : null,
     agent.usage?.toolUses !== undefined ? `${agent.usage.toolUses} tools` : null,
   ].filter((value): value is string => value !== null);
 

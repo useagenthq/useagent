@@ -8,6 +8,7 @@ export interface ChildUsage {
   readonly reasoningOutputTokens?: number;
   readonly toolUses?: number;
   readonly durationMs?: number;
+  readonly costUsd?: number;
 }
 
 const OPTIONAL_USAGE_KEYS = [
@@ -17,6 +18,7 @@ const OPTIONAL_USAGE_KEYS = [
   "reasoningOutputTokens",
   "toolUses",
   "durationMs",
+  "costUsd",
 ] as const satisfies readonly (keyof ChildUsage)[];
 
 function count(value: unknown): number | undefined {
@@ -56,6 +58,7 @@ export function normalizeChildUsage(value: unknown): ChildUsage | null {
     ...optionalCount("reasoningOutputTokens", raw),
     ...optionalCount("toolUses", raw),
     ...optionalCount("durationMs", raw),
+    ...optionalCount("costUsd", raw),
   };
 }
 
@@ -89,5 +92,6 @@ export function mergeChildUsage(
     ...optionalMax("reasoningOutputTokens", current, incoming),
     ...optionalMax("toolUses", current, incoming),
     ...optionalMax("durationMs", current, incoming),
+    ...optionalMax("costUsd", current, incoming),
   };
 }
