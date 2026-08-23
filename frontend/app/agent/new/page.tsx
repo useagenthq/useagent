@@ -91,7 +91,7 @@ export default async function NewTaskPage({
           <div className="flex flex-col items-center gap-3 text-center">
             <OrbitKnotMark className="size-7" />
             <p className="text-mono-label text-text-tertiary">New thread</p>
-            <h1 className="text-display-md text-text-primary">What should your agent do?</h1>
+            <h1 className="text-display-md text-text-primary">What do you want done?</h1>
           </div>
 
           <div className="mt-8">
