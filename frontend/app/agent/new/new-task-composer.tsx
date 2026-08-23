@@ -2,14 +2,19 @@
 
 import {
   RiAddLine,
-  RiAttachment2,
   RiBookMarkedLine,
   RiCpuLine,
   RiFlashlightLine,
-  RiGithubLine,
 } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ADD_MENU_ROW,
+  AddFilesRow,
+  AddMenuDivider,
+  CreateRows,
+  GithubConnectedRow,
+} from "@/components/chat/composer-add-menu";
 import { resolveEnabledEngine, useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 import {
@@ -50,20 +55,6 @@ const ENGINE_CAPTIONS: Partial<Record<EngineId, string>> = {
   claude: "cloud sandbox",
   codex: "cloud sandbox",
 };
-
-/** Full-width row styling for the controls inside the "+" action shelf. */
-const ADD_MENU_ROW =
-  "flex w-full items-center gap-3 rounded-2lg px-2.5 py-2 text-left text-body-2-medium text-text-primary transition-colors hover:bg-background-primary-hover";
-
-/** "Create" actions in the + shelf: the colored BoardUI plugin icons
- *  (public/plugin-icons) that seed the prompt with a real artifact-creation task
- *  the agent can execute (it genuinely makes documents, spreadsheets, decks, code). */
-const CREATE_ROWS = [
-  { icon: "/plugin-icons/plugin-documents.svg", label: "Document", desc: "Write and edit a document", seed: "Create a document that " },
-  { icon: "/plugin-icons/plugin-spreadsheets.svg", label: "Spreadsheet", desc: "Generate a spreadsheet", seed: "Create a spreadsheet that " },
-  { icon: "/plugin-icons/plugin-presentations.svg", label: "Presentation", desc: "Build a slide deck", seed: "Create a presentation that " },
-  { icon: "/plugin-icons/plugin-codeblocks.svg", label: "Code", desc: "Write and edit code", seed: "Write code that " },
-] as const;
 
 /**
  * The New Task composer: a prompt textarea over a control row of searchable
@@ -530,20 +521,12 @@ export function NewTaskComposer({
           per-repo branches, and GitHub (already connected server-side). */}
       {addMenuOpen ? (
         <div className="relative z-0 rounded-b-[20px] rounded-t-none border-x border-b border-border-button-default bg-background-primary-default p-1.5 shadow-md">
-          <button
-            type="button"
-            onClick={() => {
+          <AddFilesRow
+            onPick={() => {
               setAddMenuOpen(false);
               fileInput.current?.click();
             }}
-            className={ADD_MENU_ROW}
-          >
-            <RiAttachment2 className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-body-2-medium text-text-primary">Add photos &amp; files</span>
-              <span className="text-caption-1-regular text-text-tertiary">Upload from computer</span>
-            </span>
-          </button>
+          />
 
           <RepoMultiPicker
             repos={repos}
@@ -558,44 +541,21 @@ export function NewTaskComposer({
             </div>
           ) : null}
 
-          <div className="my-1 border-t border-border-button-default" />
+          <AddMenuDivider />
 
           {/* Create: colored BoardUI plugin icons that seed a real artifact task. */}
-          <p className="px-2.5 pb-0.5 pt-0.5 text-mono-label text-text-tertiary">Create</p>
-          {CREATE_ROWS.map((row) => (
-            <button
-              key={row.label}
-              type="button"
-              onClick={() => {
-                setAddMenuOpen(false);
-                setPrompt((prev) => (prev.trim() ? prev : row.seed));
-              }}
-              className={ADD_MENU_ROW}
-            >
-              <img src={row.icon} alt="" width={20} height={20} className="size-5 shrink-0" aria-hidden />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="text-body-2-medium text-text-primary">{row.label}</span>
-                <span className="text-caption-1-regular text-text-tertiary">{row.desc}</span>
-              </span>
-            </button>
-          ))}
+          <CreateRows
+            onSeed={(seed) => {
+              setAddMenuOpen(false);
+              setPrompt((prev) => (prev.trim() ? prev : seed));
+            }}
+          />
 
-          <div className="my-1 border-t border-border-button-default" />
+          <AddMenuDivider />
 
           {/* GitHub is connected server-side via the GitHub App (that is why the
               repo list loads) - so this is a status row, not a "Connect" action. */}
-          <div className={cx(ADD_MENU_ROW, "cursor-default hover:bg-transparent")}>
-            <RiGithubLine className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-body-2-medium text-text-primary">GitHub</span>
-              <span className="text-caption-1-regular text-text-tertiary">
-                Read pull requests &amp; issues
-              </span>
-            </span>
-            <span className="rounded-full bg-background-secondary-default px-2 py-0.5 text-caption-1-medium text-text-secondary">
-              Connected
-            </span>
-          </div>
+          <GithubConnectedRow />
         </div>
       ) : null}
 
