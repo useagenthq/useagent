@@ -694,7 +694,7 @@ function ReplyComposer({
   prefill?: { readonly text: string; readonly nonce: number } | null;
 }) {
   return (
-    <div className="shrink-0 px-4 pb-4 pt-2">
+    <div className="shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
       <div className="mx-auto w-full max-w-5xl">
         <Composer
           variant="compact"

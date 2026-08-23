@@ -94,7 +94,9 @@ import { shouldRetireOptimistic, useThreadStream } from "@/components/chat/use-t
 import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
 import { Chip } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
+import { CloseButton } from "@/components/base/buttons/close-button";
 import { PillTab, PillTabList } from "@/components/base/tabs/pill-tab";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { backendFetch } from "@/lib/backend-fetch";
 import { createRun } from "@/lib/create-run";
 import { cx } from "@/utils/cx";
@@ -584,6 +586,11 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const [railOverride, setRailOverride] = useState<boolean | null>(null);
   const [railExpanded, setRailExpanded] = useState(false);
   const railOpen = railOverride ?? hasRuntimeSurfaces;
+  // Below md the SAME rail renders as a bottom slide-over sheet and starts
+  // CLOSED (chat full-bleed): an explicit open - the thread bar's opener or a
+  // workpiece auto-open, both of which set railOverride - slides it up.
+  const isMobile = useIsMobile();
+  const mobileSurfacesOpen = railOverride ?? false;
   // Rail resize: a dragger between the conversation and the rail (md+). Width
   // in px, persisted per browser; null → the 32% default. Loaded in an effect
   // (not the initializer) so SSR and first client render agree.
@@ -592,7 +599,13 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const [railWidth, setRailWidth] = useState<number | null>(null);
   useEffect(() => {
     const saved = Number(localStorage.getItem("skynet.rail-width"));
-    if (Number.isFinite(saved) && saved >= RAIL_MIN) setRailWidth(saved);
+    if (!Number.isFinite(saved) || saved < RAIL_MIN) return;
+    // Apply the saved width through the same 0.6-of-container ceiling as the
+    // drag/keyboard paths: a width persisted on a wide desktop must never
+    // starve the conversation on a narrower window (tablet split).
+    const bounds = bodyRef.current?.getBoundingClientRect();
+    const containerMax = bounds ? Math.min(bounds.width * 0.6, RAIL_MAX) : RAIL_MAX;
+    setRailWidth(Math.round(Math.min(saved, containerMax)));
   }, []);
   // The drag itself is ZERO-React: each (rAF-coalesced) pointer move writes the
   // rail's `--rail-w` var imperatively against container bounds cached once per
@@ -673,6 +686,13 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const railTab =
     railTabOverride ??
     (hasSubagents ? "agents" : hasFiles ? "artifacts" : hasCommands ? "terminal" : null);
+  // Mobile sheet grammar: the chooser card grid is a md+ surface - the sheet's
+  // pill tabs ARE the chooser on a phone, so opening on a quiet thread lands on
+  // a concrete tab (Files); the pane body's null branch falls back the same way.
+  const openMobileSurfaces = useCallback(() => {
+    setRailOverride(true);
+    if (railTab === null) setRailTabOverride("artifacts");
+  }, [railTab]);
 
   const openWorkpiece = useCallback((artifact: TimelineArtifact) => {
     setOpenWorkpieces((prev) =>
@@ -755,6 +775,20 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     window.addEventListener("keydown", restoreOnEscape);
     return () => window.removeEventListener("keydown", restoreOnEscape);
   }, [railExpanded]);
+  // Expand/Restore is md+ grammar; entering the phone layout drops it so the
+  // conversation (which railExpanded hides) can never be stranded off-screen.
+  useEffect(() => {
+    if (isMobile && railExpanded) setRailExpanded(false);
+  }, [isMobile, railExpanded]);
+  // The mobile sheet dismisses like the nav drawer: Close X, backdrop, or Escape.
+  useEffect(() => {
+    if (!isMobile || !mobileSurfacesOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setRailOverride(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isMobile, mobileSurfacesOpen]);
 
   // Slash-command catalog for the reply composer's "/" autocomplete - the SELECTED engine's
   // real native commands, capability-driven (no provider-name gate). Authoritative source is
@@ -848,18 +882,33 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               so the SSR-provided root is authoritative for the page lifetime. */}
           <GitChips refs={runGitRefs(root)} />
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <StatusPill status={threadStatus} />
           {/* Stop lives in the composer send button (running+empty -> red Stop),
               threaded through Conversation. The old top-bar Stop was removed so
               there is exactly ONE Stop affordance (user: "i mean stop here"). */}
           <Link
             href="/agent/new"
+            aria-label="New session"
             className="flex items-center gap-1.5 rounded-lg border border-border-button-default bg-background-primary-default px-2.5 py-1.5 text-caption-1-medium text-text-secondary shadow-xs transition-colors hover:border-border-button-hover hover:bg-background-primary-hover"
           >
             <RiAddLine className="size-4" aria-hidden />
-            New session
+            <span className="hidden sm:inline">New session</span>
           </Link>
+          {/* Below md the surfaces rail is a slide-over sheet; this is its
+              opener (the rail's own reopen strip covers md+). */}
+          {hasRuntimeSurfaces && !mobileSurfacesOpen && (
+            <Button
+              variant="ghost"
+              size="small"
+              iconOnly
+              leadingIcon={RiLayoutRightLine}
+              onClick={openMobileSurfaces}
+              title="Open surfaces panel"
+              aria-label="Open surfaces panel"
+              className="md:hidden"
+            />
+          )}
         </div>
       </div>
 
@@ -877,7 +926,11 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         <section
           aria-hidden={railExpanded}
           className={cx(
-            "bg-background-primary-default relative flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden md:min-h-0",
+            // min-h-0 (not a vh block) below md too: the conversation is the ONLY
+            // in-flow surface on a phone, so this column fills main exactly and
+            // its internal scroller pins the composer to the viewport bottom.
+            // md:min-w-80 floors the tablet split so a wide rail cannot crush it.
+            "bg-background-primary-default relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-w-80",
             railExpanded && "hidden",
           )}
         >
@@ -950,12 +1003,24 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           />
         )}
 
+        {/* Sheet backdrop (<md only): same dismiss grammar as the nav drawer. */}
+        {railOpen && mobileSurfacesOpen && (
+          <button
+            type="button"
+            aria-label="Close surfaces panel"
+            onClick={() => setRailOverride(false)}
+            className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
+          />
+        )}
+
         {railOpen ? (
           // ONE bordered panel: the Editor|Terminal switcher + collapse live in
           // its header; the active pane fills the body bare (its own border/round
           // is dropped so this panel owns the single card edge).
           <section
             ref={railRef}
+            inert={isMobile && !mobileSurfacesOpen}
+            aria-hidden={isMobile && !mobileSurfacesOpen ? true : undefined}
             style={
               railWidth !== null
                 ? ({ "--rail-w": `${railWidth}px` } as React.CSSProperties)
@@ -967,12 +1032,21 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               // the transition is suppressed so the edge tracks the pointer
               // exactly and the terminal's ResizeObserver stops firing the
               // moment the pointer stops (no post-drag animation tail).
-              "bg-background-primary-default flex min-h-[50vh] min-w-0 flex-col overflow-hidden transition-[width] peer-data-[dragging=true]:transition-none md:min-h-0",
+              "bg-background-primary-default flex min-h-0 min-w-0 flex-col overflow-hidden transition-[width] peer-data-[dragging=true]:transition-none",
+              // Below md this SAME panel is a bottom slide-over sheet (fixed,
+              // safe-area padded, pill-tab header unchanged) with a translate-y
+              // open/close transition per the subagent-pane mechanics.
+              "max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-50 max-md:h-[85dvh] max-md:rounded-t-2xl max-md:border-t max-md:border-border-button-default max-md:pb-[env(safe-area-inset-bottom)] max-md:transition-transform max-md:duration-300 max-md:ease-out",
+              mobileSurfacesOpen
+                ? "max-md:translate-y-0"
+                : "max-md:pointer-events-none max-md:translate-y-full",
               railExpanded
                 ? "flex-1 md:w-auto"
                 : // Width always reads the var (drag writes it imperatively even
                   // before any committed state); 360px is the uncustomized default.
-                  "md:w-[var(--rail-w,360px)] md:shrink-0",
+                  // The calc ceiling pairs with the conversation's md:min-w-80
+                  // floor so a persisted width can never overflow the split.
+                  "md:w-[var(--rail-w,360px)] md:max-w-[calc(100%-20rem)] md:shrink-0",
             )}
           >
             <div className="border-border-button-default/50 flex shrink-0 items-center gap-2 border-b p-2">
@@ -1062,7 +1136,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                 }
                 aria-pressed={railExpanded}
                 aria-keyshortcuts={railExpanded ? "Escape" : undefined}
-                className="shrink-0"
+                className="hidden shrink-0 md:flex"
               />
               <Button
                 variant="ghost"
@@ -1075,7 +1149,14 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                 }}
                 title="Collapse panel"
                 aria-label="Collapse side panel"
-                className="shrink-0"
+                className="hidden shrink-0 md:flex"
+              />
+              {/* On the phone sheet a single Close X replaces Expand/Collapse. */}
+              <CloseButton
+                size="md"
+                aria-label="Close surfaces panel"
+                onClick={() => setRailOverride(false)}
+                className="md:hidden"
               />
             </div>
             <div className="relative min-h-0 flex-1">
@@ -1116,11 +1197,18 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               {railTab !== "desktop" && railTab !== "workspace" && (
                 <div className="absolute inset-0">
                   {railTab === null ? (
-                    <SurfaceChooser
-                      agentsAvailable={hasSubagents}
-                      diffAvailable={hasFiles}
-                      onSelect={setRailTabOverride}
-                    />
+                    // The chooser card grid is md+ grammar; in the phone sheet
+                    // the pill tabs ARE the chooser, so a null tab lands on
+                    // Files instead of a full-screen card grid.
+                    isMobile ? (
+                      <ArtifactsRail threadId={rootId} live={live} />
+                    ) : (
+                      <SurfaceChooser
+                        agentsAvailable={hasSubagents}
+                        diffAvailable={hasFiles}
+                        onSelect={setRailTabOverride}
+                      />
+                    )
                   ) : railTab === "agents" ? (
                     <AgentsRail
                       steps={allSteps}
@@ -1152,7 +1240,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             onClick={() => setRailOverride(true)}
             title="Open the editor/terminal panel"
             aria-label="Open side panel"
-            className="hidden shrink-0 flex-col items-center gap-3 rounded-2xl border border-border-button-default bg-background-primary-default px-2 py-4 text-foreground-icon-tertiary transition-colors hover:bg-background-primary-hover hover:text-foreground-icon-secondary lg:flex"
+            className="hidden shrink-0 flex-col items-center gap-3 rounded-2xl border border-border-button-default bg-background-primary-default px-2 py-4 text-foreground-icon-tertiary transition-colors hover:bg-background-primary-hover hover:text-foreground-icon-secondary md:flex"
           >
             <RiCodeSSlashLine className="size-4" aria-hidden />
             <RiFileList2Line className="size-4" aria-hidden />
