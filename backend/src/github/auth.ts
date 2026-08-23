@@ -12,7 +12,10 @@ import {
   getRepositoryInstallationToken,
   getRepositoryInstallationTokenForId,
 } from "./app-auth";
-import { findConnectedOrgIntegrationRecord } from "../integrations/connection-repo";
+import {
+  findConnectedOrgIntegrationRecord,
+  findLatestOrgIntegrationRecord,
+} from "../integrations/connection-repo";
 import {
   GITHUB_NATIVE_RUNTIME_BINDING_ID,
   githubNativeConnectionConfigFromEnv,
@@ -38,14 +41,24 @@ async function resolveTenantGithubAuth(orgId: string): Promise<{
   readonly installationId: number;
   readonly app: GithubAppConfig;
 } | null> {
-  const connection = githubNativeConnectionConfigFromEnv();
-  if (!connection) return null;
   const record = await findConnectedOrgIntegrationRecord({
     orgId,
     provider: "github",
     runtimeBindingId: GITHUB_NATIVE_RUNTIME_BINDING_ID,
   });
-  if (!record) return null;
+  if (!record) {
+    const latest = await findLatestOrgIntegrationRecord({
+      orgId,
+      provider: "github",
+      runtimeBindingId: GITHUB_NATIVE_RUNTIME_BINDING_ID,
+    });
+    if (latest?.status === "revoked") {
+      throw new Error("GitHub integration has been revoked for this organization");
+    }
+    return null;
+  }
+  const connection = githubNativeConnectionConfigFromEnv();
+  if (!connection) throw new Error("GitHub tenant integration backend is unavailable");
   const installationId = Number(record.externalConnectionId);
   if (!Number.isSafeInteger(installationId) || installationId <= 0) {
     throw new Error("stored GitHub installation id is invalid");

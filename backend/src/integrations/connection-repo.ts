@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, or } from "drizzle-orm";
 import { db } from "../db/client";
 import {
   integrationConnections,
@@ -202,6 +202,31 @@ export async function findConnectedOrgIntegrationRecord(input: {
         eq(integrationConnections.status, "connected"),
       ),
     )
+    .limit(1);
+  return row ?? null;
+}
+
+/** Trusted backend lookup for the latest org-owned provider connection in any
+ * lifecycle state. This distinguishes "never connected" from an explicit
+ * disconnect/revocation before callers consider a legacy fallback. */
+export async function findLatestOrgIntegrationRecord(input: {
+  readonly orgId: string;
+  readonly provider: string;
+  readonly runtimeBindingId: string;
+}): Promise<IntegrationConnectionRecord | null> {
+  const [row] = await db
+    .select()
+    .from(integrationConnections)
+    .where(
+      and(
+        eq(integrationConnections.orgId, input.orgId),
+        eq(integrationConnections.ownerType, "org"),
+        isNull(integrationConnections.ownerUserId),
+        eq(integrationConnections.provider, input.provider),
+        eq(integrationConnections.runtimeBindingId, input.runtimeBindingId),
+      ),
+    )
+    .orderBy(desc(integrationConnections.updatedAt))
     .limit(1);
   return row ?? null;
 }
