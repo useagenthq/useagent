@@ -139,7 +139,8 @@ export async function listActiveCommands(): Promise<ActiveCommand[]> {
  */
 export async function failCommandlessStaleRuns(summary: string): Promise<number> {
   const res = await db.execute(sql`
-    update runs set status = 'failed', summary = ${summary}, updated_at = now()
+    update runs
+    set status = 'failed', summary = ${summary}, settled_at = now(), updated_at = now()
     where status in ('queued', 'running')
       and id not in (
         select run_id from commands
