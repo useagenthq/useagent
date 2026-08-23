@@ -2110,19 +2110,9 @@
 }
 
 .harbor {
-  /* Accent ramp -> Harbor periwinkle. 500 mirrors AlignUI --primary-base
-   * (blue-950 #3053a2: deep enough for white button text). */
-  --color-accent-50:  hsl(var(--blue-50));
-  --color-accent-100: hsl(var(--blue-100));
-  --color-accent-200: hsl(var(--blue-200));
-  --color-accent-300: hsl(var(--blue-300));
-  --color-accent-400: hsl(var(--blue-700));  /* #5d85d9 hover-top */
-  --color-accent-500: hsl(var(--blue-950));  /* #3053a2 primary base */
-  --color-accent-600: hsl(var(--blue-800));  /* #254387 */
-  --color-accent-700: hsl(var(--blue-900));  /* #1d3363 */
-  --color-accent-800: hsl(var(--blue-800));
-  --color-accent-900: hsl(var(--blue-900));
-  --color-accent-950: hsl(var(--blue-950));
+  /* Accent deliberately NOT overridden: interactive blue (nav selected,
+   * primary buttons, focus) stays the standard light-theme ramp per user
+   * decision 2026-08-23; harbor personality lives in surfaces and text. */
 
   /* Foreground */
   --color-foreground-full:            hsl(var(--neutral-400));
