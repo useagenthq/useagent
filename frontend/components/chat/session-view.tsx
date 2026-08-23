@@ -874,7 +874,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       <SessionLatestRunProvider value={newest.id}>
       <div className="flex h-full flex-col">
       {/* Compact thread bar. Brand and search belong to the collapsible sidebar. */}
-      <div className="bg-background-primary-default flex shrink-0 items-center justify-between gap-3 px-4 py-2">
+      <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="text-mono-label text-text-tertiary">Session</span>
           {/* The thread's git identity: repos (+ chosen branch) come from the
@@ -930,7 +930,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             // in-flow surface on a phone, so this column fills main exactly and
             // its internal scroller pins the composer to the viewport bottom.
             // md:min-w-80 floors the tablet split so a wide rail cannot crush it.
-            "bg-background-primary-default relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-w-80",
+            "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-w-80",
             railExpanded && "hidden",
           )}
         >
