@@ -149,6 +149,16 @@ function sessionDirectory(sessionId: string): string {
   return `/tmp/skynet-cube-sessions/${Buffer.from(sessionId).toString("hex")}`;
 }
 
+/** Session id a live process was stamped with. Reads the legacy SKYNET_ name
+ *  too: processes started by the pre-rename release survive the cutover
+ *  deploy, and matching only the new name would leak them past deleteSession
+ *  and hide them from getSession. New processes are stamped USEAGENT_* only -
+ *  drop the legacy read once the cutover release has cycled every resident
+ *  and warm-pool sandbox. */
+function processSessionId(envs: Record<string, string | undefined>): string | undefined {
+  return envs.USEAGENT_SESSION_ID ?? envs.SKYNET_SESSION_ID;
+}
+
 class CubeProcess implements SandboxProcess {
   constructor(private readonly sandbox: () => Promise<E2BSandbox>) {}
 
@@ -180,7 +190,7 @@ class CubeProcess implements SandboxProcess {
     const processes = await sandbox.commands.list();
     await Promise.all(
       processes
-        .filter((process) => process.envs.USEAGENT_SESSION_ID === sessionId)
+        .filter((process) => processSessionId(process.envs) === sessionId)
         .map((process) => sandbox.commands.kill(process.pid).catch(() => false)),
     );
     await sandbox.commands.run(`rm -rf ${sessionDirectory(sessionId)}`);
@@ -191,8 +201,10 @@ class CubeProcess implements SandboxProcess {
     const processes = await sandbox.commands.list();
     return {
       commands: processes
-        .filter((process) => process.envs.USEAGENT_SESSION_ID === sessionId)
-        .map((process) => ({ id: process.envs.USEAGENT_COMMAND_ID ?? String(process.pid) })),
+        .filter((process) => processSessionId(process.envs) === sessionId)
+        .map((process) => ({
+          id: process.envs.USEAGENT_COMMAND_ID ?? process.envs.SKYNET_COMMAND_ID ?? String(process.pid),
+        })),
     };
   }
 
