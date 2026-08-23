@@ -18,14 +18,15 @@ import {
   type MergedChildFidelity,
 } from "@/components/chat/canonical-children";
 import type { CanonicalEventLike } from "@/components/chat/canonical-timeline";
-import type { ChildStatus, NativeFrame } from "@/components/chat/native-events";
-import type { SubagentCard } from "@/components/chat/subagents";
 import {
-  type ApiStep,
-  type EngineId,
-  engineLabel,
-  type RunStatus,
-} from "@/components/chat/types";
+  firstLine,
+  type GatewayChildSession,
+  RUN_CHILD_STATUS,
+  RUN_STATUS_LABEL,
+} from "@/components/chat/gateway-children";
+import type { NativeFrame } from "@/components/chat/native-events";
+import type { SubagentCard } from "@/components/chat/subagents";
+import { type ApiStep, engineLabel } from "@/components/chat/types";
 import {
   formatSubagentModelLabel,
   formatSubagentTokenCount,
@@ -34,33 +35,10 @@ import {
 import { StatusDot } from "@/components/shared/status-dot";
 import { cx as cn } from "@/utils/cx";
 
-/** One gateway child-session turn of this turn (a run in the same thread with
- *  the durable `child_session` mark and `parent_run_id` = this run). */
-export interface GatewayChildSession {
-  readonly id: string;
-  readonly prompt: string;
-  readonly engine: EngineId;
-  readonly model: string;
-  readonly status: RunStatus;
-  readonly summary: string | null;
-}
-
-/** RunStatus -> the shared child-status vocabulary (queued IS pending-in-line). */
-const RUN_CHILD_STATUS: Record<RunStatus, ChildStatus> = {
-  queued: "pending",
-  running: "running",
-  completed: "completed",
-  failed: "failed",
-};
-
-const RUN_STATUS_LABEL: Record<RunStatus, string> = {
-  queued: "Queued",
-  running: "Running",
-  completed: "Completed",
-  failed: "Failed",
-};
-
-const firstLine = (text: string): string => text.split("\n", 1)[0]?.trim() ?? "";
+// GatewayChildSession + its status maps live in ./gateway-children (shared with
+// the Agents rail); re-exported here so existing importers (conversation, tests)
+// keep resolving the type from this module.
+export type { GatewayChildSession } from "./gateway-children";
 
 function NativeChildRow({
   card,

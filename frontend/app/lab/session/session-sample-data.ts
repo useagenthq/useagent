@@ -545,6 +545,7 @@ export const agentRows: readonly AgentPanelRowModel[] = [
   {
     title: "Load-test runner",
     role: "loadtest",
+    engine: null,
     model: "claude-sonnet-5",
     status: "running",
     statusLabel: "Running",
@@ -558,6 +559,7 @@ export const agentRows: readonly AgentPanelRowModel[] = [
   {
     title: "Docs writer",
     role: "docs",
+    engine: null,
     model: "claude-haiku-4-5",
     status: "completed",
     statusLabel: "Completed",
@@ -571,6 +573,7 @@ export const agentRows: readonly AgentPanelRowModel[] = [
   {
     title: "Redis limiter spike",
     role: "spike",
+    engine: null,
     model: "openai/gpt-5.6-sol",
     status: "failed",
     statusLabel: "Failed",

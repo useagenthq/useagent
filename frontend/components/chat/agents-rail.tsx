@@ -15,6 +15,12 @@ import {
   type MergedChildFidelity,
 } from "@/components/chat/canonical-children";
 import type { CanonicalEventLike } from "@/components/chat/canonical-timeline";
+import {
+  firstLine,
+  type GatewayChildSession,
+  RUN_CHILD_STATUS,
+  RUN_STATUS_LABEL,
+} from "@/components/chat/gateway-children";
 import type { ChildStatus, NativeFrame } from "@/components/chat/native-events";
 import type { SubagentCard } from "@/components/chat/subagents";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
@@ -161,6 +167,7 @@ function AgentCardRow({
       agent={{
         title: card.title,
         role: fidelity?.role ?? null,
+        engine: null,
         model: fidelity?.model ?? null,
         status,
         statusLabel: childStatusLabel(status, fidelity?.resumable ?? null),
@@ -172,6 +179,42 @@ function AgentCardRow({
         elapsed: elapsed !== null ? formatDuration(elapsed) : null,
       }}
       onOpen={onOpen}
+    />
+  );
+}
+
+/**
+ * A gateway child session (spawned via child_session_create) as a rail card. It
+ * is its OWN run - a deferred serial thread turn - so the card links to that
+ * session rather than opening an in-rail detail. Identity is real: the child's
+ * prompt is the title, its engine + model ride the meta caption, and its
+ * queued/running/settled state (plus any summary) reads on the caption line.
+ */
+function GatewayAgentCard({ child }: { child: GatewayChildSession }) {
+  const status = RUN_CHILD_STATUS[child.status];
+  const summaryLine = child.summary ? firstLine(child.summary) : null;
+  // Active rows lead with their queue/run state (there is no glyph yet); settled
+  // rows lead with the summary (the dot/check already conveys the outcome). The
+  // row's own status-label fallback covers a settled child with no summary.
+  const result = isChildActive(status) ? RUN_STATUS_LABEL[child.status] : summaryLine;
+
+  return (
+    <AgentPanelRow
+      href={`/session/${child.id}`}
+      agent={{
+        title: child.prompt,
+        role: null,
+        engine: child.engine,
+        model: child.model,
+        status,
+        statusLabel: RUN_STATUS_LABEL[child.status],
+        progress: null,
+        lastToolName: null,
+        lastStepLabel: null,
+        result,
+        usage: null,
+        elapsed: null,
+      }}
     />
   );
 }
@@ -377,11 +420,15 @@ export function AgentsRail({
   live,
   frames = [],
   canonicalEvents = [],
+  childSessions = [],
 }: {
   steps: ApiStep[];
   live: boolean;
   frames?: readonly NativeFrame[];
   canonicalEvents?: readonly CanonicalEventLike[];
+  /** Gateway child sessions across the thread (child_session_create fan-out).
+   *  Their own runs, so they render as link cards to their session. */
+  childSessions?: readonly GatewayChildSession[];
 }) {
   // ONE merged projection (canonical + legacy steps + native frames) - the same
   // view the inline conversation fold reads, so the two surfaces never disagree.
@@ -395,7 +442,7 @@ export function AgentsRail({
   // and hasn't emitted its terminal `done` step.
   const runLive = live && !steps.some((s) => s.kind === "done");
 
-  if (cards.length === 0) {
+  if (cards.length === 0 && childSessions.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <p className="text-body-2-regular text-text-tertiary text-center">
@@ -427,7 +474,7 @@ export function AgentsRail({
   }
 
   return (
-    <div className="h-full space-y-2.5 overflow-y-auto p-3" data-testid="agents-rail">
+    <div className="h-full space-y-2 overflow-y-auto p-3" data-testid="agents-rail">
       {cards.map((card) => (
         <AgentCardRow
           key={card.id}
@@ -436,6 +483,9 @@ export function AgentsRail({
           runLive={runLive}
           onOpen={() => setSelectedId(card.id)}
         />
+      ))}
+      {childSessions.map((child) => (
+        <GatewayAgentCard key={child.id} child={child} />
       ))}
     </div>
   );
