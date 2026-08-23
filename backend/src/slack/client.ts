@@ -6,8 +6,12 @@
  * A module-level override (`setSlackClientForTest`) lets tests record calls (and
  * simulate 429 / errors) instead of hitting the network.
  */
-import type { SlackConfig } from "../env";
 import type { SlackSessionStatus, SlackStreamChunk, SlackStreamTaskDisplayMode } from "./streaming";
+
+export interface SlackClientConfig {
+  readonly botToken: string;
+  readonly apiUrl: string;
+}
 
 /** Outcome of a single Slack delivery attempt — drives the outbox state machine.
  *  A successful post/update carries the message `ts` (Slack's `message.ts`) so a
@@ -103,7 +107,7 @@ const PERMANENT_ERRORS = new Set([
 ]);
 
 /** Real client: thin `fetch` wrapper that classifies the Slack response. */
-export function httpSlackClient(config: SlackConfig): SlackClient {
+export function httpSlackClient(config: SlackClientConfig): SlackClient {
   async function call(method: string, params: Record<string, unknown>): Promise<DeliveryResult> {
     try {
       const res = await fetch(`${config.apiUrl}${method}`, {
@@ -258,6 +262,6 @@ export function setSlackClientForTest(client: SlackClient | null): void {
 }
 
 /** Resolve the active client: the test override, else a real one for `config`. */
-export function resolveSlackClient(config: SlackConfig): SlackClient {
+export function resolveSlackClient(config: SlackClientConfig): SlackClient {
   return override ?? httpSlackClient(config);
 }

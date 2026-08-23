@@ -171,7 +171,11 @@ export async function fireScheduleWithOutcome(
   // deliver it) — the run itself is never blocked by notification config.
   const notifyTarget = parseSlackAutomationTarget(schedule.notifications);
   const slack = slackConfig();
-  if (notifyTarget && slack && slackChannelAllowed(notifyTarget.channel, slack)) {
+  if (
+    notifyTarget
+    && slack?.legacyBotToken
+    && slackChannelAllowed(notifyTarget.channel, slack)
+  ) {
     await enqueuePostMessage({
       idempotencyKey: `automation-notify:${idempotencyKey}`,
       channel: notifyTarget.channel,

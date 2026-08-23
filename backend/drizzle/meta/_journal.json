@@ -372,6 +372,34 @@
 			"when": 1789200000000,
 			"tag": "0054_integration_connections",
 			"breakpoints": true
+		},
+		{
+			"idx": 53,
+			"version": "7",
+			"when": 1789300000000,
+			"tag": "0055_integration_connect_leases",
+			"breakpoints": true
+		},
+		{
+			"idx": 54,
+			"version": "7",
+			"when": 1789400000000,
+			"tag": "0056_integration_connection_identity",
+			"breakpoints": true
+		},
+		{
+			"idx": 55,
+			"version": "7",
+			"when": 1789500000000,
+			"tag": "0057_saas_query_indexes",
+			"breakpoints": true
+		},
+		{
+			"idx": 56,
+			"version": "7",
+			"when": 1789600000000,
+			"tag": "0058_integration_connection_credentials",
+			"breakpoints": true
 		}
 	]
 }

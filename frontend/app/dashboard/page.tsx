@@ -51,7 +51,7 @@ async function getJson(path: string): Promise<unknown> {
 
 export default async function DashboardPage() {
   const [runsData, skillsData, knowledgeData] = await Promise.all([
-    getJson("/api/runs"),
+    getJson("/api/runs?view=summary&all=1&limit=1000&include_active=1"),
     getJson("/api/skills"),
     getJson("/api/knowledge"),
   ]);
@@ -60,7 +60,7 @@ export default async function DashboardPage() {
   const skillsCount = extractCount(skillsData, "skills");
   const knowledgeCount = extractCount(knowledgeData, "records");
 
-  // Per-project fleet lanes are derived from the same /api/runs snapshot so the
+  // Per-project fleet lanes are derived from the same compact runs snapshot so the
   // grouping refreshes with the rest of the dashboard on DashboardLiveRefresh.
   const fleetRuns = extractFleetRuns(runsData);
   const lanes = groupIntoLanes(fleetRuns);

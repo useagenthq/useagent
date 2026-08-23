@@ -62,7 +62,7 @@ export function automationSlackConfigError(automation: {
     if (!target) {
       return `${name} must be a Slack target ({ slack: { channel } }) to enable`;
     }
-    if (!config) {
+    if (!config?.legacyBotToken) {
       return `${name} targets Slack, but the Slack integration is not configured`;
     }
     if (!slackChannelAllowed(target.channel, config)) {

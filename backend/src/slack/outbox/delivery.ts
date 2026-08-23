@@ -14,6 +14,8 @@ import {
 } from "../repo";
 import type { ProcessResult, SlackDeliveryOutcome } from "./types";
 import type { SlackSessionStatus, SlackStreamChunk, SlackStreamTaskDisplayMode } from "../streaming";
+import { findSlackWorkspace } from "../workspaces";
+import { resolveSlackBotTokenForWorkspace } from "../../integrations/slack-token-resolver";
 
 // ---------------------------------------------------------------------------
 // Slack outbox delivery worker + relay. Claims due rows, calls Slack, and on
@@ -330,7 +332,42 @@ async function recordArtifactDelivered(row: ClaimedRow): Promise<void> {
 }
 
 /** Deliver one claimed row and transition its state. */
-async function deliverOne(client: SlackClient, row: ClaimedRow): Promise<SlackDeliveryOutcome> {
+function rowTeamId(row: ClaimedRow): string | null {
+  try {
+    const payload = JSON.parse(row.payload) as { teamId?: unknown };
+    return typeof payload.teamId === "string" && payload.teamId ? payload.teamId : null;
+  } catch {
+    return null;
+  }
+}
+
+type SlackTeamClientResolver = (teamId: string) => Promise<SlackClient | null>;
+
+async function deliverOne(
+  defaultClient: SlackClient | null,
+  row: ClaimedRow,
+  resolveTeamClient?: SlackTeamClientResolver,
+): Promise<SlackDeliveryOutcome> {
+  const teamId = rowTeamId(row);
+  let client = defaultClient;
+  if (teamId && resolveTeamClient) {
+    try {
+      client = await resolveTeamClient(teamId);
+    } catch {
+      await markDead(row.id, {
+        errorClass: "permanent",
+        lastError: "integration_credential_invalid",
+      });
+      return { status: "dead", errorClass: "permanent" };
+    }
+  }
+  if (!client) {
+    await markDead(row.id, {
+      errorClass: "permanent",
+      lastError: "integration_not_connected",
+    });
+    return { status: "dead", errorClass: "permanent" };
+  }
   const result = await attempt(client, row);
   if (result.ok) {
     await markDelivered(row.id);
@@ -361,13 +398,16 @@ async function deliverOne(client: SlackClient, row: ClaimedRow): Promise<SlackDe
 }
 
 /** One delivery pass: claim due rows and deliver each. Returns tallies. */
-export async function processDue(client: SlackClient): Promise<ProcessResult> {
+export async function processDue(
+  client: SlackClient | null,
+  resolveTeamClient?: SlackTeamClientResolver,
+): Promise<ProcessResult> {
   const rows = await claimDue();
   let delivered = 0;
   let retried = 0;
   let dead = 0;
   for (const row of rows) {
-    const outcome = await deliverOne(client, row);
+    const outcome = await deliverOne(client, row, resolveTeamClient);
     if (outcome.status === "delivered") delivered++;
     else if (outcome.status === "retry") retried++;
     else dead++;
@@ -384,9 +424,24 @@ let inFlight = false;
 /** A single guarded pass (no overlapping passes). */
 async function pass(): Promise<void> {
   if (inFlight || !relayConfig) return;
+  const config = relayConfig;
   inFlight = true;
   try {
-    await processDue(resolveSlackClient(relayConfig));
+    const legacyClient = config.legacyBotToken
+      ? resolveSlackClient({ apiUrl: config.apiUrl, botToken: config.legacyBotToken })
+      : null;
+    await processDue(legacyClient, async (teamId) => {
+      const workspace = await findSlackWorkspace(teamId);
+      if (!workspace) return null;
+      const botToken = await resolveSlackBotTokenForWorkspace({
+        orgId: workspace.orgId,
+        teamId,
+        config,
+      });
+      return botToken
+        ? resolveSlackClient({ apiUrl: config.apiUrl, botToken })
+        : null;
+    });
   } catch (err) {
     console.error("[slack-outbox] delivery pass failed:", (err as Error).message);
   } finally {

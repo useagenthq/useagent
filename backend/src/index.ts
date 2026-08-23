@@ -439,8 +439,10 @@ if (sandboxProviderKind() === "cube" && cubeRuntimePoolTarget && cubeRuntimeTemp
   );
 }
 
-// Slack adapter: mounted only when SLACK_BOT_TOKEN + SLACK_SIGNING_SECRET are
-// set (env-gated). Handles the Events API at POST /api/slack/events, and starts
+// Slack adapter: mounted when the shared App signing secret is configured.
+// Workspace bot tokens resolve from encrypted OAuth connections; a global bot
+// token is a named single-workspace legacy fallback only. Handles the Events
+// API at POST /api/slack/events, and starts
 // the durable outbox relay (boot recovery of undelivered replies + retry loop).
 // Workspace -> org/user bindings from SLACK_WORKSPACE_BINDINGS are upserted here
 // (ingress fails closed for workspaces with no mapping).

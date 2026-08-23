@@ -51,7 +51,7 @@ describe("engine model catalog", () => {
       )?.label,
     ).toBe("DeepSeek V4 Flash · Wafer Fast");
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
-      "google/gemini-2.5-flash",
+      "google/gemini-3.7-flash",
     );
   });
 

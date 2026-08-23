@@ -2,6 +2,7 @@ import { and, asc, eq, isNull, or } from "drizzle-orm";
 import { db } from "../db/client";
 import {
   integrationConnections,
+  slackWorkspaces,
   type IntegrationConnectionAuthMethod,
   type IntegrationConnectionStatus,
 } from "../db/schema";
@@ -14,6 +15,7 @@ import {
   type ConnectionProjection,
   type IntegrationConnectionScope,
 } from "./types";
+import { deleteIntegrationCredential } from "./credential-repo";
 
 export type IntegrationConnectionRecord = typeof integrationConnections.$inferSelect;
 
@@ -125,12 +127,20 @@ export async function listVisibleIntegrationConnections(scope: {
   readonly orgId: string;
   readonly userId: string;
 }): Promise<ConnectionProjection[]> {
-  const rows = await db
+  const rows = await listVisibleIntegrationConnectionRecords(scope);
+  return rows.map(projectIntegrationConnection);
+}
+
+/** Trusted backend list. Raw backend references never cross HTTP projections. */
+export async function listVisibleIntegrationConnectionRecords(scope: {
+  readonly orgId: string;
+  readonly userId: string;
+}): Promise<IntegrationConnectionRecord[]> {
+  return db
     .select()
     .from(integrationConnections)
     .where(visiblePredicate(scope.orgId, scope.userId))
     .orderBy(asc(integrationConnections.provider), asc(integrationConnections.createdAt));
-  return rows.map(projectIntegrationConnection);
 }
 
 export async function findVisibleIntegrationConnection(scope: {
@@ -170,6 +180,32 @@ export async function findVisibleIntegrationConnectionRecord(scope: {
   return row ?? null;
 }
 
+export async function findConnectedOrgIntegrationRecord(input: {
+  readonly orgId: string;
+  readonly provider: string;
+  readonly runtimeBindingId: string;
+  readonly externalConnectionId?: string;
+}): Promise<IntegrationConnectionRecord | null> {
+  const [row] = await db
+    .select()
+    .from(integrationConnections)
+    .where(
+      and(
+        eq(integrationConnections.orgId, input.orgId),
+        eq(integrationConnections.ownerType, "org"),
+        isNull(integrationConnections.ownerUserId),
+        eq(integrationConnections.provider, input.provider),
+        eq(integrationConnections.runtimeBindingId, input.runtimeBindingId),
+        input.externalConnectionId
+          ? eq(integrationConnections.externalConnectionId, input.externalConnectionId)
+          : undefined,
+        eq(integrationConnections.status, "connected"),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 export async function updateOwnedIntegrationConnection(
   input: UpdateIntegrationConnectionInput,
 ): Promise<ConnectionProjection | null> {
@@ -193,4 +229,49 @@ export async function updateOwnedIntegrationConnection(
     )
     .returning();
   return row ? projectIntegrationConnection(row) : null;
+}
+
+export async function revokeOwnedIntegrationConnection(input: {
+  readonly orgId: string;
+  readonly owner: ConnectionOwner;
+  readonly id: string;
+  readonly account: unknown;
+  readonly scopes: unknown;
+  readonly externalConnectionName?: string | null;
+  readonly lastVerifiedAt?: Date | null;
+}): Promise<ConnectionProjection | null> {
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    const [row] = await tx
+      .update(integrationConnections)
+      .set({
+        status: "revoked",
+        accountMetadata: readSafeIntegrationAccount(input.account),
+        scopes: readSafeIntegrationScopes(input.scopes),
+        externalConnectionName: input.externalConnectionName?.trim() || null,
+        lastVerifiedAt: input.lastVerifiedAt ?? null,
+        revokedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          ownerPredicate(input.orgId, input.owner),
+          eq(integrationConnections.id, input.id),
+        ),
+      )
+      .returning();
+    if (!row) return null;
+    await deleteIntegrationCredential(row.id, tx);
+    if (row.provider === "slack") {
+      await tx
+        .delete(slackWorkspaces)
+        .where(
+          and(
+            eq(slackWorkspaces.teamId, row.externalConnectionId),
+            eq(slackWorkspaces.orgId, row.orgId),
+          ),
+        );
+    }
+    return projectIntegrationConnection(row);
+  });
 }

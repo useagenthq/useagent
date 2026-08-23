@@ -95,6 +95,7 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
       if (artifact.sizeBytes > SHARE_MAX_BYTES) continue;
       const created = await enqueueUploadFileTx(tx, {
         idempotencyKey: `slack-artifact:${slack.teamId}:${run.id}:${artifact.id}`,
+        teamId: slack.teamId,
         channel: slack.channel,
         threadTs: slack.threadTs,
         filename: artifact.name,
@@ -206,7 +207,7 @@ export async function finalizeRun(
     if (automation) {
       const target = parseSlackAutomationTarget(automation.delivery);
       const config = slackConfig();
-      if (target && config && slackChannelAllowed(target.channel, config)) {
+      if (target && config?.legacyBotToken && slackChannelAllowed(target.channel, config)) {
         const created = await enqueuePostMessageTx(tx, {
           idempotencyKey: `automation-delivery:${runId}`,
           channel: target.channel,

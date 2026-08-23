@@ -327,9 +327,9 @@ export function githubTenantOrgId(): string | null {
 
 /**
  * Slack adapter config for the optional Events-API integration (src/slack/*).
- * Gated exactly like memoryConfig(): read per call, and BOTH `SLACK_BOT_TOKEN`
- * and `SLACK_SIGNING_SECRET` must be set or the whole adapter is a no-op —
- * `slackConfig()` returns null, the events route 404s, nothing touches Slack.
+ * Gated by `SLACK_SIGNING_SECRET`; workspace OAuth tokens are resolved from the
+ * encrypted integration connection store. `SLACK_BOT_TOKEN` is accepted only
+ * with `SLACK_LEGACY_TEAM_ID` as an explicit single-workspace fallback.
  *
  * `SLACK_DEFAULT_ENGINE` (default "opencode") picks the engine a Slack-started
  * run uses; `SLACK_DEFAULT_MODEL` (default "claude-opus-5") its model.
@@ -340,11 +340,13 @@ export function githubTenantOrgId(): string | null {
  * unset/empty = no restriction.
  */
 export interface SlackConfig {
-  botToken: string;
   signingSecret: string;
   apiUrl: string;
   defaultEngine: EngineId;
   model: string;
+  /** Single-workspace compatibility only. OAuth connections resolve their own token. */
+  legacyBotToken: string | null;
+  legacyTeamId: string | null;
   /** Channel ids the adapter may ingest from (empty = all channels). Set via
    *  SLACK_CHANNEL_ALLOWLIST (comma-separated) to scope a fresh workspace
    *  connection to designated test channels. */
@@ -354,9 +356,15 @@ export interface SlackConfig {
 const SLACK_ENGINES: readonly EngineId[] = ENGINE_IDS;
 
 export function slackConfig(): SlackConfig | null {
-  const botToken = process.env.SLACK_BOT_TOKEN?.trim();
   const signingSecret = process.env.SLACK_SIGNING_SECRET?.trim();
-  if (!botToken || !signingSecret) return null;
+  if (!signingSecret) return null;
+  const legacyBotToken = process.env.SLACK_BOT_TOKEN?.trim() || null;
+  const legacyTeamId = process.env.SLACK_LEGACY_TEAM_ID?.trim() || null;
+  if ((legacyBotToken && !legacyTeamId) || (!legacyBotToken && legacyTeamId)) {
+    console.warn(
+      "[slack] legacy fallback requires both SLACK_BOT_TOKEN and SLACK_LEGACY_TEAM_ID",
+    );
+  }
 
   const rawEngine = process.env.SLACK_DEFAULT_ENGINE?.trim();
   const defaultEngine =
@@ -375,11 +383,12 @@ export function slackConfig(): SlackConfig | null {
   );
 
   return {
-    botToken,
     signingSecret,
     apiUrl,
     defaultEngine,
     model: process.env.SLACK_DEFAULT_MODEL?.trim() || "claude-opus-5",
+    legacyBotToken: legacyBotToken && legacyTeamId ? legacyBotToken : null,
+    legacyTeamId: legacyBotToken && legacyTeamId ? legacyTeamId : null,
     channelAllowlist,
   };
 }
@@ -387,6 +396,10 @@ export function slackConfig(): SlackConfig | null {
 /** True when the Slack adapter is fully configured (both secrets present). */
 export function slackEnabled(): boolean {
   return slackConfig() !== null;
+}
+
+export function legacySlackEnabled(): boolean {
+  return Boolean(slackConfig()?.legacyBotToken);
 }
 
 /**

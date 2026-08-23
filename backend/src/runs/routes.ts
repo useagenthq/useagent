@@ -684,11 +684,11 @@ runsRoutes.delete("/:id/sandbox", async (c) => {
 // run in every thread.
 runsRoutes.get("/", async (c) => {
   const all = c.req.query("all") === "1";
+  const requestedLimit = Number.parseInt(c.req.query("limit") ?? "100", 10);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.min(c.req.query("view") === "summary" ? 1_000 : 100, Math.max(1, requestedLimit))
+    : 100;
   if (c.req.query("view") === "summary") {
-    const requestedLimit = Number.parseInt(c.req.query("limit") ?? "100", 10);
-    const limit = Number.isFinite(requestedLimit)
-      ? Math.min(100, Math.max(1, requestedLimit))
-      : 100;
     return c.json({
       runs: await listRunSummaries(c.get("orgId"), {
         all,
@@ -697,7 +697,7 @@ runsRoutes.get("/", async (c) => {
       }),
     });
   }
-  return c.json({ runs: await listRunsWithSteps(c.get("orgId"), { all }) });
+  return c.json({ runs: await listRunsWithSteps(c.get("orgId"), { all, limit }) });
 });
 
 // Single run + steps (scoped to the active org — cross-org id → 404).

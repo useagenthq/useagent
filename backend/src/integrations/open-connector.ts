@@ -110,6 +110,7 @@ export function createOpenConnectorBackend(
   return {
     kind: "delegated",
     runtimeBindingId: `openconnector:${config.origin}`,
+    disconnectSupported: true,
     supports: (provider) =>
       PROVIDER_PATTERN.test(provider) && provider !== "github" && provider !== "slack",
     async listConnectableProviders() {

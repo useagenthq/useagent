@@ -9,6 +9,7 @@
         "@anthropic-ai/sdk": "^0.115.0",
         "@daytona/sdk": "^0.203.0",
         "@modelcontextprotocol/sdk": "^1.30.0",
+        "@oomol-lab/connector": "1.1.0",
         "@skynet/agent-client": "file:../packages/agent-client",
         "@skynet/agent-harness": "file:../packages/agent-harness",
         "@skynet/artifact-formats": "file:../packages/artifact-formats",
@@ -210,6 +211,8 @@
     "@nodelib/fs.stat": ["@nodelib/fs.stat@2.0.5", "", {}, "sha512-RkhPPp2zrqDAQA/2jNhnztcPAlv64XdhIp7a7454A5ovI7Bukxgt7MX7udwAu3zg1DcpPU0rz3VV1SeaqvY4+A=="],
 
     "@nodelib/fs.walk": ["@nodelib/fs.walk@1.2.8", "", { "dependencies": { "@nodelib/fs.scandir": "2.1.5", "fastq": "^1.6.0" } }, "sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg=="],
+
+    "@oomol-lab/connector": ["@oomol-lab/connector@1.1.0", "", {}, "sha512-frMAmZqOla6tEkl57ogTVehcXg3XC7r89j34UCJ58/YOZ5651sj0PicxhMDrtUjS0TarT9SwcjeIN+2I52UHHQ=="],
 
     "@opentelemetry/api": ["@opentelemetry/api@1.9.1", "", {}, "sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q=="],
 
@@ -932,6 +935,12 @@
     "@opentelemetry/sdk-trace-base/@opentelemetry/sdk-trace": ["@opentelemetry/sdk-trace@2.10.0", "", { "dependencies": { "@opentelemetry/core": "2.10.0", "@opentelemetry/resources": "2.10.0", "@opentelemetry/semantic-conventions": "^1.29.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.3.0 <1.10.0" } }, "sha512-MfQGq3GRmTh5fM/y+OjaO0vj6+luCB1XO2gfXCalKCfgKw0eHL++sm75DNweC6ohlp+aFvACqeE0fYayqdRaoQ=="],
 
     "@opentelemetry/sdk-trace-node/@opentelemetry/sdk-trace-base": ["@opentelemetry/sdk-trace-base@2.9.0", "", { "dependencies": { "@opentelemetry/core": "2.9.0", "@opentelemetry/resources": "2.9.0", "@opentelemetry/sdk-trace": "2.9.0", "@opentelemetry/semantic-conventions": "^1.29.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.3.0 <1.10.0" } }, "sha512-cp9zmTl62R8PJrpvFcmc8N2JQU/xfa0S+61q511Nji+QxCfZ8Ifvg7H27G8cANe4crg4RTrWsVvanHiXjSp6ag=="],
+
+    "@skynet/agent-client/@skynet/agent-harness": ["@skynet/agent-harness@file:../packages/agent-harness", {}],
+
+    "@skynet/agent-client/@skynet/artifact-workspace": ["@skynet/artifact-workspace@file:../packages/artifact-workspace", { "devDependencies": { "@types/bun": "^1.3.14" } }],
+
+    "@skynet/artifact-formats/@skynet/artifact-workspace": ["@skynet/artifact-workspace@file:../packages/artifact-workspace", { "devDependencies": { "@types/bun": "^1.3.14" } }],
 
     "accepts/mime-types": ["mime-types@3.0.2", "", { "dependencies": { "mime-db": "^1.54.0" } }, "sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A=="],
 

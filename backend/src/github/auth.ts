@@ -3,12 +3,20 @@ import {
   githubAppConfig,
   githubConfig,
   githubTenantOrgId,
+  type GithubAppConfig,
   type GithubAuthSource,
 } from "../env";
 import {
   getInstallationToken,
+  getInstallationTokenForId,
   getRepositoryInstallationToken,
+  getRepositoryInstallationTokenForId,
 } from "./app-auth";
+import { findConnectedOrgIntegrationRecord } from "../integrations/connection-repo";
+import {
+  GITHUB_NATIVE_RUNTIME_BINDING_ID,
+  githubNativeConnectionConfigFromEnv,
+} from "../integrations/github-native-backend";
 
 // ---------------------------------------------------------------------------
 // One place that turns configured credentials into concrete bearer tokens.
@@ -23,6 +31,36 @@ export interface GithubAuth {
   /** org/user whose repos to list (may be null in the token-only PAT case). */
   owner: string | null;
   source: GithubAuthSource;
+}
+
+async function resolveTenantGithubAuth(orgId: string): Promise<{
+  readonly auth: GithubAuth;
+  readonly installationId: number;
+  readonly app: GithubAppConfig;
+} | null> {
+  const connection = githubNativeConnectionConfigFromEnv();
+  if (!connection) return null;
+  const record = await findConnectedOrgIntegrationRecord({
+    orgId,
+    provider: "github",
+    runtimeBindingId: GITHUB_NATIVE_RUNTIME_BINDING_ID,
+  });
+  if (!record) return null;
+  const installationId = Number(record.externalConnectionId);
+  if (!Number.isSafeInteger(installationId) || installationId <= 0) {
+    throw new Error("stored GitHub installation id is invalid");
+  }
+  const app = { appId: connection.appId, privateKey: connection.privateKey, org: null };
+  const { token } = await getInstallationTokenForId(installationId, app);
+  return {
+    auth: {
+      token,
+      owner: record.externalConnectionName,
+      source: "app",
+    },
+    installationId,
+    app,
+  };
 }
 
 /**
@@ -50,7 +88,23 @@ export async function resolveGithubAuth(): Promise<GithubAuth> {
  * retained production sandboxes also require App-scoped repository access.
  * This keeps the offered catalog identical to what a run can actually open.
  */
-export async function resolveGithubCatalogAuth(): Promise<GithubAuth> {
+export async function resolveGithubCatalogAuth(orgId?: string): Promise<GithubAuth> {
+  if (orgId) {
+    const tenant = await resolveTenantGithubAuth(orgId);
+    if (tenant) return tenant.auth;
+    if (githubConfig().token || githubAppConfig()) {
+      const legacyTenantOrgId = githubTenantOrgId();
+      if (!legacyTenantOrgId) {
+        throw new Error(
+          "GitHub is connected but not assigned to a product organization; set " +
+            "GITHUB_TENANT_ORG_ID to the owning organization id and retry",
+        );
+      }
+      if (legacyTenantOrgId !== orgId) {
+        throw new Error("GitHub repository access is not available to this organization");
+      }
+    }
+  }
   const app = githubAppConfig();
   if (!app) return resolveGithubAuth();
 
@@ -78,6 +132,18 @@ export async function resolveGithubSandboxToken(
   repository: string,
   orgId?: string | null,
 ): Promise<string | null> {
+  if (orgId) {
+    const tenant = await resolveTenantGithubAuth(orgId);
+    if (tenant) {
+      return (
+        await getRepositoryInstallationTokenForId(
+          repository,
+          tenant.installationId,
+          tenant.app,
+        )
+      ).token;
+    }
+  }
   const app = githubAppConfig();
   const { token: pat } = githubConfig();
   const production = process.env.NODE_ENV === "production" || !devModeEnabled();
