@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter, Inter_Tight, JetBrains_Mono } from 'next/font/google';
 
 import { cx } from '@/utils/cx';
@@ -29,6 +29,15 @@ const fontDisplay = Inter_Tight({
 export const metadata: Metadata = {
   title: 'useAgent - one interface for every coding agent',
   description: 'Run coding agents in isolated workspaces with durable context, automations, and audit trails.',
+};
+
+// `viewportFit: 'cover'` makes iOS report real safe-area insets, so the pinned
+// session composer's `pb-[max(1rem,env(safe-area-inset-bottom))]` can clear the
+// home indicator (env() resolves to 0 without it).
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({
