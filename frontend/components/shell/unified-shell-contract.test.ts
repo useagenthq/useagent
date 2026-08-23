@@ -175,10 +175,15 @@ describe("unified shell contract", () => {
   test("keeps context actions expandable and the primary action inline", () => {
     const composer = readFromFrontend("app/agent/new/new-task-composer.tsx");
     const newThreadPage = readFromFrontend("app/agent/new/page.tsx");
+    // The add-context rows (upload, Create, GitHub) live in a shared module
+    // consumed by BOTH the new-thread shelf and the reply composer popover.
+    const addMenu = readFromFrontend("components/chat/composer-add-menu.tsx");
 
     expect(composer).toContain('aria-label="Add context"');
-    expect(composer).toContain("Add photos &amp; files");
-    expect(composer).toContain("GitHub");
+    expect(addMenu).toContain("Add photos &amp; files");
+    expect(addMenu).toContain("GitHub");
+    expect(composer).toContain("<AddFilesRow");
+    expect(composer).toContain("<GithubConnectedRow");
     expect(composer).toContain("triggerClassName={ADD_MENU_ROW}");
     expect(composer).toContain("<PromptInput");
     expect(composer).toContain("<PromptInputTextarea");
@@ -190,6 +195,19 @@ describe("unified shell contract", () => {
     expect(newThreadPage).toContain("max-w-3xl");
     expect(composer).toContain('e.id !== "chat"');
     expect(composer).not.toContain("<AsteriskMark");
+  });
+
+  test("shares the same add-context grammar in the reply composer", () => {
+    const replyComposer = readFromFrontend("components/chat/composer.tsx");
+    // The reply "+" opens the SHARED add-menu rows (real upload + Create seeds)
+    // in a popover above the input, instead of jumping straight to the file
+    // dialog. Repos/GitHub are omitted - a reply reuses the thread's sandbox.
+    expect(replyComposer).toContain('from "@/components/chat/composer-add-menu"');
+    expect(replyComposer).toContain("<AddFilesRow");
+    expect(replyComposer).toContain("<CreateRows");
+    expect(replyComposer).toContain('aria-label="Add context"');
+    expect(replyComposer).toContain("setAddMenuOpen");
+    expect(replyComposer).not.toContain('aria-label="Add files"');
   });
 
   test("folds the project rail to a useful compact rail on a real working transition", () => {
