@@ -134,6 +134,20 @@ export function translateOpenCode(
     }
   }
 
+  // Resolve one stable child identity for every task call before translating
+  // any lifecycle revision. OpenCode may reveal the real child session only on
+  // completion; without this pre-scan the running frame uses callId while the
+  // completion uses ses_*, splitting one child into two cards.
+  const taskChildIdByCallId = new Map<string, string>();
+  for (const f of orderedFrames) {
+    const p = rec(f.payload);
+    const callId = f.native.callId;
+    if (!callId || !f.eventType.startsWith("part.tool") || p?.tool !== "task") continue;
+    const resolved = taskChildId(rec(p.state), null);
+    if (resolved) taskChildIdByCallId.set(callId, resolved);
+    else if (!taskChildIdByCallId.has(callId)) taskChildIdByCallId.set(callId, callId);
+  }
+
   // Pre-scanned REAL child metadata, keyed by provider child id: the child's own
   // session-lifecycle frame carries its title; the parent task-tool frames carry
   // the child's session id, agent role (`input.subagent_type`) and model
@@ -158,7 +172,10 @@ export function translateOpenCode(
     }
     if (f.eventType.startsWith("part.tool") && p?.tool === "task") {
       const state = rec(p.state);
-      const childId = taskChildId(state, f.native.callId);
+      const callId = f.native.callId;
+      const childId = callId
+        ? taskChildIdByCallId.get(callId) ?? taskChildId(state, callId)
+        : taskChildId(state, null);
       if (!childId) continue;
       const seed = seedOf(childId);
       const title = firstString(p.title, state?.title);
@@ -618,7 +635,7 @@ export function translateOpenCode(
       } else if (isTask && callId) {
         const state = rec(p?.state);
         const output = str(state?.output) ?? "";
-        const childId = taskChildId(state, callId) ?? callId;
+        const childId = taskChildIdByCallId.get(callId) ?? callId;
         // Frame-authoritative lifecycle status (the task tool's own state) wins;
         // the merged snapshot adds the accumulated child-session activity plus
         // the pre-scanned role/model, so the lifecycle events carry REAL state.

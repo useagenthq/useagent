@@ -151,6 +151,67 @@ describe("child derivation equivalence (synthetic task frames)", () => {
     expect(c1?.result).toBe("the answer");
     expect(done.find((e) => e.status === "error")).toBeTruthy();
   });
+
+  test("uses the eventual child session id for every revision of one task call", () => {
+    const frames: OpenCodeFrame[] = [
+      {
+        eventId: "task-running",
+        seq: 1,
+        provider: "opencode",
+        eventType: "part.tool.updated",
+        native: {
+          sessionId: "ses_parent",
+          parentSessionId: null,
+          messageId: "m1",
+          partId: "part-task",
+          callId: "call-task",
+        },
+        payload: {
+          type: "tool",
+          tool: "task",
+          state: { status: "running", input: { prompt: "Inspect the release" } },
+        },
+      },
+      {
+        eventId: "task-completed",
+        seq: 2,
+        provider: "opencode",
+        eventType: "part.tool.completed",
+        native: {
+          sessionId: "ses_parent",
+          parentSessionId: null,
+          messageId: "m1",
+          partId: "part-task",
+          callId: "call-task",
+        },
+        payload: {
+          type: "tool",
+          tool: "task",
+          state: {
+            status: "completed",
+            output: '<task id="ses_real"><task_result>done</task_result></task>',
+          },
+        },
+      },
+    ];
+
+    const childEvents = translateOpenCode(frames, CTX).events.filter(
+      (event): event is Extract<
+        CanonicalAgentEvent,
+        { kind: "child.started" | "child.updated" | "child.completed" }
+      > =>
+        event.kind === "child.started" ||
+        event.kind === "child.updated" ||
+        event.kind === "child.completed",
+    );
+    expect(childEvents.map((event) => event.childId)).toEqual([
+      "ses_real",
+      "ses_real",
+      "ses_real",
+    ]);
+    expect(childEvents.filter((event) => event.kind === "child.started")).toHaveLength(1);
+    expect(childEvents.filter((event) => event.kind === "child.completed")).toHaveLength(1);
+  });
 });
 
 // The opencode frames genuinely carry child state: session lifecycle title, task
