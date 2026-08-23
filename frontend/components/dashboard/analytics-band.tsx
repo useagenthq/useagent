@@ -12,9 +12,8 @@ const count = (n: number) => String(Math.round(n));
  * cards are interactive and format functions cannot cross the RSC boundary.
  */
 export function AnalyticsBand({ daily, combo }: { daily: DayBucket[]; combo: WeekComboPoint[] }) {
-  const dayLabel = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' });
   const points = daily.map((d) => ({
-    label: d.key ? dayLabel.format(new Date(d.key)) : d.label,
+    label: d.label,
     completed: d.completed,
     failed: d.failed,
   }));
@@ -48,6 +47,18 @@ export function AnalyticsBand({ daily, combo }: { daily: DayBucket[]; combo: Wee
         line={null}
         range='Last 8 weeks'
       />
+      <div className='sr-only'>
+        <table>
+          <caption>Runs settled by UTC day</caption>
+          <thead><tr><th>Day</th><th>Completed</th><th>Failed</th></tr></thead>
+          <tbody>{daily.map((row) => <tr key={row.key}><th>{row.label}</th><td>{row.completed}</td><td>{row.failed}</td></tr>)}</tbody>
+        </table>
+        <table>
+          <caption>Runs created by UTC week</caption>
+          <thead><tr><th>Week</th><th>Runs</th></tr></thead>
+          <tbody>{combo.map((row) => <tr key={row.label}><th>{row.label}</th><td>{row.runs}</td></tr>)}</tbody>
+        </table>
+      </div>
     </div>
   );
 }

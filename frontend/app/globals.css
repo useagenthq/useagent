@@ -3378,6 +3378,7 @@
 @media (prefers-reduced-motion: reduce) {
   .aurora-blob {
     animation: none;
+    will-change: auto;
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { recentRuns, type DashRun } from "./dashboard-data";
+import { extractDashboardSummary, recentRuns, type DashRun } from "./dashboard-data";
 
 function run(id: string, createdAt: string): DashRun {
   return {
@@ -26,5 +26,25 @@ describe("recent dashboard runs", () => {
         2,
       ).map((item) => item.id),
     ).toEqual(["new", "middle"]);
+  });
+
+  test("accepts authoritative UTC aggregates and rejects unavailable data", () => {
+    expect(extractDashboardSummary(null)).toBeNull();
+    expect(
+      extractDashboardSummary({
+        stats: {
+          total: 1_005,
+          running: 1,
+          queued: 2,
+          completed: 1_000,
+          failed: 2,
+          completed_today: 3,
+        },
+        counts: { skills: 1_734, knowledge: 120 },
+        daily: [{ key: "2026-08-24", label: "Aug 24", total: 3, completed: 2, failed: 1 }],
+        weekly: [{ key: "2026-08-24", label: "Aug 24", runs: 5 }],
+        timezone: "UTC",
+      })?.stats.total,
+    ).toBe(1_005);
   });
 });
