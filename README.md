@@ -1,6 +1,49 @@
 # useAgent
 
-useAgent is a multi-package repository for a multi-harness coding-agent control plane. The repo has one product UI, one backend control plane, and shared TypeScript packages that define the cross-package contracts.
+**The open, self-hostable control plane for coding agents.** Run Codex, Claude Code, and OpenCode as durable, threaded sessions in isolated Linux sandboxes - one event contract, one UI, your infrastructure.
+
+useAgent is a multi-package repository with one product UI, one backend control plane, and shared TypeScript packages that define the cross-package contracts. Postgres is the source of truth: every run is an event-sourced timeline that survives restarts, renders through one session grammar regardless of which engine produced it, and stays inspectable after the fact.
+
+## Features
+
+- **Choice of agent.** Codex (API key or ChatGPT subscription), Claude Code, and OpenCode run behind one provider-neutral canonical event contract - switch engines per run, render through one session UI. Native frames are retained alongside canonical events for fidelity and debugging.
+- **Durable runs.** Event-sourced on Postgres; runs survive backend restarts. Recovery re-probes in-flight sessions, streams recovered events live with a visible heartbeat, and adopts the finished result instead of failing work that actually completed.
+- **Real sandboxes.** Each thread gets an isolated Linux workstation: terminal, repositories, browser automation, and a visible XFCE desktop over noVNC with recording to real MP4 artifacts. Warm pools cut cold-start work; Daytona and Cube sit behind one provider-neutral sandbox contract.
+- **A trusted gateway, not credentials in the sandbox.** The sandbox holds only short-lived signed capability tokens. Knowledge search, memory, skills, GitHub reads, web search, desktop control, and artifact publishing are typed MCP tools served by the backend; every gated refusal names its remedy so an agent can self-correct instead of fabricate.
+- **Human-in-the-loop approvals.** Destructive tools pause on an approval card in the session (or Slack) and resume with a one-shot, argument-bound capability that can never be self-issued from inside a run.
+- **Skills and playbooks from GitHub.** Import `SKILL.md` files from your repositories as versioned skills pinned to a commit, auto-resync hourly, relevance-ranked into every turn so the right procedure surfaces per prompt.
+- **Knowledge, wiki, and memory.** Org-scoped retrieval with inline citations, generated wikis, and optional scoped team memory. A human-reviewed learning lane proposes knowledge drafts from high-value runs and skill revisions from accepted drafts - nothing publishes without a person.
+- **Slack as a first-class channel.** Mention-to-run, threaded replies with multi-turn continuity, inbound attachments, allowlist-validated repo binding, and answers, artifacts, and approval cards back in the thread - through the same durable command lane as the web UI.
+- **Native artifacts.** DOCX, XLSX, PPTX, and PDF workpieces with revisioned editing surfaces and native renderers; images and videos remain previewable media artifacts.
+- **Guarded releases.** A fail-closed release gate runs real engine journeys (repo clone, computer use, desktop recording, artifact publish, subagent fan-out, thread resume) against a candidate and rolls back source, env, Caddy, and services on any failure; a separate rollback-safe fast lane handles ordinary product deploys.
+
+## Quick Start
+
+Requires [bun](https://bun.sh) and Postgres.
+
+```bash
+(cd backend && bun install)
+(cd frontend && bun install)
+
+bun run dev:backend    # API + orchestration on :3201
+bun run dev:frontend   # UI on :3400 (proxies /api/* to the backend)
+```
+
+`bun run typecheck` covers the frontend, backend, and every shared package. `bun run deploy:hosted` is the normal rollback-safe deployment lane; `bun run release:hosted` runs the exhaustive hosted certification gate in `deploy/hetzner/`.
+
+## Run Your Own Instance
+
+[`infra/terraform/hetzner/`](infra/terraform/hetzner/README.md) provisions a complete host (server, firewall, PostgreSQL 16 + pgvector, bun, Node, Docker, Caddy) with one `terraform apply`, and `deploy-app.sh` brings up the **core stack** (backend + frontend + Caddy) with a single command:
+
+```bash
+export HCLOUD_TOKEN=...            # never committed
+cd infra/terraform/hetzner
+terraform init && terraform apply  # provision the host + dependencies
+SERVER_IP=$(terraform output -raw server_ip) PG_PASSWORD=... OPENROUTER_API_KEY=... \
+  ./deploy-app.sh /path/to/this/repo
+```
+
+That yields a signed-in web UI and model-backed chat. Full engine runs, team memory, and the desktop need the additional secrets and a baked sandbox template documented in the [Terraform README](infra/terraform/hetzner/README.md#scope-core-vs-full). The token is read from `HCLOUD_TOKEN` only; state and tfvars are gitignored.
 
 ## Repo Map
 
@@ -9,7 +52,7 @@ useAgent is a multi-package repository for a multi-harness coding-agent control 
 | `frontend/` | Next.js UI on the BoardUI design system (vendored base primitives, application blocks, and semantic tokens). Chat, agent sessions, skills, playbooks, wiki, artifacts, secrets, learnings review, automations, and settings. |
 | `backend/` | Hono + Postgres control plane. Auth, org scoping, runs, sandboxes, engines, knowledge, memory, skills, automations, artifacts, uploads, and connectors. |
 | `docs-site/` | The product documentation site (Blume/Astro): getting started, concepts, architecture with SVG diagrams, product, platform, API, operations, and channels. `bun run dev` / `bun run build`. |
-| `deploy/hetzner/` | Hosted release tooling: the guarded release gate, provider-connection bootstrap, and the atomic frontend release. |
+| `deploy/hetzner/` | Hosted release tooling: the guarded release gate, the fast rollback-safe deploy lane, provider-connection bootstrap, and the atomic frontend release. |
 | `packages/agent-client/` | Runtime-neutral client for thread events, SSE reconnect, reducers, selectors, and typed API helpers. |
 | `packages/agent-harness/` | Provider-neutral canonical event and control contract for engine adapters. |
 | `packages/artifact-formats/` | Native DOCX, XLSX, PPTX, and PDF artifact renderers plus bounded Office text extraction. |
@@ -78,56 +121,6 @@ useAgent is a multi-package repository for a multi-harness coding-agent control 
 | Agent harness | Shared provider-neutral event, capability, session, and `ProviderDriver` lifecycle types. The production worker resolves this registry before each turn: OpenCode and selected runtime-path routes use native drivers, while legacy ACP Claude/Codex execution is declared as an EngineAdapter compatibility path. | `packages/agent-harness/` and backend engine registry |
 | Conformance suite | Deterministic tests for the public agent-client and agent-harness contracts, reducer behavior, replay, and capability gating. Sandbox adapters share a provider-neutral interface but retain provider-specific tests; live provider parity is a separate environment-gated proof. | `packages/conformance/` and backend tests |
 
-## Quick Start
-
-Install in the app packages that have their own lockfiles, then run the two dev servers:
-
-```bash
-(cd frontend && bun install)
-(cd backend && bun install)
-
-bun run dev:backend
-bun run dev:frontend
-```
-
-The common root scripts are:
-
-```bash
-bun run typecheck
-bun run deploy:hosted
-bun run release:hosted
-```
-
-`bun run typecheck` covers the frontend, backend, and shared packages. `bun run deploy:hosted` is the normal rollback-safe deployment lane; `bun run release:hosted` runs the exhaustive hosted certification gate.
-When promoting a newly built Cube runtime, set
-`RELEASE_T3_CUBE_TEMPLATE_ID=tpl-...`; the gate validates the id, activates it
-only inside the rollback-bound candidate environment, and restores the exact
-previous environment if any preflight or parity journey fails.
-The same gate installs the repository's Caddyfile only after backing up the live
-configuration. It validates and reloads the candidate, and restores the prior
-file on failure. The only direct backend WebSocket ingress is the one-use Codex
-relay capability path; other product traffic remains behind the frontend.
-
-## Run Your Own Instance
-
-To stand up useAgent on your own server, [`infra/terraform/hetzner/`](infra/terraform/hetzner/README.md)
-provisions a Hetzner Cloud host (server, firewall, PostgreSQL 16 + pgvector, bun,
-Node, Docker, Caddy) with one `terraform apply`, and `deploy-app.sh` brings up the
-**core stack** (backend + frontend + Caddy) with a single command:
-
-```bash
-export HCLOUD_TOKEN=...            # never committed
-cd infra/terraform/hetzner
-terraform init && terraform apply  # provision the host + dependencies
-SERVER_IP=$(terraform output -raw server_ip) PG_PASSWORD=... OPENROUTER_API_KEY=... \
-  ./deploy-app.sh /path/to/this/repo
-```
-
-That yields a signed-in web UI and model-backed chat. Full engine runs, team
-memory, and the desktop need the additional secrets and a baked sandbox template
-documented in the [Terraform README](infra/terraform/hetzner/README.md#scope-core-vs-full).
-The token is read from `HCLOUD_TOKEN` only; state and tfvars are gitignored.
-
 ## Shared Packages
 
 | Package | Docs |
@@ -138,29 +131,18 @@ The token is read from `HCLOUD_TOKEN` only; state and tfvars are gitignored.
 | `@useagent/artifact-workspace` | Workpiece capability matrix shared by backend and frontend. |
 | Artifact wire contract | [`packages/agent-client/ARTIFACTS.md`](packages/agent-client/ARTIFACTS.md) |
 
-## Operational Docs
-
-| Area | Docs |
-|---|---|
-| Product docs site (concepts, architecture + SVG diagrams, API, operations) | [`docs-site/`](docs-site/README.md) |
-| Interactive request-flow architecture | [`docs/architecture/request-flow.html`](docs/architecture/request-flow.html) |
-| Backend control plane | [`backend/README.md`](backend/README.md) |
-| Frontend UI | [`frontend/README.md`](frontend/README.md) |
-| Optional team memory | [`memory/README.md`](memory/README.md) |
-| Production DNS | [`infra/terraform/prod/README.md`](infra/terraform/prod/README.md) |
-
 ## Deployment Lanes
 
 | Lane | What it does |
 |---|---|
 | Normal deploy (`bun run deploy:hosted`) | Exact clean commit, host mutex, admission drain, source snapshot, one dependency/build/restart pass, public health smoke, and automatic source rollback. Designed for ordinary product releases. |
 | Guarded release (`bun run release:hosted`) | Exhaustive certification: identity, source sync, readiness, workpieces, provider parity, and hard journeys with automatic rollback. Run for release candidates and scheduled certification, not every UI patch. |
-
-The normal lane accepts only backward-compatible migrations explicitly marked
-`-- fast-deploy: expansion-safe`; destructive schema changes require the guarded
-release lane. Both lanes require an authenticated release identity.
 | Provider-connection bootstrap | Deploys the full source tree and proves the account lifecycle surface without claiming runtime parity. Used to converge production onto a verified commit between certifications. |
 | Atomic frontend release | Builds into an isolated dist dir, verifies BUILD_ID, swaps under a brief stop and start, checks public health and that backend and gateway PIDs never moved, and parks the previous dist as a rollback dir. |
+
+The normal lane accepts only backward-compatible migrations explicitly marked `-- fast-deploy: expansion-safe`; destructive schema changes require the guarded release lane. Both lanes require an authenticated release identity.
+
+When promoting a newly built Cube runtime, set `RELEASE_T3_CUBE_TEMPLATE_ID=tpl-...`; the gate validates the id, activates it only inside the rollback-bound candidate environment, and restores the exact previous environment if any preflight or parity journey fails. The same gate installs the repository's Caddyfile only after backing up the live configuration, validates and reloads the candidate, and restores the prior file on failure.
 
 Operational invariants: exactly one backend per database (a boot-time advisory lock enforces it; production sets `REQUIRE_SINGLE_BACKEND=1`), the sandbox gateway uses a restricted database role with explicit grants and no DDL, and secrets are write-only through the API.
 
@@ -176,7 +158,7 @@ Operational invariants: exactly one backend per database (a boot-time advisory l
 - Agent runs are implemented as threaded sessions backed by sandboxes and streamed events; the canonical session grammar is the default rendering in the live thread view.
 - Runs survive backend restarts: recovery parks and re-probes in-flight sessions, streams recovered events live, and adopts the finished result instead of failing work that actually completed.
 - Production turn dispatch enters the provider registry first. Native OpenCode and selected runtime-path turns receive a concrete `ProviderDriver`; legacy ACP execution remains an explicit compatibility branch.
-- User API keys are resolved inside the signed provider gateway. Managed Codex subscription turns use a separate host-owned app-server relay and never copy OAuth state into the runtime environment or a sandbox. Hosted Codex subscription execution now runs end-to-end in production: first turns, multi-turn replies, in-run tools, and the guarded-release parity case all pass live. Engine readiness stays credential-mode-aware: a subscription-only Codex release proves the connected account and native turn path, while API-key engines prove their mapped gateway provider.
+- User API keys are resolved inside the signed provider gateway. Managed Codex subscription turns use a separate host-owned app-server relay and never copy OAuth state into the runtime environment or a sandbox. Hosted Codex subscription execution runs end-to-end in production: first turns, multi-turn replies, in-run tools, and the guarded-release parity case all pass live. Engine readiness stays credential-mode-aware: a subscription-only Codex release proves the connected account and native turn path, while API-key engines prove their mapped gateway provider.
 - Skills and playbooks share one immutable substrate. GitHub is the source of the org's procedures: manual import plus an optional hourly resync keep the catalog current, and the prefill is relevance-ranked so the right procedure is discoverable per prompt.
 - The self-improvement lane is live: salience-gated capture with structured evidence and an ordered procedure trace, human-reviewed knowledge drafts, and skill-revision proposals assembled from accepted traces. Nothing publishes without a human.
 - The approval lane is live and guarded-release certified: destructive gated tools pause for a human approval card in the session (or Slack), then resume with a one-shot capability.
@@ -188,12 +170,23 @@ Operational invariants: exactly one backend per database (a boot-time advisory l
 ## Bounded Roadmap
 
 - The feature-lockdown parity matrix (product features plus the reference-parity core) certifies 16 of 19 cases live on Codex through the guarded release; the remaining three are test-harness bugs (a canary-side file-ownership issue on inbound attachments, a seeded-record cleanup, and a memory-config path), not product regressions, and need harness fixes before a fully green gate.
-- Two deploy-lane hardening items are the next infrastructure work: a deploy mutex so a certification rollback can never clobber a concurrent deploy, and drain-aware restarts so a backend bounce never kills an in-flight run mid-stream.
+- Deploy-lane hardening continues: the fast lane brought the host mutex and admission drain; extending drain-aware restarts to every restart path so a backend bounce never kills an in-flight run mid-stream is still open.
 - Internal canary and diagnostic runs carry a first-class `origin` and are excluded from memory capture; filtering them out of the user's thread list is the remaining display step.
 - The sandbox provider interface does not expose explicit pause, checkpoint, or snapshot operations yet.
 - Turn-start latency work continues: warm-pool-claimable creation, parallelized post-sandbox preparation, and config-refresh caching are in; regional always-on topology and the remaining perceived-latency budgets are not.
 - Multi-replica realtime requires durable org-event fanout before adding backend replicas.
 - Artifact storage is still local to the backend node.
 - Lower-severity review follow-ups are logged: down-ranking untrusted imported skill metadata in the per-turn prefill, loopback-only hardening of the operator bridge, centralizing the protected-skill name set, and caching the per-org catalog to remove the per-turn full scan.
+
+## Documentation
+
+| Area | Docs |
+|---|---|
+| Product docs site (concepts, architecture + SVG diagrams, API, operations) | [`docs-site/`](docs-site/README.md) |
+| Interactive request-flow architecture | [`docs/architecture/request-flow.html`](docs/architecture/request-flow.html) |
+| Backend control plane | [`backend/README.md`](backend/README.md) |
+| Frontend UI | [`frontend/README.md`](frontend/README.md) |
+| Optional team memory | [`memory/README.md`](memory/README.md) |
+| Production DNS | [`infra/terraform/prod/README.md`](infra/terraform/prod/README.md) |
 
 If you need the implemented flow in detail, read [`backend/README.md`](backend/README.md) first and then [`frontend/README.md`](frontend/README.md).
