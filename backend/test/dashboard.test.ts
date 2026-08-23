@@ -11,6 +11,7 @@ let session: OrgSession;
 beforeAll(async () => {
   session = await createOrgSession("dashboard-summary");
   for (let offset = 0; offset < RUNS; offset += 100) {
+    const settledAt = new Date();
     await db.insert(runs).values(
       Array.from({ length: Math.min(100, RUNS - offset) }, () => {
         const id = crypto.randomUUID();
@@ -22,10 +23,23 @@ beforeAll(async () => {
           engine: "mock" as const,
           status: "completed" as const,
           threadId: id,
+          settledAt,
         };
       }),
     );
   }
+  const internalId = crypto.randomUUID();
+  await db.insert(runs).values({
+    id: internalId,
+    orgId: session.orgId,
+    prompt: "internal dashboard fixture",
+    model: "mock",
+    engine: "mock",
+    status: "completed",
+    threadId: internalId,
+    origin: "internal:canary",
+    settledAt: new Date(),
+  });
 });
 
 afterAll(async () => {
@@ -51,4 +65,14 @@ test("dashboard summary returns uncapped, UTC-stable organization aggregates", a
   expect(result.body.weekly).toHaveLength(8);
   expect(result.body.weekly.at(-1)?.runs).toBe(RUNS);
   expect(result.body.timezone).toBe("UTC");
+
+  await db
+    .update(runs)
+    .set({ updatedAt: new Date("2099-01-01T00:00:00.000Z") })
+    .where(eq(runs.orgId, session.orgId));
+  const afterMetadataUpdate = await json<typeof result.body>("/api/dashboard/summary", {
+    cookies: session.cookies,
+  });
+  expect(afterMetadataUpdate.body.stats.completed_today).toBe(RUNS);
+  expect(afterMetadataUpdate.body.daily.at(-1)?.completed).toBe(RUNS);
 });

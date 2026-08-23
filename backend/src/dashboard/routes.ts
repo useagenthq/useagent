@@ -1,4 +1,4 @@
-import { count, eq, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { db } from "../db/client";
@@ -6,6 +6,7 @@ import { runs, skills } from "../db/schema";
 import type { AppEnv } from "../http";
 import { countRecords } from "../knowledge/store";
 import { orgScope } from "../middleware/org";
+import { publicRunCondition } from "../runs/visibility";
 
 interface DailyRow {
   key: string;
@@ -26,6 +27,7 @@ dashboardRoutes.use("*", orgScope);
 
 dashboardRoutes.get("/summary", async (c) => {
   const orgId = c.get("orgId");
+  const publicRun = publicRunCondition();
   const [totalsRows, skillRows, knowledgeCount, dailyRows, weeklyRows] = await Promise.all([
     db
       .select({
@@ -36,11 +38,11 @@ dashboardRoutes.get("/summary", async (c) => {
         failed: sql<number>`count(*) filter (where ${runs.status} = 'failed')::int`,
         completedToday: sql<number>`count(*) filter (
           where ${runs.status} = 'completed'
-          and ${runs.updatedAt} >= (date_trunc('day', now() at time zone 'UTC') at time zone 'UTC')
+          and ${runs.settledAt} >= (date_trunc('day', now() at time zone 'UTC') at time zone 'UTC')
         )::int`,
       })
       .from(runs)
-      .where(eq(runs.orgId, orgId)),
+      .where(and(eq(runs.orgId, orgId), publicRun)),
     db.select({ count: count() }).from(skills).where(eq(skills.orgId, orgId)),
     countRecords(orgId),
     db.execute(sql`
@@ -52,13 +54,14 @@ dashboardRoutes.get("/summary", async (c) => {
         )::date as day
       ), settled as (
         select
-          (${runs.updatedAt} at time zone 'UTC')::date as day,
+          (${runs.settledAt} at time zone 'UTC')::date as day,
           count(*) filter (where ${runs.status} = 'completed')::int as completed,
           count(*) filter (where ${runs.status} = 'failed')::int as failed
         from ${runs}
         where ${runs.orgId} = ${orgId}
+          and ${publicRun}
           and ${runs.status} in ('completed', 'failed')
-          and ${runs.updatedAt} >= (
+          and ${runs.settledAt} >= (
             ((now() at time zone 'UTC')::date - 13)::timestamp at time zone 'UTC'
           )
         group by 1
@@ -85,6 +88,7 @@ dashboardRoutes.get("/summary", async (c) => {
           count(*)::int as runs
         from ${runs}
         where ${runs.orgId} = ${orgId}
+          and ${publicRun}
           and ${runs.createdAt} >= (
             (date_trunc('week', now() at time zone 'UTC') - interval '49 days') at time zone 'UTC'
           )
