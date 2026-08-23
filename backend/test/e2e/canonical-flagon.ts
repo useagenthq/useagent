@@ -1,5 +1,5 @@
 /**
- * REAL flag-on browser E2E for the canonical timeline (final_harness Phase 1 close-out).
+ * REAL flag-on browser E2E for the canonical timeline.
  *
  * Drives an ISOLATED flag-on frontend (NEXT_PUBLIC_CANONICAL_TIMELINE=1) + an isolated
  * backend on a throwaway DB against a REAL Daytona/OpenCode run. Proves the canonical lane

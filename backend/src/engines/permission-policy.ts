@@ -1,5 +1,5 @@
 /**
- * ACP / CLI tool-permission policy (final_harness.md P0). ONE fail-closed decision
+ * ACP / CLI tool-permission policy. ONE fail-closed decision
  * point both the resident ACP relay (acp-server.ts), the local ACP bridge (acp.ts),
  * and the CLI runner (sandbox.ts) route through - so there is no second place that
  * can silently re-open yolo.

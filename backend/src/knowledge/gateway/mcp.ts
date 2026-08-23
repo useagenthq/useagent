@@ -16,8 +16,8 @@ import { resolveToolRunIdentity } from "./run-authorization";
 import { type ToolTokenClaims, verifyToolToken } from "./token";
 
 // ---------------------------------------------------------------------------
-// Trusted capability MCP gateway (mem_op.md 0.2 / new_prompt.md "Trusted Tool
-// Gateway"). A stateless MCP Streamable-HTTP server the resident opencode agent
+// Trusted capability MCP gateway (mem_op.md 0.2).
+// A stateless MCP Streamable-HTTP server the resident opencode agent
 // connects to as a `type:"remote"` MCP server. It speaks plain JSON-RPC over a
 // single POST — every request gets an `application/json` response, every
 // notification a 202 (no SSE session state needed), which the MCP SDK client

@@ -44,7 +44,7 @@ export function selfSignupEnabled(
 }
 
 /**
- * Which engines may actually run. SECURITY GATE (final_harness.md P0): the
+ * Which engines may actually run. SECURITY GATE: the
  * Claude/Codex ACP adapters are registered but still require an operator-provisioned
  * provider gateway and an explicit permission posture. They must never be activatable
  * through a direct `engine` on POST /api/runs - or any channel - unless an operator
@@ -81,7 +81,7 @@ export function isEngineEnabled(engine: string): boolean {
 
 /**
  * DEV-ONLY escape hatch to auto-approve ACP permission requests (yolo). Default
- * OFF (fail CLOSED): final_harness.md P0 forbids auto-approving tool permissions
+ * OFF (fail CLOSED): production forbids auto-approving tool permissions
  * in a team/SaaS deployment. The real fix is a trusted-backend approval policy
  * evaluated outside the sandbox (Phase 3); until then ACP permission requests are
  * DENIED unless an operator explicitly sets ACP_YOLO_APPROVE=1 for a local run.

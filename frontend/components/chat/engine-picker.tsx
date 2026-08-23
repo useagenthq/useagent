@@ -99,7 +99,7 @@ export function useEnabledEngineConfig(): {
  * Which agent engines the SERVER actually allows, from GET /api/config -> `engines`
  * (gated by ENABLED_ENGINES). Defaults to just OpenCode until the fetch resolves, so
  * the composer never offers claude/codex on a backend that would 403 them. This is
- * the capability-driven source of truth for the engine picker (final_harness Phase 2).
+ * the capability-driven source of truth for the engine picker.
  */
 export function useEnabledEngines(): EngineId[] {
   return useEnabledEngineConfig().engines;

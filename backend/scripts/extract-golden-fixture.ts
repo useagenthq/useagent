@@ -1,5 +1,5 @@
 /**
- * Sanitizing golden-fixture extractor (final_harness.md Phase 0).
+ * Sanitizing golden-fixture extractor for the canonical event lane.
  *
  * Reads ONE real OpenCode run's provider_events and emits a STRUCTURE-ONLY
  * NativeFrame[] fixture the frontend derivation (timeline.ts / native-events.ts)

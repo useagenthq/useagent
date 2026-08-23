@@ -1,5 +1,5 @@
 /**
- * OpenCode -> Canonical translator (final_harness Phase 1).
+ * OpenCode -> Canonical translator.
  *
  * PURE + additive: maps the OpenCode native event stream (frames) AND the durable
  * step projection into the provider-neutral {@link CanonicalAgentEvent} vocabulary.
