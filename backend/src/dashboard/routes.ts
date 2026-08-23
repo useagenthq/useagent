@@ -58,7 +58,9 @@ dashboardRoutes.get("/summary", async (c) => {
         from ${runs}
         where ${runs.orgId} = ${orgId}
           and ${runs.status} in ('completed', 'failed')
-          and ${runs.updatedAt} >= ((now() at time zone 'UTC')::date - 13)
+          and ${runs.updatedAt} >= (
+            ((now() at time zone 'UTC')::date - 13)::timestamp at time zone 'UTC'
+          )
         group by 1
       )
       select
@@ -83,7 +85,9 @@ dashboardRoutes.get("/summary", async (c) => {
           count(*)::int as runs
         from ${runs}
         where ${runs.orgId} = ${orgId}
-          and ${runs.createdAt} >= (date_trunc('week', now() at time zone 'UTC') - interval '49 days')
+          and ${runs.createdAt} >= (
+            (date_trunc('week', now() at time zone 'UTC') - interval '49 days') at time zone 'UTC'
+          )
         group by 1
       )
       select
