@@ -178,7 +178,7 @@ Operational invariants: exactly one backend per database (a boot-time advisory l
 ## Bounded Roadmap
 
 - The August 20, 2026 feature-lockdown checkpoint certified 16 of 19 Codex cases; the remaining three were test-harness bugs that still need fresh certification evidence after their fixes.
-- Deploy-lane hardening continues: the fast lane brought the host mutex and admission drain; extending drain-aware restarts to every restart path so a backend bounce never kills an in-flight run mid-stream is still open.
+- Deploy-lane hardening includes the host mutex and bounded pre-restart admission drain. Provider-stream reconnection after an unexpected host interruption remains open.
 - Internal canary and diagnostic runs carry a first-class `origin` and are excluded from memory capture, product-facing run lists, and dashboard aggregates.
 - The sandbox provider interface does not expose explicit pause, checkpoint, or snapshot operations yet.
 - Turn-start latency work continues: warm-pool-claimable creation, parallelized post-sandbox preparation, and config-refresh caching are in; regional always-on topology and the remaining perceived-latency budgets are not.
