@@ -3,16 +3,16 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ProviderStatusBanner, unavailableEngineLabel } from "./provider-status-banner";
 
 test("a listed engine is never flagged", () => {
-  expect(unavailableEngineLabel("opencode", ["opencode", "claude"])).toBeNull();
+  expect(unavailableEngineLabel("opencode", ["opencode", "claude"], true)).toBeNull();
 });
 
 test("an engine missing from the manifest resolves to its display label", () => {
-  expect(unavailableEngineLabel("claude", ["opencode"])).toBe("Claude Code");
-  expect(unavailableEngineLabel("codex", ["opencode", "claude"])).toBe("Codex");
+  expect(unavailableEngineLabel("claude", ["opencode"], true)).toBe("Claude Code");
+  expect(unavailableEngineLabel("codex", ["opencode", "claude"], true)).toBe("Codex");
 });
 
-test("an EMPTY (unresolved) manifest never flags anything", () => {
-  expect(unavailableEngineLabel("claude", [])).toBeNull();
+test("the loading fallback never produces a false unavailable warning", () => {
+  expect(unavailableEngineLabel("codex", ["opencode"], false)).toBeNull();
 });
 
 test("renders a slim honest unavailable notice", () => {
