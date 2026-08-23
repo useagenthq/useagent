@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  RiAddLine,
   RiCodeSSlashLine,
   RiCollapseDiagonal2Line,
   RiComputerLine,
@@ -14,7 +13,6 @@ import {
   RiTerminalBoxLine,
 } from "@remixicon/react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentsRail } from "@/components/chat/agents-rail";
 import {
@@ -109,22 +107,6 @@ function workspaceSurfaceHasFocus(): boolean {
   if (typeof document === "undefined") return false;
   const active = document.activeElement;
   return active instanceof HTMLElement && active.closest("[data-workspace-surface]") !== null;
-}
-
-function StatusPill({ status }: { status: RunStatus }) {
-  const live = status === "queued" || status === "running";
-  const map: Record<RunStatus, "blue" | "lime" | "rose"> = {
-    queued: "blue",
-    running: "blue",
-    completed: "lime",
-    failed: "rose",
-  };
-  return (
-    <Chip variant="caption" color={map[status]} className="gap-1.5 capitalize">
-      {live && <span className="ai-loading-pixel size-1.5 rounded-full bg-blue-500" />}
-      {status}
-    </Chip>
-  );
 }
 
 /**
@@ -874,7 +856,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       <SessionLatestRunProvider value={newest.id}>
       <div className="flex h-full flex-col">
       {/* Compact thread bar. Brand and search belong to the collapsible sidebar. */}
-      <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-2">
+      <div className="border-border-button-default/50 flex h-12 shrink-0 items-center justify-between gap-3 border-b px-4">
         <div className="flex min-w-0 items-center gap-2">
           <span className="text-mono-label text-text-tertiary">Session</span>
           {/* The thread's git identity: repos (+ chosen branch) come from the
@@ -883,18 +865,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           <GitChips refs={runGitRefs(root)} />
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          <StatusPill status={threadStatus} />
-          {/* Stop lives in the composer send button (running+empty -> red Stop),
-              threaded through Conversation. The old top-bar Stop was removed so
-              there is exactly ONE Stop affordance (user: "i mean stop here"). */}
-          <Link
-            href="/agent/new"
-            aria-label="New session"
-            className="flex items-center gap-1.5 rounded-lg border border-border-button-default bg-background-primary-default px-2.5 py-1.5 text-caption-1-medium text-text-secondary shadow-xs transition-colors hover:border-border-button-hover hover:bg-background-primary-hover"
-          >
-            <RiAddLine className="size-4" aria-hidden />
-            <span className="hidden sm:inline">New session</span>
-          </Link>
+          {/* Status pill + New session removed (user 2026-08-23): run state
+              already lives in the composer/timeline and New thread in the
+              sidebar - the header stays quiet. Stop remains the composer's. */}
           {/* Below md the surfaces rail is a slide-over sheet; this is its
               opener (the rail's own reopen strip covers md+). */}
           {hasRuntimeSurfaces && !mobileSurfacesOpen && (
@@ -1049,7 +1022,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                   "md:w-[var(--rail-w,360px)] md:max-w-[calc(100%-20rem)] md:shrink-0",
             )}
           >
-            <div className="border-border-button-default/50 flex shrink-0 items-center gap-2 border-b p-2">
+            <div className="border-border-button-default/50 flex h-12 shrink-0 items-center gap-2 border-b px-2">
               <PillTabList aria-label="Surface" className="min-w-0 flex-1 overflow-x-auto">
                 {/* Agents leads the switcher, but only once a run has fanned
                     out — no empty tab before then. */}
