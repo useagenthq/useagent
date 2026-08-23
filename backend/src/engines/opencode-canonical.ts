@@ -1,6 +1,6 @@
 /**
  * Compatibility facade. The OpenCode -> canonical translator moved to the shared
- * `@skynet/agent-harness` package (subpath `./opencode`) so its golden fixtures
+ * `@useagent/agent-harness` package (subpath `./opencode`) so its golden fixtures
  * and tests no longer cross the backend/frontend tree boundary.
  *
  * This file is intentionally a pure re-export so every existing
@@ -9,4 +9,4 @@
  * facade only after all callers import the package directly and the rollback
  * window has passed.
  */
-export * from "@skynet/agent-harness/opencode";
+export * from "@useagent/agent-harness/opencode";

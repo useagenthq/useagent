@@ -13,10 +13,10 @@ import { parseNativeFrame } from "./native-events";
 import { buildTimelineFromCanonical } from "./canonical-timeline";
 import type { ApiStep } from "./types";
 // The translator + golden fixtures live in the shared, zero-dependency
-// @skynet/agent-harness package (final_harness: backend translates each harness).
+// @useagent/agent-harness package (final_harness: backend translates each harness).
 // The frontend imports the published translator here for the equivalence proof;
 // it is pure so it resolves cleanly in the test runner.
-import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "@skynet/agent-harness/opencode";
+import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "@useagent/agent-harness/opencode";
 
 const frames = heavy as unknown[];
 const steps = heavySteps as unknown as ApiStep[];

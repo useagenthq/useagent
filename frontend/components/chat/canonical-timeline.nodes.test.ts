@@ -9,7 +9,7 @@ import { createNativeStore } from "./native-store";
 import { buildTimeline } from "./timeline";
 import { parseNativeFrame } from "./native-events";
 import { buildTimelineFromCanonical, type CanonicalEventLike } from "./canonical-timeline";
-import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "@skynet/agent-harness/opencode";
+import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "@useagent/agent-harness/opencode";
 import type { ApiStep } from "./types";
 
 type F = OpenCodeFrame;

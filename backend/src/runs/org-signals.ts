@@ -1,14 +1,14 @@
 import { EventEmitter } from "node:events";
-import type { OrgChange as ClientOrgChange } from "@skynet/agent-client/org-changes";
+import type { OrgChange as ClientOrgChange } from "@useagent/agent-client/org-changes";
 import type {
   ProviderConnectionAuthMethod,
   ProviderConnectionChangeAction,
   ProviderConnectionProvider,
   ProviderConnectionStatus,
-} from "@skynet/agent-client/provider-connections";
+} from "@useagent/agent-client/provider-connections";
 import type {
   IntegrationConnectionChangeAction,
-} from "@skynet/agent-client/integrations";
+} from "@useagent/agent-client/integrations";
 import { publishThreadChange, type ThreadChangeKind } from "./thread-signals";
 
 /** Internal invalidation events for ambient product surfaces. */

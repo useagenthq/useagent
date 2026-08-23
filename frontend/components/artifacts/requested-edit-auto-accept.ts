@@ -1,7 +1,7 @@
 import type {
   ArtifactWorkpieceProposalDescriptor,
   ArtifactWorkpieceState,
-} from "@skynet/agent-client";
+} from "@useagent/agent-client";
 
 /** A structured edit or editing-focus within this window counts as "typing
  *  seconds ago": the agent's change is always routed through the proposal banner

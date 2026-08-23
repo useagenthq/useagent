@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { applyDecodedFrame } from "./use-thread-stream";
-import { decodeFrame } from "@skynet/agent-client";
+import { decodeFrame } from "@useagent/agent-client";
 import { createThreadStore } from "./thread-store";
 
 const canonicalEvent = (over: Record<string, unknown>) => ({

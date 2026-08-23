@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@skynet/artifact-workspace",
+      "name": "@useagent/artifact-workspace",
       "devDependencies": {
         "@types/bun": "^1.3.14",
       },

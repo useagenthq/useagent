@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import type { ArtifactWorkpieceProposalDescriptor } from "@skynet/artifact-workspace";
+import type { ArtifactWorkpieceProposalDescriptor } from "@useagent/artifact-workspace";
 import type { ArtifactDescriptor } from "../src/artifacts/repo";
 import { setArtifactStorageForTest } from "../src/artifacts/storage";
 import { executeArtifactTool } from "../src/knowledge/gateway/artifact-tools";

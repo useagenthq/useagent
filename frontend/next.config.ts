@@ -31,15 +31,15 @@ export default function nextConfig(phase: string): NextConfig {
       // off frontend/; map the bare specifiers straight to the linked package sources.
       // resolveAlias paths are relative to the PROJECT dir (frontend/), not the root.
       resolveAlias: {
-        "@skynet/agent-client": "../packages/agent-client/src/index.ts",
-        "@skynet/agent-client/integrations": "../packages/agent-client/src/integrations.ts",
-        "@skynet/agent-client/org-changes": "../packages/agent-client/src/org-changes.ts",
-        "@skynet/agent-client/provider-connections":
+        "@useagent/agent-client": "../packages/agent-client/src/index.ts",
+        "@useagent/agent-client/integrations": "../packages/agent-client/src/integrations.ts",
+        "@useagent/agent-client/org-changes": "../packages/agent-client/src/org-changes.ts",
+        "@useagent/agent-client/provider-connections":
           "../packages/agent-client/src/provider-connections.ts",
-        "@skynet/agent-harness": "../packages/agent-harness/src/index.ts",
-        "@skynet/agent-harness/canonical": "../packages/agent-harness/src/canonical.ts",
-        "@skynet/agent-harness/opencode": "../packages/agent-harness/src/opencode-canonical.ts",
-        "@skynet/artifact-workspace": "../packages/artifact-workspace/src/index.ts",
+        "@useagent/agent-harness": "../packages/agent-harness/src/index.ts",
+        "@useagent/agent-harness/canonical": "../packages/agent-harness/src/canonical.ts",
+        "@useagent/agent-harness/opencode": "../packages/agent-harness/src/opencode-canonical.ts",
+        "@useagent/artifact-workspace": "../packages/artifact-workspace/src/index.ts",
       },
     },
     distDir: resolveDistDir(phase),

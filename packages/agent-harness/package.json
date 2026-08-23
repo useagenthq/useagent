@@ -1,5 +1,5 @@
 {
-  "name": "@skynet/agent-harness",
+  "name": "@useagent/agent-harness",
   "version": "0.0.0",
   "private": true,
   "type": "module",

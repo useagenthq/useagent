@@ -1,10 +1,10 @@
-import type { HarnessRuntime, HarnessSession } from "@skynet/agent-harness/canonical";
+import type { HarnessRuntime, HarnessSession } from "@useagent/agent-harness/canonical";
 import {
   providerDriverUnsupported,
   type HarnessOperationResult,
   type ProviderDriver,
   type ProviderStartRequest,
-} from "@skynet/agent-harness/control";
+} from "@useagent/agent-harness/control";
 import {
   sandboxProvider,
   sandboxProviderApiKey,

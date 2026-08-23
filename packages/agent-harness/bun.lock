@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@skynet/agent-harness",
+      "name": "@useagent/agent-harness",
       "devDependencies": {
         "@types/bun": "^1.3.14",
       },

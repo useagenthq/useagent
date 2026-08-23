@@ -7,7 +7,7 @@ import {
   type EventSourceLike,
   THREAD_FRAME_TYPES,
   type ThreadConnection,
-} from "@skynet/agent-client";
+} from "@useagent/agent-client";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { backendFetch } from "@/lib/backend-fetch";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
@@ -69,7 +69,7 @@ async function fetchThread(rootRunId: string): Promise<ApiRun[] | null> {
 }
 
 /** Apply ONE decoded thread frame to the addressed run's slice. The client library
- *  (`@skynet/agent-client`) owns the wire decode + canonical envelope validation
+ *  (`@useagent/agent-client`) owns the wire decode + canonical envelope validation
  *  (H4-equivalent: schemaVersion/kind/ids/seq/deliverySeq/revision/thread); this thin
  *  product adapter maps the typed frame onto the store's native + canonical lanes.
  *  Unknown/malformed frames are ignored (bounded), never applied or fatal. */

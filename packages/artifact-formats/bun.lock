@@ -3,9 +3,9 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@skynet/artifact-formats",
+      "name": "@useagent/artifact-formats",
       "dependencies": {
-        "@skynet/artifact-workspace": "file:../artifact-workspace",
+        "@useagent/artifact-workspace": "file:../artifact-workspace",
         "docx": "^9.5.1",
         "exceljs": "^4.4.0",
         "jszip": "^3.10.1",
@@ -30,7 +30,7 @@
 
     "@pdf-lib/upng": ["@pdf-lib/upng@1.0.1", "", { "dependencies": { "pako": "^1.0.10" } }, "sha512-dQK2FUMQtowVP00mtIksrlZhdFXQZPC+taih1q4CvPZ5vqdxR/LKBaFg0oAfzd1GlHZXXSPdQfzQnt+ViGvEIQ=="],
 
-    "@skynet/artifact-workspace": ["@skynet/artifact-workspace@file:../artifact-workspace", { "devDependencies": { "@types/bun": "^1.3.14" } }],
+    "@useagent/artifact-workspace": ["@useagent/artifact-workspace@file:../artifact-workspace", { "devDependencies": { "@types/bun": "^1.3.14" } }],
 
     "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 

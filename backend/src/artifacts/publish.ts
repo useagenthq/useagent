@@ -24,8 +24,8 @@ import { getRunForOrg } from "../runs/repo";
 import { publishOrgChange } from "../runs/org-signals";
 import { recordProviderEvent } from "../runs/provider-events";
 import { downloadSandboxFile, resolveSandboxFilePath } from "../slack/sandbox-file";
-import { extractPptxDeck, type PptxImportResult } from "@skynet/artifact-formats";
-import type { DeckBackground, DeckBlock, DeckSlide, PresentationDeck } from "@skynet/artifact-workspace";
+import { extractPptxDeck, type PptxImportResult } from "@useagent/artifact-formats";
+import type { DeckBackground, DeckBlock, DeckSlide, PresentationDeck } from "@useagent/artifact-workspace";
 import {
   buildInitialWorkpieceState,
   inferWorkpieceKind,

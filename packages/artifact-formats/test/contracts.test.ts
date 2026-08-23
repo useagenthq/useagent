@@ -46,12 +46,12 @@ describe("artifact format contracts", () => {
 
   test("declares the canonical package as an internal workspace dependency", async () => {
     const manifest = await Bun.file(new URL("../package.json", import.meta.url)).json();
-    expect(manifest.dependencies?.["@skynet/artifact-workspace"]).toBe(
+    expect(manifest.dependencies?.["@useagent/artifact-workspace"]).toBe(
       "file:../artifact-workspace",
     );
 
     const source = await Bun.file(new URL("../src/index.ts", import.meta.url)).text();
-    expect(source).toContain('from "@skynet/artifact-workspace"');
+    expect(source).toContain('from "@useagent/artifact-workspace"');
     expect(source).not.toMatch(
       /export const (?:DOCX|XLSX|PPTX|PDF)_CONTENT_TYPE/,
     );

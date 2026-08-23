@@ -4,13 +4,13 @@ import type {
   ProviderConnectionMeta,
   ProviderConnectionMetadata,
   ProviderConnectionProvider,
-} from "@skynet/agent-client/provider-connections";
+} from "@useagent/agent-client/provider-connections";
 
 export {
   decodeProviderConnectionMetadata as readSafeMetadata,
   isProviderConnectionAuthMethod,
   isProviderConnectionProvider,
-} from "@skynet/agent-client/provider-connections";
+} from "@useagent/agent-client/provider-connections";
 export type {
   ProviderConnectionAuthMethod,
   ProviderConnectionChangeAction,

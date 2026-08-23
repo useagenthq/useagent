@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { HarnessSession } from "@skynet/agent-harness/canonical";
-import { validateProviderDriver } from "@skynet/agent-harness/control";
+import type { HarnessSession } from "@useagent/agent-harness/canonical";
+import { validateProviderDriver } from "@useagent/agent-harness/control";
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
   RuntimeEnvironmentRequestError,

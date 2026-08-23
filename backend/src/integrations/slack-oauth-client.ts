@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import type { IntegrationConnectionAccount } from "@skynet/agent-client/integrations";
+import type { IntegrationConnectionAccount } from "@useagent/agent-client/integrations";
 
 const DEFAULT_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize";
 const DEFAULT_API_BASE_URL = "https://slack.com/api";

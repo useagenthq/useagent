@@ -26,9 +26,9 @@ import {
   type FetchLike,
   type ResponseLike,
   type TimerHost,
-} from "@skynet/agent-client";
-import type { HarnessCapabilities } from "@skynet/agent-harness/control";
-import { CANONICAL_SCHEMA_VERSION } from "@skynet/agent-harness/canonical";
+} from "@useagent/agent-client";
+import type { HarnessCapabilities } from "@useagent/agent-harness/control";
+import { CANONICAL_SCHEMA_VERSION } from "@useagent/agent-harness/canonical";
 
 // ── fake infra (a sample UI injects these; the library owns no globals) ──────────────
 const json = (status: number, body: unknown): ResponseLike => ({

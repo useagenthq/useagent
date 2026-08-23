@@ -8,7 +8,7 @@ import {
   RiImageLine,
   RiSlackLine,
 } from "@remixicon/react";
-import { artifactAuthoringProfile, inferWorkpieceKind } from "@skynet/artifact-workspace";
+import { artifactAuthoringProfile, inferWorkpieceKind } from "@useagent/artifact-workspace";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { LoadingState } from "@/components/ai/loading-state";
 import { Thinking } from "@/components/ai/thinking";

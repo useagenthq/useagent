@@ -1,4 +1,4 @@
-import type { ArtifactDescriptor, ArtifactWorkpieceResult } from "@skynet/agent-client";
+import type { ArtifactDescriptor, ArtifactWorkpieceResult } from "@useagent/agent-client";
 import {
   artifactActionContractFor,
   artifactFileExtension,
@@ -7,12 +7,12 @@ import {
   isArtifactRichHtmlTag,
   migrateSlidesToDeck,
   normalizeArtifactRichHtml,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 
 export {
   parseArtifactCsv as parseCsv,
   serializeArtifactCsv as serializeCsv,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 
 export type ArtifactEditorMode =
   | "source-document"

@@ -172,7 +172,7 @@ export interface EngineAdapter {
 // Its existence does NOT mean the agent loop moved out of the sandbox — the
 // OpenCode implementation is a thin client over the resident `opencode serve`.
 //
-// The pure control types moved to `@skynet/agent-harness/control` so a future
+// The pure control types moved to `@useagent/agent-harness/control` so a future
 // independent consumer can depend on the contract without importing product
 // code. They are re-exported here so every existing `../engines/types` import
 // keeps working unchanged.
@@ -187,4 +187,4 @@ export type {
   HarnessInterimEvent,
   HarnessReconciliation,
   HarnessAdapter,
-} from "@skynet/agent-harness/control";
+} from "@useagent/agent-harness/control";

@@ -6,7 +6,7 @@ import type {
   ArtifactWorkpieceState,
   PresentationDeck,
   Workbook,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import type {
   ArtifactDescriptor,
   ArtifactWorkpieceDescriptor,
@@ -48,7 +48,7 @@ describe("artifact repository contracts", () => {
   test("re-exports descriptors instead of declaring a backend copy", async () => {
     const source = await Bun.file(new URL("./repo.ts", import.meta.url)).text();
     expect(source).toMatch(
-      /export type\s*\{\s*ArtifactDescriptor,\s*ArtifactWorkpieceDescriptor\s*\}\s*from "@skynet\/artifact-workspace";/,
+      /export type\s*\{\s*ArtifactDescriptor,\s*ArtifactWorkpieceDescriptor\s*\}\s*from "@useagent\/artifact-workspace";/,
     );
     expect(source).not.toMatch(/export interface Artifact(?:Workpiece)?Descriptor/);
   });

@@ -1,4 +1,4 @@
-import type { IntegrationActionCatalogEntry } from "@skynet/agent-client/integrations";
+import type { IntegrationActionCatalogEntry } from "@useagent/agent-client/integrations";
 import {
   executeIntegrationAction,
   listExecutableIntegrationActions,
