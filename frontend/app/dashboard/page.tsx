@@ -6,27 +6,25 @@ import {
 } from "@remixicon/react";
 import type { Metadata } from "next";
 import { ContributionsCard } from "@/components/dashboard/contributions-card";
+import { Suspense } from "react";
 import { AnalyticsBand } from "@/components/dashboard/analytics-band";
-import { AuroraBackdrop } from "@/components/dashboard/aurora-backdrop";
 import {
   buildHeatmap,
   computeStats,
-  durationScatter,
-  engineFlow,
   extractCount,
   extractRuns,
   recentRuns,
-  repoLeaders,
   runsPerDay,
-  statusSlices,
-  weekdayRadar,
   weeklyCombo,
 } from "@/components/dashboard/dashboard-data";
 import { DashboardLiveRefresh } from "@/components/dashboard/dashboard-live-refresh";
 import { RecentRunsTable } from "@/components/dashboard/recent-runs-table";
-import { RunsBarChartCard } from "@/components/dashboard/runs-bar-chart-card";
-import { RunsTrendCard } from "@/components/dashboard/runs-trend-card";
-import { StatCards, type StatItem } from "@/components/dashboard/stat-cards";
+import {
+  StatCard,
+  StatCards,
+  StatCardSkeleton,
+  type StatItem,
+} from "@/components/dashboard/stat-cards";
 import { WelcomeHeader } from "@/components/dashboard/welcome-header";
 import { Fleet } from "@/components/fleet/fleet-lanes";
 import {
@@ -57,16 +55,40 @@ async function getJson(path: string): Promise<unknown> {
   }
 }
 
-export default async function DashboardPage() {
-  const [runsData, skillsData, knowledgeData] = await Promise.all([
-    getJson("/api/runs?view=summary&all=1&limit=1000&include_active=1"),
+/**
+ * The skills / knowledge counts stream in AFTER first paint: /api/skills has
+ * been observed at 6+ seconds, and the page must never block its runs-derived
+ * content on it. Rendered inside a Suspense boundary in the stat grid.
+ */
+async function CountStats() {
+  const [skillsData, knowledgeData] = await Promise.all([
     getJson("/api/skills"),
     getJson("/api/knowledge"),
   ]);
+  return (
+    <>
+      <StatCard
+        stat={{
+          icon: RiBookOpenLine,
+          label: "Knowledge records",
+          value: compactNumber(extractCount(knowledgeData, "records")),
+        }}
+      />
+      <StatCard
+        stat={{
+          icon: RiSparkling2Line,
+          label: "Skills",
+          value: compactNumber(extractCount(skillsData, "skills")),
+        }}
+      />
+    </>
+  );
+}
+
+export default async function DashboardPage() {
+  const runsData = await getJson("/api/runs?view=summary&all=1&limit=1000&include_active=1");
 
   const runs = extractRuns(runsData);
-  const skillsCount = extractCount(skillsData, "skills");
-  const knowledgeCount = extractCount(knowledgeData, "records");
 
   // Per-project fleet lanes are derived from the same compact runs snapshot so the
   // grouping refreshes with the rest of the dashboard on DashboardLiveRefresh.
@@ -75,20 +97,10 @@ export default async function DashboardPage() {
   const fleetStats = computeFleetStats(lanes.flatMap((lane) => lane.runs));
 
   const stats = computeStats(runs);
-  const week = runsPerDay(runs, 7);
   const fortnight = runsPerDay(runs, 14);
   const heat = buildHeatmap(runs, 26);
-
-  const weekTotal = week.reduce((n, d) => n + d.total, 0);
-  const fortnightTotal = fortnight.reduce((n, d) => n + d.total, 0);
   const recent = recentRuns(runs);
-
   const combo = weeklyCombo(runs);
-  const status = statusSlices(stats);
-  const flow = engineFlow(runs);
-  const durations = durationScatter(runs);
-  const repos = repoLeaders(runs);
-  const weekdays = weekdayRadar(runs);
 
   const statItems: StatItem[] = [
     {
@@ -105,41 +117,27 @@ export default async function DashboardPage() {
       delta: stats.failed > 0 ? `${stats.failed} failed` : undefined,
       deltaColor: "red",
     },
-    {
-      icon: RiBookOpenLine,
-      label: "Knowledge records",
-      value: compactNumber(knowledgeCount),
-    },
-    {
-      icon: RiSparkling2Line,
-      label: "Skills",
-      value: compactNumber(skillsCount),
-    },
   ];
 
   return (
     <AppShell sidebar={<ThreadSidebar active="dashboard" />}>
       <DashboardLiveRefresh />
-      <AuroraBackdrop />
-      <div className="relative mx-auto flex max-w-[1200px] flex-col gap-6 p-6 lg:p-8">
+      <div className="mx-auto flex max-w-[1200px] flex-col gap-6 p-6 lg:p-8">
         <WelcomeHeader liveCount={stats.running} />
-        <StatCards stats={statItems} />
+        <StatCards stats={statItems}>
+          <Suspense
+            fallback={
+              <>
+                <StatCardSkeleton />
+                <StatCardSkeleton />
+              </>
+            }
+          >
+            <CountStats />
+          </Suspense>
+        </StatCards>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <RunsBarChartCard data={week} total={weekTotal} />
-          <RunsTrendCard data={fortnight} tokensLabel={estimatedTokens(fortnightTotal)} />
-        </div>
-
-        {stats.total > 0 && (
-          <AnalyticsBand
-            combo={combo}
-            status={status}
-            flow={flow}
-            durations={durations}
-            repos={repos}
-            weekdays={weekdays}
-          />
-        )}
+        {stats.total > 0 && <AnalyticsBand daily={fortnight} combo={combo} />}
 
         <section className="flex flex-col gap-3">
           <h2 className="text-headline-medium text-text-primary">Limits</h2>

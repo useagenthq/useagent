@@ -1,7 +1,6 @@
-import Link from 'next/link';
 import { RiAddLine } from '@remixicon/react';
 
-import * as Button from '@/components/ui/button';
+import { ButtonLink } from '@/components/base/buttons/button';
 
 export function WelcomeHeader({ liveCount = 0 }: { liveCount?: number }) {
   return (
@@ -17,12 +16,15 @@ export function WelcomeHeader({ liveCount = 0 }: { liveCount?: number }) {
       </div>
 
       <div className='flex items-center gap-4'>
-        <Button.Root className="rounded-full" asChild variant='primary' mode='filled' size='small'>
-          <Link href='/agent/new'>
-            <Button.Icon as={RiAddLine} />
-            New run
-          </Link>
-        </Button.Root>
+        <ButtonLink
+          href='/agent/new'
+          variant='primary'
+          size='small'
+          leadingIcon={RiAddLine}
+          className='rounded-full'
+        >
+          New run
+        </ButtonLink>
       </div>
     </header>
   );
