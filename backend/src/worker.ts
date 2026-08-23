@@ -767,7 +767,7 @@ async function runEngine(
 ): Promise<void> {
   const startedAt = Date.now();
 
-  // SECURITY GATE (final_harness.md P0), defense-in-depth: even if a run row
+  // SECURITY GATE, defense-in-depth: even if a run row
   // exists with an unsafe/unproven engine (legacy row, non-HTTP channel, direct
   // DB write), refuse to spawn its adapter unless the engine is explicitly enabled
   // (ENABLED_ENGINES). Fail the run closed rather than activating it.
