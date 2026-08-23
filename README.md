@@ -8,10 +8,10 @@ useAgent is a multi-package repository with one product UI, one backend control 
 
 - **Choice of agent.** Codex (API key or ChatGPT subscription), Claude Code, and OpenCode run behind one provider-neutral canonical event contract - switch engines per run, render through one session UI. Native frames are retained alongside canonical events for fidelity and debugging.
 - **Durable runs.** Event-sourced on Postgres; runs survive backend restarts. Recovery re-probes in-flight sessions, streams recovered events live with a visible heartbeat, and adopts the finished result instead of failing work that actually completed.
-- **Real sandboxes.** Each thread gets an isolated Linux workstation: terminal, repositories, browser automation, and a visible XFCE desktop over noVNC with recording to real MP4 artifacts. Warm pools cut cold-start work; Daytona and Cube sit behind one provider-neutral sandbox contract.
+- **Real sandboxes.** Each agent-run thread gets an isolated Linux workstation: terminal, repositories, browser automation, and a visible XFCE desktop over noVNC with recording to real MP4 artifacts. Warm pools cut cold-start work; Daytona and Cube sit behind one provider-neutral sandbox contract.
 - **A trusted gateway, not credentials in the sandbox.** The sandbox holds only short-lived signed capability tokens. Knowledge search, memory, skills, GitHub reads, web search, desktop control, and artifact publishing are typed MCP tools served by the backend; every gated refusal names its remedy so an agent can self-correct instead of fabricate.
 - **Human-in-the-loop approvals.** Destructive tools pause on an approval card in the session (or Slack) and resume with a one-shot, argument-bound capability that can never be self-issued from inside a run.
-- **Skills and playbooks from GitHub.** Import `SKILL.md` files from your repositories as versioned skills pinned to a commit, auto-resync hourly, relevance-ranked into every turn so the right procedure surfaces per prompt.
+- **Skills and playbooks from GitHub.** Import `SKILL.md` files from your repositories as versioned skills pinned to a commit, optionally resync on a configured interval, and relevance-rank them into every turn so the right procedure surfaces per prompt.
 - **Knowledge, wiki, and memory.** Org-scoped retrieval with inline citations, generated wikis, and optional scoped team memory. A human-reviewed learning lane proposes knowledge drafts from high-value runs and skill revisions from accepted drafts - nothing publishes without a person.
 - **Slack as a first-class channel.** Mention-to-run, threaded replies with multi-turn continuity, inbound attachments, allowlist-validated repo binding, and answers, artifacts, and approval cards back in the thread - through the same durable command lane as the web UI.
 - **Native artifacts.** DOCX, XLSX, PPTX, and PDF workpieces with revisioned editing surfaces and native renderers; images and videos remain previewable media artifacts.
@@ -22,8 +22,12 @@ useAgent is a multi-package repository with one product UI, one backend control 
 Requires [bun](https://bun.sh) and Postgres.
 
 ```bash
-(cd backend && bun install)
-(cd frontend && bun install)
+for workspace in \
+  packages/agent-harness packages/artifact-workspace \
+  packages/agent-client packages/artifact-formats packages/conformance \
+  backend frontend; do
+  (cd "$workspace" && bun install)
+done
 
 bun run dev:backend    # API + orchestration on :3201
 bun run dev:frontend   # UI on :3400 (proxies /api/* to the backend)
@@ -71,7 +75,7 @@ That yields a signed-in web UI and model-backed chat. Full engine runs, team mem
 - `frontend/app/learnings/page.tsx` is the human review queue for the self-improvement lane: knowledge drafts proposed from high-value runs (with the ordered, redacted procedure trace of what actually worked) and skill-revision proposals assembled from accepted drafts. Nothing is auto-published; an org admin accepts or dismisses each.
 - Knowledge, wiki, memory hub, artifacts, secrets, learnings, automations, and settings all have real UI and backend paths.
 - Design system: BoardUI (licensed, vendored source via its CLI) - base primitives in `frontend/components/base/`, application blocks in `frontend/components/application/`, and the semantic token layer in `frontend/styles/theme.css` + per-theme override blocks in `frontend/app/globals.css`. The legacy AlignUI library survives only as the sanctioned dialog/overlay layer (`frontend/components/ui/README.md`).
-- Themes: nine, light-first - Light (default), Midnight, Aura (violet), Harbor (blue), Slate (blue-gray), Dark Green and Light Green (phosphor), Dark Red and Light Red (sakura) - selected from the theme menu and applied wholesale through semantic tokens; each theme overrides the full BoardUI slot list so every surface follows.
+- Themes: nine, dark-first - Midnight (default), Light, Aura (violet), Harbor (blue), Slate (blue-gray), Dark Green and Light Green (phosphor), Dark Red and Light Red (sakura) - selected from the theme menu and applied wholesale through semantic tokens; each theme overrides the full BoardUI slot list so every surface follows.
 - Slack is a first-class channel: an @mention or DM starts a run, replies thread under it, inbound file attachments ride the run, GitHub links in the message bind the run's repositories (validated against the same allowlist the web composer enforces), and answers, artifacts, and approval cards flow back. Ingress enters the same durable command lane as the web UI.
 - The backend exposes the API and orchestration layer at `:3201`.
 - The frontend runs at `:3400` and proxies browser `/api/*` requests to the backend. The one direct backend WebSocket ingress is the run-bound Codex relay capability path.
@@ -142,6 +146,10 @@ That yields a signed-in web UI and model-backed chat. Full engine runs, team mem
 
 The normal lane accepts only backward-compatible migrations explicitly marked `-- fast-deploy: expansion-safe`; destructive schema changes require the guarded release lane. Both lanes require an authenticated release identity.
 
+Database migrations are forward-only in both lanes. Schema changes must follow
+an expand, migrate, contract sequence; restoring source and services does not
+reverse an applied migration.
+
 When promoting a newly built Cube runtime, set `RELEASE_T3_CUBE_TEMPLATE_ID=tpl-...`; the gate validates the id, activates it only inside the rollback-bound candidate environment, and restores the exact previous environment if any preflight or parity journey fails. The same gate installs the repository's Caddyfile only after backing up the live configuration, validates and reloads the candidate, and restores the prior file on failure.
 
 Operational invariants: exactly one backend per database (a boot-time advisory lock enforces it; production sets `REQUIRE_SINGLE_BACKEND=1`), the sandbox gateway uses a restricted database role with explicit grants and no DDL, and secrets are write-only through the API.
@@ -150,7 +158,7 @@ Operational invariants: exactly one backend per database (a boot-time advisory l
 
 - Backend suite (isolated throwaway database), frontend suite, shared package suites, and root typecheck across every package.
 - `bun run e2e` is a mock full-stack pass including Slack and memory outbox delivery and crash-survival stages; `bun run e2e:real` exercises real sandboxes end to end; a soak marathon and a UI sweep exist for storm and browser coverage.
-- Release parity canaries run real engine journeys (repo clone, computer use, desktop recording, artifact publish, automations, subagent fan-out, thread resume, model switch, web search) against a candidate before it can ship.
+- Release certification runs real engine journeys (repo clone, computer use, desktop recording, artifact publish, automations, subagent fan-out, thread resume, model switch, web search). Ordinary deployments use the separate fast lane described above.
 
 ## Current State
 
@@ -169,9 +177,9 @@ Operational invariants: exactly one backend per database (a boot-time advisory l
 
 ## Bounded Roadmap
 
-- The feature-lockdown parity matrix (product features plus the reference-parity core) certifies 16 of 19 cases live on Codex through the guarded release; the remaining three are test-harness bugs (a canary-side file-ownership issue on inbound attachments, a seeded-record cleanup, and a memory-config path), not product regressions, and need harness fixes before a fully green gate.
+- The August 20, 2026 feature-lockdown checkpoint certified 16 of 19 Codex cases; the remaining three were test-harness bugs that still need fresh certification evidence after their fixes.
 - Deploy-lane hardening continues: the fast lane brought the host mutex and admission drain; extending drain-aware restarts to every restart path so a backend bounce never kills an in-flight run mid-stream is still open.
-- Internal canary and diagnostic runs carry a first-class `origin` and are excluded from memory capture; filtering them out of the user's thread list is the remaining display step.
+- Internal canary and diagnostic runs carry a first-class `origin` and are excluded from memory capture, product-facing run lists, and dashboard aggregates.
 - The sandbox provider interface does not expose explicit pause, checkpoint, or snapshot operations yet.
 - Turn-start latency work continues: warm-pool-claimable creation, parallelized post-sandbox preparation, and config-refresh caching are in; regional always-on topology and the remaining perceived-latency budgets are not.
 - Multi-replica realtime requires durable org-event fanout before adding backend replicas.
