@@ -253,10 +253,10 @@ describe("secrets — encryption-root rotation", () => {
     const previous = {
       auth: process.env.BETTER_AUTH_SECRET,
       encryption: process.env.SECRETS_ENCRYPTION_KEY,
-      dev: process.env.SKYNET_DEV_MODE,
+      dev: process.env.USEAGENT_DEV_MODE,
     };
     try {
-      process.env.SKYNET_DEV_MODE = "true";
+      process.env.USEAGENT_DEV_MODE = "true";
       process.env.BETTER_AUTH_SECRET = "legacy-auth-root-0123456789abcdef0123456789";
       delete process.env.SECRETS_ENCRYPTION_KEY;
       const legacy = sealSecret("legacy-value");
@@ -271,8 +271,8 @@ describe("secrets — encryption-root rotation", () => {
       else process.env.BETTER_AUTH_SECRET = previous.auth;
       if (previous.encryption === undefined) delete process.env.SECRETS_ENCRYPTION_KEY;
       else process.env.SECRETS_ENCRYPTION_KEY = previous.encryption;
-      if (previous.dev === undefined) delete process.env.SKYNET_DEV_MODE;
-      else process.env.SKYNET_DEV_MODE = previous.dev;
+      if (previous.dev === undefined) delete process.env.USEAGENT_DEV_MODE;
+      else process.env.USEAGENT_DEV_MODE = previous.dev;
     }
   });
 });

@@ -218,11 +218,11 @@ export function Composer({
   // composers stay on the empty string with zero effect churn.
   const [value, setValue] = useState(() => {
     if (!draftKey || typeof window === "undefined") return "";
-    return window.localStorage.getItem(`skynet.draft.${draftKey}`) ?? "";
+    return window.localStorage.getItem(`useagent.draft.${draftKey}`) ?? "";
   });
   useEffect(() => {
     if (!draftKey || typeof window === "undefined") return;
-    const key = `skynet.draft.${draftKey}`;
+    const key = `useagent.draft.${draftKey}`;
     if (value) window.localStorage.setItem(key, value);
     else window.localStorage.removeItem(key);
   }, [draftKey, value]);

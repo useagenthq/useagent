@@ -142,7 +142,7 @@ describe("recording gateway tools", () => {
 
   test("stops and validates a real H.264 recording before publishing", async () => {
     const sandbox = sandboxWithResult(
-      "__SKYNET_RECORDING_PATH__=/root/work/recordings/proof.mp4\ncodec_name=h264\nwidth=1440\nheight=900\nduration=2.200000\n",
+      "__USEAGENT_RECORDING_PATH__=/root/work/recordings/proof.mp4\ncodec_name=h264\nwidth=1440\nheight=900\nduration=2.200000\n",
     );
     const stopped = await stopRecordingInSandbox(sandbox);
     expect(stopped).toEqual({

@@ -115,8 +115,8 @@ async function main() {
         env: {
           ...process.env,
           PORT: String(FE_PORT),
-          SKYNET_API_ORIGIN: BE,
-          SKYNET_BUILD_DIST: DIST,
+          USEAGENT_API_ORIGIN: BE,
+          USEAGENT_BUILD_DIST: DIST,
         },
         stdout: feLog,
         stderr: feLog,

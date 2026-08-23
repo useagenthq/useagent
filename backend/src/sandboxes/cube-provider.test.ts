@@ -71,7 +71,7 @@ describe("Cube sandbox provider", () => {
       autoStopInterval: 15,
       envVars: {
         BASH_ENV: "/tmp/skynet.env",
-        SKYNET_PROVIDER_GATEWAY_URL: "http://gateway.internal",
+        USEAGENT_PROVIDER_GATEWAY_URL: "http://gateway.internal",
       },
       labels: { "skynet-run": "run-1" },
       snapshot: "agent-template",
@@ -82,7 +82,7 @@ describe("Cube sandbox provider", () => {
       expect.objectContaining({
         apiKey: "cube-key",
         apiUrl: "http://127.0.0.1:3000",
-        envs: { SKYNET_PROVIDER_GATEWAY_URL: "http://gateway.internal" },
+        envs: { USEAGENT_PROVIDER_GATEWAY_URL: "http://gateway.internal" },
         lifecycle: { autoResume: true, onTimeout: "pause" },
         metadata: { "skynet-run": "run-1" },
         network: { allowPublicTraffic: false },
@@ -247,7 +247,7 @@ describe("Cube sandbox provider", () => {
     const sandbox = fakeSandbox({
       list: async () => [
         {
-          envs: { SKYNET_COMMAND_ID: "command-1", SKYNET_SESSION_ID: "resident" },
+          envs: { USEAGENT_COMMAND_ID: "command-1", USEAGENT_SESSION_ID: "resident" },
           pid: 71,
         },
       ],
@@ -274,8 +274,8 @@ describe("Cube sandbox provider", () => {
     expect(calls.at(-1)?.command).toMatch(/^nohup setsid sh .* <\/dev\/null >.* 2>&1 &$/);
     expect(calls.at(-1)?.options).toEqual({
       envs: {
-        SKYNET_COMMAND_ID: result.cmdId,
-        SKYNET_SESSION_ID: "resident",
+        USEAGENT_COMMAND_ID: result.cmdId,
+        USEAGENT_SESSION_ID: "resident",
       },
     });
     expect(result.exitCode).toBe(0);

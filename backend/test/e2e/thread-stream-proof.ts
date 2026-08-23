@@ -16,7 +16,7 @@
  *     admin host is validated local (or an explicit remote opt-in is set).
  *   - backend on :3577 (mock engine, WORKER_STEP_DELAY_MS=1000 so turns are slow
  *     enough to reply mid-stream), SLACK/MEMORY/DAYTONA/OPENROUTER stripped.
- *   - frontend `next dev` on :3477 retargeted via SKYNET_API_ORIGIN.
+ *   - frontend `next dev` on :3477 retargeted via USEAGENT_API_ORIGIN.
  *   - safety gate: aborts unless the freshly-migrated backend DB is empty.
  *   - TEARDOWN kills ONLY the Bun.spawn children (graceful SIGTERM then SIGKILL),
  *     never a blanket lsof-kill of whatever holds the port.
@@ -353,7 +353,7 @@ async function main(): Promise<void> {
   console.log(`[thread-stream-proof] booting frontend :${FE_PORT} (next dev -> :${BE_PORT})`);
   frontend = Bun.spawn(["bunx", "next", "dev", "-p", String(FE_PORT)], {
     cwd: frontendRoot,
-    env: childEnv({ SKYNET_API_ORIGIN: BE, PORT: String(FE_PORT) }),
+    env: childEnv({ USEAGENT_API_ORIGIN: BE, PORT: String(FE_PORT) }),
     stdout: Bun.file("/tmp/thread-e2e-frontend.log"),
     stderr: Bun.file("/tmp/thread-e2e-frontend.log"),
   });

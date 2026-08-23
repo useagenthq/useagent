@@ -180,7 +180,7 @@ class CubeProcess implements SandboxProcess {
     const processes = await sandbox.commands.list();
     await Promise.all(
       processes
-        .filter((process) => process.envs.SKYNET_SESSION_ID === sessionId)
+        .filter((process) => process.envs.USEAGENT_SESSION_ID === sessionId)
         .map((process) => sandbox.commands.kill(process.pid).catch(() => false)),
     );
     await sandbox.commands.run(`rm -rf ${sessionDirectory(sessionId)}`);
@@ -191,8 +191,8 @@ class CubeProcess implements SandboxProcess {
     const processes = await sandbox.commands.list();
     return {
       commands: processes
-        .filter((process) => process.envs.SKYNET_SESSION_ID === sessionId)
-        .map((process) => ({ id: process.envs.SKYNET_COMMAND_ID ?? String(process.pid) })),
+        .filter((process) => process.envs.USEAGENT_SESSION_ID === sessionId)
+        .map((process) => ({ id: process.envs.USEAGENT_COMMAND_ID ?? String(process.pid) })),
     };
   }
 
@@ -223,8 +223,8 @@ class CubeProcess implements SandboxProcess {
     await sandbox.files.write(script, request.command);
     await sandbox.commands.run(`nohup setsid sh ${script} </dev/null >${log} 2>&1 &`, {
       envs: {
-        SKYNET_COMMAND_ID: commandId,
-        SKYNET_SESSION_ID: sessionId,
+        USEAGENT_COMMAND_ID: commandId,
+        USEAGENT_SESSION_ID: sessionId,
       },
     });
     return { cmdId: commandId, exitCode: 0 };

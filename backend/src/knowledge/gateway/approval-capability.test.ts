@@ -11,14 +11,14 @@ import { verifyToolToken, type ToolTokenClaims } from "./token";
 
 const originalFetch = globalThis.fetch;
 const originalGatewayDatabaseUrl = process.env.GATEWAY_DATABASE_URL;
-const originalApiOrigin = process.env.SKYNET_API_ORIGIN;
+const originalApiOrigin = process.env.USEAGENT_API_ORIGIN;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
   if (originalGatewayDatabaseUrl === undefined) delete process.env.GATEWAY_DATABASE_URL;
   else process.env.GATEWAY_DATABASE_URL = originalGatewayDatabaseUrl;
-  if (originalApiOrigin === undefined) delete process.env.SKYNET_API_ORIGIN;
-  else process.env.SKYNET_API_ORIGIN = originalApiOrigin;
+  if (originalApiOrigin === undefined) delete process.env.USEAGENT_API_ORIGIN;
+  else process.env.USEAGENT_API_ORIGIN = originalApiOrigin;
 });
 
 class MemoryApprovalStore implements ApprovalCapabilityStore {
@@ -145,7 +145,7 @@ describe("gateway operation approval capability", () => {
 
   test("restricted gateway delegates atomic consumption to the authenticated primary API", async () => {
     process.env.GATEWAY_DATABASE_URL = "postgres://restricted";
-    process.env.SKYNET_API_ORIGIN = "http://127.0.0.1:3201/path-is-ignored";
+    process.env.USEAGENT_API_ORIGIN = "http://127.0.0.1:3201/path-is-ignored";
     const requests: Request[] = [];
     globalThis.fetch = (async (input, init) => {
       requests.push(input instanceof Request ? input : new Request(input.toString(), init));

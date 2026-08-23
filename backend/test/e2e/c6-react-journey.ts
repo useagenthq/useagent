@@ -172,7 +172,7 @@ try {
   try {
     fe = Bun.spawn(["bun", "run", "dev", "--port", String(FE_PORT)], {
       cwd: frontendDir,
-      env: { ...process.env, PORT: String(FE_PORT), SKYNET_API_ORIGIN: BE, SKYNET_BUILD_DIST: DIST, NEXT_PUBLIC_CANONICAL_TIMELINE: "1" },
+      env: { ...process.env, PORT: String(FE_PORT), USEAGENT_API_ORIGIN: BE, USEAGENT_BUILD_DIST: DIST, NEXT_PUBLIC_CANONICAL_TIMELINE: "1" },
       stdout: feLog, stderr: feLog,
     });
   } finally {
