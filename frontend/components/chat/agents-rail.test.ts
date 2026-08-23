@@ -163,4 +163,24 @@ describe("agents rail gateway children", () => {
     expect(html.match(/data-testid="subagent-card"/g)).toHaveLength(1);
     expect(html).toContain("Get Google stock price");
   });
+
+  test("prefers one gateway row when canonical lifecycle names the same child", () => {
+    const html = renderToStaticMarkup(
+      createElement(AgentsRail, {
+        steps: [],
+        live: false,
+        canonicalEvents: [
+          {
+            kind: "child.started",
+            seq: 1,
+            childId: "child-run-1",
+            title: "Subagent",
+          },
+        ],
+        childSessions: [gatewayChild()],
+      }),
+    );
+    expect(html.match(/data-testid="subagent-card"/g)).toHaveLength(1);
+    expect(html).toContain("Get Google stock price");
+  });
 });

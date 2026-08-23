@@ -76,29 +76,13 @@ export type Attribution =
 const UNATTRIBUTED: Attribution = { kind: "none" };
 const NESTED_MARKER = /^↳\s*/;
 
-/** Placeholder objectives that are transport noise, not a real spawn target. A
- *  subagent-shaped tool row whose only "description" is one of these (and that
- *  resolves no child session) is an anonymous tool call, not an agent - some
- *  engines chip such rows `subagent` and label them "Tool". */
-const PLACEHOLDER_OBJECTIVES = new Set([
-  "tool",
-  "task",
-  "subagent",
-  "agent",
-  "mcp tool call",
-  "tool started",
-  "task started",
-  "subagent started",
-]);
-
-/** A real, non-placeholder objective (description/prompt) the spawn card can
- *  title itself with; null when the row names no real work. */
+/** A provider-supplied objective (description/prompt), when one exists. */
 function spawnObjective(step: ApiStep): string | null {
   const code = asRecord(parseStepCode(step));
   const input = asRecord(code?.input);
   const raw = readString(input?.description) ?? readString(input?.prompt);
   const trimmed = raw?.trim();
-  return trimmed && !PLACEHOLDER_OBJECTIVES.has(trimmed.toLowerCase()) ? trimmed : null;
+  return trimmed || null;
 }
 
 const isTaskLifecycle = (step: ApiStep): boolean => {
@@ -111,13 +95,13 @@ const isTaskLifecycle = (step: ApiStep): boolean => {
 
 const isSpawn = (step: ApiStep): boolean => {
   if (step.chip !== "subagent") return false;
+  if (isTaskLifecycle(step)) return false;
   const code = asRecord(parseStepCode(step));
   // Pre-code legacy subagent rows carry their identity in the label; keep them.
   if (!code) return true;
-  // A REAL spawn resolves a child session, or at least names real work. A
-  // subagent-shaped transport row with neither (a bare "Tool"/"subagent"
-  // placeholder some engines chip as `subagent`) is an anonymous tool call, not
-  // an agent - never card it into the rail.
+  // A real spawn resolves a provider child identity or carries an explicit
+  // provider objective. Transport wrappers carry neither; reject them by
+  // structure rather than guessing from display labels.
   return childSessionOf(step) !== null || spawnObjective(step) !== null;
 };
 
@@ -125,11 +109,7 @@ function spawnCard(step: ApiStep): SubagentCard {
   const childSessionId = childSessionOf(step);
   const callId = nativeOf(step)?.callID ?? null;
   const aliases = [...new Set([callId, childSessionId].filter((id): id is string => !!id))];
-  // Prefer the real objective; fall back to a plain "Subagent" rather than a
-  // placeholder tool verb so a card never reads a bare "Tool"/"Task".
-  const derived = deriveTrace(step).target.trim();
-  const title =
-    derived && !PLACEHOLDER_OBJECTIVES.has(derived.toLowerCase()) ? derived : "Subagent";
+  const title = spawnObjective(step) ?? (parseStepCode(step) ? "Subagent" : deriveTrace(step).target);
   return {
     id: step.id,
     title,

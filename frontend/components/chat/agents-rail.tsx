@@ -437,12 +437,18 @@ export function AgentsRail({
     frames,
     canonicalEvents,
   );
+  // Gateway children are product runs with richer identity than the parent
+  // lifecycle receipt. Prefer their row when both lanes name the same child.
+  const gatewayIds = new Set(childSessions.map((child) => child.id));
+  const nativeCards = cards.filter(
+    (card) => !card.aliases.some((alias) => gatewayIds.has(alias)),
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Fallback liveness for cards without a native status frame: the run is live
   // and hasn't emitted its terminal `done` step.
   const runLive = live && !steps.some((s) => s.kind === "done");
 
-  if (cards.length === 0 && childSessions.length === 0) {
+  if (nativeCards.length === 0 && childSessions.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <p className="text-body-2-regular text-text-tertiary text-center">
@@ -453,7 +459,7 @@ export function AgentsRail({
   }
 
   // Selection survives live re-derivation because card ids are stable.
-  const selected = selectedId ? cards.find((c) => c.id === selectedId) : null;
+  const selected = selectedId ? nativeCards.find((c) => c.id === selectedId) : null;
   if (selected) {
     const f = fidelityFor(selected, fidelity);
     // A legacy card's id IS its spawn step; a canonical card resolves through the
@@ -475,7 +481,7 @@ export function AgentsRail({
 
   return (
     <div className="h-full space-y-2 overflow-y-auto p-3" data-testid="agents-rail">
-      {cards.map((card) => (
+      {nativeCards.map((card) => (
         <AgentCardRow
           key={card.id}
           card={card}
