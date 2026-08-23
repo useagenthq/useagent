@@ -67,7 +67,7 @@ export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
         href="/skills"
         icon={RiBookShelfLine}
         tone="green"
-        label="Library"
+        label="Customize"
         active={active === "library"}
       />
       <SidebarProjects />

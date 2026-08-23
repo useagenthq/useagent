@@ -64,7 +64,7 @@ export function CompactSidebarRail({
           <RailLink href="/dashboard" label="Dashboard">
             <RiDashboardLine className="size-4" aria-hidden />
           </RailLink>
-          <RailLink href="/skills" label="Library">
+          <RailLink href="/skills" label="Customize">
             <RiBookMarkedLine className="size-4" aria-hidden />
           </RailLink>
           <RailLink href="/settings" label="Settings">
