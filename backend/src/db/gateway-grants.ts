@@ -51,21 +51,31 @@ const VIEW_GRANT =
  * the normal non-hosted state, not an error. A present role with a failing
  * grant is LOUD: that is exactly the production incident class this prevents.
  */
-export async function applyGatewayGrants(sql: Sql): Promise<void> {
+export async function applyGatewayGrants(
+  sql: Sql,
+  options: { strict?: boolean } = {},
+): Promise<void> {
   const [role] = await sql`SELECT 1 FROM pg_roles WHERE rolname = 'skynet_gateway'`;
-  if (!role) return;
+  if (!role) {
+    if (options.strict) throw new Error("required hosted role skynet_gateway is missing");
+    return;
+  }
   for (const grant of GATEWAY_GRANTS) {
     try {
       await sql.unsafe(grant);
     } catch (error) {
       console.error(`[gateway-grants] failed: ${grant}:`, error);
+      if (options.strict) throw error;
     }
   }
   const [view] = await sql`SELECT 1 FROM pg_views WHERE viewname = 'gateway_provider_api_key_credentials'`;
   if (view) {
     await sql.unsafe(VIEW_GRANT).catch((error) => {
       console.error(`[gateway-grants] failed: ${VIEW_GRANT}:`, error);
+      if (options.strict) throw error;
     });
+  } else if (options.strict) {
+    throw new Error("required hosted credentials view gateway_provider_api_key_credentials is missing");
   }
   console.log(`[gateway-grants] reconciled ${GATEWAY_GRANTS.length} grants for skynet_gateway`);
 }
