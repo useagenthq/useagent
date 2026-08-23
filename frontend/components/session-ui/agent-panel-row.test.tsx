@@ -12,6 +12,7 @@ import {
 const base: AgentPanelRowModel = {
   title: "Research checkout",
   role: null,
+  engine: null,
   model: null,
   status: "running",
   statusLabel: "Running",
@@ -104,7 +105,7 @@ describe("AgentPanelRow", () => {
     expect(html).not.toContain("tok");
   });
 
-  test("settled row: result preview, token usage, model chip, role chip, completed check", () => {
+  test("settled row: result preview, token caption, model + role chip, completed check", () => {
     const html = renderToStaticMarkup(
       <AgentPanelRow
         agent={{
@@ -122,12 +123,35 @@ describe("AgentPanelRow", () => {
     );
     expect(html).toContain("Found 3 issues in checkout");
     expect(html).toContain("41.2k tok");
-    expect(html).toContain("7 tools");
-    expect(html).toContain("$0.03");
     expect(html).toContain("sonnet-5");
     expect(html).toContain("reviewer");
     expect(html).toContain("text-lime-600");
+    expect(html).toContain("1m 5s");
+    // A completed row leads with its result, never a redundant visible "Completed"
+    // line - the word survives only once, in the sr-only status span.
+    expect(html.split("Completed").length).toBe(2);
     expect(html).not.toContain("animate-pulse");
+  });
+
+  test("gateway child row links to its own session and shows engine + model", () => {
+    const html = renderToStaticMarkup(
+      <AgentPanelRow
+        href="/session/child-run-1"
+        agent={{
+          ...base,
+          title: "Get Google stock price",
+          engine: "codex",
+          model: "openai/gpt-5.6-sol",
+          status: "completed",
+          statusLabel: "Completed",
+          result: "GOOGL is $344.82.",
+        }}
+      />,
+    );
+    expect(html).toContain('href="/session/child-run-1"');
+    expect(html).toContain("Get Google stock price");
+    expect(html).toContain("gpt-5.6-sol");
+    expect(html).toContain("GOOGL is $344.82.");
   });
 
   test("failed row: error-toned activity; role chip hidden when it repeats the title", () => {

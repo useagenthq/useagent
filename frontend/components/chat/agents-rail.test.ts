@@ -3,7 +3,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AgentsRail, childElapsedMs, childStatusLabel } from "./agents-rail";
 import type { CanonicalChildEventLike } from "./canonical-children";
+import type { GatewayChildSession } from "./gateway-children";
 import type { SubagentCard } from "./subagents";
+import type { ApiStep } from "./types";
 
 describe("agents rail child state labels", () => {
   test("uses the explicit resumable flag for idle children", () => {
@@ -79,5 +81,106 @@ describe("agents rail rows", () => {
     );
     expect(html.match(/Open subagent: Research price/g)).toHaveLength(2);
     expect(html.match(/data-testid="subagent-card"/g)).toHaveLength(2);
+  });
+});
+
+// The regression surface: a gateway `child_session_create` fan-out on codex. The
+// children are their OWN runs (no native child.started, no chip-subagent spawn),
+// so the rail must render them from the gateway list with real identity, and must
+// NOT card the anonymous "Tool" tool-call rows the run also emitted.
+describe("agents rail gateway children", () => {
+  const gatewayChild = (over: Partial<GatewayChildSession> = {}): GatewayChildSession => ({
+    id: "child-run-1",
+    prompt: "Get Google stock price",
+    engine: "codex",
+    model: "openai/gpt-5.6-sol",
+    status: "completed",
+    summary: "GOOGL is $344.82.",
+    ...over,
+  });
+
+  // A runtime collab_agent_tool_call row chipped `subagent` with tool "subagent"
+  // but no child session and no objective - the label falls back to "Tool".
+  const anonymousToolStep = (id: string): ApiStep => ({
+    id,
+    run_id: "parent",
+    idx: 0,
+    kind: "task",
+    label: "Tool",
+    chip: "subagent",
+    code_json: JSON.stringify({
+      source: "t3",
+      activityKind: "tool.completed",
+      tool: "subagent",
+      input: {},
+      native: { callID: `${id}-call` },
+    }),
+    created_at: "2026-08-23T09:00:00Z",
+  });
+
+  test("renders gateway children with real identity and a link to their session", () => {
+    const html = renderToStaticMarkup(
+      createElement(AgentsRail, {
+        steps: [],
+        live: false,
+        childSessions: [
+          gatewayChild(),
+          gatewayChild({ id: "child-run-2", prompt: "Get NVIDIA stock price", status: "queued", summary: null }),
+        ],
+      }),
+    );
+    expect(html.match(/data-testid="subagent-card"/g)).toHaveLength(2);
+    expect(html).toContain("Get Google stock price");
+    expect(html).toContain("Get NVIDIA stock price");
+    // Real engine + model identity, its own-session link, and honest queued state.
+    expect(html).toContain("Codex");
+    expect(html).toContain("gpt-5.6-sol");
+    expect(html).toContain('href="/session/child-run-1"');
+    expect(html).toContain("GOOGL is $344.82.");
+    expect(html).toContain("Queued");
+  });
+
+  test("excludes anonymous 'Tool' tool-call rows - the nine-identical-cards bug", () => {
+    const html = renderToStaticMarkup(
+      createElement(AgentsRail, {
+        steps: [anonymousToolStep("a1"), anonymousToolStep("a2"), anonymousToolStep("a3")],
+        live: false,
+      }),
+    );
+    // None of the anonymous rows become cards; with no real children the rail is empty.
+    expect(html).not.toContain('data-testid="subagent-card"');
+    expect(html).toContain("No subagents in this conversation yet.");
+  });
+
+  test("shows only the real gateway children when a run also emitted anonymous rows", () => {
+    const html = renderToStaticMarkup(
+      createElement(AgentsRail, {
+        steps: [anonymousToolStep("a1"), anonymousToolStep("a2")],
+        live: false,
+        childSessions: [gatewayChild()],
+      }),
+    );
+    expect(html.match(/data-testid="subagent-card"/g)).toHaveLength(1);
+    expect(html).toContain("Get Google stock price");
+  });
+
+  test("prefers one gateway row when canonical lifecycle names the same child", () => {
+    const html = renderToStaticMarkup(
+      createElement(AgentsRail, {
+        steps: [],
+        live: false,
+        canonicalEvents: [
+          {
+            kind: "child.started",
+            seq: 1,
+            childId: "child-run-1",
+            title: "Subagent",
+          },
+        ],
+        childSessions: [gatewayChild()],
+      }),
+    );
+    expect(html.match(/data-testid="subagent-card"/g)).toHaveLength(1);
+    expect(html).toContain("Get Google stock price");
   });
 });

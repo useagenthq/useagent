@@ -76,6 +76,15 @@ export type Attribution =
 const UNATTRIBUTED: Attribution = { kind: "none" };
 const NESTED_MARKER = /^↳\s*/;
 
+/** A provider-supplied objective (description/prompt), when one exists. */
+function spawnObjective(step: ApiStep): string | null {
+  const code = asRecord(parseStepCode(step));
+  const input = asRecord(code?.input);
+  const raw = readString(input?.description) ?? readString(input?.prompt);
+  const trimmed = raw?.trim();
+  return trimmed || null;
+}
+
 const isTaskLifecycle = (step: ApiStep): boolean => {
   const code = asRecord(parseStepCode(step));
   return (
@@ -86,22 +95,24 @@ const isTaskLifecycle = (step: ApiStep): boolean => {
 
 const isSpawn = (step: ApiStep): boolean => {
   if (step.chip !== "subagent") return false;
+  if (isTaskLifecycle(step)) return false;
   const code = asRecord(parseStepCode(step));
+  // Pre-code legacy subagent rows carry their identity in the label; keep them.
   if (!code) return true;
-  return (
-    readString(code?.tool) === "subagent" ||
-    nativeOf(step)?.childSessionID !== undefined ||
-    childSessionOf(step) !== null
-  );
+  // A real spawn resolves a provider child identity or carries an explicit
+  // provider objective. Transport wrappers carry neither; reject them by
+  // structure rather than guessing from display labels.
+  return childSessionOf(step) !== null || spawnObjective(step) !== null;
 };
 
 function spawnCard(step: ApiStep): SubagentCard {
   const childSessionId = childSessionOf(step);
   const callId = nativeOf(step)?.callID ?? null;
   const aliases = [...new Set([callId, childSessionId].filter((id): id is string => !!id))];
+  const title = spawnObjective(step) ?? (parseStepCode(step) ? "Subagent" : deriveTrace(step).target);
   return {
     id: step.id,
-    title: deriveTrace(step).target,
+    title,
     childSessionId,
     callId,
     aliases,
