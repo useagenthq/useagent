@@ -4,6 +4,7 @@ import { commands, runs, type CommandState } from "../db/schema";
 import { createRun } from "../runs/repo";
 import type { RunCommandInput } from "./types";
 import { claimUploadsForRun, UploadClaimError } from "../uploads/repo";
+import { recordAdmissionOnAccept } from "../fleet/intake";
 
 // ---------------------------------------------------------------------------
 // Command persistence — pure data access, no decisions. The service layer
@@ -113,6 +114,19 @@ export async function insertCommandWithRun(
       state: "queued" satisfies CommandState,
       attemptCount: 0,
     });
+    // Durable fleet admission: enforce the per-org queue ceiling (429) and record
+    // the workload's resource class ATOMICALLY with the run + command, so a queued
+    // task is exactly as crash-durable as the run itself.
+    await recordAdmissionOnAccept(
+      {
+        runId: cmd.run.id,
+        orgId: cmd.orgId,
+        threadId: cmd.run.threadId,
+        engine: cmd.run.engine,
+        model: cmd.run.model,
+      },
+      tx,
+    );
   };
   if (exec === db) await db.transaction(insert);
   else await insert(exec);

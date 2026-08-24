@@ -33,6 +33,10 @@ import { desktopProxyRoutes } from "./runs/desktop-proxy";
 import { fleetRoutes } from "./runs/fleet-routes";
 import { liveProxyRoutes } from "./runs/live-proxy";
 import { recoverStaleRuns, startReconcileLoop } from "./runs/recovery";
+import {
+  reconcileFleetOnBoot,
+  startFleetReconciler,
+} from "./fleet/reconciler";
 import { pumpThread, signalCancel } from "./worker";
 import { handleRunCreate, runsRoutes } from "./runs/routes";
 import { terminalRoutes } from "./runs/terminal";
@@ -107,6 +111,23 @@ await applyGatewayGrants(client);
 // Idempotent boot seeding: dev org/user/member only. No demo content — the
 // Knowledge and Skills surfaces start empty and fill with real records.
 await seedDev();
+
+// Fleet boot reconciliation (HA Stage A): the process that held every active
+// sandbox lease is gone, so release them all (capacity zeroed) and unbind
+// non-terminal admissions BEFORE recovery re-pumps threads — so a re-dispatched
+// run mints a fresh lease and the queue never double-counts a dead reservation.
+const fleetBoot = await reconcileFleetOnBoot();
+if (
+  fleetBoot.releasedLeases > 0 ||
+  fleetBoot.resetAdmissions > 0 ||
+  fleetBoot.syncedTerminal > 0
+) {
+  console.log(
+    `[boot] fleet recovery — ${fleetBoot.releasedLeases} leases released, ` +
+      `${fleetBoot.resetAdmissions} admissions re-queued, ` +
+      `${fleetBoot.syncedTerminal} synced terminal`,
+  );
+}
 
 // Recover orphaned runs from a previous (unclean) shutdown: reconcile the ones
 // whose native opencode session actually finished server-side, fail the rest
@@ -377,6 +398,14 @@ startLearningOutbox();
 // the finished session, honest-fails after the ~5min budget. Single-flight;
 // harmless when nothing is parked.
 startReconcileLoop();
+
+// Fleet capacity reconciler (HA Stage A, 5s tick). Heartbeats live leases,
+// reclaims + provider-GCs expired ones (crashed workers), and admits durably-
+// queued work as capacity frees. Single-flight with a watchdog; DB-backed so it
+// survives restarts. The durable queue + leases make "accepted" mean "persisted
+// as queued", not "started instantly". FLEET_RECONCILER_AUTOSTART=0 disables the
+// background loop (the unit suite drives admission explicitly).
+if (process.env.FLEET_RECONCILER_AUTOSTART !== "0") startFleetReconciler();
 
 // Daytona warm pool for the OpenCode snapshot (perf plan Phase 3), OFF by
 // default. Only when DAYTONA_WARM_POOL_SIZE is set AND an explicit OpenCode

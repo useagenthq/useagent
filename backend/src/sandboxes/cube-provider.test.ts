@@ -327,4 +327,41 @@ describe("Cube sandbox provider", () => {
     create.mockRestore();
     getInfo.mockRestore();
   });
+
+  test("reads per-node placement headroom from the local CubeOps inventory API", async () => {
+    process.env.CUBE_PROXY_SCHEME = "https";
+    process.env.CUBE_OPS_ACCESS_TOKEN = "ops-token";
+    process.env.CUBE_OPS_URL = "http://127.0.0.1:12088/opsapi/v1";
+    let page = 0;
+    const list = spyOn(E2BSandbox, "list").mockReturnValue({
+      get hasNext() { return page === 0; },
+      nextItems: async () => {
+        page += 1;
+        return [sandboxInfo({ state: "running" })];
+      },
+    } as ReturnType<typeof E2BSandbox.list>);
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([{
+      nodeID: "node-a",
+      healthy: true,
+      schedulingDisabled: false,
+      allocatable: { cpuMilli: 3_000, memoryMB: 12_000 },
+    }]), { status: 200 }));
+
+    await expect(cubeSandboxProvider("").inventory?.()).resolves.toMatchObject({
+      activeSandboxes: 1,
+      nodes: [{
+        id: "node-a",
+        ready: true,
+        schedulingDisabled: false,
+        allocatableCpuMillicores: 3_000,
+        allocatableMemoryMib: 12_000,
+      }],
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://127.0.0.1:12088/opsapi/v1/nodes",
+      expect.objectContaining({ headers: { Authorization: "Bearer ops-token" } }),
+    );
+    list.mockRestore();
+    fetchSpy.mockRestore();
+  });
 });

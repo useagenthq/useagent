@@ -24,6 +24,8 @@ import {
   RunAdmissionClosedError,
   type RunCommandIntent,
 } from "../commands";
+import { FleetQueueLimitError } from "../fleet/intake";
+import { runQueueView } from "../fleet/view";
 import {
   acceptInternalRunCommand,
   preflightInternalRunCommandReplay,
@@ -512,17 +514,24 @@ export async function handleRunCreate(
     if (error instanceof RunAdmissionClosedError) {
       return c.json({ error: error.code, retryable: true }, 503);
     }
+    // Durable per-org queue ceiling exceeded — the server-side fan-out authority.
+    if (error instanceof FleetQueueLimitError)
+      return c.json({ error: error.code, retryable: true, limit: error.limit }, 429);
     throw error;
   }
 
   // Translate the acceptance outcome to the HTTP response (exhaustive — a new
   // outcome variant is a compile error here).
   switch (accepted.status) {
-    case "created":
-      // Enqueued durably; pump the thread's mailbox — dispatches this run now if
-      // the thread is idle, else it waits its turn (survives a restart).
+    case "created": {
+      // Pump the mailbox: dispatches now if the thread is idle AND capacity is
+      // free, else the run stays queued (survives a restart; the reconciler
+      // admits it later). ADDITIVE response: still `id`, plus `status` + `queue`.
       await pumpThread(threadId);
-      return c.json({ id: accepted.runId }, 201);
+      const queue = await runQueueView(accepted.runId);
+      const status = queue?.state === "queued" ? "queued" : "running";
+      return c.json({ id: accepted.runId, status, queue }, 201);
+    }
     case "replayed":
       // The original run's worker is already running (or finished) — return its
       // id, do NOT re-dispatch.
