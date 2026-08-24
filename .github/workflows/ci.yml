@@ -94,10 +94,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: bun-store-${{ runner.os }}-${{ hashFiles('backend/bun.lock') }}
+          key: bun-store-${{ runner.os }}-${{ hashFiles('backend/bun.lock', 'packages/*/bun.lock') }}
           restore-keys: bun-store-${{ runner.os }}-
       - run: bun install --frozen-lockfile
         working-directory: backend
+      # Backend tests import packages/artifact-formats (docx etc.) through file:
+      # links, so the linked packages need their own installs here too.
+      - name: Install shared package deps
+        run: |
+          for p in packages/*/; do
+            if [ -f "$p/package.json" ]; then (cd "$p" && bun install --frozen-lockfile); fi
+          done
       # `bun run test` = prepare-db (DROP+CREATE skynet_test) then `bun test`.
       # The boot migrator builds the schema from committed Drizzle migrations, so
       # a schema drift fails here. preload.ts strips LLM keys → fully deterministic.
