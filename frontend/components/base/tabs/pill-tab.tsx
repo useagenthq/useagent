@@ -143,6 +143,7 @@ export function PillTab({
   onSelect,
   children,
   className,
+  labelClassName,
   ...props
 }: {
   variant?: PillTabVariant;
@@ -151,6 +152,9 @@ export function PillTab({
   onSelect: () => void;
   children: ReactNode;
   className?: string;
+  // Opt-in classes for the label span only (e.g. a container-query `sr-only`
+  // to collapse the pill to icon-only in a narrow strip). Default: unchanged.
+  labelClassName?: string;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onClick" | "type" | "children" | "className">) {
   return (
     <button
@@ -191,6 +195,7 @@ export function PillTab({
         className={cx(
           "relative z-10 text-body-medium whitespace-nowrap",
           isSelected ? styles.selectedLabel[variant] : "text-text-secondary",
+          labelClassName,
         )}
       >
         {children}
