@@ -863,47 +863,15 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           open workpiece can tell a requested edit (from the user's own last
           message's run) from an unsolicited one. */}
       <SessionLatestRunProvider value={newest.id}>
-      <div className="flex h-full flex-col">
-      {/* Compact thread bar. Brand and search belong to the collapsible sidebar. */}
-      <div className="border-border-button-default/50 flex h-12 shrink-0 items-center justify-between gap-3 border-b px-4">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="text-mono-label text-text-tertiary">Session</span>
-          {/* The thread's git identity: repos (+ chosen branch) come from the
-              ROOT run's durable wire row - repos are inherited across a thread,
-              so the SSR-provided root is authoritative for the page lifetime. */}
-          <GitChips refs={runGitRefs(root)} />
-        </div>
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* Status pill + New session removed (user 2026-08-23): run state
-              already lives in the composer/timeline and New thread in the
-              sidebar - the header stays quiet. Stop remains the composer's. */}
-          {/* Below md the surfaces rail is a slide-over sheet; this is its
-              opener (the rail's own reopen strip covers md+). */}
-          {hasRuntimeSurfaces && !mobileSurfacesOpen && (
-            <Button
-              variant="ghost"
-              size="small"
-              iconOnly
-              leadingIcon={RiLayoutRightLine}
-              onClick={openMobileSurfaces}
-              title="Open surfaces panel"
-              aria-label="Open surfaces panel"
-              className="md:hidden"
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Fan-out subagents in this thread that aren't on the main reply line —
-          each opens in the temporary viewing pane. Empty until threading lands. */}
-      <SubagentChips rootId={rootId} excludeIds={thread.map((r) => r.id)} />
-
       {/* Body: the conversation is the dominant surface (~68% when the rail is
           open, everything when it's collapsed); the right rail is ONE tabbed
-          Editor|Terminal panel. ONE live indicator at a time: the boot gap is the
-          orb below, and once steps stream the conversation's Thinking block takes
-          over — the old floating WorkingPill duplicate is gone. */}
-      <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col md:flex-row">
+          Editor|Terminal panel spanning the FULL main height (the session
+          header lives inside the conversation column so the rail reaches the
+          top edge, per the sidebar-matching chrome). ONE live indicator at a
+          time: the boot gap is the orb below, and once steps stream the
+          conversation's Thinking block takes over — the old floating
+          WorkingPill duplicate is gone. */}
+      <div ref={bodyRef} className="flex h-full min-h-0 flex-col md:flex-row">
         {/* Conversation */}
         <section
           aria-hidden={railExpanded}
@@ -916,6 +884,40 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             railExpanded && "hidden",
           )}
         >
+          {/* Compact thread bar - INSIDE the conversation column so the rail
+              can run full height beside it. Brand/search stay in the sidebar. */}
+          <div className="border-border-button-default/50 flex h-12 shrink-0 items-center justify-between gap-3 border-b px-4">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="text-mono-label text-text-tertiary">Session</span>
+              {/* The thread's git identity: repos (+ chosen branch) come from the
+                  ROOT run's durable wire row - repos are inherited across a thread,
+                  so the SSR-provided root is authoritative for the page lifetime. */}
+              <GitChips refs={runGitRefs(root)} />
+            </div>
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* Status pill + New session removed (user 2026-08-23): run state
+                  already lives in the composer/timeline and New thread in the
+                  sidebar - the header stays quiet. Stop remains the composer's. */}
+              {/* Below md the surfaces rail is a slide-over sheet; this is its
+                  opener (the rail's own reopen strip covers md+). */}
+              {hasRuntimeSurfaces && !mobileSurfacesOpen && (
+                <Button
+                  variant="ghost"
+                  size="small"
+                  iconOnly
+                  leadingIcon={RiLayoutRightLine}
+                  onClick={openMobileSurfaces}
+                  title="Open surfaces panel"
+                  aria-label="Open surfaces panel"
+                  className="md:hidden"
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Fan-out subagents in this thread that aren't on the main reply line —
+              each opens in the temporary viewing pane. Empty until threading lands. */}
+          <SubagentChips rootId={rootId} excludeIds={thread.map((r) => r.id)} />
           {/* PRIMARY CHAT = our native React conversation (user decision
               2026-08-05, second pass): owning the rendering layer keeps the
               extension surface ours — artifact/PPT/PDF viewers, custom panes —
@@ -1014,7 +1016,11 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               // the transition is suppressed so the edge tracks the pointer
               // exactly and the terminal's ResizeObserver stops firing the
               // moment the pointer stops (no post-drag animation tail).
-              "bg-background-primary-default flex min-h-0 min-w-0 flex-col overflow-hidden transition-[width] peer-data-[dragging=true]:transition-none",
+              // bg matches the SIDEBAR surface token (secondary-default) so the
+              // two chrome panels read as one system in every theme - the old
+              // primary-default card token diverged visibly in Midnight's
+              // inverted dark ladder.
+              "bg-background-secondary-default flex min-h-0 min-w-0 flex-col overflow-hidden transition-[width] peer-data-[dragging=true]:transition-none",
               // Below md this SAME panel is a bottom slide-over sheet (fixed,
               // safe-area padded, pill-tab header unchanged) with a translate-y
               // open/close transition per the subagent-pane mechanics.
@@ -1231,7 +1237,6 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             <RiComputerLine className="size-4" aria-hidden />
           </button>
         ) : null}
-      </div>
       </div>
       </SessionLatestRunProvider>
       </ComposerPrefillProvider>
