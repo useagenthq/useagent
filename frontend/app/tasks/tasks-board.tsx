@@ -69,14 +69,18 @@ export function TasksBoard({
 
   // The project filter is mirrored into the URL so a board view is shareable and
   // back/forward correct. Selecting a project writes `?project=` (replace, no
-  // history spam); browser navigation writes it back into state.
+  // history spam) while preserving any other query params; browser navigation
+  // writes it back into state.
   const selectProject = useCallback(
     (next: string) => {
       setProject(next);
-      const query = next === ALL_PROJECTS ? "" : `?project=${encodeURIComponent(next)}`;
-      router.replace(`${pathname}${query}`, { scroll: false });
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      if (next === ALL_PROJECTS) params.delete("project");
+      else params.set("project", next);
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
-    [pathname, router],
+    [pathname, router, searchParams],
   );
 
   const projectParam = searchParams?.get("project") ?? null;
