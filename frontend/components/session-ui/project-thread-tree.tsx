@@ -53,7 +53,8 @@ function TreeConnector({ count }: { count: number }) {
   const height = firstCenter + rowPitch * (count - 1) + 1;
   return (
     <svg
-      aria-hidden
+      aria-hidden="true"
+      role="presentation"
       width="12"
       height={height}
       viewBox={`0 0 12 ${height}`}
@@ -141,6 +142,7 @@ function ProjectFolder({
   const menu = renderMenu?.(group, { isOpen: menuOpen, setOpen: setMenuOpen });
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: right-click is a progressive enhancement; the hover kebab is the fully keyboard-accessible twin of this menu.
     <div
       className="group/proj relative flex w-full flex-col"
       onContextMenu={
