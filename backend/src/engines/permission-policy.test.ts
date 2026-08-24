@@ -93,12 +93,6 @@ describe("decideAcpPermission - actual response payloads (pure logic)", () => {
       ),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
-      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.loop_login_open"),
-    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
-    expect(
-      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.loop_login_destroy"),
-    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
-    expect(
       decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.skills_list"),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
@@ -114,14 +108,14 @@ describe("decideAcpPermission - actual response payloads (pure logic)", () => {
       decideAcpPermission(
         [ALLOW_ALWAYS],
         false,
-        "mcp.skynet-knowledge.loop_login_destroy",
+        "mcp.skynet-knowledge.memory_search",
       ),
     ).toEqual({ outcome: { outcome: "cancelled" } });
     expect(
       decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.computer_future"),
     ).toEqual({ outcome: { outcome: "cancelled" } });
     expect(
-      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.loop_login_delete_all"),
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.memory_delete_all"),
     ).toEqual({ outcome: { outcome: "cancelled" } });
     expect(
       decideAcpPermission(

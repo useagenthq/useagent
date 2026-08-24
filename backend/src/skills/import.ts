@@ -48,7 +48,7 @@ export interface ScanResult {
 
 export interface ImportOutcome {
   path: string;
-  action: "created" | "updated" | "unchanged" | "skipped" | "protected";
+  action: "created" | "updated" | "unchanged" | "skipped";
   reason?: "not_found" | "too_large";
   skillId?: string;
   version?: number;

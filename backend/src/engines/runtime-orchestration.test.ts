@@ -218,16 +218,16 @@ describe("T3 orchestration projection", () => {
       id: "mcp-completed",
       tone: "tool" as const,
       kind: "tool.completed",
-      summary: "skynet-knowledge · loop_login_open",
+      summary: "skynet-knowledge · memory_search",
       payload: {
         itemType: "mcp_tool_call",
         data: {
           item: {
             id: "exec-login-1",
             server: "skynet-knowledge",
-            tool: "loop_login_open",
-            arguments: { org: "overwatch" },
-            result: { opened: true },
+            tool: "memory_search",
+            arguments: { query: "release process" },
+            result: { items: [] },
             status: "completed",
             type: "mcp_tool_call",
           },
@@ -237,11 +237,11 @@ describe("T3 orchestration projection", () => {
     };
     expect(activityStep(mcpCompleted)).toMatchObject({
       kind: "command",
-      label: "useAgent · loop_login_open",
+      label: "useAgent · memory_search",
       code_json: {
-        tool: "loop_login_open",
+        tool: "memory_search",
         server: "skynet-knowledge",
-        input: { org: "overwatch" },
+        input: { query: "release process" },
         native: { callID: "exec-login-1" },
       },
     });

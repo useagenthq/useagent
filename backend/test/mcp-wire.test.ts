@@ -61,7 +61,6 @@ describe("MCP wire is byte-identical after the SDK-schema adoption (#98)", () =>
     expect(result.tools).toEqual(
       advertisedGatewayToolDescriptors({
         childSessions: false,
-        loopLogin: false,
         slack: false,
       }),
     );
