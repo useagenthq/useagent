@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
+import { slackOutbox } from "../src/db/schema";
 import { acceptRunCommand } from "../src/commands";
 import { finalizeRun } from "../src/runs/finalize";
 import { recoverStaleRuns, type ReconcileProbe } from "../src/runs/recovery";
@@ -84,7 +85,11 @@ describe("slack reply durability at finalization (GAP 3)", () => {
     await finalizeRun(runId, "completed", "sum", 1);
     const row = await getSlackOutbox(`slack-reply:${TEAM}:${runId}`);
     expect(row).not.toBeNull();
-    expect(row!.attemptCount).toBe(0); // one original pending row, never duplicated
+    const rows = await db
+      .select({ id: slackOutbox.id })
+      .from(slackOutbox)
+      .where(eq(slackOutbox.idempotencyKey, `slack-reply:${TEAM}:${runId}`));
+    expect(rows).toHaveLength(1);
   });
 
   test("a BOOT-RECONCILED Slack run still replies (the watcher-death case)", async () => {
