@@ -8,7 +8,8 @@ import * as Badge from "@/components/ui/badge";
 import { AskRepoBar } from "./ask-repo-bar";
 import { PagesRail } from "./pages-rail";
 import { wikiContentPreview } from "./wiki-content-data";
-import { fetchPublishedWikiDocuments, relativeTime, type WikiDoc } from "./wiki-data";
+import { fetchPublishedWikiDocuments, type WikiDoc } from "./wiki-data";
+import { relativeTime } from "@/utils/format";
 
 export const metadata: Metadata = {
   title: "Wiki",

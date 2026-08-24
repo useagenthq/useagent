@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import { env } from "../env";
+import { errorMessage } from "../util/error-message";
 
 // A fixed advisory-lock key identifying "THE skynet backend singleton for this database".
 // Arbitrary 32-bit constant ("SkNt"); only its uniqueness within this app matters.
@@ -65,7 +66,7 @@ export async function enforceSingleBackend(
     }
     await reserved.release();
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = errorMessage(err);
     await holder.end().catch(() => {});
     if (required) {
       throw new Error(`[boot] single-backend guard unavailable: ${detail}`, { cause: err });

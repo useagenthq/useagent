@@ -33,12 +33,12 @@ import {
   type ApiStep,
   deriveTrace,
   type FileChangeKind,
-  formatDuration,
   parseTodos,
   type StepTrace,
   type TodoItem,
   type TraceGlyph,
 } from "@/components/chat/types";
+import { formatDuration } from "@/utils/format";
 import { cx as cn } from "@/utils/cx";
 
 type RowState = "running" | "done";

@@ -7,6 +7,7 @@ import type {
   HarnessSessionHandle,
 } from "./types";
 import { cancelAcpSession } from "./acp-server";
+import { errorMessage } from "../util/error-message";
 
 // ---------------------------------------------------------------------------
 // Claude/Codex ACP control seam (Slice 2). Gives the ACP engines the SAME typed
@@ -63,7 +64,7 @@ function makeAcpHarness(provider: string): HarnessAdapter {
         const sent = await cancelAcpSession(handle.sandboxId, handle.sessionId);
         return sent ? { status: "ok" } : { status: "error", code: "session_invalid", message: "no live ACP relay holds this session" };
       } catch (e) {
-        return { status: "error", code: "provider_error", message: e instanceof Error ? e.message : String(e) };
+        return { status: "error", code: "provider_error", message: errorMessage(e) };
       }
     },
 
