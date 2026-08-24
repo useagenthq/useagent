@@ -32,11 +32,15 @@ import { canonicalEngine } from "../engines/engine-alias";
 import { enqueueLearning } from "../learning/learning-outbox";
 
 /** Providers whose runs project native events and/or `steps` into the canonical lane.
- *  OpenCode + the ACP engines (acp/claude/codex). Legacy aliases (daytona -> opencode,
+ *  OpenCode, Pi, and the ACP engines (acp/claude/codex). Legacy aliases (daytona -> opencode,
  *  claude-sdk -> claude) run the same adapter, so they normalize into this set via
  *  {@link canonicalEngine} and are NOT left silently outside the lane. Only `mock`
  *  (scripted) has no provider source to translate. */
-const CANONICAL_ENGINES = new Set(["opencode", "acp", "claude", "codex"]);
+const CANONICAL_ENGINES = new Set(["opencode", "acp", "claude", "codex", "pi"]);
+
+export function terminalCanonicalizationEligible(engine: string): boolean {
+  return CANONICAL_ENGINES.has(canonicalEngine(engine));
+}
 
 type RunRow = typeof runs.$inferSelect;
 
@@ -221,9 +225,9 @@ export async function finalizeRun(
     // transaction, so the intent to translate commits ATOMICALLY with the terminal run
     // - a crash never leaves a settled run with no canonical history. A background
     // outbox worker translates with a source-watermark stability check + retry, and
-    // marks `complete` only when the whole source was translated. OpenCode + the ACP
-    // engines project into `steps`, which the step lane turns into canonical tool rows.
-    if (CANONICAL_ENGINES.has(canonicalEngine(run.engine))) {
+    // marks `complete` only when the whole source was translated. Native and ACP
+    // engines project events/steps into the same canonical rows.
+    if (terminalCanonicalizationEligible(run.engine)) {
       await enqueueCanonicalization(runId, run.threadId, tx);
     }
 

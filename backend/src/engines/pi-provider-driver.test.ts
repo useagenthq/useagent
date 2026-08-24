@@ -14,6 +14,12 @@ function harnessSession(nativeSessionId = "/sessions/pi.jsonl"): HarnessSession 
 }
 
 describe("Pi provider driver", () => {
+  test("advertises constrained native tools with no product approval mediation", () => {
+    const driver = makePiProviderDriver();
+    expect(driver.descriptor.tools).toEqual({ mode: "provider_native", approval: "none" });
+    expect(driver.descriptor.capabilities.approvals).toBe(false);
+  });
+
   test("resumes a persistent native session and forwards follow-up prompts", async () => {
     const commands: unknown[] = [];
     const bridge = {
