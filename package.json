@@ -9,6 +9,6 @@
     "release:provider-connection-bootstrap": "bash deploy/hetzner/deploy-provider-connection-bootstrap.sh",
     "release:hosted": "bash deploy/hetzner/deploy-release.sh",
     "deploy:hosted": "bash deploy/hetzner/deploy-fast.sh",
-    "typecheck": "bun run --cwd frontend typecheck && (cd backend && bunx tsc --noEmit) && bun run --cwd backend typecheck:release && (cd packages/sandbox-contract && bunx tsc --noEmit) && (cd packages/artifact-workspace && bunx tsc --noEmit) && (cd packages/artifact-formats && bunx tsc --noEmit) && (cd packages/agent-harness && bunx tsc --noEmit) && (cd packages/agent-client && bunx tsc --noEmit) && (cd packages/conformance && bunx tsc --noEmit)"
+    "typecheck": "bun run --cwd frontend typecheck && (cd backend && bunx tsc --noEmit) && bun run --cwd backend typecheck:release && (cd packages/sandbox-contract && bunx tsc --noEmit) && (cd packages/artifact-workspace && bunx tsc --noEmit) && (cd packages/artifact-formats && bunx tsc --noEmit) && (cd packages/agent-harness && bunx tsc --noEmit) && (cd packages/agent-client && bunx tsc --noEmit) && (cd packages/conformance && bunx tsc --noEmit) && (cd packages/cli && bunx tsc --noEmit)"
   }
 }
