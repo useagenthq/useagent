@@ -90,6 +90,23 @@ describe("AgentClient HTTP", () => {
     expect(snap.runs[0]!.id).toBe("a");
   });
 
+  test("listRuns requests the summary view and drops malformed rows", async () => {
+    let requested = "";
+    const summaryRow = {
+      id: "run_a", prompt: "p", model: "m", engine: "opencode", status: "completed",
+      summary: "done", duration_ms: 10, repo: null, repos: [], repo_specs: [],
+      created_at: "2026-08-24T00:00:00.000Z", updated_at: "2026-08-24T00:00:00.000Z",
+    };
+    const client = createAgentClient({
+      baseUrl: "https://x",
+      fetch: async (url) => { requested = url; return jsonResponse(200, { runs: [summaryRow, { nope: 1 }] }); },
+    });
+    const runs = await client.listRuns({ limit: 5, all: true });
+    expect(requested).toBe("https://x/api/runs?view=summary&all=1&limit=5");
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.id).toBe("run_a");
+  });
+
   test("cancel returns a classified OperationResult", async () => {
     const client = createAgentClient({ fetch: async () => jsonResponse(202, { id: "r", status: "cancelling" }) });
     expect(await client.cancel("r")).toEqual({ ok: true, status: "cancelling" });
