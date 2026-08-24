@@ -1,5 +1,9 @@
 import { resolveRepoHeadSha } from "../github/discovery";
-import { listRepos } from "../github/repos";
+import {
+  resolveGithubRepositoryAccess,
+  type GithubRepositoryAccess,
+} from "../github/auth";
+import { listReposWithAccess } from "../github/repos";
 import { DEV_ORG_ID } from "../seed";
 import { importSkills, scanSkillCandidates } from "./import";
 
@@ -16,12 +20,10 @@ import { importSkills, scanSkillCandidates } from "./import";
 //   SKILLS_RESYNC_INTERVAL_MIN  minutes between sweeps. Default 0 = DISABLED —
 //                               enabling background GitHub traffic is an
 //                               explicit operator choice, never implicit.
-//   SKILLS_RESYNC_ORG_ID        org that receives the imports. The GitHub
-//                               credential is process-global (one installation
-//                               per backend), so the target org is deployment
-//                               config, not per-request. Defaults to the seeded
-//                               dev org for a single-tenant dev bring-up; a
-//                               production deploy enabling the job sets it.
+//   SKILLS_RESYNC_ORG_ID        org that receives the imports and whose active
+//                               GitHub connection authorizes every repo read.
+//                               Defaults to the seeded dev org; production sets
+//                               the owning org explicitly.
 //
 // Sweep shape: serial over the listed repos with a small pacing delay between
 // them and a hard per-sweep repo bound. Steady state is cheap: a repo whose
@@ -77,20 +79,23 @@ export function skillsResyncConfig(
  *  bounds, error isolation) with fakes and zero GitHub/DB traffic. Structural
  *  subsets of the real functions' types — the defaults satisfy them as-is. */
 export interface SkillsResyncDeps {
-  listRepos: (orgId: string) => Promise<{
+  openAccess: (orgId: string) => Promise<GithubRepositoryAccess>;
+  listRepos: (access: GithubRepositoryAccess) => Promise<{
     configured: boolean;
     repos: readonly { full_name: string }[];
     error?: string;
   }>;
-  resolveHeadSha: (repo: string) => Promise<string>;
+  resolveHeadSha: (repo: string, access: GithubRepositoryAccess) => Promise<string>;
   scan: (
     orgId: string,
     repo: string,
+    access: GithubRepositoryAccess,
   ) => Promise<{ sha: string; candidates: readonly { path: string }[] }>;
   importPaths: (
     orgId: string,
     repo: string,
     paths: string[],
+    access: GithubRepositoryAccess,
   ) => Promise<{
     results: readonly { path: string; action: "created" | "updated" | "unchanged" | "skipped" }[];
   }>;
@@ -101,7 +106,8 @@ export interface SkillsResyncDeps {
 
 function defaultDeps(): SkillsResyncDeps {
   return {
-    listRepos,
+    openAccess: resolveGithubRepositoryAccess,
+    listRepos: listReposWithAccess,
     resolveHeadSha: resolveRepoHeadSha,
     scan: scanSkillCandidates,
     importPaths: importSkills,
@@ -155,9 +161,21 @@ export async function runSkillsResyncSweep(
     skippedPaths: 0,
   };
 
+  let access: GithubRepositoryAccess;
+  try {
+    access = await deps.openAccess(orgId);
+  } catch (err) {
+    console.warn(
+      `[skills-resync] tenant GitHub access unavailable; sweep skipped: ${
+        err instanceof Error ? err.message : err
+      }`,
+    );
+    return summary;
+  }
+
   let listing: Awaited<ReturnType<SkillsResyncDeps["listRepos"]>>;
   try {
-    listing = await deps.listRepos(orgId);
+    listing = await deps.listRepos(access);
   } catch (err) {
     console.error("[skills-resync] repo listing failed:", err);
     return summary;
@@ -183,20 +201,20 @@ export async function runSkillsResyncSweep(
       // nothing moved. Note this also means a skill DELETED org-side is not
       // resurrected until the repo's HEAD advances — deliberate: resync mirrors
       // source changes, it does not fight operator deletions.
-      const head = await deps.resolveHeadSha(repo);
+      const head = await deps.resolveHeadSha(repo, access);
       if (lastSyncedSha.get(shaKey) === head) {
         summary.reposUnchangedHead++;
         continue;
       }
 
-      const scan = await deps.scan(orgId, repo);
+      const scan = await deps.scan(orgId, repo, access);
       summary.reposScanned++;
       const paths = scan.candidates.map((c) => c.path);
       if (paths.length > 0) {
         // Import every candidate (not just !alreadyImported): changed content
         // on an already-imported path must append a revision, and the upsert's
         // hash compare makes the unchanged rest free.
-        const imported = await deps.importPaths(orgId, repo, paths);
+        const imported = await deps.importPaths(orgId, repo, paths, access);
         for (const outcome of imported.results) {
           if (outcome.action === "created") summary.created++;
           else if (outcome.action === "updated") summary.updated++;

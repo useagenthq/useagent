@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { DEV_ORG_ID } from "../src/seed";
+import type { GithubRepositoryAccess } from "../src/github/auth";
 import {
   clearCodeIndexStateForTest,
   codeIndexConfig,
@@ -18,6 +19,13 @@ import {
 // ---------------------------------------------------------------------------
 
 const ORG = "org-code-index-test";
+const ACCESS: GithubRepositoryAccess = {
+  orgId: ORG,
+  token: "tenant-token",
+  owner: "acme",
+  source: "app",
+  connectionId: "connection-1",
+};
 
 interface FakeRepo {
   name: string;
@@ -29,6 +37,7 @@ interface FakeRepo {
 }
 
 interface Calls {
+  openedOrgs: string[];
   listedOrgs: string[];
   sleeps: number[];
   headChecks: string[];
@@ -41,6 +50,7 @@ function fakeDeps(
   overrides: Partial<CodeIndexDeps> = {},
 ): { deps: CodeIndexDeps; calls: Calls } {
   const calls: Calls = {
+    openedOrgs: [],
     listedOrgs: [],
     sleeps: [],
     headChecks: [],
@@ -49,20 +59,26 @@ function fakeDeps(
   };
   const byName = new Map(repos.map((r) => [r.name, r]));
   const deps: CodeIndexDeps = {
-    listRepos: async (orgId) => {
-      calls.listedOrgs.push(orgId);
+    openAccess: async (orgId) => {
+      calls.openedOrgs.push(orgId);
+      return { ...ACCESS, orgId };
+    },
+    listRepos: async (access) => {
+      calls.listedOrgs.push(access.orgId);
       return {
         configured: true,
         repos: repos.map((r) => ({ full_name: r.name })),
       };
     },
-    resolveHeadSha: async (repo) => {
+    resolveHeadSha: async (repo, access) => {
+      expect(access.token).toBe(ACCESS.token);
       calls.headChecks.push(repo);
       const r = byName.get(repo)!;
       if (r.failHead) throw new Error(`ls-remote failed for ${repo}`);
       return r.head;
     },
-    snapshot: async (repo): Promise<RepoSnapshot> => {
+    snapshot: async (repo, access): Promise<RepoSnapshot> => {
+      expect(access.token).toBe(ACCESS.token);
       calls.snapshots.push(repo);
       const r = byName.get(repo)!;
       if (r.failSnapshot) throw new Error(`clone failed for ${repo}`);
@@ -111,6 +127,19 @@ describe("codeIndexConfig", () => {
 });
 
 describe("runCodeIndexSweep", () => {
+  test("fails closed before listing or per-repo work when tenant access is unavailable", async () => {
+    const { deps, calls } = fakeDeps([{ name: "o/private", head: "sha-1" }], {
+      openAccess: async () => {
+        throw new Error("GitHub integration has been revoked for this organization");
+      },
+    });
+    const summary = await runCodeIndexSweep(ORG, deps);
+    expect(summary.reposListed).toBe(0);
+    expect(calls.listedOrgs).toEqual([]);
+    expect(calls.headChecks).toEqual([]);
+    expect(calls.snapshots).toEqual([]);
+  });
+
   test("indexes each repo serially and tallies projected records", async () => {
     const { deps, calls } = fakeDeps([
       { name: "acme/dns", head: "sha-a", records: 5 },
@@ -126,6 +155,7 @@ describe("runCodeIndexSweep", () => {
     });
     expect(calls.snapshots).toEqual(["acme/dns", "acme/web"]);
     expect(calls.listedOrgs).toEqual([ORG]);
+    expect(calls.openedOrgs).toEqual([ORG]);
   });
 
   test("paces BETWEEN repos: n-1 sleeps, none before the first", async () => {

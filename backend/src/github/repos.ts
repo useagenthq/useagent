@@ -1,5 +1,9 @@
 import { githubConfigured, githubTenantOrgId } from "../env";
-import { resolveGithubCatalogAuth, type GithubAuth } from "./auth";
+import {
+  resolveGithubCatalogAuth,
+  type GithubAuth,
+  type GithubRepositoryAccess,
+} from "./auth";
 import {
   findConnectedOrgIntegrationRecord,
   findLatestOrgIntegrationRecord,
@@ -288,19 +292,15 @@ async function fetchRepos(
  * requests only its existing first three pages. Never throws: failures remain
  * explicit in the listing so callers can degrade without leaking credentials.
  */
-export async function listGithubCatalog(
+async function listGithubCatalogWithAuth(
   orgId: string,
-  options: { readonly cursor?: string | null; readonly maxPages?: number } = {},
+  auth: GithubAuth,
+  cursor: string | null,
+  maxPages: number,
 ): Promise<GithubCatalogListing> {
   const now = Date.now();
-  const cursor = options.cursor ?? null;
-  const maxPages = options.maxPages ?? MAX_PAGES;
-  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > MAX_PAGES) {
-    throw new Error(`maxPages must be between 1 and ${MAX_PAGES}`);
-  }
-  let key: string | null = null;
+  const key = `${scopeKey(orgId, auth)}|${cursor ?? "start"}|${maxPages}`;
   try {
-    const auth = await resolveGithubCatalogAuth(orgId);
     if (!auth.token && !auth.owner) {
       return {
         configured: false,
@@ -310,7 +310,6 @@ export async function listGithubCatalog(
         nextCursor: null,
       };
     }
-    key = `${scopeKey(orgId, auth)}|${cursor ?? "start"}|${maxPages}`;
     const hit = cache.get(key);
     if (hit && now - hit.at < CACHE_TTL_MS) {
       return { ...hit.listing, connectionId: auth.connectionId ?? null };
@@ -323,7 +322,7 @@ export async function listGithubCatalog(
       complete: page.complete,
       nextCursor: page.nextCursor,
     };
-    if (key) cache.set(key, { at: now, listing });
+    cache.set(key, { at: now, listing });
     return listing;
   } catch (err) {
     const listing: GithubCatalogListing = {
@@ -336,9 +335,55 @@ export async function listGithubCatalog(
     };
     // Cache the failure briefly too, so a hard-down GitHub doesn't get hammered
     // on every keystroke; the short TTL means it recovers within minutes.
-    if (key) cache.set(key, { at: now, listing });
+    cache.set(key, { at: now, listing });
     return listing;
   }
+}
+
+export async function listGithubCatalog(
+  orgId: string,
+  options: { readonly cursor?: string | null; readonly maxPages?: number } = {},
+): Promise<GithubCatalogListing> {
+  const cursor = options.cursor ?? null;
+  const maxPages = options.maxPages ?? MAX_PAGES;
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > MAX_PAGES) {
+    throw new Error(`maxPages must be between 1 and ${MAX_PAGES}`);
+  }
+  try {
+    return await listGithubCatalogWithAuth(
+      orgId,
+      await resolveGithubCatalogAuth(orgId),
+      cursor,
+      maxPages,
+    );
+  } catch (err) {
+    return {
+      configured: true,
+      repos: [],
+      error: err instanceof Error ? err.message : "github fetch failed",
+      connectionId: null,
+      complete: false,
+      nextCursor: cursor,
+    };
+  }
+}
+
+/** List repositories with an already-resolved tenant access object. Background
+ * jobs use this so list/head/clone/read share one connection and revocation can
+ * never trigger a later fallback to deployment credentials. */
+export async function listReposWithAccess(
+  access: GithubRepositoryAccess,
+): Promise<RepoListing> {
+  const {
+    connectionId: _connectionId,
+    complete: _complete,
+    nextCursor: _nextCursor,
+    ...listing
+  } = await listGithubCatalogWithAuth(access.orgId, access, null, MAX_PAGES);
+  return {
+    ...listing,
+    repos: listing.repos.map(({ external_id: _externalId, ...repo }) => repo),
+  };
 }
 
 export async function listRepos(orgId: string): Promise<RepoListing> {
