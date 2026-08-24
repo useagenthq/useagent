@@ -28,7 +28,7 @@ import type { EngineAdapter, EngineRunContext, HarnessAdapter } from "./types";
 import { isRuntimeThreadSessionId, type RuntimeEngineId } from "./runtime-orchestration";
 import { sessionCapabilities } from "./capabilities";
 import { piAdapter } from "./pi-adapter";
-import { piProviderDriver } from "./pi-provider-driver";
+import { piHarness, piProviderDriver } from "./pi-provider-driver";
 
 // Build the ACP compatibility adapters before registering them beside native
 // ProviderDriver execution. `mock` is NOT registered here — it
@@ -149,6 +149,7 @@ const piRegistration: ProviderRegistration = {
     kind: "provider",
     run: async (ctx) => piAdapter.run(ctx),
   },
+  harnessAdapterCompatibility: piHarness,
   unsupportedDriverCapabilities: [],
 };
 

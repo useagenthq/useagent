@@ -17,6 +17,7 @@ export type NativeBridgeCommand =
 export type NativeBridgeFrameBody =
   | { readonly kind: "turn.started" }
   | { readonly kind: "turn.completed"; readonly stopReason?: string }
+  | { readonly kind: "turn.failed"; readonly error: string; readonly stopReason?: string }
   | { readonly kind: "message.delta"; readonly messageId: string; readonly text: string }
   | { readonly kind: "reasoning.delta"; readonly messageId: string; readonly text: string }
   | { readonly kind: "plan.updated"; readonly entries: readonly CanonicalPlanEntry[] }

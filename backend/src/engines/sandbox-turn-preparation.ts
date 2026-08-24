@@ -18,6 +18,9 @@ export interface SandboxTurnPreparationOptions<T> {
   readonly labels?: Record<string, string>;
   readonly requiredLabels?: Record<string, string>;
   readonly timingPrefix: string;
+  /** Providers that establish a lower-privilege runtime user must run after
+   * repository/input materialization so ownership cannot race those writes. */
+  readonly providerAfterResources?: boolean;
   readonly prepareProvider: (sandbox: SandboxHandle, workdir: string) => Promise<T>;
 }
 
@@ -80,8 +83,7 @@ export async function prepareSandboxTurn<T>(
         secretInjection,
       ),
     );
-    const [providerState] = await Promise.all([
-      stage("provider_bridge", () => options.prepareProvider(sandbox, workdir)),
+    const prepareResources = () => Promise.all([
       stage("repos", async () => {
         await prepareRepos(sandbox, workdir, ctx);
         await checkoutPullRequestResources(
@@ -93,6 +95,16 @@ export async function prepareSandboxTurn<T>(
       }),
       stage("inputs", () => materializeRunInputs(sandbox, ctx.inputFiles)),
     ]);
+    let providerState: T;
+    if (options.providerAfterResources) {
+      await prepareResources();
+      providerState = await stage("provider_bridge", () => options.prepareProvider(sandbox, workdir));
+    } else {
+      [providerState] = await Promise.all([
+        stage("provider_bridge", () => options.prepareProvider(sandbox, workdir)),
+        prepareResources(),
+      ]);
+    }
     await stage("secrets_marker", () => recordSecretsInjected(ctx, secretInjection));
     return {
       sandbox,

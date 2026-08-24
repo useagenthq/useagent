@@ -36,6 +36,18 @@ function usageFrame(message: Record<string, unknown> | null): NativeBridgeFrameB
   };
 }
 
+function assistantFailure(message: Record<string, unknown> | null): NativeBridgeFrameBody | null {
+  if (message?.role !== "assistant") return null;
+  const stopReason = text(message.stopReason);
+  const error = text(message.errorMessage) ?? text(message.errorClassificationMessage);
+  if (stopReason !== "error" && stopReason !== "aborted" && !error) return null;
+  return {
+    kind: "turn.failed",
+    error: error ?? `Pi turn ${stopReason}`,
+    ...(stopReason ? { stopReason } : {}),
+  };
+}
+
 /** Lossless-enough Pi RPC -> provider-neutral bridge mapping. Unknown upstream
  * frames remain available in the native provider lane; they are not fabricated
  * into product events here. */
@@ -45,8 +57,16 @@ export function piRpcFrameBodies(frame: unknown): readonly NativeBridgeFrameBody
   switch (value.type) {
     case "agent_start":
       return [{ kind: "turn.started" }];
-    case "agent_end":
-      return value.isTerminal === false ? [] : [{ kind: "turn.completed" }];
+    case "agent_end": {
+      if (value.isTerminal === false) return [];
+      const messages = Array.isArray(value.messages) ? value.messages : [];
+      const failure = messages
+        .map(record)
+        .filter((message): message is Record<string, unknown> => message !== null)
+        .map(assistantFailure)
+        .find((item): item is NativeBridgeFrameBody => item !== null);
+      return [failure ?? { kind: "turn.completed" }];
+    }
     case "prompt_result":
       return value.agentInvoked === false ? [{ kind: "turn.completed", stopReason: "command" }] : [];
     case "message_update": {
@@ -63,8 +83,11 @@ export function piRpcFrameBodies(frame: unknown): readonly NativeBridgeFrameBody
     }
     case "message_end": {
       const message = record(value.message);
-      return message?.role === "assistant" ? [usageFrame(message)].filter(Boolean) as NativeBridgeFrameBody[] : [];
+      if (message?.role !== "assistant") return [];
+      return [usageFrame(message), assistantFailure(message)].filter(Boolean) as NativeBridgeFrameBody[];
     }
+    case "rpc_frame_error":
+      return [{ kind: "turn.failed", error: text(value.error) ?? "Pi RPC frame failed" }];
     case "tool_execution_start":
       return [{
         kind: "tool.started",
