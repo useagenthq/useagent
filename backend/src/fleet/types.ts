@@ -31,6 +31,13 @@ export interface CapacityInventory {
   readonly providerAllocatableCpuMillicores?: number;
   readonly providerAllocatableMemoryMib?: number;
   readonly providerReadyNodes?: number;
+  readonly providerNodes?: readonly {
+    id: string;
+    ready: boolean;
+    schedulingDisabled?: boolean;
+    allocatableCpuMillicores: number;
+    allocatableMemoryMib: number;
+  }[];
 }
 
 export type AdmissionDecisionKind =

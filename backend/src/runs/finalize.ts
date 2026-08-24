@@ -30,6 +30,7 @@ import { publishRunLifecycleChange } from "./org-signals";
 import { enqueueCanonicalization } from "./canonicalization-outbox";
 import { canonicalEngine } from "../engines/engine-alias";
 import { enqueueLearning } from "../learning/learning-outbox";
+import { releaseLeaseForRun } from "../fleet/lease-repo";
 
 /** Providers whose runs project native events and/or `steps` into the canonical lane.
  *  OpenCode, Pi, and the ACP engines (acp/claude/codex). Legacy aliases (daytona -> opencode,
@@ -170,6 +171,7 @@ export async function finalizeRun(
       settledOrgId = null;
       return;
     }
+    await releaseLeaseForRun(runId, tx);
 
     // Memory capture — completed runs only, into the run's WRITE pool
     // (personal→personal, org→org), resolved from the run row's memory_scope +

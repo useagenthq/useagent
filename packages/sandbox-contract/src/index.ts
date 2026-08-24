@@ -144,6 +144,15 @@ export interface SandboxCreateOptions {
  * compute nodes the provider manages.
  */
 export interface SandboxInventory {
+  /** Per-node placement headroom. When present, admission requires one ready,
+   * schedulable node to fit the whole request; aggregate totals are not enough. */
+  nodes?: readonly {
+    id: string;
+    ready: boolean;
+    schedulingDisabled?: boolean;
+    allocatableCpuMillicores: number;
+    allocatableMemoryMib: number;
+  }[];
   /** Compute nodes/hosts that are ready to place sandboxes on. */
   readyNodes?: number;
   /** Sum of allocatable cpu (millicores) across ready nodes. */

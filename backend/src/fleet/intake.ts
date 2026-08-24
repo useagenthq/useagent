@@ -1,4 +1,5 @@
 import { db, type Executor } from "../db/client";
+import { sql } from "drizzle-orm";
 import { fleetCapacityConfig } from "../env";
 import {
   countOrgOpenAdmissions,
@@ -30,27 +31,6 @@ export class FleetQueueLimitError extends Error {
   }
 }
 
-/** Thrown when a single fan-out submits more tasks than the server allows. */
-export class FleetFanoutLimitError extends Error {
-  readonly code = "fleet_fanout_too_large";
-  constructor(
-    readonly requested: number,
-    readonly limit: number,
-  ) {
-    super(`fan-out of ${requested} exceeds the limit of ${limit}`);
-    this.name = "FleetFanoutLimitError";
-  }
-}
-
-/** Server-side fan-out cap. Any ingress that submits N tasks in one call passes
- *  N here first; throws past the configured limit. */
-export function assertFanoutWithinLimit(taskCount: number): void {
-  const { maxFanoutTasks } = fleetCapacityConfig();
-  if (taskCount > maxFanoutTasks) {
-    throw new FleetFanoutLimitError(taskCount, maxFanoutTasks);
-  }
-}
-
 export interface AdmissionIntakeInput {
   readonly runId: string;
   readonly orgId: string;
@@ -70,6 +50,11 @@ export async function recordAdmissionOnAccept(
   exec: Executor = db,
 ): Promise<void> {
   const config = fleetCapacityConfig();
+  // The surrounding accept transaction owns this per-org lock until commit.
+  // Concurrent accepts for one tenant therefore observe each other's admission
+  // insert before checking the ceiling; different orgs remain independent.
+  await exec.execute(sql`
+    select pg_advisory_xact_lock(hashtext('fleet-org-queue'), hashtext(${input.orgId}))`);
   const open = await countOrgOpenAdmissions(input.orgId, exec);
   if (open >= config.orgMaxQueueDepth) {
     throw new FleetQueueLimitError(input.orgId, config.orgMaxQueueDepth);

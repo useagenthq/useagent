@@ -149,23 +149,31 @@ export interface QueuedAdmission {
   readonly priority: number;
 }
 
-/** Highest-priority, oldest queued admissions first (the admit scan order). */
+/** Fair queued-admission scan: one item per org before any org's second item,
+ * while preserving priority/age within each tenant. */
 export async function listQueuedAdmissions(
   limit: number,
   exec: Executor = db,
 ): Promise<QueuedAdmission[]> {
-  const rows = await exec
-    .select({
-      runId: runAdmissions.runId,
-      threadId: runAdmissions.threadId,
-      orgId: runAdmissions.orgId,
-      priority: runAdmissions.priority,
-    })
-    .from(runAdmissions)
-    .where(eq(runAdmissions.state, "queued"))
-    .orderBy(sql`priority desc, queued_at asc`)
-    .limit(limit);
-  return rows;
+  const rows = await exec.execute(sql`
+    with fair as (
+      select run_id, thread_id, org_id, priority, queued_at,
+        row_number() over (
+          partition by org_id order by priority desc, queued_at asc, run_id asc
+        ) as org_rank
+      from run_admissions
+      where state = 'queued'
+    )
+    select run_id, thread_id, org_id, priority
+    from fair
+    order by org_rank asc, priority desc, queued_at asc, org_id asc
+    limit ${limit}`);
+  return rows.map((row) => ({
+    runId: row.run_id as string,
+    threadId: row.thread_id as string,
+    orgId: row.org_id as string,
+    priority: Number(row.priority),
+  }));
 }
 
 /** Boot reconciliation: unbind admissions whose lease died with the process
@@ -176,8 +184,11 @@ export async function resetLeasedAdmissionsForBoot(
   const rows = await exec.execute(sql`
     update run_admissions a set
       state = 'queued', worker_lease_id = null, queue_reason = null, updated_at = now()
-    from runs r
+    from runs r, sandbox_leases l
     where a.run_id = r.id
+      and a.worker_lease_id = l.id
+      and l.state = 'released'
+      and l.sandbox_id is null
       and a.state in ('leased', 'running')
       and r.status in ('queued', 'running')
     returning a.run_id`);

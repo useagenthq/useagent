@@ -66,7 +66,6 @@ export interface OrgCapacityView {
     readonly allocatableMemoryMib: number | null;
   };
   readonly limits: {
-    readonly maxFanoutTasks: number;
     readonly maxDispatchConcurrency: number;
   };
 }
@@ -105,7 +104,6 @@ export async function orgCapacityView(orgId: string): Promise<OrgCapacityView> {
       allocatableMemoryMib: prov?.allocatableMemoryMib ?? null,
     },
     limits: {
-      maxFanoutTasks: config.maxFanoutTasks,
       maxDispatchConcurrency: config.maxDispatchConcurrency,
     },
   };

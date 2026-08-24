@@ -66,17 +66,23 @@ export function setProviderInventoryForTest(inv: SandboxInventory | null): void 
 export async function buildCapacityInventory(
   orgId: string,
   exec: Executor = db,
+  excludeRetainedSandboxId?: string | null,
 ): Promise<CapacityInventory> {
-  const res = await reservationSnapshot(orgId, exec);
+  const res = await reservationSnapshot(orgId, exec, excludeRetainedSandboxId);
   const prov = providerCache?.inv ?? null;
+  const resident = Math.max(0, Math.max(
+    (prov?.activeSandboxes ?? 0) + (prov?.pausedSandboxes ?? 0),
+    prov?.warmPoolReady ?? 0,
+  ) - (excludeRetainedSandboxId ? 1 : 0));
   return {
-    globalActiveSandboxes: res.globalActiveSandboxes,
+    globalActiveSandboxes: Math.max(res.globalActiveSandboxes, resident),
     globalReservedCpuMillicores: res.globalReservedCpuMillicores,
     globalReservedMemoryMib: res.globalReservedMemoryMib,
     orgActiveSandboxes: res.orgActiveSandboxes,
     providerAllocatableCpuMillicores: prov?.allocatableCpuMillicores,
     providerAllocatableMemoryMib: prov?.allocatableMemoryMib,
     providerReadyNodes: prov?.readyNodes,
+    providerNodes: prov?.nodes,
   };
 }
 

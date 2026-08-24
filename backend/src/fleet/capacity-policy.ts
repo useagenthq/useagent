@@ -91,7 +91,20 @@ export function evaluateAdmission(
 
   // 5. Optional provider allocatable ceiling (multi-node Cube inventory). Absent
   //    ceilings are skipped; the declared-host budget governed above.
-  if (
+  if (inventory.providerNodes) {
+    const fits = inventory.providerNodes.some((node) =>
+      node.ready &&
+      !node.schedulingDisabled &&
+      request.cpuMillicores <= node.allocatableCpuMillicores &&
+      request.memoryMib <= node.allocatableMemoryMib
+    );
+    if (!fits) {
+      return {
+        decision: "queue_provider_capacity",
+        reason: "no ready provider node can fit the complete resource request",
+      };
+    }
+  } else if (
     inventory.providerAllocatableCpuMillicores !== undefined &&
     request.cpuMillicores > inventory.providerAllocatableCpuMillicores
   ) {
@@ -101,6 +114,7 @@ export function evaluateAdmission(
     };
   }
   if (
+    inventory.providerNodes === undefined &&
     inventory.providerAllocatableMemoryMib !== undefined &&
     request.memoryMib > inventory.providerAllocatableMemoryMib
   ) {

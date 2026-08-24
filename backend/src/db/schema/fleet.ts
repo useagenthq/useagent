@@ -123,11 +123,14 @@ export const sandboxLeases = pgTable(
     reservedCpuMillicores: integer("reserved_cpu_millicores").notNull(),
     reservedMemoryMib: integer("reserved_memory_mib").notNull(),
     tier: text("tier").$type<WorkloadTier>().notNull().default("standard"),
-    /** active holds capacity; released/expired do not. */
+    /** active and reclaiming hold capacity; released does not. */
     state: text("state")
-      .$type<"active" | "released" | "expired">()
+      .$type<"active" | "reclaiming" | "released">()
       .notNull()
       .default("active"),
+    gcAttemptCount: integer("gc_attempt_count").notNull().default(0),
+    nextGcAttemptAt: timestamp("next_gc_attempt_at", { withTimezone: true }),
+    gcLastError: text("gc_last_error"),
     heartbeatAt: timestamp("heartbeat_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -142,13 +145,14 @@ export const sandboxLeases = pgTable(
   (t) => [
     // The reconciler claims due-expired active leases by this index.
     index("idx_sandbox_leases_state_expiry").on(t.state, t.leaseExpiry),
+    index("idx_sandbox_leases_state_gc_retry").on(t.state, t.nextGcAttemptAt),
     // Per-org + global active reservation sums.
     index("idx_sandbox_leases_org_state").on(t.orgId, t.state),
     index("idx_sandbox_leases_run").on(t.runId),
-    // At most ONE active lease per run (double-admission guard).
+    // At most ONE capacity-holding lease per run (double-admission guard).
     uniqueIndex("uq_sandbox_leases_active_run")
       .on(t.runId)
-      .where(sql`state = 'active'`),
+      .where(sql`state in ('active', 'reclaiming')`),
   ],
 );
 
