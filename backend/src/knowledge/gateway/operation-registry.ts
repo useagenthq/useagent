@@ -42,6 +42,7 @@ import { executeRecordingTool, RECORDING_TOOLS } from "./recording-tools";
 import { executeRepositoryTool, REPOSITORY_TOOLS } from "./repository-tools";
 import { executeResourceTool, RESOURCE_TOOLS } from "./resource-tools";
 import { executeSkillTool, SKILL_TOOLS } from "./skill-tools";
+import { executeTaskTool, TASK_TOOLS } from "./task-tools";
 import { executeSlackTool, SLACK_TOOLS } from "./slack-tools";
 import type { ToolTokenClaims } from "./token";
 import { executeKnowledgeTool, KNOWLEDGE_TOOLS } from "./tools";
@@ -129,6 +130,7 @@ const BASE_TOOL_FAMILIES = [
   { tools: BLUEPRINT_TOOLS, execute: executeBlueprintTool },
   { tools: CHILD_SESSION_TOOLS, execute: executeChildSessionTool },
   { tools: SKILL_TOOLS, execute: executeSkillTool },
+  { tools: TASK_TOOLS, execute: executeTaskTool },
 ] as const satisfies readonly GatewayToolFamily[];
 
 const SLACK_FAMILY = {
