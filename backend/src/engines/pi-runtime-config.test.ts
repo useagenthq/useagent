@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import {
   preparePiRuntime,
   piApiForProvider,
+  piModelSelection,
   PI_CODING_AGENT_UPSTREAM_SHA,
   PI_CODING_AGENT_VERSION,
   PI_RUNTIME_LOCK_SHA256,
@@ -22,6 +23,11 @@ describe("Pi runtime configuration", () => {
     const lock = await readFile(new URL("../../pi-runtime/package-lock.json", import.meta.url));
     expect(createHash("sha256").update(lock).digest("hex")).toBe(PI_RUNTIME_LOCK_SHA256);
     expect(piApiForProvider("openrouter")).toBe("openai-completions");
+    expect(piModelSelection("google/gemini-3.7-flash")).toEqual({
+      provider: "openrouter",
+      modelId: "google/gemini-3.7-flash",
+      selector: "openrouter/google/gemini-3.7-flash",
+    });
   });
 
   test("keeps signed credentials behind the root broker and installs from the immutable lock", async () => {
