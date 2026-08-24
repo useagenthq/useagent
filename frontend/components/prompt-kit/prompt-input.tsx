@@ -3,10 +3,10 @@
 // Vendored from prompt-kit (prompt-kit.com/c/prompt-input.json), adapted to the
 // BoardUI foundation (semantic tokens from styles/theme.css). Two adaptations
 // from the shadcn original:
-//   - the `@/components/ui/textarea` dep is replaced with a plain autosizing
+//   - the shadcn textarea dep is replaced with a plain autosizing
 //     <textarea> (a design-system Textarea ships its own bordered container we
 //     don't want inside the composer card);
-//   - the `@/components/ui/tooltip` dep is dropped — `PromptInputAction` renders
+//   - the shadcn tooltip dep is dropped - `PromptInputAction` renders
 //     its child directly (the composer's controls are self-describing). The
 //     `tooltip` prop is kept optional so the call-shape stays source-compatible.
 
