@@ -654,7 +654,7 @@ async function runChat(
   let answer = "";
   turnStream.begin(run.id);
   try {
-    const [context, priorThread] = await Promise.all([
+    const [context, priorThread, resourceSnapshot] = await Promise.all([
       retrieveChatContext({
         orgId: run.orgId,
         userId: run.userId,
@@ -664,10 +664,24 @@ async function runChat(
         origin: isInternalRunOrigin(run.origin) ? run.origin : null,
       }),
       run.parentRunId ? buildThreadPreamble(run.threadId, run.id) : Promise.resolve(""),
+      run.userId
+        ? buildResourceAccessSnapshot(
+            {
+              orgId: run.orgId,
+              userId: run.userId,
+              runId: run.id,
+              resources: run.resolvedResources ?? [],
+              repos: run.repos ?? [],
+            },
+            undefined,
+            { inlineLimit: 500, exactInventoryTool: null },
+          )
+        : Promise.resolve(null),
     ]);
 
     const systemParts = [CHAT_SYSTEM_PROMPT];
     if (skillContext) systemParts.push(skillContext);
+    if (resourceSnapshot) systemParts.push(formatResourceAccessContext(resourceSnapshot));
     if (context.block) systemParts.push(context.block);
     if (priorThread) {
       systemParts.push(
