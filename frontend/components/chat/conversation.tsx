@@ -572,7 +572,11 @@ const TurnBlock = memo(function TurnBlock({
       <div className="space-y-1" data-testid="turn-block" data-run-id={run.id}>
         <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
         <InboundAttachments uploads={run.uploads} />
-        <QueuedMessagePill position={queuePosition ?? 1} onSendNow={onSendNow} />
+        <QueuedMessagePill
+          position={queuePosition ?? 1}
+          waitingOnCurrentRun={run.parent_run_id !== null}
+          onSendNow={onSendNow}
+        />
       </div>
     );
   }

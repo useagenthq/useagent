@@ -12,7 +12,8 @@ import { RiTimeLine } from "@remixicon/react";
 
 /** Honest queue copy: position 1 waits only on the running turn; deeper
  *  positions also wait on the replies ahead of them. */
-export function queuedPillLabel(position: number): string {
+export function queuedPillLabel(position: number, waitingOnCurrentRun = true): string {
+  if (!waitingOnCurrentRun) return "Queued - waiting to start";
   if (position <= 1) return "Queued - sends after the current run";
   const ahead = position - 1;
   return `Queued #${position} - ${ahead} ${ahead === 1 ? "reply" : "replies"} ahead`;
@@ -25,10 +26,13 @@ export function queuedPillLabel(position: number): string {
  */
 export function QueuedMessagePill({
   position,
+  waitingOnCurrentRun = true,
   onSendNow,
 }: {
   /** 1-based place in this thread's queued-turn FIFO. */
   position: number;
+  /** False for the thread's first/root run, which is waiting for admission rather than another turn. */
+  waitingOnCurrentRun?: boolean;
   onSendNow?: () => void;
 }) {
   return (
@@ -38,7 +42,7 @@ export function QueuedMessagePill({
         className="flex w-fit max-w-full items-center gap-1.5 rounded-full border border-border-button-default bg-background-secondary-default px-2.5 py-1 text-[11px] leading-4 text-text-secondary tabular-nums"
       >
         <RiTimeLine className="size-3.5 shrink-0 text-text-tertiary" aria-hidden />
-        <span className="truncate">{queuedPillLabel(position)}</span>
+        <span className="truncate">{queuedPillLabel(position, waitingOnCurrentRun)}</span>
         {onSendNow && (
           <button
             type="button"
