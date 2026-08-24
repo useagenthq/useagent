@@ -81,6 +81,19 @@ describe("gateway operation registry", () => {
     expect(isRegisteredGatewayToolName("resource_catalog_search_all")).toBe(false);
     expect(isRegisteredGatewayToolName("gcs_delete_bucket")).toBe(false);
     expect(isRegisteredGatewayToolName("computer_future")).toBe(false);
+    expect(isRegisteredGatewayToolName("record_start")).toBe(true);
+    expect(isRegisteredGatewayToolName("record_stop")).toBe(true);
+  });
+
+  test("resolves declared aliases to their authoritative descriptors", () => {
+    expect(advertisedGatewayToolDescriptor("record_start")).toMatchObject({
+      name: "desktop_recording_start",
+      aliases: ["record_start"],
+    });
+    expect(advertisedGatewayToolDescriptor("record_stop")).toMatchObject({
+      name: "desktop_recording_stop",
+      aliases: ["record_stop"],
+    });
   });
 
   test("advertises conditional capabilities only when their trusted context is present", () => {

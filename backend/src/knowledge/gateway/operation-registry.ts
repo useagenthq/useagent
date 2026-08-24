@@ -164,9 +164,30 @@ function indexFamilies(
   return operations;
 }
 
+function indexAliases(
+  families: readonly GatewayToolFamily[],
+): ReadonlyMap<string, string> {
+  const aliases = new Map<string, string>();
+  const canonicalNames = new Set(
+    families.flatMap((family) => family.tools.map((tool) => tool.name)),
+  );
+  for (const family of families) {
+    for (const tool of family.tools) {
+      for (const alias of tool.aliases ?? []) {
+        if (canonicalNames.has(alias) || aliases.has(alias)) {
+          throw new Error(`Duplicate gateway tool alias: ${alias}`);
+        }
+        aliases.set(alias, tool.name);
+      }
+    }
+  }
+  return aliases;
+}
+
 // Build one process-wide index so duplicate names fail during module loading,
 // including collisions between always-on and conditional tool families.
 const ALL_OPERATIONS = indexFamilies(ALL_TOOL_FAMILIES);
+const TOOL_ALIASES = indexAliases(ALL_TOOL_FAMILIES);
 const CHILD_SESSION_TOOL_NAMES: ReadonlySet<string> = new Set(
   CHILD_SESSION_TOOLS.map((tool) => tool.name),
 );
@@ -222,7 +243,7 @@ export function gatewayToolRequiresApproval(name: string): boolean {
  * bridges use this exact registry lookup to allow the RPC round-trip; the
  * gateway still performs run, tenant, and one-shot approval authorization. */
 export function isRegisteredGatewayToolName(name: string): boolean {
-  return ALL_OPERATIONS.has(name) || isGatewayMetaToolName(name);
+  return ALL_OPERATIONS.has(TOOL_ALIASES.get(name) ?? name) || isGatewayMetaToolName(name);
 }
 
 /** Registered descriptor lookup across every family (conditional included) -
@@ -230,8 +251,9 @@ export function isRegisteredGatewayToolName(name: string): boolean {
 export function advertisedGatewayToolDescriptor(
   name: string,
 ): GatewayToolDescriptor | null {
+  const canonicalName = TOOL_ALIASES.get(name) ?? name;
   for (const family of ALL_TOOL_FAMILIES) {
-    const tool = family.tools.find((candidate) => candidate.name === name);
+    const tool = family.tools.find((candidate) => candidate.name === canonicalName);
     if (tool) return tool;
   }
   return null;
@@ -277,33 +299,35 @@ export async function executeRegisteredGatewayTool(
   args: Record<string, unknown>,
   options?: GatewayToolListOptions,
 ): Promise<GatewayToolExecution> {
+  const canonicalName = TOOL_ALIASES.get(name) ?? name;
   const resolvedOptions = options ?? {
     childSessions: await childSessionToolsEnabled(claims),
     loopLogin: loopLoginConfigured(),
     slack: false,
   };
-  if (isGatewayMetaToolName(name)) {
+  if (isGatewayMetaToolName(canonicalName)) {
     const availableTools = availableGatewayToolDescriptors(resolvedOptions);
     return {
       matched: true,
       result: await executeGatewayMetaTool(
-        name,
+        canonicalName,
         args,
         availableTools,
         async (toolName, toolArgs) => {
-          const executor = ALL_OPERATIONS.get(toolName);
+          const resolvedToolName = TOOL_ALIASES.get(toolName) ?? toolName;
+          const executor = ALL_OPERATIONS.get(resolvedToolName);
           if (!executor) {
             return {
               content: [{ type: "text", text: `Unknown gateway tool: ${toolName}` }],
               isError: true,
             };
           }
-          return invokeRegisteredOperation(executor, claims, toolName, toolArgs);
+          return invokeRegisteredOperation(executor, claims, resolvedToolName, toolArgs);
         },
       ),
     };
   }
-  if (CHILD_SESSION_TOOL_NAMES.has(name) && !(await childSessionToolsEnabled(claims))) {
+  if (CHILD_SESSION_TOOL_NAMES.has(canonicalName) && !(await childSessionToolsEnabled(claims))) {
     return {
       matched: true,
       result: {
@@ -314,14 +338,14 @@ export async function executeRegisteredGatewayTool(
       },
     };
   }
-  if (LOOP_LOGIN_TOOL_NAMES.has(name) && !loopLoginConfigured()) {
+  if (LOOP_LOGIN_TOOL_NAMES.has(canonicalName) && !loopLoginConfigured()) {
     return { matched: false };
   }
-  const executor = ALL_OPERATIONS.get(name);
+  const executor = ALL_OPERATIONS.get(canonicalName);
   if (!executor) return { matched: false };
   return {
     matched: true,
-    result: await invokeRegisteredOperation(executor, claims, name, args),
+    result: await invokeRegisteredOperation(executor, claims, canonicalName, args),
   };
 }
 
