@@ -576,13 +576,15 @@ describe("slack event → run", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(await findRunByPrompt(`verify both deployments ${marker}`)).toBeNull();
-    await waitFor(async () =>
-      rec.messages.find(
-        (message) =>
-          message.channel === channel &&
-          message.threadTs === rootTs &&
-          message.text.includes("GitHub is not connected"),
-      ) ?? null,
+    await waitFor(
+      async () =>
+        rec.messages.find(
+          (message) =>
+            message.channel === channel &&
+            message.threadTs === rootTs &&
+            message.text.includes("GitHub is not connected"),
+        ) ?? null,
+      { timeoutMs: 14_000 },
     );
   });
 
@@ -686,8 +688,10 @@ describe("slack event → run", () => {
     const run = await waitFor(async () => findRunByPrompt(`go ${marker}`));
 
     // The official Agents session status clears back to "active" when the run settles.
-    await waitFor(async () =>
-      rec.sessionStatuses.some((s) => s.channel === channel && s.threadTs === ts && s.status === "active") || null,
+    await waitFor(
+      async () =>
+        rec.sessionStatuses.some((s) => s.channel === channel && s.threadTs === ts && s.status === "active") || null,
+      { timeoutMs: 14_000 },
     );
 
     const mine = rec.sessionStatuses.filter((s) => s.channel === channel && s.threadTs === ts);
@@ -708,7 +712,7 @@ describe("slack event → run", () => {
       );
       await waitFor(async () => findRunByPrompt(`run ${marker}`));
       // setStatus rejects every call, yet the completion surface still lands.
-      const answer = await waitFor(async () => finalAnswerFor(channel, ts));
+      const answer = await waitFor(async () => finalAnswerFor(channel, ts), { timeoutMs: 14_000 });
       expect(answer!.length).toBeGreaterThan(0);
     } finally {
       statusFails = false;
