@@ -2,7 +2,11 @@
 // Parsing reports the offending line number so a malformed batch fails loudly, not
 // silently. No IO here - the caller supplies the file bytes and writes the output.
 
-import type { FleetTask, Verdict } from "@useagent/agent-client/fleet";
+import {
+  MAX_FLEET_TASKS,
+  type FleetTask,
+  type Verdict,
+} from "@useagent/agent-client/fleet";
 import { CliError } from "./errors";
 import { coerceTask } from "./task";
 
@@ -37,6 +41,9 @@ export function parseTasksJsonl(text: string): FleetTask[] {
       throw new CliError(`tasks file line ${i + 1}: each line needs a non-empty "prompt" string`, 2);
     }
     tasks.push(task);
+    if (tasks.length > MAX_FLEET_TASKS) {
+      throw new CliError(`tasks file may contain at most ${MAX_FLEET_TASKS} tasks`, 2);
+    }
   }
   if (tasks.length === 0) throw new CliError("tasks file has no task lines", 2);
   return tasks;

@@ -8,6 +8,10 @@ import { serializeResults, type FanResultLine } from "./jsonl";
 import { parseTasksJsonl } from "./jsonl";
 import { formatFanSummary } from "./format";
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export interface CommandIO {
   /** Machine output (run ids, JSONL, answers) - stdout. */
   out: (line: string) => void;
@@ -64,7 +68,19 @@ export async function fanCommand(client: FleetClient, args: FanArgs, io: Command
       if (!outcome.ok) {
         return { prompt: outcome.task.prompt, runId: null, status: "dispatch_error", answer: "", url: null, error: outcome.error };
       }
-      const settled = await client.awaitSettled(outcome.run.runId);
+      let settled: Awaited<ReturnType<FleetClient["awaitSettled"]>>;
+      try {
+        settled = await client.awaitSettled(outcome.run.runId);
+      } catch (error) {
+        return {
+          prompt: outcome.task.prompt,
+          runId: outcome.run.runId,
+          status: "settle_error",
+          answer: "",
+          url: outcome.run.url,
+          error: errorMessage(error),
+        };
+      }
       const base: FanResultLine = {
         prompt: outcome.task.prompt,
         runId: outcome.run.runId,
@@ -74,8 +90,17 @@ export async function fanCommand(client: FleetClient, args: FanArgs, io: Command
       };
       if (!args.qc) return base;
       // QC is a real reply run recorded in the SAME thread as the work it judges.
-      const verified = await client.verify(outcome.run.runId, args.qc);
-      return { ...base, verdict: verified.verdict };
+      try {
+        const verified = await client.verify(outcome.run.runId, args.qc);
+        return { ...base, verdict: verified.verdict };
+      } catch (error) {
+        return {
+          ...base,
+          status: "verification_error",
+          verdict: "unknown",
+          error: errorMessage(error),
+        };
+      }
     }),
   );
 
@@ -89,6 +114,8 @@ export async function fanCommand(client: FleetClient, args: FanArgs, io: Command
   io.err("");
   io.err(formatFanSummary(results));
 
-  const allGood = results.every((r) => r.status === "completed" && r.verdict !== "fail");
+  const allGood = results.every(
+    (r) => r.status === "completed" && r.error === undefined && r.verdict !== "fail",
+  );
   return allGood ? 0 : 1;
 }

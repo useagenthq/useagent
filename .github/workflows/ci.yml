@@ -127,7 +127,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [agent-harness, agent-client, conformance, sandbox-contract]
+        package: [agent-harness, agent-client, conformance, sandbox-contract, cli]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2

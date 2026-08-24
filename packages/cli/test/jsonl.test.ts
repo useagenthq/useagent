@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { MAX_FLEET_TASKS } from "@useagent/agent-client/fleet";
 import { CliError } from "../src/errors";
 import { parseTasksJsonl, serializeResults } from "../src/jsonl";
 
@@ -35,6 +36,14 @@ describe("parseTasksJsonl", () => {
   test("throws when there are no task lines at all", () => {
     expect(() => parseTasksJsonl("\n  \n")).toThrow(CliError);
     expect(() => parseTasksJsonl("\n  \n")).toThrow(/no task lines/);
+  });
+
+  test("rejects a batch above the shared fleet task limit", () => {
+    const input = Array.from(
+      { length: MAX_FLEET_TASKS + 1 },
+      (_, index) => JSON.stringify({ prompt: `task-${index}` }),
+    ).join("\n");
+    expect(() => parseTasksJsonl(input)).toThrow(`at most ${MAX_FLEET_TASKS} tasks`);
   });
 });
 
