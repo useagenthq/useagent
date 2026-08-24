@@ -42,19 +42,18 @@ export interface ProjectMenuControl {
 
 /**
  * Curved tree connector (Figma "Vector 132"): a vertical guide dropping from
- * the folder icon with a rounded elbow into each thread row. Rows are 30px
- * tall with 2px gaps; the trunk sits at the icon's center (x 17.5 within the
- * list) and each elbow lands 8px to the right at the row's center. Geometry is
- * kept verbatim - the curved elbow is the signature look.
+ * the folder icon with a rounded elbow into each thread row. Rows are a compact
+ * 24px (h-6) with 2px gaps; the trunk sits at the icon's center (x 17.5 within
+ * the list) and each elbow lands 8px to the right at the row's center - the
+ * pitch tracks the row height so the elbows stay aligned.
  */
 function TreeConnector({ count }: { count: number }) {
-  const rowPitch = 32; // 30px row + 2px gap
-  const firstCenter = 15;
+  const rowPitch = 26; // 24px row (h-6) + 2px gap
+  const firstCenter = 12;
   const height = firstCenter + rowPitch * (count - 1) + 1;
   return (
     <svg
-      aria-hidden="true"
-      role="presentation"
+      aria-hidden
       width="12"
       height={height}
       viewBox={`0 0 12 ${height}`}
@@ -77,8 +76,8 @@ function TreeConnector({ count }: { count: number }) {
 }
 
 /** Thread row under an open folder - indented 36px (pl aligns past the folder
- *  icon), py 5, with a relative-time chip on the right. Navigates to the
- *  thread; the active thread holds its fill. */
+ *  icon), a compact fixed 24px height (h-6), with a relative-time chip on the
+ *  right. Navigates to the thread; the active thread holds its fill. */
 function ThreadItem({
   thread,
   href,
@@ -98,11 +97,11 @@ function ThreadItem({
       aria-current={active ? "page" : undefined}
       title={thread.label}
       className={cx(
-        "flex w-full items-center gap-2.5 rounded-2lg py-[5px] pr-2 pl-9 transition-colors duration-150 ease",
+        "flex h-6 w-full items-center gap-2 rounded-2lg pr-2 pl-9 transition-colors duration-150 ease",
         active ? "bg-background-secondary-hover" : "hover:bg-background-secondary-hover",
       )}
     >
-      <span className="min-w-0 flex-1 truncate text-body-medium text-text-secondary">
+      <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-secondary">
         {thread.label}
       </span>
       <span className="inline-flex shrink-0 items-center justify-center rounded-sm bg-background-tertiary-default px-1 py-px text-caption-1-medium whitespace-nowrap tabular-nums text-text-secondary">
@@ -119,10 +118,9 @@ function ThreadItem({
  * smoothly without measuring content. Expansion is controlled by the parent so
  * it can be remembered per project.
  *
- * The row owns the per-project menu open-state: a right-click anywhere on the
- * folder row and the hover-revealed kebab both open the SAME menu (supplied by
- * `renderMenu`). onContextMenu is preventDefault-ed only on this row, so the
- * browser menu is suppressed here without hijacking the rest of the page.
+ * The row owns the per-project menu open-state: the hover-revealed kebab (its
+ * three-dots trigger) opens the menu supplied by `renderMenu`. Right-click is
+ * left to the browser - the kebab is the single, discoverable trigger.
  */
 function ProjectFolder({
   group,
@@ -142,18 +140,7 @@ function ProjectFolder({
   const menu = renderMenu?.(group, { isOpen: menuOpen, setOpen: setMenuOpen });
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: right-click is a progressive enhancement; the hover kebab is the fully keyboard-accessible twin of this menu.
-    <div
-      className="group/proj relative flex w-full flex-col"
-      onContextMenu={
-        menu
-          ? (event) => {
-              event.preventDefault();
-              setMenuOpen(true);
-            }
-          : undefined
-      }
-    >
+    <div className="group/proj relative flex w-full flex-col">
       <div className="flex w-full items-center">
         <button
           type="button"

@@ -94,8 +94,8 @@ test("each real project gets one shared actions-menu slot; the no-project bucket
     g.fullName ? <span data-testid="proj-menu" data-open={String(control.isOpen)} /> : null;
   const html = renderTree(groups, { expanded: false, renderMenu });
 
-  // A single menu instance for the real project (the same one the kebab and the
-  // right-click both open) and none for the no-project bucket.
+  // A single menu instance for the real project (opened by its kebab) and none
+  // for the no-project bucket.
   const menus = html.match(/data-testid="proj-menu"/g) ?? [];
   expect(menus).toHaveLength(1);
   expect(html).toContain('data-open="false"');
