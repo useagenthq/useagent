@@ -19,6 +19,7 @@ describe("paid model policy", () => {
     expect(DEFAULT_OPENCODE_MODEL).toBe(FAST_OPENCODE_MODEL);
     expect(DEFAULT_CODEX_MODEL).toBe(FAST_CODEX_MODEL);
     expect(defaultModelForEngine("opencode", {})).toBe(FAST_OPENCODE_MODEL);
+    expect(defaultModelForEngine("pi", {})).toBe(FAST_OPENCODE_MODEL);
     expect(defaultModelForEngine("claude", {})).toBe("claude-opus-5");
     expect(defaultModelForEngine("codex", {})).toBe(DEFAULT_CODEX_MODEL);
     expect(
@@ -72,6 +73,9 @@ describe("paid model policy", () => {
     expect(isModelAllowedForEngine("chat", "anthropic/claude-sonnet-5", {})).toBe(true);
     expect(isModelAllowedForEngine("chat", "openai/unbounded", {})).toBe(false);
     expect(allowedModelsForEngine("opencode", {})).toEqual(
+      Object.values(OPENCODE_ALLOWED_MODELS).flat(),
+    );
+    expect(allowedModelsForEngine("pi", {})).toEqual(
       Object.values(OPENCODE_ALLOWED_MODELS).flat(),
     );
     expect(allowedModelsForEngine("acp", {})).toEqual([]);

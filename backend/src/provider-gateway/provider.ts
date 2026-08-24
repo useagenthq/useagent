@@ -7,6 +7,7 @@ export function providerForEngine(engine: EngineId, model: string): ProviderId |
   switch (engine) {
     case "opencode":
     case "daytona":
+    case "pi":
       if (model.startsWith("openai/")) return "openai";
       return model.includes("/") ? "openrouter" : "anthropic";
     case "claude":
