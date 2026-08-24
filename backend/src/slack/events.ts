@@ -408,6 +408,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     engine,
     parentRunId,
     requestedRepos: [],
+    requestedResources: [],
     attachmentIds: attachmentIntentIds,
     memoryScope,
     skillId: null,

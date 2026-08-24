@@ -1,5 +1,5 @@
 import type { EngineId, MemoryScope } from "../db/schema";
-import type { RunResource } from "../resources/types";
+import type { ExplicitRunResource, RunResource } from "../resources/types";
 
 // ---------------------------------------------------------------------------
 // Boundary types for durable command acceptance (north star "Durable
@@ -21,6 +21,7 @@ export interface RunCommandIntent {
   /** Only repositories explicitly selected by the caller. Inherited and
    * resource-discovered repositories are derived acceptance state. */
   readonly requestedRepos: readonly string[];
+  readonly requestedResources: readonly ExplicitRunResource[];
   /** Stable identities from the ingress (upload IDs for HTTP, Slack file IDs
    * for Slack), not provider-generated staging metadata. */
   readonly attachmentIds: readonly string[];
