@@ -22,6 +22,7 @@ export function initialProjectFilter(param: string | null | undefined): string {
 
 export interface Task {
   id: string;
+  project_id?: string | null;
   project_key: string | null;
   title: string;
   body: string | null;

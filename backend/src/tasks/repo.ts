@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { tasks, type TaskStatus } from "../db/schema";
+import { ensureProject, getProjectForOrg } from "../projects/repo";
 
 // ---------------------------------------------------------------------------
 // Tasks data access. Every function is ORG-SCOPED and fail-closed: a cross-org
@@ -13,6 +14,7 @@ export type TaskRecord = typeof tasks.$inferSelect;
 
 export interface CreateTaskInput {
   orgId: string;
+  projectId?: string | null;
   projectKey?: string | null;
   title: string;
   body?: string | null;
@@ -34,16 +36,16 @@ export interface UpdateTaskPatch {
 /** Next append-to-bottom order key for a project: one above the current max, so
  *  a freshly created task sorts last and a later reorder can drop cards between
  *  neighbours by taking their midpoint. Org+project scoped. */
-async function nextOrderKey(orgId: string, projectKey: string | null): Promise<number> {
+async function nextOrderKey(orgId: string, projectId: string | null): Promise<number> {
   const [row] = await db
     .select({ max: sql<number | null>`max(${tasks.orderKey})` })
     .from(tasks)
     .where(
       and(
         eq(tasks.orgId, orgId),
-        projectKey === null
-          ? sql`${tasks.projectKey} is null`
-          : eq(tasks.projectKey, projectKey),
+        projectId === null
+          ? sql`${tasks.projectId} is null`
+          : eq(tasks.projectId, projectId),
       ),
     );
   return (row?.max ?? 0) + 1;
@@ -51,13 +53,23 @@ async function nextOrderKey(orgId: string, projectKey: string | null): Promise<n
 
 /** Create an org-scoped task. `projectKey` normalizes an empty string to null. */
 export async function createTask(input: CreateTaskInput): Promise<TaskRecord> {
-  const projectKey =
-    input.projectKey && input.projectKey.trim() ? input.projectKey.trim() : null;
-  const orderKey = await nextOrderKey(input.orgId, projectKey);
+  const requestedKey = input.projectKey?.trim() || null;
+  const selectedProject = input.projectId
+    ? await getProjectForOrg(input.orgId, input.projectId)
+    : requestedKey
+      ? await ensureProject(input.orgId, requestedKey, {
+          repoFullName: requestedKey.includes("/") ? requestedKey : null,
+        })
+      : null;
+  if (input.projectId && !selectedProject) throw new Error("project not found");
+  const projectId = selectedProject?.id ?? null;
+  const projectKey = selectedProject?.key ?? null;
+  const orderKey = await nextOrderKey(input.orgId, projectId);
   const [row] = await db
     .insert(tasks)
     .values({
       orgId: input.orgId,
+      projectId,
       projectKey,
       title: input.title,
       body: input.body ?? null,
@@ -71,28 +83,37 @@ export async function createTask(input: CreateTaskInput): Promise<TaskRecord> {
   return row!;
 }
 
-/** List org-scoped tasks, newest-column-order first. When `projectKey` is
- *  provided the list is scoped to that project ("" / null → the unfiled column);
- *  omit it (undefined) to list every task in the org. Ordered by column position
- *  then recency so the board can group by status directly. */
+/** List org-scoped tasks with an explicit scope and hard upper bound. The
+ * default is the unfiled project; cross-project reads require `{ scope: "all" }`.
+ * Ordered by column position then recency for direct board grouping. */
+export type TaskListScope =
+  | { scope: "all" }
+  | { projectId: string }
+  | { projectKey: string | null };
+
 export async function listTasksForOrg(
   orgId: string,
-  projectKey?: string | null,
+  selection: TaskListScope = { projectKey: null },
+  requestedLimit = 100,
 ): Promise<TaskRecord[]> {
-  const scope =
-    projectKey === undefined
-      ? eq(tasks.orgId, orgId)
-      : and(
-          eq(tasks.orgId, orgId),
-          projectKey === null || projectKey === ""
-            ? sql`${tasks.projectKey} is null`
-            : eq(tasks.projectKey, projectKey),
-        );
+  const limit = Math.min(Math.max(requestedLimit, 1), 500);
+  const projectScope =
+    "scope" in selection
+      ? undefined
+      : "projectId" in selection
+        ? eq(tasks.projectId, selection.projectId)
+        : selection.projectKey === null || selection.projectKey === ""
+          ? sql`${tasks.projectId} is null`
+          : eq(tasks.projectKey, selection.projectKey);
+  const scope = projectScope
+    ? and(eq(tasks.orgId, orgId), projectScope)
+    : eq(tasks.orgId, orgId);
   return db
     .select()
     .from(tasks)
     .where(scope)
-    .orderBy(asc(tasks.orderKey), desc(tasks.createdAt), desc(tasks.id));
+    .orderBy(asc(tasks.orderKey), desc(tasks.createdAt), desc(tasks.id))
+    .limit(limit);
 }
 
 /** Org-scoped fetch - a cross-org (or missing) id resolves to null. */

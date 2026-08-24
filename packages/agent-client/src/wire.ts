@@ -162,6 +162,8 @@ export interface ApiRun {
   id: string;
   org_id: string | null;
   user_id: string | null;
+  /** Durable project identity. Null means an independent, unfiled thread. */
+  project_id?: string | null;
   prompt: string;
   model: string;
   engine: EngineId;
@@ -214,6 +216,7 @@ export type ApiRunSummary = Pick<
   | "status"
   | "summary"
   | "duration_ms"
+  | "project_id"
   | "repo"
   | "repos"
   | "repo_specs"
@@ -370,6 +373,7 @@ export function decodeApiRunSummary(value: unknown): ApiRunSummary | null {
     !RUN_STATUS_SET.has(record.status) ||
     !isNullableString(record.summary) ||
     !(record.duration_ms === null || typeof record.duration_ms === "number") ||
+    !(record.project_id === undefined || isNullableString(record.project_id)) ||
     !isNullableString(record.repo) ||
     !isStringArray(record.repos) ||
     !Array.isArray(record.repo_specs) ||
@@ -388,6 +392,7 @@ export function decodeApiRunSummary(value: unknown): ApiRunSummary | null {
     status: record.status as RunStatus,
     summary: record.summary,
     duration_ms: record.duration_ms,
+    project_id: record.project_id ?? null,
     repo: record.repo,
     repos: record.repos,
     repo_specs: repoSpecs as RepoRef[],

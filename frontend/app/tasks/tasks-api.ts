@@ -12,23 +12,24 @@ const jsonHeaders = { "content-type": "application/json" } as const;
 
 /** List org tasks, optionally scoped to one project key. */
 export async function fetchTasks(project?: string): Promise<Task[]> {
-  const qs = project ? `?project=${encodeURIComponent(project)}` : "";
+  const qs = project ? `?project=${encodeURIComponent(project)}` : "?scope=all";
   const res = await backendFetch(`/api/tasks${qs}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`tasks ${res.status}`);
   const data = (await res.json()) as { tasks?: Task[] };
   return data.tasks ?? [];
 }
 
-/** The org's configured repositories (full names), used as project options. A
- *  failed fetch degrades to an empty list - the board still works with the
- *  project keys already present on tasks. */
+/** The org's durable project identities, used as board filter options. A failed
+ *  fetch degrades to task project keys already present on the board. */
 export async function fetchRepoProjects(): Promise<string[]> {
   try {
-    const res = await backendFetch("/api/repos", { cache: "no-store" });
+    const res = await backendFetch("/api/projects", { cache: "no-store" });
     if (!res.ok) return [];
-    const data = (await res.json()) as { repos?: { full_name?: string }[] };
-    return (data.repos ?? [])
-      .map((r) => r.full_name)
+    const data = (await res.json()) as {
+      projects?: { key?: string; repo_full_name?: string | null }[];
+    };
+    return (data.projects ?? [])
+      .map((project) => project.repo_full_name ?? project.key)
       .filter((n): n is string => typeof n === "string" && n.length > 0);
   } catch {
     return [];
