@@ -207,7 +207,7 @@ export function AutomationEditorModal({
               Cancel
             </Button>
             <Button
-              variant="primary"
+              variant="neutral"
               size="small"
               onClick={() => void submit()}
               disabled={!canSubmit}

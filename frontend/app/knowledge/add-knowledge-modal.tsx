@@ -112,7 +112,7 @@ export function AddKnowledgeModal({
 
             <Input
               label="Trigger"
-              placeholder="When working with AlignUI components…"
+              placeholder="When working with the design system…"
               hint="A phrase that tells useAgent when to recall this."
               value={trigger}
               isDisabled={busy}

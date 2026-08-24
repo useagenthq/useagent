@@ -46,7 +46,7 @@ export default async function WikiPage() {
                 Published knowledge documents · your organization
               </p>
               <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                <Chip color={failed ? "yellow" : "gray"}>
+                <Chip color={failed ? "orange" : "gray"}>
                   <RiFileList3Line className="size-3.5 shrink-0" aria-hidden />
                   {failed ? "unavailable" : `${docs.length} published`}
                 </Chip>
