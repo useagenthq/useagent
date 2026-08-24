@@ -32,7 +32,9 @@ import { recordSkillLoaded } from "./skills/skill-loaded";
 import { finalizeRun } from "./runs/finalize";
 import { turnStream } from "./runs/turn-stream";
 import { publishRunLifecycleChange } from "./runs/org-signals";
-import { claimNextRun, settleCommandForRun } from "./commands/dispatch";
+import { settleCommandForRun } from "./commands/dispatch";
+import { releaseOnSettle } from "./fleet/admission";
+import { pumpThreadWithGate } from "./fleet/pump";
 import {
   createFirstOutputMarker,
   createRunTimer,
@@ -103,6 +105,11 @@ const SCRIPT: ScriptedStep[] = [
 ];
 
 const registry = new Map<string, Promise<void>>();
+
+/** Run ids with a live actor in THIS process — the Stage-A lease-liveness signal
+ *  the fleet reconciler heartbeats (process-local by design; see the fleet
+ *  architecture note). */
+export const liveActorRunIds = (): string[] => [...registry.keys()];
 
 // runId → abort the in-flight actor with a reason. Present ONLY while an actor
 // executes in THIS process. A durable `run.cancel` command records the intent
@@ -226,21 +233,18 @@ export function spawnWorker(runId: string): void {
 // thread executes at a time, and a queued reply survives a crash. When a run
 // settles, `onRunSettled` frees the thread and pumps the next queued command.
 
-/** Claim the thread's next queued command (if the thread is now idle) and spawn
- *  it. Called after a run settles, on accept, and on boot. Returns the run id
- *  dispatched, or null if the thread is busy/empty. */
-export async function pumpThread(threadId: string): Promise<string | null> {
-  const next = await claimNextRun(threadId);
-  if (next) spawnWorker(next);
-  return next;
-}
+/** Claim + capacity-gate + spawn the thread's next turn (see fleet/pump). Null if
+ *  the thread is busy/empty OR capacity is not yet available (stays queued). */
+export const pumpThread = (threadId: string): Promise<string | null> =>
+  pumpThreadWithGate(threadId, spawnWorker);
 
-/** Mark the settled run's command completed (or requeued) and pump the thread's
- *  next turn. Runs in every terminal path (success, failure, timeout). */
+/** Settle the run's command, release its capacity lease (so the reconciler can
+ *  admit queued work), and pump the thread's next turn. Every terminal path. */
 async function onRunSettled(runId: string, threadId: string): Promise<void> {
   await settleCommandForRun(runId).catch((err) =>
     console.error(`[worker] settle command for run ${runId} failed:`, err),
   );
+  await releaseOnSettle(runId).catch((err) => console.error(`[worker] release lease ${runId}:`, err));
   await pumpThread(threadId).catch((err) =>
     console.error(`[worker] pump thread ${threadId} failed:`, err),
   );
