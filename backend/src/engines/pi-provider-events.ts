@@ -18,10 +18,18 @@ export function piBridgeProviderEvent(
   };
   const body = frame.body;
   switch (body.kind) {
+    case "message.started":
+      return {
+        ...base,
+        id: `${ctx.runId}:pi:${frame.sessionId}:message:${body.messageId}:start`,
+        eventType: "part.step-start",
+        nativeMessageId: body.messageId,
+        payload: { bridgeSeq: frame.seq },
+      };
     case "message.delta":
       return {
         ...base,
-        id: `pi:${frame.sessionId}:message:${body.messageId}:${frame.seq}`,
+        id: `${ctx.runId}:pi:${frame.sessionId}:message:${body.messageId}:text`,
         eventType: "part.text",
         nativeMessageId: body.messageId,
         payload: { text: body.text, bridgeSeq: frame.seq },
@@ -29,10 +37,18 @@ export function piBridgeProviderEvent(
     case "reasoning.delta":
       return {
         ...base,
-        id: `pi:${frame.sessionId}:reasoning:${body.messageId}:${frame.seq}`,
+        id: `${ctx.runId}:pi:${frame.sessionId}:reasoning:${body.messageId}`,
         eventType: "part.reasoning",
         nativeMessageId: body.messageId,
         payload: { text: body.text, bridgeSeq: frame.seq },
+      };
+    case "message.completed":
+      return {
+        ...base,
+        id: `${ctx.runId}:pi:${frame.sessionId}:message:${body.messageId}:finish`,
+        eventType: "part.step-finish",
+        nativeMessageId: body.messageId,
+        payload: { bridgeSeq: frame.seq },
       };
     case "tool.started":
     case "tool.progress":
