@@ -1,95 +1,127 @@
 "use client";
 
-import { RiArrowDownSLine, RiArrowUpSLine } from "@remixicon/react";
+import { RiAddLine, RiArrowRightSLine, RiFolderLine } from "@remixicon/react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 
-import { fetchSidebarRuns, type Run } from "@/app/agent/runs/runs-data";
 import { ThreadRow } from "@/components/session-ui/thread-row";
-import { useOrgChanges } from "@/hooks/use-org-changes";
-import { SidebarSectionLabel } from "./sidebar-nav";
+import { StatusDot } from "@/components/shared/status-dot";
+import { cx } from "@/utils/cx";
+import type { ProjectGroup } from "./sidebar-project-groups";
+import { isSidebarActiveRun } from "./working-project-status";
 
-const POLL_MS = 30_000;
-// Generous cap: the sidebar column scrolls; this only bounds DOM cost.
-const MAX = 100;
-// The recent few stay visible; the rest sit behind a disclosure so a long
-// thread history never floods the rail.
+// The recent few threads stay visible; the rest sit behind a per-project
+// disclosure so a long history never floods the rail.
 const VISIBLE_THREADS = 6;
 
 /**
- * The sidebar thread list, rendered with the vendored T3 thread-row treatment
- * (components/session-ui/thread-row.tsx). Same data lane as the Active-runs surface
- * (`fetchRuns` + org-change invalidation + a low-frequency recovery poll);
- * supersedes SidebarRecents' row rendering. Client leaf so the server
- * `ThreadSidebar` stays static; renders nothing until at least one run exists
- * (no empty-section furniture).
+ * One collapsible project group in the thread rail: a folder-icon header with
+ * the repo name and its live/count indicator, and (when expanded) its threads
+ * nested beneath a connecting tree line, each rendered with the shared
+ * `ThreadRow` (title + relative time, active-state highlight). The repo chips
+ * are dropped on the nested rows since the group header already names the repo.
+ *
+ * Expanded/collapsed state is owned by the parent (SidebarProjects) so it can be
+ * remembered per project; the inner "Show N more" cap is local.
  */
-export function SidebarThreads() {
+export function ProjectThreadGroup({
+  group,
+  expanded,
+  onToggle,
+}: {
+  group: ProjectGroup;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const pathname = usePathname();
-  const [runs, setRuns] = useState<Run[]>([]);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [expanded, setExpanded] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const hasThreads = group.threads.length > 0;
 
-  const load = useCallback(async (revalidate = false) => {
-    try {
-      setRuns(await fetchSidebarRuns({ revalidate }));
-      setStatus("ready");
-    } catch {
-      setStatus("error");
-    }
-  }, []);
+  // A repo with no threads yet is a plain shortcut to start one there - no
+  // disclosure, since there is nothing to nest.
+  if (!hasThreads) {
+    return (
+      <Link
+        href={`/agent/new?repo=${encodeURIComponent(group.fullName ?? "")}`}
+        className="group/proj flex items-center gap-2 rounded-2lg px-2.5 py-1.5 text-body-2-medium text-text-secondary transition-colors hover:bg-background-secondary-hover hover:text-text-primary"
+      >
+        <RiFolderLine className="size-3.5 shrink-0 text-foreground-icon-tertiary" aria-hidden />
+        <span className="min-w-0 flex-1 truncate">{group.name}</span>
+        <RiAddLine
+          className="size-3.5 shrink-0 text-foreground-icon-tertiary opacity-0 transition-opacity group-hover/proj:opacity-100"
+          aria-hidden
+        />
+      </Link>
+    );
+  }
 
-  useOrgChanges((change) => {
-    if (change.type === "run") void load(true);
-  });
-
-  useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(true), POLL_MS);
-    return () => {
-      clearInterval(id);
-    };
-  }, [load]);
-
-  const capped = runs.slice(0, MAX);
-  const visible = capped.slice(0, VISIBLE_THREADS);
-  const overflow = capped.slice(VISIBLE_THREADS);
-
-  const threadRow = (run: Run) => {
-    const href = `/session/${run.id}`;
-    return <ThreadRow key={run.id} run={run} href={href} active={pathname === href} />;
-  };
+  const active = group.threads.some(isSidebarActiveRun);
+  const visible = showAll ? group.threads : group.threads.slice(0, VISIBLE_THREADS);
+  const overflow = group.threads.length - visible.length;
 
   return (
-    <>
-      <SidebarSectionLabel>Threads</SidebarSectionLabel>
-      {runs.length === 0 ? (
-        <p className="px-2.5 py-2 text-caption-1-regular text-text-tertiary">
-          {status === "loading"
-            ? "Loading threads..."
-            : status === "error"
-              ? "Threads unavailable"
-              : "No threads yet"}
-        </p>
-      ) : null}
-      {visible.map(threadRow)}
-      {overflow.length > 0 ? (
-        <>
-          {expanded ? overflow.map(threadRow) : null}
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="flex w-full items-center gap-2 rounded-2lg px-2.5 py-1.5 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
-          >
-            {expanded ? (
-              <RiArrowUpSLine className="size-4" aria-hidden />
-            ) : (
-              <RiArrowDownSLine className="size-4" aria-hidden />
+    <div>
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-2lg px-2.5 py-1.5 text-body-2-medium text-text-secondary transition-colors hover:bg-background-secondary-hover hover:text-text-primary"
+        >
+          <RiArrowRightSLine
+            className={cx(
+              "size-3.5 shrink-0 text-foreground-icon-tertiary transition-transform",
+              expanded && "rotate-90",
             )}
-            {expanded ? "Show fewer" : `Show ${overflow.length} more`}
-          </button>
-        </>
+            aria-hidden
+          />
+          <RiFolderLine className="size-3.5 shrink-0 text-foreground-icon-tertiary" aria-hidden />
+          <span className="min-w-0 flex-1 truncate text-left">{group.name}</span>
+          {active ? (
+            <StatusDot tone="away" pulse />
+          ) : (
+            <span className="shrink-0 text-caption-1-regular tabular-nums text-text-tertiary">
+              {group.threads.length}
+            </span>
+          )}
+        </button>
+        {group.fullName ? (
+          <Link
+            href={`/agent/new?repo=${encodeURIComponent(group.fullName)}`}
+            aria-label={`New thread in ${group.name}`}
+            className="shrink-0 rounded-2lg p-1 text-foreground-icon-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-primary"
+          >
+            <RiAddLine className="size-3.5" aria-hidden />
+          </Link>
+        ) : null}
+      </div>
+      {expanded ? (
+        <ul
+          aria-label={`Threads in ${group.name}`}
+          className="ml-[1.05rem] flex flex-col border-l border-border-button-default pl-1.5"
+        >
+          {visible.map((run) => {
+            const href = `/session/${run.id}`;
+            return (
+              <li key={run.id}>
+                <ThreadRow run={run} href={href} active={pathname === href} hideGitRefs />
+              </li>
+            );
+          })}
+          {overflow > 0 || showAll ? (
+            <li>
+              <button
+                type="button"
+                onClick={() => setShowAll((v) => !v)}
+                className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
+              >
+                {showAll ? "Show fewer" : `Show ${overflow} more`}
+              </button>
+            </li>
+          ) : null}
+        </ul>
       ) : null}
-    </>
+    </div>
   );
 }
