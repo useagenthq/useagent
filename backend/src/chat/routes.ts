@@ -4,6 +4,10 @@ import { auth } from "../auth";
 import { orgScope } from "../middleware/org";
 import { isMemoryScope, type MemoryScope } from "../memory/scope";
 import { resolveChatProviderCredential } from "../provider-gateway/credentials";
+import {
+  buildResourceAccessSnapshot,
+  formatResourceAccessContext,
+} from "../resources/access-snapshot";
 import { captureChatExchange } from "./capture";
 import { chatModelCatalog } from "./models";
 import { CHAT_SYSTEM_PROMPT } from "./prompt";
@@ -144,11 +148,30 @@ chatRoutes.post("/", async (c) => {
         try {
           // Read-only retrieval first (best-effort, never throws) so the UI can
           // show honest Sources before the answer streams.
-          const context = await retrieveChatContext({ orgId, userId, query, memoryScope, threadId });
+          const [context, resourceSnapshot] = await Promise.all([
+            retrieveChatContext({ orgId, userId, query, memoryScope, threadId }),
+            userId
+              ? buildResourceAccessSnapshot(
+                  {
+                    orgId,
+                    userId,
+                    runId: threadId,
+                    resources: [],
+                    repos: [],
+                  },
+                  undefined,
+                  { inlineLimit: 500, exactInventoryTool: null },
+                )
+              : Promise.resolve(null),
+          ]);
           if (closed) return;
           sendEvent("context", { citations: context.citations });
 
-          const system = context.block ? `${CHAT_SYSTEM_PROMPT}\n\n${context.block}` : CHAT_SYSTEM_PROMPT;
+          const system = [
+            CHAT_SYSTEM_PROMPT,
+            resourceSnapshot ? formatResourceAccessContext(resourceSnapshot) : "",
+            context.block,
+          ].filter(Boolean).join("\n\n");
           const llmMessages: ChatMessage[] = [{ role: "system", content: system }, ...messages];
           let answer = "";
           for await (const delta of streamChat(llmMessages, model, resolved.value, signal)) {
