@@ -47,7 +47,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: bun-store-${{ runner.os }}-${{ hashFiles('frontend/bun.lock', 'backend/bun.lock') }}
+          key: bun-store-${{ runner.os }}-${{ hashFiles('frontend/bun.lock', 'backend/bun.lock', 'packages/*/bun.lock') }}
           restore-keys: bun-store-${{ runner.os }}-
       # Root `typecheck` runs the frontend tsc AND the backend tsc, so both apps
       # need their deps installed first.
@@ -55,6 +55,15 @@ jobs:
         working-directory: frontend
       - run: bun install --frozen-lockfile
         working-directory: backend
+      # file:-linked packages do not install their own deps transitively - a
+      # package's imports (@useagent/artifact-workspace etc.) only resolve after
+      # an install INSIDE that package dir. Root typecheck spans every package,
+      # so install them all. This was the chronic CI red.
+      - name: Install shared package deps
+        run: |
+          for p in packages/*/; do
+            if [ -f "$p/package.json" ]; then (cd "$p" && bun install --frozen-lockfile); fi
+          done
       - run: bun run typecheck
 
   # ── Backend unit/integration tests against an isolated Postgres ──────────────
@@ -63,7 +72,10 @@ jobs:
     timeout-minutes: 10
     services:
       postgres:
-        image: postgres:16
+        # Migrations create the vector extension, so plain postgres:16 cannot
+        # represent the production schema. Pin the upstream pgvector image to
+        # the same Postgres major instead of letting CI fail during bootstrap.
+        image: pgvector/pgvector:0.8.6-pg16-bookworm
         # Passwordless `postgres` superuser so the test defaults connect verbatim
         # (test/prepare-db.ts → postgres://postgres@localhost:5432/postgres,
         #  test/preload.ts → .../skynet_test). No env override needed.
@@ -85,10 +97,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: bun-store-${{ runner.os }}-${{ hashFiles('backend/bun.lock') }}
+          key: bun-store-${{ runner.os }}-${{ hashFiles('backend/bun.lock', 'packages/*/bun.lock') }}
           restore-keys: bun-store-${{ runner.os }}-
       - run: bun install --frozen-lockfile
         working-directory: backend
+      # Backend tests import packages/artifact-formats (docx etc.) through file:
+      # links, so the linked packages need their own installs here too.
+      - name: Install shared package deps
+        run: |
+          for p in packages/*/; do
+            if [ -f "$p/package.json" ]; then (cd "$p" && bun install --frozen-lockfile); fi
+          done
       # `bun run test` = prepare-db (DROP+CREATE skynet_test) then `bun test`.
       # The boot migrator builds the schema from committed Drizzle migrations, so
       # a schema drift fails here. preload.ts strips LLM keys → fully deterministic.
@@ -116,10 +135,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: bun-store-${{ runner.os }}-${{ matrix.package }}-${{ hashFiles(format('packages/{0}/bun.lock', matrix.package)) }}
+          key: bun-store-${{ runner.os }}-${{ matrix.package }}-${{ hashFiles('packages/*/bun.lock') }}
           restore-keys: bun-store-${{ runner.os }}-${{ matrix.package }}-
-      - run: bun install --frozen-lockfile
-        working-directory: packages/${{ matrix.package }}
+      - name: Install this package and its file:-linked siblings
+        run: |
+          for p in packages/*/; do
+            if [ -f "$p/package.json" ]; then (cd "$p" && bun install --frozen-lockfile); fi
+          done
       - run: bun run typecheck
         working-directory: packages/${{ matrix.package }}
       - run: bun run test
@@ -138,10 +160,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: bun-store-${{ runner.os }}-${{ hashFiles('frontend/bun.lock') }}
+          key: bun-store-${{ runner.os }}-${{ hashFiles('frontend/bun.lock', 'packages/*/bun.lock') }}
           restore-keys: bun-store-${{ runner.os }}-
       - run: bun install --frozen-lockfile
         working-directory: frontend
+      # file:-linked packages do not install their own deps transitively - a
+      # package's imports (@useagent/artifact-workspace etc.) only resolve after
+      # an install INSIDE that package dir. Root typecheck spans every package,
+      # so install them all. This was the chronic CI red.
+      - name: Install shared package deps
+        run: |
+          for p in packages/*/; do
+            if [ -f "$p/package.json" ]; then (cd "$p" && bun install --frozen-lockfile); fi
+          done
       # Chat is the surface we own end-to-end; its store/timeline/part-renderer
       # logic is pure and deterministic.
       - name: bun run test

@@ -82,19 +82,21 @@ describe("shared theme tokens", () => {
     expect(lightTokens["--feature-base"]).toBe("var(--purple-500)");
   });
 
-  test("dark theme maps the BoardUI dark ramp through the legacy semantic tokens", () => {
-    expect(resolveToken(darkTokens, "--bg-white-0")).toBe("0 0% 7.06%");
-    expect(resolveToken(darkTokens, "--bg-weak-50")).toBe("0 0% 9.02%");
-    expect(resolveToken(darkTokens, "--bg-soft-200")).toBe("0 0% 9.02%");
-    expect(resolveToken(darkTokens, "--bg-sub-300")).toBe("0 0% 14.9%");
+  test("dark theme maps the Midnight ramp through the legacy semantic tokens", () => {
+    // The Midnight (Tokyo-Night-derived) elevation inversion: a blue-tinted
+    // ladder (panel #1a1b26, inset #16161e), not the original neutral gray ramp.
+    expect(resolveToken(darkTokens, "--bg-white-0")).toBe("235 18.75% 12.55%");
+    expect(resolveToken(darkTokens, "--bg-weak-50")).toBe("240 15.38% 10.2%");
+    expect(resolveToken(darkTokens, "--bg-soft-200")).toBe("240 15.38% 10.2%");
+    expect(resolveToken(darkTokens, "--bg-sub-300")).toBe("232.5 21.05% 14.9%");
 
-    expect(resolveToken(darkTokens, "--text-strong-950")).toBe("0 0% 98.04%");
-    expect(resolveToken(darkTokens, "--text-sub-600")).toBe("0 0% 45.1%");
-    expect(resolveToken(darkTokens, "--text-soft-400")).toBe("0 0% 32.16%");
-    expect(resolveToken(darkTokens, "--text-disabled-300")).toBe("0 0% 25.1%");
+    expect(resolveToken(darkTokens, "--text-strong-950")).toBe("228.68 72.6% 85.69%");
+    expect(resolveToken(darkTokens, "--text-sub-600")).toBe("232.73 13.92% 53.53%");
+    expect(resolveToken(darkTokens, "--text-soft-400")).toBe("229.41 22.87% 43.73%");
+    expect(resolveToken(darkTokens, "--text-disabled-300")).toBe("229.23 23.08% 33.14%");
 
-    expect(resolveToken(darkTokens, "--stroke-soft-200")).toBe("0 0% 14.9%");
-    expect(resolveToken(darkTokens, "--stroke-sub-300")).toBe("0 0% 25.1%");
+    expect(resolveToken(darkTokens, "--stroke-soft-200")).toBe("228 23.36% 20.98%");
+    expect(resolveToken(darkTokens, "--stroke-sub-300")).toBe("229.23 23.08% 33.14%");
     expect(resolveToken(darkTokens, "--primary-base")).toBe("216.23 100% 58.43%");
     expect(resolveToken(darkTokens, "--verified-dark")).toBe("202.15 100% 74.51%");
     expect(resolveToken(darkTokens, "--success-dark")).toBe("88.8 50.51% 61.18%");
