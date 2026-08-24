@@ -3,6 +3,7 @@ export interface TurnPromptContext {
   readonly prompt: string;
   readonly bootstrapContext: string;
   readonly turnContext: string;
+  readonly resourceContext?: string;
   readonly skillContext?: string;
   readonly skillCatalogContext?: string;
   readonly inputContext?: string;
@@ -62,6 +63,7 @@ export function composeTurnPrompt(ctx: TurnPromptContext, resumed: boolean): str
   const perTurn =
     AGENT_WORKFLOW_ROUTING_RULES +
     skillReference +
+    (ctx.resourceContext ?? "") +
     (ctx.inputContext ?? "") +
     ctx.turnContext;
   const prefix = resumed ? perTurn : AGENT_OPERATING_RULES + ctx.bootstrapContext + perTurn;

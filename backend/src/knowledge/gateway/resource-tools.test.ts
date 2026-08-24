@@ -53,12 +53,22 @@ describe("provider-neutral resource gateway tools", () => {
     }
   });
 
+  test("resource_catalog_search describes the currently supported GitHub inventory", () => {
+    const tool = RESOURCE_TOOLS.find((t) => t.name === "resource_catalog_search");
+    expect(tool).toBeDefined();
+    const description = tool!.description;
+    expect(description).toContain("connected GitHub integration");
+    expect(description).toContain("authoritative answer to connected GitHub repository inventory");
+    expect(description).toContain("sandbox filesystem is not");
+  });
+
   test("catalog search derives actor scope from signed claims and returns safe inventory metadata", async () => {
     const calls: unknown[] = [];
     setResourceToolServiceForTest({
       async search(scope, provider, input) {
         calls.push({ scope, provider, input });
         return {
+          status: "available",
           items: [{
             catalogRef: "rc_safe",
             provider: "github",
@@ -68,6 +78,7 @@ describe("provider-neutral resource gateway tools", () => {
             metadata: { private: true, defaultBranch: "main" },
           }],
           nextCursor: null,
+          complete: true,
         };
       },
       async bindings() {
@@ -107,7 +118,7 @@ describe("provider-neutral resource gateway tools", () => {
   test("run bindings stay separate from connected inventory", async () => {
     setResourceToolServiceForTest({
       async search() {
-        return { items: [], nextCursor: null };
+        return { status: "empty", items: [], nextCursor: null, complete: true };
       },
       async bindings(claims) {
         expect(claims).toBe(CLAIMS);
@@ -150,7 +161,7 @@ describe("provider-neutral resource gateway tools", () => {
     const calls: Array<{ orgId: string; runId: string }> = [];
     const service = createResourceToolService({
       async search() {
-        return { items: [], nextCursor: null };
+        return { status: "empty", items: [], nextCursor: null, complete: true };
       },
       async getRun(orgId, runId) {
         calls.push({ orgId, runId });

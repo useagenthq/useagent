@@ -422,6 +422,10 @@ describe("knowledge MCP gateway", () => {
     expect(r.body.result.capabilities.tools).toBeDefined();
     expect(r.body.result.serverInfo.name).toBe("skynet-knowledge");
     expect(r.body.result.instructions).toContain("Call tools/list before use");
+    // Repo-access truthfulness: the always-in-context gateway instructions route
+    // "what can I access" to the connected inventory, not the sandbox filesystem.
+    expect(r.body.result.instructions).toContain("resource_catalog_search");
+    expect(r.body.result.instructions).toContain("not the sandbox filesystem");
     expect(new TextEncoder().encode(r.body.result.instructions as string).byteLength).toBeLessThan(
       600,
     );
