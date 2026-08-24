@@ -155,12 +155,15 @@ export class NativeBridgeDeltaAccumulator {
       { kind, messageId: body.messageId, text: body.text, authoritative: true },
       target,
     );
+    const authoritativeReplacement = replacement.length > 0
+      ? replacement
+      : [{ kind, messageId: body.messageId, text: "", segment: 0, authoritative: true } as const];
     const replacementLastIndex = target.get(body.messageId)?.index ?? -1;
     const tombstones: NativeBridgeFrameBody[] = [];
     for (let index = replacementLastIndex + 1; index <= previousLastIndex; index++) {
       tombstones.push({ kind, messageId: body.messageId, text: "", segment: index, authoritative: true });
     }
-    return [...replacement, ...tombstones];
+    return [...authoritativeReplacement, ...tombstones];
   }
 
   durable(body: NativeBridgeFrameBody): readonly NativeBridgeFrameBody[] {
