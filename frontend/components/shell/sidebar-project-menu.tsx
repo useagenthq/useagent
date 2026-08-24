@@ -1,6 +1,11 @@
 "use client";
 
-import { RiAddLine, RiListCheck2, RiMore2Line, type RemixiconComponentType } from "@remixicon/react";
+import {
+  type RemixiconComponentType,
+  RiAddLine,
+  RiListCheck2,
+  RiMore2Line,
+} from "@remixicon/react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -99,10 +104,7 @@ export function SidebarProjectMenu({
             const Icon = ITEM_ICON[item.key];
             return (
               <DropdownItem key={item.key} className="px-2 py-1.5" onSelect={() => go(item.href)}>
-                <Icon
-                  className="size-5 shrink-0 text-foreground-icon-secondary"
-                  aria-hidden
-                />
+                <Icon className="size-5 shrink-0 text-foreground-icon-secondary" aria-hidden />
                 <span className="truncate text-body-medium text-text-primary">{item.label}</span>
               </DropdownItem>
             );

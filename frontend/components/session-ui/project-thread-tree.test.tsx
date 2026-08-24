@@ -3,10 +3,10 @@ import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
-  ProjectThreadTree,
   type ProjectGroup,
   type ProjectMenuControl,
   type ProjectThread,
+  ProjectThreadTree,
 } from "./project-thread-tree";
 
 const thread = (id: string, label: string, over: Partial<ProjectThread> = {}): ProjectThread => ({

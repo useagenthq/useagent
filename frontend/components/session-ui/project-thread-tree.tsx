@@ -7,10 +7,10 @@
 // Only the tree section is vendored - our shell keeps its own nav, brand,
 // search and account chrome.
 
+import { RiFolderLine, RiFolderOpenLine } from "@remixicon/react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { RiFolderLine, RiFolderOpenLine } from "@remixicon/react";
 
 import { cx } from "@/utils/cx";
 
@@ -62,6 +62,7 @@ function TreeConnector({ count }: { count: number }) {
       fill="none"
       className="pointer-events-none absolute top-0 left-[16.5px] text-foreground-icon-quaternary"
     >
+      <title>Project thread connector</title>
       {Array.from({ length: count }, (_, i) => {
         const y = firstCenter + rowPitch * i;
         return (
