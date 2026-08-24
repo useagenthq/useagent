@@ -1,5 +1,15 @@
 import { eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
+import {
+  backoffAt as computeBackoff,
+  claimDue as claimDueRows,
+  markDead,
+  markForRetry,
+  markSuccess,
+  outboxOutcome,
+  type BackoffPolicy,
+  type OutboxTable,
+} from "../db/outbox";
 import { memoryOutbox, type MemoryOutboxState, type MemoryScope } from "../db/schema";
 import { renderCaptureEvidence, type CaptureEvidence } from "./capture-evidence";
 import { deliverTeamMemory, type MemoryIdentity } from "./team-memory";
@@ -26,8 +36,19 @@ import { deliverTeamMemory, type MemoryIdentity } from "./team-memory";
 // ---------------------------------------------------------------------------
 
 const PAYLOAD_CAP = 16_384;
-const BASE_BACKOFF_MS = 30_000; // 30s, doubling
-const MAX_BACKOFF_MS = 3_600_000; // capped at 1h
+
+/** Backoff window + column mapping for the shared outbox primitive (db/outbox).
+ *  30s doubling, capped at 1h; at-most-once, so no resetStuck (see below). */
+const CAPTURE_POLICY: BackoffPolicy = { baseMs: 30_000, maxMs: 3_600_000 };
+const MEMORY_OUTBOX: OutboxTable = {
+  table: "memory_outbox",
+  key: "id",
+  stateColumn: "state",
+  attemptColumn: "attempt_count",
+  pending: "pending",
+  claimed: "delivering",
+  dead: "dead",
+};
 
 interface CapturePayload {
   readonly identity: MemoryIdentity;
@@ -47,7 +68,7 @@ interface CapturePayload {
 
 /** Next retry time: exponential backoff (30s·2^attempt), capped at 1h. Pure. */
 export function backoffAt(now: number, attempt: number): Date {
-  return new Date(now + Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS));
+  return computeBackoff(CAPTURE_POLICY, now, attempt);
 }
 
 /** The row's state after a delivery outcome — retry until maxAttempts, then dead.
@@ -57,8 +78,8 @@ export function nextOutboxState(
   attemptCount: number,
   maxAttempts: number,
 ): "delivered" | "retry" | "dead" {
-  if (ok) return "delivered";
-  return attemptCount + 1 >= maxAttempts ? "dead" : "retry";
+  const outcome = outboxOutcome(ok, attemptCount, maxAttempts);
+  return outcome === "success" ? "delivered" : outcome;
 }
 
 /**
@@ -127,60 +148,16 @@ interface ClaimedRow {
   readonly maxAttempts: number;
 }
 
-/** Atomically claim due pending rows → `delivering` (CTE + FOR UPDATE SKIP
- *  LOCKED), so a concurrent worker can't double-send. Due is the DB clock. */
+/** Atomically claim due pending rows → `delivering` via the shared primitive
+ *  (CTE + FOR UPDATE SKIP LOCKED), so a concurrent worker can't double-send. */
 async function claimDue(limit: number): Promise<ClaimedRow[]> {
-  const rows = (await db.execute(sql`
-    with due as (
-      select id from memory_outbox
-      where state = 'pending' and next_attempt_at <= now()
-      order by next_attempt_at asc
-      limit ${limit}
-      for update skip locked
-    )
-    update memory_outbox o set state = 'delivering', updated_at = now()
-    from due where o.id = due.id
-    returning o.id, o.payload, o.attempt_count, o.max_attempts`)) as unknown as Array<
-    Record<string, unknown>
-  >;
+  const rows = await claimDueRows(MEMORY_OUTBOX, limit, ["payload"]);
   return rows.map((r) => ({
     id: r.id as string,
     payload: r.payload as string,
     attemptCount: Number(r.attempt_count),
     maxAttempts: Number(r.max_attempts),
   }));
-}
-
-async function markDelivered(id: string): Promise<void> {
-  await db
-    .update(memoryOutbox)
-    .set({ state: "delivered", lastError: null, updatedAt: new Date() })
-    .where(eq(memoryOutbox.id, id));
-}
-
-async function markRetry(id: string, nextAttemptAt: Date, lastError: string): Promise<void> {
-  await db
-    .update(memoryOutbox)
-    .set({
-      state: "pending",
-      attemptCount: sql`${memoryOutbox.attemptCount} + 1`,
-      nextAttemptAt,
-      lastError: lastError.slice(0, 500),
-      updatedAt: new Date(),
-    })
-    .where(eq(memoryOutbox.id, id));
-}
-
-async function markDead(id: string, lastError: string): Promise<void> {
-  await db
-    .update(memoryOutbox)
-    .set({
-      state: "dead",
-      attemptCount: sql`${memoryOutbox.attemptCount} + 1`,
-      lastError: lastError.slice(0, 500),
-      updatedAt: new Date(),
-    })
-    .where(eq(memoryOutbox.id, id));
 }
 
 /**
@@ -204,7 +181,7 @@ export async function deliverDueCaptures(
       parsed = null;
     }
     if (!parsed) {
-      await markDead(row.id, "unparseable payload");
+      await markDead(MEMORY_OUTBOX, row.id, "unparseable payload");
       dead++;
       continue;
     }
@@ -223,13 +200,13 @@ export async function deliverDueCaptures(
     }
     const outcome = nextOutboxState(ok, row.attemptCount, row.maxAttempts);
     if (outcome === "delivered") {
-      await markDelivered(row.id);
+      await markSuccess(MEMORY_OUTBOX, row.id, "delivered");
       delivered++;
     } else if (outcome === "dead") {
-      await markDead(row.id, "delivery failed after max attempts");
+      await markDead(MEMORY_OUTBOX, row.id, "delivery failed after max attempts");
       dead++;
     } else {
-      await markRetry(row.id, backoffAt(Date.now(), row.attemptCount + 1), "delivery failed");
+      await markForRetry(MEMORY_OUTBOX, row.id, backoffAt(Date.now(), row.attemptCount + 1), "delivery failed");
       retried++;
     }
   }
