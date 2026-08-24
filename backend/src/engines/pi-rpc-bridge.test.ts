@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { SandboxHandle } from "../sandboxes/provider";
+import type { SandboxHandle, SandboxProcess } from "../sandboxes/provider";
 import { DefaultPiBridgeManager } from "./pi-rpc-bridge";
 
 function sandboxWithBracketedPastePrefix(): SandboxHandle {
@@ -10,10 +10,10 @@ function sandboxWithBracketedPastePrefix(): SandboxHandle {
     memory: 4,
     state: "started",
     process: {
-      async createPty({ onData }) {
+      async createPty({ onData }: Parameters<SandboxProcess["createPty"]>[0]) {
         return {
           async waitForConnection() {},
-          async sendInput(input) {
+          async sendInput(input: string | Uint8Array) {
             const text = typeof input === "string" ? input : new TextDecoder().decode(input);
             if (text.startsWith("stty ")) {
               await onData(encoder.encode("\u001b[?2004hroot@box:/work# "));
@@ -41,7 +41,7 @@ function sandboxWithBracketedPastePrefix(): SandboxHandle {
           async kill() {},
         };
       },
-    } as SandboxHandle["process"],
+    } as unknown as SandboxHandle["process"],
     fs: {} as SandboxHandle["fs"],
     async start() {},
     async delete() {},
