@@ -421,6 +421,13 @@
 			"when": 1789900000000,
 			"tag": "0061_fleet_admission_leases",
 			"breakpoints": true
+		},
+		{
+			"idx": 60,
+			"version": "7",
+			"when": 1790000000000,
+			"tag": "0062_tasks",
+			"breakpoints": true
 		}
 	]
 }
