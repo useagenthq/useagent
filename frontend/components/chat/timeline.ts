@@ -318,6 +318,7 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
   // Narration bursts — root-session, assistant-step messages only. One frame per
   // text partId (the store keeps the latest revision), each rendered as its own
   // progressive-markdown block; separate bursts stay separate paragraphs.
+  const unpartedText = new Map<string, { text: string; firstSeq: number; order: number }>();
   for (const f of nativeFrames) {
     if (!f.eventType.startsWith("part.text")) continue;
     const sid = f.native.sessionId;
@@ -326,11 +327,28 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
     if (!mid || !stepMessages.has(mid)) continue; // context / user prompt text
     const text = partText(f.payload);
     if (!text) continue;
+    if (!f.native.partId) {
+      const previous = unpartedText.get(mid);
+      unpartedText.set(mid, {
+        text: `${previous?.text ?? ""}${text}`,
+        firstSeq: previous?.firstSeq ?? f.seq,
+        order: previous?.order ?? f.seq,
+      });
+      continue;
+    }
     ranked.push({
-      node: { kind: "text", key: f.native.partId ?? f.eventId, text },
+      node: { kind: "text", key: f.native.partId, text },
       k0: msgOrderKey.get(mid) ?? f.seq,
       k1: 0, // narration precedes its step's tools
       k2: f.seq,
+    });
+  }
+  for (const [messageId, grouped] of unpartedText) {
+    ranked.push({
+      node: { kind: "text", key: `message:${messageId}`, text: grouped.text },
+      k0: grouped.order,
+      k1: 0,
+      k2: grouped.firstSeq,
     });
   }
 
@@ -338,6 +356,7 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
   // (the delta carries the cumulative text; the .completed frame just seals it).
   // Ordered by the part's own seq so a "Thought" disclosure lands where the model
   // thought, ahead of its answer. Child-session thinking routes to its own pane.
+  const unpartedReasoning = new Map<string, { text: string; firstSeq: number }>();
   for (const f of nativeFrames) {
     if (!f.eventType.startsWith("part.reasoning")) continue;
     if (f.eventType.endsWith(".completed")) continue;
@@ -345,11 +364,28 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
     if (sid && childSessions.has(sid)) continue;
     const text = partText(f.payload);
     if (!text) continue;
+    const mid = f.native.messageId;
+    if (!f.native.partId && mid) {
+      const previous = unpartedReasoning.get(mid);
+      unpartedReasoning.set(mid, {
+        text: `${previous?.text ?? ""}${text}`,
+        firstSeq: previous?.firstSeq ?? f.seq,
+      });
+      continue;
+    }
     ranked.push({
       node: { kind: "reasoning", key: f.native.partId ?? f.eventId, text },
       k0: f.seq,
       k1: 0,
       k2: f.seq,
+    });
+  }
+  for (const [messageId, grouped] of unpartedReasoning) {
+    ranked.push({
+      node: { kind: "reasoning", key: `reasoning:${messageId}`, text: grouped.text },
+      k0: grouped.firstSeq,
+      k1: 0,
+      k2: grouped.firstSeq,
     });
   }
 

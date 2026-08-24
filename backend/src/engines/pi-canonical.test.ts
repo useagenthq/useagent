@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { NativeBridgeSequencer } from "@useagent/agent-harness/bridge";
-import { piRpcFrameBodies } from "./pi-canonical";
+import {
+  NativeBridgeDeltaAccumulator,
+  NativeBridgeSequencer,
+  type NativeBridgeFrameBody,
+} from "@useagent/agent-harness/bridge";
+import { createPiRpcFrameMapper, piRpcFrameBodies } from "./pi-canonical";
 import { piBridgeProviderEvent } from "./pi-provider-events";
 import { translateOpenCode, type OpenCodeFrame } from "@useagent/agent-harness/opencode";
 
@@ -86,6 +90,147 @@ describe("Pi RPC canonical bridge mapping", () => {
     expect(started.id).toBe(completed.id);
     expect(started.eventType).toBe("part.tool");
     expect(completed.eventType).toBe("part.tool.completed");
+  });
+
+  test("coalesces token-sized Pi reasoning deltas into one durable Thought row", () => {
+    const map = createPiRpcFrameMapper("pi-message-run");
+    const first = map({
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "Let " },
+    });
+    const second = map({
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "me think" },
+    });
+    expect(first.filter((body) => body.kind === "message.started")).toHaveLength(1);
+    expect(second.filter((body) => body.kind === "message.started")).toHaveLength(0);
+
+    const accumulator = new NativeBridgeDeltaAccumulator();
+    const sequencer = new NativeBridgeSequencer("session", () => 1);
+    const deltas = [...first, ...second].filter(
+      (body) => body.kind === "reasoning.delta",
+    );
+    const events = deltas.map((body) => piBridgeProviderEvent(
+      { runId: "run", threadId: "thread" },
+      sequencer.frame(accumulator.durable(body)[0]!),
+    ));
+    expect(events[0]?.id).toBe(events[1]?.id);
+    expect(events[1]?.payload).toMatchObject({ text: "Let me think" });
+
+    const finalEvent = events[1]!;
+    const translated = translateOpenCode([{
+      eventId: finalEvent.id,
+      seq: 1,
+      provider: "pi",
+      eventType: finalEvent.eventType,
+      payload: finalEvent.payload,
+      native: {
+        sessionId: "session",
+        parentSessionId: null,
+        messageId: "pi-message-run",
+        partId: null,
+        callId: null,
+      },
+    }], { runId: "run", threadId: "thread", engine: "pi" });
+    expect(translated.events).toContainEqual(expect.objectContaining({
+      kind: "reasoning.delta",
+      messageId: "pi-message-run",
+      text: "Let me think",
+    }));
+  });
+
+  test("starts a fresh message after every assistant message_end in tool loops", () => {
+    const map = createPiRpcFrameMapper("pi-message-run");
+    map({ type: "agent_start" });
+    const first = map({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "Calling tool" },
+    });
+    map({
+      type: "message_end",
+      message: { role: "assistant", stopReason: "toolUse", usage: {} },
+    });
+    const second = map({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "Final answer" },
+    });
+    expect(first).toContainEqual({ kind: "message.started", messageId: "pi-message-run" });
+    expect(second).toContainEqual({ kind: "message.started", messageId: "pi-message-run-1" });
+    expect(second).toContainEqual({
+      kind: "message.delta",
+      messageId: "pi-message-run-1",
+      text: "Final answer",
+    });
+  });
+
+  test("uses message_start identity through authoritative message_end content", () => {
+    const map = createPiRpcFrameMapper("fallback");
+    expect(map({
+      type: "message_start",
+      message: { role: "assistant", timestamp: 100, content: [] },
+    })).toEqual([{ kind: "message.started", messageId: "pi-message-100" }]);
+    const streamed = map({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "draft" },
+    });
+    const ended = map({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        timestamp: 999,
+        stopReason: "stop",
+        usage: {},
+        content: [
+          { type: "thinking", thinking: "final thought" },
+          { type: "text", text: "rewritten answer" },
+        ],
+      },
+    });
+    expect(streamed).toContainEqual({
+      kind: "message.delta",
+      messageId: "pi-message-100",
+      text: "draft",
+    });
+    expect(ended).toContainEqual({
+      kind: "message.authoritative",
+      messageId: "pi-message-100",
+      text: "rewritten answer",
+    });
+    expect(ended).toContainEqual({
+      kind: "reasoning.authoritative",
+      messageId: "pi-message-100",
+      text: "final thought",
+    });
+
+    const accumulator = new NativeBridgeDeltaAccumulator();
+    for (const body of streamed) accumulator.durable(body);
+    const final = ended.flatMap((body) => accumulator.durable(body));
+    expect(final).toContainEqual(expect.objectContaining({
+      kind: "message.delta",
+      messageId: "pi-message-100",
+      text: "rewritten answer",
+      authoritative: true,
+    }));
+  });
+
+  test("namespaces every Pi provider-event identity by run", () => {
+    const bodies: NativeBridgeFrameBody[] = [
+      { kind: "turn.started" },
+      { kind: "tool.started", toolCallId: "tool", name: "read" },
+      { kind: "plan.updated", entries: [{ id: "todo", text: "Check", status: "pending" }] },
+      { kind: "commands.updated", commands: [{ name: "compact" }] },
+      { kind: "usage.updated", inputTokens: 1 },
+      { kind: "child.started", childId: "child" },
+    ];
+    const sequencer = new NativeBridgeSequencer("shared-session", () => 1);
+    for (const body of bodies) {
+      const frame = sequencer.frame(body);
+      const first = piBridgeProviderEvent({ runId: "run-a", threadId: "thread" }, frame);
+      const second = piBridgeProviderEvent({ runId: "run-b", threadId: "thread" }, frame);
+      expect(first.id).not.toBe(second.id);
+      expect(first.id.startsWith("run-a:pi:")).toBe(true);
+      expect(second.id.startsWith("run-b:pi:")).toBe(true);
+    }
   });
 
   test("classifies a terminal provider error as a failed turn", () => {
