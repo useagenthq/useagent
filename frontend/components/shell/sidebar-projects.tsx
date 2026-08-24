@@ -6,14 +6,21 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchSidebarRuns } from "@/app/agent/runs/runs-data";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";
+import { threadRowTimestamp } from "@/components/session-ui/thread-row";
+import {
+  ProjectThreadTree,
+  type ProjectGroup as TreeProjectGroup,
+  type ProjectMenuControl,
+} from "@/components/session-ui/project-thread-tree";
+import { relativeTime } from "@/utils/format";
 import {
   groupThreadsByProject,
   runPrimaryRepo,
   UNATTACHED_KEY,
   type ProjectRepo,
 } from "./sidebar-project-groups";
+import { SidebarProjectMenu } from "./sidebar-project-menu";
 import { SidebarSectionLabel } from "./sidebar-nav";
-import { ProjectThreadGroup } from "./sidebar-threads";
 import type { SidebarRun } from "./working-project-status";
 
 const POLL_MS = 30_000;
@@ -46,10 +53,12 @@ function writeExpanded(value: Record<string, boolean>): void {
 }
 
 /**
- * The project-nested thread rail. Combines the two existing data lanes - GET
- * /api/repos (the full project list) and the runs summary (threads + their
- * repo) - into collapsible project groups with their threads nested beneath
- * (see `groupThreadsByProject` + `ProjectThreadGroup`). No new endpoints.
+ * The project-nested thread rail, rendered with the native Board UI repos-tree
+ * treatment (folder -> folder-open, grid-rows height animation, curved tree
+ * connector, relative-time chips) and a per-project actions menu (hover kebab +
+ * right-click). Data still comes from the two existing lanes - GET /api/repos
+ * (the full project list) and the runs summary (threads + their repo) - folded
+ * into project groups by `groupThreadsByProject`. No new endpoints.
  *
  * Same refresh contract as before: an org-change subscription plus a
  * low-frequency recovery poll. Expanded/collapsed state is remembered per
@@ -143,19 +152,45 @@ export function SidebarProjects() {
     });
   };
 
+  // Fold the data groups into the tree view model: a title, the clean repo name
+  // for the actions menu, and each thread's label + real relative-time chip +
+  // active-state from the current route.
+  const treeGroups = useMemo<TreeProjectGroup[]>(
+    () =>
+      groups.map((group) => ({
+        key: group.key,
+        label: group.name,
+        fullName: group.fullName,
+        threads: group.threads.map((run) => ({
+          id: run.id,
+          label: run.prompt || "Untitled run",
+          time: relativeTime(threadRowTimestamp(run)),
+          isSelected: pathname === `/session/${run.id}`,
+        })),
+      })),
+    [groups, pathname],
+  );
+
+  const renderMenu = useCallback(
+    (group: TreeProjectGroup, control: ProjectMenuControl) =>
+      group.fullName ? (
+        <SidebarProjectMenu group={group} isOpen={control.isOpen} setOpen={control.setOpen} />
+      ) : null,
+    [],
+  );
+
   if (groups.length === 0) return null;
 
   return (
     <>
       <SidebarSectionLabel>Projects</SidebarSectionLabel>
-      {groups.map((group) => (
-        <ProjectThreadGroup
-          key={group.key}
-          group={group}
-          expanded={isExpanded(group.key)}
-          onToggle={() => toggle(group.key)}
-        />
-      ))}
+      <ProjectThreadTree
+        groups={treeGroups}
+        isExpanded={isExpanded}
+        onToggle={toggle}
+        threadHref={(thread) => `/session/${thread.id}`}
+        renderMenu={renderMenu}
+      />
     </>
   );
 }

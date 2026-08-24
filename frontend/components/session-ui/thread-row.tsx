@@ -112,20 +112,16 @@ export const ThreadRow = memo(function ThreadRow({
   href,
   active = false,
   unread = false,
-  hideGitRefs = false,
 }: {
   run: SidebarRun;
   href: string;
   active?: boolean;
   unread?: boolean;
-  /** Drop the git identity chips (used when the row already sits under its
-   *  repo group, so the repo is implied by the group header). */
-  hideGitRefs?: boolean;
 }) {
   const pill = resolveThreadRowPill({ status: run.status, unread });
   const title = run.prompt || "Untitled run";
   const timestampMs = threadRowTimestamp(run);
-  const gitRefs = hideGitRefs ? [] : runGitRefs(run);
+  const gitRefs = runGitRefs(run);
 
   return (
     <Link
