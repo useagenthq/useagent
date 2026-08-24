@@ -35,6 +35,7 @@ export const ENGINE_IDS = [
   "opencode",
   "claude",
   "codex",
+  "pi",
   "chat",
   "daytona",
   "claude-sdk",

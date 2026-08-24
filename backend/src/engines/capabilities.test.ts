@@ -7,7 +7,7 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
   const res = { desktop: false, knowledgeTools: false };
 
   test("shared truths hold for every engine (streaming/tools/commands/terminal/stop/resume)", () => {
-    for (const e of ["opencode", "claude", "codex"]) {
+    for (const e of ["opencode", "claude", "codex", "pi"]) {
       const c = sessionCapabilities(e, res);
       expect(c.streamingText).toBe(true);
       expect(c.toolProgress).toBe(true);
@@ -16,6 +16,21 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
       expect(c.stop).toBe(true);
       expect(c.resume).toBe(true);
     }
+  });
+
+  test("Pi advertises only its wired native RPC surfaces", () => {
+    expect(sessionCapabilities("pi", { desktop: false, knowledgeTools: true })).toMatchObject({
+      nativeChildProjection: true,
+      gatewayChildSessions: true,
+      reasoning: true,
+      plans: true,
+      usage: true,
+      modelSelection: true,
+      reconcile: false,
+      approvals: false,
+      questions: false,
+      nativeEmbed: false,
+    });
   });
 
   test("OpenCode-only truths: nativeEmbed, plans, usage, reconcile; selectable-model truths; ACP: close", () => {

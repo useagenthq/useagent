@@ -62,6 +62,22 @@ describe("engine readiness advertisement", () => {
     })).toMatchObject({ ready: true, reason: "enabled" });
   });
 
+  test("Pi is hidden until its native bridge and selected provider are proven", () => {
+    const engineOnly = {
+      ...PROD,
+      ENABLED_ENGINES: "pi",
+      ENGINE_READINESS_PI: "verified",
+    };
+    expect(engineReadiness("pi", engineOnly)).toMatchObject({
+      ready: false,
+      reason: "not_proven",
+    });
+    expect(engineReadiness("pi", {
+      ...engineOnly,
+      PROVIDER_HEALTH_OPENAI: "verified",
+    })).toMatchObject({ ready: true, reason: "enabled" });
+  });
+
   test("subscription-backed Codex requires engine proof but not an API-key provider", () => {
     const env = {
       ...PROD,

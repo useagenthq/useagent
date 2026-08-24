@@ -577,6 +577,20 @@ export function translateOpenCode(
           source: parsed.source ?? f.provider,
         }, ident));
       } else suppressed = "session.started without a capabilities map";
+    } else if (et === "pi.turn.started") {
+      produced.push(push(f.eventId, f.provider, { kind: "turn.started" }, ident));
+    } else if (et === "pi.turn.completed") {
+      const stopReason = str(p?.stopReason);
+      produced.push(push(f.eventId, f.provider, {
+        kind: "turn.completed",
+        ...(stopReason ? { stopReason } : {}),
+      }, ident));
+    } else if (et === "pi.turn.failed") {
+      produced.push(push(f.eventId, f.provider, {
+        kind: "harness.error",
+        message: str(p?.error) ?? "Pi turn failed",
+        fatal: true,
+      }, ident));
     } else if (et.startsWith("session")) {
       produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: p ?? {} }, ident));
     } else if (et === "part.step-start") {

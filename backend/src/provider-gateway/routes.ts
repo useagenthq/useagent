@@ -112,7 +112,11 @@ function requestHeaders(provider: ProviderId, incoming: Headers, credential: str
 }
 
 function normalizeOpenAIModelForUpstream(run: GatewayRun, body: string): string {
-  if (run.engine !== "opencode" || !run.model.startsWith("openai/") || !body) return body;
+  if (
+    (run.engine !== "opencode" && run.engine !== "pi") ||
+    !run.model.startsWith("openai/") ||
+    !body
+  ) return body;
   const parsed = JSON.parse(body) as Record<string, unknown>;
   if (parsed.model === run.model) {
     parsed.model = run.model.slice("openai/".length);

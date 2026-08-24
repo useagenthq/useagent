@@ -6,6 +6,7 @@ const agentTurnFiles = [
   "src/engines/opencode-server.ts",
   "src/engines/sandbox.ts",
   "src/engines/runtime-adapter.ts",
+  "src/engines/pi-adapter.ts",
 ] as const;
 
 const sourceFor = (path: string): string =>
@@ -34,6 +35,8 @@ const providerSecretNames = stringLiteralsIn(
 );
 
 describe("provider credential trust boundary", () => {
+  const sharedPreparation = sourceFor("src/engines/sandbox-turn-preparation.ts");
+
   for (const path of agentTurnFiles) {
     test(`${path} cannot read or inject backend provider credentials`, () => {
       const source = sourceFor(path);
@@ -46,11 +49,22 @@ describe("provider credential trust boundary", () => {
       expect(backendSource).not.toMatch(
         /env\s*:\s*process\.env\b|\.\.\.\s*process\.env\b|\b(?:childEnv|hostProviderEnv)\(/,
       );
-      expect(source).toMatch(
-        /composeSecretEnv\(ctx,\s*\{\s*excludeNames:\s*PROVIDER_SECRET_NAMES\s*,?\s*\}\)/,
-      );
+      if (source.includes("prepareSandboxTurn")) {
+        expect(source).toContain('from "./sandbox-turn-preparation"');
+      } else {
+        expect(source).toMatch(
+          /composeSecretEnv\(ctx,\s*\{\s*excludeNames:\s*PROVIDER_SECRET_NAMES\s*,?\s*\}\)/,
+        );
+      }
     });
   }
+
+  test("shared sandbox preparation owns lease acquisition and provider-secret exclusion", () => {
+    expect(sharedPreparation).toContain("acquireThreadSandbox(ctx");
+    expect(sharedPreparation).toMatch(
+      /composeSecretEnv\(ctx,\s*\{\s*excludeNames:\s*PROVIDER_SECRET_NAMES\s*,?\s*\}\)/,
+    );
+  });
 
   test("every paid sandbox adapter fails closed without the gateway", () => {
     for (const path of agentTurnFiles) {
@@ -68,9 +82,8 @@ describe("provider credential trust boundary", () => {
       expect(sourceFor(path)).toContain("providerGatewaySandboxIsCurrent(prior)");
     }
 
-    const runtimeAdapter = sourceFor("src/engines/runtime-adapter.ts");
     const sharedLease = sourceFor("src/engines/thread-sandbox.ts");
-    expect(runtimeAdapter).toContain("acquireThreadSandbox(ctx");
+    expect(sharedPreparation).toContain("acquireThreadSandbox(ctx");
     expect(sharedLease).toContain("providerGatewaySandboxIsCurrent(sandbox)");
   });
 

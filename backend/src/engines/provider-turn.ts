@@ -98,6 +98,7 @@ export async function establishProviderSession(
     try {
       resumed = await input.driver.resume({
         session: candidate,
+        metadata: input.startMetadata,
         signal: input.ctx.signal,
       });
     } catch (error) {
