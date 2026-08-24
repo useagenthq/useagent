@@ -98,6 +98,7 @@ describe("github listing — one product organization owns the shared credential
       fetches += 1;
       return new Response(JSON.stringify([
         {
+          id: 123456,
           full_name: "upstream-org/backend",
           name: "backend",
           private: true,
@@ -118,6 +119,13 @@ describe("github listing — one product organization owns the shared credential
     expect(allowed.repos.map((repo) => repo.full_name)).toEqual([
       "upstream-org/backend",
     ]);
+    expect(allowed.repos[0]).toEqual({
+      full_name: "upstream-org/backend",
+      name: "backend",
+      private: true,
+      default_branch: "main",
+    });
+    expect(JSON.stringify(allowed)).not.toContain("123456");
     expect(fetches).toBe(1);
   });
 

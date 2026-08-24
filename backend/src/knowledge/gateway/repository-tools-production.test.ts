@@ -7,7 +7,6 @@ import { createRun, setRunSandbox } from "../../runs/repo";
 import type { SandboxHandle } from "../../sandboxes/provider";
 import type { ToolTokenClaims } from "./token";
 import * as repoPrepModule from "../../engines/repo-prep";
-import * as githubReposModule from "../../github/repos";
 import * as sandboxProviderModule from "../../sandboxes/provider";
 
 const ensureRepoClone = mock(async (
@@ -16,7 +15,7 @@ const ensureRepoClone = mock(async (
   const [sandbox, workdir, entry, ctx, options] = args;
   if (
     workdir === "/root/work" &&
-    entry === "upstream-org/backend" &&
+    entry === "upstream-org/backend:feature/auth" &&
     ctx.orgId === "org-1" &&
     options?.useGithubCredential === true
   ) {
@@ -26,29 +25,13 @@ const ensureRepoClone = mock(async (
 });
 const executeCommand = mock(async () => ({
   exitCode: 0,
-  result: "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\nmain\n",
+  result: "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\nfeature/auth\n",
 }));
 
 mock.module("../../engines/repo-prep", () => ({
   ...repoPrepModule,
   ensureRepoClone,
   shq: (value: string) => `'${value.replace(/'/g, "'\\''")}'`,
-}));
-
-mock.module("../../github/repos", () => ({
-  ...githubReposModule,
-  listRepos: async (orgId: string) =>
-    orgId === "org-1"
-      ? {
-          configured: true,
-          repos: [{
-            full_name: "upstream-org/backend",
-            name: "backend",
-            private: true,
-            default_branch: "main",
-          }],
-        }
-      : githubReposModule.listRepos(orgId),
 }));
 
 mock.module("../../sandboxes/provider", () => ({
@@ -70,7 +53,7 @@ mock.module("../../sandboxes/provider", () => ({
 const { executeRepositoryTool } = await import("./repository-tools");
 
 describe("repository gateway production clone", () => {
-  test("passes the signed organization id into the credentialed clone boundary", async () => {
+  test("lists and clones the durable run binding without consulting catalog contents", async () => {
     const runId = crypto.randomUUID();
     const threadId = crypto.randomUUID();
     const claims: ToolTokenClaims = {
@@ -90,12 +73,22 @@ describe("repository gateway production clone", () => {
       userId: claims.userId,
       parentRunId: null,
       threadId: claims.threadId,
-      repos: ["upstream-org/backend"],
+      repos: ["upstream-org/backend:feature/auth"],
       memoryScope: "org",
     });
     await setRunSandbox(runId, "sandbox-1");
 
     try {
+      const listed = await executeRepositoryTool(claims, "github_repositories", {});
+      expect(listed.isError).toBeUndefined();
+      expect(listed.structuredContent).toEqual({
+        repositories: [{
+          full_name: "upstream-org/backend",
+          name: "backend",
+          revision: "feature/auth",
+        }],
+      });
+
       const response = await executeRepositoryTool(claims, "github_clone_repository", {
         query: "upstream-org/backend",
       });
@@ -108,6 +101,12 @@ describe("repository gateway production clone", () => {
       });
       expect(ensureRepoClone.mock.calls[0]?.[4]).toEqual({
         useGithubCredential: true,
+      });
+      expect(response.structuredContent).toEqual({
+        repository: "upstream-org/backend",
+        branch: "feature/auth",
+        commit: "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d",
+        path: "/root/work/upstream-org/backend",
       });
       const provider = await import("../../sandboxes/provider");
       expect(typeof provider.sandboxTemplate).toBe("function");

@@ -41,6 +41,7 @@ import { executeLoopLoginTool, LOOP_LOGIN_TOOLS, loopLoginConfigured } from "./l
 import { executeMemoryTool, MEMORY_TOOLS } from "./memory-tools";
 import { executeRecordingTool, RECORDING_TOOLS } from "./recording-tools";
 import { executeRepositoryTool, REPOSITORY_TOOLS } from "./repository-tools";
+import { executeResourceTool, RESOURCE_TOOLS } from "./resource-tools";
 import { executeSkillTool, SKILL_TOOLS } from "./skill-tools";
 import { executeSlackTool, SLACK_TOOLS } from "./slack-tools";
 import type { ToolTokenClaims } from "./token";
@@ -121,6 +122,7 @@ const BASE_TOOL_FAMILIES = [
   { tools: ARTIFACT_TOOLS, execute: executeArtifactTool },
   { tools: RECORDING_TOOLS, execute: executeRecordingTool },
   { tools: COMPUTER_USE_TOOLS, execute: executeComputerUseTool },
+  { tools: RESOURCE_TOOLS, execute: executeResourceTool },
   { tools: REPOSITORY_TOOLS, execute: executeRepositoryTool },
   { tools: GITHUB_TOOLS, execute: executeGithubTool },
   { tools: GCS_TOOLS, execute: executeGcsTool },
