@@ -14,7 +14,7 @@ import { PI_BROKER_PORT, startPiCredentialBroker } from "./pi-credential-broker"
 export const PI_CODING_AGENT_VERSION = "18.0.3";
 export const PI_BUN_VERSION = "1.3.14";
 export const PI_CODING_AGENT_UPSTREAM_SHA = "160ed439ac0df594347e7d7018b813a7ffdb5e81";
-export const PI_BRIDGE_GENERATION = 2;
+export const PI_BRIDGE_GENERATION = 3;
 export const PI_RUNTIME_LOCK_SHA256 = "a2f93ead170bc02603de81e80fbd3c678990d8204ce115932875f90e64c26847";
 export const PI_RUNTIME_USER = "useagent-pi";
 export const PI_RUNTIME_HOME = "/home/useagent-pi";

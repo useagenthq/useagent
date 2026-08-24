@@ -212,6 +212,23 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
     expect(canon).toEqual(legacy); // FULL deep equality across lanes (H3)
   });
 
+  test("bounded no-part segments recompose into one Thought and one answer without loss", () => {
+    const frames: F[] = [
+      frame({ eventType: "part.step-start", seq: 0, provider: "pi", native: { messageId: "m1" } }),
+      frame({ eventType: "part.reasoning", seq: 1, provider: "pi", native: { messageId: "m1" }, payload: { text: "Let " } }),
+      frame({ eventType: "part.reasoning", seq: 2, provider: "pi", native: { messageId: "m1" }, payload: { text: "me think" } }),
+      frame({ eventType: "part.text", seq: 3, provider: "pi", native: { messageId: "m1" }, payload: { text: "Final " } }),
+      frame({ eventType: "part.text", seq: 4, provider: "pi", native: { messageId: "m1" }, payload: { text: "answer" } }),
+      frame({ eventType: "part.step-finish", seq: 5, provider: "pi", native: { messageId: "m1" } }),
+    ];
+    const { legacy, canon } = bothWays(frames, []);
+    expect(legacy).toEqual([
+      { kind: "reasoning", key: "reasoning:m1", text: "Let me think" },
+      { kind: "text", key: "message:m1", text: "Final answer" },
+    ]);
+    expect(canon).toEqual(legacy);
+  });
+
   test("child/subagent reasoning is routed OUT of the main timeline", () => {
     const frames: F[] = [
       frame({ eventType: "part.step-start", seq: 0, native: { messageId: "m1", partId: "ps1" } }),
