@@ -222,6 +222,11 @@ test("settled turn renders tool bursts through the T3 work grammar", () => {
 
   // The canonical lane drove the timeline, and tools render as T3 work rows.
   expect(html).toContain('data-timeline-source="canonical"');
+  // The timeline wrapper carries the shared 12px (space-y-3) rhythm so a trailing
+  // published-artifact card / answer sits one step below the timeline above it,
+  // not glued to it (artifact-block spacing fix).
+  const timelineWrapper = html.match(/<div[^>]*data-timeline-source="canonical"[^>]*>/)?.[0] ?? "";
+  expect(timelineWrapper).toContain("space-y-3");
   expect(html).toContain('data-session-ui="work-group"');
   expect(html).toContain('data-session-ui="work-entry-row"');
   // The legacy ToolStepRow grammar no longer renders tool nodes.

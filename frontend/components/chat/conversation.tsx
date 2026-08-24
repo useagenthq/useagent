@@ -596,7 +596,7 @@ const TurnBlock = memo(function TurnBlock({
              and their tool rows in true order (live and settled alike). Its final
              burst is the answer, so the durable summary is re-rendered only when
              the timeline carried no narration (a tool-only turn). */
-          <div data-timeline-source={timelineSource}>
+          <div data-timeline-source={timelineSource} className="space-y-3">
             <Timeline nodes={timeline} live={live} workingSince={run.created_at} />
             {summary && !hasNarration(timeline) && <AgentAnswer summary={summary} />}
             {failed && !summary && !hasNarration(timeline) && <FailedNote />}
@@ -608,7 +608,7 @@ const TurnBlock = memo(function TurnBlock({
              OrbBootIndicator). Steps render through the same T3 work grammar as
              the interleaved timeline: settled work folds behind "+N previous tool
              calls"; live work tails with the T3 working indicator. */
-          <>
+          <div className="space-y-3">
             {narrating
               ? null
               : live
@@ -640,7 +640,7 @@ const TurnBlock = memo(function TurnBlock({
             {!summary && !narrating && !failed && activity.length === 0 && status === "running" && (
               <span className="text-body-2-medium text-text-tertiary">Working...</span>
             )}
-          </>
+          </div>
         )}
 
         {/* This turn's subagents: native task fan-out (same projection as the
