@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
-import { resolveGithubSandboxToken } from "../src/github/auth";
+import {
+  resolveGithubRepositoryAccess,
+  resolveGithubSandboxToken,
+} from "../src/github/auth";
 import { githubOrgAccessErrorForOrg, listRepos } from "../src/github/repos";
 import { createIntegrationConnection } from "../src/integrations/connection-repo";
 import { GITHUB_NATIVE_RUNTIME_BINDING_ID } from "../src/integrations/github-native-backend";
@@ -68,6 +71,10 @@ describe("revoked tenant GitHub integration", () => {
       repos: [],
       error: "GitHub integration has been revoked for this organization",
     });
+    await expect(resolveGithubRepositoryAccess(orgId)).rejects.toThrow(
+      "GitHub integration has been revoked for this organization",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   test("sandbox repository access does not fall back to the deployment GitHub App", async () => {

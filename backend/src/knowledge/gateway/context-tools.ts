@@ -7,6 +7,7 @@ import {
 } from "../../context/store";
 import { parseCodeRef } from "../../context/code/projector";
 import { readFileAtCommit } from "../../wiki-gen/clone";
+import { resolveGithubRepositoryAccess } from "../../github/auth";
 import { formatSkillMarkdown } from "../../skills/format";
 import { resolveSkillSelection } from "../../skills/repo";
 import { getScheduleForOrg } from "../../schedules/repo";
@@ -276,11 +277,11 @@ type CodeFileReader = (
   commitSha: string,
   file: string,
 ) => Promise<string | null>;
-let codeFileReader: CodeFileReader = readFileAtCommit;
+let codeFileReader: CodeFileReader | null = null;
 
 /** Test-only seam: production always reads the excerpt from the repo at the sha. */
 export function setCodeFileReaderForTest(reader: CodeFileReader | null): void {
-  codeFileReader = reader ?? readFileAtCommit;
+  codeFileReader = reader;
 }
 
 /** Read a code: ref -> the cited file excerpt at that commit. ORG-SCOPED: the ref
@@ -302,9 +303,13 @@ async function readCode(claims: ToolTokenClaims, ref: string): Promise<ToolCallR
       'That code source_ref is malformed. Use a value returned by context_search, e.g. "code:<owner/name>@<sha>:<file>#L<line>".',
     );
   }
-  const text = await codeFileReader(parsed.repo, parsed.commitSha, parsed.file).catch(
-    () => null,
-  );
+  const text = await (async () => {
+    if (codeFileReader) {
+      return codeFileReader(parsed.repo, parsed.commitSha, parsed.file);
+    }
+    const access = await resolveGithubRepositoryAccess(claims.orgId);
+    return readFileAtCommit(parsed.repo, parsed.commitSha, parsed.file, access);
+  })().catch(() => null);
   if (text === null) {
     return error(
       `The cited file is no longer readable at that commit (${parsed.repo}@${parsed.commitSha.slice(0, 8)}:${parsed.file}). Run context_search again to get a current source_ref.`,
