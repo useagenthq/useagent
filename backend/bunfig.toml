@@ -2,3 +2,10 @@
 # Runs once before any test file — points the app at skynet_test and strips the
 # LLM/embedding keys so distillation degrades to its built-in stub (no network).
 preload = ["./test/preload.ts"]
+
+# Supply-chain hardening for `bun install` (mirrors root + frontend bunfig).
+#   exact             pin resolved versions instead of caret ranges.
+#   minimumReleaseAge refuse versions published within the last 3 days (259200s).
+[install]
+exact = true
+minimumReleaseAge = 259200
