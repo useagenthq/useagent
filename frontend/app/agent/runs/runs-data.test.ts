@@ -3,6 +3,23 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as backend from "@/lib/backend-fetch";
 import { fetchSidebarRuns } from "./runs-data";
 
+function summary(id: string, status = "running") {
+  return {
+    id,
+    prompt: "hello",
+    model: "openai/gpt-5.6-luna",
+    engine: "opencode",
+    status,
+    summary: null,
+    duration_ms: null,
+    repo: null,
+    repos: [],
+    repo_specs: [],
+    created_at: "2026-08-24T00:00:00.000Z",
+    updated_at: "2026-08-24T00:00:00.000Z",
+  };
+}
+
 async function waitForCalls(spy: { mock: { calls: unknown[] } }, count: number): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if (spy.mock.calls.length === count) return;
@@ -17,7 +34,7 @@ afterEach(() => {
 
 describe("fetchSidebarRuns", () => {
   test("shares one compact backend request across concurrent sidebar consumers", async () => {
-    const summaries = [{ id: "run-1", prompt: "hello", status: "running" }];
+    const summaries = [summary("run-1")];
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -47,7 +64,7 @@ describe("fetchSidebarRuns", () => {
         new Promise<Response>((resolve) => {
           const call = releases.length + 1;
           releases.push(() =>
-            resolve(new Response(JSON.stringify({ runs: [{ id: `run-${call}` }] }))),
+            resolve(new Response(JSON.stringify({ runs: [summary(`run-${call}`)] }))),
           );
         }),
     );
@@ -63,10 +80,10 @@ describe("fetchSidebarRuns", () => {
     expect(request).toHaveBeenCalledTimes(2);
 
     releases[1]!();
-    expect(await initial).toEqual([{ id: "run-2" }]);
-    expect(await initialPeer).toEqual([{ id: "run-2" }]);
-    expect(await refreshed).toEqual([{ id: "run-2" }]);
-    expect(await refreshedPeer).toEqual([{ id: "run-2" }]);
+    expect(await initial).toEqual([summary("run-2")]);
+    expect(await initialPeer).toEqual([summary("run-2")]);
+    expect(await refreshed).toEqual([summary("run-2")]);
+    expect(await refreshedPeer).toEqual([summary("run-2")]);
   });
 
   test("reissues again when another invalidation arrives during the follow-up", async () => {
@@ -76,7 +93,7 @@ describe("fetchSidebarRuns", () => {
         new Promise<Response>((resolve) => {
           const call = releases.length + 1;
           releases.push(() =>
-            resolve(new Response(JSON.stringify({ runs: [{ id: `run-${call}` }] }))),
+            resolve(new Response(JSON.stringify({ runs: [summary(`run-${call}`)] }))),
           );
         }),
     );
@@ -93,6 +110,14 @@ describe("fetchSidebarRuns", () => {
     expect(request).toHaveBeenCalledTimes(3);
 
     releases[2]!();
-    expect(await result).toEqual([{ id: "run-3" }]);
+    expect(await result).toEqual([summary("run-3")]);
+  });
+
+  test("drops malformed run statuses instead of normalizing them", async () => {
+    spyOn(backend, "backendFetch").mockResolvedValue(
+      new Response(JSON.stringify({ runs: [summary("run-1", "done"), summary("run-2")] })),
+    );
+
+    expect(await fetchSidebarRuns()).toEqual([summary("run-2")]);
   });
 });

@@ -15,7 +15,7 @@ import {
   type ArtifactWorkpieceState,
 } from "./artifacts";
 import { decodeFrame, THREAD_FRAME_TYPES, type DecodedFrame } from "./thread-events";
-import type { ApiRun } from "./wire";
+import { decodeApiRun, type ApiRun } from "./wire";
 
 /** Minimal injected fetch/response surface (works with the browser fetch, a Node/Bun
  *  fetch, or a test stub). Kept structural so the package needs no DOM lib. */
@@ -76,14 +76,8 @@ export interface RunHandle {
   readonly status: string;
 }
 
-/** One run row from the thread endpoint (`GET /api/runs/:id?thread=1`). On the wire
- *  it is a full {@link ApiRun}; the client runtime-guarantees only `id` (the field
- *  it filters on), so the rest of the contract is typed but optional. Replaces the
- *  old `readonly [key: string]: unknown` index signature, under which a renamed or
- *  removed backend field drifted silently - a field typo is now a compile error. */
-export interface RunSummary extends Partial<ApiRun> {
-  readonly id: string;
-}
+/** One validated full run row from `GET /api/runs/:id?thread=1`. */
+export type RunSummary = ApiRun;
 export interface ThreadSnapshot {
   readonly runs: readonly RunSummary[];
 }
@@ -180,9 +174,7 @@ export function createAgentClient(config: AgentClientConfig): AgentClient {
     async getThread(rootRunId) {
       const json = (await send(`/api/runs/${rootRunId}?thread=1`, {})) as Record<string, unknown>;
       const rawRuns = Array.isArray(json.thread) ? json.thread : Array.isArray(json.runs) ? json.runs : [];
-      const runs = rawRuns.filter(
-        (r): r is RunSummary => !!r && typeof r === "object" && typeof (r as { id?: unknown }).id === "string",
-      );
+      const runs = rawRuns.map(decodeApiRun).filter((run): run is ApiRun => run !== null);
       return { runs };
     },
 

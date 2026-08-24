@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { RiCloseLine, RiEyeLine, RiRobot2Line } from "@remixicon/react";
+import { decodeApiRun } from "@useagent/agent-client";
 import { backendFetch } from "@/lib/backend-fetch";
 import { createRun } from "@/lib/create-run";
 import { cx as cn } from "@/utils/cx";
@@ -16,6 +17,7 @@ import {
   type ApiRun,
   type EngineId,
   type RunStatus,
+  toThread,
 } from "@/components/chat/types";
 import { deriveSubagents } from "@/components/chat/subagents";
 
@@ -253,7 +255,8 @@ export function SubagentPane() {
       try {
         const res = await backendFetch(`/api/runs/${runId}`);
         if (!res.ok) throw new Error(`backend ${res.status}`);
-        const data = (await res.json()) as ApiRun;
+        const data = decodeApiRun(await res.json());
+        if (!data) throw new Error("invalid run response");
         if (!cancelled) setRun(data);
       } catch {
         if (!cancelled) setErrored(true);
@@ -308,12 +311,7 @@ export function SubagentPane() {
 
 /* ---------------------------------------------------------------- triggers -- */
 
-/** A run carrying the (forthcoming) threading fields. */
-type ThreadRun = ApiRun & {
-  parent_run_id?: string | null;
-  thread_id?: string | null;
-};
-type ThreadEnvelope = ApiRun & { thread?: ThreadRun[] };
+type ThreadRun = ApiRun;
 
 function SubagentChip({ run }: { run: ThreadRun }) {
   const tone = statusTone(run.status);
@@ -360,8 +358,8 @@ export function SubagentChips({
       try {
         const res = await backendFetch(`/api/runs/${rootId}?thread=1`);
         if (!res.ok) return;
-        const data = (await res.json()) as ThreadEnvelope;
-        if (!cancelled) setThread(Array.isArray(data.thread) ? data.thread : []);
+        const data = toThread(await res.json());
+        if (!cancelled) setThread(data);
       } catch {
         // threading not live yet — leave the strip empty
       }

@@ -2,18 +2,23 @@
 
 import {
   createThreadConnection,
+  decodeApiRun,
+  decodeApiStep,
   type DecodedFrame,
   decodeFrame,
   type EventSourceLike,
   THREAD_FRAME_TYPES,
   type ThreadConnection,
+  RUN_STATUSES,
 } from "@useagent/agent-client";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { backendFetch } from "@/lib/backend-fetch";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
 import { parseNativeFrame } from "./native-events";
 import { createThreadStore, type ThreadSnapshot, type ThreadStore } from "./thread-store";
-import { type ApiRun, type ApiStep, type RunStatus, toThread } from "./types";
+import { type ApiRun, toThread } from "./types";
+
+const RUN_STATUS_SET: ReadonlySet<string> = new Set(RUN_STATUSES);
 
 // useThreadStream — the session page's realtime unit (final_fix.md §4.7). ONE
 // EventSource to the thread endpoint for the page lifetime, keyed by the ROOT thread
@@ -41,7 +46,7 @@ export interface ThreadStreamState {
 export function seedThreadStore(rootRunId: string, initialThread: readonly ApiRun[]): ThreadStore {
   const store = createThreadStore();
   if (initialThread.length && initialThread[0]?.id === rootRunId) {
-    store.applySnapshot(initialThread as ApiRun[]);
+    store.applySnapshot([...initialThread]);
   }
   return store;
 }
@@ -95,13 +100,13 @@ export function applyDecodedFrame(store: ThreadStore, frame: DecodedFrame): void
           return;
         }
         case "run": {
-          const run = (p as { run?: ApiRun }).run;
-          if (run && typeof run.id === "string") store.upsertRun(run);
+          const run = decodeApiRun((p as { run?: unknown }).run);
+          if (run) store.upsertRun(run);
           return;
         }
         case "step": {
           const runId = p.runId as string | undefined;
-          const step = (p as { step?: ApiStep }).step;
+          const step = decodeApiStep((p as { step?: unknown }).step);
           if (runId && step) store.applyStep(runId, step);
           return;
         }
@@ -123,7 +128,9 @@ export function applyDecodedFrame(store: ThreadStore, frame: DecodedFrame): void
         }
         case "done": {
           const runId = p.runId as string | undefined;
-          const status = p.status as RunStatus | undefined;
+          const status = typeof p.status === "string" && RUN_STATUS_SET.has(p.status)
+            ? p.status as (typeof RUN_STATUSES)[number]
+            : null;
           if (runId && status) store.applyDone(runId, status);
           return;
         }

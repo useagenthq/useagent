@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { backendFetch } from "@/lib/backend-fetch";
-import { createThreadConnection, type EventSourceLike, type ThreadConnection } from "@useagent/agent-client";
+import {
+  createThreadConnection,
+  decodeApiRun,
+  decodeApiStep,
+  type EventSourceLike,
+  RUN_STATUSES,
+  type ThreadConnection,
+} from "@useagent/agent-client";
 import type { ApiRun, ApiStep, RunStatus } from "./types";
 import { isLiveStatus } from "./types";
 import { createNativeStore, type NativeSnapshot, type NativeStore } from "./native-store";
@@ -26,6 +33,7 @@ export type RunStreamState = {
 };
 
 const RUN_FRAME_TYPES = ["step", "delta", "native", "done"] as const;
+const RUN_STATUS_SET: ReadonlySet<string> = new Set(RUN_STATUSES);
 
 function browserEventSource(url: string): EventSourceLike {
   const es = new EventSource(url);
@@ -111,7 +119,8 @@ export function useRunStream(initialRun: ApiRun): RunStreamState {
         // `staleGuard` aborts in cleanup when the watched run changes — a late
         // resolution for the OLD run must not overwrite the new run's state.
         if (res.ok && !staleGuard.signal.aborted) {
-          const run = (await res.json()) as ApiRun;
+          const run = decodeApiRun(await res.json());
+          if (!run) return;
           if (staleGuard.signal.aborted) return;
           setSummary(run.summary);
           store.ingestAll(run.steps, gen);
@@ -126,7 +135,8 @@ export function useRunStream(initialRun: ApiRun): RunStreamState {
         try {
           const res = await backendFetch(`/api/runs/${id}`);
           if (!res.ok) return;
-          const run = (await res.json()) as ApiRun;
+          const run = decodeApiRun(await res.json());
+          if (!run) return;
           store.ingestAll(run.steps, gen);
           setSummary(run.summary);
           if (!isLiveStatus(run.status)) {
@@ -152,7 +162,8 @@ export function useRunStream(initialRun: ApiRun): RunStreamState {
         switch (event) {
           case "step":
             try {
-              store.ingest(JSON.parse(data) as ApiStep, gen);
+              const step = decodeApiStep(JSON.parse(data));
+              if (step) store.ingest(step, gen);
             } catch {
               /* ignore malformed frame */
             }
@@ -176,15 +187,15 @@ export function useRunStream(initialRun: ApiRun): RunStreamState {
             }
             return;
           case "done": {
-            let next: RunStatus = "completed";
             try {
-              next = (JSON.parse(data).status as RunStatus) ?? "completed";
+              const status = (JSON.parse(data) as { status?: unknown }).status;
+              if (typeof status !== "string" || !RUN_STATUS_SET.has(status)) return;
+              closed = true;
+              connection?.stop();
+              void finalize(status as RunStatus);
             } catch {
-              /* default completed */
+              /* ignore malformed frame */
             }
-            closed = true;
-            connection?.stop();
-            void finalize(next);
             return;
           }
         }

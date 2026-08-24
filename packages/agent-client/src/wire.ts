@@ -12,8 +12,11 @@
 
 // ── Accepted sets at every API boundary ──────────────────────────────────────
 
-export type RunStatus = "queued" | "running" | "completed" | "failed";
-export type StepKind = "command" | "file" | "task" | "done";
+export const RUN_STATUSES = ["queued", "running", "completed", "failed"] as const;
+export type RunStatus = (typeof RUN_STATUSES)[number];
+
+export const STEP_KINDS = ["command", "file", "task", "done"] as const;
+export type StepKind = (typeof STEP_KINDS)[number];
 
 /** Which team-memory pool a run reads/writes (default "org"). */
 export const MEMORY_SCOPES = ["org", "personal"] as const;
@@ -216,6 +219,227 @@ export type ApiRunSummary = Pick<
   | "created_at"
   | "updated_at"
 >;
+
+// ── Run/step boundary decoders ──────────────────────────────────────────────
+
+const RUN_STATUS_SET: ReadonlySet<string> = new Set(RUN_STATUSES);
+const STEP_KIND_SET: ReadonlySet<string> = new Set(STEP_KINDS);
+const ENGINE_ID_SET: ReadonlySet<string> = new Set(ENGINE_IDS);
+const MEMORY_SCOPE_SET: ReadonlySet<string> = new Set(MEMORY_SCOPES);
+const RESOURCE_CAPABILITY_SET: ReadonlySet<string> = new Set([
+  "content.read",
+  "code.checkout",
+  "change.read",
+  "change.checks.read",
+  "deployment.read",
+  "file.read",
+  "page.read",
+]);
+const INTAKE_SOURCE_SET: ReadonlySet<string> = new Set(["web", "api", "slack", "automation"]);
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function decodeRepoRef(value: unknown): RepoRef | null {
+  const record = asRecord(value);
+  if (!record || typeof record.repo !== "string" || !isNullableString(record.branch)) return null;
+  return { repo: record.repo, branch: record.branch };
+}
+
+function decodeRunUpload(value: unknown): RunUpload | null {
+  const record = asRecord(value);
+  if (
+    !record ||
+    typeof record.id !== "string" ||
+    typeof record.name !== "string" ||
+    typeof record.content_type !== "string" ||
+    typeof record.size_bytes !== "number" ||
+    typeof record.created_at !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: record.id,
+    name: record.name,
+    content_type: record.content_type,
+    size_bytes: record.size_bytes,
+    created_at: record.created_at,
+  };
+}
+
+function isRunResource(value: unknown): value is RunResource {
+  const record = asRecord(value);
+  if (
+    !record ||
+    typeof record.kind !== "string" ||
+    typeof record.provider !== "string" ||
+    !Array.isArray(record.capabilities) ||
+    !record.capabilities.every(
+      (item) => typeof item === "string" && RESOURCE_CAPABILITY_SET.has(item),
+    ) ||
+    !Array.isArray(record.provenance) ||
+    !record.provenance.every((item) => {
+      const provenance = asRecord(item);
+      return (
+        provenance !== null &&
+        (provenance.source === "explicit" ||
+          provenance.source === "user_text" ||
+          provenance.source === "legacy_parent") &&
+        typeof provenance.channel === "string" &&
+        INTAKE_SOURCE_SET.has(provenance.channel) &&
+        typeof provenance.raw === "string" &&
+        (provenance.start === null || typeof provenance.start === "number") &&
+        (provenance.end === null || typeof provenance.end === "number")
+      );
+    }) ||
+    asRecord(record.locator) === null
+  ) {
+    return false;
+  }
+  const locator = record.locator as Record<string, unknown>;
+  if (record.kind === "code.repository") {
+    return (
+      record.provider === "github" &&
+      locator.type === "github.repository" &&
+      typeof locator.repository === "string" &&
+      isNullableString(locator.revision)
+    );
+  }
+  if (record.kind === "code.change") {
+    return (
+      record.provider === "github" &&
+      locator.type === "github.pull_request" &&
+      typeof locator.repository === "string" &&
+      typeof locator.number === "number" &&
+      isNullableString(locator.revision)
+    );
+  }
+  if (record.kind === "file") {
+    return locator.type === "file" && typeof locator.id === "string" && isNullableString(locator.name);
+  }
+  return record.kind === "web.page" && locator.type === "web.page" && typeof locator.url === "string";
+}
+
+/** Decode one step at an untrusted HTTP/SSE boundary. Invalid enum values are
+ * rejected rather than asserted into the shared contract. */
+export function decodeApiStep(value: unknown): ApiStep | null {
+  const record = asRecord(value);
+  if (
+    !record ||
+    typeof record.id !== "string" ||
+    typeof record.run_id !== "string" ||
+    typeof record.idx !== "number" ||
+    typeof record.kind !== "string" ||
+    !STEP_KIND_SET.has(record.kind) ||
+    typeof record.label !== "string" ||
+    !isNullableString(record.chip) ||
+    !isNullableString(record.code_json) ||
+    typeof record.created_at !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: record.id,
+    run_id: record.run_id,
+    idx: record.idx,
+    kind: record.kind as StepKind,
+    label: record.label,
+    chip: record.chip,
+    code_json: record.code_json,
+    created_at: record.created_at,
+  };
+}
+
+/** Decode the compact run projection used by navigation/dashboard surfaces. */
+export function decodeApiRunSummary(value: unknown): ApiRunSummary | null {
+  const record = asRecord(value);
+  if (
+    !record ||
+    typeof record.id !== "string" ||
+    typeof record.prompt !== "string" ||
+    typeof record.model !== "string" ||
+    typeof record.engine !== "string" ||
+    !ENGINE_ID_SET.has(record.engine) ||
+    typeof record.status !== "string" ||
+    !RUN_STATUS_SET.has(record.status) ||
+    !isNullableString(record.summary) ||
+    !(record.duration_ms === null || typeof record.duration_ms === "number") ||
+    !isNullableString(record.repo) ||
+    !isStringArray(record.repos) ||
+    !Array.isArray(record.repo_specs) ||
+    typeof record.created_at !== "string" ||
+    typeof record.updated_at !== "string"
+  ) {
+    return null;
+  }
+  const repoSpecs = record.repo_specs.map(decodeRepoRef);
+  if (repoSpecs.some((item) => item === null)) return null;
+  return {
+    id: record.id,
+    prompt: record.prompt,
+    model: record.model,
+    engine: record.engine as EngineId,
+    status: record.status as RunStatus,
+    summary: record.summary,
+    duration_ms: record.duration_ms,
+    repo: record.repo,
+    repos: record.repos,
+    repo_specs: repoSpecs as RepoRef[],
+    created_at: record.created_at,
+    updated_at: record.updated_at,
+  };
+}
+
+/** Decode a full run row at an untrusted HTTP/SSE boundary. */
+export function decodeApiRun(value: unknown): ApiRun | null {
+  const record = asRecord(value);
+  const summary = decodeApiRunSummary(value);
+  if (
+    !record ||
+    !summary ||
+    !isNullableString(record.org_id) ||
+    !isNullableString(record.user_id) ||
+    !isNullableString(record.parent_run_id) ||
+    typeof record.child_session !== "boolean" ||
+    typeof record.thread_id !== "string" ||
+    !isNullableString(record.engine_session_id) ||
+    !Array.isArray(record.resolved_resources) ||
+    !record.resolved_resources.every(isRunResource) ||
+    typeof record.memory_scope !== "string" ||
+    !MEMORY_SCOPE_SET.has(record.memory_scope) ||
+    !isNullableString(record.skill_id) ||
+    !(record.skill_version === null || typeof record.skill_version === "number") ||
+    !isNullableString(record.skill_content_hash) ||
+    !Array.isArray(record.uploads) ||
+    !Array.isArray(record.steps)
+  ) {
+    return null;
+  }
+  const uploads = record.uploads.map(decodeRunUpload);
+  const steps = record.steps.map(decodeApiStep);
+  if (uploads.some((item) => item === null) || steps.some((item) => item === null)) return null;
+  return {
+    ...summary,
+    org_id: record.org_id,
+    user_id: record.user_id,
+    parent_run_id: record.parent_run_id,
+    child_session: record.child_session,
+    thread_id: record.thread_id,
+    engine_session_id: record.engine_session_id,
+    resolved_resources: record.resolved_resources,
+    memory_scope: record.memory_scope as MemoryScope,
+    skill_id: record.skill_id,
+    skill_version: record.skill_version,
+    skill_content_hash: record.skill_content_hash,
+    uploads: uploads as RunUpload[],
+    steps: steps as ApiStep[],
+  };
+}
 
 // ── Native-event lane (event: native on GET /api/runs/:id/events) ─────────────
 

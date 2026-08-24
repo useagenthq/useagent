@@ -16,22 +16,12 @@ describe("thread status pill (upstream running/failed/settled treatment)", () =>
     expect(pill?.dot.pulse).toBe(true);
   });
 
-  test("every live wire status maps to Working", () => {
-    for (const status of ["running", "active", "in_progress", "live", "streaming"]) {
-      expect(resolveThreadRowPill({ status })?.label).toBe("Working");
-    }
-  });
-
   test("failed threads read Failed with a steady error dot", () => {
     const pill = resolveThreadRowPill({ status: "failed" });
     expect(pill?.label).toBe("Failed");
     expect(pill?.dot.tone).toBe("error");
     expect(pill?.dot.pulse).toBeUndefined();
     expect(pill?.textClass).toBe("text-text-error-primary");
-  });
-
-  test("cancelled counts as Failed", () => {
-    expect(resolveThreadRowPill({ status: "cancelled" })?.label).toBe("Failed");
   });
 
   test("failure stays visible even when marked unread", () => {
@@ -48,10 +38,8 @@ describe("thread status pill (upstream running/failed/settled treatment)", () =>
     expect(resolveThreadRowPill({ status: "completed" })).toBeNull();
   });
 
-  test("queued and unknown statuses rest unlabeled", () => {
+  test("queued threads rest unlabeled", () => {
     expect(resolveThreadRowPill({ status: "queued" })).toBeNull();
-    expect(resolveThreadRowPill({ status: "pending", unread: true })).toBeNull();
-    expect(resolveThreadRowPill({ status: "who-knows" })).toBeNull();
   });
 });
 
