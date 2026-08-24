@@ -25,6 +25,7 @@
     "@useagent/agent-harness": "file:../packages/agent-harness",
     "@useagent/artifact-formats": "file:../packages/artifact-formats",
     "@useagent/artifact-workspace": "file:../packages/artifact-workspace",
+    "@useagent/sandbox-contract": "file:../packages/sandbox-contract",
     "better-auth": "^1.6.25",
     "drizzle-orm": "^0.45.2",
     "e2b": "2.38.3",

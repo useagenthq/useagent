@@ -132,9 +132,9 @@ describe("dependency law", () => {
   });
 
   test("packages without their own boundary test do not import backend or frontend", () => {
-    // agent-harness / agent-client / artifact-workspace already ship a
-    // *boundary*.test.ts; skip them to avoid duplicating that coverage and
-    // extend the law to the packages that have none.
+    // agent-harness / agent-client / artifact-workspace / sandbox-contract
+    // already ship a *boundary*.test.ts; skip them to avoid duplicating that
+    // coverage and extend the law to the packages that have none.
     const hasBoundaryTest = (pkgDir: string) => {
       const testDir = join(pkgDir, "test");
       return (

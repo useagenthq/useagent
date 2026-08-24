@@ -117,15 +117,17 @@ jobs:
 
   # ── Reusable harness/client contracts ──────────────────────────────────────
   # These packages carry the provider-neutral event vocabulary, reconnect
-  # reducer and conformance contract. Typechecking alone cannot catch semantic
-  # regressions in replay, deduplication or capability projection.
+  # reducer, conformance contract and sandbox contract. Typechecking alone
+  # cannot catch semantic regressions in replay, deduplication or capability
+  # projection, nor the sandbox contract's import-boundary (it must stay a pure
+  # leaf, importing no backend/frontend/provider code).
   package-test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        package: [agent-harness, agent-client, conformance]
+        package: [agent-harness, agent-client, conformance, sandbox-contract]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
