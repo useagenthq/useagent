@@ -9,7 +9,14 @@
  * reply → parent_run_id, thread-follow via the durable mapping, DM handling,
  * non-mention channel chatter ignored, the 👀 ack, and the completion post-back.
  */
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test,
+} from "bun:test";
 import { createHmac } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
@@ -38,6 +45,11 @@ import {
   upsertSlackWorkspace,
 } from "../src/slack/workspaces";
 import { fetchApi, json, uid, waitFor } from "./helpers";
+
+// This DB-backed integration suite shares the CI Postgres service with the
+// full backend matrix. Keep its bounded async waits above Bun's 5s unit-test
+// default so normal runner contention is not misclassified as a product hang.
+setDefaultTimeout(15_000);
 
 const SECRET = "test-signing-secret"; // this suite signs every inbound event with it
 const BOT = "U0BOTBOT";
