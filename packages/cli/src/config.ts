@@ -1,10 +1,8 @@
 // Env resolution + client construction. resolveConfig is pure (env record in, config
 // out) so it is unit-testable; clientFromEnv wires it to the fleet client.
 
-import { createFleetClient, type FleetClient } from "@useagent/agent-client/fleet";
+import { createFleetClient, DEFAULT_BASE_URL, type FleetClient } from "@useagent/agent-client/fleet";
 import { CliError } from "./errors";
-
-export const DEFAULT_BASE_URL = "https://skynet.meow.gs";
 
 export interface CliConfig {
   readonly baseUrl: string;

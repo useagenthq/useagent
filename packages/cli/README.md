@@ -24,12 +24,14 @@ bun packages/cli/src/bin.ts --help
 
 ## Configuration
 
-| Variable            | Required | Default                     |
-| ------------------- | -------- | --------------------------- |
-| `USEAGENT_API_KEY`  | yes      | -                           |
-| `USEAGENT_BASE_URL` | no       | `https://skynet.meow.gs`    |
+| Variable            | Required | Default                                            |
+| ------------------- | -------- | -------------------------------------------------- |
+| `USEAGENT_API_KEY`  | yes      | -                                                  |
+| `USEAGENT_BASE_URL` | no       | `DEFAULT_BASE_URL` (from `@useagent/agent-client/fleet`) |
 
-The key is sent verbatim as `Authorization: Bearer <key>` on every request.
+The key is sent verbatim as `Authorization: Bearer <key>` on every request. The default
+hosted origin lives in one place - the `DEFAULT_BASE_URL` constant - so run `useagent
+--help` to see the current value.
 
 ## Commands
 

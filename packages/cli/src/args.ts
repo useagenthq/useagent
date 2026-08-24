@@ -2,6 +2,7 @@
 // takes the raw argv tail and returns a typed options object or throws a CliError with
 // a terse usage hint. Extracted so the whole surface is unit-testable without spawning.
 
+import { DEFAULT_BASE_URL } from "@useagent/agent-client/fleet";
 import { CliError } from "./errors";
 
 export const USAGE = `useagent - fan cloud agent tasks out to your hosted org
@@ -14,7 +15,7 @@ Usage:
 
 Environment:
   USEAGENT_API_KEY   required - org API key (sent as Authorization: Bearer <key>)
-  USEAGENT_BASE_URL  optional - hosted origin (default https://skynet.meow.gs)`;
+  USEAGENT_BASE_URL  optional - hosted origin (default ${DEFAULT_BASE_URL})`;
 
 export interface RunArgs {
   readonly prompt: string;

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_BASE_URL, resolveConfig } from "../src/config";
+import { DEFAULT_BASE_URL } from "@useagent/agent-client/fleet";
+import { resolveConfig } from "../src/config";
 
 describe("resolveConfig", () => {
   test("reads the api key and defaults the base url", () => {
