@@ -1,0 +1,6 @@
+# Supply-chain hardening for `bun install` (mirrors root + backend bunfig).
+#   exact             pin resolved versions instead of caret ranges.
+#   minimumReleaseAge refuse versions published within the last 3 days (259200s).
+[install]
+exact = true
+minimumReleaseAge = 259200
