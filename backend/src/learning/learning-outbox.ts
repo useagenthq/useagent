@@ -1,5 +1,16 @@
 import { eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
+import {
+  backoffAt as computeBackoff,
+  claimDue as claimDueRows,
+  markDead,
+  markForRetry,
+  markSuccess,
+  outboxOutcome,
+  resetStuck,
+  type BackoffPolicy,
+  type OutboxTable,
+} from "../db/outbox";
 import { learningOutbox, type LearningOutboxStatus, type MemoryScope } from "../db/schema";
 import { proposeKnowledgeDraftForRun } from "./drafts";
 import { errorMessage } from "../util/error-message";
@@ -21,8 +32,19 @@ import { errorMessage } from "../util/error-message";
 // Mirrors the capture/canonicalization outbox shape (claim CTE + backoff).
 // ---------------------------------------------------------------------------
 
-const BASE_BACKOFF_MS = 30_000; // 30s, doubling
-const MAX_BACKOFF_MS = 3_600_000; // capped at 1h
+/** Backoff window + column mapping for the shared outbox primitive (db/outbox).
+ *  30s doubling, capped at 1h. Note: the state column is `status` and the attempt
+ *  column is `attempts` (both differ from the capture/canonicalization tables). */
+const LEARNING_POLICY: BackoffPolicy = { baseMs: 30_000, maxMs: 3_600_000 };
+const LEARNING_OUTBOX: OutboxTable = {
+  table: "learning_outbox",
+  key: "run_id",
+  stateColumn: "status",
+  attemptColumn: "attempts",
+  pending: "pending",
+  claimed: "processing",
+  dead: "dead",
+};
 
 /** The current candidate-builder policy version, recorded per enqueued row so a
  *  later builder change is auditable (self_improving 6.1). Bump when the
@@ -31,7 +53,7 @@ export const LEARNING_POLICY_VERSION = 1;
 
 /** Next retry time: exponential backoff (30s·2^attempt), capped at 1h. Pure. */
 export function learningBackoffAt(now: number, attempt: number): Date {
-  return new Date(now + Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS));
+  return computeBackoff(LEARNING_POLICY, now, attempt);
 }
 
 /** The row's next status after a build outcome — retry until maxAttempts, then
@@ -41,8 +63,8 @@ export function nextLearningStatus(
   attempts: number,
   maxAttempts: number,
 ): "done" | "retry" | "dead" {
-  if (ok) return "done";
-  return attempts + 1 >= maxAttempts ? "dead" : "retry";
+  const outcome = outboxOutcome(ok, attempts, maxAttempts);
+  return outcome === "success" ? "done" : outcome;
 }
 
 export interface EnqueueLearningInput {
@@ -91,57 +113,15 @@ interface ClaimedRow {
   maxAttempts: number;
 }
 
-/** Atomically claim due pending rows -> `processing` (CTE + FOR UPDATE SKIP
- *  LOCKED), so a concurrent worker can't double-process. Due is the DB clock. */
+/** Atomically claim due pending rows -> `processing` via the shared primitive
+ *  (CTE + FOR UPDATE SKIP LOCKED), so a concurrent worker can't double-process. */
 async function claimDue(limit: number): Promise<ClaimedRow[]> {
-  const rows = (await db.execute(sql`
-    with due as (
-      select run_id from learning_outbox
-      where status = 'pending' and next_attempt_at <= now()
-      order by next_attempt_at asc
-      limit ${limit}
-      for update skip locked
-    )
-    update learning_outbox o set status = 'processing', updated_at = now()
-    from due where o.run_id = due.run_id
-    returning o.run_id, o.attempts, o.max_attempts`)) as unknown as Array<Record<string, unknown>>;
+  const rows = await claimDueRows(LEARNING_OUTBOX, limit);
   return rows.map((r) => ({
     runId: r.run_id as string,
     attempts: Number(r.attempts),
     maxAttempts: Number(r.max_attempts),
   }));
-}
-
-async function markDone(runId: string): Promise<void> {
-  await db
-    .update(learningOutbox)
-    .set({ status: "done", lastError: null, updatedAt: new Date() })
-    .where(eq(learningOutbox.runId, runId));
-}
-
-async function markRetry(runId: string, nextAttemptAt: Date, lastError: string): Promise<void> {
-  await db
-    .update(learningOutbox)
-    .set({
-      status: "pending",
-      attempts: sql`${learningOutbox.attempts} + 1`,
-      nextAttemptAt,
-      lastError: lastError.slice(0, 500),
-      updatedAt: new Date(),
-    })
-    .where(eq(learningOutbox.runId, runId));
-}
-
-async function markDead(runId: string, lastError: string): Promise<void> {
-  await db
-    .update(learningOutbox)
-    .set({
-      status: "dead",
-      attempts: sql`${learningOutbox.attempts} + 1`,
-      lastError: lastError.slice(0, 500),
-      updatedAt: new Date(),
-    })
-    .where(eq(learningOutbox.runId, runId));
 }
 
 /** Builds a run's learning candidate; returns a truthy value when a candidate
@@ -169,17 +149,16 @@ export async function processDueLearning(
   for (const row of rows) {
     try {
       const draft = await build(row.runId);
-      await markDone(row.runId);
+      await markSuccess(LEARNING_OUTBOX, row.runId, "done");
       if (draft) built++;
       else skipped++;
     } catch (err) {
       const message = errorMessage(err);
-      const outcome = nextLearningStatus(false, row.attempts, row.maxAttempts);
-      if (outcome === "dead") {
-        await markDead(row.runId, `build failed after max attempts: ${message}`);
+      if (nextLearningStatus(false, row.attempts, row.maxAttempts) === "dead") {
+        await markDead(LEARNING_OUTBOX, row.runId, `build failed after max attempts: ${message}`);
         dead++;
       } else {
-        await markRetry(row.runId, learningBackoffAt(Date.now(), row.attempts + 1), message);
+        await markForRetry(LEARNING_OUTBOX, row.runId, learningBackoffAt(Date.now(), row.attempts + 1), message);
         retried++;
       }
     }
@@ -197,10 +176,7 @@ export async function getLearningIntent(runId: string) {
  *  to `pending` — SAFE because candidate building is idempotent (one draft per
  *  run), unlike the at-most-once memory capture outbox. Returns how many. */
 export async function resetStuckLearning(): Promise<number> {
-  const rows = (await db.execute(sql`
-    update learning_outbox set status = 'pending', updated_at = now()
-    where status = 'processing' returning run_id`)) as unknown as unknown[];
-  return rows.length;
+  return resetStuck(LEARNING_OUTBOX);
 }
 
 /** List an org's learning-outbox rows, newest first (operator surface). Includes
