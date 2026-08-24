@@ -4,14 +4,26 @@ import { AppShell } from "@/components/shell/app-shell";
 import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { fetchRepoProjects, fetchTasks } from "./tasks-api";
 import { TasksBoard } from "./tasks-board";
-import type { Task } from "./tasks-data";
+import { ALL_PROJECTS, initialProjectFilter, type Task } from "./tasks-data";
 
 export const metadata: Metadata = {
   title: "Tasks",
   description: "Durable, org-scoped tasks grouped per project on a Kanban board.",
 };
 
-export default async function TasksPage() {
+export default async function TasksPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ project?: string | string[] }>;
+}) {
+  // Deep-link support: `/tasks?project=owner/name` opens straight onto that
+  // project's board. Read the param server-side so the SSR fetch is already
+  // scoped and the filter is preselected (no client-side filter flash).
+  const { project } = await searchParams;
+  const initialProject = typeof project === "string" ? project : undefined;
+  const scope = initialProjectFilter(initialProject);
+  const forProject = scope === ALL_PROJECTS ? undefined : scope;
+
   // SSR the real task board when the backend is up. A failed fetch becomes a
   // distinct, retryable `initialError` state - never swallowed into an empty
   // board, so an outage never reads as "no tasks yet". Repos are best-effort
@@ -20,7 +32,7 @@ export default async function TasksPage() {
   let initialRepos: string[] = [];
   let initialError = false;
   try {
-    [initial, initialRepos] = await Promise.all([fetchTasks(), fetchRepoProjects()]);
+    [initial, initialRepos] = await Promise.all([fetchTasks(forProject), fetchRepoProjects()]);
   } catch {
     initialError = true;
   }
@@ -43,6 +55,7 @@ export default async function TasksPage() {
             initial={initial}
             initialRepos={initialRepos}
             initialError={initialError}
+            initialProject={initialProject}
           />
         </div>
       </div>
