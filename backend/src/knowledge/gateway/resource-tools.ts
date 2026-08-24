@@ -1,13 +1,11 @@
-import { githubResourceCatalogProvider } from "../../resources/github-catalog";
 import {
-  ResourceCatalogRegistry,
   type ResourceCatalogPage,
   type ResourceCatalogScope,
 } from "../../resources/catalog";
+import { productionResourceCatalogService } from "../../resources/catalog-service";
 import {
-  resourcesWithLegacyRepositories,
-  runResourceBindingId,
-} from "../../resources/bindings";
+  projectRunResourceBindings,
+} from "../../resources/access-snapshot";
 import { getRunForOrg } from "../../runs/repo";
 import type { GatewayToolDescriptor } from "./descriptor";
 import { errorResult, textResult } from "./tool-results";
@@ -32,25 +30,7 @@ interface ResourceToolDependencies {
   getRun: typeof getRunForOrg;
 }
 
-export function projectRunResourceBindings(input: {
-  readonly runId: string;
-  readonly resources: Parameters<typeof resourcesWithLegacyRepositories>[0]["resources"];
-  readonly repos: readonly string[];
-}): readonly Record<string, unknown>[] {
-  return resourcesWithLegacyRepositories({
-    resources: input.resources,
-    repos: input.repos,
-  }).map((resource) => ({
-    bindingId: runResourceBindingId(input.runId, resource),
-    provider: resource.provider,
-    kind: resource.kind,
-    locator: resource.locator,
-    capabilities: resource.capabilities,
-    provenance: resource.provenance,
-  }));
-}
-
-const catalog = new ResourceCatalogRegistry([githubResourceCatalogProvider]);
+export { projectRunResourceBindings } from "../../resources/access-snapshot";
 
 export function createResourceToolService(
   dependencies: ResourceToolDependencies,
@@ -72,7 +52,8 @@ export function createResourceToolService(
 }
 
 const productionService = createResourceToolService({
-  search: (scope, provider, input) => catalog.search(scope, provider, input),
+  search: (scope, provider, input) =>
+    productionResourceCatalogService.search(scope, provider, input),
   getRun: getRunForOrg,
 });
 
@@ -90,8 +71,8 @@ export const RESOURCE_TOOLS = [
   {
     name: "resource_catalog_search",
     description:
-      "List the repositories and resources this organization can access through a connected integration, such as a repository in the connected GitHub inventory. " +
-      "This is the authoritative answer to what repositories or resources are available; the sandbox filesystem is not, and an empty sandbox does not mean no access. " +
+      "List repositories this organization can access through its connected GitHub integration. " +
+      "This is the authoritative answer to connected GitHub repository inventory; the sandbox filesystem is not, and an empty sandbox does not mean no access. " +
       "Catalog results are discoverable inventory only: they are not attached to this run and are not present in the sandbox unless separately selected and bound.",
     inputSchema: {
       type: "object",
@@ -179,10 +160,18 @@ export async function executeResourceTool(
         },
       );
       return textResult(
-        page.items.length > 0
+        page.status === "not_connected"
+          ? `No ${provider} integration is connected for this workspace.`
+          : page.items.length > 0
           ? `Found ${page.items.length} visible ${provider} resource${page.items.length === 1 ? "" : "s"}. These are inventory, not run bindings.`
           : `No visible ${provider} resources matched.`,
-        { provider, items: page.items, nextCursor: page.nextCursor },
+        {
+          provider,
+          status: page.status,
+          items: page.items,
+          nextCursor: page.nextCursor,
+          complete: page.complete,
+        },
       );
     }
     if (name === "run_resource_bindings") {

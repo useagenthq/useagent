@@ -53,14 +53,12 @@ describe("provider-neutral resource gateway tools", () => {
     }
   });
 
-  test("resource_catalog_search description is the authoritative answer to org repository access, above the sandbox filesystem", () => {
+  test("resource_catalog_search describes the currently supported GitHub inventory", () => {
     const tool = RESOURCE_TOOLS.find((t) => t.name === "resource_catalog_search");
     expect(tool).toBeDefined();
     const description = tool!.description;
-    // The truthfulness fix: the agent must learn that repository/resource access
-    // is answered here, not by inspecting an (often empty) sandbox filesystem.
-    expect(description).toContain("this organization can access");
-    expect(description).toContain("authoritative");
+    expect(description).toContain("connected GitHub integration");
+    expect(description).toContain("authoritative answer to connected GitHub repository inventory");
     expect(description).toContain("sandbox filesystem is not");
   });
 
@@ -70,6 +68,7 @@ describe("provider-neutral resource gateway tools", () => {
       async search(scope, provider, input) {
         calls.push({ scope, provider, input });
         return {
+          status: "available",
           items: [{
             catalogRef: "rc_safe",
             provider: "github",
@@ -79,6 +78,7 @@ describe("provider-neutral resource gateway tools", () => {
             metadata: { private: true, defaultBranch: "main" },
           }],
           nextCursor: null,
+          complete: true,
         };
       },
       async bindings() {
@@ -118,7 +118,7 @@ describe("provider-neutral resource gateway tools", () => {
   test("run bindings stay separate from connected inventory", async () => {
     setResourceToolServiceForTest({
       async search() {
-        return { items: [], nextCursor: null };
+        return { status: "empty", items: [], nextCursor: null, complete: true };
       },
       async bindings(claims) {
         expect(claims).toBe(CLAIMS);
@@ -161,7 +161,7 @@ describe("provider-neutral resource gateway tools", () => {
     const calls: Array<{ orgId: string; runId: string }> = [];
     const service = createResourceToolService({
       async search() {
-        return { items: [], nextCursor: null };
+        return { status: "empty", items: [], nextCursor: null, complete: true };
       },
       async getRun(orgId, runId) {
         calls.push({ orgId, runId });

@@ -17,6 +17,7 @@ const ctx = (
     prompt: string;
     bootstrapContext: string;
     turnContext: string;
+    resourceContext: string;
     skillContext: string;
     skillCatalogContext: string;
     commandName: string | null;
@@ -54,6 +55,12 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
   test("REGRESSION: a resumed session STILL carries fresh turnContext (memory not dropped)", () => {
     // The bug: resumed → only ctx.prompt, so this recalled fact never reached the model.
     expect(composeTurnPrompt(ctx({ turnContext: "RECALLED_FACT" }), true)).toContain("RECALLED_FACT");
+  });
+
+  test("fresh and resumed turns carry the current server-authored resource snapshot", () => {
+    const resourceContext = "<resource_access_snapshot>{}</resource_access_snapshot>";
+    expect(composeTurnPrompt(ctx({ resourceContext }), false)).toContain(resourceContext);
+    expect(composeTurnPrompt(ctx({ resourceContext }), true)).toContain(resourceContext);
   });
 
   test("fresh run ALWAYS carries the operating rules (graceful-degradation guardrail)", () => {
@@ -124,6 +131,7 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
           commandName: "review",
           skillContext: "SKILL",
           skillCatalogContext: "CATALOG",
+          resourceContext: "RESOURCE",
         }),
         false,
       );
@@ -132,6 +140,7 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
       expect(out).not.toContain("BOOT");
       expect(out).not.toContain("SKILL");
       expect(out).not.toContain("CATALOG");
+      expect(out).not.toContain("RESOURCE");
       expect(out).not.toContain("TURN");
     });
 
