@@ -34,6 +34,8 @@ export interface GithubAuth {
   /** org/user whose repos to list (may be null in the token-only PAT case). */
   owner: string | null;
   source: GithubAuthSource;
+  /** Internal connection identity used to derive opaque catalog references. */
+  connectionId?: string | null;
 }
 
 async function resolveTenantGithubAuth(orgId: string): Promise<{
@@ -70,6 +72,7 @@ async function resolveTenantGithubAuth(orgId: string): Promise<{
       token,
       owner: record.externalConnectionName,
       source: "app",
+      connectionId: record.id,
     },
     installationId,
     app,
@@ -84,15 +87,15 @@ async function resolveTenantGithubAuth(orgId: string): Promise<{
  */
 export async function resolveGithubAuth(): Promise<GithubAuth> {
   const { token: pat, owner } = githubConfig();
-  if (pat) return { token: pat, owner, source: "pat" };
+  if (pat) return { token: pat, owner, source: "pat", connectionId: null };
 
   const app = githubAppConfig();
   if (app) {
     const { token } = await getInstallationToken(app);
-    return { token, owner: owner ?? app.org, source: "app" };
+    return { token, owner: owner ?? app.org, source: "app", connectionId: null };
   }
 
-  return { token: null, owner, source: "anon" };
+  return { token: null, owner, source: "anon", connectionId: null };
 }
 
 /**
@@ -123,7 +126,7 @@ export async function resolveGithubCatalogAuth(orgId?: string): Promise<GithubAu
 
   const { owner } = githubConfig();
   const { token } = await getInstallationToken(app);
-  return { token, owner: owner ?? app.org, source: "app" };
+  return { token, owner: owner ?? app.org, source: "app", connectionId: null };
 }
 
 /**

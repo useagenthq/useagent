@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { RepoInfo } from "../../github/repos";
 import {
   executeRepositoryTool,
   repositoriesForRun,
@@ -12,24 +11,21 @@ import {
 import type { ToolTokenClaims } from "./token";
 import type { RunResource } from "../../resources/types";
 
-const repos: RepoInfo[] = [
+const repos = [
   {
     full_name: "upstream-org/backend",
     name: "backend",
-    private: true,
-    default_branch: "main",
+    revision: "feature/auth",
   },
   {
     full_name: "upstream-org/frontend",
     name: "frontend",
-    private: true,
-    default_branch: "main",
+    revision: null,
   },
   {
     full_name: "other/backend-tools",
     name: "backend-tools",
-    private: false,
-    default_branch: "master",
+    revision: null,
   },
 ];
 
@@ -76,63 +72,95 @@ describe("repository gateway tools", () => {
     }
   });
 
-  test("resolves natural Acme aliases to an exact accessible repository", () => {
-    expect(resolveRepositoryQuery(repos, "Acme backend")?.full_name).toBe(
-      "upstream-org/backend",
-    );
-    expect(resolveRepositoryQuery(repos, "backend repo")?.full_name).toBe(
+  test("resolves only exact owner/name or a unique exact repository name", () => {
+    expect(resolveRepositoryQuery(repos, "backend")?.full_name).toBe(
       "upstream-org/backend",
     );
     expect(resolveRepositoryQuery(repos, "upstream-org/frontend")?.full_name).toBe(
       "upstream-org/frontend",
     );
+    expect(resolveRepositoryQuery(repos, "upstream-org/FRONTEND")?.full_name).toBe(
+      "upstream-org/frontend",
+    );
   });
 
-  test("refuses an ambiguous or unknown repository query", () => {
+  test("refuses fuzzy product phrases, ambiguous names, and unknown repositories", () => {
+    expect(resolveRepositoryQuery(repos, "Acme backend")).toBeNull();
+    expect(resolveRepositoryQuery(repos, "backend repo")).toBeNull();
     expect(resolveRepositoryQuery(repos, "upstream-org")).toBeNull();
     expect(resolveRepositoryQuery(repos, "payments-service")).toBeNull();
+    expect(
+      resolveRepositoryQuery([
+        ...repos,
+        {
+          full_name: "other/backend",
+          name: "backend",
+          revision: null,
+        },
+      ], "backend"),
+    ).toBeNull();
   });
 
-  test("exposes only repositories persisted on the current run", () => {
+  test("projects repositories directly from durable run bindings", () => {
     expect(
-      repositoriesForRun(repos, ["upstream-org/backend:feature/auth"])
-        .map((repo) => repo.full_name),
-    ).toEqual(["upstream-org/backend"]);
-    expect(repositoriesForRun(repos, [])).toEqual([]);
+      repositoriesForRun(["upstream-org/backend:feature/auth"]),
+    ).toEqual([{
+      full_name: "upstream-org/backend",
+      name: "backend",
+      revision: "feature/auth",
+    }]);
+    expect(repositoriesForRun([], [{
+      kind: "code.repository",
+      provider: "github",
+      locator: {
+        type: "github.repository",
+        repository: "upstream-org/frontend",
+        revision: "release/next",
+      },
+      capabilities: ["content.read", "code.checkout"],
+      provenance: [],
+    }])).toEqual([{
+      full_name: "upstream-org/frontend",
+      name: "frontend",
+      revision: "release/next",
+    }]);
   });
 
   test("resolves private clones only from run-bound repos and marks exact public URLs anonymous", () => {
     expect(
       resolveRepositoryCloneTarget(
-        repos,
         ["upstream-org/backend:feature/auth"],
-        "Acme backend",
+        "upstream-org/backend",
       ),
     ).toEqual({
       fullName: "upstream-org/backend",
-      defaultBranch: "main",
+      revision: "feature/auth",
       useGithubCredential: true,
     });
     expect(
-      resolveRepositoryCloneTarget(repos, ["upstream-org/frontend"], "Acme backend"),
+      resolveRepositoryCloneTarget(["upstream-org/frontend"], "backend"),
     ).toBeNull();
     expect(
       resolveRepositoryCloneTarget(
-        repos,
+        ["upstream-org/backend:feature/auth"],
+        "Acme backend",
+      ),
+    ).toBeNull();
+    expect(
+      resolveRepositoryCloneTarget(
         [],
         "https://github.com/octocat/Hello-World",
       ),
     ).toBeNull();
     expect(
       resolveRepositoryCloneTarget(
-        repos,
         ["octocat/Hello-World"],
         "https://github.com/octocat/Hello-World.git",
         [publicRepositoryResource],
       ),
     ).toEqual({
       fullName: "octocat/Hello-World",
-      defaultBranch: null,
+      revision: null,
       useGithubCredential: false,
     });
   });
@@ -154,7 +182,7 @@ describe("repository gateway tools", () => {
     setRepositoryServiceForTest({
       list: async () => repos,
       clone: async (_claims, query, branch) => {
-        expect(query).toBe("Acme backend");
+        expect(query).toBe("upstream-org/backend");
         expect(branch).toBeNull();
         return {
           repository: "upstream-org/backend",
@@ -166,7 +194,7 @@ describe("repository gateway tools", () => {
     });
 
     const response = await executeRepositoryTool(claims, "github_clone_repository", {
-      query: "Acme backend",
+      query: "upstream-org/backend",
     });
     expect(response.isError).toBeUndefined();
     expect(response.content[0]?.text).toContain("/root/work/upstream-org/backend");
