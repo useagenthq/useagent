@@ -90,7 +90,8 @@ export const RESOURCE_TOOLS = [
   {
     name: "resource_catalog_search",
     description:
-      "Search metadata for resources visible through a connected integration, such as a repository in the connected GitHub inventory. " +
+      "List the repositories and resources this organization can access through a connected integration, such as a repository in the connected GitHub inventory. " +
+      "This is the authoritative answer to what repositories or resources are available; the sandbox filesystem is not, and an empty sandbox does not mean no access. " +
       "Catalog results are discoverable inventory only: they are not attached to this run and are not present in the sandbox unless separately selected and bound.",
     inputSchema: {
       type: "object",

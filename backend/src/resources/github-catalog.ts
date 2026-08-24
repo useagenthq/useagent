@@ -63,7 +63,16 @@ export function createGithubResourceCatalogProvider(
           maxPages: 1,
         });
         if (!listing.configured) return { items: [], nextCursor: null };
-        if (listing.error && listing.repos.length === 0) throw new Error(listing.error);
+        if (listing.error && listing.repos.length === 0) {
+          // Surface a listing failure honestly instead of degrading to an empty
+          // page: an empty page would read as "no repositories", the misleading
+          // outcome we want to avoid. Frame the message so a caller never mistakes
+          // a transient/auth listing failure for confirmed absence of access.
+          throw new Error(
+            `connected GitHub inventory listing failed: ${listing.error} ` +
+              "(a listing error, not confirmation the organization has no accessible repositories)",
+          );
+        }
         const matches = listing.repos.filter((repo) => {
           if (!stablePositiveNumericId(repo.external_id)) return false;
           return !query ||
