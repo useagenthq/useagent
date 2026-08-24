@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { githubConfigured } from "../env";
 import { cloneRepoAtHead, resolveRemoteHeadSha } from "../wiki-gen/clone";
 import { resolveGithubAuth } from "./auth";
+import { errorMessage } from "../util/error-message";
 
 // ---------------------------------------------------------------------------
 // GitHub skill discovery (multi-repo "import Skills from a repo"). Given an
@@ -141,7 +142,7 @@ export async function discoverSkillFiles(repo: string): Promise<DiscoverResult> 
   try {
     cloned = await cloneRepoAtHead(repo);
   } catch (e) {
-    throw new DiscoveryError(e instanceof Error ? e.message : String(e), "upstream");
+    throw new DiscoveryError(errorMessage(e), "upstream");
   }
   try {
     const paths = await listSkillPathsInDir(cloned.dir);
@@ -170,7 +171,7 @@ export async function resolveRepoHeadSha(repo: string): Promise<string> {
   try {
     return await resolveRemoteHeadSha(repo);
   } catch (e) {
-    throw new DiscoveryError(e instanceof Error ? e.message : String(e), "upstream");
+    throw new DiscoveryError(errorMessage(e), "upstream");
   }
 }
 

@@ -16,6 +16,7 @@ import {
   isRuntimeThreadSessionId,
   type RuntimeThreadSnapshot,
 } from "./runtime-orchestration";
+import { errorMessage } from "../util/error-message";
 
 const RUNTIME_CONTROL_TIMEOUT_MS = 10_000;
 
@@ -77,7 +78,7 @@ export const runtimeHarness: HarnessAdapter = {
       return {
         status: "error",
         code: "t3_cancel_failed",
-        message: error instanceof Error ? error.message : String(error),
+        message: errorMessage(error),
       };
     }
   },

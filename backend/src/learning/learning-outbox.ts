@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { learningOutbox, type LearningOutboxStatus, type MemoryScope } from "../db/schema";
 import { proposeKnowledgeDraftForRun } from "./drafts";
+import { errorMessage } from "../util/error-message";
 
 // ---------------------------------------------------------------------------
 // Durable learning outbox (self_improving 6.1). The learning candidate used to
@@ -172,7 +173,7 @@ export async function processDueLearning(
       if (draft) built++;
       else skipped++;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       const outcome = nextLearningStatus(false, row.attempts, row.maxAttempts);
       if (outcome === "dead") {
         await markDead(row.runId, `build failed after max attempts: ${message}`);

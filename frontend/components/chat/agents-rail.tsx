@@ -24,7 +24,8 @@ import {
 import type { ChildStatus, NativeFrame } from "@/components/chat/native-events";
 import type { SubagentCard } from "@/components/chat/subagents";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
-import { type ApiStep, deriveTrace, formatDuration } from "@/components/chat/types";
+import { type ApiStep, deriveTrace } from "@/components/chat/types";
+import { formatDuration } from "@/utils/format";
 import {
   formatSubagentCostUsd,
   formatSubagentTokenCount,

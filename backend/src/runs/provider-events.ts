@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { providerEvents } from "../db/schema";
 import { makeNativeFrame, publishNativeFrame } from "./native-events";
+import { errorMessage } from "../util/error-message";
 
 const PAYLOAD_CAP = 32_768; // bounded native payload (chars of JSON)
 
@@ -125,7 +126,7 @@ export function recordProviderEvent(input: ProviderEventInput, opts: { critical?
   const done = entry.chain
     .then(() => persistAndPublish(input, entry))
     .catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       // The chain must stay resolved (a rejected link stalls the run's later captures), so
       // failures are logged, not thrown. `critical` raises the level so an authoritative frame
       // (a command catalog) fails VISIBLY instead of being silently dropped.

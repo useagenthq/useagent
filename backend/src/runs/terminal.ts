@@ -4,6 +4,7 @@ import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import { getRunForOrg } from "./repo";
 import { resolvePreviewSandbox } from "./preview-proxy";
+import { errorMessage } from "../util/error-message";
 
 // ---------------------------------------------------------------------------
 // Interactive terminal — a WebSocket bridge from the browser's xterm.js into
@@ -83,7 +84,7 @@ terminalRoutes.get(
             send("\x1b[2m[useAgent] connected to sandbox " + sandboxId.slice(0, 8) + "\x1b[0m\r\n");
             await pty.sendInput("cd ~/work 2>/dev/null; clear\n");
           } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
+            const message = errorMessage(err);
             // A reaped/absent sandbox is the NORMAL idle state between runs,
             // not a fault: send the dim "no live sandbox" notice (the client
             // filters that phrase into one calm waiting line) instead of a red

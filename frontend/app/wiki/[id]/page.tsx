@@ -8,7 +8,8 @@ import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { AskRepoBar } from "../ask-repo-bar";
 import { PagesRail } from "../pages-rail";
 import { WikiContent } from "../wiki-content";
-import { fetchPublishedWikiDocuments, relativeTime, type WikiDoc } from "../wiki-data";
+import { fetchPublishedWikiDocuments, type WikiDoc } from "../wiki-data";
+import { relativeTime } from "@/utils/format";
 
 export const metadata: Metadata = {
   title: "Wiki",

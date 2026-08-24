@@ -110,6 +110,7 @@ import {
   sandboxMeetsResourceTarget,
 } from "./daytona-resources";
 import { claimCubeWarmSandbox } from "../sandboxes/cube-warm-pool";
+import { errorMessage } from "../util/error-message";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -1582,7 +1583,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
             childrenFetchWarned = true;
             console.warn(
               `[opencode] GET /session/${sessionId}/children failed - child discovery degraded to SSE frames: ${
-                e instanceof Error ? e.message : String(e)
+                errorMessage(e)
               }`,
             );
           }

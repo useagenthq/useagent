@@ -409,7 +409,7 @@ export const gatewayApprovalRequests = pgTable(
 
 /**
  * Canonical agent-event lane. Provider-neutral events the
- * backend translates every harness INTO (see src/engines/canonical.ts). Persisted
+ * backend translates every harness INTO (see @useagent/agent-harness/canonical). Persisted
  * BEFORE publishing to the browser SSE so replay + live use the SAME rows. Runs
  * ALONGSIDE provider_events (the bounded raw sidecar) - additive, not a replacement.
  *
