@@ -284,6 +284,7 @@ skillsRoutes.post("/:id/run", async (c) => {
     engine,
     parentRunId: null,
     requestedRepos: [],
+    requestedResources: [],
     attachmentIds: [],
     memoryScope: "org",
     // The route means "run the current revision of this skill". Keep that raw

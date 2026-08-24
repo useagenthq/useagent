@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { NativeFrame } from "./native-events";
-import { composeQuestionAnswers, selectPendingQuestion } from "./question-state";
+import {
+  composerAcceptsRunResources,
+  composeQuestionAnswers,
+  selectPendingQuestion,
+} from "./question-state";
 
 const frame = (
   seq: number,
@@ -38,6 +42,12 @@ const asked = frame(1, "question.asked", {
 });
 
 describe("native question state", () => {
+  test("native-question control traffic disables new run-resource selection", () => {
+    const question = selectPendingQuestion([asked]);
+    expect(question).not.toBeNull();
+    expect(composerAcceptsRunResources(question)).toBe(false);
+    expect(composerAcceptsRunResources(null)).toBe(true);
+  });
   test("asked is pending until its matching resolution", () => {
     expect(selectPendingQuestion([asked])?.id).toBe("que_1");
     expect(

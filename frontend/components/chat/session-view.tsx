@@ -13,6 +13,7 @@ import {
   RiTerminalBoxLine,
 } from "@remixicon/react";
 import dynamic from "next/dynamic";
+import type { RunResourceSelection } from "@useagent/agent-client/wire";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentsRail } from "@/components/chat/agents-rail";
 import { deriveThreadGatewayChildren } from "@/components/chat/gateway-children";
@@ -91,7 +92,6 @@ import {
 } from "@/components/chat/types";
 import { shouldRetireOptimistic, useThreadStream } from "@/components/chat/use-thread-stream";
 import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
-import { Chip } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
 import { CloseButton } from "@/components/base/buttons/close-button";
 import { PillTab, PillTabList } from "@/components/base/tabs/pill-tab";
@@ -422,10 +422,14 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       memoryScope: MemoryScope,
       command?: { name: string; args: string } | null,
       attachmentIds: readonly string[] = [],
+      resources: readonly RunResourceSelection[] = [],
     ) => {
       // A free-text reply to a native question resumes the resident OpenCode
       // turn. It must never enqueue a child run behind the blocked parent.
       if (activeQuestion && composerCanAnswerQuestion) {
+        if (attachmentIds.length > 0 || resources.length > 0) {
+          throw new Error("Resources cannot be added while answering a native question");
+        }
         const accepted = await submitQuestionAnswers(activeQuestion, [[text]]);
         if (!accepted) throw new Error("question reply failed");
         return;
@@ -445,6 +449,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             // composer's choice lets the user change it for this reply.
             memory_scope: memoryScope,
             ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}),
+            ...(resources.length > 0 ? { resources } : {}),
             // TYPED native-command intent (Phase 3): present ONLY for a `/known-command ...`
             // from the current session's catalog. Carries the provider + native session id so
             // the backend rejects a stale/cross-session intent; the backend re-validates before
@@ -950,6 +955,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             stopError={stopError}
             onStop={handleStop}
             prefill={composerPrefill}
+            repoRevisions={Object.fromEntries(
+              newest.repo_specs.map((spec) => [spec.repo, spec.branch]),
+            )}
           />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the
               moment the first step streams in (Thinking block takes over).

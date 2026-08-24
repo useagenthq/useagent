@@ -120,6 +120,7 @@ export async function createChildSession(input: {
     // Child sessions inherit the parent's already-authorized resources. They
     // cannot make an explicit repository selection of their own.
     requestedRepos: [],
+    requestedResources: [],
     attachmentIds: [],
     memoryScope: input.memoryScope,
     skillId: null,
