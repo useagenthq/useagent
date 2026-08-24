@@ -15,6 +15,7 @@ import {
   type ArtifactWorkpieceState,
 } from "./artifacts";
 import { decodeFrame, THREAD_FRAME_TYPES, type DecodedFrame } from "./thread-events";
+import type { ApiRun } from "./wire";
 
 /** Minimal injected fetch/response surface (works with the browser fetch, a Node/Bun
  *  fetch, or a test stub). Kept structural so the package needs no DOM lib. */
@@ -75,12 +76,13 @@ export interface RunHandle {
   readonly status: string;
 }
 
-/** One run row as returned by the thread endpoint. Loosely typed on purpose: the client
- *  owns the canonical render lane (via the store), not the product's full run view. */
-export interface RunSummary {
+/** One run row from the thread endpoint (`GET /api/runs/:id?thread=1`). On the wire
+ *  it is a full {@link ApiRun}; the client runtime-guarantees only `id` (the field
+ *  it filters on), so the rest of the contract is typed but optional. Replaces the
+ *  old `readonly [key: string]: unknown` index signature, under which a renamed or
+ *  removed backend field drifted silently - a field typo is now a compile error. */
+export interface RunSummary extends Partial<ApiRun> {
   readonly id: string;
-  readonly status: string;
-  readonly [key: string]: unknown;
 }
 export interface ThreadSnapshot {
   readonly runs: readonly RunSummary[];

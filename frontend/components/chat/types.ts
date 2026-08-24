@@ -1,76 +1,21 @@
-// Wire types + small parse helpers for the coding-session surface. These mirror
-// the useAgent backend contract (:3201) verbatim — snake_case as the API sends it.
+// Small parse helpers + view types for the coding-session surface. The run/step
+// WIRE TYPES (ApiRun, ApiStep, StepKind, RunStatus, EngineId, MemoryScope,
+// RunUpload) are the shared agent-client contract - imported here (and re-exported
+// so this module's many consumers keep one path) instead of hand-copied, so the
+// backend serializer and this UI cannot drift. The view types + parsers below are
+// frontend-only and stay local.
 
-import type { RunStatus } from "@/lib/runs";
+import type {
+  ApiRun,
+  ApiStep,
+  EngineId,
+  MemoryScope,
+  RunStatus,
+  RunUpload,
+  StepKind,
+} from "@useagent/agent-client/wire";
 
-export type EngineId =
-  // Selectable, sandbox-only engines (see ENGINES below).
-  | "opencode"
-  | "claude"
-  | "codex"
-  | "chat"
-  // Legacy ids kept so old runs/rows still type; never offered in the picker.
-  | "mock"
-  | "claude-sdk"
-  | "daytona"
-  | "acp";
-export type StepKind = "command" | "file" | "task" | "done";
-/** Which team-memory pool a run reads/writes (backend `memory_scope`). */
-export type MemoryScope = "org" | "personal";
-export type { RunStatus };
-
-export interface ApiStep {
-  id: string;
-  run_id: string;
-  idx: number;
-  kind: StepKind;
-  label: string;
-  chip: string | null;
-  code_json: string | null;
-  created_at: string;
-}
-
-export interface ApiRun {
-  id: string;
-  org_id: string | null;
-  user_id: string | null;
-  parent_run_id?: string | null;
-  /** True when this run is a gateway CHILD SESSION - a deferred serial thread
-   *  turn the parent agent spawned via child_session_create. The conversation
-   *  folds it under its parent turn's subagent group instead of rendering a
-   *  top-level user turn. Optional so pre-flag payloads still parse. */
-  child_session?: boolean;
-  prompt: string;
-  model: string;
-  engine: EngineId;
-  status: RunStatus;
-  summary: string | null;
-  duration_ms: number | null;
-  /** The engine's own native session id (opencode `ses_*`), when one was
-   * recorded for this run. The thread's latest non-null value deep-links the
-   * "Live" tab straight into that session (see session-view.tsx / live-pane.tsx). */
-  engine_session_id?: string | null;
-  /** Which team-memory pool this run reads/writes. A reply's composer defaults to
-   *  the thread's current scope (its newest run). Optional so a pre-scope run
-   *  shape still parses; treated as "org" when absent. */
-  memory_scope?: MemoryScope;
-  /** Inbound attachments the user sent with this turn (Slack files or a browser
-   *  upload), claimed by the run. Rendered on the user's bubble; bytes come from
-   *  `/api/uploads/:id/content`. Optional so a pre-uploads run shape still parses. */
-  uploads?: RunUpload[];
-  created_at: string;
-  updated_at: string;
-  steps: ApiStep[];
-}
-
-/** One inbound attachment on a run's user turn (backend `RunUploadDescriptor`). */
-export interface RunUpload {
-  id: string;
-  name: string;
-  content_type: string;
-  size_bytes: number;
-  created_at: string;
-}
+export type { ApiRun, ApiStep, EngineId, MemoryScope, RunStatus, RunUpload, StepKind };
 
 /** `GET /api/runs/:id?thread=1` → the whole conversation, oldest → newest. */
 export interface ThreadResponse {

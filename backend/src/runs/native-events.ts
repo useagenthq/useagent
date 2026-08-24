@@ -1,5 +1,7 @@
 import { EventEmitter } from "node:events";
 import { and, asc, eq, gt } from "drizzle-orm";
+import { NATIVE_SCHEMA_VERSION } from "@useagent/agent-client/wire";
+import type { NativeFrame } from "@useagent/agent-client/wire";
 import { db } from "../db/client";
 import { providerEvents } from "../db/schema";
 
@@ -13,31 +15,12 @@ import { providerEvents } from "../db/schema";
 // cycle: provider-events → native-events → db, nothing back into worker).
 // ---------------------------------------------------------------------------
 
-/** Bumped when the wire shape of {@link NativeFrame} changes; clients upcast. */
-export const NATIVE_SCHEMA_VERSION = 1;
-
-/** A versioned native-event frame. `eventId` is the stable dedupe key (one per
- *  native part / lifecycle row); `seq` is the monotonic per-run cursor. A part
- *  revision re-emits the SAME `eventId` with a HIGHER `seq` — clients key by
- *  `eventId` and keep the largest `seq`. */
-export interface NativeFrame {
-  readonly schemaVersion: number;
-  readonly eventId: string;
-  readonly seq: number;
-  readonly provider: string;
-  readonly eventType: string;
-  readonly native: {
-    readonly sessionId: string | null;
-    readonly parentSessionId: string | null;
-    readonly messageId: string | null;
-    readonly partId: string | null;
-    readonly callId: string | null;
-  };
-  /** Bounded (capture caps the stored JSON); an over-cap/truncated payload is
-   *  represented as an `{ _unparseable, _bytes }` marker rather than invalid
-   *  JSON, so a frame is always well-formed. */
-  readonly payload: unknown;
-}
+// The native-event frame wire shape + schema version are the agent-client wire
+// contract (shared verbatim with the browser client's parser); re-exported so
+// backend callers keep importing them from here alongside the capture/replay
+// machinery below. Bumping the version stays a backend concern (clients upcast).
+export { NATIVE_SCHEMA_VERSION };
+export type { NativeFrame };
 
 type ProviderEventRow = typeof providerEvents.$inferSelect;
 
