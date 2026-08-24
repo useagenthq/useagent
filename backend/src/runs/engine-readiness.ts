@@ -48,7 +48,7 @@ export function engineResolutionErrorBody(
 }
 
 function devModeEnabledForEnv(env: Record<string, string | undefined>): boolean {
-  const explicit = env.SKYNET_DEV_MODE;
+  const explicit = env.USEAGENT_DEV_MODE;
   if (explicit !== undefined) return explicit === "true";
   return (env.NODE_ENV ?? "development") !== "production";
 }

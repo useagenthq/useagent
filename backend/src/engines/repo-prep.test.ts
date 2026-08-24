@@ -89,18 +89,18 @@ const pullCmd = (calls: Call[]) => calls.find((c) => /refs\/pull\//.test(c.cmd))
 
 async function withProductionMode<T>(action: () => Promise<T>): Promise<T> {
   const priorNodeEnv = process.env.NODE_ENV;
-  const priorDevMode = process.env.SKYNET_DEV_MODE;
+  const priorDevMode = process.env.USEAGENT_DEV_MODE;
   const priorTenantOrgId = process.env.GITHUB_TENANT_ORG_ID;
   process.env.NODE_ENV = "production";
-  process.env.SKYNET_DEV_MODE = "false";
+  process.env.USEAGENT_DEV_MODE = "false";
   process.env.GITHUB_TENANT_ORG_ID = "org-acme";
   try {
     return await action();
   } finally {
     if (priorNodeEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = priorNodeEnv;
-    if (priorDevMode === undefined) delete process.env.SKYNET_DEV_MODE;
-    else process.env.SKYNET_DEV_MODE = priorDevMode;
+    if (priorDevMode === undefined) delete process.env.USEAGENT_DEV_MODE;
+    else process.env.USEAGENT_DEV_MODE = priorDevMode;
     if (priorTenantOrgId === undefined) delete process.env.GITHUB_TENANT_ORG_ID;
     else process.env.GITHUB_TENANT_ORG_ID = priorTenantOrgId;
   }

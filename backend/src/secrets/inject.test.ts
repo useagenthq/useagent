@@ -28,7 +28,7 @@ describe("sandbox secret delivery mode", () => {
       () =>
         sandboxSecretMode({
           NODE_ENV: "production",
-          SKYNET_DEV_MODE: "true",
+          USEAGENT_DEV_MODE: "true",
           SANDBOX_SECRET_MODE: "compatibility",
         }),
     ).toThrow("SANDBOX_SECRET_MODE=compatibility is forbidden outside development");

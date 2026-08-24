@@ -14,7 +14,7 @@ import { verifyToolToken, type ToolTokenClaims } from "./token";
 
 const originalFetch = globalThis.fetch;
 const originalGatewayDatabaseUrl = process.env.GATEWAY_DATABASE_URL;
-const originalApiOrigin = process.env.SKYNET_API_ORIGIN;
+const originalApiOrigin = process.env.USEAGENT_API_ORIGIN;
 const originalToolGatewaySecret = process.env.TOOL_GATEWAY_SECRET;
 
 const claims: ToolTokenClaims = {
@@ -47,8 +47,8 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   if (originalGatewayDatabaseUrl === undefined) delete process.env.GATEWAY_DATABASE_URL;
   else process.env.GATEWAY_DATABASE_URL = originalGatewayDatabaseUrl;
-  if (originalApiOrigin === undefined) delete process.env.SKYNET_API_ORIGIN;
-  else process.env.SKYNET_API_ORIGIN = originalApiOrigin;
+  if (originalApiOrigin === undefined) delete process.env.USEAGENT_API_ORIGIN;
+  else process.env.USEAGENT_API_ORIGIN = originalApiOrigin;
   if (originalToolGatewaySecret === undefined) delete process.env.TOOL_GATEWAY_SECRET;
   else process.env.TOOL_GATEWAY_SECRET = originalToolGatewaySecret;
 });
@@ -142,7 +142,7 @@ describe("automation gateway control-plane delegation", () => {
 
   test("forwards through the primary API with a short-lived identity-bound capability", async () => {
     process.env.GATEWAY_DATABASE_URL = "postgres://restricted";
-    process.env.SKYNET_API_ORIGIN = "http://127.0.0.1:3201/path-is-ignored";
+    process.env.USEAGENT_API_ORIGIN = "http://127.0.0.1:3201/path-is-ignored";
     process.env.TOOL_GATEWAY_SECRET = "automation-test-secret-0123456789abcdef";
     const requests: Request[] = [];
     globalThis.fetch = (async (input, init) => {
@@ -177,7 +177,7 @@ describe("automation gateway control-plane delegation", () => {
 
   test("fails closed when a restricted gateway has no primary API origin", async () => {
     process.env.GATEWAY_DATABASE_URL = "postgres://restricted";
-    delete process.env.SKYNET_API_ORIGIN;
+    delete process.env.USEAGENT_API_ORIGIN;
     const result = await executeAutomationTool(
       {
         orgId: "org-a",

@@ -586,7 +586,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const railRef = useRef<HTMLElement>(null);
   const [railWidth, setRailWidth] = useState<number | null>(null);
   useEffect(() => {
-    const saved = Number(localStorage.getItem("skynet.rail-width"));
+    const saved = Number(localStorage.getItem("useagent.rail-width"));
     if (!Number.isFinite(saved) || saved < RAIL_MIN) return;
     // Apply the saved width through the same 0.6-of-container ceiling as the
     // drag/keyboard paths: a width persisted on a wide desktop must never
@@ -620,7 +620,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     dragWidthRef.current = null;
     if (width === null) return; // pointerdown without movement - nothing to commit
     setRailWidth(width);
-    localStorage.setItem("skynet.rail-width", String(width));
+    localStorage.setItem("useagent.rail-width", String(width));
   }, []);
   const resetRailWidth = useCallback(() => {
     dragBoundsRef.current = null;
@@ -629,7 +629,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     // on the element, where React's style diffing would not remove it.
     railRef.current?.style.removeProperty("--rail-w");
     setRailWidth(null);
-    localStorage.removeItem("skynet.rail-width");
+    localStorage.removeItem("useagent.rail-width");
   }, []);
   function resizeRailWithKeyboard(key: string) {
     const containerMax = bodyRef.current
@@ -643,7 +643,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     if (next === null) return;
     const rounded = Math.round(next);
     setRailWidth(rounded);
-    localStorage.setItem("skynet.rail-width", String(rounded));
+    localStorage.setItem("useagent.rail-width", String(rounded));
   }
   // Canonical workpieces opened from the conversation into the Workspace surface.
   // Every open workpiece stays mounted (visibility-toggled) so a tab switch never

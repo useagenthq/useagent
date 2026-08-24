@@ -17,9 +17,9 @@ const githubEnvKeys = [
   "GITHUB_APP_ID",
   "GITHUB_APP_PRIVATE_KEY",
   "GITHUB_TENANT_ORG_ID",
-  "SKYNET_PRIMARY_ORG_ID",
+  "USEAGENT_PRIMARY_ORG_ID",
   "SLACK_DEFAULT_ORG_ID",
-  "SKYNET_DEV_MODE",
+  "USEAGENT_DEV_MODE",
   "ALLOW_DEV_ORG",
 ] as const;
 const originalGithubEnv = new Map(
@@ -132,7 +132,7 @@ describe("github listing — one product organization owns the shared credential
   test("fails closed with an actionable error when production has no tenant binding", async () => {
     process.env.GITHUB_TOKEN = "test-token";
     process.env.GITHUB_ORG = "upstream-org";
-    process.env.SKYNET_DEV_MODE = "false";
+    process.env.USEAGENT_DEV_MODE = "false";
     process.env.ALLOW_DEV_ORG = "0";
     let fetches = 0;
     globalThis.fetch = async () => {

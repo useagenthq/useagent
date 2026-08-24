@@ -12,7 +12,7 @@ import {
 
 const PROD = {
   NODE_ENV: "production",
-  SKYNET_DEV_MODE: "false",
+  USEAGENT_DEV_MODE: "false",
 } as const;
 
 describe("engine readiness advertisement", () => {

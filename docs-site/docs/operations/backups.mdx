@@ -44,11 +44,11 @@ configuration.
 
 A systemd timer runs the backup daily at 03:17 UTC, with a randomized delay of
 up to 20 minutes, and catches up after downtime. Local archives are kept for
-14 days by default (`SKYNET_BACKUP_RETENTION_DAYS`).
+14 days by default (`USEAGENT_BACKUP_RETENTION_DAYS`).
 
 :::warning
 Archives are encrypted **local** snapshots. They are not disaster recovery
-until `SKYNET_BACKUP_REMOTE_SYNC_COMMAND` ships them off-host. Set
-`SKYNET_BACKUP_REQUIRE_REMOTE=1` to fail the backup closed when remote sync is
+until `USEAGENT_BACKUP_REMOTE_SYNC_COMMAND` ships them off-host. Set
+`USEAGENT_BACKUP_REQUIRE_REMOTE=1` to fail the backup closed when remote sync is
 unavailable.
 :::

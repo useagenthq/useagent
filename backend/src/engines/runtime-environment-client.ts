@@ -9,7 +9,7 @@ import {
 const RUNTIME_AUTH_DIRECTORY = `${RUNTIME_ENVIRONMENT_HOME}/skynet-auth`;
 const RUNTIME_COOKIE_JAR = `${RUNTIME_AUTH_DIRECTORY}/session.cookies`;
 const RUNTIME_REQUEST_TIMEOUT_SECONDS = 15;
-const RUNTIME_HTTP_STATUS_MARKER = "__SKYNET_T3_HTTP_STATUS__";
+const RUNTIME_HTTP_STATUS_MARKER = "__USEAGENT_T3_HTTP_STATUS__";
 
 export class RuntimeEnvironmentRequestError extends Error {
   readonly status: number | undefined;

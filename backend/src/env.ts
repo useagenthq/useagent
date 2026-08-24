@@ -14,7 +14,7 @@ import {
  * fallback for unauthenticated requests (middleware/org.ts), the insecure
  * default auth secret (below), and the store-a-stub-on-LLM-failure path
  * (knowledge/ingest.ts). It defaults to true UNLESS NODE_ENV is "production";
- * an explicit SKYNET_DEV_MODE always wins. Evaluated per call so tests can flip
+ * an explicit USEAGENT_DEV_MODE always wins. Evaluated per call so tests can flip
  * it at runtime without a fresh process.
  */
 export function devModeEnabled(): boolean {
@@ -35,7 +35,7 @@ export function allowDevOrg(): boolean {
 }
 
 /** Self-service account creation is a development convenience only. A production
- * process always fails closed even if SKYNET_DEV_MODE was accidentally left on. */
+ * process always fails closed even if USEAGENT_DEV_MODE was accidentally left on. */
 export function selfSignupEnabled(
   source: Record<string, string | undefined> = process.env,
 ): boolean {
@@ -88,7 +88,7 @@ export function isEngineEnabled(engine: string): boolean {
  */
 export function acpAutoApprove(): boolean {
   // Require VERIFIED development mode: in production (NODE_ENV=production /
-  // SKYNET_DEV_MODE=false) this is always false no matter what ACP_YOLO_APPROVE
+  // USEAGENT_DEV_MODE=false) this is always false no matter what ACP_YOLO_APPROVE
   // is set to, so the escape hatch can never be flipped on for a real deployment.
   if (!devModeEnabled()) return false;
   return process.env.ACP_YOLO_APPROVE === "1" || process.env.ACP_YOLO_APPROVE === "true";
@@ -100,7 +100,7 @@ function resolveAuthSecret(): string {
   if (secret) return secret;
   if (!devModeEnabled()) {
     throw new Error(
-      "BETTER_AUTH_SECRET is required when SKYNET_DEV_MODE is off (production). " +
+      "BETTER_AUTH_SECRET is required when USEAGENT_DEV_MODE is off (production). " +
         "Set a strong secret and restart.",
     );
   }
@@ -312,14 +312,14 @@ export function githubConfigured(): boolean {
  *
  * `GITHUB_TENANT_ORG_ID` is the canonical binding. The two fallbacks preserve
  * the current single-tenant deployment while it migrates: the host bootstrap
- * already receives `SKYNET_PRIMARY_ORG_ID`, and older installs carry their
+ * already receives `USEAGENT_PRIMARY_ORG_ID`, and older installs carry their
  * tenant id in `SLACK_DEFAULT_ORG_ID`. Local development stays bound to the
  * seeded dev org only while the dev-org fallback is explicitly enabled.
  */
 export function githubTenantOrgId(): string | null {
   return (
     process.env.GITHUB_TENANT_ORG_ID?.trim() ||
-    process.env.SKYNET_PRIMARY_ORG_ID?.trim() ||
+    process.env.USEAGENT_PRIMARY_ORG_ID?.trim() ||
     process.env.SLACK_DEFAULT_ORG_ID?.trim() ||
     (allowDevOrg() ? "org-skynet-dev" : null)
   );

@@ -3,7 +3,7 @@ import { db } from "../db/client";
 import { reconcileQueue, runs } from "../db/schema";
 import type { SandboxCreateOptions, SandboxHandle, SandboxProvider } from "./provider";
 
-export const SKYNET_WARM_POOL_TEMPLATE_LABEL = "skynet-warm-pool-template";
+export const USEAGENT_WARM_POOL_TEMPLATE_LABEL = "skynet-warm-pool-template";
 
 const CUBE_TEMPLATE_LABELS = [
   "cube.master.appsnapshot.template.id",
@@ -44,7 +44,7 @@ export function withWarmPoolTemplateLabel(
     ...createOptions,
     labels: {
       ...createOptions.labels,
-      [SKYNET_WARM_POOL_TEMPLATE_LABEL]: createOptions.snapshot,
+      [USEAGENT_WARM_POOL_TEMPLATE_LABEL]: createOptions.snapshot,
     },
   };
 }
@@ -115,7 +115,7 @@ function matchesPoolLabels(
   if (!expected || Object.keys(expected).length === 0) return false;
   const labels = sandbox.labels ?? {};
   const poolLabels = Object.entries(expected).filter(
-    ([key]) => key !== SKYNET_WARM_POOL_TEMPLATE_LABEL,
+    ([key]) => key !== USEAGENT_WARM_POOL_TEMPLATE_LABEL,
   );
   if (poolLabels.length === 0) return false;
   return poolLabels.every(([key, value]) => labels[key] === value);
@@ -124,7 +124,7 @@ function matchesPoolLabels(
 function matchesSnapshot(sandbox: SandboxHandle, snapshot: string | undefined): boolean {
   if (!snapshot) return true;
   const labels = sandbox.labels ?? {};
-  const ownedTemplate = labels[SKYNET_WARM_POOL_TEMPLATE_LABEL];
+  const ownedTemplate = labels[USEAGENT_WARM_POOL_TEMPLATE_LABEL];
   if (ownedTemplate) return ownedTemplate === snapshot;
   const exposedTemplate = CUBE_TEMPLATE_LABELS.map((key) => labels[key]).find(Boolean);
   return exposedTemplate === snapshot;

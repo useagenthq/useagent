@@ -43,7 +43,7 @@ type DesktopReadiness = (
 
 const NAME_RE = /^[A-Za-z0-9._-]+$/;
 const RECORDING_ID_RE = /^[A-Za-z0-9._-]{1,200}$/;
-const PATH_MARKER = "__SKYNET_RECORDING_PATH__=";
+const PATH_MARKER = "__USEAGENT_RECORDING_PATH__=";
 const DAYTONA_RECORDING_STATE = "/home/daytona/.skynet/active-recording-id";
 
 const result = (text: string, structuredContent?: Record<string, unknown>): ToolResult => ({

@@ -18,7 +18,7 @@ export function proxy(request: NextRequest): NextResponse {
   // Better Auth session independently and fail closed.
   if (
     process.env.NODE_ENV !== 'production' &&
-    process.env.SKYNET_PREVIEW_OPEN === '1'
+    process.env.USEAGENT_PREVIEW_OPEN === '1'
   ) {
     return NextResponse.next();
   }

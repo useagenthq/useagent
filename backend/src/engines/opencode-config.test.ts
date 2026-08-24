@@ -87,7 +87,7 @@ describe("OpenCode generated config placement", () => {
     expect(source).toContain("activateOpenCodeRuntimeConfig({");
     expect(source).toContain("reuseHealthyResidentServer(rememberedServer, box.id, ctx.signal)");
     // Perf Phase 1: the same concurrent stages now flow through stagesTogether,
-    // which honors the SKYNET_SERIAL_STARTUP rollback flag (same DAG, concurrency 1).
+    // which honors the USEAGENT_SERIAL_STARTUP rollback flag (same DAG, concurrency 1).
     expect(source).toContain(
       "const [desktop, cachedRuntimeServer, , baseOpenCodeConfig] = await stagesTogether([",
     );

@@ -67,8 +67,8 @@ async function scanWithCommand(command: string, input: UploadScanInput): Promise
       detached: true,
       env: {
         ...process.env,
-        SKYNET_UPLOAD_NAME: input.name,
-        SKYNET_UPLOAD_CONTENT_TYPE: input.contentType,
+        USEAGENT_UPLOAD_NAME: input.name,
+        USEAGENT_UPLOAD_CONTENT_TYPE: input.contentType,
       },
       stdout: "ignore",
       stderr: "pipe",

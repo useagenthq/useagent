@@ -1,7 +1,7 @@
-export const SKYNET_API_COMPAT = "run-events-v1";
+export const USEAGENT_API_COMPAT = "run-events-v1";
 
-const CLIENT_COMMIT = process.env.NEXT_PUBLIC_SKYNET_RELEASE_COMMIT?.trim().toLowerCase() || "dev";
-export const CLIENT_RELEASE_FINGERPRINT = `${SKYNET_API_COMPAT}:${CLIENT_COMMIT}`;
+const CLIENT_COMMIT = process.env.NEXT_PUBLIC_USEAGENT_RELEASE_COMMIT?.trim().toLowerCase() || "dev";
+export const CLIENT_RELEASE_FINGERPRINT = `${USEAGENT_API_COMPAT}:${CLIENT_COMMIT}`;
 
 const RELOAD_MARKER = "skynet.release.reload";
 
