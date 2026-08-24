@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import { sql } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { startSlackOutbox } from "../src/slack";
-import type { DeliveryResult, SlackClient } from "../src/slack/client";
+import { setSlackClientForTest, type DeliveryResult, type SlackClient } from "../src/slack/client";
 import { enqueue } from "../src/slack/outbox/repo";
 import { createRun } from "../src/runs/repo";
 import { createSlackRunResponse, findSlackRunResponse, linkSlackThread } from "../src/slack/repo";
@@ -14,7 +14,7 @@ import {
   resetStuckDelivering,
   stopSlackOutboxRelay,
 } from "../src/slack/outbox";
-import { uid } from "./helpers";
+import { uid, waitFor } from "./helpers";
 
 // Durable Slack outbox: transactional enqueue → delivery worker with idempotency,
 // bounded backoff, 429/Retry-After, and dead-letter. Each test builds its OWN
@@ -131,6 +131,43 @@ async function linkedSlackRun(): Promise<{ runId: string; teamId: string; channe
 }
 
 describe("durable slack outbox", () => {
+  test("a kick during an active pass schedules one immediate follow-up pass", async () => {
+    const firstKey = uid("overlap-first");
+    const secondKey = uid("overlap-second");
+    let releaseFirst!: () => void;
+    const firstBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let firstStarted!: () => void;
+    const firstStartedPromise = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const posted: string[] = [];
+    const client = recorder(() => ({ ok: true })).client;
+    client.postMessage = async (message) => {
+      posted.push(message.text);
+      if (message.text === firstKey) {
+        firstStarted();
+        await firstBlocked;
+      }
+      return { ok: true };
+    };
+    setSlackClientForTest(client);
+    startSlackOutbox();
+    try {
+      await enqueuePostMessage({ channel: "C1", text: firstKey, idempotencyKey: firstKey });
+      await firstStartedPromise;
+      await enqueuePostMessage({ channel: "C1", text: secondKey, idempotencyKey: secondKey });
+      releaseFirst();
+      await waitFor(async () => posted.includes(secondKey), { timeoutMs: 1_000 });
+      expect(posted).toEqual([firstKey, secondKey]);
+    } finally {
+      stopSlackOutboxRelay();
+      setSlackClientForTest(null);
+      releaseFirst();
+    }
+  });
+
   test("enqueues a committed row and delivers it exactly once", async () => {
     const key = uid("deliver");
     const rec = recorder(() => ({ ok: true }));
