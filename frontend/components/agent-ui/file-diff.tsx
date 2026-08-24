@@ -1,5 +1,5 @@
 // Ported from beui.dev registry "file-diff" (components/agents/file-diff.tsx +
-// agent-disclosure, lib/ease inlined). Re-expressed with our AlignUI tokens + Remixicon.
+// agent-disclosure, lib/ease inlined). Re-expressed with our tokens + Remixicon.
 // The shiki syntax highlighter was dropped in favor of a clean mono/token diff view.
 // A collapsible added/removed line diff viewer for a single file, with a streaming
 // state, change counts, and a copy action.

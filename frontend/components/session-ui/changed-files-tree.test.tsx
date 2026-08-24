@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import * as Tooltip from "@/components/ui/tooltip";
 import { type ChangedFile } from "./changed-files";
 import { ChangedFilesCard, ChangedFilesTree } from "./changed-files-tree";
 
@@ -12,7 +11,7 @@ const FILES: ChangedFile[] = [
 ];
 
 function render(ui: React.ReactElement): string {
-  return renderToStaticMarkup(<Tooltip.Provider>{ui}</Tooltip.Provider>);
+  return renderToStaticMarkup(<>{ui}</>);
 }
 
 test("expanded card shows the summary header and the compacted tree", () => {

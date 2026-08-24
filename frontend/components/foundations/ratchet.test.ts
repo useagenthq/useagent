@@ -91,52 +91,11 @@ function alignOffenders(): string[] {
   return offenders.sort();
 }
 
-// Generated snapshot of the CURRENT AlignUI importers (do not hand-edit; a file
-// may LEAVE this list freely - remove it once it stops importing AlignUI).
-// components/base is canonical; AlignUI (components/ui + cnExt) is legacy-do-not-extend.
-const ALIGNUI_ALLOWLIST = [
-  "app/agent/artifacts/live-artifacts.tsx",
-  "app/agent/plugins/plugins-panel.tsx",
-  "app/agent/schedules/automation-history-drawer.tsx",
-  "app/agent/schedules/new-schedule-modal.tsx",
-  "app/apps/apps-marketplace.tsx",
-  "app/foundation/page.tsx",
-  "app/knowledge/add-knowledge-modal.tsx",
-  "app/lab/beui-agent-inventory.tsx",
-  "app/lab/component-lab.tsx",
-  "app/lab/session/session-sample.tsx",
-  "app/learnings/learning-review.tsx",
-  "app/playbooks/playbook-detail.tsx",
-  "app/playbooks/playbook-editor.tsx",
-  "app/review/review-workspace.tsx",
-  "app/settings/integration-connections.tsx",
-  "app/skills/new-skill-modal.tsx",
-  "app/skills/skill-detail-dialog.tsx",
-  "app/wiki/ask-repo-bar.tsx",
-  "app/wiki/page.tsx",
-  "app/wiki/pages-rail.tsx",
-  "app/wiki/wiki-content.tsx",
-  "components/ai/approval-card.tsx",
-  "components/ai/context-card.tsx",
-  "components/ai/diff-table.tsx",
-  "components/ai/recommendation-card.tsx",
-  "components/ai/records-table.tsx",
-  "components/auth/google-sign-in-button.tsx",
-  "components/dashboard/card.tsx",
-  "components/dashboard/stat-cards.tsx",
-  "components/fleet/fleet-lanes.tsx",
-  "components/fleet/panel.tsx",
-  "components/prompt-kit/button.tsx",
-  "components/prompt-kit/code-block.tsx",
-  "components/prompt-kit/loader.tsx",
-  "components/prompt-kit/markdown.tsx",
-  "components/prompt-kit/message.tsx",
-  "components/prompt-kit/prompt-suggestion.tsx",
-  "components/prompt-kit/response-stream.tsx",
-  "components/session-ui/expanded-image-dialog.tsx",
-  "components/shared/number-ticker.tsx",
-  "components/shell/search-command.tsx",
-];
+// The legacy AlignUI kit (components/ui) and its class-merge helper cnExt have
+// been fully removed; components/base is the sole canonical kit. This list is
+// now empty and must stay empty - any new import of components/ui or cnExt is
+// forbidden debt.
+const ALIGNUI_ALLOWLIST: string[] = [];
 
 describe("AlignUI allowlist ratchet", () => {
   test("allowlist is sorted, unique, and free of test files", () => {

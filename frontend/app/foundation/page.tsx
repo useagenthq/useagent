@@ -12,11 +12,11 @@ import {
 } from '@remixicon/react';
 
 import { AsteriskMark } from '@/components/foundations/brand/asterisk-mark';
-import * as Button from '@/components/ui/button';
-import * as Input from '@/components/ui/input';
-import * as Badge from '@/components/ui/badge';
-import * as Switch from '@/components/ui/switch';
-import * as TabMenuHorizontal from '@/components/ui/tab-menu-horizontal';
+import { Button } from '@/components/base/buttons/button';
+import { Input } from '@/components/base/input/input';
+import { Chip } from '@/components/base/badges/chip';
+import { Switch } from '@/components/base/switch/switch';
+import { Tabs, TabList, Tab, TabPanel } from '@/components/base/tabs/tabs';
 
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -26,16 +26,15 @@ function ThemeToggle() {
   const isDark = resolvedTheme === 'dark';
 
   return (
-    <Button.Root
-      variant='neutral'
-      mode='stroke'
+    <Button
+      variant='secondary'
       size='small'
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
       aria-label='Toggle theme'
+      leadingIcon={mounted && isDark ? RiSunLine : RiMoonLine}
     >
-      <Button.Icon as={mounted && isDark ? RiSunLine : RiMoonLine} />
       {mounted ? (isDark ? 'Light' : 'Dark') : 'Theme'}
-    </Button.Root>
+    </Button>
   );
 }
 
@@ -77,108 +76,89 @@ export default function Home() {
       <div className='mx-auto max-w-4xl px-6'>
         <div className='animate-ai-fade-up flex flex-col gap-1 py-10'>
           <h1 className='text-title-1-medium text-text-primary'>
-            AlignUI foundation
+            Component foundation
           </h1>
           <p className='text-body-regular text-text-secondary'>
-            Vendored AlignUI base components on Tailwind v4, wired to the useAgent
-            brand layer. This page proves the foundation renders in both themes.
+            Base components on Tailwind v4, wired to the useAgent brand layer.
+            This page proves the foundation renders in both themes.
           </p>
         </div>
 
         {/* Buttons */}
         <Section label='Button - variants & modes'>
           <div className='flex flex-wrap items-center gap-3'>
-            <Button.Root variant='primary' mode='filled'>
-              <Button.Icon as={RiSparkling2Line} />
+            <Button variant='primary' leadingIcon={RiSparkling2Line}>
               Primary
-            </Button.Root>
-            <Button.Root variant='neutral' mode='stroke'>
+            </Button>
+            <Button variant='secondary'>
               Neutral
-            </Button.Root>
-            <Button.Root variant='error' mode='lighter'>
+            </Button>
+            <Button variant='danger'>
               Error
-            </Button.Root>
-            <Button.Root variant='primary' mode='ghost'>
+            </Button>
+            <Button variant='ghost'>
               Ghost
-            </Button.Root>
-            <Button.Root variant='primary' mode='filled' size='xsmall'>
-              <Button.Icon as={RiAddLine} />
+            </Button>
+            <Button variant='primary' size='xs' leadingIcon={RiAddLine}>
               New run
-            </Button.Root>
+            </Button>
           </div>
         </Section>
 
         {/* Input */}
         <Section label='Input - with leading icon'>
           <div className='max-w-sm'>
-            <Input.Root>
-              <Input.Wrapper>
-                <Input.Icon as={RiSearch2Line} />
-                <Input.Input placeholder='Search agents, runs, skills…' />
-              </Input.Wrapper>
-            </Input.Root>
+            <Input
+              aria-label='Search'
+              leadingIcon={RiSearch2Line}
+              placeholder='Search agents, runs, skills…'
+            />
           </div>
         </Section>
 
         {/* Badges */}
         <Section label='Badge - colors & variants'>
           <div className='flex flex-wrap items-center gap-2'>
-            <Badge.Root variant='filled' color='green'>
-              Running
-            </Badge.Root>
-            <Badge.Root variant='light' color='blue'>
-              Queued
-            </Badge.Root>
-            <Badge.Root variant='lighter' color='orange'>
-              Review
-            </Badge.Root>
-            <Badge.Root variant='stroke' color='red'>
-              Failed
-            </Badge.Root>
-            <Badge.Root variant='light' color='purple'>
-              <Badge.Dot />
+            <Chip color='lime'>Running</Chip>
+            <Chip color='blue'>Queued</Chip>
+            <Chip color='yellow'>Review</Chip>
+            <Chip color='rose'>Failed</Chip>
+            <Chip color='purple'>
+              <span className='size-1.5 rounded-full bg-current opacity-70' aria-hidden />
               Model
-            </Badge.Root>
+            </Chip>
           </div>
         </Section>
 
         {/* Switch */}
         <Section label='Switch'>
           <div className='flex items-center gap-3'>
-            <Switch.Root defaultChecked id='autopilot' />
-            <label htmlFor='autopilot' className='text-body-2-medium text-text-primary'>
-              Autopilot mode
-            </label>
+            <Switch defaultSelected>Autopilot mode</Switch>
           </div>
         </Section>
 
         {/* Tabs */}
         <Section label='TabMenuHorizontal'>
-          <TabMenuHorizontal.Root defaultValue='overview'>
-            <TabMenuHorizontal.List>
-              <TabMenuHorizontal.Trigger value='overview'>
-                <TabMenuHorizontal.Icon as={RiFlashlightLine} />
+          <Tabs defaultSelectedKey='overview'>
+            <TabList aria-label='Foundation tabs'>
+              <Tab id='overview' icon={RiFlashlightLine}>
                 Overview
-              </TabMenuHorizontal.Trigger>
-              <TabMenuHorizontal.Trigger value='runs'>
-                Runs
-              </TabMenuHorizontal.Trigger>
-              <TabMenuHorizontal.Trigger value='skills'>
-                Skills
-              </TabMenuHorizontal.Trigger>
-            </TabMenuHorizontal.List>
-            <TabMenuHorizontal.Content value='overview' className='pt-4'>
+              </Tab>
+              <Tab id='runs'>Runs</Tab>
+              <Tab id='skills'>Skills</Tab>
+            </TabList>
+            <TabPanel id='overview' className='pt-4'>
               <p className='text-body-2-regular text-text-secondary'>
                 Overview panel - the active-tab indicator animates underneath.
               </p>
-            </TabMenuHorizontal.Content>
-            <TabMenuHorizontal.Content value='runs' className='pt-4'>
+            </TabPanel>
+            <TabPanel id='runs' className='pt-4'>
               <p className='text-body-2-regular text-text-secondary'>Runs panel.</p>
-            </TabMenuHorizontal.Content>
-            <TabMenuHorizontal.Content value='skills' className='pt-4'>
+            </TabPanel>
+            <TabPanel id='skills' className='pt-4'>
               <p className='text-body-2-regular text-text-secondary'>Skills panel.</p>
-            </TabMenuHorizontal.Content>
-          </TabMenuHorizontal.Root>
+            </TabPanel>
+          </Tabs>
         </Section>
 
         {/* Motion primitives */}

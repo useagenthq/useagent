@@ -5,8 +5,6 @@ import { ChevronRightSmall } from "@/components/foundations/icons/chevrons";
 import { cx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → dashboard 1 breadcrumb (node 3731:3011).
- *
  * Trail of ancestor pages separated by chevrons.
  *   item      Caption 1/Medium, text/tertiary, gap 6 (icon/avatar ↔ label)
  *   hover     interactive items darken to text/secondary with a soft

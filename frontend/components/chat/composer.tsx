@@ -189,7 +189,7 @@ export type ComposerProps = {
  * Optional "/" Choose-Agent slash command that renders the selection as a
  * pink inline chip, and a "/" command autocomplete on reply composers.
  *
- * The card surface/border swap via the AlignUI theme ladder; the blue send and
+ * The card surface/border swap via the theme ladder; the blue send and
  * blue accents use the literal blue scale (which doesn't flip), so the anatomy
  * reads identically on the light card and the dark #20201f surface.
  */

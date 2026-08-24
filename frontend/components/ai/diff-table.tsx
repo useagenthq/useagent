@@ -1,9 +1,9 @@
-import * as Badge from "@/components/ui/badge";
+import { Chip } from "@/components/base/badges/chip";
 import { cx } from "@/utils/cx";
 
 /**
  * Proposed-changes table — a compact bordered diff. Ported from the AI
- * library's DiffTable onto AlignUI tokens.
+ * library's DiffTable onto our tokens.
  *
  * Each row carries an optional `status` that tints its left edge and reads:
  *   added   → success edge + soft success row, leading "+"
@@ -105,9 +105,9 @@ export function DiffTable({ columns, rows, className }: DiffTableProps) {
                       }
                     >
                       {asBadge ? (
-                        <Badge.Root variant="light" color="yellow" size="medium">
+                        <Chip color="yellow">
                           {cell}
-                        </Badge.Root>
+                        </Chip>
                       ) : (
                         <>
                           {meta?.sign && ci === 0 ? `${meta.sign} ` : ""}

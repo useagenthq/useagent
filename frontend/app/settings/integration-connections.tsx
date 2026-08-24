@@ -6,7 +6,6 @@ import { integrationVisual } from "@/app/apps/integrations";
 import { Chip } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
-import { cnExt } from "@/utils/cn";
 import { cx } from "@/utils/cx";
 import { type IntegrationSummary, integrationAccountLabel } from "./integration-connections-data";
 import { useIntegrations } from "./use-integrations";
@@ -76,7 +75,7 @@ function IntegrationRow({
   return (
     <li className="flex items-center gap-3 py-3">
       <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-border-button-default bg-background-primary-default">
-        <Icon className={cnExt("size-6", visual.iconClass)} aria-hidden />
+        <Icon className={cx("size-6", visual.iconClass)} aria-hidden />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">

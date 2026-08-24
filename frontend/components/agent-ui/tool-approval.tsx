@@ -1,5 +1,5 @@
 // Ported from beui.dev registry "tool-approval" (components/agents/tool-approval.tsx +
-// agent-disclosure, lib/ease inlined). Re-expressed with our AlignUI tokens + Remixicon.
+// agent-disclosure, lib/ease inlined). Re-expressed with our tokens + Remixicon.
 // A human-in-the-loop permission card for reviewing tool details, allowing once,
 // remembering access, or denying execution.
 "use client";

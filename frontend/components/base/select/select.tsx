@@ -28,7 +28,7 @@ import { useDismissOnOutsidePress, useTriggerToggle } from "@/utils/use-dismiss-
 
 /**
  * Figma source: Board UI → dashboard 1 dropdown triggers ("All prices" filter
- * node 3731:3208, table status dropdown node 3731:3264).
+ * and table status dropdown).
  *
  * Select with a button trigger styled 1:1 with Figma:
  *   trigger  bg color/white, 1px border/button/default, shadow/xs,

@@ -3,7 +3,7 @@ import { cx } from "@/utils/cx";
 
 /**
  * Shared row chrome for the settings modal pages (Figma "Settings/Profile"
- * node 4081:13943 and "Settings/General" node 4079:13037).
+ * and "Settings/General").
  *
  * Every settings group is the same recipe:
  *   card   bg background/secondary, radius/2xl (16px), pl 12 — the left

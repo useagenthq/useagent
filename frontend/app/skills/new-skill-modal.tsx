@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
-import * as Modal from "@/components/ui/modal";
+import * as Modal from "@/components/base/modal/modal";
 import { createSkill } from "./skills-api";
 import { SectionTextarea } from "@/components/foundations/form-recipes";
 
@@ -12,7 +12,7 @@ import { SectionTextarea } from "@/components/foundations/form-recipes";
  * "New skill" — the header CTA plus the modal it opens, mirroring the knowledge
  * add-modal. Collects a name, description, comma-separated tags, and three
  * step-sections (one step per line) → POSTs to `/api/skills`, then refetches
- * via `onCreated`. The Modal shell stays AlignUI (no BoardUI equivalent); its
+ * via `onCreated`. The Modal shell stays vendored (no BoardUI equivalent); its
  * visible surfaces are restyled with BoardUI tokens.
  */
 

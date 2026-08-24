@@ -8,8 +8,6 @@ import type {
 import { cx, sortCx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → Buttons (node 3656:13819).
- *
  * Variant matrix from Figma:
  *   Type     = Primary | Secondary | Ghost | Danger
  *   Size     = Medium  | Small | Xs
@@ -27,7 +25,7 @@ import { cx, sortCx } from "@/utils/cx";
  *   icon-only square    36×36 (content-derived)   32×32 (forced size)      24×24 (forced size)
  *
  * `xs` is the smallest tier — first needed for the calendar template's
- * event-details modal ("Join" / edit-icon buttons, node 3920:10954), which
+ * event-details modal ("Join" / edit-icon buttons), which
  * scales every dimension down by the same ~0.667 factor from Figma; the
  * table above rounds those to clean pixel values rather than reproducing
  * the fractional source numbers.

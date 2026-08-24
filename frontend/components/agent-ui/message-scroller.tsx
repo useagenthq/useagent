@@ -1,5 +1,5 @@
 // Ported from beui.dev registry "message-scroller" (components/agents/message-scroller.tsx +
-// lib/ease inlined). Re-expressed with our AlignUI tokens + Remixicon. An auto-sticking scroll
+// lib/ease inlined). Re-expressed with our tokens + Remixicon. An auto-sticking scroll
 // container that pins streamed output to the live edge while the reader stays near the bottom,
 // and surfaces a "jump to latest" affordance the moment they scroll away.
 "use client";

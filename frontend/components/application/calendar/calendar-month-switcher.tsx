@@ -14,8 +14,8 @@ import { cx } from "@/utils/cx";
 const PANEL_WIDTH = 320;
 
 /**
- * Figma source: Board UI → "calendar_view" → "Month 1" switcher (node
- * 3905:9550), enlarging in place to reveal node 3906:9797's own single-month
+ * Figma source: Board UI → "calendar_view" → "Month 1" switcher,
+ * enlarging in place to reveal its own single-month
  * calendar (the same one `DatePicker` ships) — one continuous surface, not a
  * separate popover: the pill's own title/chevron row stays the *only*
  * header (the day grid below uses `MonthPanel`'s `hideHeader`, so there's

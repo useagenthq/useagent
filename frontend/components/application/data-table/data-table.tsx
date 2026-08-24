@@ -56,7 +56,7 @@ import { cx } from "@/utils/cx";
 /**
  * Advanced Data Table - the react-aria `Table` primitive rendered from a
  * @tanstack/react-table instance, styled to match the dashboard template's
- * customers table (node 3731:3201). TanStack owns sorting / pagination / row
+ * customers table. TanStack owns sorting / pagination / row
  * selection; the price/product/region/search filters pre-filter the rows.
  */
 

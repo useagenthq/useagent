@@ -32,8 +32,6 @@ import { ChevronSortDown } from "@/components/foundations/icons/chevrons";
 import { cx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → dashboard 1 → Frame 89 (node 3731:3201).
- *
  * Customers table: toolbar (total + working filter selects + search), sortable
  * column header row, rows with selection checkbox, avatar, status select,
  * status chip, date, price chip, row actions — and a Pagination footer.

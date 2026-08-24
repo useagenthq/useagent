@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import * as Badge from "@/components/ui/badge";
-import * as Button from "@/components/ui/button";
+import { Chip } from "@/components/base/badges/chip";
+import { Button } from "@/components/base/buttons/button";
 import { cx } from "@/utils/cx";
 
 /**
  * Suggestion card — a titled recommendation with a confidence pill and an
  * Accept / Alternatives footer. Ported from the AI library's RecommendationCard
- * onto AlignUI tokens (Badge + Button).
+ * onto our tokens (Badge + Button).
  *
  * The confidence Badge pairs a colored dot with a label:
  *   high → green · medium → yellow · low → gray.
@@ -19,10 +19,10 @@ type Confidence = "high" | "medium" | "low";
 
 const confidenceMeta: Record<
   Confidence,
-  { color: "green" | "yellow" | "gray"; dot: string; label: string }
+  { color: "lime" | "yellow" | "gray"; dot: string; label: string }
 > = {
   high: {
-    color: "green",
+    color: "lime",
     dot: "bg-lime-500",
     label: "High confidence",
   },
@@ -68,24 +68,24 @@ export function RecommendationCard({
         <div className="text-body-2-regular text-text-secondary">{body}</div>
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-border-button-default bg-background-secondary-default px-4 py-3">
-        <Badge.Root variant="light" color={meta.color} size="medium">
+        <Chip color={meta.color}>
           <span className={cx("size-1.5 rounded-full", meta.dot)} aria-hidden />
           {meta.label}
-        </Badge.Root>
+        </Chip>
         <div className="flex items-center gap-2">
           {onAlternatives && (
-            <Button.Root className="rounded-full"
-              variant="neutral"
-              mode="ghost"
+            <Button
+              className="rounded-full"
+              variant="secondary"
               size="small"
               onClick={onAlternatives}
             >
               Alternatives
-            </Button.Root>
+            </Button>
           )}
-          <Button.Root className="rounded-full" variant="primary" mode="filled" size="small" onClick={onAccept}>
+          <Button className="rounded-full" variant="primary" size="small" onClick={onAccept}>
             Accept
-          </Button.Root>
+          </Button>
         </div>
       </div>
     </article>

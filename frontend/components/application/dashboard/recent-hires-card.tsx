@@ -6,8 +6,6 @@ import { ChevronDownSmall } from "@/components/foundations/icons/chevrons";
 import { cx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → dashboard 1 → Frame 125 (node 3731:3042).
- *
  * "Recent hires" card: metric header, 2×2 grid of people cards, pagination.
  */
 

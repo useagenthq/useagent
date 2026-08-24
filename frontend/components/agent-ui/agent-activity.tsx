@@ -1,6 +1,6 @@
 // Ported from beui.dev registry "agent-activity" (components/agents/agent-activity.tsx +
 // agent-disclosure, lib/ease, and the thinking shimmer inlined). Re-expressed with our
-// AlignUI tokens + Remixicon. A live agent activity feed: a streaming, collapsible timeline
+// tokens + Remixicon. A live agent activity feed: a streaming, collapsible timeline
 // of steps, tool calls, web searches and reasoning traces with a working/complete summary.
 "use client";
 

@@ -21,7 +21,7 @@ export interface ThinkingProps {
  * Collapsible "Thinking…" disclosure. The label shimmers while the agent is
  * still working (reusing the `.agent-progress-loading-text` sweep); the steps
  * region expands with a grid-rows transition down a hairline connector. Ported
- * from the beautiful-ui Thinking demo onto AlignUI semantic tokens.
+ * from the beautiful-ui Thinking demo onto our semantic tokens.
  */
 export function Thinking({
   label = "Thinking",

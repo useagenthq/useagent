@@ -1,12 +1,12 @@
 "use client";
 
-// Vendored from prompt-kit (prompt-kit.com/c/message.json), adapted to AlignUI:
+// Vendored from prompt-kit (prompt-kit.com/c/message.json), adapted to our tokens:
 // the shadcn `Avatar`/`Tooltip` dependencies are dropped (the session surface
 // supplies its own AsteriskMark avatar and needs no tooltips), `cn` → `cnExt`,
 // and shadcn tokens (`text-foreground`/`bg-secondary`/`text-muted-foreground`)
-// → AlignUI semantic tokens.
+// → our semantic tokens.
 
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import { Markdown } from "./markdown";
 
 export type MessageProps = {
@@ -15,7 +15,7 @@ export type MessageProps = {
 } & React.HTMLProps<HTMLDivElement>;
 
 const Message = ({ children, className, ...props }: MessageProps) => (
-  <div className={cn("flex gap-3", className)} {...props}>
+  <div className={cx("flex gap-3", className)} {...props}>
     {children}
   </div>
 );
@@ -27,7 +27,7 @@ export type MessageAvatarProps = {
 
 const MessageAvatar = ({ children, className }: MessageAvatarProps) => (
   <div
-    className={cn(
+    className={cx(
       "bg-background-secondary-default text-text-primary flex size-8 shrink-0 items-center justify-center rounded-full",
       className,
     )}
@@ -49,7 +49,7 @@ const MessageContent = ({
   className,
   ...props
 }: MessageContentProps) => {
-  const classNames = cn(
+  const classNames = cx(
     "text-text-primary break-words whitespace-normal",
     className,
   );
@@ -72,7 +72,7 @@ export type MessageActionsProps = {
 
 const MessageActions = ({ children, className, ...props }: MessageActionsProps) => (
   <div
-    className={cn("text-text-tertiary flex items-center gap-1", className)}
+    className={cx("text-text-tertiary flex items-center gap-1", className)}
     {...props}
   >
     {children}

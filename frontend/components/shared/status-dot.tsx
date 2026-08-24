@@ -1,7 +1,7 @@
 import { cx as cnExt } from "@/utils/cx";
 
 /**
- * A bare 12×12 status disc — AlignUI ships StatusBadge.Dot only inside a badge,
+ * A bare 12×12 status disc — the vendored kit ships StatusBadge.Dot only inside a badge,
  * so this is the standalone dot the agent surfaces (fleet lanes, schedules,
  * recent tasks, live chip) share. `hollow` renders an outlined ring (queued);
  * `pulse` gently breathes for live/running states.

@@ -6,8 +6,6 @@ import type { SwitchProps as AriaSwitchProps } from "react-aria-components";
 import { cx, sortCx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → "Toogles" (node 3856:3807).
- *
  * Two shapes × three sizes, plus off / on:
  *   shape   pill        (Figma "fully rounded") — track & thumb rounded-full
  *           rectangle   (Figma "rectangle")     — track radius/md-scale, thumb radius/xs-scale

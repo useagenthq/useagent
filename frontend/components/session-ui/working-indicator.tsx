@@ -9,7 +9,7 @@
 // commit while streaming), and an optional current-step suffix.
 //
 // Port notes: their `animate-status-pulse` utility -> our `ai-loading-pixel`
-// stagger (globals.css, reduced-motion aware); tokens are AlignUI semantic.
+// stagger (globals.css, reduced-motion aware); tokens are our semantic tokens.
 
 import { useEffect, useRef } from "react";
 import { formatWorkingTimerNow } from "./work-entry";

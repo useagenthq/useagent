@@ -26,7 +26,7 @@
 //   run carries repos, a second row of GitChips (repo shortname + chosen
 //   branch from `repo_specs`) renders under the title and the row trades its
 //   fixed h-8 for a two-line py-1.5 layout.
-// - T3 shadcn tokens -> AlignUI semantic tokens (sidebar-row-active/hover ->
+// - T3 shadcn tokens -> our semantic tokens (sidebar-row-active/hover ->
 //   bg-weak-50, sidebar-muted-foreground -> text-sub-600, secondary-label ->
 //   text-soft-400); their rounded-md px-2 follows this rail's rounded-lg
 //   px-2.5 rhythm; their h-1.5 status dot + animate-status-pulse -> the shared

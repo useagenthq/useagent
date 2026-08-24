@@ -1,5 +1,5 @@
 // Ported from beui.dev registry "message" (components/agents/message.tsx +
-// message-context, lib/ease inlined). Re-expressed with our AlignUI tokens + Remixicon.
+// message-context, lib/ease inlined). Re-expressed with our tokens + Remixicon.
 // A role-aware chat message row (avatar + header + markdown-ish bubble + footer) with a
 // mount pop-in, a lightweight inline markdown renderer, a typing indicator, and a
 // copy-to-clipboard footer action. No react-markdown dep - a small CSS/motion renderer.

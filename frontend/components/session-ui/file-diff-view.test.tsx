@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DiffPane } from "@/components/chat/diff-pane";
 import type { ApiStep, StepKind } from "@/components/chat/types";
-import * as Tooltip from "@/components/ui/tooltip";
 import { type ChangedFile } from "./changed-files";
 import {
   type DiffHunk,
@@ -17,7 +16,7 @@ import {
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 function render(ui: React.ReactElement): string {
-  return renderToStaticMarkup(<Tooltip.Provider>{ui}</Tooltip.Provider>);
+  return renderToStaticMarkup(<>{ui}</>);
 }
 
 let stepId = 0;

@@ -8,7 +8,7 @@
 //
 // Port notes: label is a plain prop (upstream derives it from their threadSync
 // phase machine); lucide LoaderCircleIcon -> RiLoader4Line with motion-safe spin;
-// tokens are AlignUI semantic.
+// tokens are our semantic tokens.
 
 import { RiLoader4Line } from "@remixicon/react";
 

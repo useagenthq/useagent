@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import * as Tooltip from "@/components/ui/tooltip";
 import type { GatewayApproval, GatewayApprovalStatus } from "@/lib/gateway-approvals";
 import { GatewayApprovalCard } from "./gateway-approval-card";
 
@@ -76,7 +75,7 @@ describe("GatewayApprovalCard", () => {
 describe("conversation integration", () => {
   test("multiple pending approvals stack in order", () => {
     const html = renderToStaticMarkup(
-      <Tooltip.Provider>
+      <>
         <Conversation
           turns={[]}
           defaultEngine="opencode"
@@ -89,7 +88,7 @@ describe("conversation integration", () => {
             approval({ id: "appr-2", toolName: "second_tool" }),
           ]}
         />
-      </Tooltip.Provider>,
+      </>,
     );
     expect(html.split('data-testid="gateway-approval-card"').length - 1).toBe(2);
     expect(html.indexOf("first_tool")).toBeGreaterThan(-1);
@@ -98,7 +97,7 @@ describe("conversation integration", () => {
 
   test("no gateway approvals renders no card", () => {
     const html = renderToStaticMarkup(
-      <Tooltip.Provider>
+      <>
         <Conversation
           turns={[]}
           defaultEngine="opencode"
@@ -107,7 +106,7 @@ describe("conversation integration", () => {
           pendingReply={null}
           onReply={async () => {}}
         />
-      </Tooltip.Provider>,
+      </>,
     );
     expect(html).not.toContain('data-testid="gateway-approval-card"');
   });

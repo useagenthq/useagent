@@ -106,9 +106,9 @@ Notes:
 - Floating menus/popovers also stay `rounded-2xl` (16px) — same as cards now.
 - **Nav elements are `rounded-lg` (8px)** — sidebar rows, top-nav tab pills, header icon
   buttons. Already the shell default; keep it there.
-- **CTAs/buttons are pill.** The vendored `components/ui/button` defaults to `rounded-10`; do
-  NOT fork it — pass `className="rounded-full"` on the `Button.Root`/`FancyButton.Root` call
-  site (tailwind-merge lets it win). Every product CTA carries it.
+- **CTAs/buttons are pill.** Pass `className="rounded-full"` on the base `<Button>` call
+  site (tailwind-merge lets it win over the component's default radius). Every product CTA
+  carries it.
 - Don't reach below `rounded-lg` for interactive controls; `rounded-md` is for tiny inline
   chrome (progress bars, code chips) only.
 

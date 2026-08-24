@@ -32,10 +32,6 @@ import { DashboardTeamMenu } from "./dashboard-team-menu";
 import { DashboardUserMenu } from "./dashboard-user-menu";
 
 /**
- * Figma sources:
- *   expanded  → Board UI → dashboard 1 → Sidebar (node 3731:2934)
- *   collapsed → Board UI → Sidebar (node 3768:3382)
- *
  * Floating sidebar panel. Expanded: 260px wide, p 12, radius/3xl (24px),
  * white 1px border, "Background/Sidebar Elevation" shadow, bg
  * background/secondary. Collapsed: 60px wide (36px icon items + 12px
