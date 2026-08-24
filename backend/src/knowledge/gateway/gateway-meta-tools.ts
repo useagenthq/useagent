@@ -87,7 +87,16 @@ function boundedSearchLimit(value: unknown): number {
 }
 
 function descriptorSearchText(tool: GatewayToolDescriptor): string {
-  return `${tool.name} ${tool.description}`.toLowerCase();
+  return `${tool.name} ${(tool.aliases ?? []).join(" ")} ${tool.description}`.toLowerCase();
+}
+
+function resolveAvailableTool(
+  availableTools: readonly GatewayToolDescriptor[],
+  name: string,
+): GatewayToolDescriptor | null {
+  return availableTools.find(
+    (tool) => tool.name === name || tool.aliases?.includes(name),
+  ) ?? null;
 }
 
 type GatewayToolInvoker = (
@@ -130,7 +139,7 @@ export async function executeGatewayMetaTool(
 
   if (name === "gateway_tool_describe") {
     const toolName = typeof args.name === "string" ? args.name.trim() : "";
-    const tool = availableTools.find((candidate) => candidate.name === toolName);
+    const tool = resolveAvailableTool(availableTools, toolName);
     if (!tool) {
       return {
         content: [
@@ -154,7 +163,8 @@ export async function executeGatewayMetaTool(
     if (isGatewayMetaToolName(toolName)) {
       return errorResult("gateway_tool_call cannot invoke gateway meta-tools.");
     }
-    if (!availableTools.some((tool) => tool.name === toolName) || !invoke) {
+    const tool = resolveAvailableTool(availableTools, toolName);
+    if (!tool || !invoke) {
       return errorResult(`Gateway tool ${toolName} is not available to this run.`);
     }
     const toolArguments = args.arguments ?? {};
@@ -165,7 +175,7 @@ export async function executeGatewayMetaTool(
     ) {
       return errorResult("gateway_tool_call `arguments` must be an object.");
     }
-    return invoke(toolName, toolArguments as Record<string, unknown>);
+    return invoke(tool.name, toolArguments as Record<string, unknown>);
   }
 
   return null;

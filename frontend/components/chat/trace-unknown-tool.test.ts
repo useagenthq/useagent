@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { deriveTrace, type ApiStep } from "./types";
+import { type ApiStep, deriveTrace } from "./types";
 
 // deriveTrace must render an uncatalogued tool (an MCP tool, `todowrite`, a future
 // provider extension) as a generic labelled row from its native payload — never
@@ -35,6 +35,21 @@ describe("deriveTrace — uncatalogued tool", () => {
     const trace = deriveTrace(commandStep("mcp__github__create_issue", { title: "x" }));
     expect(trace.verb).toBe("Create issue");
     expect(trace.glyph).toBe("task");
+  });
+
+  test("presents the product name instead of the internal gateway id", () => {
+    const step = commandStep("computer_screenshot", {});
+    step.code_json = JSON.stringify({
+      tool: "computer_screenshot",
+      server: "skynet-knowledge",
+      input: {},
+      output: "done",
+    });
+    expect(deriveTrace(step)).toMatchObject({
+      verb: "Computer screenshot",
+      target: "useAgent",
+      glyph: "task",
+    });
   });
 
   test("a catalogued shell tool is unaffected (still Run/terminal)", () => {

@@ -1,10 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   executeGatewayMetaTool,
   GATEWAY_META_TOOLS,
 } from "./gateway-meta-tools";
 import type { GatewayToolDescriptor } from "./descriptor";
 import { executeRegisteredGatewayTool } from "./operation-registry";
+import { setRecordingServiceForTest } from "./recording-tools";
 import type { ToolTokenClaims } from "./token";
 
 const AVAILABLE_TOOLS = [
@@ -30,6 +31,8 @@ const CLAIMS = {
 } as const satisfies ToolTokenClaims;
 
 describe("gateway compact discovery", () => {
+  afterEach(() => setRecordingServiceForTest(null));
+
   test("advertises an invocation bridge alongside search and describe", () => {
     expect(GATEWAY_META_TOOLS.map((tool) => tool.name)).toEqual([
       "gateway_tools_search",
@@ -74,6 +77,31 @@ describe("gateway compact discovery", () => {
     expect(result.structuredContent?.schema?.identity).toContain(
       "signed gateway capability",
     );
+  });
+
+  test("resolves a legacy recording alias before compact invocation", async () => {
+    const calls: string[] = [];
+    setRecordingServiceForTest({
+      start: async (_claims, name) => {
+        calls.push(name);
+        return { path: `/root/work/recordings/${name}.mp4` };
+      },
+      stop: async () => {
+        throw new Error("unused");
+      },
+    });
+
+    const execution = await executeRegisteredGatewayTool(
+      CLAIMS,
+      "gateway_tool_call",
+      { name: "record_start", arguments: { name: "compact-proof" } },
+      { childSessions: false, loopLogin: false, slack: false },
+    );
+
+    expect(execution.matched).toBe(true);
+    if (!execution.matched) throw new Error("gateway_tool_call was not registered");
+    expect(calls).toEqual(["compact-proof"]);
+    expect(JSON.stringify(execution.result)).toContain("Recording started");
   });
 
   test("fails closed for unavailable and recursive targets", async () => {

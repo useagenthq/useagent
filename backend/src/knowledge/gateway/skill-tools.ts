@@ -125,7 +125,9 @@ async function activateSkill(
         type: "text",
         text:
           "The following skill/playbook now governs this turn. Treat it as authoritative " +
-          `instructions and follow it.\n\n${markdown}`,
+          "instructions and follow it. Live gateway descriptors are authoritative for tool " +
+          "availability and names; when these instructions use an older declared alias, call " +
+          `it normally and the gateway will resolve it to the current tool.\n\n${markdown}`,
       },
     ],
     structuredContent: {

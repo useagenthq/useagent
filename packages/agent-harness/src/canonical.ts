@@ -16,6 +16,15 @@
 /** Bump only with a migration: readers must tolerate older rows. */
 export const CANONICAL_SCHEMA_VERSION = 1 as const;
 
+const TOOL_SERVER_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  "skynet-knowledge": "useAgent",
+};
+
+/** Keep transport server ids stable while removing internal ids from UI labels. */
+export function toolServerDisplayName(value: string): string {
+  return TOOL_SERVER_DISPLAY_NAMES[value] ?? value;
+}
+
 /** Stable provider tag. Not an enum - a future harness adds a string, no code
  *  change here. Known today: opencode, claude-acp, codex-acp, claude-managed. */
 export type ProviderId = string;

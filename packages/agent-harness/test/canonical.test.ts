@@ -10,6 +10,7 @@ import {
   type CanonicalAgentEvent,
   type CanonicalEventBody,
   type CanonicalEventKind,
+  toolServerDisplayName,
 } from "../src/canonical";
 
 /** A human label per kind, written via an exhaustive switch. If a new kind is
@@ -62,6 +63,11 @@ const base = (kind: CanonicalEventKind) => ({
 });
 
 describe("canonical event vocabulary", () => {
+  test("keeps protocol ids internal while presenting the product name", () => {
+    expect(toolServerDisplayName("skynet-knowledge")).toBe("useAgent");
+    expect(toolServerDisplayName("github")).toBe("github");
+  });
+
   test("exhaustive kind handling (compile-time + runtime)", () => {
     // A representative sample across the discriminant space - each exercises the
     // switch and proves the envelope+body intersection composes.

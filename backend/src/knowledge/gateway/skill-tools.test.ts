@@ -148,6 +148,7 @@ describe("agent-selected skill gateway", () => {
     const run = await getRunForOrg(claims.orgId, claims.runId);
     expect(result.isError).toBeUndefined();
     expect(result.content[0]?.text).toContain("Open the dashboard.");
+    expect(result.content[0]?.text).toContain("Live gateway descriptors are authoritative");
     expect(run?.skillId).toBe(skillId);
     expect(run?.skillVersion).toBe(1);
     expect(run?.skillContentHash).toBeString();

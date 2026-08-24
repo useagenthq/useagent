@@ -237,7 +237,7 @@ describe("T3 orchestration projection", () => {
     };
     expect(activityStep(mcpCompleted)).toMatchObject({
       kind: "command",
-      label: "skynet-knowledge · loop_login_open",
+      label: "useAgent · loop_login_open",
       code_json: {
         tool: "loop_login_open",
         server: "skynet-knowledge",
@@ -399,7 +399,7 @@ describe("T3 orchestration projection", () => {
     } as const;
     expect(shouldProjectRuntimeActivity(summaryOnlyMcp)).toBe(true);
     expect(activityStep(summaryOnlyMcp)).toMatchObject({
-      label: "skynet-knowledge · computer_screenshot",
+      label: "useAgent · computer_screenshot",
       code_json: {
         server: "skynet-knowledge",
         tool: "computer_screenshot",
@@ -419,7 +419,7 @@ describe("T3 orchestration projection", () => {
         },
       },
     })).toMatchObject({
-      label: "skynet-knowledge · github_clone_repository",
+      label: "useAgent · github_clone_repository",
       code_json: {
         server: "skynet-knowledge",
         tool: "github_clone_repository",
@@ -469,7 +469,7 @@ describe("T3 orchestration projection", () => {
         },
       },
     })).toMatchObject({
-      label: "skynet-knowledge · computer_screenshot",
+      label: "useAgent · computer_screenshot",
       code_json: {
         server: "skynet-knowledge",
         tool: "computer_screenshot",
@@ -496,7 +496,7 @@ describe("T3 orchestration projection", () => {
       },
     } as const;
     expect(activityStep(structuredMcpActivity)).toMatchObject({
-      label: "skynet-knowledge · github_create_pull_request",
+      label: "useAgent · github_create_pull_request",
       code_json: {
         server: "skynet-knowledge",
         tool: "github_create_pull_request",
