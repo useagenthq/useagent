@@ -261,38 +261,6 @@ describe("POST /api/skills/import — created / updated / unchanged idempotency"
     expect(deployC.alreadyImported).toBe(true);
   });
 
-  test("a security-anchored skill (login-as) is never updated by import", async () => {
-    const repo = "acme/protected";
-    const path = ".claude/skills/login-as/SKILL.md";
-    fixture.files[path] = { text: canonicalDoc("login-as", "repo copy of the login skill") };
-
-    // First import: the canonical row does not exist in this org yet, so the
-    // create path runs; a later import against the SAME source row (now named
-    // login-as) must return protected instead of appending a revision.
-    const first = await json<any>(`/api/skills/import`, {
-      method: "POST",
-      cookies: A.cookies,
-      body: { repo, paths: [path] },
-    });
-    expect(first.status).toBe(200);
-    expect(first.body.results[0].action).toBe("created");
-
-    fixture.files[path].text = canonicalDoc("login-as", "attacker or drifted repo copy");
-    fixture.commitSha = "sha-3333333";
-    const second = await json<any>(`/api/skills/import`, {
-      method: "POST",
-      cookies: A.cookies,
-      body: { repo, paths: [path] },
-    });
-    expect(second.status).toBe(200);
-    expect(second.body.results[0].action).toBe("protected");
-
-    // The row's version did not advance.
-    const list = await json<{ skills: any[] }>(`/api/skills`, { cookies: A.cookies });
-    const row = list.body.skills.find((s) => s.name === "login-as");
-    expect(row.current_version).toBe(1);
-  });
-
   test("oversize is skipped and an unknown path is not_found", async () => {
     const imp = await json<any>(`/api/skills/import`, {
       method: "POST",

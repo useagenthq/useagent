@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { CHILD_SESSION_TOOLS } from "./child-session-tools";
-import { LOOP_LOGIN_TOOLS } from "./loop-login-tools";
 import {
   advertisedGatewayToolDescriptor,
   advertisedGatewayToolDescriptors,
@@ -19,7 +18,6 @@ import type { ToolTokenClaims } from "./token";
 
 const ALL_OPTIONS = {
   childSessions: true,
-  loopLogin: true,
   slack: true,
 } as const;
 
@@ -100,22 +98,16 @@ describe("gateway operation registry", () => {
     const baseNames = new Set(
       advertisedGatewayToolDescriptors({
         childSessions: false,
-        loopLogin: false,
         slack: false,
       }).map((tool) => tool.name),
     );
     const enabledNames = new Set(
       advertisedGatewayToolDescriptors({
         childSessions: true,
-        loopLogin: true,
         slack: true,
       }).map((tool) => tool.name),
     );
 
-    for (const tool of LOOP_LOGIN_TOOLS) {
-      expect(baseNames.has(tool.name)).toBe(false);
-      expect(enabledNames.has(tool.name)).toBe(true);
-    }
     for (const tool of SLACK_TOOLS) {
       expect(baseNames.has(tool.name)).toBe(false);
       expect(enabledNames.has(tool.name)).toBe(true);

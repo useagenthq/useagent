@@ -37,7 +37,6 @@ import {
   argumentsWithoutApproval,
   consumeGatewayOperationApproval,
 } from "./approval-capability";
-import { executeLoopLoginTool, LOOP_LOGIN_TOOLS, loopLoginConfigured } from "./loop-login-tools";
 import { executeMemoryTool, MEMORY_TOOLS } from "./memory-tools";
 import { executeRecordingTool, RECORDING_TOOLS } from "./recording-tools";
 import { executeRepositoryTool, REPOSITORY_TOOLS } from "./repository-tools";
@@ -56,7 +55,6 @@ export type { GatewayToolDescriptor, GatewayToolExecutor } from "./descriptor";
 
 export interface GatewayToolListOptions {
   readonly childSessions: boolean;
-  readonly loopLogin: boolean;
   readonly slack: boolean;
 }
 
@@ -133,11 +131,6 @@ const BASE_TOOL_FAMILIES = [
   { tools: SKILL_TOOLS, execute: executeSkillTool },
 ] as const satisfies readonly GatewayToolFamily[];
 
-const LOOP_LOGIN_FAMILY = {
-  tools: LOOP_LOGIN_TOOLS,
-  execute: executeLoopLoginTool,
-} as const satisfies GatewayToolFamily;
-
 const SLACK_FAMILY = {
   tools: SLACK_TOOLS,
   execute: executeSlackTool,
@@ -145,7 +138,6 @@ const SLACK_FAMILY = {
 
 const ALL_TOOL_FAMILIES = [
   ...BASE_TOOL_FAMILIES,
-  LOOP_LOGIN_FAMILY,
   SLACK_FAMILY,
 ] as const satisfies readonly GatewayToolFamily[];
 
@@ -191,10 +183,6 @@ const TOOL_ALIASES = indexAliases(ALL_TOOL_FAMILIES);
 const CHILD_SESSION_TOOL_NAMES: ReadonlySet<string> = new Set(
   CHILD_SESSION_TOOLS.map((tool) => tool.name),
 );
-const LOOP_LOGIN_TOOL_NAMES: ReadonlySet<string> = new Set(
-  LOOP_LOGIN_TOOLS.map((tool) => tool.name),
-);
-
 export function baseGatewayToolDescriptors(): readonly GatewayToolDescriptor[] {
   return BASE_TOOL_FAMILIES.flatMap<GatewayToolDescriptor>((family) => [...family.tools]);
 }
@@ -210,7 +198,6 @@ export function advertisedGatewayToolDescriptors(
     ...BASE_TOOL_FAMILIES.flatMap<GatewayToolDescriptor>((family) =>
       family.tools === CHILD_SESSION_TOOLS && !options.childSessions ? [] : [...family.tools],
     ),
-    ...(options.loopLogin ? LOOP_LOGIN_TOOLS : []),
     ...(options.slack ? SLACK_TOOLS : []),
   ];
 }
@@ -302,7 +289,6 @@ export async function executeRegisteredGatewayTool(
   const canonicalName = TOOL_ALIASES.get(name) ?? name;
   const resolvedOptions = options ?? {
     childSessions: await childSessionToolsEnabled(claims),
-    loopLogin: loopLoginConfigured(),
     slack: false,
   };
   if (isGatewayMetaToolName(canonicalName)) {
@@ -337,9 +323,6 @@ export async function executeRegisteredGatewayTool(
         isError: true,
       },
     };
-  }
-  if (LOOP_LOGIN_TOOL_NAMES.has(canonicalName) && !loopLoginConfigured()) {
-    return { matched: false };
   }
   const executor = ALL_OPERATIONS.get(canonicalName);
   if (!executor) return { matched: false };
