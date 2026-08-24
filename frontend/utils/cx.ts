@@ -1,4 +1,5 @@
 import { extendTailwindMerge } from "tailwind-merge";
+import { texts } from "@/tailwind.config";
 
 /**
  * Text-style classes from styles/typography.css.
@@ -43,7 +44,7 @@ export const TEXT_STYLE_SUFFIXES = [
 const twMerge = extendTailwindMerge({
   extend: {
     classGroups: {
-      "font-size": [{ text: TEXT_STYLE_SUFFIXES }],
+      "font-size": [{ text: [...Object.keys(texts), ...TEXT_STYLE_SUFFIXES] }],
     },
   },
 });
