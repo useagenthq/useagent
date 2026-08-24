@@ -7,7 +7,7 @@ import {
   RiPulseLine,
   RiTimeLine,
 } from "@remixicon/react";
-import * as Checkbox from "@/components/ui/checkbox";
+import { Checkbox } from "@/components/base/checkbox/checkbox";
 import { cx } from "@/utils/cx";
 
 /**
@@ -15,7 +15,7 @@ import { cx } from "@/utils/cx";
  * sticky first column (select checkbox + letter mark + name), colored category
  * tags, a relative last-interaction, a tone-colored connection-strength dot, and
  * a links cell. Ported from the beautiful-ui RecordsTable demo (hardcoded →
- * parameterized) onto AlignUI tokens.
+ * parameterized) onto our tokens.
  */
 
 export type RecordTagColor =
@@ -110,9 +110,9 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
               )}
             >
               <div className="flex items-center gap-2.5">
-                <Checkbox.Root
-                  checked={allSelected}
-                  onCheckedChange={(v) => toggleAll(v === true)}
+                <Checkbox
+                  isSelected={allSelected}
+                  onChange={(v) => toggleAll(v)}
                 />
                 <span>Company</span>
               </div>
@@ -151,9 +151,9 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
             >
               <td className={cx(STICKY, "px-3 py-2.5")}>
                 <div className="flex items-center gap-2.5">
-                  <Checkbox.Root
-                    checked={selected.has(ri)}
-                    onCheckedChange={(v) => toggle(ri, v === true)}
+                  <Checkbox
+                    isSelected={selected.has(ri)}
+                    onChange={(v) => toggle(ri, v)}
                   />
                   <span
                     aria-hidden

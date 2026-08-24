@@ -6,7 +6,7 @@ import { codeToHtml } from "shiki";
 import { cx } from "@/utils/cx";
 
 /**
- * Code surface, beautiful-ui `CodeBlock` chrome mapped to AlignUI tokens: a card
+ * Code surface, beautiful-ui `CodeBlock` chrome mapped to our tokens: a card
  * with a header bar (mono filename + language label + Copy) over a
  * line-numbered, syntax-highlighted body whose lines fade up in a stagger.
  *

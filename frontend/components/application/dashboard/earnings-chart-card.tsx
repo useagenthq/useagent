@@ -11,8 +11,6 @@ import { useCountUp } from "@/hooks/use-count-up";
 import { cx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → dashboard 1 → Frame 68 (node 3731:3088).
- *
  * "Earned so far" card. The static Figma bars are now a live Recharts
  * BarChart: lime rounded bars sit over a neutral track (Bar `background`),
  * the y-axis keeps the Figma ticks ($0 / $3K / $5K / $10K), hovering a bar

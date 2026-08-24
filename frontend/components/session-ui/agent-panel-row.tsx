@@ -11,7 +11,7 @@
 //   formatSubagentModelLabel + formatSubagentTokenCount.
 //
 // Port notes:
-// - lucide-react -> @remixicon/react; shadcn tokens -> AlignUI semantic tokens.
+// - lucide-react -> @remixicon/react; shadcn tokens -> our semantic tokens.
 // - Bound to OUR child model (SubagentCard + child fidelity), not T3's
 //   RuntimeSubagent: no effort/activationCount/outputFile; `result` carries the
 //   error text on failed rows (our fidelity folds errors into resultText); our

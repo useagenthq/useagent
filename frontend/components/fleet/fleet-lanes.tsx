@@ -4,9 +4,9 @@ import { RiArrowRightSLine, RiFolderLine } from "@remixicon/react";
 import Link from "next/link";
 import { useState } from "react";
 import { StatusDot } from "@/components/shared/status-dot";
-import * as Badge from "@/components/ui/badge";
+import { Chip } from "@/components/base/badges/chip";
 import type { RunStatus } from "@/lib/runs";
-import { cnExt } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import { formatDuration } from "@/utils/format";
 import type { FleetStats, LaneGroup, WorkspaceRun } from "./fleet-lanes-data";
 import { Panel } from "./panel";
@@ -21,11 +21,11 @@ function RunStatusDot({ status }: { status: RunStatus }) {
 
 const STATUS_CHIP: Record<
   RunStatus,
-  { color: "green" | "yellow" | "red" | "gray"; label: string }
+  { color: "lime" | "yellow" | "rose" | "gray"; label: string }
 > = {
-  completed: { color: "green", label: "Done" },
+  completed: { color: "lime", label: "Done" },
   running: { color: "yellow", label: "Working" },
-  failed: { color: "red", label: "Failed" },
+  failed: { color: "rose", label: "Failed" },
   queued: { color: "gray", label: "Queued" },
 };
 
@@ -43,9 +43,9 @@ function RunRow({ run }: { run: WorkspaceRun }) {
       <span className="hidden font-mono text-caption-1-regular tabular-nums text-text-tertiary sm:inline">
         {formatDuration(run.duration_ms)}
       </span>
-      <Badge.Root variant="light" size="medium" color={chip.color}>
+      <Chip color={chip.color}>
         {chip.label}
-      </Badge.Root>
+      </Chip>
     </Link>
   );
 }
@@ -65,7 +65,7 @@ function LaneCard({ lane, defaultOpen }: { lane: LaneGroup; defaultOpen: boolean
       >
         <RiArrowRightSLine
           aria-hidden
-          className={cnExt(
+          className={cx(
             "size-4 shrink-0 text-text-tertiary transition-transform",
             open && "rotate-90",
           )}
@@ -75,7 +75,7 @@ function LaneCard({ lane, defaultOpen }: { lane: LaneGroup; defaultOpen: boolean
           {lane.label}
         </span>
         <span
-          className={cnExt(
+          className={cx(
             "text-mono-label",
             lane.working > 0 ? "text-yellow-600" : "text-text-tertiary",
           )}

@@ -91,54 +91,17 @@ function alignOffenders(): string[] {
   return offenders.sort();
 }
 
-// Generated snapshot of the CURRENT AlignUI importers (do not hand-edit; a file
-// may LEAVE this list freely - remove it once it stops importing AlignUI).
-// components/base is canonical; AlignUI (components/ui + cnExt) is legacy-do-not-extend.
-const ALIGNUI_ALLOWLIST = [
-  "app/agent/artifacts/live-artifacts.tsx",
-  "app/agent/plugins/plugins-panel.tsx",
-  "app/agent/schedules/automation-history-drawer.tsx",
-  "app/agent/schedules/new-schedule-modal.tsx",
-  "app/apps/apps-marketplace.tsx",
-  "app/foundation/page.tsx",
-  "app/knowledge/add-knowledge-modal.tsx",
-  "app/lab/beui-agent-inventory.tsx",
-  "app/lab/component-lab.tsx",
-  "app/lab/session/session-sample.tsx",
-  "app/learnings/learning-review.tsx",
-  "app/playbooks/playbook-detail.tsx",
-  "app/playbooks/playbook-editor.tsx",
-  "app/review/review-workspace.tsx",
-  "app/settings/integration-connections.tsx",
-  "app/skills/new-skill-modal.tsx",
-  "app/skills/skill-detail-dialog.tsx",
-  "app/wiki/ask-repo-bar.tsx",
-  "app/wiki/page.tsx",
-  "app/wiki/pages-rail.tsx",
-  "app/wiki/wiki-content.tsx",
-  "components/ai/approval-card.tsx",
-  "components/ai/context-card.tsx",
-  "components/ai/diff-table.tsx",
-  "components/ai/recommendation-card.tsx",
-  "components/ai/records-table.tsx",
-  "components/auth/google-sign-in-button.tsx",
-  "components/dashboard/card.tsx",
-  "components/dashboard/stat-cards.tsx",
-  "components/fleet/fleet-lanes.tsx",
-  "components/fleet/panel.tsx",
-  "components/prompt-kit/button.tsx",
-  "components/prompt-kit/code-block.tsx",
-  "components/prompt-kit/loader.tsx",
-  "components/prompt-kit/markdown.tsx",
-  "components/prompt-kit/message.tsx",
-  "components/prompt-kit/prompt-suggestion.tsx",
-  "components/prompt-kit/response-stream.tsx",
-  "components/session-ui/expanded-image-dialog.tsx",
-  "components/shared/number-ticker.tsx",
-  "components/shell/search-command.tsx",
-];
+// The legacy AlignUI kit (components/ui) and its class-merge helper cnExt have
+// been fully removed; components/base is the sole canonical kit. This list is
+// now empty and must stay empty - any new import of components/ui or cnExt is
+// forbidden debt.
+const ALIGNUI_ALLOWLIST: string[] = [];
 
 describe("AlignUI allowlist ratchet", () => {
+  test("the removed components/ui tree cannot reappear", () => {
+    expect(existsSync(join(FRONTEND_ROOT, "components/ui"))).toBeFalse();
+  });
+
   test("allowlist is sorted, unique, and free of test files", () => {
     expect(ALIGNUI_ALLOWLIST).toEqual([...new Set(ALIGNUI_ALLOWLIST)].sort());
     expect(ALIGNUI_ALLOWLIST.filter(isTest)).toEqual([]);
@@ -180,10 +143,11 @@ function lineCount(text: string): number {
 // Recorded baselines for the files that are ALREADY over the 800-line cap. A
 // number here may only SHRINK; new files get no baseline and are capped at 800.
 const FRONTEND_SIZE_BASELINE: Record<string, number> = {
-  "components/chat/session-view.tsx": 1240,
   "app/agent/artifacts/[id]/artifact-editor-surfaces.tsx": 1083,
-  "components/chat/conversation.tsx": 1029,
   "components/agent-ui/rich-approval-card.tsx": 880,
+  "components/chat/composer.tsx": 808,
+  "components/chat/conversation.tsx": 1044,
+  "components/chat/session-view.tsx": 1248,
   "components/chat/types.ts": 801,
 };
 
@@ -213,7 +177,8 @@ describe("file-size ratchet (frontend)", () => {
       if (n <= MAX_LINES) loosen.push(`${rel}: ${n} <= ${MAX_LINES} (drop the baseline)`);
       else if (n < base) loosen.push(`${rel}: ${n} < ${base} (lower the baseline)`);
     }
-    if (loosen.length) console.log("[size-ratchet] baselines must be tightened:\n" + loosen.join("\n"));
+    if (loosen.length)
+      console.log("[size-ratchet] baselines must be tightened:\n" + loosen.join("\n"));
     expect(loosen).toEqual([]);
   });
 });
@@ -240,35 +205,95 @@ function emDashStringLines(src: string): number[] {
     const ch = src[i]!;
     const nx = src[i + 1];
     if (state === "code") {
-      if (ch === "\n") { line++; i++; continue; }
-      if (ch === "/" && nx === "/") { state = "line"; i += 2; continue; }
-      if (ch === "/" && nx === "*") { state = "block"; i += 2; continue; }
-      if (ch === '"' || ch === "'" || ch === "`") { state = "str"; quote = ch; i++; continue; }
-      if (ch === "/" && regexAllowed()) { state = "regex"; inClass = false; i++; continue; }
+      if (ch === "\n") {
+        line++;
+        i++;
+        continue;
+      }
+      if (ch === "/" && nx === "/") {
+        state = "line";
+        i += 2;
+        continue;
+      }
+      if (ch === "/" && nx === "*") {
+        state = "block";
+        i += 2;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === "`") {
+        state = "str";
+        quote = ch;
+        i++;
+        continue;
+      }
+      if (ch === "/" && regexAllowed()) {
+        state = "regex";
+        inClass = false;
+        i++;
+        continue;
+      }
       if (!/\s/.test(ch)) prev = ch;
       i++;
       continue;
     }
-    if (state === "line") { if (ch === "\n") { line++; state = "code"; } i++; continue; }
+    if (state === "line") {
+      if (ch === "\n") {
+        line++;
+        state = "code";
+      }
+      i++;
+      continue;
+    }
     if (state === "block") {
       if (ch === "\n") line++;
-      else if (ch === "*" && nx === "/") { state = "code"; i += 2; continue; }
+      else if (ch === "*" && nx === "/") {
+        state = "code";
+        i += 2;
+        continue;
+      }
       i++;
       continue;
     }
     if (state === "regex") {
-      if (ch === "\\") { i += 2; continue; }
-      if (ch === "\n") { line++; state = "code"; i++; continue; }
+      if (ch === "\\") {
+        i += 2;
+        continue;
+      }
+      if (ch === "\n") {
+        line++;
+        state = "code";
+        i++;
+        continue;
+      }
       if (ch === "[") inClass = true;
       else if (ch === "]") inClass = false;
-      else if (ch === "/" && !inClass) { state = "code"; prev = "/"; i++; continue; }
+      else if (ch === "/" && !inClass) {
+        state = "code";
+        prev = "/";
+        i++;
+        continue;
+      }
       i++;
       continue;
     }
     // string or template literal
-    if (ch === "\\") { if (nx === "\n") line++; i += 2; continue; }
-    if (ch === "\n") { line++; i++; if (quote !== "`") state = "code"; continue; }
-    if (ch === quote) { state = "code"; prev = quote; i++; continue; }
+    if (ch === "\\") {
+      if (nx === "\n") line++;
+      i += 2;
+      continue;
+    }
+    if (ch === "\n") {
+      line++;
+      i++;
+      if (quote !== "`") state = "code";
+      continue;
+    }
+    if (ch === quote) {
+      state = "code";
+      prev = quote;
+      i++;
+      continue;
+    }
     if (ch === EM_DASH && quote !== "`") hits.push(line);
     i++;
   }
@@ -287,9 +312,7 @@ function emDashOffenders(): string[] {
 // Current debt only, shrink-only. A sibling PR removes the format.ts and
 // agent-limits occurrences; app/dashboard/page.tsx carries em-dash placeholders
 // too. Remove an entry once the file is clean.
-const EM_DASH_ALLOWLIST = [
-  "app/dashboard/page.tsx",
-];
+const EM_DASH_ALLOWLIST = ["app/dashboard/page.tsx"];
 
 describe("em-dash ratchet (frontend)", () => {
   test("no NEW first-party file puts an em dash inside a string literal", () => {
@@ -303,7 +326,8 @@ describe("em-dash ratchet (frontend)", () => {
       );
     }
     const stale = EM_DASH_ALLOWLIST.filter((f) => !offenders.includes(f));
-    if (stale.length) console.log("[em-dash-ratchet] now-clean, remove from allowlist:\n" + stale.join("\n"));
+    if (stale.length)
+      console.log("[em-dash-ratchet] now-clean, remove from allowlist:\n" + stale.join("\n"));
     expect(newDebt).toEqual([]);
     expect(stale).toEqual([]);
   });

@@ -6,10 +6,9 @@
   // format sweep is a DELIBERATE separate step, not auto-run here.
   "extends": ["ultracite/biome/next"],
   "files": {
-    // The vendored AlignUI kit + generated/build output are not ours to reformat.
+    // Generated/build output is not ours to reformat.
     "includes": [
       "**",
-      "!**/components/ui",
       "!**/.next",
       "!**/.next-*",
       "!**/node_modules"

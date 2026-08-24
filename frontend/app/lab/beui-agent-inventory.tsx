@@ -12,7 +12,7 @@ import { RichToolResult } from "@/components/agent-ui/rich-tool-result";
 import { CodeBlock } from "@/components/ai/code-block";
 import { StreamingText } from "@/components/ai/streaming-text";
 import { Composer } from "@/components/chat/composer";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import {
   BEUI_ACTIVITY_GROUPS,
   BEUI_AGENT_INVENTORY,
@@ -56,7 +56,7 @@ function ShellCard({
   return (
     <section
       data-beui-agent-component={slug}
-      className={cn(
+      className={cx(
         "flex flex-col gap-4 rounded-3xl border border-border-button-default bg-background-primary-default p-5 shadow-card",
         wide ? "lg:col-span-2" : "",
       )}
@@ -67,7 +67,7 @@ function ShellCard({
           <h3 className="mt-1 text-title-3-medium text-text-primary">{title}</h3>
           <p className="mt-1 text-body-2-regular text-text-secondary">{note}</p>
         </div>
-        <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-caption-1-medium", tone)}>
+        <span className={cx("shrink-0 rounded-full px-2.5 py-1 text-caption-1-medium", tone)}>
           {decision}
         </span>
       </div>
@@ -104,7 +104,7 @@ function InventoryChip({ label, decision }: { readonly label: string; readonly d
 
   return (
     <span
-      className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-caption-1-medium", tone)}
+      className={cx("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-caption-1-medium", tone)}
     >
       {label}
     </span>

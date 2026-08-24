@@ -12,7 +12,7 @@ import {
 } from "./settings-rows";
 
 /**
- * Figma source: Board UI → "Settings/General" (node 4079:13037), the right
+ * Figma source: Board UI → "Settings/General", the right
  * pane of the settings modal. Taller than the 614px modal, so the pane
  * scrolls within the shell.
  *

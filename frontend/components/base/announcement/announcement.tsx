@@ -9,8 +9,6 @@ import { CloseButton } from "@/components/base/buttons/close-button";
 import { cx, sortCx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → "Event card" (node 3718:2317).
- *
  * A compact announcement / onboarding card sized for the sidebar (fills its
  * container — 236px inside the 260px sidebar). Structure, 1:1 with Figma:
  *

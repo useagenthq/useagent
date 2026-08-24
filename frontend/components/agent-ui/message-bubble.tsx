@@ -1,5 +1,5 @@
 // Ported from beui.dev registry "message-bubble" (components/agents/message-bubble.tsx +
-// message-context, lib/ease inlined). Re-expressed with our AlignUI tokens + Remixicon.
+// message-context, lib/ease inlined). Re-expressed with our tokens + Remixicon.
 // A chat message row: avatar, an aligned bubble with a soft pop-in surface, a collapsible
 // clamp for long turns, and hover-revealed row actions (copy / regenerate).
 "use client";

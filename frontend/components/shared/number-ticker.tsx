@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, MotionConfig, useAnimationControls, useReducedMotion } from "motion/react";
-import { cnExt } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /**
  * NumberTicker — a lean inline rolling-digits value for dashboard stats
@@ -36,7 +36,7 @@ export function NumberTicker({
   return (
     <MotionConfig reducedMotion="user">
       <span
-        className={cnExt("inline-flex items-baseline tabular-nums leading-none", className)}
+        className={cx("inline-flex items-baseline tabular-nums leading-none", className)}
       >
         <span className="sr-only">{text}</span>
         {Array.from(text).map((char, position) => {

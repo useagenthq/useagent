@@ -28,7 +28,7 @@ const tone: Record<ToolChipState, string> = {
 /**
  * Inline chip for a single tool call / activity entry. Running chips carry a
  * pulsing dot; errors take the error state tone. Ported from the beautiful-ui
- * ToolChips demo onto AlignUI semantic tokens.
+ * ToolChips demo onto our semantic tokens.
  */
 export function ToolChip({
   icon: Icon,

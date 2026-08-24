@@ -9,7 +9,7 @@ import { cx } from "@/utils/cx";
  * glyph (done check / running spinner / pending ring), a title, an optional
  * count, an optional status pill, and — when it carries substeps — a collapsible
  * detail region down a hairline connector. Ported from the beautiful-ui TaskRows
- * demo (hardcoded → parameterized) onto AlignUI tokens.
+ * demo (hardcoded → parameterized) onto our tokens.
  */
 
 export type TaskRowStatus = "done" | "running" | "pending";

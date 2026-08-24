@@ -8,7 +8,7 @@ const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffec
 
 /**
  * Figma source: Board UI → "ai_chat" → Changes / Browser panel switcher
- * (node 4030:5993 region) — the fully-rounded pill tab, in two styles:
+ * — the fully-rounded pill tab, in two styles:
  *
  *   pill      px 8, py 5, gap 4
  *   blue      fully rounded (40px); selected bg uses the semantic blue pill

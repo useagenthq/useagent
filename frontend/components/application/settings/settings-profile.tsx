@@ -15,7 +15,7 @@ import {
 } from "./settings-rows";
 
 /**
- * Figma source: Board UI → "Settings/Profile" (node 4081:13943), the right
+ * Figma source: Board UI → "Settings/Profile", the right
  * pane of the settings modal.
  *
  * Two cards, 24px apart:

@@ -32,8 +32,6 @@ import { cx } from "@/utils/cx";
 import { useDismissOnOutsidePress, useTriggerToggle } from "@/utils/use-dismiss-on-outside-press";
 
 /**
- * Figma source: Board UI → "Calendar" (node 3871:5738).
- *
  * A dual-month date range picker: trigger button opens a popover with a
  * quick-select sidebar, two adjacent months (react-aria's
  * `visibleDuration={{ months: 2 }}`), and a footer with read-only date chips,

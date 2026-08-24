@@ -9,8 +9,8 @@ import {
 } from "@remixicon/react";
 import { useState } from "react";
 import { IntegrationConnections } from "@/app/settings/integration-connections";
-import * as Input from "@/components/ui/input";
-import { cnExt } from "@/utils/cn";
+import { Input } from "@/components/base/input/input";
+import { cx } from "@/utils/cx";
 
 /* -------------------------------------------------------------------------- */
 /*  Promo banner — a fixed-appearance gradient art element (same in both       */
@@ -63,14 +63,14 @@ function PromoBanner() {
         {bannerPills.map(({ icon: Icon, label, labelClass, task, indent }) => (
           <div
             key={label}
-            className={cnExt(
+            className={cx(
               "inline-flex w-fit max-w-full items-center gap-3 rounded-full bg-white py-2 pl-2 pr-5 shadow-sm",
               indent,
             )}
           >
             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-neutral-50 px-2.5 py-1 ring-1 ring-black/[0.04]">
-              <Icon className={cnExt("size-4 shrink-0", labelClass)} aria-hidden />
-              <span className={cnExt("text-body-2-medium", labelClass)}>{label}</span>
+              <Icon className={cx("size-4 shrink-0", labelClass)} aria-hidden />
+              <span className={cx("text-body-2-medium", labelClass)}>{label}</span>
             </span>
             <span className="truncate text-body-2-regular text-neutral-800">{task}</span>
           </div>
@@ -93,17 +93,13 @@ export function AppsMarketplace() {
         <h1 className="text-center text-display-sm text-text-primary">
           Connect the tools your team already uses
         </h1>
-        <Input.Root>
-          <Input.Wrapper>
-            <Input.Icon as={RiSearchLine} />
-            <Input.Input
-              aria-label="Search marketplace"
-              placeholder="Search marketplace..."
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </Input.Wrapper>
-        </Input.Root>
+        <Input
+          aria-label="Search marketplace"
+          leadingIcon={RiSearchLine}
+          placeholder="Search marketplace..."
+          value={query}
+          onChange={setQuery}
+        />
       </div>
 
       <PromoBanner />

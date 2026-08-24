@@ -10,8 +10,8 @@ import {
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
-import * as Avatar from '@/components/ui/avatar';
-import * as Badge from '@/components/ui/badge';
+import { Avatar } from '@/components/base/avatar/avatar';
+import { Chip } from '@/components/base/badges/chip';
 import { BackendUnreachable } from '@/components/shared/backend-unreachable';
 import { relativeTime } from '@/utils/format';
 import { fetchPulls, type PullRequestItem, type PullsResult } from './review-api';
@@ -65,22 +65,22 @@ function PrRow({ pr }: { pr: PullRequestItem }) {
 
       <div className='flex flex-wrap items-center justify-between gap-2'>
         <div className='flex flex-wrap items-center gap-1.5'>
-          <Avatar.Root size='20' color='gray'>
-            {pr.author_avatar_url ? (
-              <Avatar.Image src={pr.author_avatar_url} alt={pr.author} />
-            ) : (
-              initials(pr.author)
-            )}
-          </Avatar.Root>
+          <Avatar
+            size='xs'
+            color='neutral'
+            src={pr.author_avatar_url || undefined}
+            alt={pr.author}
+            initials={initials(pr.author)}
+          />
           <span className='text-caption-1-medium text-text-secondary'>{pr.author}</span>
           {pr.draft ? (
-            <Badge.Root variant='lighter' color='gray'>
+            <Chip color='gray'>
               Draft
-            </Badge.Root>
+            </Chip>
           ) : (
-            <Badge.Root variant='light' color='green'>
+            <Chip color='lime'>
               Open
-            </Badge.Root>
+            </Chip>
           )}
         </div>
 
@@ -186,9 +186,9 @@ export function ReviewWorkspace() {
           <div className='flex items-center gap-2'>
             <h1 className='text-title-2-medium text-text-primary'>Pull requests</h1>
             {count !== null ? (
-              <Badge.Root variant='lighter' color='gray'>
+              <Chip color='gray'>
                 {count}
-              </Badge.Root>
+              </Chip>
             ) : null}
           </div>
           <p className='text-body-2-regular text-text-secondary'>

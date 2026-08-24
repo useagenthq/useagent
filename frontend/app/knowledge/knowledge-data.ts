@@ -14,11 +14,11 @@ import type { ChipProps } from "@/components/base/badges/chip";
 import { relativeTime } from "@/utils/format";
 
 /* -------------------------------------------------------------------------- */
-/*  Chip color union (legacy AlignUI Badge hues — the skills page still maps    */
+/*  Chip color union (legacy Badge hues — the skills page still maps            */
 /*  its tag palette through this union, so the type stays exported here)        */
 /* -------------------------------------------------------------------------- */
 
-/** The subset of AlignUI Badge colors shared tag palettes are keyed on. */
+/** The subset of Badge colors shared tag palettes are keyed on. */
 export type ChipColor =
   | "gray"
   | "blue"

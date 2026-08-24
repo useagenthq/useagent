@@ -1,9 +1,9 @@
 // Vendored from prompt-kit (prompt-kit.com/c/markdown.json), adapted to the
-// AlignUI foundation: `cn` → `cnExt` and the inline-code token
-// (`bg-primary-foreground`) → AlignUI `bg-background-secondary-default`. Block-splitting +
+// foundation: `cn` → `cnExt` and the inline-code token
+// (`bg-primary-foreground`) → `bg-background-secondary-default`. Block-splitting +
 // per-block memoization keep re-renders cheap while text streams in.
 
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import { marked } from "marked";
 import { memo, useId, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -40,7 +40,7 @@ const INITIAL_COMPONENTS: Partial<Components> = {
       // the surrounding 13px rhythm so code reads as an accent, not a jump.
       return (
         <span
-          className={cn(
+          className={cx(
             "bg-background-secondary-default text-text-primary ring-border-button-default rounded-md px-1.5 py-0.5 font-mono text-[0.85em] ring-1 ring-inset",
             className,
           )}
@@ -109,13 +109,13 @@ const INITIAL_COMPONENTS: Partial<Components> = {
   },
 };
 
-// Flow-element prose styling shared by EVERY Markdown consumer. The AlignUI
+// Flow-element prose styling shared by EVERY Markdown consumer. The
 // foundation ships no @tailwindcss/typography, and Tailwind preflight strips
 // list markers - so lists, headings, paragraphs and links are mapped to brand
 // tokens HERE, once. Callers may still extend/override via className (cnExt
 // merges with caller classes winning). Historically this lived only in the
 // conversation surface, which left every other consumer with bulletless lists.
-const FLOW_CLASS = cn(
+const FLOW_CLASS = cx(
   // First/last block flush to the container's edges; even rhythm elsewhere.
   "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
   "[&_p]:my-2",
@@ -167,7 +167,7 @@ function MarkdownComponent({
   const blocks = useMemo(() => parseMarkdownIntoBlocks(children), [children]);
 
   return (
-    <div className={cn(FLOW_CLASS, className)}>
+    <div className={cx(FLOW_CLASS, className)}>
       {blocks.map((block, index) => (
         <MemoizedMarkdownBlock
           key={`${blockId}-block-${index}`}

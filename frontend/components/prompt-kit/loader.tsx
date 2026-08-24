@@ -8,7 +8,7 @@
 // config).
 
 import "./loader.css";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import React from "react";
 
 export interface LoaderProps {
@@ -41,7 +41,7 @@ export function CircularLoader({
 }) {
   return (
     <div
-      className={cn(
+      className={cx(
         "border-accent-500 animate-spin rounded-full border-2 border-t-transparent",
         SIZE[size],
         className,
@@ -65,7 +65,7 @@ export function ClassicLoader({
     lg: { height: "10px", width: "2.5px" },
   };
   return (
-    <div className={cn("relative", SIZE[size], className)}>
+    <div className={cx("relative", SIZE[size], className)}>
       <div className="absolute h-full w-full">
         {[...Array(12)].map((_, i) => (
           <div
@@ -99,7 +99,7 @@ export function PulseLoader({
   size?: "sm" | "md" | "lg";
 }) {
   return (
-    <div className={cn("relative", SIZE[size], className)}>
+    <div className={cx("relative", SIZE[size], className)}>
       <div className="border-accent-500 absolute inset-0 animate-[thin-pulse_1.5s_ease-in-out_infinite] rounded-full border-2" />
       <span className="sr-only">Loading</span>
     </div>
@@ -116,7 +116,7 @@ export function PulseDotLoader({
   const dot = { sm: "size-1", md: "size-2", lg: "size-3" } as const;
   return (
     <div
-      className={cn(
+      className={cx(
         "bg-accent-500 animate-[pulse-dot_1.2s_ease-in-out_infinite] rounded-full",
         dot[size],
         className,
@@ -137,11 +137,11 @@ export function DotsLoader({
   const dotSizes = { sm: "h-1.5 w-1.5", md: "h-2 w-2", lg: "h-2.5 w-2.5" };
   const containerSizes = { sm: "h-4", md: "h-5", lg: "h-6" };
   return (
-    <div className={cn("flex items-center space-x-1", containerSizes[size], className)}>
+    <div className={cx("flex items-center space-x-1", containerSizes[size], className)}>
       {[...Array(3)].map((_, i) => (
         <div
           key={i}
-          className={cn(
+          className={cx(
             "bg-accent-500 animate-[bounce-dots_1.4s_ease-in-out_infinite] rounded-full",
             dotSizes[size],
           )}
@@ -163,11 +163,11 @@ export function TypingLoader({
   const dotSizes = { sm: "h-1 w-1", md: "h-1.5 w-1.5", lg: "h-2 w-2" };
   const containerSizes = { sm: "h-4", md: "h-5", lg: "h-6" };
   return (
-    <div className={cn("flex items-center space-x-1", containerSizes[size], className)}>
+    <div className={cx("flex items-center space-x-1", containerSizes[size], className)}>
       {[...Array(3)].map((_, i) => (
         <div
           key={i}
-          className={cn(
+          className={cx(
             "bg-accent-500 animate-[typing_1s_infinite] rounded-full",
             dotSizes[size],
           )}
@@ -194,11 +194,11 @@ export function WaveLoader({
     lg: ["10px", "15px", "20px", "15px", "10px"],
   };
   return (
-    <div className={cn("flex items-center gap-0.5", containerSizes[size], className)}>
+    <div className={cx("flex items-center gap-0.5", containerSizes[size], className)}>
       {[...Array(5)].map((_, i) => (
         <div
           key={i}
-          className={cn(
+          className={cx(
             "bg-accent-500 animate-[wave_1s_ease-in-out_infinite] rounded-full",
             barWidths[size],
           )}
@@ -220,11 +220,11 @@ export function BarsLoader({
   const barWidths = { sm: "w-1", md: "w-1.5", lg: "w-2" };
   const containerSizes = { sm: "h-4 gap-1", md: "h-5 gap-1.5", lg: "h-6 gap-2" };
   return (
-    <div className={cn("flex", containerSizes[size], className)}>
+    <div className={cx("flex", containerSizes[size], className)}>
       {[...Array(3)].map((_, i) => (
         <div
           key={i}
-          className={cn(
+          className={cx(
             "bg-accent-500 h-full animate-[wave-bars_1.2s_ease-in-out_infinite]",
             barWidths[size],
           )}
@@ -247,10 +247,10 @@ export function TerminalLoader({
   const textSizes = { sm: "text-xs", md: "text-sm", lg: "text-base" };
   const containerSizes = { sm: "h-4", md: "h-5", lg: "h-6" };
   return (
-    <div className={cn("flex items-center space-x-1", containerSizes[size], className)}>
-      <span className={cn("text-accent-500 font-mono", textSizes[size])}>{">"}</span>
+    <div className={cx("flex items-center space-x-1", containerSizes[size], className)}>
+      <span className={cx("text-accent-500 font-mono", textSizes[size])}>{">"}</span>
       <div
-        className={cn(
+        className={cx(
           "bg-accent-500 animate-[blink_1s_step-end_infinite]",
           cursorSizes[size],
         )}
@@ -272,7 +272,7 @@ export function TextBlinkLoader({
   const textSizes = { sm: "text-xs", md: "text-sm", lg: "text-base" };
   return (
     <div
-      className={cn(
+      className={cx(
         "animate-[text-blink_2s_ease-in-out_infinite] font-medium",
         textSizes[size],
         className,
@@ -295,7 +295,7 @@ export function TextShimmerLoader({
   const textSizes = { sm: "text-xs", md: "text-sm", lg: "text-base" };
   return (
     <div
-      className={cn(
+      className={cx(
         "bg-[linear-gradient(to_right,var(--color-text-tertiary)_40%,var(--color-text-primary)_60%,var(--color-text-tertiary)_80%)]",
         "bg-size-[200%_auto] bg-clip-text font-medium text-transparent",
         "animate-[shimmer_4s_infinite_linear]",
@@ -319,8 +319,8 @@ export function TextDotsLoader({
 }) {
   const textSizes = { sm: "text-xs", md: "text-sm", lg: "text-base" };
   return (
-    <div className={cn("inline-flex items-center", className)}>
-      <span className={cn("text-text-primary font-medium", textSizes[size])}>
+    <div className={cx("inline-flex items-center", className)}>
+      <span className={cx("text-text-primary font-medium", textSizes[size])}>
         {text}
       </span>
       <span className="inline-flex">

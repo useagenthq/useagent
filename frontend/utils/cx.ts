@@ -1,4 +1,5 @@
 import { extendTailwindMerge } from "tailwind-merge";
+import { texts } from "@/tailwind.config";
 
 /**
  * Text-style classes from styles/typography.css.
@@ -31,7 +32,7 @@ const TEXT_WEIGHTS = ["regular", "medium", "semibold", "bold"] as const;
 
 /** Every composite text-style suffix (`body-2-regular`, `title-1-semibold`, ...)
  *  plus our own `text-mono-label` utility (app/globals.css). Exported so
- *  utils/cn.ts (the vendored AlignUI `cnExt`) registers the same suffixes as
+ *  utils/cn.ts (the vendored `cnExt`) registers the same suffixes as
  *  font-sizes — otherwise the mergers drop them as "conflicting colors" when a
  *  caller passes e.g. `text-mono-label text-neutral-400` (this silently
  *  un-labeled the terminal-pane Shell/Log tabs). */
@@ -43,7 +44,7 @@ export const TEXT_STYLE_SUFFIXES = [
 const twMerge = extendTailwindMerge({
   extend: {
     classGroups: {
-      "font-size": [{ text: TEXT_STYLE_SUFFIXES }],
+      "font-size": [{ text: [...Object.keys(texts), ...TEXT_STYLE_SUFFIXES] }],
     },
   },
 });

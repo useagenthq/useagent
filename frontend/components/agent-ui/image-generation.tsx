@@ -1,5 +1,5 @@
 // Ported from beui.dev registry "image-generation" (components/agents/image-generation.tsx +
-// lib/ease, use-hover-capable inlined). Re-expressed with our AlignUI tokens + Remixicon.
+// lib/ease, use-hover-capable inlined). Re-expressed with our tokens + Remixicon.
 // An image-generation tile: a scanning progress overlay that resolves into a placeholder
 // gradient result, with a live status line, resolution chip, and retry-on-error.
 "use client";

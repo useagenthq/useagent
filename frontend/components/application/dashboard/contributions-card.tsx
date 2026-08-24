@@ -8,8 +8,6 @@ import { Tooltip, TooltipTrigger } from "@/components/base/tooltip/tooltip";
 import { cx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → "Contributions this year" (node 3842:4786).
- *
  *   header    "Contributions this year" (Body 1/Medium) + "$7,462"
  *             (Title 1/Medium) + Chip bold/lime "+14.8%"
  *   stats     4 white cards (radius/2lg, shadow/card — same recipe as the

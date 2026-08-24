@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import * as Tooltip from "@/components/ui/tooltip";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
 import type { ApiRun, RunStatus } from "./types";
 
@@ -71,7 +70,7 @@ function makeTurn(id: string, status: RunStatus, canonical: StoredCanonicalEvent
 
 function render(turns: Turn[], extra: Partial<ConversationProps> = {}): string {
   return renderToStaticMarkup(
-    <Tooltip.Provider>
+    <>
       <Conversation
         turns={turns}
         defaultEngine="opencode"
@@ -81,7 +80,7 @@ function render(turns: Turn[], extra: Partial<ConversationProps> = {}): string {
         onReply={async () => {}}
         {...extra}
       />
-    </Tooltip.Provider>,
+    </>,
   );
 }
 

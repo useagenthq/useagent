@@ -1,6 +1,6 @@
 // Ported from beui.dev registry "chat-app" (components/agents/chat-app.tsx +
 // motion/animated-sidebar, motion/shared-layout-bg, lib/ease inlined). Re-expressed with
-// our AlignUI tokens + Remixicon. A compact end-to-end chat composition: a collapsible
+// our tokens + Remixicon. A compact end-to-end chat composition: a collapsible
 // conversation rail with a morphing active pill, an animated message thread, and a composer.
 // The heavy registry shell (offcanvas portal, mobile media-query, focus-trap, sidebar
 // context system) is dropped in favor of a single self-contained, self-driving demo.

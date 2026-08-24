@@ -1,11 +1,11 @@
 "use client";
 
 // Vendored from prompt-kit (prompt-kit.com/c/code-block.json), adapted to the
-// AlignUI foundation: `cn` → `cnExt` (clsx + tailwind-merge) and shadcn tokens
-// (border/bg-card) → AlignUI semantic tokens. Shiki highlights on the client;
+// foundation: `cn` → `cnExt` (clsx + tailwind-merge) and shadcn tokens
+// (border/bg-card) → our semantic tokens. Shiki highlights on the client;
 // an un-highlighted <pre> is the SSR/first-paint fallback.
 
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import React, { useEffect, useState } from "react";
 import { codeToHtml } from "shiki";
 
@@ -17,7 +17,7 @@ export type CodeBlockProps = {
 function CodeBlock({ children, className, ...props }: CodeBlockProps) {
   return (
     <div
-      className={cn(
+      className={cx(
         "not-prose flex w-full flex-col overflow-clip border",
         "border-border-button-default bg-background-secondary-default text-text-primary rounded-xl",
         className,
@@ -72,7 +72,7 @@ function CodeBlockCode({
     };
   }, [code, language]);
 
-  const classNames = cn(
+  const classNames = cx(
     "w-full overflow-x-auto text-[13px] [&>pre]:px-4 [&>pre]:py-4 [&>pre]:!bg-transparent",
     className,
   );
@@ -97,7 +97,7 @@ export type CodeBlockGroupProps = React.HTMLAttributes<HTMLDivElement>;
 function CodeBlockGroup({ children, className, ...props }: CodeBlockGroupProps) {
   return (
     <div
-      className={cn("flex items-center justify-between", className)}
+      className={cx("flex items-center justify-between", className)}
       {...props}
     >
       {children}

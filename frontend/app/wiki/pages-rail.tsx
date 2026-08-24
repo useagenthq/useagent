@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { cnExt } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import type { WikiDoc } from "./wiki-data";
 
 /**
@@ -28,7 +28,7 @@ export function PagesRail({
           <li key={doc.id}>
             <Link
               href={`/wiki/${doc.id}`}
-              className={cnExt(
+              className={cx(
                 "block truncate rounded-lg px-2.5 py-1.5 text-body-2-medium transition-colors",
                 doc.id === activeId
                   ? "bg-background-secondary-default text-text-primary"

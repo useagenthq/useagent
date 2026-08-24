@@ -3,7 +3,7 @@
 // Git identity chips for thread rows + the session bar, following the T3 Code
 // sidebar chip treatment (apps/web/src/components/LegacySidebar.tsx, upstream
 // commit 7c1bdd6e1, MIT - T3 Tools Inc): a compact h-5 rounded-full bordered
-// mono chip. Rebuilt on AlignUI tokens (stroke-soft border, text-soft tone, no
+// mono chip. Rebuilt on our tokens (stroke-soft border, text-soft tone, no
 // color noise) and bound to OUR wire shape.
 //
 // Data contract (GET /api/runs run rows): `repo_specs` is authoritative - each

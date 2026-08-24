@@ -9,7 +9,7 @@ import {
 
 import { Chip, type ChipProps } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
-import * as Modal from "@/components/ui/modal";
+import * as Modal from "@/components/base/modal/modal";
 import { tagChipColor, usageCaption, type Skill } from "@/app/skills/skills-data";
 import type { ChipColor } from "@/app/knowledge/knowledge-data";
 import { CHIP_COLOR } from "@/components/foundations/form-recipes";
@@ -20,7 +20,7 @@ import { CHIP_COLOR } from "@/components/foundations/form-recipes";
  * numbered, check), with the version + usage caption and Edit / Run actions.
  * The full description lives here; the list row clamps it. The copy is
  * deliberately honest - useAgent FOLLOWS the procedure as guidance; it is not a
- * deterministic, step-by-step workflow engine. The Modal shell stays AlignUI
+ * deterministic, step-by-step workflow engine. The Modal shell stays vendored
  * (no BoardUI equivalent); its visible surfaces are BoardUI tokens.
  */
 

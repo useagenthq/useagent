@@ -1,5 +1,5 @@
 // Ported from beui.dev registry "ai-sidebar" (components/agents/ai-sidebar.tsx +
-// motion/popover-morph, lib/ease inlined). Re-expressed with our AlignUI tokens +
+// motion/popover-morph, lib/ease inlined). Re-expressed with our tokens +
 // Remixicon. An assistant side-panel shell: a collapsible workspace tree with keyboard
 // navigation, overflow-aware marquee labels, active selection, and a composer footer.
 // The heavy optimistic drag-and-drop + portal morph-popover from the source were dropped

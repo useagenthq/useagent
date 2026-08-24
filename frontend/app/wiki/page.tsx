@@ -4,7 +4,7 @@ import Link from "next/link";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { AppShell } from "@/components/shell/app-shell";
 import { LibrarySidebar } from "@/components/shell/library-sidebar";
-import * as Badge from "@/components/ui/badge";
+import { Chip } from "@/components/base/badges/chip";
 import { AskRepoBar } from "./ask-repo-bar";
 import { PagesRail } from "./pages-rail";
 import { wikiContentPreview } from "./wiki-content-data";
@@ -46,10 +46,10 @@ export default async function WikiPage() {
                 Published knowledge documents · your organization
               </p>
               <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                <Badge.Root variant="lighter" size="medium" color={failed ? "orange" : "gray"}>
-                  <Badge.Icon as={RiFileList3Line} />
+                <Chip color={failed ? "orange" : "gray"}>
+                  <RiFileList3Line className="size-3.5 shrink-0" aria-hidden />
                   {failed ? "unavailable" : `${docs.length} published`}
-                </Badge.Root>
+                </Chip>
               </div>
             </div>
           </div>

@@ -95,7 +95,7 @@ The important detail is that `Steer` does not change the backend route. It is st
 
 The frontend uses three presentation layers:
 
-- `components/ui/` is the tokenized primitive layer.
+- `components/base/` is the canonical tokenized primitive kit (dialog/overlay primitives live in `components/base` and `components/session-ui`).
 - `components/ai/` holds the imported AI-native cards, loaders, and timeline primitives.
 - `components/prompt-kit/` holds the prompt and markdown primitives.
 

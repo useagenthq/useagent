@@ -41,7 +41,7 @@ import {
   ThreadErrorBanner,
 } from "@/components/session-ui/thread-error-banner";
 import { WorkedForFold } from "@/components/session-ui/worked-for-fold";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import {
   agentRows,
   changedFiles,

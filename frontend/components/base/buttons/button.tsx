@@ -8,8 +8,6 @@ import type {
 import { cx, sortCx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → Buttons (node 3656:13819).
- *
  * Variant matrix from Figma:
  *   Type     = Primary | Secondary | Ghost | Danger
  *   Size     = Medium  | Small | Xs
@@ -27,7 +25,7 @@ import { cx, sortCx } from "@/utils/cx";
  *   icon-only square    36×36 (content-derived)   32×32 (forced size)      24×24 (forced size)
  *
  * `xs` is the smallest tier — first needed for the calendar template's
- * event-details modal ("Join" / edit-icon buttons, node 3920:10954), which
+ * event-details modal ("Join" / edit-icon buttons), which
  * scales every dimension down by the same ~0.667 factor from Figma; the
  * table above rounds those to clean pixel values rather than reproducing
  * the fractional source numbers.
@@ -43,7 +41,7 @@ import { cx, sortCx } from "@/utils/cx";
  * `variant` to avoid the clash.
  */
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+type ButtonVariant = "primary" | "neutral" | "secondary" | "ghost" | "danger";
 type ButtonSize = "medium" | "small" | "xs";
 
 type IconComponent = ComponentType<{
@@ -137,6 +135,14 @@ const styles = sortCx({
       "hover:bg-button-ghost-hover active:bg-button-ghost-active",
       "disabled:bg-button-ghost-disabled disabled:text-button-ghost-disabled-foreground disabled:shadow-none",
       "aria-disabled:bg-button-ghost-disabled aria-disabled:text-button-ghost-disabled-foreground aria-disabled:shadow-none",
+    ].join(" "),
+    // Solid dark/neutral emphasis (the primary-action look carried over from
+    // the retired neutral+filled button); distinct from the accent `primary`.
+    neutral: [
+      "bg-foreground-icon-primary text-background-full shadow-xs",
+      "hover:opacity-90 active:opacity-95",
+      "disabled:opacity-50 disabled:shadow-none",
+      "aria-disabled:opacity-50 aria-disabled:shadow-none",
     ].join(" "),
   },
 });
