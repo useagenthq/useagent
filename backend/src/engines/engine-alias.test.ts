@@ -13,7 +13,7 @@ describe("canonicalEngine alias normalization", () => {
     expect(canonicalEngine("claude-sdk")).toBe("claude");
   });
   test("canonical providers pass through unchanged", () => {
-    for (const e of ["opencode", "claude", "codex", "chat"]) {
+    for (const e of ["opencode", "claude", "codex", "pi", "chat"]) {
       expect(canonicalEngine(e)).toBe(e);
     }
   });
@@ -24,7 +24,7 @@ describe("canonicalEngine alias normalization", () => {
   test("every route-accepted engine id normalizes to a known canonical target", () => {
     // The canonical target of any accepted engine is either a canonical provider or
     // a deliberately non-canonical id (mock/acp) - never an unmapped alias.
-    const canonicalTargets = new Set(["opencode", "claude", "codex", "chat", "mock", "acp"]);
+    const canonicalTargets = new Set(["opencode", "claude", "codex", "pi", "chat", "mock", "acp"]);
     for (const id of ENGINE_IDS) {
       expect(canonicalTargets.has(canonicalEngine(id))).toBe(true);
     }
