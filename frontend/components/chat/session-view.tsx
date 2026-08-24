@@ -110,6 +110,12 @@ function workspaceSurfaceHasFocus(): boolean {
   return active instanceof HTMLElement && active.closest("[data-workspace-surface]") !== null;
 }
 
+// The rail is a resizable sub-viewport panel (viewport breakpoints can't
+// describe it), so a container query on the switcher header collapses each
+// surface pill to icon-only (label -> sr-only keeps the accessible name) once
+// the strip is too narrow for up to 7 labels; scroll is the final fallback.
+const RAIL_TAB_LABEL_COLLAPSE = "@max-[40rem]:sr-only";
+
 /**
  * The coding-session surface: a threaded conversation column beside a vertical
  * editor|terminal split. The whole thread renders as one conversation, driven by
@@ -1040,8 +1046,11 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                   "md:w-[var(--rail-w,28.6%)] md:max-w-[calc(100%-20rem)] md:shrink-0",
             )}
           >
-            <div className="border-border-button-default/50 flex h-12 shrink-0 items-center gap-2 border-b px-2">
-              <PillTabList aria-label="Surface" className="min-w-0 flex-1 overflow-x-auto">
+            <div className="@container border-border-button-default/50 flex h-12 shrink-0 items-center gap-2 border-b px-2">
+              <PillTabList
+                aria-label="Surface"
+                className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
                 {/* Agents leads the switcher, but only once a run has fanned
                     out — no empty tab before then. */}
                 {hasSubagents && (
@@ -1050,6 +1059,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                     isSelected={railTab === "agents"}
                     onSelect={() => setRailTabOverride("agents")}
                     data-testid="rail-tab-agents"
+                    labelClassName={RAIL_TAB_LABEL_COLLAPSE}
                   >
                     Agents
                   </PillTab>
@@ -1059,6 +1069,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                   isSelected={railTab === "artifacts"}
                   onSelect={() => setRailTabOverride("artifacts")}
                   data-testid="rail-tab-artifacts"
+                  labelClassName={RAIL_TAB_LABEL_COLLAPSE}
                 >
                   Files
                 </PillTab>
@@ -1070,6 +1081,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                     isSelected={railTab === "workspace"}
                     onSelect={() => setRailTabOverride("workspace")}
                     data-testid="rail-tab-workspace"
+                    labelClassName={RAIL_TAB_LABEL_COLLAPSE}
                   >
                     Workspace
                   </PillTab>
@@ -1082,6 +1094,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                     isSelected={railTab === "diff"}
                     onSelect={() => setRailTabOverride("diff")}
                     data-testid="rail-tab-diff"
+                    labelClassName={RAIL_TAB_LABEL_COLLAPSE}
                   >
                     Diff
                   </PillTab>
@@ -1091,6 +1104,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                   isSelected={railTab === "editor"}
                   onSelect={() => setRailTabOverride("editor")}
                   data-testid="rail-tab-editor"
+                  labelClassName={RAIL_TAB_LABEL_COLLAPSE}
                 >
                   Editor
                 </PillTab>
@@ -1099,6 +1113,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                   isSelected={railTab === "terminal"}
                   onSelect={() => setRailTabOverride("terminal")}
                   data-testid="rail-tab-terminal"
+                  labelClassName={RAIL_TAB_LABEL_COLLAPSE}
                 >
                   Terminal
                 </PillTab>
@@ -1109,6 +1124,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                   isSelected={railTab === "desktop"}
                   onSelect={() => setRailTabOverride("desktop")}
                   data-testid="rail-tab-desktop"
+                  labelClassName={RAIL_TAB_LABEL_COLLAPSE}
                 >
                   Browser
                 </PillTab>
