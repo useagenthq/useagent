@@ -6,6 +6,8 @@ import {
   DESKTOP_PROBE_MIN_DELAY,
   guardDesktopFocusSteal,
   nextDesktopProbeDelay,
+  shouldReleaseStolenFocus,
+  watchDesktopFocusSteal,
 } from "./desktop-pane";
 import type { DesktopFocusGuardDoc } from "./desktop-pane";
 
@@ -192,5 +194,95 @@ describe("Desktop product surface", () => {
       },
     });
     expect(() => release()).not.toThrow();
+  });
+
+  test("the cross-origin steal check fires only when the iframe element holds focus", () => {
+    // Fake the iframe element and an unrelated outside element (the composer).
+    const frame = { id: "desktop-frame" } as unknown as Element;
+    const composer = { id: "composer" } as unknown as Element;
+
+    // noVNC's async rfb.focus() lands on the iframe element while only watching.
+    expect(shouldReleaseStolenFocus({ activeElement: frame, frame, captured: false })).toBe(true);
+    // After an explicit "click to control", focus legitimately lives in the pane.
+    expect(shouldReleaseStolenFocus({ activeElement: frame, frame, captured: true })).toBe(false);
+    // Focus that stayed on the composer is left alone.
+    expect(shouldReleaseStolenFocus({ activeElement: composer, frame, captured: false })).toBe(
+      false,
+    );
+    // Nothing focused, or no frame mounted yet, is never a steal.
+    expect(shouldReleaseStolenFocus({ activeElement: null, frame, captured: false })).toBe(false);
+    expect(shouldReleaseStolenFocus({ activeElement: null, frame: null, captured: false })).toBe(
+      false,
+    );
+  });
+
+  test("the watchdog releases stolen focus on poll and window focus, then cleans up both", () => {
+    // Deterministic, no real timers: capture the tick the wrapper schedules and
+    // fire it by hand.
+    let stolen = true;
+    let releases = 0;
+    let tickFromPoll: (() => void) | null = null;
+    let tickFromListen: (() => void) | null = null;
+    let pollStopped = false;
+    let listenStopped = false;
+
+    const cleanup = watchDesktopFocusSteal({
+      check: () => stolen,
+      release: () => {
+        releases += 1;
+      },
+      schedule: (tick) => {
+        tickFromPoll = tick;
+        return () => {
+          pollStopped = true;
+        };
+      },
+      listen: (tick) => {
+        tickFromListen = tick;
+        return () => {
+          listenStopped = true;
+        };
+      },
+    });
+
+    // The poll and the window focus listeners run the same check.
+    expect(tickFromPoll).toBe(tickFromListen);
+
+    // A poll while the iframe holds stolen focus hands it back to the composer.
+    tickFromPoll?.();
+    expect(releases).toBe(1);
+    // A window focus change re-checks too.
+    tickFromListen?.();
+    expect(releases).toBe(2);
+
+    // Once captured (nothing to release), the watchdog does not interfere.
+    stolen = false;
+    tickFromPoll?.();
+    expect(releases).toBe(2);
+
+    // Cleanup stops the poll and detaches the listeners.
+    cleanup();
+    expect(pollStopped).toBe(true);
+    expect(listenStopped).toBe(true);
+  });
+
+  test("a cross-origin watchdog bounces noVNC's async focus off the iframe element", () => {
+    const desktopPane = read("./desktop-pane.tsx");
+
+    // Runs only while the pane is watched (loaded, not captured).
+    expect(desktopPane).toContain("if (!loaded || inputCaptured) return;");
+    expect(desktopPane).toContain("watchDesktopFocusSteal({");
+    // Keys off the iframe ELEMENT being activeElement - observable cross-origin,
+    // unlike the inner document guardDesktopFocusSteal needs.
+    expect(desktopPane).toContain("activeElement: document.activeElement");
+    expect(desktopPane).toContain("frame: frameRef.current");
+    expect(desktopPane).toContain("captured: inputCapturedRef.current");
+    // Poll plus window focus changes; restores the remembered outer focus.
+    expect(desktopPane).toContain("window.setInterval(tick, DESKTOP_FOCUS_WATCHDOG_INTERVAL)");
+    expect(desktopPane).toContain('window.addEventListener("focusin", tick, true)');
+    expect(desktopPane).toContain('window.addEventListener("blur", tick, true)');
+    expect(desktopPane).toContain(
+      "restoreOuterFocus(lastOuterFocusRef.current, frameRef.current)",
+    );
   });
 });
