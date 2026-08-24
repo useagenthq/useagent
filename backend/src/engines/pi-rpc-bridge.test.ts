@@ -4,6 +4,7 @@ import { DefaultPiBridgeManager } from "./pi-rpc-bridge";
 
 function sandboxWithBracketedPastePrefix(): SandboxHandle {
   const encoder = new TextEncoder();
+  let nonCanonicalInput = false;
   return {
     id: "cube-box",
     cpu: 2,
@@ -16,6 +17,7 @@ function sandboxWithBracketedPastePrefix(): SandboxHandle {
           async sendInput(input: string | Uint8Array) {
             const text = typeof input === "string" ? input : new TextDecoder().decode(input);
             if (text.startsWith("stty ")) {
+              nonCanonicalInput = text.includes(" -icanon min 1 time 0");
               await onData(encoder.encode("\u001b[?2004hroot@box:/work# "));
               await onData(encoder.encode(text.trimEnd()));
               await onData(encoder.encode("\r\n\u001b[?2004l\r"));
@@ -24,7 +26,10 @@ function sandboxWithBracketedPastePrefix(): SandboxHandle {
               ));
               return;
             }
-            const request = JSON.parse(text) as { id: string; type: string };
+            const request = JSON.parse(text) as { id: string; type: string; message?: string };
+            if ((request.message?.length ?? 0) > 4_095 && !nonCanonicalInput) {
+              throw new Error("canonical PTY input corrupted the long RPC frame");
+            }
             const data = request.type === "get_state"
               ? { sessionId: "pi-session", sessionFile: "/home/useagent-pi/agent/sessions/pi.jsonl" }
               : { level: "events" };
@@ -70,6 +75,26 @@ describe("Pi RPC frame parsing", () => {
 
     expect(session.sessionId).toBe("pi-session");
     expect(session.sessionFile).toBe("/home/useagent-pi/agent/sessions/pi.jsonl");
+    await session.dispose();
+  }, 2_000);
+
+  test("delivers prompt frames larger than Linux MAX_CANON intact", async () => {
+    const manager = new DefaultPiBridgeManager();
+    const session = await manager.ensure({
+      sandbox: sandboxWithBracketedPastePrefix(),
+      workdir: "/work",
+      runtime: {
+        model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+        fingerprint: "runtime",
+        knowledgeTools: false,
+        executable: "/opt/useagent/pi-runtime/cli.js",
+        bunExecutable: "/opt/useagent/pi-runtime/bun",
+        runAsUser: "useagent-pi",
+        home: "/home/useagent-pi",
+      },
+    });
+
+    await expect(session.command({ kind: "prompt", text: "x".repeat(12_000) })).resolves.toBeUndefined();
     await session.dispose();
   }, 2_000);
 });
