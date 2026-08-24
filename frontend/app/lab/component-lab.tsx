@@ -95,16 +95,16 @@ export function ComponentLab() {
           <AsteriskMark className="size-8 text-text-primary" />
           <div className="flex flex-col">
             <span className="text-headline-medium text-text-primary">Component lab</span>
-            <span className="text-mono-label text-text-tertiary">useAgent · BoardUI parts bin</span>
+            <span className="text-mono-label text-text-tertiary">useAgent · Base kit parts bin</span>
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-4xl px-6">
         <div className="animate-ai-fade-up flex flex-col gap-3 py-10">
-          <h1 className="text-title-1-semibold text-text-primary">BoardUI parts bin</h1>
+          <h1 className="text-title-1-semibold text-text-primary">Base kit parts bin</h1>
           <p className="text-body-regular text-text-secondary">
-            Every native BoardUI primitive this app composes, wired to the useAgent brand layer.
+            Every native base-kit primitive this app composes, wired to the useAgent brand layer.
             Toggle the theme from any page to confirm both render.
           </p>
           <Link
@@ -289,7 +289,7 @@ export function ComponentLab() {
           </Table>
         </Section>
 
-        {/* Modal - AlignUI behavior kept, surfaces reskinned with BoardUI tokens */}
+        {/* Modal - AlignUI behavior kept, surfaces reskinned with base-kit tokens */}
         <Section label="Modal">
           <Modal.Root>
             <Modal.Trigger asChild>
@@ -306,7 +306,7 @@ export function ComponentLab() {
               />
               <Modal.Body>
                 <p className="text-body-2-regular text-text-secondary">
-                  This modal keeps AlignUI behavior under a BoardUI skin - Escape, the backdrop,
+                  This modal keeps AlignUI behavior under a base-kit skin - Escape, the backdrop,
                   and the close button all dismiss it.
                 </p>
               </Modal.Body>
@@ -427,12 +427,12 @@ export function ComponentLab() {
         <Section label="AI kit · Streaming text">
           <StreamingText
             key={streamKey}
-            text="Ported the AI component kit onto BoardUI tokens - streaming text, thinking disclosures, tool chips, approval cards and tables all read from the semantic scale, so they flip cleanly between light and the warm #20201f dark ladder."
+            text="Ported the AI component kit onto the base-kit tokens - streaming text, thinking disclosures, tool chips, approval cards and tables all read from the semantic scale, so they flip cleanly between light and the warm #20201f dark ladder."
             active
             sources={[
-              { name: "AGENTS.md", url: "https://skynet-a.local/AGENTS.md" },
+              { name: "AGENTS.md", url: "https://useagent.local/AGENTS.md" },
               { name: "beautiful-ui", url: "the component catalog" },
-              { name: "BoardUI tokens", url: "https://skynet-a.local/styles/theme.css" },
+              { name: "Base kit tokens", url: "https://useagent.local/styles/theme.css" },
             ]}
             onRegenerate={() => setStreamKey((k) => k + 1)}
           />
@@ -444,7 +444,7 @@ export function ComponentLab() {
               Reading AGENTS.md and the tailwind token scale…
             </p>
             <p className="text-body-2-regular text-text-secondary">
-              Mapping BoardUI status colors onto success / error / away.
+              Mapping base-kit status colors onto success / error / away.
             </p>
           </Thinking>
         </Section>
@@ -487,7 +487,7 @@ export function ComponentLab() {
                 title: "tailwind.config.ts",
                 meta: "512 chars",
                 icon: RiFileList2Line,
-                body: "The BoardUI token scale bridged into Tailwind v4 - semantic background / text / border families plus the state color ramps.",
+                body: "The base-kit token scale bridged into Tailwind v4 - semantic background / text / border families plus the state color ramps.",
               },
               {
                 title: "app/globals.css",
