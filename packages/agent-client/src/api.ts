@@ -15,6 +15,7 @@ import {
   type ArtifactWorkpieceState,
 } from "./artifacts";
 import { decodeFrame, THREAD_FRAME_TYPES, type DecodedFrame } from "./thread-events";
+import { decodeApiRun, type ApiRun } from "./wire";
 
 /** Minimal injected fetch/response surface (works with the browser fetch, a Node/Bun
  *  fetch, or a test stub). Kept structural so the package needs no DOM lib. */
@@ -75,13 +76,8 @@ export interface RunHandle {
   readonly status: string;
 }
 
-/** One run row as returned by the thread endpoint. Loosely typed on purpose: the client
- *  owns the canonical render lane (via the store), not the product's full run view. */
-export interface RunSummary {
-  readonly id: string;
-  readonly status: string;
-  readonly [key: string]: unknown;
-}
+/** One validated full run row from `GET /api/runs/:id?thread=1`. */
+export type RunSummary = ApiRun;
 export interface ThreadSnapshot {
   readonly runs: readonly RunSummary[];
 }
@@ -178,9 +174,7 @@ export function createAgentClient(config: AgentClientConfig): AgentClient {
     async getThread(rootRunId) {
       const json = (await send(`/api/runs/${rootRunId}?thread=1`, {})) as Record<string, unknown>;
       const rawRuns = Array.isArray(json.thread) ? json.thread : Array.isArray(json.runs) ? json.runs : [];
-      const runs = rawRuns.filter(
-        (r): r is RunSummary => !!r && typeof r === "object" && typeof (r as { id?: unknown }).id === "string",
-      );
+      const runs = rawRuns.map(decodeApiRun).filter((run): run is ApiRun => run !== null);
       return { runs };
     },
 

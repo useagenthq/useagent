@@ -1,17 +1,16 @@
+import type {
+  CommandCatalogEntry,
+  SessionCommandCatalog,
+} from "@useagent/agent-client/wire";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
 
-/** A native slash command as surfaced to the composer's "/" popover. */
-export interface CanonicalCommandView {
-  readonly name: string;
-  readonly description?: string | null;
-  readonly input?: string | null;
-}
+/** A native slash command as surfaced to the composer's "/" popover - the shared
+ *  wire `CommandCatalogEntry`. */
+export type CanonicalCommandView = CommandCatalogEntry;
 
-export interface SessionCommandCatalog {
-  readonly commands: CanonicalCommandView[];
-  /** Latest commands.updated deliverySeq for this session. */
-  readonly revision: number;
-}
+// The session command catalog is the agent-client wire contract (shared with the
+// backend authorizer); re-exported so this module's consumers keep one path.
+export type { SessionCommandCatalog };
 
 export function selectSessionCommandCatalog(
   runs: readonly { readonly canonical: readonly StoredCanonicalEvent[] }[],
@@ -44,7 +43,7 @@ export function selectSessionCommandCatalog(
 export function selectSessionCommands(
   runs: readonly { readonly canonical: readonly StoredCanonicalEvent[] }[],
   sessionId: string | null,
-): CanonicalCommandView[] | null {
+): readonly CanonicalCommandView[] | null {
   return selectSessionCommandCatalog(runs, sessionId)?.commands ?? null;
 }
 

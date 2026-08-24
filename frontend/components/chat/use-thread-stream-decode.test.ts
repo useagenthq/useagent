@@ -14,13 +14,40 @@ const canonicalEvent = (over: Record<string, unknown>) => ({
 });
 const apply = (store: ReturnType<typeof createThreadStore>, event: string, obj: unknown) =>
   applyDecodedFrame(store, decodeFrame(event, JSON.stringify(obj)));
+const run = (status = "running") => ({
+  id: "r1",
+  org_id: "org-1",
+  user_id: "user-1",
+  prompt: "hello",
+  model: "openai/gpt-5.6-luna",
+  engine: "opencode",
+  status,
+  summary: null,
+  duration_ms: null,
+  parent_run_id: null,
+  child_session: false,
+  thread_id: "r1",
+  engine_session_id: null,
+  repo: null,
+  repos: [],
+  repo_specs: [],
+  resolved_resources: [],
+  memory_scope: "org",
+  skill_id: null,
+  skill_version: null,
+  skill_content_hash: null,
+  uploads: [],
+  created_at: "2026-08-24T00:00:00.000Z",
+  updated_at: "2026-08-24T00:00:00.000Z",
+  steps: [],
+});
 const seedRun = (s: ReturnType<typeof createThreadStore>) =>
-  apply(s, "run", { run: { id: "r1", status: "running", steps: [], created_at: "", summary: null } });
+  apply(s, "run", { run: run() });
 
 describe("applyDecodedFrame maps decoded frames onto the product store", () => {
   test("snapshot -> applySnapshot (native run lane)", () => {
     const s = createThreadStore();
-    apply(s, "snapshot", { runs: [{ id: "r1", status: "running", steps: [], created_at: "", summary: null }] });
+    apply(s, "snapshot", { runs: [run()] });
     expect(s.getSnapshot().byId.has("r1")).toBe(true);
   });
 
@@ -35,6 +62,30 @@ describe("applyDecodedFrame maps decoded frames onto the product store", () => {
     seedRun(s);
     apply(s, "done", { runId: "r1", status: "completed" });
     expect(s.getSnapshot().byId.get("r1")?.status).toBe("completed");
+  });
+
+  test("malformed run, step, and done statuses are dropped", () => {
+    const s = createThreadStore();
+    apply(s, "run", { run: run("done") });
+    expect(s.getSnapshot().runs).toHaveLength(0);
+
+    seedRun(s);
+    apply(s, "step", {
+      runId: "r1",
+      step: {
+        id: "s1",
+        run_id: "r1",
+        idx: 0,
+        kind: "shell",
+        label: "bad",
+        chip: null,
+        code_json: null,
+        created_at: "2026-08-24T00:00:00.000Z",
+      },
+    });
+    apply(s, "done", { runId: "r1", status: "done" });
+    expect(s.getSnapshot().byId.get("r1")?.run.steps).toHaveLength(0);
+    expect(s.getSnapshot().byId.get("r1")?.status).toBe("running");
   });
 
   test("canonical -> applyCanonical (canonical lane, deduped by eventId/revision)", () => {

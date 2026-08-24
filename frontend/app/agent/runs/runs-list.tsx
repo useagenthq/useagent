@@ -268,7 +268,7 @@ export function RunsList({
   // Engine filter options come from the data itself, so the select never
   // advertises an engine the org has no runs for.
   const engines = React.useMemo(
-    () => [...new Set(runs.map((run) => run.engine).filter((e): e is string => !!e))].toSorted(),
+    () => [...new Set(runs.map((run) => run.engine))].toSorted(),
     [runs],
   );
 

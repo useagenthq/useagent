@@ -41,6 +41,7 @@ import type { SidebarRun } from "@/components/shell/working-project-status";
 import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
 import { cx as cn } from "@/utils/cx";
 import { relativeTime } from "@/utils/format";
+import type { RunStatus } from "@useagent/agent-client/wire";
 
 export interface ThreadRowPill {
   label: "Working" | "Failed" | "Completed";
@@ -54,7 +55,7 @@ export interface ThreadRowPill {
  * completion affordance (Completed). Everything else rests unlabeled.
  */
 export function resolveThreadRowPill(input: {
-  status: string;
+  status: RunStatus;
   unread?: boolean;
 }): ThreadRowPill | null {
   const tone = statusTone(input.status);

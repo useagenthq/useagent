@@ -7,30 +7,15 @@ import { statusTone, type Run } from "@/app/agent/runs/runs-data";
 import { formatDuration } from "@/utils/format";
 import { cn } from "@/utils/cn";
 
-export type SidebarRun = Run & {
-  readonly repo?: unknown;
-  readonly repos?: unknown;
-  readonly created_at?: unknown;
-  readonly updated_at?: unknown;
-};
-
-const ACTIVE_STATUSES = new Set([
-  "active",
-  "in_progress",
-  "live",
-  "pending",
-  "queued",
-  "running",
-  "streaming",
-]);
+export type SidebarRun = Run;
 
 export function explicitRunRepos(run: SidebarRun): string[] {
-  const repos = Array.isArray(run.repos) ? run.repos : run.repo ? [run.repo] : [];
+  const repos = run.repos.length > 0 ? run.repos : run.repo ? [run.repo] : [];
   return repos.filter((repo): repo is string => typeof repo === "string" && repo.length > 0);
 }
 
 export function isSidebarActiveRun(run: SidebarRun): boolean {
-  return ACTIVE_STATUSES.has(run.status.toLowerCase());
+  return run.status === "queued" || run.status === "running";
 }
 
 function timestamp(value: unknown): number | null {
@@ -59,9 +44,8 @@ export function activeRunByRepo(runs: readonly SidebarRun[]): Map<string, Sideba
 }
 
 export function runStatusLabel(run: SidebarRun): string {
-  const status = run.status.toLowerCase();
+  if (run.status === "queued") return "Queued";
   if (statusTone(run.status) === "live") return "Working";
-  if (status === "queued" || status === "pending") return "Queued";
   if (statusTone(run.status) === "error") return "Failed";
   if (statusTone(run.status) === "success") return "Done";
   return "Idle";

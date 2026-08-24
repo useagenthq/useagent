@@ -1,81 +1,35 @@
-export type RunIntakeSource = "web" | "api" | "slack" | "automation";
+// The typed run-resource wire shapes (RunResource + its locators, capabilities,
+// provenance, kinds) live in the agent-client wire contract so the backend
+// serializer (`resolved_resources`) and any client share ONE definition. Packages
+// never import apps, so the ground truth is the package. Re-exported here so the
+// resolver/intake types below - and the backend modules that read these from
+// `../resources/types` - keep one import path. The intake/resolver/diagnostic
+// types below this block are backend-only and stay here.
+export type {
+  RunIntakeSource,
+  ResourceKind,
+  ResourceCapability,
+  ResourceProvenance,
+  GitHubRepositoryLocator,
+  GitHubPullRequestLocator,
+  FileLocator,
+  WebPageLocator,
+  GitHubRepositoryResource,
+  GitHubPullRequestResource,
+  FileResource,
+  WebPageResource,
+  RunResource,
+} from "@useagent/agent-client/wire";
 
-export type ResourceKind = "code.repository" | "code.change" | "file" | "web.page";
-
-export type ResourceCapability =
-  | "content.read"
-  | "code.checkout"
-  | "change.read"
-  | "change.checks.read"
-  | "deployment.read"
-  | "file.read"
-  | "page.read";
-
-export interface ResourceProvenance {
-  readonly source: "explicit" | "user_text" | "legacy_parent";
-  readonly channel: RunIntakeSource;
-  readonly raw: string;
-  readonly start: number | null;
-  readonly end: number | null;
-}
-
-export interface GitHubRepositoryLocator {
-  readonly type: "github.repository";
-  readonly repository: string;
-  readonly revision: string | null;
-}
-
-export interface GitHubPullRequestLocator {
-  readonly type: "github.pull_request";
-  readonly repository: string;
-  readonly number: number;
-  readonly revision: string | null;
-}
-
-export interface FileLocator {
-  readonly type: "file";
-  readonly id: string;
-  readonly name: string | null;
-}
-
-export interface WebPageLocator {
-  readonly type: "web.page";
-  readonly url: string;
-}
-
-interface RunResourceBase {
-  readonly provider: string;
-  readonly capabilities: readonly ResourceCapability[];
-  readonly provenance: readonly ResourceProvenance[];
-}
-
-export interface GitHubRepositoryResource extends RunResourceBase {
-  readonly kind: "code.repository";
-  readonly provider: "github";
-  readonly locator: GitHubRepositoryLocator;
-}
-
-export interface GitHubPullRequestResource extends RunResourceBase {
-  readonly kind: "code.change";
-  readonly provider: "github";
-  readonly locator: GitHubPullRequestLocator;
-}
-
-export interface FileResource extends RunResourceBase {
-  readonly kind: "file";
-  readonly locator: FileLocator;
-}
-
-export interface WebPageResource extends RunResourceBase {
-  readonly kind: "web.page";
-  readonly locator: WebPageLocator;
-}
-
-export type RunResource =
-  | GitHubRepositoryResource
-  | GitHubPullRequestResource
-  | FileResource
-  | WebPageResource;
+import type {
+  RunResource,
+  GitHubRepositoryResource,
+  GitHubPullRequestResource,
+  FileResource,
+  WebPageResource,
+  ResourceCapability,
+  RunIntakeSource,
+} from "@useagent/agent-client/wire";
 
 type ExplicitResource<T extends RunResource> = Omit<T, "capabilities" | "provenance"> & {
   readonly capabilities?: readonly ResourceCapability[];

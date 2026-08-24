@@ -1,3 +1,4 @@
+import type { ApiRun, ApiRunSummary, ApiStep } from "@useagent/agent-client/wire";
 import {
   and,
   desc,
@@ -20,10 +21,16 @@ import {
   type RunStatus,
   type StepKind,
 } from "../db/schema";
-import { parseRepoRef, type RepoRef } from "../github/repo-ref";
+import { parseRepoRef } from "../github/repo-ref";
 import type { RunResource } from "../resources/types";
 import { listUploadsForRuns, type RunUploadDescriptor } from "../uploads/repo";
 import { publicRunCondition } from "./visibility";
+
+// The run/step API shapes are the agent-client WIRE CONTRACT (single source of
+// truth; packages never import apps). Re-exported so the many backend modules that
+// read them from `../runs/repo` keep one import path; the serializers below
+// `satisfies` them, so any field or optionality drift is a compile error here.
+export type { ApiRun, ApiRunSummary, ApiStep } from "@useagent/agent-client/wire";
 
 // ---------------------------------------------------------------------------
 // API serialization — preserve the exact snake_case shapes the frontend reads
@@ -33,81 +40,6 @@ import { publicRunCondition } from "./visibility";
 
 type RunRecord = typeof runs.$inferSelect;
 type StepRecord = typeof steps.$inferSelect;
-
-export interface ApiStep {
-  id: string;
-  run_id: string;
-  idx: number;
-  kind: StepKind;
-  label: string;
-  chip: string | null;
-  code_json: string | null;
-  created_at: string;
-}
-
-export interface ApiRun {
-  id: string;
-  org_id: string | null;
-  user_id: string | null;
-  prompt: string;
-  model: string;
-  engine: EngineId;
-  status: RunStatus;
-  summary: string | null;
-  duration_ms: number | null;
-  parent_run_id: string | null;
-  /** True when this run is a GATEWAY CHILD SESSION - a deferred serial thread
-   *  turn the parent agent spawned via child_session_create (detected by its
-   *  durable command's idempotency-key namespace). The conversation folds these
-   *  under the parent turn's subagent group instead of rendering a top-level
-   *  user turn. `parent_run_id` alone cannot tell them apart - replies set it too. */
-  child_session: boolean;
-  thread_id: string;
-  engine_session_id: string | null;
-  /** Legacy single-repo mirror (= repos[0] ?? null), kept for back-compat.
-   *  Clean "owner/name" (any stored branch suffix is decoded away). */
-  repo: string | null;
-  /** GitHub repos this thread works in (each clean "owner/name"); [] = bare
-   *  workdir. Any per-repo branch lives in `repo_specs`, not here. */
-  repos: string[];
-  /** Per-repo target the run actually clones: clean repo + the chosen branch
-   *  (null = the repo's default branch). Decoded from the stored refs so
-   *  replay/reconnect reports the SAME branch the sandbox was cloned at. */
-  repo_specs: RepoRef[];
-  /** Typed resources accepted for this run. [] for legacy runs/callers. */
-  resolved_resources: RunResource[];
-  /** Which team-memory pool this run reads/writes (default "org"). The composer
-   *  reads a thread's scope from its newest run so a reply inherits it. */
-  memory_scope: MemoryScope;
-  /** Pinned skill revision this run loaded (null when none). Immutable: links a
-   *  historical run to the EXACT skill version/hash it used. */
-  skill_id: string | null;
-  skill_version: number | null;
-  skill_content_hash: string | null;
-  /** Inbound attachments the user sent with this turn (from Slack files or a
-   *  browser upload), claimed by the run. [] = none. The timeline renders these
-   *  on the user's bubble; bytes come from `/api/uploads/:id/content`. */
-  uploads: RunUploadDescriptor[];
-  created_at: string;
-  updated_at: string;
-  steps: ApiStep[];
-}
-
-export type ApiRunSummary = Pick<
-  ApiRun,
-  | "id"
-  | "prompt"
-  | "model"
-  | "engine"
-  | "status"
-  | "summary"
-  | "duration_ms"
-  | "repo"
-  | "repos"
-  | "repo_specs"
-  | "created_at"
-  | "updated_at"
->;
 
 function toStep(s: StepRecord): ApiStep {
   return {
@@ -119,7 +51,7 @@ function toStep(s: StepRecord): ApiStep {
     chip: s.chip,
     code_json: s.codeJson,
     created_at: s.createdAt.toISOString(),
-  };
+  } satisfies ApiStep;
 }
 
 function toRun(
@@ -157,7 +89,7 @@ function toRun(
     created_at: r.createdAt.toISOString(),
     updated_at: r.updatedAt.toISOString(),
     steps: stepRows.map(toStep),
-  };
+  } satisfies ApiRun;
 }
 
 /** Idempotency-key namespace `createChildSession` accepts its runs under - the
@@ -550,7 +482,7 @@ export async function listRunSummaries(
       repo_specs: specs,
       created_at: row.createdAt.toISOString(),
       updated_at: row.updatedAt.toISOString(),
-    };
+    } satisfies ApiRunSummary;
   });
 }
 
