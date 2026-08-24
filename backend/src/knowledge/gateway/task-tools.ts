@@ -184,8 +184,14 @@ async function listTasksTool(
   if (statusFilter === null) {
     return error(`task_list: status must be one of: ${TASK_STATUSES.join(", ")}.`);
   }
-  const { value: project } = resolveProject(args.project, await runPrimaryProject(claims));
-  const rows = await listTasksForOrg(claims.orgId, project ?? undefined);
+  const { value: project, explicit } = resolveProject(
+    args.project,
+    await runPrimaryProject(claims),
+  );
+  const rows = await listTasksForOrg(
+    claims.orgId,
+    explicit ? project : (project ?? undefined),
+  );
   const filtered = statusFilter ? rows.filter((t) => t.status === statusFilter) : rows;
 
   const tasks = filtered.map(summarizeTask);

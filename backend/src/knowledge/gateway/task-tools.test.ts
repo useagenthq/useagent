@@ -100,6 +100,23 @@ describe("durable task gateway", () => {
     expect(titles).not.toContain("Theirs");
   });
 
+  test("task_list with an explicit empty project returns only unfiled tasks", async () => {
+    const { claims, repo } = await fixture();
+    await createTask({ orgId: claims.orgId, projectKey: null, title: "Unfiled" });
+    await createTask({ orgId: claims.orgId, projectKey: repo, title: "Filed" });
+
+    const listed = await executeTaskTool(claims, "task_list", { project: "" });
+    const rows = (listed.structuredContent?.tasks ?? []) as Array<{
+      project: string | null;
+      title: string;
+    }>;
+
+    expect(rows).toEqual([
+      expect.objectContaining({ project: null, title: "Unfiled" }),
+    ]);
+    expect(listed.content[0]?.text).toStartWith("Unfiled tasks:");
+  });
+
   test("task_update transitions status and fails closed cross-org", async () => {
     const { claims, otherOrgId } = await fixture();
     const created = await executeTaskTool(claims, "task_create", { title: "Move me" });
