@@ -92,6 +92,7 @@ export function buildRuntimeProviderBootstrapCommand(
     "",
   ].join("\n");
   const settingsPatch = {
+    enableAgentBrowserAccess: false,
     providers: {
       codex: {
         enabled: true,
@@ -127,7 +128,7 @@ export function buildRuntimeProviderBootstrapCommand(
     `printf %s '${encode(wrapper)}' | base64 -d > "$CLAUDE_WRAPPER"`,
     'chmod 700 "$CLAUDE_WRAPPER"',
     `export PATCH_B64='${encode(JSON.stringify(settingsPatch))}'`,
-    `node -e 'const fs=require("node:fs");const path=process.argv[1];const wrapper=process.argv[2];const patch=JSON.parse(Buffer.from(process.env.PATCH_B64,"base64").toString("utf8"));patch.providers.claudeAgent.binaryPath=wrapper;let current={};try{current=JSON.parse(fs.readFileSync(path,"utf8"))}catch{};current.providers={...(current.providers??{}),...patch.providers};const tmp=path+".tmp";fs.writeFileSync(tmp,JSON.stringify(current));fs.chmodSync(tmp,0o600);fs.renameSync(tmp,path)' "$SETTINGS" "$CLAUDE_WRAPPER"`,
+    `node -e 'const fs=require("node:fs");const path=process.argv[1];const wrapper=process.argv[2];const patch=JSON.parse(Buffer.from(process.env.PATCH_B64,"base64").toString("utf8"));patch.providers.claudeAgent.binaryPath=wrapper;let current={};try{current=JSON.parse(fs.readFileSync(path,"utf8"))}catch{};current.enableAgentBrowserAccess=patch.enableAgentBrowserAccess;current.providers={...(current.providers??{}),...patch.providers};const tmp=path+".tmp";fs.writeFileSync(tmp,JSON.stringify(current));fs.chmodSync(tmp,0o600);fs.renameSync(tmp,path)' "$SETTINGS" "$CLAUDE_WRAPPER"`,
   ].join("\n");
 }
 
