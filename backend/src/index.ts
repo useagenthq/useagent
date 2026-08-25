@@ -84,6 +84,7 @@ import { engineModelsForReadyEngines, readyUserFacingEngines } from "./runs/engi
 import { uploadRoutes } from "./uploads/routes";
 import { startUploadCleanup } from "./uploads/cleanup";
 import { internalAutomationRoutes } from "./schedules/internal-routes";
+import { internalChildSessionRoutes } from "./knowledge/gateway/child-session-internal-routes";
 import {
   gatewayApprovalRoutes,
   internalGatewayApprovalRoutes,
@@ -221,6 +222,7 @@ app.use("/api/*", async (c, next) => {
 app.get("/api/health", (c) => c.json({ status: "ok" }));
 app.route("/api/internal/artifact-changes", internalArtifactChangeRoutes);
 app.route("/api/internal/automation", internalAutomationRoutes);
+app.route("/api/internal/child-sessions", internalChildSessionRoutes);
 app.route("/api/internal/gateway-approval/consume", internalGatewayApprovalRoutes);
 app.route("/api/internal/gateway-approval-requests", internalApprovalRequestRoutes);
 app.route("/api/internal/github-operations", internalGithubRoutes);
