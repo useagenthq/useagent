@@ -16,6 +16,7 @@ set -euo pipefail
 
 SERVER_IP=${SERVER_IP:?set SERVER_IP}
 PG_PASSWORD=${PG_PASSWORD:?set PG_PASSWORD}
+PG_GATEWAY_PASSWORD=${PG_GATEWAY_PASSWORD:?set PG_GATEWAY_PASSWORD}
 SSH_KEY=${SSH_KEY:-$HOME/.ssh/id_ed25519}
 REPO=${1:?pass the path to the skynet repo root}
 SSH=(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new root@"$SERVER_IP")
@@ -31,17 +32,20 @@ rsync -az --delete -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
   root@"$SERVER_IP":/opt/skynet/
 
 echo "== write env + build + start (remote) =="
-"${SSH[@]}" OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}" PG_PASSWORD="$PG_PASSWORD" 'bash -s' <<'REMOTE'
+"${SSH[@]}" OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}" PG_PASSWORD="$PG_PASSWORD" PG_GATEWAY_PASSWORD="$PG_GATEWAY_PASSWORD" 'bash -s' <<'REMOTE'
 set -euxo pipefail
 install -d -o root -g root -m 755 /etc/skynet
 AUTH_SECRET=$(openssl rand -hex 32)
 cat > /etc/skynet/backend.env <<ENV
-DATABASE_URL=postgres://skynet:${PG_PASSWORD}@localhost:5432/skynet
+DATABASE_URL=postgres://useagent:${PG_PASSWORD}@localhost:5432/useagent
 BETTER_AUTH_SECRET=${AUTH_SECRET}
 BETTER_AUTH_URL=http://localhost:3400
 PORT=3201
 USEAGENT_DEV_MODE=1
 OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+ENV
+cat > /etc/skynet/gateway.env <<ENV
+GATEWAY_DATABASE_URL=postgres://useagent_gateway:${PG_GATEWAY_PASSWORD}@localhost:5432/useagent
 ENV
 chown -R skynet:skynet /opt/skynet
 

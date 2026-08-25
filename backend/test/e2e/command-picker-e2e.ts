@@ -25,7 +25,7 @@ import { closeSync, openSync } from "node:fs";
 import { readFileSync, writeFileSync, rmSync } from "node:fs";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
-const DB = "skynet_e2e_cmd";
+const DB = "useagent_e2e_cmd";
 const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 const BE_PORT = 3522;
 const FE_PORT = 3422;

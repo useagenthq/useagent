@@ -23,7 +23,7 @@ if (process.env.LIVE_ARTIFACT_E2E !== "1") {
 }
 
 const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-const databaseName = `skynet_artifact_live_${suffix}`;
+const databaseName = `useagent_artifact_live_${suffix}`;
 const port = 35_000 + Math.floor(Math.random() * 500);
 const baseUrl = `http://127.0.0.1:${port}`;
 const adminUrl = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";

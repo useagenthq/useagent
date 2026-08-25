@@ -8,7 +8,7 @@
  *
  *   bun run test/e2e/live-timings.ts
  *
- * Isolation (NEVER the shared stack): throwaway DB skynet_e2e_timings, backend
+ * Isolation (NEVER the shared stack): throwaway DB useagent_e2e_timings, backend
  * on :3515, gateway on :3516, and a tunnel to the gateway for sandbox access.
  * Requires backend/.env to carry DAYTONA_API_KEY + a provider key
  * (OPENROUTER_API_KEY / ANTHROPIC_API_KEY); the gateway resolves the org
@@ -27,7 +27,7 @@ import { startPublicTunnel, tunnelProviderOrder, type PublicTunnel } from "./lib
 import { stopOwnedProcess } from "./lib/process-lifecycle";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
-const DB = "skynet_e2e_timings";
+const DB = "useagent_e2e_timings";
 const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 const PORT = 3515;
 const GATEWAY_PORT = 3516;

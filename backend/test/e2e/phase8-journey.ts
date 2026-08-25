@@ -10,7 +10,7 @@
  * credential-leak audit over the persisted product surfaces.
  *
  * Isolation: boots its OWN backend on a throwaway DB (unique per engine) - NEVER a second
- * backend on the shared `skynet` DB (recoverStaleRuns would hijack other agents' in-flight
+ * backend on the shared `useagent` DB (recoverStaleRuns would hijack other agents' in-flight
  * runs). One Daytona sandbox per engine; deleted + API-verified at the end.
  *
  * Emits `PHASE8_EVIDENCE=<json>` (engine, model, run/thread/sandbox/session ids, per-cell
@@ -48,7 +48,7 @@ const BE_PORT = Number(process.env.BE_PORT ?? PORT_BY_ENGINE[ENGINE]);
 const BE = `http://localhost:${BE_PORT}`;
 const ORIGIN = "http://localhost:3200"; // dev-org (anonymous) scope
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
-const DB = `skynet_e2e_p8_${ENGINE}`;
+const DB = `useagent_e2e_p8_${ENGINE}`;
 const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 // ACP relay install is slow the first time in a fresh sandbox; poll generously.
 const BUDGET = Number(process.env.E2E_BOOT_BUDGET_S ?? 480);

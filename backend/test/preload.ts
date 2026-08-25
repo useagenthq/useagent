@@ -3,7 +3,7 @@
  * module is imported), so it wins over Bun's auto-loaded `.env`.
  *
  *  - Points every DB client (Drizzle in src/db, the knowledge store, better-auth,
- *    drizzle-kit) at the isolated `skynet_test` database.
+ *    drizzle-kit) at the isolated `useagent_test` database.
  *  - Strips OPENROUTER_API_KEY / OPENAI_API_KEY so distillation degrades to its
  *    keyless STUB path and embeddings degrade to keyword-only — zero LLM calls,
  *    fully deterministic. (The app reads these keys lazily, so deleting them here
@@ -17,7 +17,7 @@
  */
 process.env.DATABASE_URL =
   process.env.TEST_DATABASE_URL ??
-  "postgres://postgres@localhost:5432/skynet_test";
+  "postgres://postgres@localhost:5432/useagent_test";
 process.env.PORT = "3211";
 
 delete process.env.OPENROUTER_API_KEY;

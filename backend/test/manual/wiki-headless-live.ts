@@ -6,7 +6,7 @@
  *
  *   bun run test/manual/wiki-headless-live.ts
  *
- * Isolated: throwaway DB skynet_kbgw_wiki, backend :3417, Next :3416. Needs the
+ * Isolated: throwaway DB useagent_kbgw_wiki, backend :3417, Next :3416. Needs the
  * worktree frontend to have real node_modules (bun install; Turbopack rejects a
  * symlink). Requires nothing external.
  */
@@ -14,7 +14,7 @@ import { openSync, readFileSync } from "node:fs";
 import postgres from "postgres";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
-const DB = "skynet_kbgw_wiki";
+const DB = "useagent_kbgw_wiki";
 const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 const BE = 3417;
 const FE = 3416;

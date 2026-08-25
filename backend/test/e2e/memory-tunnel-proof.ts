@@ -4,8 +4,8 @@
  *
  *     bun run test/e2e/memory-tunnel-proof.ts
  *
- * Boots an ISOLATED backend (throwaway DB `skynet_memtun_e2e`, PORT 3502 - NEVER
- * the shared `skynet` DB) with the REAL Daytona/opencode/:8420 keys, and exposes it
+ * Boots an ISOLATED backend (throwaway DB `useagent_memtun_e2e`, PORT 3502 - NEVER
+ * the shared `useagent` DB) with the REAL Daytona/opencode/:8420 keys, and exposes it
  * via `cloudflared` so the sandbox agent can reach the Skynet memory MCP gateway
  * (GATEWAY_PUBLIC_URL = the dedicated-gateway tunnel origin). Then proves cross-sandbox memory:
  *
@@ -30,7 +30,7 @@ import {
 } from "./lib/public-tunnel";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
-const DB = "skynet_memtun_e2e";
+const DB = "useagent_memtun_e2e";
 const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 const PORT = 3502;
 const BASE = `http://localhost:${PORT}`;
@@ -104,7 +104,7 @@ async function startBackend(publicUrl: string, memoryUrl?: string): Promise<Proc
   const fd = openSync(backendLog, "a");
   const env: Record<string, string> = { ...process.env } as Record<string, string>;
   env.PORT = String(PORT);
-  env.DATABASE_URL = DB_URL; // wins over .env's shared skynet
+  env.DATABASE_URL = DB_URL; // wins over .env's shared useagent
   env.GATEWAY_PUBLIC_URL = publicUrl; // sandbox-reachable gateway-only origin
   env.PROVIDER_GATEWAY_SECRET = providerSigningSecret;
   env.TOOL_GATEWAY_SECRET = toolSigningSecret;
