@@ -32,7 +32,7 @@ import { createHmac } from "node:crypto";
 import postgres from "postgres";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
-const DB = "skynet_e2e";
+const DB = "useagent_e2e";
 const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 const PORT = 3507;
 const MEM_PORT = 3517;
@@ -406,7 +406,7 @@ async function stage5_durabilitySurvived(root: { channel: string; rootTs: string
 
 // ── run ───────────────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
-  console.log("E2E full-stack — isolated stack (:3507, DB skynet_e2e, mock memory/slack)");
+  console.log("E2E full-stack — isolated stack (:3507, DB useagent_e2e, mock memory/slack)");
   await recreateDb();
   let proc = await startBackend("boot");
   // Safety: confirm the backend is on the throwaway DB before anything else.

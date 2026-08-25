@@ -18,7 +18,7 @@ import { deleteById } from "./soak/lib/daytona";
 const BE = process.env.BE_ORIGIN ?? "http://localhost:3501";
 const ORIGIN = "http://localhost:3200"; // dev org (anonymous)
 const MODEL = process.env.STOP_MODEL ?? "claude-haiku-4-5";
-const DB = process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/skynet";
+const DB = process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/useagent";
 // A prompt that forces ONE long-running bash tool call (~120s) so we can cancel
 // mid-flight. If Stop works, the run settles long before tick 40 and the output is
 // partial.

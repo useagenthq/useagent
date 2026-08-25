@@ -36,7 +36,7 @@ const gatewayPortByJourney: Record<Journey, Record<Engine, number>> = {
 };
 const gatewayPort = gatewayPortByJourney[journey][engine];
 const gatewayBase = `http://localhost:${gatewayPort}`;
-const dbName = journey === "phase8" ? `skynet_e2e_p8_${engine}` : `skynet_e2e_c6_${engine}`;
+const dbName = journey === "phase8" ? `useagent_e2e_p8_${engine}` : `useagent_e2e_c6_${engine}`;
 const dbUrl = `postgres://postgres@localhost:5432/${dbName}`;
 const backendDir = new URL("../..", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";

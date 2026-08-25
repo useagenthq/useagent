@@ -64,7 +64,7 @@ describe("gateway trust-boundary configuration", () => {
         ...process.env,
         ...secureEnv,
         BETTER_AUTH_SECRET: "",
-        DATABASE_URL: "postgres://postgres@localhost:5432/skynet",
+        DATABASE_URL: "postgres://postgres@localhost:5432/useagent",
       },
       stdout: "pipe",
       stderr: "pipe",

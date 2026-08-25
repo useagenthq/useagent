@@ -14,7 +14,7 @@ This was verified end to end: provision -> boot -> a live model turn -> destroy
 | `hcloud_server` (Ubuntu 24.04) | The host. Default `cpx31` (4 vCPU / 8 GB). |
 | `hcloud_firewall` | Inbound 22 (SSH), 80, 443. |
 | `hcloud_ssh_key` | Your key for root SSH (or reference an existing one). |
-| cloud-init | Installs bun (pinned 1.3.14), Node 24, Docker, Caddy, PostgreSQL 16 + pgvector, 4 GB swap, and a **throwaway `skynet` database** with the `vector` extension pre-created. |
+| cloud-init | Installs bun (pinned 1.3.14), Node 24, Docker, Caddy, PostgreSQL 16 + pgvector, 4 GB swap, and a **throwaway `useagent` database** with owner and restricted gateway roles. |
 
 The database is local and isolated, so this host never shares a database with any
 other useAgent backend (the platform supports exactly one backend per database).
@@ -40,6 +40,7 @@ terraform apply
 ```hcl
 ssh_public_key_path = "~/.ssh/id_ed25519.pub"
 postgres_password   = "a-strong-secret"
+gateway_postgres_password = "a-different-strong-secret"
 ```
 
 To reuse an SSH key already in your Hetzner project instead of creating one, set
@@ -56,6 +57,7 @@ ssh root@$(terraform output -raw server_ip) 'cloud-init status --wait'
 ```bash
 SERVER_IP=$(terraform output -raw server_ip) \
 PG_PASSWORD='the-postgres-password' \
+PG_GATEWAY_PASSWORD='the-gateway-postgres-password' \
 OPENROUTER_API_KEY=sk-or-...        \
 SSH_KEY=~/.ssh/id_ed25519           \
 ./deploy-app.sh /path/to/skynet/repo
@@ -92,7 +94,7 @@ Point the extra env at `/etc/skynet/backend.env` and restart `skynet-backend`.
 
 Against a real `cpx31` in `ash`:
 
-- cloud-init installed the full dependency set; the throwaway `skynet` DB came up
+- cloud-init installed the full dependency set; the throwaway `useagent` DB came up
   with pgvector.
 - The backend migrated the schema (37 tables) and served `/api/health` -> `200`.
 - The Next.js 16 frontend built and served behind Caddy.

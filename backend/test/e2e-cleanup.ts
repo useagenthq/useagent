@@ -1,5 +1,5 @@
 /**
- * Remove rows created by the Playwright e2e suite from the dev `skynet`
+ * Remove rows created by the Playwright e2e suite from the dev `useagent`
  * database. Everything the specs create is tagged with the marker below (or,
  * for auth users, an `e2e-skynet-` email prefix). Idempotent + defensive:
  * each delete is independent so one failure never blocks the rest.
@@ -11,7 +11,7 @@ import postgres from "postgres";
 
 const MARKER = "[e2e-skynet]";
 const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/skynet";
+  process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/useagent";
 
 const sql = postgres(DATABASE_URL, { max: 1 });
 

@@ -9,14 +9,14 @@ function normalize(grant: string): string {
   return grant.replace(/\s+/g, " ").replace(/;$/, "").trim();
 }
 
-/** Extract every `GRANT ... TO skynet_gateway;` from the provisioning script,
+/** Extract every `GRANT ... TO useagent_gateway;` from the provisioning script,
  *  joining continuation lines, excluding the credentials VIEW grant (the view
  *  is provisioning-owned; boot grants it only when present). */
 function scriptGrants(script: string): string[] {
   const out: string[] = [];
   // Multiline-tolerant: a GRANT may wrap its table list across lines; consume
   // up to the first semicolon and normalize whitespace afterward.
-  for (const match of script.matchAll(/^GRANT [\s\S]*?TO skynet_gateway;/gm)) {
+  for (const match of script.matchAll(/^GRANT [\s\S]*?TO useagent_gateway;/gm)) {
     const grant = normalize(match[0]);
     if (grant.includes("gateway_provider_api_key_credentials")) continue;
     // Structural role baseline (database CONNECT, schema USAGE) is
@@ -48,18 +48,18 @@ describe("gateway grants single source of truth", () => {
       expect(grant).not.toMatch(/ON provider_connections\b/);
     }
     expect(GATEWAY_GRANTS).toContain(
-      "GRANT UPDATE (status, resolved_at, resolved_by, resolved_revision) ON artifact_workpiece_proposals TO skynet_gateway",
+      "GRANT UPDATE (status, resolved_at, resolved_by, resolved_revision) ON artifact_workpiece_proposals TO useagent_gateway",
     );
   });
 
   test("restricted gateway can persist tasks and read connected integration credentials", () => {
     expect(GATEWAY_GRANTS).toEqual(
       expect.arrayContaining([
-        "GRANT SELECT, INSERT ON projects TO skynet_gateway",
-        "GRANT UPDATE (repo_full_name, updated_at) ON projects TO skynet_gateway",
-        "GRANT SELECT, INSERT ON tasks TO skynet_gateway",
-        "GRANT UPDATE (title, body, status, priority, order_key, updated_at) ON tasks TO skynet_gateway",
-        "GRANT SELECT ON integration_connections, integration_connection_credentials TO skynet_gateway",
+        "GRANT SELECT, INSERT ON projects TO useagent_gateway",
+        "GRANT UPDATE (repo_full_name, updated_at) ON projects TO useagent_gateway",
+        "GRANT SELECT, INSERT ON tasks TO useagent_gateway",
+        "GRANT UPDATE (title, body, status, priority, order_key, updated_at) ON tasks TO useagent_gateway",
+        "GRANT SELECT ON integration_connections, integration_connection_credentials TO useagent_gateway",
       ]),
     );
   });
@@ -78,5 +78,24 @@ describe("gateway grants single source of truth", () => {
     await expect(applyGatewayGrants(missingView, { strict: true })).rejects.toThrow(
       "required hosted credentials view",
     );
+  });
+
+  test("keeps grants deployable before the one-time hosted role cutover", async () => {
+    let query = 0;
+    const applied: string[] = [];
+    const legacyHost = Object.assign(
+      async () => {
+        query += 1;
+        if (query === 1) return [];
+        return [{ present: 1 }];
+      },
+      { unsafe: async (grant: string) => applied.push(grant) },
+    ) as unknown as Sql;
+
+    await applyGatewayGrants(legacyHost, { strict: true });
+
+    expect(applied).toHaveLength(GATEWAY_GRANTS.length + 1);
+    expect(applied.every((grant) => !grant.includes("useagent_gateway"))).toBe(true);
+    expect(applied.every((grant) => grant.includes("skynet_gateway"))).toBe(true);
   });
 });

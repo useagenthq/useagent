@@ -22,7 +22,7 @@ import { deleteById, listAll } from "./soak/lib/daytona";
 const BE_PORT = 3552;
 const BE = `http://localhost:${BE_PORT}`;
 const ORIGIN = "http://localhost:3200";
-const DB = "skynet_e2e_secaudit";
+const DB = "useagent_e2e_secaudit";
 const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
 const backendDir = new URL("../..", import.meta.url).pathname;

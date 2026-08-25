@@ -16,7 +16,7 @@ export const env = {
    *  DATABASE_URL would shadow the privileged one (it broke a release gate). */
   databaseUrl:
     process.env.GATEWAY_DATABASE_URL ??
-    opt("DATABASE_URL", "postgres://postgres@localhost:5432/skynet"),
+    opt("DATABASE_URL", "postgres://postgres@localhost:5432/useagent"),
 
   /** Default org when the caller resolves none (headers wired later). */
   defaultOrg: opt("KNOWLEDGE_DEFAULT_ORG", "skynet-dev"),

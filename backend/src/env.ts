@@ -113,7 +113,7 @@ function resolveAuthSecret(): string {
 
 export const env = {
   DATABASE_URL:
-    process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/skynet",
+    process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/useagent",
   PORT: Number(process.env.PORT ?? 3201),
   FRONTEND_ORIGIN: process.env.FRONTEND_ORIGIN ?? "http://localhost:3200",
   BETTER_AUTH_URL: process.env.BETTER_AUTH_URL ?? "http://localhost:3201",

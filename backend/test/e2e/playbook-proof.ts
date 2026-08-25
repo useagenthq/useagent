@@ -4,8 +4,8 @@
  *
  *     bun run test/e2e/playbook-proof.ts
  *
- * It boots an isolated backend (throwaway DB `skynet_pb_proof`, PORT 3424 - NEVER
- * the shared `skynet` dev DB, NEVER :3401/:3501) with the REAL Daytona/opencode
+ * It boots an isolated backend (throwaway DB `useagent_pb_proof`, PORT 3424 - NEVER
+ * the shared `useagent` dev DB, NEVER :3401/:3501) with the REAL Daytona/opencode
  * keys from backend/.env (memory disabled so the proof never touches the shared
  * pool), then proves the substrate end to end on a REAL opencode(haiku) run:
  *
@@ -25,7 +25,7 @@ import { Daytona } from "@daytona/sdk";
 import postgres from "postgres";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
-const DB = "skynet_pb_proof";
+const DB = "useagent_pb_proof";
 const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 const PORT = 3424;
 const BASE = `http://localhost:${PORT}`;
