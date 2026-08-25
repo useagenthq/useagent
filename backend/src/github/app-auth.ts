@@ -30,6 +30,22 @@ export interface InstallationToken {
   expiresAt: number;
 }
 
+type GithubInstallationPermissionAccess = "read" | "write";
+type GithubInstallationPermissions = Readonly<
+  Record<string, GithubInstallationPermissionAccess>
+>;
+
+const REPOSITORY_READ_PERMISSIONS = {
+  contents: "read",
+  metadata: "read",
+} as const satisfies GithubInstallationPermissions;
+
+const REPOSITORY_PUBLICATION_PERMISSIONS = {
+  contents: "write",
+  metadata: "read",
+  pull_requests: "write",
+} as const satisfies GithubInstallationPermissions;
+
 interface GhInstallation {
   id: number;
   account: { login: string } | null;
@@ -43,6 +59,26 @@ const repositoryTokenCache = new Map<string, InstallationToken>();
 const repositoryTokenInflight = new Map<string, Promise<InstallationToken>>();
 /** Repository -> installation is stable for the life of the process. */
 const repositoryInstallations = new Map<string, number>();
+
+function normalizedPermissions(
+  permissions: GithubInstallationPermissions,
+): GithubInstallationPermissions {
+  return Object.fromEntries(
+    Object.entries(permissions).sort(([left], [right]) => left.localeCompare(right)),
+  ) as GithubInstallationPermissions;
+}
+
+function repositoryTokenCacheKey(input: {
+  readonly appId: string;
+  readonly installationId: number;
+  readonly repository: string;
+  readonly permissions: GithubInstallationPermissions;
+}): string {
+  const permissionKey = Object.entries(normalizedPermissions(input.permissions))
+    .map(([name, access]) => `${name}:${access}`)
+    .join(",");
+  return `${input.appId}|${input.installationId}|${input.repository.toLowerCase()}|${permissionKey}`;
+}
 
 function base64url(input: Buffer | string): string {
   return Buffer.from(input).toString("base64url");
@@ -70,7 +106,7 @@ function appJwtHeaders(jwt: string): Record<string, string> {
   return {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "skynet-a",
+    "User-Agent": "useagent",
     Authorization: `Bearer ${jwt}`,
   };
 }
@@ -218,12 +254,18 @@ async function repositoryInstallationId(
 async function mintRepositoryInstallationToken(
   cfg: GithubAppConfig,
   repository: string,
+  permissions: GithubInstallationPermissions,
 ): Promise<{ key: string; token: InstallationToken }> {
   const { name } = parseRepository(repository);
   const jwt = signAppJwt(cfg, Math.floor(Date.now() / 1000));
   const headers = appJwtHeaders(jwt);
   const installationId = await repositoryInstallationId(cfg, repository, headers);
-  const key = `${cfg.appId}|${installationId}|${repository.toLowerCase()}`;
+  const key = repositoryTokenCacheKey({
+    appId: cfg.appId,
+    installationId,
+    repository,
+    permissions,
+  });
 
   const now = Date.now();
   const cached = repositoryTokenCache.get(key);
@@ -234,7 +276,7 @@ async function mintRepositoryInstallationToken(
   try {
     const token = await mintInstallationAccessToken(cfg, installationId, {
       repositories: [name],
-      permissions: { contents: "read", metadata: "read" },
+      permissions: normalizedPermissions(permissions),
     });
     return { key, token };
   } catch (error) {
@@ -316,7 +358,12 @@ export async function getRepositoryInstallationToken(
   const repositoryKey = `${cfg.appId}|${parsed.owner.toLowerCase()}/${parsed.name.toLowerCase()}`;
   const installationId = repositoryInstallations.get(repositoryKey);
   if (installationId !== undefined) {
-    const tokenKey = `${cfg.appId}|${installationId}|${repository.toLowerCase()}`;
+    const tokenKey = repositoryTokenCacheKey({
+      appId: cfg.appId,
+      installationId,
+      repository,
+      permissions: REPOSITORY_READ_PERMISSIONS,
+    });
     const cached = repositoryTokenCache.get(tokenKey);
     if (cached && cached.expiresAt - Date.now() > REFRESH_MARGIN_MS) return cached;
   }
@@ -326,7 +373,11 @@ export async function getRepositoryInstallationToken(
   if (pending) return pending;
   const mint = (async (): Promise<InstallationToken> => {
     try {
-      const result = await mintRepositoryInstallationToken(cfg, repository);
+      const result = await mintRepositoryInstallationToken(
+        cfg,
+        repository,
+        REPOSITORY_READ_PERMISSIONS,
+      );
       repositoryTokenCache.set(result.key, result.token);
       return result.token;
     } finally {
@@ -342,8 +393,27 @@ export async function getRepositoryInstallationTokenForId(
   installationId: number,
   cfg: GithubAppConfig,
 ): Promise<InstallationToken> {
+  return getRepositoryInstallationTokenForIdWithPermissions(
+    repository,
+    installationId,
+    cfg,
+    REPOSITORY_READ_PERMISSIONS,
+  );
+}
+
+async function getRepositoryInstallationTokenForIdWithPermissions(
+  repository: string,
+  installationId: number,
+  cfg: GithubAppConfig,
+  permissions: GithubInstallationPermissions,
+): Promise<InstallationToken> {
   const { name } = parseRepository(repository);
-  const tokenKey = `${cfg.appId}|${installationId}|${repository.toLowerCase()}`;
+  const tokenKey = repositoryTokenCacheKey({
+    appId: cfg.appId,
+    installationId,
+    repository,
+    permissions,
+  });
   const cached = repositoryTokenCache.get(tokenKey);
   if (cached && cached.expiresAt - Date.now() > REFRESH_MARGIN_MS) return cached;
   const active = repositoryTokenInflight.get(tokenKey);
@@ -352,7 +422,7 @@ export async function getRepositoryInstallationTokenForId(
     try {
       const token = await mintInstallationAccessToken(cfg, installationId, {
         repositories: [name],
-        permissions: { contents: "read", metadata: "read" },
+        permissions: normalizedPermissions(permissions),
       });
       repositoryTokenCache.set(tokenKey, token);
       return token;
@@ -362,6 +432,20 @@ export async function getRepositoryInstallationTokenForId(
   })();
   repositoryTokenInflight.set(tokenKey, mint);
   return mint;
+}
+
+/** Mint the exact repository-scoped credential used by the Git Data publisher. */
+export async function getRepositoryPublicationTokenForId(
+  repository: string,
+  installationId: number,
+  cfg: GithubAppConfig,
+): Promise<InstallationToken> {
+  return getRepositoryInstallationTokenForIdWithPermissions(
+    repository,
+    installationId,
+    cfg,
+    REPOSITORY_PUBLICATION_PERMISSIONS,
+  );
 }
 
 /** Test/ops hook: drop the cached installation token so the next call re-mints. */

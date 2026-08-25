@@ -33,12 +33,14 @@ export const GITHUB_PUBLICATION_STATES = [
 export type GitHubPublicationState = (typeof GITHUB_PUBLICATION_STATES)[number];
 
 export type GitHubChangeAction = "add" | "modify" | "delete" | "rename";
+export type GitHubFileMode = "100644" | "100755" | "120000";
 
 export interface GitHubChangeManifestFile {
   readonly path: string;
   readonly action: GitHubChangeAction;
   readonly sha256?: string;
   readonly sizeBytes?: number;
+  readonly mode?: GitHubFileMode;
   readonly previousPath?: string;
 }
 
