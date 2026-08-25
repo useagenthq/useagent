@@ -7,6 +7,7 @@ import { enqueueCapture } from "../memory/capture-outbox";
 import { collectRunEvidence } from "../memory/capture-evidence";
 import { assessCaptureSalience } from "../memory/capture-salience";
 import { isInternalRunOrigin } from "./origin";
+import { recordRunFollowups } from "./followups";
 import { findSlackRunResponse } from "../slack/repo";
 import { composeSlackReplyText } from "../slack/reply";
 import { buildRunCard, deriveTitle, phaseForStatus, sessionUrl } from "../slack/card";
@@ -155,11 +156,17 @@ export async function finalizeRun(
   let kickSlack = false;
   let settledThreadId: string | null = null;
   let settledOrgId: string | null = null;
+  let settledUserId: string | null = null;
+  let settledPrompt: string | null = null;
+  let settledInternal = true; // stays true unless a customer run actually finalized
   await db.transaction(async (tx) => {
     const [run] = await tx.select().from(runs).where(eq(runs.id, runId)).limit(1);
     if (!run) return; // deleted mid-flight — nothing to finalize
     settledThreadId = run.threadId;
     settledOrgId = run.orgId;
+    settledUserId = run.userId;
+    settledPrompt = run.prompt;
+    settledInternal = isInternalRunOrigin(run.origin) || run.engine === "mock";
 
     // FIRST finalizer wins (completeRun guards on a non-terminal status). A
     // concurrent second finalizer - zombie-cancel racing the reconcile loop -
@@ -169,6 +176,9 @@ export async function finalizeRun(
     if (!finalized) {
       settledThreadId = null;
       settledOrgId = null;
+      settledUserId = null;
+      settledPrompt = null;
+      settledInternal = true;
       return;
     }
     await releaseLeaseForRun(runId, tx);
@@ -273,5 +283,28 @@ export async function finalizeRun(
       runId,
       kind: "settled",
     });
+  }
+
+  // Follow-up suggestions (post-commit, fire-and-forget): a completed customer
+  // run gets 2-3 suggested next questions appended as a native-lane frame the
+  // thread stream then delivers. Strictly AFTER settle so the model call can
+  // never delay the answer; internal (parity/e2e) and mock runs never generate.
+  if (
+    status === "completed" &&
+    settledThreadId &&
+    settledOrgId &&
+    settledPrompt !== null &&
+    !settledInternal
+  ) {
+    void recordRunFollowups(
+      {
+        id: runId,
+        threadId: settledThreadId,
+        orgId: settledOrgId,
+        userId: settledUserId,
+        prompt: settledPrompt,
+      },
+      summary,
+    );
   }
 }

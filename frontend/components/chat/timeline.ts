@@ -20,6 +20,7 @@ import {
   asRecord,
   deriveTrace,
   isRenderableTimelineStep,
+  parseStepCode,
   parseTodos,
 } from "./types";
 
@@ -100,7 +101,53 @@ export type TimelineNode =
   | { kind: "artifact"; key: string; artifact: TimelineArtifact }
   | { kind: "file"; key: string; file: TimelineFileChange }
   | { kind: "plan"; key: string; entries: readonly TimelinePlanEntry[] }
-  | { kind: "tool"; key: string; step: ApiStep };
+  | { kind: "tool"; key: string; step: ApiStep }
+  | { kind: "followups"; key: string; suggestions: readonly string[] };
+
+/** One distinct web source a turn actually fetched: the display domain + the
+ *  first URL fetched from it. */
+export interface TurnSource {
+  domain: string;
+  href: string;
+}
+
+/**
+ * The web sources a turn consulted, derived from its OWN fetch-tool steps
+ * (deriveTrace glyph "fetch" — webfetch/fetch), never fabricated. One entry per
+ * distinct domain, first-fetched URL wins, encounter order preserved.
+ */
+export function deriveTurnSources(nodes: readonly TimelineNode[]): TurnSource[] {
+  const seen = new Map<string, string>();
+  for (const node of nodes) {
+    if (node.kind !== "tool") continue;
+    const trace = deriveTrace(node.step);
+    if (trace.glyph !== "fetch" || trace.isError) continue;
+    const input = asRecord(asRecord(parseStepCode(node.step))?.input);
+    const url = typeof input?.url === "string" ? input.url : null;
+    if (!url) continue;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
+      const domain = parsed.hostname.replace(/^www\./, "");
+      if (domain && !seen.has(domain)) seen.set(domain, parsed.href);
+    } catch {
+      /* not an absolute URL — nothing citable */
+    }
+  }
+  return [...seen.entries()].map(([domain, href]) => ({ domain, href }));
+}
+
+/** Parse a `followups.suggested` skynet frame into its suggestion list, or null
+ *  for any other/malformed frame (renders as nothing on clients that predate it). */
+export function parseFollowups(eventType: string, payload: unknown): readonly string[] | null {
+  if (eventType !== "followups.suggested") return null;
+  const item = asRecord(payload);
+  if (!item || !Array.isArray(item.suggestions)) return null;
+  const suggestions = item.suggestions.filter(
+    (s): s is string => typeof s === "string" && s.trim().length > 0,
+  );
+  return suggestions.length > 0 ? suggestions : null;
+}
 
 function parseArtifact(eventType: string, payload: unknown): TimelineArtifact | null {
   if (eventType !== "artifact.created" && eventType !== "artifact.delivered") return null;
@@ -288,6 +335,20 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
       node: { kind: "artifact", key: f.eventId, artifact },
       k0: Number.MAX_SAFE_INTEGER,
       k1: 2,
+      k2: f.seq,
+    });
+  }
+
+  // Follow-up suggestions (emitted post-settle) CLOSE the turn: after the
+  // answer and after any artifact receipts (k1 above the artifact band).
+  for (const f of nativeFrames) {
+    if (f.provider !== "skynet") continue;
+    const suggestions = parseFollowups(f.eventType, f.payload);
+    if (!suggestions) continue;
+    ranked.push({
+      node: { kind: "followups", key: f.eventId, suggestions },
+      k0: Number.MAX_SAFE_INTEGER,
+      k1: 3,
       k2: f.seq,
     });
   }
