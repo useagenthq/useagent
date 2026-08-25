@@ -83,6 +83,31 @@ export async function countOrgQueuedAdmissions(
   return Number(row?.n ?? 0);
 }
 
+export async function oldestQueuedAdmissionForReason(
+  reason: QueueReason,
+  exec: Executor = db,
+): Promise<NewRunAdmission | null> {
+  const [row] = await exec.execute(sql`
+    select run_id, org_id, thread_id, engine, model, tier,
+      cpu_millicores, memory_mib, priority
+    from run_admissions
+    where state = 'queued' and queue_reason = ${reason}
+    order by priority desc, queued_at asc, run_id asc
+    limit 1`);
+  if (!row) return null;
+  return {
+    runId: String(row.run_id),
+    orgId: String(row.org_id),
+    threadId: String(row.thread_id),
+    engine: String(row.engine),
+    model: String(row.model),
+    tier: row.tier as WorkloadTier,
+    cpuMillicores: Number(row.cpu_millicores),
+    memoryMib: Number(row.memory_mib),
+    priority: Number(row.priority),
+  };
+}
+
 /** Grant capacity: bind the lease and move to `leased`, clearing queue_reason. */
 export async function markAdmissionLeased(
   runId: string,
