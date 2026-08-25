@@ -110,6 +110,34 @@ describe("internal GitHub tool bridge", () => {
         name: "resource_catalog_search",
         arguments: { provider: "github" },
       },
+      {
+        family: "github",
+        name: "github_changeset_prepare",
+        arguments: {
+          repository: "upstream-org/backend",
+          targetBranch: "main",
+          bundlePath: "/root/work/github-change-bundle.json",
+        },
+      },
+      {
+        family: "github",
+        name: "github_pull_request_publish",
+        arguments: {
+          changeSetId: "change-a",
+          idempotencyKey: "key-a",
+          headBranch: "useagent/change-a",
+          commitMessage: "Update",
+          pullRequestTitle: "Update",
+          pullRequestBody: "Update",
+          draft: false,
+          approvalCapability: "opaque",
+        },
+      },
+      {
+        family: "github",
+        name: "github_publication_status",
+        arguments: { changeSetId: "change-a" },
+      },
     ];
 
     for (const operation of operations) {

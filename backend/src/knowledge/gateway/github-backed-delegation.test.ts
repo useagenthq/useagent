@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { executeContextTool } from "./context-tools";
 import { executeRepositoryTool } from "./repository-tools";
 import { executeResourceTool } from "./resource-tools";
+import { executeGithubTool } from "./github-tools";
 import { verifyToolToken, type ToolTokenClaims } from "./token";
 
 const originalFetch = globalThis.fetch;
@@ -55,13 +56,28 @@ describe("GitHub-backed gateway delegation", () => {
         provider: "github",
         query: "backend",
       }),
+      executeGithubTool(claims, "github_changeset_prepare", {
+        repository: "upstream-org/backend",
+        targetBranch: "main",
+        bundlePath: "/root/work/github-change-bundle.json",
+      }),
+      executeGithubTool(claims, "github_pull_request_publish", {
+        changeSetId: "change-a",
+        idempotencyKey: "key-a",
+        headBranch: "useagent/change-a",
+        commitMessage: "Update",
+        pullRequestTitle: "Update",
+        pullRequestBody: "Update",
+        draft: false,
+      }),
+      executeGithubTool(claims, "github_publication_status", { changeSetId: "change-a" }),
     ];
     for (const result of await Promise.all(calls)) {
       expect(result.isError).not.toBe(true);
       expect(result.structuredContent).toEqual({ delegated: true });
     }
 
-    expect(requests).toHaveLength(3);
+    expect(requests).toHaveLength(6);
     expect(await Promise.all(requests.map((request) => request.json()))).toEqual([
       {
         family: "repository",
@@ -79,6 +95,33 @@ describe("GitHub-backed gateway delegation", () => {
         family: "resource",
         name: "resource_catalog_search",
         arguments: { provider: "github", query: "backend" },
+      },
+      {
+        family: "github",
+        name: "github_changeset_prepare",
+        arguments: {
+          repository: "upstream-org/backend",
+          targetBranch: "main",
+          bundlePath: "/root/work/github-change-bundle.json",
+        },
+      },
+      {
+        family: "github",
+        name: "github_pull_request_publish",
+        arguments: {
+          changeSetId: "change-a",
+          idempotencyKey: "key-a",
+          headBranch: "useagent/change-a",
+          commitMessage: "Update",
+          pullRequestTitle: "Update",
+          pullRequestBody: "Update",
+          draft: false,
+        },
+      },
+      {
+        family: "github",
+        name: "github_publication_status",
+        arguments: { changeSetId: "change-a" },
       },
     ]);
     for (const request of requests) {
@@ -108,6 +151,7 @@ describe("GitHub-backed gateway delegation", () => {
       executeResourceTool(claims, "resource_catalog_search", {
         provider: "github",
       }),
+      executeGithubTool(claims, "github_publication_status", { changeSetId: "change-a" }),
     ]);
     for (const result of results) {
       expect(result.isError).toBe(true);

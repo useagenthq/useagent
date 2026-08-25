@@ -68,6 +68,7 @@ const ADDITIONAL_APPROVAL_REQUIRED_TOOL_NAMES: ReadonlySet<string> = new Set([
   ...INTEGRATION_APPROVAL_REQUIRED_TOOL_NAMES,
   "knowledge_draft_publish",
   "knowledge_draft_archive",
+  "github_pull_request_publish",
 ]);
 
 /** THE registry of approval-gated operations - discovery, the authenticated
@@ -110,6 +111,7 @@ const APPROVED_KNOWLEDGE_MANAGEMENT_TOOLS = KNOWLEDGE_MANAGEMENT_TOOLS.map(
   withApprovalRequirement,
 );
 const APPROVED_INTEGRATION_TOOLS = INTEGRATION_TOOLS.map(withApprovalRequirement);
+const APPROVED_GITHUB_TOOLS = GITHUB_TOOLS.map(withApprovalRequirement);
 
 const BASE_TOOL_FAMILIES = [
   { tools: KNOWLEDGE_TOOLS, execute: executeKnowledgeTool },
@@ -123,7 +125,7 @@ const BASE_TOOL_FAMILIES = [
   { tools: COMPUTER_USE_TOOLS, execute: executeComputerUseTool },
   { tools: RESOURCE_TOOLS, execute: executeResourceTool },
   { tools: REPOSITORY_TOOLS, execute: executeRepositoryTool },
-  { tools: GITHUB_TOOLS, execute: executeGithubTool },
+  { tools: APPROVED_GITHUB_TOOLS, execute: executeGithubTool },
   { tools: GCS_TOOLS, execute: executeGcsTool },
   { tools: AUTOMATION_TOOLS, execute: executeAutomationTool },
   { tools: APPROVAL_REQUEST_TOOLS, execute: executeApprovalRequestTool },
@@ -255,6 +257,13 @@ async function invokeRegisteredOperation(
   args: Record<string, unknown>,
 ): Promise<unknown> {
   if (AUTOMATION_APPROVAL_REQUIRED_TOOL_NAMES.has(name)) {
+    return executor(claims, name, args);
+  }
+  // GitHub publication is delegated to the credential-owning primary API.
+  // Preserve the opaque capability so that backend atomically consumes it
+  // immediately before claiming the durable publication receipt; consuming it
+  // in the restricted gateway would make the internal route an approval bypass.
+  if (name === "github_pull_request_publish") {
     return executor(claims, name, args);
   }
   if (
