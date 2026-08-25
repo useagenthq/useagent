@@ -210,6 +210,7 @@ describe("gateway operation registry", () => {
       "automation_delete",
       "automation_run_now",
       "automation_update",
+      "github_pull_request_publish",
       "integration_action_execute",
       "knowledge_draft_archive",
       "knowledge_draft_publish",

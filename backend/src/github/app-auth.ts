@@ -388,6 +388,27 @@ export async function getRepositoryInstallationToken(
   return mint;
 }
 
+/** Mint a repository-scoped write credential for the trusted publication
+ * worker. Unlike the read token above, this credential must never cross the
+ * primary-backend boundary. */
+export async function getRepositoryPublicationToken(
+	repository: string,
+	cfg: GithubAppConfig = githubAppConfig() ??
+		(() => {
+			throw new Error("GitHub App is not configured");
+		})(),
+): Promise<InstallationToken> {
+	const result = await mintRepositoryInstallationToken(
+		cfg,
+		repository,
+		REPOSITORY_PUBLICATION_PERMISSIONS,
+	);
+	const cached = repositoryTokenCache.get(result.key);
+	if (cached && cached.expiresAt - Date.now() > REFRESH_MARGIN_MS) return cached;
+	repositoryTokenCache.set(result.key, result.token);
+	return result.token;
+}
+
 export async function getRepositoryInstallationTokenForId(
   repository: string,
   installationId: number,

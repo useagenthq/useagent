@@ -361,6 +361,57 @@ describe("GitHub Git Data publisher", () => {
 
 		expect(publishedDraft).toBe(true);
 	});
+
+	test("persists commit intent and renews the fenced lease before exposing a ref", async () => {
+		const events: string[] = [];
+		let writeChecks = 0;
+		const fetchImpl = successfulFetch({
+			onRequest(url, init) {
+				if (init?.method === "POST") events.push(`fetch:${url.pathname}`);
+				return null;
+			},
+		});
+
+		await expect(publishFrozenGitHubChange(inputs(), {
+			resolveToken: async () => "token",
+			fetch: fetchImpl,
+			assertLease: async () => {
+				writeChecks += 1;
+				events.push("lease");
+				if (writeChecks === 4) throw new Error("lease lost");
+			},
+			recordIntent: async (commitSha) => {
+				expect(commitSha).toBe(COMMIT_SHA);
+				events.push("intent");
+			},
+		})).rejects.toThrow("lease was lost");
+
+		expect(events).toContain("intent");
+		expect(events).not.toContain("fetch:/repos/acme/widget/git/refs");
+		expect(events.indexOf("intent")).toBeLessThan(events.lastIndexOf("lease"));
+	});
+
+	test("marks a lease loss between ref creation and pull request as reconciliation-required", async () => {
+		let writeChecks = 0;
+		try {
+			await publishFrozenGitHubChange(inputs(), {
+				resolveToken: async () => "token",
+				fetch: successfulFetch(),
+				assertLease: async () => {
+					writeChecks += 1;
+					if (writeChecks === 5) throw new Error("stale claim");
+				},
+				recordIntent: async () => {},
+			});
+			throw new Error("expected publication failure");
+		} catch (error) {
+			const publicationError = error as GitHubPublicationError;
+			expect(publicationError.stage).toBe("create_pull_request");
+			expect(publicationError.reconcileRequired).toBe(true);
+			expect(publicationError.headRefState).toBe("created");
+			expect(publicationError.commitSha).toBe(COMMIT_SHA);
+		}
+	});
 });
 
 function successfulFetch(
