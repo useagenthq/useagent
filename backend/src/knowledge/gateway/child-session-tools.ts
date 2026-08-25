@@ -1,6 +1,6 @@
 import type { ToolCallResult } from "./tools";
 import { errorResult, textResult } from "./tool-results";
-import type { ToolTokenClaims } from "./token";
+import { mintToolToken, type ToolTokenClaims } from "./token";
 import { getRunForOrg } from "../../runs/repo";
 import { engineModelReadyForDispatch } from "../../runs/engine-readiness";
 import { sessionCapabilities } from "../../engines/capabilities";
@@ -313,7 +313,7 @@ async function gather(
   );
 }
 
-export async function executeChildSessionTool(
+export async function executeChildSessionToolLocal(
   claims: ToolTokenClaims,
   name: string,
   args: Record<string, unknown>,
@@ -323,4 +323,80 @@ export async function executeChildSessionTool(
   if (name === "child_session_events") return events(claims, args);
   if (name === "child_session_gather") return gather(claims, args);
   return errorResult(`Unknown tool: ${name}`);
+}
+
+function primaryApiOrigin(): string | null {
+  if (!process.env.GATEWAY_DATABASE_URL) return null;
+  const raw = process.env.USEAGENT_API_ORIGIN?.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+async function executeThroughPrimaryApi(
+  origin: string,
+  claims: ToolTokenClaims,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<ToolCallResult> {
+  const remainingTtlMs = Math.max(1, Math.min(30_000, claims.exp - Date.now()));
+  const token = mintToolToken(
+    {
+      orgId: claims.orgId,
+      userId: claims.userId,
+      threadId: claims.threadId,
+      runId: claims.runId,
+      scope: claims.scope,
+    },
+    remainingTtlMs,
+  );
+  const response = await fetch(`${origin}/api/internal/child-sessions`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ name, arguments: args }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const body = (await response.json().catch(() => null)) as
+    | { result?: ToolCallResult; error?: string }
+    | null;
+  if (!response.ok || !body?.result) {
+    return errorResult(
+      body?.error ?? `child-session control plane returned HTTP ${response.status}`,
+      { status: response.status },
+    );
+  }
+  return body.result;
+}
+
+/**
+ * The standalone gateway runs with a restricted database role that can read
+ * runs but never INSERT runs/run_commands/run_admissions - exactly what
+ * creating a child session does. Mirror the automation/approval seam: in
+ * gateway mode every child-session operation is delegated to the loopback
+ * primary API under a freshly minted, short-lived copy of the current live
+ * capability; the primary re-verifies liveness and tenant identity before
+ * executing. In-backend (non-gateway) mode keeps the direct path.
+ */
+export async function executeChildSessionTool(
+  claims: ToolTokenClaims,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<ToolCallResult> {
+  const origin = primaryApiOrigin();
+  if (process.env.GATEWAY_DATABASE_URL && !origin) {
+    return errorResult(
+      "child-session control plane is not configured; ask the workspace operator to set USEAGENT_API_ORIGIN for the gateway, then retry",
+    );
+  }
+  return origin
+    ? executeThroughPrimaryApi(origin, claims, name, args)
+    : executeChildSessionToolLocal(claims, name, args);
 }
