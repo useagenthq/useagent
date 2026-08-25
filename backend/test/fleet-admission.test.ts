@@ -18,6 +18,7 @@ import {
 import {
   countOrgOpenAdmissions,
   getAdmission,
+  listQueuedCapacityAdmissions,
   listQueuedAdmissions,
   markAdmissionLeased,
   syncTerminalAdmissions,
@@ -144,6 +145,22 @@ afterEach(async () => {
 });
 
 describe("durable admission — capacity enforcement", () => {
+  test("capacity queue ordering uses the matching partial keyset index", async () => {
+    const plan = await db.transaction(async (tx) => {
+      await tx.execute(sql`set local enable_seqscan = off`);
+      const rows = await tx.execute(sql`
+        explain (format text)
+        select run_id
+        from run_admissions
+        where state = 'queued'
+          and queue_reason in ('provider_capacity', 'global_limit', 'org_limit')
+        order by priority desc, queued_at asc, run_id asc
+        limit 64`);
+      return rows.map((row) => String(row["QUERY PLAN"])).join("\n");
+    });
+    expect(plan).toContain("idx_run_admissions_capacity_queue");
+  });
+
   test("20 submissions all durably accept; only the limit leases; the rest stay queued with a reason", async () => {
     stopFleetReconciler(); // drive admission manually — no background drain
     process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES = "3";
@@ -443,6 +460,40 @@ describe("durable admission — restart + crash recovery", () => {
     expect((await getRun(retainedRunId))?.sandboxId).toBeNull();
   });
 
+  test("a zero global count cap ignores a stale provider-capacity reason", async () => {
+    process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES = "0";
+    const orgId = track(`org-${uid("zero-global")}`);
+    const retainedRunId = await accept(orgId);
+    const leaseId = await createLease({
+      runId: retainedRunId,
+      threadId: retainedRunId,
+      orgId,
+      provider: "mock",
+      tier: "standard",
+      cpuMillicores: 2_000,
+      memoryMib: 8_192,
+      leaseTtlMs: 10_000,
+      sandboxId: "zero-global-box",
+    });
+    await db.execute(sql`
+      update runs set status = 'completed', sandbox_id = 'zero-global-box', settled_at = now()
+      where id = ${retainedRunId}`);
+    await db.execute(sql`
+      update sandbox_leases set state = 'released' where id = ${leaseId}`);
+    const queuedRunId = await accept(orgId);
+    await db.execute(sql`
+      update run_admissions set queue_reason = 'provider_capacity'
+      where run_id = ${queuedRunId}`);
+
+    const released: string[] = [];
+    expect(await reclaimRetainedCapacityIfNeeded(async (_orgId, runId) => {
+      released.push(runId);
+      return { ok: true, released: true };
+    })).toBe(0);
+    expect(released).toEqual([]);
+    expect((await getRun(retainedRunId))?.sandboxId).toBe("zero-global-box");
+  });
+
   test("org count pressure evicts only the pressured org's idle retained sandbox", async () => {
     process.env.FLEET_ORG_MAX_ACTIVE_SANDBOXES = "1";
     // An OLDER idle retained box in another org - must be untouched.
@@ -501,6 +552,110 @@ describe("durable admission — restart + crash recovery", () => {
     // Only the pressured org's box was evicted; the older cross-org box stays.
     expect(released).toEqual([retainedRunId]);
     expect((await getRun(otherRetained))?.sandboxId).toBe("other-box");
+  });
+
+  test("a zero org count cap does not evict retained sandboxes", async () => {
+    process.env.FLEET_ORG_MAX_ACTIVE_SANDBOXES = "0";
+    const orgId = track(`org-${uid("zero-org")}`);
+    const retainedRunId = await accept(orgId);
+    const leaseId = await createLease({
+      runId: retainedRunId,
+      threadId: retainedRunId,
+      orgId,
+      provider: "mock",
+      tier: "standard",
+      cpuMillicores: 2_000,
+      memoryMib: 8_192,
+      leaseTtlMs: 10_000,
+      sandboxId: "zero-org-box",
+    });
+    await db.execute(sql`
+      update runs set status = 'completed', sandbox_id = 'zero-org-box', settled_at = now()
+      where id = ${retainedRunId}`);
+    await db.execute(sql`
+      update sandbox_leases set state = 'released' where id = ${leaseId}`);
+    const queuedRunId = await accept(orgId);
+    await db.execute(sql`
+      update run_admissions set queue_reason = 'org_limit'
+      where run_id = ${queuedRunId}`);
+
+    const released: string[] = [];
+    expect(await reclaimRetainedCapacityIfNeeded(async (_orgId, runId) => {
+      released.push(runId);
+      return { ok: true, released: true };
+    })).toBe(0);
+    expect(released).toEqual([]);
+    expect((await getRun(retainedRunId))?.sandboxId).toBe("zero-org-box");
+  });
+
+  test("unactionable org limits do not suppress a later-page actionable global limit", async () => {
+    process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES = "66";
+    process.env.FLEET_ORG_MAX_ACTIVE_SANDBOXES = "1";
+    const blockedRunIds = await Promise.all(
+      Array.from({ length: 65 }, async (_, index) => {
+        const orgId = track(`org-${uid(`blocked-${index}`)}`);
+        const activeRunId = await accept(orgId);
+        await createLease({
+          runId: activeRunId,
+          threadId: activeRunId,
+          orgId,
+          provider: "mock",
+          tier: "standard",
+          cpuMillicores: 2_000,
+          memoryMib: 8_192,
+          leaseTtlMs: 10_000,
+          sandboxId: `active-box-${index}`,
+        });
+        await db.execute(sql`
+          update runs set status = 'running', sandbox_id = ${`active-box-${index}`}
+          where id = ${activeRunId}`);
+        return accept(orgId);
+      }),
+    );
+    await db.execute(sql`
+      update run_admissions set queue_reason = 'org_limit', priority = 10
+      where run_id in ${inList(blockedRunIds)}`);
+
+    const retainedOrg = track(`org-${uid("retained")}`);
+    const retainedRunId = await accept(retainedOrg);
+    const retainedLeaseId = await createLease({
+      runId: retainedRunId,
+      threadId: retainedRunId,
+      orgId: retainedOrg,
+      provider: "mock",
+      tier: "standard",
+      cpuMillicores: 2_000,
+      memoryMib: 8_192,
+      leaseTtlMs: 10_000,
+      sandboxId: "reclaimable-box",
+    });
+    await db.execute(sql`
+      update runs set status = 'completed', sandbox_id = 'reclaimable-box', settled_at = now()
+      where id = ${retainedRunId}`);
+    await db.execute(sql`
+      update sandbox_leases set state = 'released' where id = ${retainedLeaseId}`);
+
+    const waitingOrg = track(`org-${uid("waiting")}`);
+    const waitingRunId = await accept(waitingOrg);
+    await db.execute(sql`
+      update run_admissions set queue_reason = 'global_limit', priority = 0
+      where run_id = ${waitingRunId}`);
+
+    const released: string[] = [];
+    let pageQueries = 0;
+    expect(await reclaimRetainedCapacityIfNeeded(async (orgId, runId) => {
+      released.push(runId);
+      const run = await getRun(runId);
+      await db.execute(sql`
+        update runs set sandbox_id = null
+        where org_id = ${orgId} and thread_id = ${run!.threadId}`);
+      return { ok: true, released: true };
+    }, async (limit, cursor, exec) => {
+      pageQueries += 1;
+      return listQueuedCapacityAdmissions(limit, cursor, exec);
+    })).toBe(1);
+    expect(released).toEqual([retainedRunId]);
+    expect(pageQueries).toBe(2);
   });
 
   test("a dead worker's lease expires and reconciles; capacity is reclaimed and the run settles", async () => {

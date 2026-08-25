@@ -99,6 +99,9 @@ export const runAdmissions = pgTable(
       t.priority,
       t.queuedAt,
     ),
+    index("idx_run_admissions_capacity_queue")
+      .on(t.state, t.priority.desc(), t.queuedAt.asc(), t.runId.asc())
+      .where(sql`${t.state} = 'queued' and ${t.queueReason} in ('provider_capacity', 'global_limit', 'org_limit')`),
     // Per-org active counts + durable queue-depth ceiling.
     index("idx_run_admissions_org_state").on(t.orgId, t.state),
   ],

@@ -7,6 +7,7 @@ import type {
   RunAdmissionRow,
   WorkloadTier,
 } from "../db/schema/fleet";
+import { retainedSandboxReservationTtlMs } from "./lease-repo";
 
 // ---------------------------------------------------------------------------
 // Run-admission persistence. One row per accepted run records the requested
@@ -83,23 +84,144 @@ export async function countOrgQueuedAdmissions(
   return Number(row?.n ?? 0);
 }
 
-/** Oldest queued admission held by ANY capacity gate (count or resource).
- *  Eviction keys on this: capacity-policy returns the FIRST failing gate, so a
- *  count-bound host queues on global_limit/org_limit and would never surface
- *  provider_capacity - keying on one reason starved those hosts. */
-export async function oldestQueuedCapacityAdmission(
+export interface CapacityAdmissionCursor {
+  readonly priority: number;
+  readonly queuedAt: string;
+  readonly runId: string;
+}
+
+export type QueuedCapacityAdmission = NewRunAdmission & {
+  readonly queueReason: QueueReason;
+  readonly queuedAt: string;
+  readonly globalActiveSandboxes: number;
+  readonly globalReservedCpuMillicores: number;
+  readonly globalReservedMemoryMib: number;
+  readonly orgActiveSandboxes: number;
+  readonly reclaimCandidate: {
+    readonly runId: string;
+    readonly orgId: string;
+  } | null;
+};
+
+/** One keyset-paginated page of admissions held by any capacity gate, in the
+ *  same priority/FIFO order used by admission. */
+export async function listQueuedCapacityAdmissions(
+  limit: number,
+  after?: CapacityAdmissionCursor,
   exec: Executor = db,
-): Promise<(NewRunAdmission & { queueReason: QueueReason }) | null> {
-  const [row] = await exec.execute(sql`
-    select run_id, org_id, thread_id, engine, model, tier,
-      cpu_millicores, memory_mib, priority, queue_reason
-    from run_admissions
-    where state = 'queued'
-      and queue_reason in ('provider_capacity', 'global_limit', 'org_limit')
-    order by priority desc, queued_at asc, run_id asc
-    limit 1`);
-  if (!row) return null;
-  return {
+): Promise<QueuedCapacityAdmission[]> {
+  const retainedTtlMs = retainedSandboxReservationTtlMs();
+  const afterFilter = after
+    ? sql`and (
+        priority < ${after.priority}
+        or (priority = ${after.priority} and queued_at > ${after.queuedAt}::timestamptz)
+        or (priority = ${after.priority} and queued_at = ${after.queuedAt}::timestamptz and run_id > ${after.runId})
+      )`
+    : sql``;
+  const rows = await exec.execute(sql`
+    with page as (
+      select run_id, org_id, thread_id, engine, model, tier,
+        cpu_millicores, memory_mib, priority, queue_reason, queued_at
+      from run_admissions
+      where state = 'queued'
+        and queue_reason in ('provider_capacity', 'global_limit', 'org_limit')
+        ${afterFilter}
+      order by priority desc, queued_at asc, run_id asc
+      limit ${limit}
+    ), reserved as (
+      select * from sandbox_leases where state in ('active', 'reclaiming')
+    ), latest_thread_sandbox as (
+      select distinct on (r.org_id, r.thread_id)
+        r.sandbox_id, r.org_id, r.thread_id
+      from runs r
+      where r.sandbox_id is not null
+        and (
+          r.status in ('queued', 'running') or
+          coalesce(r.settled_at, r.updated_at, r.created_at) >=
+            now() - (${retainedTtlMs}::bigint * interval '1 millisecond')
+        )
+      order by r.org_id, r.thread_id, r.created_at desc, r.id desc
+    ), retained as (
+      select distinct on (candidate.sandbox_id)
+        candidate.sandbox_id, candidate.org_id,
+        coalesce(last_lease.reserved_cpu_millicores, 0) as cpu,
+        coalesce(last_lease.reserved_memory_mib, 0) as mem
+      from latest_thread_sandbox candidate
+      left join lateral (
+        select reserved_cpu_millicores, reserved_memory_mib
+        from sandbox_leases h
+        where h.sandbox_id = candidate.sandbox_id
+        order by h.created_at desc
+        limit 1
+      ) last_lease on true
+      where not exists (
+        select 1 from reserved x where x.sandbox_id = candidate.sandbox_id
+      )
+      order by candidate.sandbox_id
+    ), global_inventory as (
+      select
+        ((select count(*) from reserved) + (select count(*) from retained))::int as global_count,
+        ((select coalesce(sum(reserved_cpu_millicores), 0) from reserved) +
+         (select coalesce(sum(cpu), 0) from retained))::int as global_cpu,
+        ((select coalesce(sum(reserved_memory_mib), 0) from reserved) +
+         (select coalesce(sum(mem), 0) from retained))::int as global_mem
+    ), org_inventory as (
+      select org_id, count(*)::int as org_count
+      from (
+        select org_id from reserved
+        union all
+        select org_id from retained
+      ) capacity
+      group by org_id
+    ), current_reclaimable as (
+      select distinct on (r.org_id, r.thread_id)
+        r.id, r.org_id, r.thread_id, r.sandbox_id, r.status,
+        coalesce(r.settled_at, r.updated_at, r.created_at) as last_used_at
+      from runs r
+      where r.sandbox_id is not null
+      order by r.org_id, r.thread_id, r.created_at desc, r.id desc
+    ), reclaimable as (
+      select c.*
+      from current_reclaimable c
+      where c.status in ('completed', 'failed')
+        and not exists (
+          select 1 from runs active
+          where active.org_id = c.org_id
+            and active.thread_id = c.thread_id
+            and active.status in ('queued', 'running')
+        )
+        and not exists (
+          select 1 from sandbox_leases lease
+          where lease.sandbox_id = c.sandbox_id
+            and lease.state in ('active', 'reclaiming')
+        )
+    ), global_candidate as (
+      select id, org_id
+      from reclaimable
+      order by last_used_at asc, id asc
+      limit 1
+    ), org_candidates as (
+      select distinct on (org_id) id, org_id
+      from reclaimable
+      order by org_id, last_used_at asc, id asc
+    )
+    select page.*,
+      page.queued_at::text as queued_at_cursor,
+      global_inventory.global_count,
+      global_inventory.global_cpu,
+      global_inventory.global_mem,
+      coalesce(org_inventory.org_count, 0)::int as org_count,
+      case when page.queue_reason = 'org_limit' then org_candidates.id else global_candidate.id end
+        as candidate_run_id,
+      case when page.queue_reason = 'org_limit' then org_candidates.org_id else global_candidate.org_id end
+        as candidate_org_id
+    from page
+    cross join global_inventory
+    left join org_inventory on org_inventory.org_id = page.org_id
+    left join global_candidate on true
+    left join org_candidates on org_candidates.org_id = page.org_id
+    order by page.priority desc, page.queued_at asc, page.run_id asc`);
+  return rows.map((row) => ({
     runId: String(row.run_id),
     orgId: String(row.org_id),
     threadId: String(row.thread_id),
@@ -110,7 +232,15 @@ export async function oldestQueuedCapacityAdmission(
     memoryMib: Number(row.memory_mib),
     priority: Number(row.priority),
     queueReason: row.queue_reason as QueueReason,
-  };
+    queuedAt: String(row.queued_at_cursor),
+    globalActiveSandboxes: Number(row.global_count),
+    globalReservedCpuMillicores: Number(row.global_cpu),
+    globalReservedMemoryMib: Number(row.global_mem),
+    orgActiveSandboxes: Number(row.org_count),
+    reclaimCandidate: row.candidate_run_id && row.candidate_org_id
+      ? { runId: String(row.candidate_run_id), orgId: String(row.candidate_org_id) }
+      : null,
+  }));
 }
 
 export async function oldestQueuedAdmissionForReason(
