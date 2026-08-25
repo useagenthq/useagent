@@ -20,6 +20,7 @@ import {
   DropdownTrigger,
 } from "@/components/base/dropdown/dropdown";
 import { Switch } from "@/components/base/switch/switch";
+import { REVEAL_ON_HOVER } from "@/components/customize/list-row";
 import { cx } from "@/utils/cx";
 import { relativeTime } from "@/utils/format";
 import {
@@ -63,7 +64,7 @@ export function AutomationCard({
   const cadence = cadenceLabel(schedule.cron);
 
   return (
-    <article className="relative border-b border-border-button-default bg-background-primary-default transition-colors last:border-b-0 hover:bg-background-secondary-default/50">
+    <article className="group/customize relative border-b border-border-button-default bg-background-primary-default transition-colors last:border-b-0 hover:bg-background-secondary-default/50">
       <div
         className={cx(
           "absolute inset-y-3 left-0 w-0.5 rounded-r-full",
@@ -121,7 +122,11 @@ export function AutomationCard({
           <Button
             variant="ghost"
             size="xs"
-            className="hidden rounded-full sm:inline-flex"
+            className={cx(
+              "hidden rounded-full sm:inline-flex",
+              REVEAL_ON_HOVER,
+              running && "opacity-100",
+            )}
             leadingIcon={RiPlayMiniLine}
             disabled={busy}
             onClick={() => onRunNow(schedule.id)}
@@ -139,7 +144,11 @@ export function AutomationCard({
           <Dropdown isOpen={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownTrigger
               aria-label={`More actions for ${schedule.name}`}
-              className="flex size-8 items-center justify-center rounded-lg text-foreground-icon-tertiary transition-colors hover:bg-background-tertiary-default hover:text-text-primary"
+              className={cx(
+                "flex size-8 items-center justify-center rounded-lg text-foreground-icon-tertiary transition-colors hover:bg-background-tertiary-default hover:text-text-primary",
+                REVEAL_ON_HOVER,
+                menuOpen && "opacity-100",
+              )}
             >
               <RiMore2Line className="size-4" aria-hidden />
             </DropdownTrigger>

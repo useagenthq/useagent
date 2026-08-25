@@ -135,11 +135,11 @@ export function recordToSkill(record: SkillRecord): Skill {
   };
 }
 
-/** "Used 14 times · last run 2d ago" caption from a skill. */
+/** "Used 14 times · last run 2d ago" caption from a skill. A zero-state stays
+ *  quiet as "Unused" rather than shouting "Used 0 times". */
 export function usageCaption(skill: Skill): string {
-  const uses = `Used ${skill.usageCount} ${
-    skill.usageCount === 1 ? "time" : "times"
-  }`;
+  if (skill.usageCount === 0) return "Unused";
+  const uses = `Used ${skill.usageCount} ${skill.usageCount === 1 ? "time" : "times"}`;
   return skill.lastRunAt
     ? `${uses} · last run ${relativeTime(skill.lastRunAt)}`
     : uses;

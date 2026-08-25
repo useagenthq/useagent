@@ -10,6 +10,7 @@ import {
 import { useState } from "react";
 
 import { Chip } from "@/components/base/badges/chip";
+import { REVEAL_ON_HOVER } from "@/components/customize/list-row";
 import { relativeTime } from "@/utils/format";
 import { SCOPE_META, type MemoryScope, type StoredMemory } from "./memory-data";
 
@@ -75,7 +76,7 @@ export function StoredMemoryCard({
   }
 
   return (
-    <article className="flex flex-col gap-2.5 rounded-2xl bg-background-primary-default p-4 shadow-card ring-1 ring-inset ring-border-button-default transition-colors hover:ring-border-button-hover">
+    <article className="group/customize flex flex-col gap-2.5 rounded-2xl bg-background-primary-default p-4 shadow-card ring-1 ring-inset ring-border-button-default transition-colors hover:ring-border-button-hover">
       {mode === "edit" ? (
         <textarea
           aria-label="Correct memory content"
@@ -106,7 +107,7 @@ export function StoredMemoryCard({
 
         <div className="ml-auto flex items-center gap-1">
           {mode === "view" && (
-            <>
+            <span className={`flex items-center gap-1 ${REVEAL_ON_HOVER}`}>
               <IconButton
                 icon={RiPencilLine}
                 label={`Correct: ${item.content.slice(0, 40)}`}
@@ -120,7 +121,7 @@ export function StoredMemoryCard({
                 label={`Delete: ${item.content.slice(0, 40)}`}
                 onClick={() => setMode("confirm")}
               />
-            </>
+            </span>
           )}
 
           {mode === "edit" && (
