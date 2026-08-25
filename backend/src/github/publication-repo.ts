@@ -121,6 +121,17 @@ function validateManifest(input: GitHubChangeManifest): {
     if (file.action !== "delete" && file.sizeBytes === undefined) {
       throw new Error("non-delete github changes require sizeBytes");
     }
+    if (
+      file.mode !== undefined &&
+      file.mode !== "100644" &&
+      file.mode !== "100755" &&
+      file.mode !== "120000"
+    ) {
+      throw new Error("github change mode is invalid");
+    }
+    if (file.action !== "delete" && file.mode === undefined) {
+      throw new Error("non-delete github changes require a valid mode");
+    }
     totalFileBytes += file.sizeBytes ?? 0;
     if (totalFileBytes > MAX_PAYLOAD_BYTES) {
       throw new Error("github change manifest exceeds the total file-size limit");
@@ -130,6 +141,7 @@ function validateManifest(input: GitHubChangeManifest): {
       action: file.action,
       ...(file.sha256 ? { sha256: sha(file.sha256, "github change sha256") } : {}),
       ...(file.sizeBytes !== undefined ? { sizeBytes: file.sizeBytes } : {}),
+      ...(file.mode ? { mode: file.mode } : {}),
       ...(previousPath ? { previousPath } : {}),
     };
   });
