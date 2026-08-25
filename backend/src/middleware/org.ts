@@ -36,6 +36,9 @@ const PUBLIC_API_EXACT = new Set([
   // Approval-request lane bridge - authenticates its own short-lived run
   // capability exactly like /api/internal/automation.
   "/api/internal/gateway-approval-requests",
+  // GitHub gateway lane - authenticates and revalidates its short-lived run
+  // capability before backend-only GitHub credentials can be resolved.
+  "/api/internal/github-operations",
 ]);
 const PUBLIC_API_PREFIXES = [
   "/api/auth/",

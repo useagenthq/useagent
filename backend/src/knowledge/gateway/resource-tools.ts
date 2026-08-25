@@ -8,6 +8,7 @@ import {
 } from "../../resources/access-snapshot";
 import { getRunForOrg } from "../../runs/repo";
 import type { GatewayToolDescriptor } from "./descriptor";
+import { executeGithubBackedOperation } from "./github-operation-bridge";
 import { errorResult, textResult } from "./tool-results";
 import type { ToolTokenClaims } from "./token";
 
@@ -137,7 +138,7 @@ function checkedLimit(value: unknown): number {
   return Math.min(value, MAX_LIMIT);
 }
 
-export async function executeResourceTool(
+export async function executeResourceToolLocal(
   claims: ToolTokenClaims,
   name: string,
   args: Record<string, unknown>,
@@ -187,4 +188,22 @@ export async function executeResourceTool(
   } catch (error) {
     return errorResult(error instanceof Error ? error.message : "resource tool failed");
   }
+}
+
+export async function executeResourceTool(
+  claims: ToolTokenClaims,
+  name: string,
+  args: Record<string, unknown>,
+) {
+  const provider = typeof args.provider === "string" ? args.provider.trim().toLowerCase() : "";
+  if (name !== "resource_catalog_search" || provider !== "github") {
+    return executeResourceToolLocal(claims, name, args);
+  }
+  return executeGithubBackedOperation(
+    claims,
+    "resource",
+    name,
+    args,
+    () => executeResourceToolLocal(claims, name, args),
+  );
 }

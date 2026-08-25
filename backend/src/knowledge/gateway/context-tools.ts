@@ -14,6 +14,7 @@ import { getScheduleForOrg } from "../../schedules/repo";
 import { embeddingsEnabled, embedOne } from "../embed";
 import { getRecord } from "../store";
 import type { ToolCallResult } from "./descriptor";
+import { executeGithubBackedOperation } from "./github-operation-bridge";
 import type { ToolTokenClaims } from "./token";
 
 export type { ToolCallResult } from "./descriptor";
@@ -379,7 +380,7 @@ async function doRead(
 
 /** Dispatch a validated tools/call. Identity is resolved from the token; this
  *  NEVER reads a tenant id from `args`. Unknown tool -> error result. */
-export async function executeContextTool(
+export async function executeContextToolLocal(
   claims: ToolTokenClaims,
   name: string,
   args: Record<string, unknown>,
@@ -392,4 +393,22 @@ export async function executeContextTool(
     default:
       return error(`Unknown tool: ${name}`);
   }
+}
+
+export async function executeContextTool(
+  claims: ToolTokenClaims,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<ToolCallResult> {
+  const sourceRef = typeof args.source_ref === "string" ? args.source_ref.trim() : "";
+  if (name !== "context_read" || !sourceRef.startsWith("code:")) {
+    return executeContextToolLocal(claims, name, args);
+  }
+  return executeGithubBackedOperation(
+    claims,
+    "context",
+    name,
+    args,
+    () => executeContextToolLocal(claims, name, args),
+  );
 }

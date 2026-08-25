@@ -89,6 +89,7 @@ import {
   internalGatewayApprovalRoutes,
 } from "./knowledge/gateway/approval-routes";
 import { internalApprovalRequestRoutes } from "./knowledge/gateway/approval-request-tools";
+import { internalGithubRoutes } from "./knowledge/gateway/github-internal-routes";
 import { approveApprovalRequestAsRunOwner } from "./knowledge/gateway/approval-requests";
 import { currentReleaseFingerprint, isClientReleaseCompatible } from "./release";
 import { dashboardRoutes } from "./dashboard/routes";
@@ -222,6 +223,7 @@ app.route("/api/internal/artifact-changes", internalArtifactChangeRoutes);
 app.route("/api/internal/automation", internalAutomationRoutes);
 app.route("/api/internal/gateway-approval/consume", internalGatewayApprovalRoutes);
 app.route("/api/internal/gateway-approval-requests", internalApprovalRequestRoutes);
+app.route("/api/internal/github-operations", internalGithubRoutes);
 app.route("/api/internal/codex-relay", codexSubscriptionRelayRoutes);
 // Loopback-only operator dispatch bridge (see runs/operator-routes.ts): lets
 // the release-lane parity canary run turns IN THIS PROCESS so the codex relay

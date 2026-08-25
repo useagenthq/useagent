@@ -9,7 +9,7 @@ import {
 } from "./github-tools";
 import { baseGatewayToolDescriptors } from "./operation-registry";
 import { resolveRunIntake } from "../../resources/run-intake";
-import type { ToolTokenClaims } from "./token";
+import { verifyToolToken, type ToolTokenClaims } from "./token";
 
 const claims: ToolTokenClaims = {
   orgId: "org-1",
@@ -22,6 +22,10 @@ const claims: ToolTokenClaims = {
 
 const BOUND = ["upstream-org/backend", "upstream-org/frontend"];
 const originalGithubTenantOrgId = process.env.GITHUB_TENANT_ORG_ID;
+const originalFetch = globalThis.fetch;
+const originalGatewayDatabaseUrl = process.env.GATEWAY_DATABASE_URL;
+const originalApiOrigin = process.env.USEAGENT_API_ORIGIN;
+const originalToolGatewaySecret = process.env.TOOL_GATEWAY_SECRET;
 
 function mockGithub(
   responses: Record<string, unknown> = {},
@@ -57,8 +61,15 @@ function mockGithub(
 
 afterEach(() => {
   setGithubReadServiceForTest(null);
+  globalThis.fetch = originalFetch;
   if (originalGithubTenantOrgId === undefined) delete process.env.GITHUB_TENANT_ORG_ID;
   else process.env.GITHUB_TENANT_ORG_ID = originalGithubTenantOrgId;
+  if (originalGatewayDatabaseUrl === undefined) delete process.env.GATEWAY_DATABASE_URL;
+  else process.env.GATEWAY_DATABASE_URL = originalGatewayDatabaseUrl;
+  if (originalApiOrigin === undefined) delete process.env.USEAGENT_API_ORIGIN;
+  else process.env.USEAGENT_API_ORIGIN = originalApiOrigin;
+  if (originalToolGatewaySecret === undefined) delete process.env.TOOL_GATEWAY_SECRET;
+  else process.env.TOOL_GATEWAY_SECRET = originalToolGatewaySecret;
 });
 
 describe("github gateway tool catalog", () => {
@@ -849,5 +860,66 @@ describe("failure handling", () => {
     const response = await executeGithubTool(claims, "github_delete_repo", {});
     expect(response.isError).toBe(true);
     expect(response.content[0]?.text).toContain("Unknown GitHub tool");
+  });
+});
+
+describe("GitHub gateway control-plane delegation", () => {
+  test("forwards every GitHub tool through the primary API with a short-lived identity-bound capability", async () => {
+    process.env.GATEWAY_DATABASE_URL = "postgres://restricted";
+    process.env.USEAGENT_API_ORIGIN = "http://127.0.0.1:3201/path-is-ignored";
+    process.env.TOOL_GATEWAY_SECRET = "github-test-secret-0123456789abcdef";
+    const requests: Request[] = [];
+    globalThis.fetch = (async (input, init) => {
+      requests.push(input instanceof Request ? input : new Request(input.toString(), init));
+      return Response.json({
+        result: {
+          content: [{ type: "text", text: "delegated" }],
+          structuredContent: { delegated: true },
+        },
+      });
+    }) as typeof fetch;
+
+    for (const [name, args] of [
+      ["github_list_prs", { repo: "upstream-org/backend" }],
+      ["github_pr_detail", { repo: "upstream-org/backend", number: 7 }],
+      ["github_list_issues", { repo: "upstream-org/backend", state: "all" }],
+    ] as const) {
+      const result = await executeGithubTool(claims, name, args);
+      expect(result.isError).not.toBe(true);
+    }
+
+    expect(requests).toHaveLength(3);
+    for (const [index, request] of requests.entries()) {
+      expect(request.url).toBe("http://127.0.0.1:3201/api/internal/github-operations");
+      const authorization = request.headers.get("authorization") ?? "";
+      const forwarded = verifyToolToken(authorization.replace(/^Bearer\s+/, ""));
+      expect(forwarded).toMatchObject({
+        orgId: "org-1",
+        userId: "user-1",
+        threadId: "thread-1",
+        runId: "run-1",
+        scope: "run",
+      });
+      expect((forwarded?.exp ?? 0) - Date.now()).toBeLessThanOrEqual(30_000);
+      expect(await request.json()).toEqual({
+        family: "github",
+        name: ["github_list_prs", "github_pr_detail", "github_list_issues"][index],
+        arguments: [
+          { repo: "upstream-org/backend" },
+          { repo: "upstream-org/backend", number: 7 },
+          { repo: "upstream-org/backend", state: "all" },
+        ][index],
+      });
+    }
+  });
+
+  test("fails closed when a restricted gateway has no primary API origin", async () => {
+    process.env.GATEWAY_DATABASE_URL = "postgres://restricted";
+    delete process.env.USEAGENT_API_ORIGIN;
+    const result = await executeGithubTool(claims, "github_list_prs", {
+      repo: "upstream-org/backend",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("not configured");
   });
 });

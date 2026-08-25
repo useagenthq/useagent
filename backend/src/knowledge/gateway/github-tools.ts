@@ -11,6 +11,7 @@ import {
   type GithubEvidenceService,
 } from "./github-pr-evidence";
 import { GITHUB_TOOL_NAMES, GITHUB_TOOLS } from "./github-tool-catalog";
+import { executeGithubBackedOperation } from "./github-operation-bridge";
 import { errorResult, textResult } from "./tool-results";
 import type { ToolCallResult } from "./tools";
 import type { ToolTokenClaims } from "./token";
@@ -439,7 +440,7 @@ async function listIssues(
   );
 }
 
-export async function executeGithubTool(
+export async function executeGithubToolLocal(
   claims: ToolTokenClaims,
   name: string,
   args: Record<string, unknown>,
@@ -459,4 +460,25 @@ export async function executeGithubTool(
   } catch (error) {
     return errorResult(error instanceof Error ? error.message : "github operation failed");
   }
+}
+
+/**
+ * The standalone gateway deliberately has neither customer GitHub credentials
+ * nor permission to resolve them. It delegates every GitHub tool call to the
+ * primary API under a freshly minted, short-lived copy of the current run
+ * capability. The primary revalidates the live run before executing this same
+ * local implementation with backend-only credentials.
+ */
+export async function executeGithubTool(
+  claims: ToolTokenClaims,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<ToolCallResult> {
+  return executeGithubBackedOperation(
+    claims,
+    "github",
+    name,
+    args,
+    () => executeGithubToolLocal(claims, name, args),
+  );
 }
