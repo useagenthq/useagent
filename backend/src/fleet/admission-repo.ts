@@ -83,6 +83,36 @@ export async function countOrgQueuedAdmissions(
   return Number(row?.n ?? 0);
 }
 
+/** Oldest queued admission held by ANY capacity gate (count or resource).
+ *  Eviction keys on this: capacity-policy returns the FIRST failing gate, so a
+ *  count-bound host queues on global_limit/org_limit and would never surface
+ *  provider_capacity - keying on one reason starved those hosts. */
+export async function oldestQueuedCapacityAdmission(
+  exec: Executor = db,
+): Promise<(NewRunAdmission & { queueReason: QueueReason }) | null> {
+  const [row] = await exec.execute(sql`
+    select run_id, org_id, thread_id, engine, model, tier,
+      cpu_millicores, memory_mib, priority, queue_reason
+    from run_admissions
+    where state = 'queued'
+      and queue_reason in ('provider_capacity', 'global_limit', 'org_limit')
+    order by priority desc, queued_at asc, run_id asc
+    limit 1`);
+  if (!row) return null;
+  return {
+    runId: String(row.run_id),
+    orgId: String(row.org_id),
+    threadId: String(row.thread_id),
+    engine: String(row.engine),
+    model: String(row.model),
+    tier: row.tier as WorkloadTier,
+    cpuMillicores: Number(row.cpu_millicores),
+    memoryMib: Number(row.memory_mib),
+    priority: Number(row.priority),
+    queueReason: row.queue_reason as QueueReason,
+  };
+}
+
 export async function oldestQueuedAdmissionForReason(
   reason: QueueReason,
   exec: Executor = db,
