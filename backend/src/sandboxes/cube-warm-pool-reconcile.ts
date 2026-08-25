@@ -1,6 +1,6 @@
-import { isNotNull } from "drizzle-orm";
 import { db } from "../db/client";
-import { reconcileQueue, runs } from "../db/schema";
+import { reconcileQueue } from "../db/schema";
+import { listCurrentRetainedSandboxMappings } from "../fleet/lease-repo";
 import type { SandboxCreateOptions, SandboxHandle, SandboxProvider } from "./provider";
 
 export const USEAGENT_WARM_POOL_TEMPLATE_LABEL = "skynet-warm-pool-template";
@@ -12,10 +12,7 @@ const CUBE_TEMPLATE_LABELS = [
 
 export async function durablyBoundSandboxIds(): Promise<ReadonlySet<string>> {
   const [runRows, reconcileRows] = await Promise.all([
-    db
-      .select({ sandboxId: runs.sandboxId })
-      .from(runs)
-      .where(isNotNull(runs.sandboxId)),
+    listCurrentRetainedSandboxMappings(),
     db.select({ sandboxId: reconcileQueue.sandboxId }).from(reconcileQueue),
   ]);
   return new Set([
