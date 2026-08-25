@@ -442,6 +442,13 @@
 			"when": 1790200000000,
 			"tag": "0064_github_publication",
 			"breakpoints": true
+		},
+		{
+			"idx": 63,
+			"version": "7",
+			"when": 1790300000000,
+			"tag": "0065_fleet_capacity_queue_index",
+			"breakpoints": true
 		}
 	]
 }
