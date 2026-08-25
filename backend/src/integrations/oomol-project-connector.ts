@@ -10,7 +10,8 @@ const PROVIDER_PATTERN = /^[a-z0-9][a-z0-9_/-]{0,127}$/u;
 const ACTION_PATTERN = /^[a-z0-9][a-z0-9_.-]{0,255}$/u;
 const PROVIDER_CONFIG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,255}$/u;
 const DEFAULT_ORIGIN = "https://connector.oomol.com/v1";
-const NATIVE_PROVIDERS = new Set(["github", "slack"]);
+const PROJECT_CONNECTOR_PROVIDERS = ["linear", "gmail", "notion", "hubspot"] as const;
+const PROJECT_CONNECTOR_PROVIDER_SET = new Set<string>(PROJECT_CONNECTOR_PROVIDERS);
 
 export interface OomolProjectConnectorConfig {
   readonly origin: string;
@@ -18,7 +19,7 @@ export interface OomolProjectConnectorConfig {
   readonly projectApiKey: string;
   readonly catalogApiKey?: string;
   readonly returnUri: string;
-  readonly providerConfigIds: Readonly<Record<string, string>>;
+  readonly providerConfigIds?: Readonly<Record<string, string>>;
 }
 
 function nonEmptyString(value: unknown): string | undefined {
@@ -60,7 +61,7 @@ function parseProviderConfigIds(raw: string): Readonly<Record<string, string>> {
   }
   const result: Record<string, string> = {};
   for (const [provider, providerConfigId] of Object.entries(parsed)) {
-    if (!PROVIDER_PATTERN.test(provider) || NATIVE_PROVIDERS.has(provider)) {
+    if (!PROVIDER_PATTERN.test(provider) || !PROJECT_CONNECTOR_PROVIDER_SET.has(provider)) {
       throw new Error(`invalid OOMOL provider mapping: ${provider}`);
     }
     const normalizedId = nonEmptyString(providerConfigId);
@@ -78,7 +79,7 @@ export function oomolProjectConnectorConfigFromEnv(): OomolProjectConnectorConfi
   const returnUri = process.env.OOMOL_CONNECT_RETURN_URI?.trim();
   const providerConfigs = process.env.OOMOL_PROJECT_PROVIDER_CONFIGS?.trim();
   if (!projectApiKey && !projectId && !returnUri && !providerConfigs) return null;
-  if (!projectApiKey || !projectId || !returnUri || !providerConfigs) {
+  if (!projectApiKey || !projectId || !returnUri) {
     console.warn("[integrations] OOMOL ProjectConnector is partially configured and remains disabled");
     return null;
   }
@@ -101,7 +102,7 @@ export function oomolProjectConnectorConfigFromEnv(): OomolProjectConnectorConfi
         ? { catalogApiKey: process.env.OOMOL_API_KEY.trim() }
         : {}),
       returnUri: callback.toString(),
-      providerConfigIds: parseProviderConfigIds(providerConfigs),
+      ...(providerConfigs ? { providerConfigIds: parseProviderConfigIds(providerConfigs) } : {}),
     };
   } catch (error) {
     console.warn(`[integrations] OOMOL ProjectConnector disabled: ${(error as Error).message}`);
@@ -136,30 +137,33 @@ export function createOomolProjectConnectorBackend(
     ? new Connector({ apiKey: config.catalogApiKey, baseUrl: config.origin, fetch: fetchImpl })
     : null;
 
-  function providerConfigId(provider: string): string {
-    if (!PROVIDER_PATTERN.test(provider)) throw new Error("invalid integration provider");
-    const id = config.providerConfigIds[provider];
-    if (!id) throw new Error("integration provider is not configured in OOMOL");
-    return id;
+  function providerSelector(provider: string):
+    | { readonly providerConfigId: string }
+    | { readonly service: string } {
+    if (!PROJECT_CONNECTOR_PROVIDER_SET.has(provider)) {
+      throw new Error("integration provider is not supported by OOMOL");
+    }
+    const providerConfigId = config.providerConfigIds?.[provider];
+    return providerConfigId ? { providerConfigId } : { service: provider };
   }
 
   return {
     kind: "delegated",
     runtimeBindingId,
     disconnectSupported: false,
-    supports: (provider) => Boolean(config.providerConfigIds[provider]),
+    supports: (provider) => PROJECT_CONNECTOR_PROVIDER_SET.has(provider),
     async listConnectableProviders() {
-      return Object.keys(config.providerConfigIds);
+      return PROJECT_CONNECTOR_PROVIDERS;
     },
     async startConnect(input) {
       const provider = input.provider;
-      const expectedProviderConfigId = providerConfigId(provider);
+      const selector = providerSelector(provider);
       const externalUserId = oomolExternalUserId(input);
       const connectionName = `ua_${randomUUID().replaceAll("-", "")}`;
       const returnUri = new URL(config.returnUri);
       returnUri.searchParams.set("state", input.state);
       const connectionRequest = await project.connect.oauth(externalUserId, {
-        providerConfigId: expectedProviderConfigId,
+        ...selector,
         connectionName,
         returnUri: returnUri.toString(),
       });
@@ -169,10 +173,15 @@ export function createOomolProjectConnectorBackend(
         throw new Error("OOMOL Connector returned an invalid authorization request");
       }
       if (
+        nonEmptyString(connectionRequest.projectId) !== config.projectId ||
         nonEmptyString(connectionRequest.externalUserId) !== externalUserId ||
-        nonEmptyString(connectionRequest.providerConfigId) !== expectedProviderConfigId
+        nonEmptyString(connectionRequest.service) !== provider ||
+        ("providerConfigId" in selector &&
+          nonEmptyString(connectionRequest.providerConfigId) !== selector.providerConfigId)
       ) {
-        throw new Error("OOMOL Connector returned a connection request for the wrong tenant");
+        throw new Error(
+          "OOMOL Connector returned a connection request for the wrong tenant or provider",
+        );
       }
       return {
         backendSessionRef: requestId,
@@ -183,7 +192,7 @@ export function createOomolProjectConnectorBackend(
     },
     async completeConnect(input) {
       const provider = input.provider;
-      const expectedProviderConfigId = providerConfigId(provider);
+      const selector = providerSelector(provider);
       const externalUserId = oomolExternalUserId(input);
       const connectionRequest = await project.getConnectionRequest(input.backendSessionRef);
       if (connectionRequest.status === "initiated") {
@@ -193,9 +202,11 @@ export function createOomolProjectConnectorBackend(
         throw new Error("integration authorization failed or expired");
       }
       if (
+        nonEmptyString(connectionRequest.projectId) !== config.projectId ||
         nonEmptyString(connectionRequest.externalUserId) !== externalUserId ||
-        nonEmptyString(connectionRequest.providerConfigId) !== expectedProviderConfigId ||
-        nonEmptyString(connectionRequest.service) !== provider
+        nonEmptyString(connectionRequest.service) !== provider ||
+        ("providerConfigId" in selector &&
+          nonEmptyString(connectionRequest.providerConfigId) !== selector.providerConfigId)
       ) {
         throw new Error("OOMOL Connector returned a connection for the wrong tenant or provider");
       }
@@ -227,7 +238,7 @@ export function createOomolProjectConnectorBackend(
     },
     async listActions(input) {
       const provider = input.connection.provider;
-      providerConfigId(provider);
+      providerSelector(provider);
       if (!catalog) {
         throw new Error(
           "OOMOL action catalog requires a separate server-side OOMOL_API_KEY; project auth does not expose catalog APIs",
@@ -259,13 +270,17 @@ export function createOomolProjectConnectorBackend(
     },
     async executeAction(input) {
       const provider = input.connection.provider;
-      const expectedProviderConfigId = providerConfigId(provider);
+      const selector = providerSelector(provider);
       if (!ACTION_PATTERN.test(input.actionId) || !input.actionId.startsWith(`${provider}.`)) {
         throw new Error("integration action does not belong to this provider");
       }
       if (!isRecord(input.input)) throw new Error("integration action input must be an object");
-      return project.execute(oomolExternalUserId(input), input.actionId, input.input, {
-        providerConfigId: expectedProviderConfigId,
+      const externalUserId = oomolExternalUserId({
+        orgId: input.orgId,
+        userId: input.connection.createdByUserId,
+      });
+      return project.execute(externalUserId, input.actionId, input.input, {
+        ...selector,
         connectedAccountId: input.connection.externalConnectionId,
       });
     },
