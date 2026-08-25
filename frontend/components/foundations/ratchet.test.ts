@@ -309,10 +309,10 @@ function emDashOffenders(): string[] {
   return files.sort();
 }
 
-// Current debt only, shrink-only. A sibling PR removes the format.ts and
-// agent-limits occurrences; app/dashboard/page.tsx carries em-dash placeholders
-// too. Remove an entry once the file is clean.
-const EM_DASH_ALLOWLIST = ["app/dashboard/page.tsx"];
+// Current debt only, shrink-only. app/dashboard/page.tsx dropped its em-dash
+// placeholders in the dashboard-widget-grammar pass, so it is off the list.
+// Remove an entry once the file is clean.
+const EM_DASH_ALLOWLIST: string[] = [];
 
 describe("em-dash ratchet (frontend)", () => {
   test("no NEW first-party file puts an em dash inside a string literal", () => {

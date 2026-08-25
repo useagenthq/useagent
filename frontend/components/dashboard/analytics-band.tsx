@@ -40,8 +40,8 @@ export function AnalyticsBand({
           {
             key: 'failed',
             label: 'Failed',
-            color: 'var(--color-red-500)',
-            activeColor: 'var(--color-red-600)',
+            color: 'var(--color-chart-3)',
+            activeColor: 'var(--color-chart-3-active)',
           },
         ]}
         range={settlementHistoryFrom
@@ -57,7 +57,13 @@ export function AnalyticsBand({
       <ComboChartCard
         title='Runs per week'
         data={combo}
-        bar={{ key: 'runs', label: 'Runs', format: count }}
+        bar={{
+          key: 'runs',
+          label: 'Runs',
+          color: 'var(--color-chart-6)',
+          activeColor: 'var(--color-chart-6-active)',
+          format: count,
+        }}
         line={null}
         range='Last 8 weeks'
       />
