@@ -35,6 +35,16 @@ export const GATEWAY_GRANTS: readonly string[] = [
   "GRANT SELECT, INSERT, UPDATE ON knowledge_records, knowledge_documents, knowledge_revisions TO skynet_gateway",
   "GRANT SELECT, INSERT ON artifact_workpiece_proposals TO skynet_gateway",
   "GRANT UPDATE (status, resolved_at, resolved_by, resolved_revision) ON artifact_workpiece_proposals TO skynet_gateway",
+  // Durable task tools resolve or create a project, then create/list/update
+  // org-scoped tasks. Keep updates column-scoped to the exact gateway patches.
+  "GRANT SELECT, INSERT ON projects TO skynet_gateway",
+  "GRANT UPDATE (repo_full_name, updated_at) ON projects TO skynet_gateway",
+  "GRANT SELECT, INSERT ON tasks TO skynet_gateway",
+  "GRANT UPDATE (title, body, status, priority, order_key, updated_at) ON tasks TO skynet_gateway",
+  // Integration action discovery/execution reads tenant-safe connection metadata
+  // and the encrypted server-side credential. OAuth lifecycle writes stay in
+  // the privileged control plane.
+  "GRANT SELECT ON integration_connections, integration_connection_credentials TO skynet_gateway",
   // Unified context index (Phase 1): the gateway context_search/context_read
   // tools READ the projection; the privileged BACKEND writes it (projector on
   // skill/knowledge/automation writes). SELECT only - no gateway write path.
