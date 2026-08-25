@@ -21,12 +21,17 @@ import {
   type ArtifactDescriptor,
 } from "@/components/artifacts/model";
 import {
+  Dropdown,
+  DropdownPopover,
+  DropdownTrigger,
+} from "@/components/base/dropdown/dropdown";
+import {
   SegmentedControl,
   SegmentedControlItem,
 } from "@/components/base/segmented-control/segmented-control";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";
-import { ArtifactCard } from "./artifact-card";
+import { ArtifactCard, ArtifactRow } from "./artifact-card";
 
 type Filter = "all" | ArtifactCategory;
 
@@ -117,45 +122,45 @@ function ArtifactCreatePanel({
   };
 
   return (
-    <section className="mt-6 border-y border-border-button-default py-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex min-w-44 flex-col gap-1 text-caption-1-medium text-text-secondary">
-          Type
-          <select
-            value={kind}
-            onChange={(event) => chooseKind(event.currentTarget.value as ArtifactWorkpieceKind)}
-            className="h-9 rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
-          >
-            {ARTIFACT_AUTHORING_PROFILES.map((profile) => (
-              <option key={profile.kind} value={profile.kind}>
-                {profile.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex min-w-64 flex-1 flex-col gap-1 text-caption-1-medium text-text-secondary">
-          Name
-          <input
-            value={name}
-            onChange={(event) => setName(event.currentTarget.value)}
-            className="h-9 rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
-          />
-        </label>
-        <label className="flex min-w-48 flex-col gap-1 text-caption-1-medium text-text-secondary">
-          Run
-          <select
-            value={runId}
-            onChange={(event) => setRunId(event.currentTarget.value)}
-            disabled={runs.length === 0}
-            className="h-9 rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring disabled:opacity-50"
-          >
-            {runs.map((artifact) => (
-              <option key={artifact.runId} value={artifact.runId}>
-                {artifact.label}
-              </option>
-            ))}
-          </select>
-        </label>
+    <div className="flex w-full flex-col gap-3">
+      <label className="flex flex-col gap-1 text-caption-1-medium text-text-secondary">
+        Type
+        <select
+          value={kind}
+          onChange={(event) => chooseKind(event.currentTarget.value as ArtifactWorkpieceKind)}
+          className="h-9 w-full rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+        >
+          {ARTIFACT_AUTHORING_PROFILES.map((profile) => (
+            <option key={profile.kind} value={profile.kind}>
+              {profile.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex flex-col gap-1 text-caption-1-medium text-text-secondary">
+        Name
+        <input
+          value={name}
+          onChange={(event) => setName(event.currentTarget.value)}
+          className="h-9 w-full rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-caption-1-medium text-text-secondary">
+        Run
+        <select
+          value={runId}
+          onChange={(event) => setRunId(event.currentTarget.value)}
+          disabled={runs.length === 0}
+          className="h-9 w-full rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring disabled:opacity-50"
+        >
+          {runs.map((artifact) => (
+            <option key={artifact.runId} value={artifact.runId}>
+              {artifact.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="flex items-center justify-between gap-2">
         <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-secondary outline-none hover:bg-background-secondary-default hover:text-text-primary">
           <RiUpload2Line aria-hidden className="size-4" />
           {file ? "Replace upload" : "Upload"}
@@ -176,17 +181,17 @@ function ArtifactCreatePanel({
         </button>
       </div>
       {file && (
-        <p className="mt-2 truncate text-caption-1-regular text-text-tertiary">
+        <p className="truncate text-caption-1-regular text-text-tertiary">
           Immutable original: {file.name}
         </p>
       )}
       {runs.length === 0 && (
-        <p className="mt-2 text-caption-1-regular text-text-tertiary">
+        <p className="text-caption-1-regular text-text-tertiary">
           Create is available after at least one run exists, or from a link with a run_id parameter.
         </p>
       )}
-      {error && <p className="mt-2 text-caption-1-regular text-text-error-primary">{error}</p>}
-    </section>
+      {error && <p className="text-caption-1-regular text-text-error-primary">{error}</p>}
+    </div>
   );
 }
 
@@ -244,6 +249,7 @@ export function LiveArtifacts({
   const [available, setAvailable] = useState(initialAvailable);
   const [filter, setFilter] = useState<Filter>("all");
   const [refreshing, setRefreshing] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setRefreshing(true);
@@ -296,6 +302,19 @@ export function LiveArtifacts({
     return runs.size === 1 ? [...runs][0] : null;
   }, [visible]);
 
+  // Tiles only for artifacts with a real thumbnail (image / video); everything
+  // else (docs, code, pdf, text) renders as a compact row instead of a hollow tile.
+  const { tiles, rows } = useMemo(() => {
+    const tiles: ArtifactDescriptor[] = [];
+    const rows: ArtifactDescriptor[] = [];
+    for (const artifact of visible) {
+      const renderer = artifactViewFor(artifact).preview.renderer;
+      if (renderer === "image" || renderer === "video") tiles.push(artifact);
+      else rows.push(artifact);
+    }
+    return { tiles, rows };
+  }, [visible]);
+
   return (
     <div className="mx-auto w-full max-w-[1120px] px-6 py-8 sm:px-10 sm:py-10">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -309,6 +328,31 @@ export function LiveArtifacts({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Dropdown isOpen={createOpen} onOpenChange={setCreateOpen}>
+            <DropdownTrigger className="inline-flex h-9 items-center gap-2 rounded-lg bg-foreground-icon-primary px-3 text-body-2-medium text-background-full transition-opacity hover:opacity-90">
+              <RiAddLine aria-hidden className="size-4" />
+              New
+            </DropdownTrigger>
+            <DropdownPopover
+              aria-label="New artifact"
+              placement="bottom end"
+              className="w-[360px] p-4"
+              dialogClassName="gap-3"
+            >
+              <ArtifactCreatePanel
+                artifacts={artifacts}
+                initialRunId={initialRunId}
+                onCreated={(artifact) => {
+                  setArtifacts((current) => [
+                    artifact,
+                    ...current.filter((item) => item.id !== artifact.id),
+                  ]);
+                  setAvailable(true);
+                  setCreateOpen(false);
+                }}
+              />
+            </DropdownPopover>
+          </Dropdown>
           {soleRunId && (
             <a
               href={`/api/artifacts/runs/${soleRunId}/archive`}
@@ -352,15 +396,6 @@ export function LiveArtifacts({
         </div>
       </div>
 
-      <ArtifactCreatePanel
-        artifacts={artifacts}
-        initialRunId={initialRunId}
-        onCreated={(artifact) => {
-          setArtifacts((current) => [artifact, ...current.filter((item) => item.id !== artifact.id)]);
-          setAvailable(true);
-        }}
-      />
-
       {!available && artifacts.length > 0 && (
         <p role="status" className="mt-4 text-caption-1-regular text-text-tertiary">
           Reconnecting to the artifact service. Showing the last loaded files.
@@ -372,11 +407,22 @@ export function LiveArtifacts({
       ) : artifacts.length === 0 ? (
         <EmptyState />
       ) : visible.length > 0 ? (
-        <div className="mt-8 grid grid-cols-1 gap-x-5 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
-          {visible.map((artifact) => (
-            <ArtifactCard key={artifact.id} artifact={artifact} />
-          ))}
-        </div>
+        <>
+          {tiles.length > 0 && (
+            <div className="mt-8 grid grid-cols-1 gap-x-5 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+              {tiles.map((artifact) => (
+                <ArtifactCard key={artifact.id} artifact={artifact} />
+              ))}
+            </div>
+          )}
+          {rows.length > 0 && (
+            <ul className="mt-6 divide-y divide-separator-border overflow-hidden rounded-2xl bg-background-primary-default shadow-sm ring-1 ring-inset ring-border-button-default">
+              {rows.map((artifact) => (
+                <ArtifactRow key={artifact.id} artifact={artifact} />
+              ))}
+            </ul>
+          )}
+        </>
       ) : (
         <p className="mt-10 text-body-2-regular text-text-secondary">
           No {FILTERS.find((item) => item.id === filter)?.label.toLowerCase()} artifacts yet.

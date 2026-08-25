@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { integrationVisual } from "@/app/apps/integrations";
 import { Chip } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
+import { dedupeIntegrations } from "@/components/integrations/dedupe-integrations";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { cx } from "@/utils/cx";
 import { type IntegrationSummary, integrationAccountLabel } from "./integration-connections-data";
@@ -100,8 +101,8 @@ function IntegrationRow({
       {integration.disconnectAvailable && connectionId ? (
         <Button
           size="xs"
-          variant="danger"
-          className="rounded-full"
+          variant="ghost"
+          className="rounded-full text-text-tertiary transition-colors hover:bg-status-rose-background hover:text-status-rose-text"
           disabled={busy}
           onClick={() => onDisconnect(integration.provider, connectionId)}
         >
@@ -124,15 +125,18 @@ export function IntegrationConnections({ query = "" }: { query?: string }) {
     loading,
     refreshing,
   } = useIntegrations();
+  // One row per provider: the backend can list the same provider connected AND
+  // available at once (the duplicate GitHub row bug); connected wins.
+  const deduped = useMemo(() => dedupeIntegrations(integrations), [integrations]);
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return integrations;
-    return integrations.filter(
+    if (!normalized) return deduped;
+    return deduped.filter(
       (integration) =>
         integration.displayName.toLowerCase().includes(normalized) ||
         integration.description.toLowerCase().includes(normalized),
     );
-  }, [integrations, query]);
+  }, [deduped, query]);
 
   if (error && integrations.length === 0) {
     return <BackendUnreachable onRetry={() => void load()} />;
@@ -151,7 +155,7 @@ export function IntegrationConnections({ query = "" }: { query?: string }) {
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-caption-1-regular text-text-secondary">
-          {integrations.length} available integrations
+          {deduped.length} available integrations
         </p>
         <Button
           size="xs"

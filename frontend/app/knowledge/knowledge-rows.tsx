@@ -14,6 +14,7 @@ import {
 import { Chip } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
 import { REVEAL_ON_HOVER } from "@/components/customize/list-row";
+import { plainTextPreview } from "@/components/shared/plain-text-preview";
 import { cx } from "@/utils/cx";
 import { kindChipColor, type KnowledgeItem } from "./knowledge-data";
 
@@ -102,7 +103,7 @@ export function KnowledgeRow({
           </span>
           {!open && (
             <span className="line-clamp-2 w-full text-body-2-regular text-text-secondary">
-              {item.body}
+              {plainTextPreview(item.body)}
             </span>
           )}
         </button>
