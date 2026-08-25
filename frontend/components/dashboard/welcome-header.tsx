@@ -7,7 +7,7 @@ export function WelcomeHeader({ liveCount = 0 }: { liveCount?: number }) {
     <header className='flex flex-wrap items-start justify-between gap-4'>
       <div className='flex flex-col gap-1'>
         <p className='text-mono-label text-text-tertiary'>Overview</p>
-        <h1 className='text-display-md text-text-primary'>Welcome back</h1>
+        <h1 className='text-display-sm text-text-primary'>Welcome back</h1>
         <p className='text-body-2-regular text-text-secondary'>
           {liveCount > 0
             ? `${liveCount} ${liveCount === 1 ? 'agent is' : 'agents are'} working right now - here's the fleet at a glance.`

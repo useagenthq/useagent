@@ -89,7 +89,7 @@ export default async function NewTaskPage({
         <div className="w-full max-w-3xl py-10 sm:py-14">
           <div className="flex flex-col items-center gap-3 text-center">
             <p className="text-mono-label text-text-tertiary">New thread</p>
-            <h1 className="text-display-md text-text-primary">What do you want done?</h1>
+            <h1 className="text-display-sm text-text-primary">What do you want done?</h1>
           </div>
 
           <div className="mt-8">

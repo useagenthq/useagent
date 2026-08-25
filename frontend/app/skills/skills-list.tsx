@@ -59,7 +59,7 @@ const SkillRow = memo(function SkillRow({
       : description || "Created in useAgent";
 
   return (
-    <li className="relative flex items-center gap-3 px-4 py-3 transition-colors hover:bg-background-primary-hover">
+    <li className="group relative flex items-center gap-3 px-4 py-3 transition-colors hover:bg-background-primary-hover">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           {/* Stretched click target: the name button opens the detail view for
@@ -89,7 +89,7 @@ const SkillRow = memo(function SkillRow({
         <Button
           variant="ghost"
           size="xs"
-          className="relative z-10 shrink-0 rounded-full"
+          className="relative z-10 shrink-0 rounded-full opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
           onClick={() => onOpen(group)}
         >
           View
@@ -98,7 +98,7 @@ const SkillRow = memo(function SkillRow({
         <Button
           variant="ghost"
           size="xs"
-          className="relative z-10 shrink-0 rounded-full"
+          className="relative z-10 shrink-0 rounded-full opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
           leadingIcon={ran ? RiCheckLine : RiPlayMiniLine}
           onClick={() => onRun(primary)}
         >
