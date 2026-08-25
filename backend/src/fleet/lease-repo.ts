@@ -58,34 +58,113 @@ export interface ReservationSnapshot {
   readonly orgActiveSandboxes: number;
 }
 
+const DEFAULT_RETAINED_SANDBOX_TTL_MIN = 4_320;
+
+/**
+ * A settled thread may reuse its sandbox until the provider's configured
+ * auto-delete boundary. Historical run mappings older than that boundary are
+ * no longer capacity reservations: providers may already have deleted them,
+ * and the explicit release path clears them sooner when deletion is observed.
+ */
+export function retainedSandboxReservationTtlMs(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): number {
+  const minutes = Number(env.SANDBOX_AUTO_DELETE_MIN ?? DEFAULT_RETAINED_SANDBOX_TTL_MIN);
+  return Number.isFinite(minutes) && minutes > 0
+    ? minutes * 60_000
+    : DEFAULT_RETAINED_SANDBOX_TTL_MIN * 60_000;
+}
+
+export interface RetainedSandboxMapping {
+  readonly orgId: string;
+  readonly threadId: string;
+  readonly sandboxId: string;
+}
+
+/**
+ * Return the single current sandbox mapping for each thread. Older run rows are
+ * immutable history, not additional resident sandboxes.
+ */
+export async function listCurrentRetainedSandboxMappings(
+  exec: Executor = db,
+): Promise<RetainedSandboxMapping[]> {
+  const rows = await exec.execute(sql`
+    select distinct on (org_id, thread_id)
+      org_id, thread_id, sandbox_id
+    from runs
+    where sandbox_id is not null
+    order by org_id, thread_id, created_at desc, id desc`);
+  return rows.map((row) => ({
+    orgId: String(row.org_id),
+    threadId: String(row.thread_id),
+    sandboxId: String(row.sandbox_id),
+  }));
+}
+
+/**
+ * Clear retained mappings that a successful authoritative provider listing did
+ * not return. Callers must not invoke this after a failed or partial listing.
+ */
+export async function clearMissingRetainedSandboxMappings(
+  liveSandboxIds: ReadonlySet<string>,
+  exec: Executor = db,
+): Promise<number> {
+  const current = await listCurrentRetainedSandboxMappings(exec);
+  const missing = [...new Set(
+    current
+      .map((mapping) => mapping.sandboxId)
+      .filter((sandboxId) => !liveSandboxIds.has(sandboxId)),
+  )];
+  if (missing.length === 0) return 0;
+  const rows = await exec.execute(sql`
+    update runs
+    set sandbox_id = null, updated_at = now()
+    where sandbox_id in (${sql.join(missing.map((id) => sql`${id}`), sql`, `)})
+    returning id`);
+  return rows.length;
+}
+
 export async function reservationSnapshot(
   orgId: string,
   exec: Executor = db,
   excludeRetainedSandboxId?: string | null,
 ): Promise<ReservationSnapshot> {
+  const retainedTtlMs = retainedSandboxReservationTtlMs();
   const retainedExclusion = excludeRetainedSandboxId
-    ? sql`and r.sandbox_id <> ${excludeRetainedSandboxId}`
+    ? sql`and candidate.sandbox_id <> ${excludeRetainedSandboxId}`
     : sql``;
   const [row] = await exec.execute(sql`
     with reserved as (
       select * from sandbox_leases where state in ('active', 'reclaiming')
+    ), latest_thread_sandbox as (
+      select distinct on (r.org_id, r.thread_id)
+        r.sandbox_id, r.org_id, r.thread_id
+      from runs r
+      where r.sandbox_id is not null
+        and (
+          r.status in ('queued', 'running') or
+          coalesce(r.settled_at, r.updated_at, r.created_at) >=
+            now() - (${retainedTtlMs}::bigint * interval '1 millisecond')
+        )
+      order by r.org_id, r.thread_id, r.created_at desc, r.id desc
     ), retained as (
-      select distinct on (r.sandbox_id)
-        r.sandbox_id, r.org_id,
+      select distinct on (candidate.sandbox_id)
+        candidate.sandbox_id, candidate.org_id,
         coalesce(last_lease.reserved_cpu_millicores, 0) as cpu,
         coalesce(last_lease.reserved_memory_mib, 0) as mem
-      from runs r
+      from latest_thread_sandbox candidate
       left join lateral (
         select reserved_cpu_millicores, reserved_memory_mib
         from sandbox_leases h
-        where h.sandbox_id = r.sandbox_id
+        where h.sandbox_id = candidate.sandbox_id
         order by h.created_at desc
         limit 1
       ) last_lease on true
-      where r.sandbox_id is not null
+      where not exists (
+          select 1 from reserved x where x.sandbox_id = candidate.sandbox_id
+        )
         ${retainedExclusion}
-        and not exists (select 1 from reserved x where x.sandbox_id = r.sandbox_id)
-      order by r.sandbox_id, r.created_at desc
+      order by candidate.sandbox_id
     )
     select
       ((select count(*) from reserved) + (select count(*) from retained))::int as global_count,
