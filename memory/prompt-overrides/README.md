@@ -1,26 +1,42 @@
-# prompt-overrides — English-output patch for memory-core
+# prompt-overrides — source-language prompts for memory-core
 
-Why: the upstream TencentDB-Agent-Memory distillation prompts (L1 fact
-extraction, L1 dedup/merge, L2 scene consolidation, L3 persona) are written
-almost entirely in Chinese, with a single mid-prompt "match the user's
-language" line. The extraction model (claude-haiku-4.5) follows the dominant
-prompt language, so English conversations produced Chinese memories (user
-report 2026-08-05). Upstream HEAD (checked 2026-08-06) has the same prompts as
-the deployed image and exposes no output-language config; the only `language`
-knob in `tdai-gateway.yaml` is `memory.bm25.language`, which controls the BM25
-tokenizer, not the LLM.
+## Why this overlay exists
 
-What: byte-for-byte copies of the four prompt files from the deployed image
-(`agentmemory/memory-core:latest`, created 2026-08-03, id f9b286246d0e), each
-with one `[CRITICAL LANGUAGE RULE - HIGHEST PRIORITY]` paragraph injected at
-the top of its system prompt(s). Nothing else is changed.
+The upstream TencentDB-Agent-Memory L1 extraction, L1 deduplication, L2 scene
+consolidation, and L3 persona prompts were predominantly written in Chinese.
+With English conversations, the model could follow the instruction language
+instead of the source language and generate Chinese memories, headings, and
+default labels.
 
-How: `memory/docker-compose.yml` mounts these files read-only over
-`/app/src/core/prompts/*.ts`. The image runs Bun directly on TS source, so
-the overlay is the code that executes.
+The `language` setting in `tdai-gateway.yaml` configures the BM25 tokenizer;
+it does not control LLM output language.
 
-Upgrading the image: re-copy the four files from the new container
-(`docker cp skynet-memory-core:/app/src/core/prompts/<f>.ts .`) and re-inject
-the rule paragraphs (grep for `CRITICAL LANGUAGE RULE` in this dir to see the
-exact insertions). If a new image ships prompts that already force
-conversation-language output, delete this overlay instead.
+## Permanent fix
+
+These four overrides use English instruction scaffolds, labels, templates, and
+examples. Each prompt also makes the output contract explicit:
+
+- Natural-language output follows the dominant language of its source
+  messages or memories.
+- English source content stays English.
+- Legitimate Chinese source content may produce Chinese output.
+- Structural identifiers remain stable: JSON keys and enums, META keys,
+  Markdown/control markers, tool names, IDs, and ISO timestamps are unchanged.
+
+The rewrite removes prompt-language bias without forcing every user into
+English and without changing exported TypeScript interfaces or JSON contracts.
+
+## Runtime wiring
+
+`memory/docker-compose.yml` mounts the files read-only over
+`/app/src/core/prompts/*.ts`. The image runs Bun directly on TypeScript source,
+so the mounted overrides are the executed prompts.
+
+## Upgrading memory-core
+
+When upgrading the image, compare the upstream prompt exports, parameter
+shapes, JSON schemas, tool names, and deletion markers with these overrides.
+Port any upstream contract changes while retaining the source-language rule
+and English-first scaffolding. If upstream ships an equivalent fix, remove the
+overlay after verifying English and Chinese source-language behavior end to
+end.
