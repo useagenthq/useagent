@@ -27,6 +27,7 @@ import {
   reconcileFleetOnBoot,
   reconcileFleetOnce,
   reconcileRetainedSandboxMappings,
+  reclaimRetainedCapacityIfNeeded,
   startFleetReconciler,
   stopFleetReconciler,
 } from "../src/fleet/reconciler";
@@ -45,6 +46,7 @@ const PRELOAD_FLEET: Record<string, string | undefined> = {
   FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES: process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES,
   FLEET_ORG_MAX_ACTIVE_SANDBOXES: process.env.FLEET_ORG_MAX_ACTIVE_SANDBOXES,
   FLEET_ORG_MAX_QUEUE_DEPTH: process.env.FLEET_ORG_MAX_QUEUE_DEPTH,
+  FLEET_HOST_CPU_MILLICORES: process.env.FLEET_HOST_CPU_MILLICORES,
 };
 
 const testOrgs = new Set<string>();
@@ -362,6 +364,45 @@ describe("durable admission — restart + crash recovery", () => {
     const followUp = await accept(orgId, crypto.randomUUID(), threadId);
     expect((await admitClaimedRun(followUp)).admit).toBe(true);
     expect((await reservationSnapshot(orgId)).globalActiveSandboxes).toBe(1);
+  });
+
+  test("provider-capacity pressure evicts one oldest idle retained sandbox", async () => {
+    process.env.FLEET_HOST_CPU_MILLICORES = "4000";
+    const orgId = track(`org-${uid("pressure")}`);
+    const retainedRunId = await accept(orgId);
+    const leaseId = await createLease({
+      runId: retainedRunId,
+      threadId: retainedRunId,
+      orgId,
+      provider: "mock",
+      tier: "standard",
+      cpuMillicores: 2_000,
+      memoryMib: 8_192,
+      leaseTtlMs: 10_000,
+      sandboxId: "idle-box",
+    });
+    await db.execute(sql`
+      update runs set status = 'completed', sandbox_id = 'idle-box', settled_at = now()
+      where id = ${retainedRunId}`);
+    await db.execute(sql`
+      update sandbox_leases set state = 'released' where id = ${leaseId}`);
+    const queuedRunId = await accept(orgId);
+    await db.execute(sql`
+      update run_admissions set queue_reason = 'provider_capacity'
+      where run_id = ${queuedRunId}`);
+
+    const released: string[] = [];
+    expect(await reclaimRetainedCapacityIfNeeded(async (releaseOrgId, runId) => {
+      released.push(runId);
+      const run = await getRun(runId);
+      await db.execute(sql`
+        update runs set sandbox_id = null
+        where org_id = ${releaseOrgId} and thread_id = ${run!.threadId}`);
+      return { ok: true, released: true };
+    })).toBe(1);
+
+    expect(released).toEqual([retainedRunId]);
+    expect((await getRun(retainedRunId))?.sandboxId).toBeNull();
   });
 
   test("a dead worker's lease expires and reconciles; capacity is reclaimed and the run settles", async () => {

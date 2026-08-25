@@ -81,6 +81,13 @@ export interface RetainedSandboxMapping {
   readonly sandboxId: string;
 }
 
+export interface ReclaimableRetainedSandbox {
+  readonly runId: string;
+  readonly orgId: string;
+  readonly threadId: string;
+  readonly sandboxId: string;
+}
+
 /**
  * Return the single current sandbox mapping for each thread. Older run rows are
  * immutable history, not additional resident sandboxes.
@@ -99,6 +106,44 @@ export async function listCurrentRetainedSandboxMappings(
     threadId: String(row.thread_id),
     sandboxId: String(row.sandbox_id),
   }));
+}
+
+/** Oldest settled retained thread that can be evicted under capacity pressure. */
+export async function oldestReclaimableRetainedSandbox(
+  exec: Executor = db,
+): Promise<ReclaimableRetainedSandbox | null> {
+  const [row] = await exec.execute(sql`
+    with current as (
+      select distinct on (r.org_id, r.thread_id)
+        r.id, r.org_id, r.thread_id, r.sandbox_id, r.status,
+        coalesce(r.settled_at, r.updated_at, r.created_at) as last_used_at
+      from runs r
+      where r.sandbox_id is not null
+      order by r.org_id, r.thread_id, r.created_at desc, r.id desc
+    )
+    select c.id, c.org_id, c.thread_id, c.sandbox_id
+    from current c
+    where c.status in ('completed', 'failed')
+      and not exists (
+        select 1 from runs active
+        where active.org_id = c.org_id
+          and active.thread_id = c.thread_id
+          and active.status in ('queued', 'running')
+      )
+      and not exists (
+        select 1 from sandbox_leases lease
+        where lease.sandbox_id = c.sandbox_id
+          and lease.state in ('active', 'reclaiming')
+      )
+    order by c.last_used_at asc, c.id asc
+    limit 1`);
+  if (!row) return null;
+  return {
+    runId: String(row.id),
+    orgId: String(row.org_id),
+    threadId: String(row.thread_id),
+    sandboxId: String(row.sandbox_id),
+  };
 }
 
 /**

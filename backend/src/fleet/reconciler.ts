@@ -5,12 +5,14 @@ import {
   sandboxProviderApiKey,
 } from "../sandboxes/provider";
 import { clearThreadSandbox, getRun } from "../runs/repo";
+import { releaseRunSandbox } from "../runs/sandbox-release";
 import { finalizeRun } from "../runs/finalize";
 import { settleCommandForRun } from "../commands/dispatch";
 import { liveActorRunIds, pumpThread } from "../worker";
 import { selectAdmittableThreads } from "./admission";
 import {
   resetLeasedAdmissionsForBoot,
+  oldestQueuedAdmissionForReason,
   setAdmissionState,
   syncRunningAdmissions,
   syncTerminalAdmissions,
@@ -19,13 +21,14 @@ import {
   clearMissingRetainedSandboxMappings,
   claimExpiredLeases,
   heartbeatLeases,
+  oldestReclaimableRetainedSandbox,
   releaseEmptyActiveLeasesOnBoot,
   releaseReclaimedLease,
   restoreLiveLease,
   scheduleLeaseGcRetry,
   type ReclaimingLease,
 } from "./lease-repo";
-import { ensureProviderInventory } from "./inventory";
+import { buildCapacityInventory, ensureProviderInventory } from "./inventory";
 
 // ---------------------------------------------------------------------------
 // Fleet reconciliation worker (HA Stage A). One periodic tick, wired into the
@@ -78,6 +81,36 @@ export async function reconcileRetainedSandboxMappings(
   const liveSandboxIds = new Set<string>();
   for await (const sandbox of provider.list()) liveSandboxIds.add(sandbox.id);
   return clearMissingRetainedSandboxMappings(liveSandboxIds);
+}
+
+type ReleaseRetainedSandbox = (
+  orgId: string,
+  runId: string,
+) => Promise<{ readonly ok: boolean; readonly released?: boolean }>;
+
+/**
+ * Retained sandboxes make follow-ups fast, but they must yield to queued new
+ * work when the host resource budget is full. Evict one oldest idle thread per
+ * tick; the normal queue pump below can consume the freed slot immediately.
+ */
+export async function reclaimRetainedCapacityIfNeeded(
+  release: ReleaseRetainedSandbox = releaseRunSandbox,
+): Promise<number> {
+  const queued = await oldestQueuedAdmissionForReason("provider_capacity");
+  if (!queued) return 0;
+  const config = fleetCapacityConfig();
+  const inventory = await buildCapacityInventory(queued.orgId);
+  const marginFactor = 1 - config.safetyMarginPct / 100;
+  const cpuBudget = Math.floor(config.hostCpuMillicores * marginFactor);
+  const memoryBudget = Math.floor(config.hostMemoryMib * marginFactor);
+  const retainedResourcePressure =
+    inventory.globalReservedCpuMillicores + queued.cpuMillicores > cpuBudget ||
+    inventory.globalReservedMemoryMib + queued.memoryMib > memoryBudget;
+  if (!retainedResourcePressure) return 0;
+  const candidate = await oldestReclaimableRetainedSandbox();
+  if (!candidate) return 0;
+  const result = await release(candidate.orgId, candidate.runId);
+  return result.ok && result.released === true ? 1 : 0;
 }
 
 async function reconcileRetainedMappingsIfDue(force = false): Promise<number> {
@@ -166,6 +199,13 @@ export async function reconcileFleetOnce(): Promise<FleetReconcileSummary> {
       console.error(`[fleet] reconcile expired lease ${lease.id} failed:`, err),
     );
   }
+
+  await reclaimRetainedCapacityIfNeeded().catch((err) =>
+    console.warn(
+      "[fleet] retained sandbox pressure reclaim failed:",
+      err instanceof Error ? err.message : err,
+    ),
+  );
 
   let pumped = 0;
   const threads = await selectAdmittableThreads(RECONCILE_BATCH);
