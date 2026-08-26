@@ -69,27 +69,21 @@ bun run dev:frontend   # UI on :3400 (proxies /api/* to the backend)
 
 ## Self-hosting
 
-[`infra/terraform/hetzner/`](infra/terraform/hetzner/README.md) provisions a
-complete host (server, firewall, PostgreSQL + pgvector, bun, Docker, Caddy)
-with one `terraform apply`; `deploy-app.sh` brings up the core stack:
+useAgent runs on **any Linux host** - AWS, Google Cloud, Azure, Hetzner, or
+bare metal. See [`infra/self-host/`](infra/self-host/README.md) for the full
+guide, including the one-command Hetzner reference host (Terraform) and the
+provider-agnostic [`deploy-app.sh`](infra/self-host/deploy-app.sh):
 
 ```bash
-export HCLOUD_TOKEN=...            # never committed
-cd infra/terraform/hetzner
-terraform init && terraform apply
-SERVER_IP=$(terraform output -raw server_ip) PG_PASSWORD=... OPENROUTER_API_KEY=... \
-  ./deploy-app.sh /path/to/this/repo
+SERVER_IP=<host-ip> PG_PASSWORD=... OPENROUTER_API_KEY=... \
+  infra/self-host/deploy-app.sh /path/to/this/repo
 ```
 
-That yields a signed-in web UI with model-backed chat. Full engine runs, team
-memory, and the sandbox desktop need the additional secrets and sandbox
-template documented in the
-[Terraform README](infra/terraform/hetzner/README.md#scope-core-vs-full).
-
-Production deploys use two lanes: `bun run deploy:hosted` (fast,
-rollback-safe) and `bun run release:hosted` (exhaustive certification with
-real engine journeys and automatic rollback). Details in
-[`deploy/hetzner/`](deploy/hetzner/).
+Sandboxes are pluggable: **Daytona** (managed service - pairs with a host on
+any cloud, easiest start) or **CubeSandbox** (self-hosted runtime on your own
+hardware - full data locality). Production deploy lanes are documented in
+[`deploy/hetzner/`](deploy/hetzner/); the scripts address the host over SSH
+and are provider-agnostic.
 
 ## Architecture
 
@@ -106,7 +100,7 @@ frontend (Next.js)  ->  backend (Bun + Hono + Postgres)  ->  sandboxes (Daytona/
 | [`packages/`](packages/) | Shared contracts: thread events, canonical engine events, workpieces, renderers |
 | [`docs-site/`](docs-site/README.md) | Documentation site: concepts, architecture, API, operations |
 | [`deploy/hetzner/`](deploy/hetzner/) | Release gate, fast deploy lane, atomic frontend release |
-| [`infra/terraform/`](infra/terraform/hetzner/README.md) | Reproducible host provisioning and DNS |
+| [`infra/self-host/`](infra/self-host/README.md) | Self-hosting on any provider + Hetzner reference Terraform |
 | [`memory/`](memory/README.md) | Optional team-memory service |
 
 Deeper reading: the [documentation site](docs-site/) and the interactive

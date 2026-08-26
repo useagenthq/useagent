@@ -1,6 +1,6 @@
 # Reproducible useAgent host on Hetzner Cloud
 
-One `terraform apply` provisions a server and its dependencies; one `deploy-app.sh`
+One `terraform apply` provisions a server and its dependencies; one `../deploy-app.sh`
 brings up the useAgent **core stack** (backend + frontend + Caddy) on it. This turns
 "bring your own host" into reproducible infrastructure-as-code.
 
@@ -60,7 +60,7 @@ PG_PASSWORD='the-postgres-password' \
 PG_GATEWAY_PASSWORD='the-gateway-postgres-password' \
 OPENROUTER_API_KEY=sk-or-...        \
 SSH_KEY=~/.ssh/id_ed25519           \
-./deploy-app.sh /path/to/skynet/repo
+../deploy-app.sh /path/to/skynet/repo
 ```
 
 This rsyncs the source, installs dependencies, links the `file:` workspace
