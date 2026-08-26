@@ -20,7 +20,11 @@
 ---
 
 <p align="center">
-  <img src="https://useagent.org/app-dark-v4.png" alt="useAgent - agent session with live timeline, terminal, and workspace panes" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://useagent.org/app-dark-v4.png">
+    <source media="(prefers-color-scheme: light)" srcset="https://useagent.org/app-light-v4.png">
+    <img src="https://useagent.org/app-dark-v4.png" alt="useAgent - agent session with live timeline, terminal, and workspace panes" width="100%">
+  </picture>
 </p>
 
 Run Codex, Claude Code, and OpenCode as durable, threaded sessions in isolated
