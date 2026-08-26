@@ -88,12 +88,13 @@ export const TerminalPane = memo(function TerminalPane({
                 key={t}
                 type="button"
                 onClick={() => setTab(t)}
+                aria-pressed={tab === t}
                 data-testid={`terminal-tab-${t}`}
                 className={cn(
-                  "text-mono-label rounded px-1.5 py-0.5 transition-colors",
+                  "text-mono-label rounded-md px-2 py-1 transition-colors",
                   tab === t
-                    ? "bg-white/10 text-neutral-200"
-                    : "text-neutral-600 hover:text-neutral-400",
+                    ? "bg-neutral-800 text-white ring-1 ring-inset ring-white/15 shadow-sm"
+                    : "text-neutral-500 hover:bg-white/5 hover:text-neutral-300",
                 )}
               >
                 {t === "shell" ? "Shell" : "Log"}

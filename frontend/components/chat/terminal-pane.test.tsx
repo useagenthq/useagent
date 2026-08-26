@@ -21,10 +21,20 @@ function commandStep(command: string, extra: Record<string, unknown> = {}): ApiS
   };
 }
 
-const render = (steps: ApiStep[], live: boolean) =>
-  renderToStaticMarkup(<TerminalPane steps={steps} live={live} engine="opencode" />);
+const render = (steps: ApiStep[], live: boolean, runId?: string) =>
+  renderToStaticMarkup(
+    <TerminalPane steps={steps} live={live} engine="opencode" runId={runId} />,
+  );
 
 describe("TerminalPane log", () => {
+  test("makes the selected Shell tab visibly distinct", () => {
+    const html = render([], false, "run-1");
+    expect(html).toContain('data-testid="terminal-tab-shell"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain("bg-neutral-800");
+    expect(html).toContain("ring-white/15");
+  });
+
   test("renders an in-flight command step (no output/exit) with a running caret", () => {
     // opencode emits the `$ command` line at `running`, before output lands - the
     // log must show it immediately, not wait for the step to settle.
