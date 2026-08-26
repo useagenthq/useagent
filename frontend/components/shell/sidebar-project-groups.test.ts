@@ -6,6 +6,7 @@ import {
   type ProjectRepo,
   runPrimaryRepo,
   UNATTACHED_KEY,
+  visibleProjectGroups,
 } from "./sidebar-project-groups";
 import type { SidebarRun } from "./working-project-status";
 
@@ -142,5 +143,24 @@ describe("dedupeProjectRepos (Show-N-more count bug)", () => {
   test("unique input is untouched", () => {
     const input = [repo("o/a"), repo("o/b")];
     expect(dedupeProjectRepos(input)).toEqual(input);
+  });
+});
+
+describe("visibleProjectGroups", () => {
+  const groups = ["a", "b", "c", "d", "e", "f"].map((name) => ({
+    key: `o/${name}`,
+    name,
+    fullName: `o/${name}`,
+    threads: [],
+  }));
+
+  test("keeps the initial project rows visible and counts only the overflow", () => {
+    const result = visibleProjectGroups(groups, 5, false);
+    expect(result.groups.map((group) => group.name)).toEqual(["a", "b", "c", "d", "e"]);
+    expect(result.hiddenCount).toBe(1);
+  });
+
+  test("returns every project when expanded", () => {
+    expect(visibleProjectGroups(groups, 5, true)).toEqual({ groups, hiddenCount: 0 });
   });
 });
