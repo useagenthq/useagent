@@ -1,0 +1,47 @@
+---
+title: Artifacts and uploads API
+description: Durable run artifacts, workpiece read/edit/export, agent-proposed revisions, PDF page operations, and user uploads.
+sidebar:
+  label: Artifacts and uploads
+  order: 3
+---
+
+The surfaces that produce, edit, and attach a run's work. The backend owns the
+immutable bytes and authorization. All routes are org-session scoped. See
+[Artifacts](/product/artifacts).
+
+## Artifacts
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/artifacts` | List artifacts for the org, optionally filtered. | Query `run_id`, `thread_id`. Returns `{artifacts}`. |
+| POST | `/api/artifacts` | Create an authored artifact. | Body: `run_id` (required), `thread_id`, `kind` (`document`/`spreadsheet`/`presentation`/`pdf`), `name`, `upload_id`, `state`. `201` created or `200` existing; `409` on upload-claim conflict. |
+| GET | `/api/artifacts/:id` | Fetch an artifact descriptor. | `{artifact}`. `404 not found`. |
+| GET | `/api/artifacts/:id/content` | Stream artifact bytes (range-capable). | Query `download=1` forces attachment. Honors `Range`; `200` or `206`, `416` on a bad range, `410` when bytes are unavailable. `HEAD` is also served (headers only). |
+| GET | `/api/artifacts/:id/preview` | Rendered-PDF preview of an Office binary, inline. | `application/pdf`, `cache-control: private, max-age=300`. `404` no preview, `410` unavailable. |
+| GET | `/api/artifacts/:id/workpiece` | The workpiece descriptor plus canonical (upgraded) state. | `{workpiece, state}`. `404` when the artifact is not a workpiece. |
+| PATCH | `/api/artifacts/:id/workpiece` | Update the workpiece state (optimistic concurrency). | Body: `expected_revision` (non-negative integer, required), `state` (parsed for the workpiece kind). `409 revision conflict` on a stale revision. |
+| GET | `/api/artifacts/:id/workpiece/export` | Export the workpiece to a downloadable file. | Query `format`. `409 invalid stored workpiece state` when canonicalization fails. |
+| POST | `/api/artifacts/:id/workpiece/pdf-pages` | Reorder or delete pages of a published PDF workpiece. | Body: `expected_revision`, `operation` (`{type:"reorder", order:number[]}` or `{type:"delete", pages:number[]}`). `409` when not a published PDF; `422` on an invalid operation. |
+| GET | `/api/artifacts/:id/proposals` | List agent-proposed workpiece revisions. | Query `status=all` returns every status; otherwise `pending`. `{proposals}`. |
+| POST | `/api/artifacts/:id/proposals/:proposalId/accept` | Fold a pending proposal into mainline as a new revision. | `{workpiece, state, proposal}`. `409 proposal already resolved` / `revision conflict`. |
+| POST | `/api/artifacts/:id/proposals/:proposalId/dismiss` | Drop a pending proposal, recording the dismissal. | `{proposal}`. `409 proposal already resolved`. |
+| GET | `/api/artifacts/runs/:runId/archive` | Download every published artifact of a run as one ZIP. | Capped at 100 artifacts / 100 MiB. `404 no artifacts to archive`, `413` over the size limit, `410` when bytes are unavailable. |
+
+:::note
+Workpiece proposals are agent-authored (written through the gateway) and
+human-reviewed through the accept/dismiss routes above; they are still ordinary
+org-scoped endpoints, not an internal surface.
+:::
+
+## Uploads
+
+User-selected files are durable before a run exists, then claimed at command
+acceptance and materialized into the sandbox. Every route requires an
+authenticated user (`401` otherwise). Limit: 25 MiB per file.
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| POST | `/api/uploads` | Upload a file (multipart), scanned and ingested as a draft. | `multipart/form-data` field `file`. `201 {upload}`. `413` over 25 MiB, `400` on invalid form/name/empty file, `422` on scan rejection. |
+| GET | `/api/uploads/:id/content` | Stream an upload's bytes. | Visible org-wide once claimed by a run; a draft stays private to its uploader and `404`s once expired. `410` when bytes are unavailable. |
+| DELETE | `/api/uploads/:id` | Delete a ready, unclaimed upload you own. | `204` on success, `404` if nothing was removed. |

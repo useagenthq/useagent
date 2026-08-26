@@ -1,65 +1,80 @@
 ---
-title: Platform API
-description: Endpoints for GitHub, provider connections, fleet usage, Slack ingress, terminal and desktop proxies, and the commands catalog.
+title: Platform and integrations API
+description: GitHub repos and pulls, user provider connections, tenant integrations, Slack ingress, the dashboard, and fleet usage.
 sidebar:
   label: Platform
-  order: 4
+  order: 8
 ---
 
-The integration and infrastructure surfaces. See [GitHub
+The integration and infrastructure surfaces. Backend-held credentials stay
+server-side and never appear in responses. See [GitHub
 integration](/platform/github-integration), [Provider connections and
 models](/platform/provider-connections-and-models), and [Fleet and
 usage](/platform/fleet-and-usage).
 
 ## GitHub
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/api/repos` | List the organization's repositories. |
-| GET | `/api/repos/:owner/:name/branches` | List a repository's branches. |
-| GET | `/api/pulls` | Open pull requests across connected repositories. |
+Org-session scoped. When GitHub org access is not configured or failing, the list
+routes return `403 {configured: true, ..., error}` rather than throwing.
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/repos` | The org's repositories for the composer's repo picker. | `403` payload with an empty list on a GitHub org-access error. |
+| GET | `/api/repos/:owner/:name/branches` | A repository's branches. | For the per-repo branch picker. |
+| GET | `/api/repos/:owner/:name/tree` | One directory level, for the @-mention file picker. | Query `ref` (branch; default branch when omitted), `path` (dir; repo root when omitted). Capped, with truncation reported. |
+| GET | `/api/pulls` | Open pull requests across the org's accessible repos. | Powers the review page. `403` payload with an empty list on a GitHub org-access error. |
 
 ## Provider connections
 
-The whole router is user-scoped: without an authenticated user every route
-returns `403 user_required`. Creation and update happen only through the
-per-provider key route and the OAuth subroutes; the collection root is
-read-only.
+User-scoped: every route requires an authenticated user (`403 user_required`).
+Values are encrypted at rest and write-only over HTTP.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/api/provider-connections` | List the current user's connections. |
-| POST | `/api/provider-connections/openai/chatgpt-oauth/start` | Begin the managed-account OAuth flow. |
-| GET | `/api/provider-connections/openai/chatgpt-oauth/status` | Poll the OAuth flow. |
-| POST | `/api/provider-connections/openai/chatgpt-oauth/cancel` | Cancel an in-progress flow. |
-| POST | `/api/provider-connections/openai/chatgpt-oauth/revoke` | Revoke the managed account. |
-| GET | `/api/provider-connections/:provider` | A provider's connection. |
-| PUT | `/api/provider-connections/:provider/api-key` | Store a provider API key (write-only). |
-| POST | `/api/provider-connections/:provider/revoke` | Revoke a provider's credential. |
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/provider-connections` | List the current user's connections. | `{connections}`. |
+| GET | `/api/provider-connections/:provider` | Get one provider connection. | Query `authMethod` (optional). `400 unknown provider`/`unknown auth method`, `404 provider connection not found`. |
+| PUT | `/api/provider-connections/:provider/api-key` | Upsert an API-key connection (write-only). | Body: `apiKey` (required), `metadata`. `{connection}`. |
+| POST | `/api/provider-connections/:provider/revoke` | Revoke a provider connection. | Query `authMethod` (required for `openai`). `404 provider connection not found`. |
+| POST | `/api/provider-connections/openai/chatgpt-oauth/start` | Start the managed Codex ChatGPT OAuth (device-code). | `{login}`. |
+| GET | `/api/provider-connections/openai/chatgpt-oauth/status` | Poll the managed Codex login. | `{status}`. |
+| POST | `/api/provider-connections/openai/chatgpt-oauth/cancel` | Cancel an in-flight login. | Body: `loginId` (required). |
+| POST | `/api/provider-connections/openai/chatgpt-oauth/revoke` | Revoke the managed Codex connection. | `404 provider connection not found`. |
 
-## Fleet
+## Integrations
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/api/fleet` | Today's model burn and the sandbox footprint. |
+Tenant-owned SaaS connections behind a provider-neutral lifecycle. The OAuth
+callback landing is public (authenticated by the OAuth `state`); every other route
+is user-scoped, and the `/org` variants require an org admin.
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/integrations/callback/:provider` | Public OAuth callback landing; completes the connect and redirects into the frontend. | Public (state-authenticated). `303` to the frontend on success or `/settings?integration=error` on failure. |
+| GET | `/api/integrations` | List integrations for the current org and user. | `{integrations}`. |
+| POST | `/api/integrations/:provider/connect` | Start a user-owned connect flow. | Body: `returnTo` (default `/settings#integrations`). |
+| POST | `/api/integrations/:provider/connect/org` | Start an org-owned connect flow. | Org-admin. Body: `returnTo`. |
+| POST | `/api/integrations/callback` | Programmatic connect completion (non-redirect). | Body: `state` (required), `callback` (object). `{connection}`. |
+| DELETE | `/api/integrations/:provider` | Disconnect a user-owned connection. | Query `connectionId` (required). |
+| DELETE | `/api/integrations/:provider/org` | Disconnect an org-owned connection. | Org-admin. Query `connectionId` (required). |
 
 ## Slack
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| POST | `/api/slack/events` | The Slack events ingress. See [Slack](/channels/slack). |
+Public and Slack-signature authenticated. See [Slack](/channels/slack).
 
-## Terminal and desktop
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| POST | `/api/slack/events` | The Slack Events-API receiver. | Verifies the request signature, answers `url_verification` with `{challenge}`, and ACKs `event_callback` immediately (`200`) while processing async. `404` when the adapter is disabled, `401 invalid_signature`. |
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| WS | `/api/runs/:id/terminal` | A run's interactive terminal (one sandbox PTY per WebSocket connection). |
-| ANY | `/api/live-proxy/:threadId/*` | Same-origin bridge to the thread's engine server. The thread id is the root run id and is org-authorized; an unknown or cross-org thread returns 404. |
-| WS / HTTP | `/api/desktop-proxy/*` | The noVNC desktop proxy (`websockify`). |
-| GET | `/api/desktop-proxy/:threadId/ready` | Desktop readiness. |
+## Dashboard
 
-## Commands
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/dashboard/summary` | Org run/skill/knowledge stats plus daily and weekly series. | `{stats, counts, daily, weekly, settlement_history_from, timezone}` over customer-visible runs. |
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/api/commands` | The command catalog available to a thread. |
+## Fleet
+
+Real "Limits" numbers. Org-scoped; the Daytona key stays server-side.
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/fleet` | Today's per-model token/cost/run burn plus the live sandbox footprint. | `{...modelBurn, machine}`. |
+| GET | `/api/fleet/capacity` | Durable queue and capacity visibility. | Active sandboxes vs limit, queued backlog vs the durable ceiling, global capacity health. |

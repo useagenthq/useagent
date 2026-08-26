@@ -1,0 +1,69 @@
+---
+title: Skills, tasks and projects API
+description: Skills and playbooks CRUD, running a skill, GitHub skill import, learning-lane skill proposals, and the durable task board.
+sidebar:
+  label: Skills and tasks
+  order: 6
+---
+
+Skills are the reusable procedure substrate; tasks and projects are the durable
+work items agents create and humans track. All routes are org-session scoped;
+proposal accept/dismiss additionally require an org admin. See [Skills and
+playbooks](/product/skills-and-playbooks).
+
+## Skills
+
+A content change (name, description, or sections) bumps `current_version` and
+appends an immutable revision; runs pinned to an older version are never mutated.
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/skills` | List skills for the org, newest first. | Query `kind` (filter; an unknown kind matches nothing), `view` (`picker` returns a slim list, `library` omits `sections`), `limit` (picker only, 1-2000). Returns `{skills}`. |
+| GET | `/api/skills/:id` | Fetch one skill with full sections. | `404 skill not found`. |
+| POST | `/api/skills` | Create a skill and its version-1 revision. | Body: `name` (required), `kind` (default `skill`), `description`, `tags[]`, `sections` (`{overview[], procedure[], verify[]}`). `201`. `409` on a name collision. |
+| PATCH | `/api/skills/:id` | Partial update; a content change bumps the version. | Body (any subset): `name`, `description`, `tags[]`, `sections`. A tags-only edit does not mint a version. `404 skill not found`. |
+| DELETE | `/api/skills/:id` | Delete a skill (revisions cascade). | `{deleted: true, id}`. Historical runs keep their recorded version for provenance. |
+| POST | `/api/skills/:id/run` | Run a skill: create a real run pinned to its current version. | Header `Idempotency-Key`. Body: `prompt` (required), `engine`, `model`. `201 {id}` new / `200 {id}` replay. `400 model_not_allowed`, `403 model_provider_not_ready`, `404 skill not found`, `409 idempotency_key_reused`, `503` when admission is closed. |
+
+## Skill import
+
+multi-repo import of `SKILL.md` files from the org's GitHub repos. The GitHub
+credential stays server-side. A bad ref or unconfigured backend is `400`; a GitHub
+upstream failure is `502`; a repo not available to the org is `403`.
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/skills/import/scan` | List the `SKILL.md` files a repo offers, each tagged already-imported. | Query `repo` (required, `"owner/name"`). |
+| POST | `/api/skills/import` | Import selected paths at repo HEAD into org skills. | Body: `repo` (required), `paths[]` (required, non-empty). Returns a per-path outcome (unchanged is a no-op). |
+
+## Skill proposals
+
+Learning-lane skill-revision proposals. Listing is org-visible; accept and dismiss
+are org-admin.
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/skills/proposals` | List proposals, newest first. | Query `status` (`proposed`/`accepted`/`dismissed`). Returns `{proposals}` (each carries the exact `proposed_content` a future accept would materialize). |
+| POST | `/api/skills/proposals/:id/accept` | Accept: mint a real skill revision (or a new playbook). | Org-admin. `{proposal, skill_id, version}`. `404 proposal not found`, `409 proposal already resolved`. |
+| POST | `/api/skills/proposals/:id/dismiss` | Dismiss a proposal (recorded, never deleted). | Org-admin. `{proposal}`. `404`/`409` as above. |
+
+## Tasks
+
+Durable, org-scoped tasks grouped per project and rendered as a Kanban board.
+Status is one of `todo`, `in_progress`, `done`, `archived`. See [Task
+composer](/product/task-composer).
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/tasks` | List org tasks, scoped by project or all. | Query `project` (key), `project_id` (uuid), `scope=all` (cross-project), `limit` (default 100). Returns `{tasks}`. |
+| POST | `/api/tasks` | Create a task. | Body: `title` (required), `status` (default `todo`), `project_id`, `project_key`, `body`, `priority`. `201`. `404 project not found`. |
+| PATCH | `/api/tasks/:id` | Partial update. | Body (any subset): `title`, `body`, `status`, `priority`, `order`. `404 task not found`. |
+| DELETE | `/api/tasks/:id` | Delete a task. | `{deleted: true, id}`. `404 task not found`. |
+
+## Projects
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/projects` | List org projects. | Query `scope=all` (include archived), `limit` (default 100). Returns `{projects}`. |
+| POST | `/api/projects` | Create or ensure a project by key. | Body: `key` (required), `display_name`, `repo_full_name`. `201`. |
+| PATCH | `/api/projects/:id` | Update a project. | Body: `display_name` (non-empty if provided), `archived` (boolean), `sort_order`. `404 project not found`. |
