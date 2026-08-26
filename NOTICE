@@ -15,8 +15,8 @@ files carry their upstream attribution and license in per-file headers.
 - Beautiful UI (Shane Levine / Turbo, MIT) - https://www.beautifului.dev
   Vendored sources in frontend/vendor/beautiful-ui/ (manifest.json records the
   upstream record, hash, and fetch time per component) and ports in
-  frontend/components/ai/ plus derived chat surfaces in
-  frontend/components/chat/ (attribution headers in the derived files).
+  frontend/components/ai/, frontend/components/agent-ui/, and derived chat
+  surfaces in frontend/components/chat/.
 
 - BoardUI (free edition) - vendored UI foundations in frontend/components/base/
   and frontend/styles/theme.css. Used under BoardUI's free-edition terms;
