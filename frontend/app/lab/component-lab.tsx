@@ -427,7 +427,7 @@ export function ComponentLab() {
             active
             sources={[
               { name: "AGENTS.md", url: "https://useagent.local/AGENTS.md" },
-              { name: "beautiful-ui", url: "the component catalog" },
+              { name: "components/ai", url: "https://useagent.local/components/ai" },
               { name: "Base kit tokens", url: "https://useagent.local/styles/theme.css" },
             ]}
             onRegenerate={() => setStreamKey((k) => k + 1)}
