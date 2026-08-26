@@ -25,7 +25,6 @@ export function ProviderConnectionsCard() {
     error,
     load,
     loading,
-    mounted,
     refreshing,
   } = useProviderConnections();
   const views = useMemo(() => providerConnectionViews(connections), [connections]);
@@ -88,12 +87,6 @@ export function ProviderConnectionsCard() {
       {error && connections.length > 0 ? (
         <p className="text-caption-1-regular text-status-yellow-text">
           Refresh failed. Showing the last provider-connection snapshot.
-        </p>
-      ) : null}
-      {mounted ? (
-        <p className="text-caption-1-regular text-text-tertiary">
-          Updates refresh from the org event stream when provider-connection invalidations are
-          present; save and revoke actions also reload this panel immediately.
         </p>
       ) : null}
     </div>
