@@ -1,6 +1,6 @@
 /**
  * Typed environment access for the knowledge module. Ported in spirit from
- * the knowledge service's packages/config, but every key is OPTIONAL: missing
+ * the knowledge service config, but every key is OPTIONAL: missing
  * LLM/embedding keys degrade gracefully (stub distillation + keyword-only
  * search) instead of throwing. Bun auto-loads backend/.env.
  */

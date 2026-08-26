@@ -1,7 +1,7 @@
 import type { SourceType } from "./schema";
 
 /**
- * Distillation prompts — ported verbatim from the knowledge service
+ * Distillation prompts — part of the knowledge service
  * (packages/distillation/src/prompts.ts). Domain-neutral (works for
  * engineering, GTM, ops, finance, customer) and shape-aware (picks a `kind`
  * instead of forcing everything into a question/resolution). Per-source
