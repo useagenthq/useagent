@@ -12,7 +12,6 @@ import {
   RiRobot2Line,
   RiTerminalBoxLine,
 } from "@remixicon/react";
-import dynamic from "next/dynamic";
 import type { RunResourceSelection } from "@useagent/agent-client/wire";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentsRail } from "@/components/chat/agents-rail";
@@ -61,25 +60,11 @@ import type { TimelineArtifact } from "@/components/chat/timeline";
 import { ComposerPrefillProvider } from "@/components/chat/composer-prefill-context";
 import { SessionLatestRunProvider } from "@/components/chat/session-run-context";
 import { useWorkpieceAutoOpen } from "@/components/chat/use-workpiece-auto-open";
-import { shouldFocusAutoOpened } from "@/components/chat/workpiece-auto-open";
+import { shouldFocusAutoOpened, workspaceSurfaceHasFocus } from "@/components/chat/workpiece-auto-open";
 import { WorkspaceOpenProvider } from "@/components/chat/workspace-open-context";
 import type { OpenWorkpieceTab } from "@/components/chat/workspace-pane";
 
-// The Workspace pane pulls in the workpiece editor surfaces + revision hook. Code
-// split it so that weight loads ONLY when a user first opens a workpiece - it must
-// never sit in the base session bundle (the pane is already mount-gated, this keeps
-// its JS out of first load too).
-const WorkspacePane = dynamic(
-  () => import("@/components/chat/workspace-pane").then((mod) => mod.WorkspacePane),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="grid h-full place-items-center p-6 text-body-2-regular text-text-secondary">
-        Loading workspace...
-      </div>
-    ),
-  },
-);
+import { WorkspacePane } from "@/components/chat/workspace-pane-loader";
 import {
   type ApiRun,
   type EngineId,
@@ -99,16 +84,6 @@ import { useIsMobile } from "@/hooks/use-is-mobile";
 import { backendFetch } from "@/lib/backend-fetch";
 import { createRun } from "@/lib/create-run";
 import { cx } from "@/utils/cx";
-
-/** True when DOM focus sits inside a live workspace editing surface - the signal
- * an auto-open uses to avoid yanking the caret away from an edit in progress.
- * `visibility:hidden` on an inactive tab drops focus, so a focused surface is by
- * definition the visible one. */
-function workspaceSurfaceHasFocus(): boolean {
-  if (typeof document === "undefined") return false;
-  const active = document.activeElement;
-  return active instanceof HTMLElement && active.closest("[data-workspace-surface]") !== null;
-}
 
 // The rail is a resizable sub-viewport panel (viewport breakpoints can't
 // describe it), so a container query on the switcher header collapses each

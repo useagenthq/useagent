@@ -16,6 +16,7 @@ import { backendFetch } from "@/lib/backend-fetch";
 import { relativeTime } from "@/utils/format";
 import { SidebarSectionLabel } from "./sidebar-nav";
 import {
+  dedupeProjectRepos,
   groupThreadsByProject,
   type ProjectGroup,
   type ProjectRepo,
@@ -108,9 +109,10 @@ export function SidebarProjects() {
                 typeof repo.name === "string" && repo.name.length > 0 ? repo.name : repo.full_name,
             },
           ];
-        })
-        .slice(0, MAX_PROJECTS);
-      setProjects(repos);
+        });
+      // Dedupe BEFORE capping: upstream duplicates collapsed in the DOM (React
+      // keys) while still counting toward "Show N more" (release-audit bug).
+      setProjects(dedupeProjectRepos(repos).slice(0, MAX_PROJECTS));
     } catch {
       // Ambient navigation stays quiet on authentication or fetch failures.
     }

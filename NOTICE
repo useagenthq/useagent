@@ -1,14 +1,27 @@
-This product includes software developed by third parties:
+useAgent
+Copyright (c) 2026 the useAgent authors
 
-- reference bot (Apache License 2.0) — https://github.com/awslabs/reference-bot
-  Portions of backend/src/connectors/, backend/src/engines/acp.ts and
-  backend/src/schedules/ are ported from the reference bot source (messaging
-  transport/renderer abstractions, ACP client wiring, cron scheduling and
-  append-only run history). See per-file attribution headers.
+This project is licensed under the GNU Affero General Public License v3.0
+(AGPL-3.0-only); see the LICENSE file at the repository root.
 
-- QM (yc-software/qm) — reference for the run turn-stream/SSE hygiene and the
-  Slack adapter structure in backend/src/ (adapted, not copied verbatim).
+This product includes software developed by third parties. Ported or adapted
+files carry their upstream attribution and license in per-file headers.
 
-- AlignUI Pro, prompt-kit, beautiful-ui, thinking-orbs (Jakub Antalík, MIT) —
-  vendored/ported UI foundations in frontend/components/ (see the per-folder
-  READMEs for source credit and adaptation notes).
+- T3 Code (T3 Tools Inc, MIT) - https://t3.chat
+  Session chrome components in frontend/components/session-ui/ (work rows,
+  status pills, banners, copy affordances); each ported file carries the
+  upstream path and commit in its header.
+
+- Beautiful UI (Shane Levine / Turbo, MIT) - https://www.beautifului.dev
+  Vendored sources in frontend/vendor/beautiful-ui/ (manifest.json records the
+  upstream record, hash, and fetch time per component) and ports in
+  frontend/components/ai/ plus derived chat surfaces in
+  frontend/components/chat/ (attribution headers in the derived files).
+
+- BoardUI (free edition) - vendored UI foundations in frontend/components/base/
+  and frontend/styles/theme.css. Used under BoardUI's free-edition terms;
+  not covered by this repository's AGPL license.
+
+- prompt-kit and thinking-orbs (Jakub Antalik, MIT) - ported UI primitives in
+  frontend/components/prompt-kit/ and brand motion in
+  frontend/components/foundations/ (see per-folder READMEs).

@@ -1,100 +1,100 @@
 "use client";
 
-import { RiMailLine, RiUserAddLine } from "@remixicon/react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { Avatar } from "@/components/base/avatar/avatar";
 import { Chip } from "@/components/base/badges/chip";
-import { Button } from "@/components/base/buttons/button";
-import { InputBase } from "@/components/base/input/input";
+import { backendFetch } from "@/lib/backend-fetch";
 import { AVATAR_GRADIENT } from "./general-card";
 
 /**
- * Team section — a static workspace roster plus a local invite form (no auth
- * backend on this surface). Inviting simply flashes a confirmation; nothing is
- * persisted.
+ * Team section - the REAL workspace roster from better-auth's organization
+ * plugin (list -> list-members). No local mock data and no invite form:
+ * invitations need configured email delivery, so until that exists this
+ * surface only reports the truth.
  */
 
-type Row = {
-  key: string;
+interface MemberRow {
+  id: string;
   name: string;
   email: string;
-  initials: string;
-  roleLabel: string;
-  emphasizeRole: boolean;
-  avatarColor: "neutral" | "blue" | "pink";
-  gradient: boolean;
-};
+  role: string;
+}
 
-const ROSTER: Row[] = [
-  { key: "a", name: "Dev User", email: "you@example.com", initials: "A", roleLabel: "Owner", emphasizeRole: true, avatarColor: "neutral", gradient: true },
-  { key: "p", name: "Priya Nair", email: "priya@example.com", initials: "P", roleLabel: "Member", emphasizeRole: false, avatarColor: "blue", gradient: false },
-  { key: "d", name: "Diego Fuentes", email: "diego@example.com", initials: "D", roleLabel: "Member", emphasizeRole: false, avatarColor: "pink", gradient: false },
-];
+const AVATAR_COLORS = ["neutral", "blue", "pink"] as const;
+
+async function fetchMembers(): Promise<MemberRow[]> {
+  const orgsRes = await backendFetch("/api/auth/organization/list");
+  if (!orgsRes.ok) return [];
+  const orgs = (await orgsRes.json()) as { id: string }[] | null;
+  const orgId = orgs?.[0]?.id;
+  if (!orgId) return [];
+  const res = await backendFetch(
+    `/api/auth/organization/list-members?organizationId=${encodeURIComponent(orgId)}`,
+  );
+  if (!res.ok) return [];
+  const data = (await res.json()) as {
+    members?: {
+      id: string;
+      role: string;
+      user?: { name?: string | null; email?: string | null };
+    }[];
+  };
+  return (data.members ?? []).map((m) => ({
+    id: m.id,
+    name: m.user?.name?.trim() || m.user?.email || "Member",
+    email: m.user?.email ?? "",
+    role: m.role,
+  }));
+}
 
 export function TeamCard() {
-  const [email, setEmail] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const [members, setMembers] = useState<MemberRow[] | null>(null);
 
-  function handleInvite(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = email.trim();
-    if (!target || pending) return;
-    setPending(true);
-    setEmail("");
-    setNotice(`Invitation sent to ${target}.`);
-    setPending(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetchMembers().then((rows) => {
+      if (!cancelled) setMembers(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (members === null) {
+    return <p className="py-2.5 text-caption-1-regular text-text-tertiary">Loading members...</p>;
   }
-
+  if (members.length === 0) {
+    return (
+      <p className="py-2.5 text-caption-1-regular text-text-tertiary">
+        No members visible for this workspace.
+      </p>
+    );
+  }
   return (
-    <>
-      <div className="flex flex-col">
-        {ROSTER.map((row) => (
+    <div className="flex flex-col">
+      {members.map((row, index) => {
+        const owner = row.role === "owner";
+        return (
           <div
-            key={row.key}
+            key={row.id}
             className="flex items-center gap-3 border-b border-separator-border py-2.5 last:border-b-0"
           >
             <Avatar
               size="md"
-              color={row.avatarColor}
-              className={row.gradient ? AVATAR_GRADIENT : undefined}
-              initials={row.initials}
+              color={AVATAR_COLORS[index % AVATAR_COLORS.length]}
+              className={owner ? AVATAR_GRADIENT : undefined}
+              initials={(row.name.charAt(0) || "?").toUpperCase()}
             />
             <div className="min-w-0 flex-1">
               <p className="truncate text-body-2-medium text-text-primary">{row.name}</p>
               <p className="truncate text-caption-1-regular text-text-secondary">{row.email}</p>
             </div>
-            <Chip variant="caption" color={row.emphasizeRole ? "purple" : "soft"}>
-              {row.roleLabel}
+            <Chip variant="caption" color={owner ? "purple" : "soft"}>
+              {owner ? "Owner" : row.role.charAt(0).toUpperCase() + row.role.slice(1)}
             </Chip>
           </div>
-        ))}
-      </div>
-
-      <form className="flex items-center gap-2 pt-3" onSubmit={handleInvite} noValidate>
-        <InputBase
-          size="small"
-          aria-label="Invite teammate by email"
-          type="email"
-          placeholder="teammate@company.com"
-          leadingIcon={RiMailLine}
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          fieldClassName="min-w-0 flex-1"
-        />
-        <Button
-          className="rounded-full"
-          type="submit"
-          variant="secondary"
-          size="small"
-          leadingIcon={RiUserAddLine}
-          disabled={pending || !email.trim()}
-        >
-          Invite member
-        </Button>
-      </form>
-
-      {notice && <p className="pt-2 text-caption-1-regular text-text-secondary">{notice}</p>}
-    </>
+        );
+      })}
+    </div>
   );
 }

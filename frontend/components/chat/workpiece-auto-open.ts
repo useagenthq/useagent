@@ -30,3 +30,13 @@ export function shouldFocusAutoOpened(active: {
 }): boolean {
   return !(active.dirty && active.focused);
 }
+
+/** True when DOM focus sits inside a live workspace editing surface - the signal
+ * an auto-open uses to avoid yanking the caret away from an edit in progress.
+ * `visibility:hidden` on an inactive tab drops focus, so a focused surface is by
+ * definition the visible one. */
+export function workspaceSurfaceHasFocus(): boolean {
+  if (typeof document === "undefined") return false;
+  const active = document.activeElement;
+  return active instanceof HTMLElement && active.closest("[data-workspace-surface]") !== null;
+}

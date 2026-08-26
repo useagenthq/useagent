@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  dedupeProjectRepos,
   groupThreadsByProject,
   type ProjectRepo,
   runPrimaryRepo,
@@ -127,5 +128,19 @@ describe("groupThreadsByProject", () => {
 
   test("returns nothing when there are no threads and no repos", () => {
     expect(groupThreadsByProject([], [])).toEqual([]);
+  });
+});
+
+describe("dedupeProjectRepos (Show-N-more count bug)", () => {
+  const repo = (fullName: string): ProjectRepo => ({ fullName, name: fullName.split("/")[1] ?? fullName });
+
+  test("collapses duplicate fullNames, first occurrence wins, order preserved", () => {
+    const out = dedupeProjectRepos([repo("o/a"), repo("o/b"), repo("o/a"), repo("o/c"), repo("o/b")]);
+    expect(out.map((r) => r.fullName)).toEqual(["o/a", "o/b", "o/c"]);
+  });
+
+  test("unique input is untouched", () => {
+    const input = [repo("o/a"), repo("o/b")];
+    expect(dedupeProjectRepos(input)).toEqual(input);
   });
 });
