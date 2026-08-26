@@ -43,6 +43,17 @@ export interface CodexSubscriptionRelayCapability {
   close(): void;
 }
 
+export function codexSubscriptionRelayPublicOrigin(
+  source: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  const configured = source.CODEX_SUBSCRIPTION_RELAY_PUBLIC_ORIGIN?.trim();
+  const origin = new URL(configured || env.BETTER_AUTH_URL);
+  if (origin.protocol !== "http:" && origin.protocol !== "https:") {
+    throw new Error("CODEX_SUBSCRIPTION_RELAY_PUBLIC_ORIGIN must be an HTTP(S) origin");
+  }
+  return origin.origin;
+}
+
 interface RelayGrant {
   readonly binding: CodexSubscriptionRelayBinding;
   readonly codexHome: string;
@@ -122,7 +133,7 @@ export function issueCodexSubscriptionRelayCapability(input: {
     expiresAt: dependencies.now() + (input.ttlMs ?? DEFAULT_CAPABILITY_TTL_MS),
     consumed: false,
   });
-  const origin = new URL(input.publicOrigin ?? env.BETTER_AUTH_URL);
+  const origin = new URL(input.publicOrigin ?? codexSubscriptionRelayPublicOrigin());
   origin.protocol = origin.protocol === "https:" ? "wss:" : "ws:";
   origin.pathname = `${RELAY_PATH_PREFIX}${token}`;
   origin.search = "";
