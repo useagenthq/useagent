@@ -12,6 +12,15 @@ const T3_TRANSPORT_TOOL_NAMES = new Set([
   "unknown",
 ]);
 
+const T3_TRANSPORT_TASK_LABELS = new Set([
+  "subagent",
+  "subagent started",
+  "task",
+  "task started",
+  "tool",
+  "tool started",
+]);
+
 export function isT3TransportToolName(value: string): boolean {
   return T3_TRANSPORT_TOOL_NAMES.has(value.trim().toLowerCase());
 }
@@ -23,6 +32,36 @@ export function firstSemanticT3ToolName(...values: readonly unknown[]): string |
     if (name && !isT3TransportToolName(name)) return name;
   }
   return null;
+}
+
+function descriptiveT3TaskLabel(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const label = value.trim();
+  return label && !T3_TRANSPORT_TASK_LABELS.has(label.toLowerCase()) ? label : null;
+}
+
+/** Provider-neutral child-task title. Transport envelope labels are never
+ * presented as user-facing identity; stable task ids remain the final factual
+ * fallback before the generic task kind. */
+export function t3TaskDisplayTitle({
+  title,
+  role,
+  taskId,
+  summary,
+  agent = true,
+}: {
+  readonly title?: unknown;
+  readonly role?: unknown;
+  readonly taskId?: unknown;
+  readonly summary?: unknown;
+  readonly agent?: boolean;
+}): string {
+  const stableTaskId = descriptiveT3TaskLabel(taskId)?.replaceAll(/[_-]+/gu, " ");
+  return descriptiveT3TaskLabel(title) ??
+    descriptiveT3TaskLabel(role) ??
+    stableTaskId ??
+    descriptiveT3TaskLabel(summary) ??
+    (agent ? "Subagent" : "Task");
 }
 
 export interface T3SummaryToolIdentity {

@@ -768,6 +768,79 @@ describe("T3 activity fidelity", () => {
     expect(result.events[2]).toMatchObject({ kind: "child.completed", childId: "task_1", status: "ok", result: "NVIDIA quote found" });
   });
 
+  test("links placeholder child wrappers to a richly named completed task", () => {
+    const result = translateOpenCode([
+      t3Frame("collab-start", 1, "t3.activity.tool.started", {
+        id: "act_collab_start",
+        kind: "tool.started",
+        summary: "Tool started",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          childSessionId: "google_price",
+          data: { toolCallId: "call-1" },
+        },
+      }),
+      t3Frame("task-start", 2, "t3.activity.task.started", {
+        id: "act_task_start",
+        kind: "task.started",
+        summary: "Tool started",
+        payload: {
+          taskId: "google_price",
+          toolUseId: "call-1",
+          agentKind: "agent",
+          title: "Tool",
+          data: {
+            item: {
+              status: "running",
+              summary: "Checking market data",
+              model: "gpt-5.6-luna",
+              role: "researcher",
+              typedUsage: { inputTokens: 10, outputTokens: 2 },
+            },
+          },
+        },
+      }),
+      t3Frame("task-complete", 3, "t3.activity.task.completed", {
+        id: "act_task_complete",
+        kind: "task.completed",
+        summary: "Tool completed",
+        payload: {
+          taskId: "google_price",
+          toolUseId: "call-1",
+          agentKind: "agent",
+          detail: '<task id="google_price"><task_result>NVIDIA quote found</task_result></task>',
+          status: "completed",
+        },
+      }),
+    ], CTX);
+
+    expect(result.accounting[0]).toMatchObject({
+      produced: [],
+      suppressed: "duplicate t3 collaboration wrapper (task lifecycle is authoritative)",
+    });
+    expect(result.events).toMatchObject([
+      {
+        kind: "child.started",
+        childId: "google_price",
+        launchToolCallId: "call-1",
+        title: "google price",
+        state: {
+          status: "running",
+          summary: "Checking market data",
+          model: "gpt-5.6-luna",
+          role: "researcher",
+          usage: { inputTokens: 10, outputTokens: 2 },
+        },
+      },
+      {
+        kind: "child.completed",
+        childId: "google_price",
+        status: "ok",
+        result: "NVIDIA quote found",
+      },
+    ]);
+  });
+
   test("preserves structured provider child state without deriving it from summary words", () => {
     const result = translateOpenCode([
       t3Frame("task-start", 1, "t3.activity.task.started", {
@@ -781,6 +854,7 @@ describe("T3 activity fidelity", () => {
           summary: "Provider assigned the child",
           lastToolName: "web_search",
           typedUsage: { inputTokens: 12, outputTokens: 3, providerCacheReads: 4 },
+          cost: 0.031,
           model: "gpt-5.6-luna",
           role: "researcher",
           resumable: true,
@@ -812,7 +886,7 @@ describe("T3 activity fidelity", () => {
           status: "running",
           summary: "Provider assigned the child",
           lastToolName: "web_search",
-          usage: { inputTokens: 12, outputTokens: 3, providerCacheReads: 4 },
+          usage: { inputTokens: 12, outputTokens: 3, providerCacheReads: 4, costUsd: 0.031 },
           model: "gpt-5.6-luna",
           role: "researcher",
           resumable: true,

@@ -54,6 +54,7 @@ import {
   stringValue as str,
 } from "./opencode-values";
 import { markerFromSkynet } from "./skynet-context-marker";
+import { t3TaskDisplayTitle } from "./t3-tool";
 
 export type {
   Disposition,
@@ -107,6 +108,25 @@ function planEntries(value: unknown): CanonicalPlanEntry[] | null {
     });
   }
   return entries.length > 0 ? entries : null;
+}
+
+function childResult(
+  activity: Record<string, unknown> | null,
+  payload: Record<string, unknown> | null,
+): string | undefined {
+  const data = rec(payload?.data);
+  const item = rec(data?.item);
+  const raw = firstString(
+    payload?.detail,
+    payload?.output,
+    data?.detail,
+    data?.output,
+    item?.detail,
+    item?.output,
+    activity?.detail,
+  );
+  const taskResult = raw ? TASK_RESULT.exec(raw)?.[1]?.trim() : undefined;
+  return boundedPreview(taskResult, t3Preview(activity, payload));
 }
 
 /**
@@ -421,6 +441,7 @@ export function translateOpenCode(
       function emitChildActivity(
         childId: string,
         title: string | undefined,
+        launchToolCallId: string | undefined,
         terminal: boolean,
         errored: boolean,
         state: CanonicalChildState | undefined,
@@ -431,6 +452,7 @@ export function translateOpenCode(
             kind: "child.started",
             childId,
             title,
+            ...(launchToolCallId ? { launchToolCallId } : {}),
             ...(state ? { state } : {}),
           }, ident, "#child-start"));
         } else if (terminal) {
@@ -438,7 +460,7 @@ export function translateOpenCode(
             kind: "child.completed",
             childId,
             status: errored ? "error" : "ok",
-            result: preview,
+            result: childResult(activity, payload),
             ...(state ? { state } : {}),
           }, ident, "#child-done"));
         } else {
@@ -502,8 +524,15 @@ export function translateOpenCode(
         suppressed = "t3 context-window diagnostic (not a timeline node)";
       } else if (activityKind.startsWith("task.")) {
         const nativeTaskId = firstString(payload?.taskId, f.native.callId);
+        const launchToolCallId = firstString(payload?.toolUseId, payload?.toolCallId) ?? undefined;
         const isAgentTask = payload?.agentKind === "agent";
-        const title = firstString(payload?.title, payload?.role, activity?.summary) ?? undefined;
+        const title = t3TaskDisplayTitle({
+          title: payload?.title,
+          role: payload?.role,
+          taskId: nativeTaskId,
+          summary: activity?.summary,
+          agent: isAgentTask,
+        });
         const errored = t3Errored(activityKind, activity, payload);
         const terminal = activityKind.endsWith(".completed") || activityKind.endsWith(".error") || activityKind.endsWith(".failed");
         const state = canonicalChildState(payload);
@@ -511,7 +540,7 @@ export function translateOpenCode(
         if (isAgentTask && !nativeTaskId) {
           suppressed = "t3 agent task without provider child identity";
         } else if (isAgentTask && nativeTaskId) {
-          emitChildActivity(nativeTaskId, title, terminal, errored, state);
+          emitChildActivity(nativeTaskId, title, launchToolCallId, terminal, errored, state);
         } else {
           const callId = nativeTaskId ?? firstString(activity?.id, f.eventId) ?? f.eventId;
           const name = title ?? "task";
@@ -536,6 +565,7 @@ export function translateOpenCode(
           emitChildActivity(
             explicitChildId,
             title,
+            callId,
             terminal,
             errored,
             canonicalChildState(payload),

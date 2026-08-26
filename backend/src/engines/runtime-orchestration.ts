@@ -9,7 +9,11 @@ import {
   type ProviderQuestionRequest,
 } from "./provider-question";
 import { approvalEventId, runtimeApprovalRequest } from "./runtime-approval";
-import { firstSemanticT3ToolName, t3SummaryToolIdentity } from "@useagent/agent-harness";
+import {
+  firstSemanticT3ToolName,
+  t3SummaryToolIdentity,
+  t3TaskDisplayTitle,
+} from "@useagent/agent-harness";
 import { toolServerDisplayName } from "@useagent/agent-harness/canonical";
 
 export type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
@@ -473,12 +477,13 @@ function taskActivityLabel(
   payload: Readonly<Record<string, unknown>>,
   isAgent: boolean,
 ): string {
-  const taskId = descriptiveActivityLabel(payload.taskId);
-  return descriptiveActivityLabel(payload.title) ??
-    descriptiveActivityLabel(payload.role) ??
-    taskId?.replaceAll(/[_-]+/gu, " ") ??
-    descriptiveActivityLabel(activity.summary) ??
-    (isAgent ? "Subagent" : "Task");
+  return t3TaskDisplayTitle({
+    title: payload.title,
+    role: payload.role,
+    taskId: payload.taskId,
+    summary: activity.summary,
+    agent: isAgent,
+  });
 }
 
 function toolActivityLabel(
