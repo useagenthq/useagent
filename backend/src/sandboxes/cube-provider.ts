@@ -375,7 +375,7 @@ class CubeProvider implements SandboxProvider {
       ? options.autoStopInterval
       : positiveInteger(process.env.SANDBOX_AUTO_STOP_MIN, 30);
     // Cube rejects shell bootstrap variables such as BASH_ENV at its API
-    // boundary. Skynet explicitly sources the protected dotenv when each
+    // boundary. useAgent explicitly sources the protected dotenv when each
     // engine boots, so this compatibility-only variable is unnecessary here.
     // Preserve every runtime/gateway variable the caller supplied.
     const envs = options.envVars

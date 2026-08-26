@@ -19,7 +19,7 @@ export const env = {
     opt("DATABASE_URL", "postgres://postgres@localhost:5432/useagent"),
 
   /** Default org when the caller resolves none (headers wired later). */
-  defaultOrg: opt("KNOWLEDGE_DEFAULT_ORG", "skynet-dev"),
+  defaultOrg: opt("KNOWLEDGE_DEFAULT_ORG", "useagent-dev"),
 
   /** Distillation LLM — OpenRouter (OpenAI-compatible). Absent key → stub. */
   distill: {

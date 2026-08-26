@@ -1,5 +1,5 @@
 /**
- * The run/step WIRE CONTRACT — the exact snake_case shapes the Skynet backend
+ * The run/step WIRE CONTRACT — the exact snake_case shapes the useAgent backend
  * serializes (`backend/src/runs/repo.ts` `toRun`/`toStep`) and every client reads.
  *
  * ONE definition so the backend serializer and the React UI cannot drift: the

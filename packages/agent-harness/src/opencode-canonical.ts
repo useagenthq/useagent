@@ -53,7 +53,7 @@ import {
   stepFinishUsage,
   stringValue as str,
 } from "./opencode-values";
-import { markerFromSkynet } from "./skynet-context-marker";
+import { markerFromUseAgent } from "./useagent-context-marker";
 import { t3TaskDisplayTitle } from "./t3-tool";
 
 export type {
@@ -132,7 +132,7 @@ function childResult(
 /**
  * Translate an OpenCode session (native frames + durable steps) into a canonical
  * event stream + full source-event accounting. Stateful over the stream; `seq` on
- * the output is Skynet's own dense monotonic cursor (the provider seq is preserved
+ * the output is useAgent's own dense monotonic cursor (the provider seq is preserved
  * in `identity.nativeSeq`).
  */
 export function translateOpenCode(
@@ -347,7 +347,7 @@ export function translateOpenCode(
     ensureChild(produced, f); // lossless child-session establishment
 
     if (f.provider.startsWith("skynet")) {
-      const marker = markerFromSkynet(et, p);
+      const marker = markerFromUseAgent(et, p);
       if (marker) {
         // Carry the originating frame verbatim so the frontend reconstructs the FULL
         // typed TimelineMarker with the SAME parser the legacy native lane uses (H3):
@@ -375,7 +375,7 @@ export function translateOpenCode(
         } else suppressed = `${et} without a complete artifact descriptor`;
       }
       else if (et === "secrets.injected") produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: { secretsInjected: true } }, ident));
-      else produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped skynet event", rawEventType: et, rawPayload: f.payload }, ident));
+      else produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped useAgent event", rawEventType: et, rawPayload: f.payload }, ident));
     } else if (et === "question.asked") {
       const questionId = str(p?.id);
       const rawQuestions = Array.isArray(p?.questions) ? p.questions : [];

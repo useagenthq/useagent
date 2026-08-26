@@ -39,7 +39,7 @@ export const canonicalEvents = pgTable(
     seq: integer("seq").notNull(), // per-run/source ordering (NOT a delivery cursor)
     turnId: text("turn_id"),
     kind: text("kind").notNull(),
-    ts: bigint("ts", { mode: "number" }).notNull(), // Skynet-assigned ms epoch
+    ts: bigint("ts", { mode: "number" }).notNull(), // useAgent-assigned ms epoch
     identity: jsonb("identity").$type<Record<string, unknown>>().notNull(),
     body: jsonb("body").$type<Record<string, unknown>>().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

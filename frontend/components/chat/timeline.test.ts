@@ -140,7 +140,7 @@ describe("buildTimeline", () => {
   });
 });
 
-// Skynet-lane context markers (skill.loaded / context.retrieved) share the frame()
+// useAgent-lane context markers (skill.loaded / context.retrieved) share the frame()
 // helper but override provider to "skynet".
 function skynetFrame(eventId: string, seq: number, eventType: string, payload: unknown): NativeFrame {
   return { ...frame(eventId, seq, eventType, {}, payload), provider: "skynet" };
@@ -208,7 +208,7 @@ describe("canonical context markers", () => {
     });
   });
 
-  test("an UNKNOWN skynet eventType is ignored (renders safely as nothing)", () => {
+  test("an UNKNOWN useAgent eventType is ignored (renders safely as nothing)", () => {
     const s = turnStore();
     s.ingestNative(skynetFrame("weird_run-1", 0, "policy.denied.future", { foo: 1 }), 0);
     expect(buildTimeline(s.getSnapshot(), false)!.some((n) => n.kind === "marker")).toBe(false);

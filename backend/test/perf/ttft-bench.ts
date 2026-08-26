@@ -172,8 +172,8 @@ async function streamOpenRouter(route: Route, prompt: string, apiKey: string, si
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": "https://github.com/skynet-saas/ttft-bench",
-      "X-Title": "Skynet TTFT Bench",
+      "HTTP-Referer": "https://github.com/useagenthq/useagent",
+      "X-Title": "useAgent TTFT Bench",
     },
     body: JSON.stringify({
       model: route.model,

@@ -60,7 +60,7 @@ function fakeSandbox(options: {
 }
 
 describe("Cube sandbox provider", () => {
-  test("maps Skynet create options onto the E2B-compatible Cube API", async () => {
+  test("maps useAgent create options onto the E2B-compatible Cube API", async () => {
     process.env.CUBE_API_URL = "http://127.0.0.1:3000";
     process.env.CUBE_PROXY_SCHEME = "https";
     process.env.CUBE_SANDBOX_DOMAIN = "sandbox.example.com";

@@ -1,6 +1,6 @@
 "use client";
 
-// skynet-a component. Original work inspired by the beui.dev "Message Scroller"
+// useAgent component. Original work inspired by the beui.dev "Message Scroller"
 // pattern: a slim vertical tick rail hugging the conversation's right edge, one
 // tick per turn, the in-view turn highlighted, clicking a tick jumps to that turn.
 // Rebuilt on OUR turn model + semantic tokens (not vendored code).

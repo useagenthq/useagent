@@ -14,7 +14,7 @@ import { canonicalEngine } from "./engine-alias";
 export interface CapabilityResources {
   /** A VNC/desktop resource is provisioned in the session's sandbox. */
   readonly desktop: boolean;
-  /** The provider actually loaded the Skynet knowledge MCP for this session. */
+  /** The provider actually loaded the useAgent knowledge MCP for this session. */
   readonly knowledgeTools: boolean;
   /** This provider session is owned by the canonical orchestration runtime. */
   readonly runtimeOrchestration?: boolean;

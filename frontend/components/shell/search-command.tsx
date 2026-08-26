@@ -41,7 +41,7 @@ type Cmd = {
   group: "Threads" | "Customize" | "Developer";
 };
 
-// Every supported skynet-a route surfaced by the ⌘K palette.
+// Every supported useAgent route surfaced by the ⌘K palette.
 const COMMANDS: Cmd[] = [
   { href: "/agent/new", label: "New thread", icon: RiAddLine, group: "Threads" },
   { href: "/agent/runs", label: "Threads", icon: RiPulseLine, group: "Threads" },

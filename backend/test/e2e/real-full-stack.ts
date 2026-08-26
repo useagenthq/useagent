@@ -1,5 +1,5 @@
 /**
- * AGGRESSIVE REAL end-to-end suite — the whole Skynet stability story on a REAL
+ * AGGRESSIVE REAL end-to-end suite — the whole useAgent stability story on a REAL
  * stack: real Daytona sandboxes, real `opencode serve` (claude-haiku-4-5), the
  * REAL team-memory gateway (:8420), the REAL knowledge store. The ONLY mocked
  * leaf is Slack (an in-process receiver — no test workspace). MANUAL-gated (not
@@ -443,7 +443,7 @@ async function stage6_knowledge(): Promise<void> {
   stage("Stage 6: Knowledge/KB — org-scoped ingest + hybrid search (API-level)");
   const token = `kbcanary${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
   const text =
-    `Skynet E2E knowledge canary ${token}. Deployment runbook: to roll back the ${token} release, ` +
+    `useAgent E2E knowledge canary ${token}. Deployment runbook: to roll back the ${token} release, ` +
     `run the command 'skynet rollback --to ${token}'. This unique test document verifies org-scoped ` +
     `knowledge ingestion and hybrid retrieval end to end.`;
   const ingestRes = await fetch(`${BASE}/api/knowledge/ingest`, {
@@ -773,7 +773,7 @@ async function stage2b_recall(teach: { token: string; phrase: string } | null): 
   note(`polling REAL :8420 for distillation of "${token}" (bounded 120s)…`);
   const distilled = await waitFor(async () => (await searchMemoryDirect(`${token} verification phrase`)).some((i) => i.content.includes(token)), 120_000);
   if (!distilled) {
-    skip("cross-thread canary recall in a resumed reply", "gateway did not distill the canary within 120s (Tencent Team Memory async L0→L1 is non-deterministic, esp. cold — a memory-service characteristic, not a Skynet defect)");
+    skip("cross-thread canary recall in a resumed reply", "gateway did not distill the canary within 120s (Tencent Team Memory async L0→L1 is non-deterministic, esp. cold — a memory-service characteristic, not a useAgent defect)");
     skip("retrieval ledger frame for the recall run", "recall did not run (distillation timeout)");
     return;
   }

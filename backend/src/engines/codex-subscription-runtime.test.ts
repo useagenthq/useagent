@@ -55,7 +55,7 @@ describe("T3 Codex subscription lease", () => {
           relayRuntime = input.runtime;
           relayExecServerUrl = input.execServerUrl;
           return {
-            url: "wss://skynet.example.test/api/internal/codex-relay/opaque",
+            url: "wss://useagent.example.test/api/internal/codex-relay/opaque",
             close: () => closed.push("relay"),
           };
         },
@@ -123,7 +123,7 @@ describe("T3 Codex subscription lease", () => {
           close: () => closed.push("bridge"),
         }),
         issueRelay: () => ({
-          url: "wss://skynet.example.test/api/internal/codex-relay/opaque",
+          url: "wss://useagent.example.test/api/internal/codex-relay/opaque",
           close: () => closed.push("relay"),
         }),
       },
@@ -172,7 +172,7 @@ describe("T3 Codex subscription lease", () => {
     expect(buildCodexExecServerReadinessCommand()).toContain("127.0.0.1");
 
     const patch = buildCodexProviderInstanceCommand({
-      relayUrl: "wss://skynet.example.test/api/internal/codex-relay/opaque",
+      relayUrl: "wss://useagent.example.test/api/internal/codex-relay/opaque",
       environmentId: "skynet-run-1",
       workdir: "/root/work",
     });
@@ -203,7 +203,7 @@ describe("T3 Codex subscription lease", () => {
     expect(command).toContain("Codex subscription");
     // The probe marker matches the display name the provider-instance patch sets.
     const patch = buildCodexProviderInstanceCommand({
-      relayUrl: "wss://skynet.example.test/api/internal/codex-relay/opaque",
+      relayUrl: "wss://useagent.example.test/api/internal/codex-relay/opaque",
       environmentId: "skynet-run-1",
       workdir: "/root/work",
     });

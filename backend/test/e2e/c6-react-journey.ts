@@ -342,7 +342,7 @@ try {
       `[${catalog.slice(0, 6).join(",")}]`,
     );
     if (safeCmd) {
-      const composer = page.locator('textarea[placeholder*="Reply to Skynet"]:visible');
+      const composer = page.locator('textarea[placeholder*="Reply to useAgent"]:visible');
       await composer.click();
       // The real picker intentionally caps an unfiltered list to eight options.
       // Type the provider command prefix like a user would so a safe command
@@ -420,7 +420,7 @@ try {
     else rec("terminal surface", "na", "rail collapsed (no tool activity this turn) - no fake empty rail");
 
     // ── 6. stop a genuinely in-flight turn ──
-    const composer = page.locator('textarea[placeholder*="Reply to Skynet"]:visible');
+    const composer = page.locator('textarea[placeholder*="Reply to useAgent"]:visible');
     await composer.fill("Use the shell tool to run exactly: sleep 90. Do not reply until it finishes.");
     await page.keyboard.press("Enter");
     let stopRun = "";

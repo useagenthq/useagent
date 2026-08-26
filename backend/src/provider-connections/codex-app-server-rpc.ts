@@ -88,7 +88,7 @@ export class CodexAppServerRpcTransport {
 
   private async initialize(): Promise<void> {
     await this.send("initialize", {
-      clientInfo: { name: "skynet-provider-connections", title: null, version: "0" },
+      clientInfo: { name: "useagent-provider-connections", title: null, version: "0" },
       capabilities: {
         experimentalApi: true,
         requestAttestation: false,

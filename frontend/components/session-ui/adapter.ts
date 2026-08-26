@@ -1,4 +1,4 @@
-// skynet-a adapter (NOT vendored): binds OUR canonical timeline to the vendored T3
+// useAgent adapter (NOT vendored): binds OUR canonical timeline to the vendored T3
 // presentation grammar in ./work-entry.ts. Upstream commit 7c1bdd6e1 renders from
 // @t3tools/client-runtime WorkLogEntry state; we have no second state model - the
 // canonical lane's TimelineNode[] (components/chat/canonical-timeline.ts output) is

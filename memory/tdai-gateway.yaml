@@ -1,6 +1,6 @@
 # memory-core (TencentDB-Agent-Memory) gateway config — standalone, single-team.
 # Mounted read-only into the container at /data/config/tdai-gateway.yaml.
-# This is the exact config used to smoke-test the Skynet integration.
+# This is the exact config used to smoke-test the useAgent integration.
 #
 # `instanceId` MUST match the backend's MEMORY_SERVICE_ID (x-tdai-service-id).
 # The production compose service overrides `llm.*` through TDAI_LLM_* variables

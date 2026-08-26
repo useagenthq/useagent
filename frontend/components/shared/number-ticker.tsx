@@ -6,7 +6,7 @@ import { cx } from "@/utils/cx";
 
 /**
  * NumberTicker — a lean inline rolling-digits value for dashboard stats
- * (ported from the skynet-saas reference, pill chrome dropped). Each digit is
+ * (ported from the useagenthq reference, pill chrome dropped). Each digit is
  * an odometer <Reel>; non-digit characters (separators, a compact "M"/"K"
  * suffix) render statically so "1.2M" or "12,480" tick correctly. Rolls up on
  * mount and whenever `value` changes; honours prefers-reduced-motion.

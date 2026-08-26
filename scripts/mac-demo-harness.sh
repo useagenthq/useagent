@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_DIR="${USEAGENT_DEMO_DIR:-$HOME/Desktop/skynet-demo}"
+BASE_DIR="${USEAGENT_DEMO_DIR:-$HOME/Desktop/useagent-demo}"
 SCREEN_DEVICE="${USEAGENT_SCREEN_DEVICE:-Capture screen 0}"
 CLICK_BIN="${USEAGENT_CLICLICK_BIN:-cliclick}"
 FFMPEG_BIN="${USEAGENT_FFMPEG_BIN:-ffmpeg}"
@@ -37,7 +37,7 @@ Global flags:
   --screen-device NAME
 
 Defaults:
-  base dir: ~/Desktop/skynet-demo
+  base dir: ~/Desktop/useagent-demo
   screen device: Capture screen 0
 EOF
 }

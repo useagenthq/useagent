@@ -6,7 +6,7 @@
  *
  * SAFETY: other agent sessions run REAL sandboxes concurrently. We therefore
  * NEVER blanket-delete by label. `deleteById` deletes only ids the caller
- * recorded as its own; `listSkynet` is read-only inventory for reporting.
+ * recorded as its own; `listUseAgent` is read-only inventory for reporting.
  *
  * CLI:
  *   bun test/e2e/soak/lib/daytona.ts list                 — inventory (read-only)
@@ -29,7 +29,7 @@ function client(): Daytona {
 }
 
 /** Every sandbox visible to this org (read-only). Optionally filter by label. */
-export async function listSkynet(labelKey = "skynet-run"): Promise<SandboxInfo[]> {
+export async function listUseAgent(labelKey = "skynet-run"): Promise<SandboxInfo[]> {
   const daytona = client();
   const out: SandboxInfo[] = [];
   for await (const sb of daytona.list()) {
@@ -47,7 +47,7 @@ export async function listSkynet(labelKey = "skynet-run"): Promise<SandboxInfo[]
 
 /** All sandboxes (unfiltered) — for a true baseline count. */
 export async function listAll(): Promise<SandboxInfo[]> {
-  return listSkynet("");
+  return listUseAgent("");
 }
 
 /**
@@ -110,7 +110,7 @@ export async function sweepOrphans(opts: { dryRun?: boolean; keepIds?: Set<strin
   } finally {
     await sql.end();
   }
-  const boxes = await listSkynet();
+  const boxes = await listUseAgent();
   const keep = opts.keepIds ?? new Set<string>();
   const STOPPED = new Set(["stopped", "archived", "paused"]);
   const spared: Array<{ id: string; run: string; state: string; reason: string }> = [];
@@ -151,7 +151,7 @@ if (import.meta.main) {
     })}`);
     process.exit(res.failed.length === 0 ? 0 : 1);
   } else if (mode === "list") {
-    const skynet = await listSkynet();
+    const skynet = await listUseAgent();
     const all = await listAll();
     console.log(
       `DAYTONA_INVENTORY=${JSON.stringify({

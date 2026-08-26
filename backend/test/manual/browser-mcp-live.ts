@@ -77,7 +77,7 @@ try {
   const initialized = await request(1, "initialize", {
     protocolVersion: "2025-06-18",
     capabilities: {},
-    clientInfo: { name: "skynet-browser-proof", version: "1.0.0" },
+    clientInfo: { name: "useagent-browser-proof", version: "1.0.0" },
   });
   if (initialized.error) throw new Error(`initialize failed: ${JSON.stringify(initialized.error)}`);
   await sandbox.process.sendSessionCommandInput(

@@ -36,8 +36,8 @@ describe("composer action contract", () => {
 describe("composer placeholder honesty", () => {
   test("an explicit caller placeholder always wins", () => {
     expect(
-      composerPlaceholder({ explicit: "Reply to Skynet…", agentSlash: true, commandCount: 3 }),
-    ).toBe("Reply to Skynet…");
+      composerPlaceholder({ explicit: "Reply to useAgent…", agentSlash: true, commandCount: 3 }),
+    ).toBe("Reply to useAgent…");
   });
 
   test("hero hints the real / agent affordance", () => {

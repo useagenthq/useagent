@@ -75,7 +75,7 @@ export interface CanonicalEventLike {
     readonly sha256: string;
     readonly contentType: string;
   };
-  /** The originating skynet-lane frame, carried by the translator so the marker is
+  /** The originating useAgent lane frame, carried by the translator so the marker is
    *  reconstructed with the SAME parser the legacy native lane uses (H3, lossless). */
   readonly sourceEventType?: string;
   readonly sourcePayload?: Record<string, unknown>;
@@ -171,7 +171,7 @@ export function validateCanonicalComplete(
 }
 
 /** Canonical context.marker -> TimelineMarker, LOSSLESS (H3): the translator carries the
- *  originating skynet frame (sourceEventType + sourcePayload), so we reconstruct with the
+ *  originating useAgent frame (sourceEventType + sourcePayload), so we reconstruct with the
  *  SAME parseMarker the legacy native lane uses - the marker node is deep-equal, never
  *  fabricated. The coarse markerType/title fallback covers only an event that predates the
  *  source fields (defensive; the opencode translator always carries them). */
@@ -329,7 +329,7 @@ export function buildTimelineFromCanonical(
   const unpartedReasoning = new Map<string, { text: string; firstSeq: number }>();
 
   for (const e of ordered) {
-    // ── context markers (skynet lane): lead the turn ──────────────────────────
+    // ── context markers (useAgent lane): lead the turn ──────────────────────────
     if (e.kind === "context.marker") {
       ranked.push({
         node: {

@@ -1,9 +1,9 @@
 // Pure, framework-neutral canonical thread store. Indexes the provider-neutral
-// canonical event lane so a sample UI (or the Skynet React hook via Slice 6) can render
+// canonical event lane so a sample UI (or the useAgent React hook via Slice 6) can render
 // a thread WITHOUT a product store, React, or a provider parser. It owns ONLY the
-// canonical lane; the Skynet product keeps its native compatibility projection.
+// canonical lane; the useAgent product keeps its native compatibility projection.
 //
-// Semantics mirror the proven Skynet store (not a competing pattern):
+// Semantics mirror the proven useAgent store (not a competing pattern):
 //   - dedupe by `eventId`, keeping the LATEST `revision` (a stale/duplicate is a no-op);
 //   - totally order by `deliverySeq`;
 //   - coalesce a replay burst into ONE notification via `batch()`;

@@ -5,17 +5,17 @@ import { proxy } from './proxy';
 
 describe('authentication proxy', () => {
   test('redirects anonymous navigation to login', () => {
-    const response = proxy(new NextRequest('https://skynet.example.com/agent/new'));
+    const response = proxy(new NextRequest('https://useagent.example.com/agent/new'));
 
     expect(response.status).toBe(307);
-    expect(response.headers.get('location')).toBe('https://skynet.example.com/login');
+    expect(response.headers.get('location')).toBe('https://useagent.example.com/login');
   });
 
   test.each([
     '__Secure-better-auth.session_token',
     'better-auth.session_token',
   ])('allows navigation carrying %s', (name) => {
-    const request = new NextRequest('https://skynet.example.com/agent/new', {
+    const request = new NextRequest('https://useagent.example.com/agent/new', {
       headers: { cookie: `${name}=opaque-session-token` },
     });
 

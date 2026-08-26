@@ -4,7 +4,8 @@ import { knowledgeFolderLabel, knowledgeItemForDisplay, seedFolders } from "./kn
 import { KnowledgeGallery } from "./knowledge-gallery";
 
 test("keeps the persisted knowledge folder key while displaying useAgent", () => {
-  expect(seedFolders).toContain("skynet-app");
+  expect(seedFolders).toContain("useagent-app");
+  expect(knowledgeFolderLabel("useagent-app")).toBe("useAgent");
   expect(knowledgeFolderLabel("skynet-app")).toBe("useAgent");
   expect(knowledgeFolderLabel("Engineering")).toBe("Engineering");
   const storedItem = {

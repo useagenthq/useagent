@@ -97,7 +97,7 @@ function runtimeToolInput(
  * T3 deliberately keeps provider-native tool records lossless. Codex MCP calls
  * arrive under `data.item`, while other providers expose their identity at the
  * activity payload or data level. Normalize those transport shapes here so the
- * rest of Skynet renders one provider-neutral tool contract.
+ * rest of useAgent renders one provider-neutral tool contract.
  */
 function runtimeToolProjection(activity: RuntimeActivity): {
   readonly data: Readonly<Record<string, unknown>> | null;
@@ -297,7 +297,7 @@ const DEFAULT_MODEL: Record<RuntimeEngineId, string> = {
 };
 
 /**
- * Skynet stores OpenCode models in its product-facing catalog without an
+ * useAgent stores OpenCode models in its product-facing catalog without an
  * OpenCode provider-instance prefix for Anthropic and most OpenRouter ids.
  * OpenAI-native ids keep their `openai/` provider prefix so T3 can spend a
  * connected OpenAI key instead of routing through OpenRouter.

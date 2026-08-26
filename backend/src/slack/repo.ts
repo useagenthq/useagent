@@ -1,9 +1,9 @@
 /**
  * Slack thread ↔ run mapping. One row per Slack thread the bot has rooted,
  * keyed by `(team, channel, thread root ts)`. The FIRST bot interaction in a Slack
- * thread creates a skynet ROOT run and links it here; every later message in
+ * thread creates a useAgent root run and links it here; every later message in
  * that Slack thread resolves to the root and becomes a `parent_run_id` reply,
- * so the thread stays one skynet conversation with clean, un-nested prompts.
+ * so the thread stays one useAgent conversation with clean, un-nested prompts.
  */
 import { and, eq } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
@@ -110,7 +110,7 @@ export async function findOrAdoptSlackThread(
 }
 
 /** The Slack channel + thread ts a run's reply belongs in, resolved from the run's
- *  THREAD (a Slack thread's `rootRunId` equals the skynet thread id every run in
+ *  THREAD (a Slack thread's `rootRunId` equals the useAgent thread id every run in
  *  it shares). Null for a non-Slack run. Takes an Executor so run finalization can
  *  resolve it inside the finalization transaction. */
 export async function findSlackThreadByRoot(

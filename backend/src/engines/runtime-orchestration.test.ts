@@ -67,7 +67,7 @@ describe("T3 orchestration projection", () => {
     });
   });
 
-  test("maps Skynet OpenCode catalog ids onto T3 provider-qualified ids", () => {
+  test("maps useAgent OpenCode catalog ids onto T3 provider-qualified ids", () => {
     expect(runtimeModelId("opencode", "openai/gpt-5.6-luna")).toBe(
       "openai/gpt-5.6-luna",
     );

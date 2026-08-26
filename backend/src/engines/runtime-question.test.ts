@@ -51,7 +51,7 @@ function snapshot(resolved = false): RuntimeThreadSnapshot {
 }
 
 describe("T3 native user input", () => {
-  test("maps ordered Skynet card answers to T3's native question ids", () => {
+  test("maps ordered useAgent card answers to T3's native question ids", () => {
     expect(runtimeQuestionAnswers(
       snapshot(),
       "skynet-thread-thread-1",

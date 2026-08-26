@@ -41,7 +41,7 @@ interface FakeSandboxOptions {
   pullOut?: string;
 }
 /** `state` is what the pre-check reports for the destination: "reuse" (right repo+branch),
- *  "branch" (right repo, wrong branch -> switch in place), "owned-stale" (a Skynet-owned checkout
+ *  "branch" (right repo, wrong branch -> switch in place), "owned-stale" (a useAgent-owned checkout
  *  of a different repo -> safe to replace), "foreign" (an UNOWNED git repo, different origin ->
  *  fail closed), "occupied" (UNOWNED non-git content -> fail closed), "absent" (nothing there). */
 function fakeSandbox(opts: FakeSandboxOptions = {}): {
@@ -396,7 +396,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(cloneCmd(calls)).toBeUndefined();
   });
 
-  test("OWNED-STALE: a Skynet-owned checkout of a different repo is safe to REPLACE (ALLOW=yes)", async () => {
+  test("OWNED-STALE: a useAgent-owned checkout of a different repo is safe to REPLACE (ALLOW=yes)", async () => {
     const { sandbox, calls } = fakeSandbox({ state: "owned-stale" });
     const { ctx } = fakeCtx();
     await ensureRepoClone(sandbox, "/w", "acme/widget:main", ctx);

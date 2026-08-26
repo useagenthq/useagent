@@ -40,12 +40,12 @@ export class LocalArtifactStorage implements ArtifactStorage {
     const target = this.path(storageKey);
     // Content-addressed bytes may already have been published by the other
     // trusted service account. That process owns the file, so chmod would fail
-    // even though the shared skynet-data group can already read it.
+    // even though the shared useagent-data group can already read it.
     if (await Bun.file(target).exists()) return;
     const directory = dirname(target);
     const createdDirectory = await mkdir(directory, { recursive: true });
     // Backend and trusted gateway run as separate users in the shared
-    // skynet-data group. Both services use a restrictive umask, so explicitly
+    // useagent-data group. Both services use a restrictive umask, so explicitly
     // restore group traversal/read after creation rather than producing rows
     // whose bytes only the publishing process can serve.
     // An existing digest-prefix directory may be owned by the sibling trusted

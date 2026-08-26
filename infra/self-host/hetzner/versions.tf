@@ -1,4 +1,4 @@
-# Reproducible Skynet host on Hetzner Cloud.
+# Reproducible useAgent host on Hetzner Cloud.
 # The API token is read from the HCLOUD_TOKEN environment variable, never a file
 # and never committed. See README.md.
 terraform {

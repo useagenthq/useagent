@@ -46,7 +46,7 @@ export const RUN_RECONCILING = "run.reconciling";
 //       running  → reconcile the native session (completed) or fail honestly,
 //                  then mark the command completed;
 //       terminal → mark the command completed (crash between run-done and the
-//                  command settle — Crash Matrix "provider completed while Skynet
+//                  command settle — Crash Matrix "provider completed while useAgent
 //                  says terminal"): frees the thread for the next turn;
 //       queued   → requeue the command (worker died before the run started).
 //  2. PUMP every thread with a queued command → dispatch its head (order +

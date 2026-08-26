@@ -72,7 +72,7 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
   });
 
   test("skynet context markers lead the turn - FULL marker fidelity (every marker kind)", () => {
-    // Exercise EVERY TimelineMarker variant the skynet lane can emit, each with its full
+    // Exercise EVERY TimelineMarker variant the useAgent lane can emit, each with its full
     // field set (version/hash, source/itemCount/query, op/scope/failed/reconciled,
     // deadlineMs), and assert the canonical marker node is DEEP-EQUAL to legacy - proving
     // the reconstruction is lossless, never fabricated (H3, review issue #5).

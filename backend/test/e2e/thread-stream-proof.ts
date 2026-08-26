@@ -147,7 +147,7 @@ function trackNet(page: Page): Net {
   return net;
 }
 async function submitReply(page: Page, text: string): Promise<void> {
-  let ta = page.locator('textarea[aria-label^="Reply to Skynet"]');
+  let ta = page.locator('textarea[aria-label^="Reply to useAgent"]');
   if ((await ta.count()) === 0) ta = page.locator("main textarea").first();
   await ta.waitFor({ state: "visible", timeout: 15_000 });
   await ta.click();

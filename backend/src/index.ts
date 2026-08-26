@@ -529,7 +529,7 @@ if (emailConnector) {
   );
 }
 
-console.log(`[skynet] backend listening on http://localhost:${env.PORT}`);
+console.log(`[useagent] backend listening on http://localhost:${env.PORT}`);
 
 export default {
   hostname: "127.0.0.1",

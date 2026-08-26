@@ -227,7 +227,7 @@ export function claudeProviderGatewayEnvironment(model?: string): Record<string,
     ANTHROPIC_BASE_URL: baseUrl,
     // The snapshot's user-level Claude plugins/skills are neither tenant-owned
     // nor bounded. A dedicated config root keeps the managed process deterministic;
-    // project CLAUDE.md instructions and selected Skynet instructions still load.
+    // project CLAUDE.md instructions and selected useAgent instructions still load.
     CLAUDE_CONFIG_DIR,
     ANTHROPIC_MODEL: runtimeModel,
     ANTHROPIC_DEFAULT_OPUS_MODEL: runtimeModel,
@@ -294,7 +294,7 @@ export function codexProviderConfigToml(
     // agent already runs inside its tenant-scoped Daytona sandbox, where nested
     // namespace/loopback setup is not permitted and fails intermittently. Disable
     // only that redundant INNER sandbox; this config is materialized inside
-    // Daytona and grants no access to the trusted Skynet host/control plane.
+    // Daytona and grants no access to the trusted useAgent host/control plane.
     'sandbox_mode = "danger-full-access"',
     'approval_policy = "never"',
     "",

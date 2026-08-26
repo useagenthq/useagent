@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
- * skynet-a — global stylesheet
+ * useAgent — global stylesheet
  *
  * Tailwind v4 entry. The full AlignUI design-token scale (colors, font sizes,
  * shadows, radii, keyframes) lives in `../tailwind.config.ts` and is bridged
@@ -3323,7 +3323,7 @@ html {
 }
 
 /* ===========================================================================
- * useAgent brand utilities  (ported from skynet-saas — Grok/x.ai-inspired
+ * useAgent brand utilities  (ported from useagenthq — Grok/x.ai-inspired
  * differentiation layer). Adapted to AlignUI semantic tokens.
  *
  *   text-mono-label  uppercase tracked monospace micro-label for section
@@ -3462,7 +3462,7 @@ html {
 }
 
 /* ---------------------------------------------------------------------------
- * AI-native motion primitives (ported from skynet-saas)
+ * AI-native motion primitives (ported from useagenthq)
  *
  *   ai-caret             blinking terminal-style type cursor for streaming text
  *   ai-loading-pixel     staggered opacity pulse for dot-matrix loaders
@@ -3508,15 +3508,15 @@ html {
   }
 }
 
-@keyframes skynet-orbit-spin {
+@keyframes useagent-orbit-spin {
   to {
     transform: rotate(360deg);
   }
 }
 
-.skynet-orbit-active {
+.useagent-orbit-active {
   transform-origin: center;
-  animation: skynet-orbit-spin 4.8s linear infinite;
+  animation: useagent-orbit-spin 4.8s linear infinite;
 }
 .animate-ai-fade-up {
   animation: ai-fade-up 350ms cubic-bezier(0.23, 1, 0.32, 1) both;
@@ -3636,7 +3636,7 @@ html {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skynet-orbit-active {
+  .useagent-orbit-active {
     animation: none;
   }
   .ai-code-surface .ai-code-line {

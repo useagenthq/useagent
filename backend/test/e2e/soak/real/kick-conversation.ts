@@ -22,7 +22,7 @@
 import { openSync } from "node:fs";
 import postgres from "postgres";
 import { Recorder } from "../lib/report";
-import { deleteById, listSkynet } from "../lib/daytona";
+import { deleteById, listUseAgent } from "../lib/daytona";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
 const DB = process.env.SOAK_REAL_DB ?? "skynet_soak_real";
@@ -242,7 +242,7 @@ async function cleanup(): Promise<void> {
   // before setRunSandbox) — but ONLY our own throwaway run ids.
   const runIds = new Set((await sql`select id from runs`.catch(() => [])).map((r) => r.id as string));
   try {
-    for (const sb of await listSkynet()) {
+    for (const sb of await listUseAgent()) {
       const label = sb.labels["skynet-run"];
       if (label && runIds.has(label)) createdSandboxes.add(sb.id);
     }

@@ -468,7 +468,7 @@ async function s8_desktop(wf: string): Promise<Result> {
     await page.waitForTimeout(250);
     checks.push({ name: "desktop: controlled noVNC receives keyboard frames", ok: desktopKeyFrames > keyFramesBeforeDesktopInput, note: `frames=${desktopKeyFrames - keyFramesBeforeDesktopInput}` });
 
-    const composer = page.locator('textarea[placeholder="Reply to Skynet…"]');
+    const composer = page.locator('textarea[placeholder="Reply to useAgent…"]');
     await composer.click();
     await page.waitForFunction(() => document.querySelector<HTMLIFrameElement>('iframe[title="Sandbox desktop"]')?.style.pointerEvents === "none");
     const keyFramesBeforeComposerInput = desktopKeyFrames;
@@ -940,7 +940,7 @@ async function s18_nativeQuestion(): Promise<Result> {
       name: "question: composer truthfully exposes the provider's custom-answer path",
       ok:
         !(await composer.isDisabled()) &&
-        /Answer Skynet/i.test((await composer.getAttribute("placeholder")) ?? ""),
+        /Answer useAgent/i.test((await composer.getAttribute("placeholder")) ?? ""),
     });
 
     const before = await getThread(id);
