@@ -88,10 +88,10 @@ describe("extractProcedure", () => {
 
   test("cites the source step-row id per step and parameterizes run-specific ids", () => {
     seq = 0;
-    const rows = [cmd("gh pr view 4213 --repo acme/skynet")];
+    const rows = [cmd("gh pr view 4213 --repo acme/api")];
     const { executable } = extractProcedure(rows, noSecrets);
     expect(executable[0]!.sourceEventIds).toEqual(["step-0"]);
-    expect(executable[0]!.operation).toBe("gh pr view <n> --repo acme/skynet");
+    expect(executable[0]!.operation).toBe("gh pr view <n> --repo acme/api");
   });
 
   test("flags verification/publish steps with a verificationRef (6.4 postcondition)", () => {

@@ -19,7 +19,7 @@ const serviceAccount = {
   type: "service_account",
   project_id: "acme-test",
   private_key: privateKeyPem,
-  client_email: "skynet@acme-test.iam.gserviceaccount.com",
+  client_email: "svc@acme-test.iam.gserviceaccount.com",
   token_uri: "https://oauth2.googleapis.com/token",
 };
 

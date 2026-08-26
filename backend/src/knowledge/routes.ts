@@ -61,7 +61,7 @@ function toApi(row: KnowledgeRow) {
   };
 }
 
-// POST /api/knowledge/ingest — the acme ingestion contract.
+// POST /api/knowledge/ingest — the upstream ingestion contract.
 knowledgeRoutes.post("/ingest", async (c) => {
   let body: Record<string, unknown>;
   try {
@@ -70,7 +70,7 @@ knowledgeRoutes.post("/ingest", async (c) => {
     return c.json({ error: "invalid JSON body" }, 400);
   }
   try {
-    // Tenancy is server-resolved: the acme contract (meta + text) is honored,
+    // Tenancy is server-resolved: the upstream contract (meta + text) is honored,
     // but org/user come ONLY from the request context, never the caller's body.
     const result = await ingestOne({
       meta: body.meta,

@@ -3,7 +3,7 @@ import { env, EMBED_DIMS } from "./env";
 import { toVectorLiteral } from "./embed";
 
 /**
- * Postgres store — the retrieval layer, replacing acme's Weaviate adapter.
+ * Postgres store — the retrieval layer, replacing the upstream Weaviate adapter.
  * Same idea (hybrid keyword + dense vector, RRF-fused; idempotent upsert keyed
  * by external identity), realized on Postgres + pgvector: a tsvector GIN index
  * for BM25-style keyword rank and an HNSW cosine index for dense vector rank.
