@@ -1,7 +1,7 @@
 # Legacy identifier allowlist
 
 Customer-facing copy, outbound attribution, and new identifiers use `useAgent` / `useagent`.
-The old `skynet` and `loopai` strings may remain only in the compatibility contracts below.
+The old `skynet` strings may remain only in the compatibility contracts below.
 Removing one requires a coordinated migration, not a cosmetic rename.
 
 | Remaining identifier | Why it remains | Retirement condition |
