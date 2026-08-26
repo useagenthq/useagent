@@ -16,8 +16,9 @@ the product experience, every claim grounded in the shipped code.
 
 ## The core idea
 
-UseAgent is built on one architectural commitment, named **VERA**: Verify-gated,
-Event-sourced, Replaceable-engine Actors.
+UseAgent is built on three architectural commitments: verification is an
+evidence discipline, all state is event-sourced in Postgres, and engines are
+replaceable adapters behind one canonical contract.
 
 <CardGroup cols={3}>
   <Card title="Harness outside the sandbox" icon="shield">
@@ -54,7 +55,7 @@ loses work that actually completed.
     self-improvement lane, each in one page.
   </Card>
   <Card title="Architecture" href="/architecture" icon="network">
-    VERA end to end: how a turn flows, how realtime works, and what the shared
+    The architecture end to end: how a turn flows, how realtime works, and what the shared
     packages contract.
   </Card>
   <Card title="Operations" href="/operations" icon="server">
