@@ -77,7 +77,7 @@ describe("T3 Codex subscription lease", () => {
       authEpoch: "credential-generation-123",
       model: "gpt-5.5",
       sandboxId: "sandbox-1",
-      sandboxGeneration: "t3-v3",
+      sandboxGeneration: "useagent-runtime-v4",
       environmentId: "skynet-sandbox-1-run-1",
       cwd: "/root/work",
     });

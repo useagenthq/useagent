@@ -135,11 +135,29 @@ function runtimeToolProjection(activity: RuntimeActivity): {
   };
 }
 
+const RUNTIME_TOOL_FAILURE_STATUSES = new Set([
+  "declined",
+  "denied",
+  "error",
+  "failed",
+  "rejected",
+]);
+
 function runtimeToolResultFailed(activity: RuntimeActivity): boolean {
   if (activity.kind !== "tool.completed") return false;
   const payload = record(activity.payload);
   const data = record(payload?.data);
   const item = record(data?.item);
+  if ([payload?.status, data?.status, item?.status].some(
+    (status) => typeof status === "string" && RUNTIME_TOOL_FAILURE_STATUSES.has(status.toLowerCase()),
+  )) {
+    return true;
+  }
+  if ([payload?.error, data?.error, item?.error].some(
+    (error) => error !== undefined && error !== null && error !== false && error !== "",
+  )) {
+    return true;
+  }
   return [payload?.result, data?.result, item?.result].some((value) => {
     const result = record(value);
     return result?.isError === true || (

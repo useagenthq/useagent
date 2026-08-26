@@ -65,6 +65,11 @@ describe("T3 run adapter gate", () => {
     ).toBe(true);
     expect(
       runtimeAdapterEngineSelected("claude", {
+        T3_RUN_ADAPTER_ENGINES: "claude, codex, opencode",
+      }),
+    ).toBe(true);
+    expect(
+      runtimeAdapterEngineSelected("claude", {
         T3_RUN_ADAPTER_ENGINES: "codex, opencode",
       }),
     ).toBe(false);

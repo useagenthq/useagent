@@ -12,7 +12,10 @@ import {
   ensureRuntimeEnvironment,
   restartRuntimeEnvironment,
   prewarmRuntimeEnvironment,
+  RUNTIME_CUBE_WARM_POOL_NAME,
   RUNTIME_ENVIRONMENT_PORT,
+  RUNTIME_GENERATION,
+  RUNTIME_GENERATION_LABEL,
   runtimeFirstActivityTimeoutMs,
   runtimeNoProgressTimeoutMs,
   runtimeEnvironmentEnabled,
@@ -39,6 +42,12 @@ function runtimeSandbox(
 }
 
 describe("T3 Cube environment", () => {
+  test("uses a release-specific useAgent identity for retained and warm sandboxes", () => {
+    expect(RUNTIME_GENERATION_LABEL).toBe("useagent.runtime");
+    expect(RUNTIME_GENERATION).toBe("useagent-runtime-v4");
+    expect(RUNTIME_CUBE_WARM_POOL_NAME).toBe(RUNTIME_GENERATION);
+  });
+
   test("is opt-in until hosted parity is proven", () => {
     expect(runtimeEnvironmentEnabled({})).toBe(false);
     expect(runtimeEnvironmentEnabled({ T3_ENVIRONMENT_ENABLED: "false" })).toBe(false);

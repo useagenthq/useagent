@@ -7,11 +7,11 @@ import {
 } from "../runs/run-timing";
 
 export const RUNTIME_ENVIRONMENT_PORT = 37_733;
-export const RUNTIME_GENERATION_LABEL = "skynet.runtime";
-// The generation VALUE is frozen: it is stamped as a label on every live/warm
-// sandbox and doubles as the warm pool name, so changing the string would
-// orphan the existing pool. Only the constant is named by function.
-export const RUNTIME_GENERATION = "t3-v3";
+export const RUNTIME_GENERATION_LABEL = "useagent.runtime";
+// Bump this identity whenever the embedded provider runtime changes. It is
+// stamped on retained/warm sandboxes and doubles as the pool name, so a new
+// release cannot accidentally resume a thread against an older runtime binary.
+export const RUNTIME_GENERATION = "useagent-runtime-v4";
 export const RUNTIME_CUBE_WARM_POOL_NAME = RUNTIME_GENERATION;
 // Frozen VALUE: warm sandboxes already carry a process session under this name;
 // renaming the string would strand their resident server processes.

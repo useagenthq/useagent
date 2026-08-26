@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { sandboxHasRequiredLabels } from "./thread-sandbox";
 
 describe("shared thread sandbox lease", () => {
   test("persists the run mapping before returning a sandbox to an engine", () => {
@@ -14,6 +15,18 @@ describe("shared thread sandbox lease", () => {
     const source = readFileSync(new URL("./thread-sandbox.ts", import.meta.url), "utf8");
     expect(source).toContain("providerGatewaySandboxIsCurrent(sandbox)");
     expect(source).toContain("sandbox.delete().catch");
+  });
+
+  test("rejects retained sandboxes from an older runtime generation", () => {
+    const required = { "useagent.runtime": "useagent-runtime-v4" };
+    expect(sandboxHasRequiredLabels({
+      labels: { "skynet.runtime": "t3-v3" },
+    }, required)).toBe(false);
+    expect(sandboxHasRequiredLabels({ labels: required }, required)).toBe(true);
+
+    const source = readFileSync(new URL("./thread-sandbox.ts", import.meta.url), "utf8");
+    expect(source).toContain("sandbox.delete().catch");
+    expect(source).toContain("retained sandbox does not match the requested runtime generation");
   });
 
   test("records a named warm-pool claim as reuse", () => {
