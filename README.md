@@ -7,17 +7,21 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-purple.svg" alt="License: AGPL-3.0"></a>
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-bun-black.svg" alt="Runtime: bun"></a>
-  <a href="docs-site/"><img src="https://img.shields.io/badge/docs-docs--site-blue.svg" alt="Documentation"></a>
+  <a href="https://useagent.org/docs/"><img src="https://img.shields.io/badge/docs-useagent.org-blue.svg" alt="Documentation"></a>
 </p>
 
 <p align="center">
   <a href="#quick-start"><b>Quick Start</b></a> ·
   <a href="#self-hosting"><b>Self-hosting</b></a> ·
-  <a href="docs-site/"><b>Documentation</b></a> ·
+  <a href="https://useagent.org/docs/"><b>Documentation</b></a> ·
   <a href="#architecture"><b>Architecture</b></a>
 </p>
 
 ---
+
+<p align="center">
+  <img src="https://useagent.org/app-dark-v4.png" alt="useAgent - agent session with live timeline, terminal, and workspace panes" width="100%">
+</p>
 
 Run Codex, Claude Code, and OpenCode as durable, threaded sessions in isolated
 Linux sandboxes. One event contract, one UI, your infrastructure.
@@ -103,7 +107,7 @@ frontend (Next.js)  ->  backend (Bun + Hono + Postgres)  ->  sandboxes (Daytona/
 | [`infra/self-host/`](infra/self-host/README.md) | Self-hosting on any provider + Hetzner reference Terraform |
 | [`memory/`](memory/README.md) | Optional team-memory service |
 
-Deeper reading: the [documentation site](docs-site/) and the interactive
+Deeper reading: the [documentation site](https://useagent.org/docs/) and the interactive
 [request-flow diagram](docs/architecture/request-flow.html).
 
 ## License
