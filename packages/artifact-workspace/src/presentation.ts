@@ -232,9 +232,74 @@ function normalizeTheme(value: unknown): DeckTheme | null {
   return { background, heading: item.heading, body: item.body, accent: item.accent };
 }
 
+/** Reference canvases a pixel-authoring agent plausibly assumed (w, h). */
+const PIXEL_REFERENCE_CANVASES: readonly (readonly [number, number])[] = [
+  [1280, 720],
+  [1920, 1080],
+  [3840, 2160],
+];
+
+function blockGeometry(value: unknown): { x: number; y: number; w: number; h: number } | null {
+  const item = record(value);
+  if (!item) return null;
+  const nums = [item.x, item.y, item.w, item.h].map((v) => (typeof v === "number" ? v : 0));
+  return { x: nums[0]!, y: nums[1]!, w: nums[2]!, h: nums[3]! };
+}
+
+/**
+ * Detect a deck authored in PIXELS instead of the contract's percent space and
+ * rescale it onto 0-100. The contract (and the gateway JSON schema) say
+ * percent, but a lane that skips schema enforcement can deliver px coords; the
+ * per-block clamps then crush every block to the bleed caps (x=120 / w=140) -
+ * parked off-canvas, so the deck renders BLANK while its content survives
+ * invisibly. Heuristic: geometry beyond 280 cannot be percent (the bleed cap
+ * is 120/140 with margin); the smallest reference canvas containing every
+ * block extent picks the divisor. Deterministic; nothing dropped or invented.
+ */
+function rescalePixelDeckSlides(rawSlides: readonly unknown[]): readonly unknown[] {
+  let maxX = 0;
+  let maxY = 0;
+  for (const rawSlide of rawSlides) {
+    const slide = record(rawSlide);
+    if (!slide || !Array.isArray(slide.blocks)) continue;
+    for (const rawBlock of slide.blocks) {
+      const g = blockGeometry(rawBlock);
+      if (!g) continue;
+      maxX = Math.max(maxX, g.x + Math.max(0, g.w), g.x);
+      maxY = Math.max(maxY, g.y + Math.max(0, g.h), g.y);
+    }
+  }
+  if (maxX <= 280 && maxY <= 280) return rawSlides;
+  const reference =
+    PIXEL_REFERENCE_CANVASES.find(([w, h]) => maxX <= w * 1.05 && maxY <= h * 1.05) ??
+    PIXEL_REFERENCE_CANVASES[PIXEL_REFERENCE_CANVASES.length - 1]!;
+  const [refW, refH] = reference;
+  return rawSlides.map((rawSlide) => {
+    const slide = record(rawSlide);
+    if (!slide || !Array.isArray(slide.blocks)) return rawSlide;
+    return {
+      ...slide,
+      blocks: slide.blocks.map((rawBlock) => {
+        const block = record(rawBlock);
+        const g = blockGeometry(rawBlock);
+        if (!block || !g) return rawBlock;
+        return {
+          ...block,
+          x: (g.x / refW) * 100,
+          y: (g.y / refH) * 100,
+          w: (g.w / refW) * 100,
+          h: (g.h / refH) * 100,
+        };
+      }),
+    };
+  });
+}
+
 /** Validate and normalize an unknown value into a canonical v2 deck, or null.
  * Fails closed: bad structure, unsafe text/colors/URLs, or over-cap sizes all
- * yield null. Numeric position/size fields are clamped, not rejected. */
+ * yield null. Numeric position/size fields are clamped, not rejected; a deck
+ * authored in obvious pixel space is deterministically rescaled to percent
+ * first (see rescalePixelDeckSlides). */
 export function normalizeDeck(value: unknown): PresentationDeck | null {
   const item = record(value);
   if (!item) return null;
@@ -243,7 +308,7 @@ export function normalizeDeck(value: unknown): PresentationDeck | null {
   if (!theme) return null;
   if (!Array.isArray(item.slides) || item.slides.length > MAX_DECK_SLIDES) return null;
   const slides: DeckSlide[] = [];
-  for (const raw of item.slides) {
+  for (const raw of rescalePixelDeckSlides(item.slides)) {
     const slide = normalizeSlide(raw);
     if (!slide) return null;
     slides.push(slide);
