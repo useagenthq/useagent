@@ -112,6 +112,7 @@ export interface TerminalGrid {
 export function isIdleTerminalNotice(text: string): boolean {
   return (
     text.includes("no live sandbox") ||
+    /\[(?:skynet|useAgent)\][^\n]*\bno-sandbox\b/i.test(text) ||
     /\[(?:skynet|useAgent)\][^\n]*not found/i.test(text) ||
     /\[(?:skynet|useAgent)\][^\n]*sandbox is probably not running anymore/i.test(text)
   );

@@ -122,6 +122,7 @@ describe("gridChanged", () => {
 describe("isIdleTerminalNotice", () => {
   test("recognizes every backend dead or idle sandbox notice", () => {
     expect(isIdleTerminalNotice("[skynet] no live sandbox for this run")).toBe(true);
+    expect(isIdleTerminalNotice("\u001b[2m[useAgent] no-sandbox\u001b[0m")).toBe(true);
     expect(isIdleTerminalNotice("[skynet] Sandbox tpl-123 not found")).toBe(true);
     expect(isIdleTerminalNotice("[skynet] Sandbox is probably not running anymore")).toBe(true);
     expect(isIdleTerminalNotice("[useAgent] Sandbox tpl-123 not found")).toBe(true);
