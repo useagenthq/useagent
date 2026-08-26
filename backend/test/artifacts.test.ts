@@ -8,7 +8,7 @@ import {
   migrateHtmlToDocument,
   migrateSlidesToDeck,
 } from "@useagent/artifact-workspace";
-import type { ArtifactDescriptor } from "../src/artifacts/repo";
+import { createArtifactRecord, type ArtifactDescriptor } from "../src/artifacts/repo";
 import { setArtifactStorageForTest } from "../src/artifacts/storage";
 import { setOfficePreviewConverterForTest } from "../src/artifacts/office-preview";
 import { executeArtifactTool } from "../src/knowledge/gateway/artifact-tools";
@@ -955,6 +955,135 @@ describe("durable artifacts", () => {
     } finally {
       sandboxBytes = previous;
     }
+  });
+
+  test("artifact_publish natively imports a companion-less XLSX into an editable workbook", async () => {
+    const runId = await createSandboxRun(owner);
+    const workbook = csvToWorkbook("Quarter,Revenue\nQ1,120000\nQ2,145000");
+    const xlsx = await artifactFormats.renderArtifactExport({ workbook }, "xlsx");
+    const previous = sandboxBytes;
+    try {
+      sandboxBytes = xlsx.bytes;
+      const published = await publish(owner, runId, "/root/work/budget.xlsx");
+      const wp = await json<{
+        workpiece: { state_revision: number };
+        state: { workbook?: { sheets: { cells: Record<string, { v: unknown }> }[] } };
+      }>(`/api/artifacts/${published.artifact.id}/workpiece`, { cookies: owner.cookies });
+
+      expect(wp.status).toBe(200);
+      expect(wp.body.workpiece.state_revision).toBe(0);
+      expect(wp.body.state.workbook?.sheets[0]?.cells.A1?.v).toBe("Quarter");
+      expect(wp.body.state.workbook?.sheets[0]?.cells.B3?.v).toBe("145000");
+    } finally {
+      sandboxBytes = previous;
+    }
+  });
+
+  test("opening an older null-state XLSX hydrates its real bytes without a revision bump", async () => {
+    const runId = await createSandboxRun(owner);
+    const workbook = csvToWorkbook("Item,Cost\nCompute,4200\nStorage,800");
+    const xlsx = await artifactFormats.renderArtifactExport({ workbook }, "xlsx");
+    const digest = createHash("sha256").update(xlsx.bytes).digest("hex");
+    await storage.put(digest, xlsx.bytes);
+    const created = await createArtifactRecord({
+      orgId: owner.orgId,
+      userId: owner.email,
+      runId,
+      threadId: runId,
+      sourcePath: "/root/work/legacy-budget.xlsx",
+      name: "legacy-budget.xlsx",
+      contentType: xlsx.contentType,
+      sizeBytes: xlsx.bytes.byteLength,
+      sha256: digest,
+      storageKey: digest,
+      workpieceKind: "spreadsheet",
+      workpieceState: null,
+    });
+
+    const path = `/api/artifacts/${created.row.id}/workpiece`;
+    const first = await json<{
+      workpiece: { state_revision: number };
+      state: { workbook?: { sheets: { cells: Record<string, { v: unknown }> }[] } };
+    }>(path, { cookies: owner.cookies });
+    const second = await json<typeof first.body>(path, { cookies: owner.cookies });
+
+    expect(first.status).toBe(200);
+    expect(first.body.workpiece.state_revision).toBe(0);
+    expect(first.body.state.workbook?.sheets[0]?.cells.A2?.v).toBe("Compute");
+    expect(first.body.state.workbook?.sheets[0]?.cells.B3?.v).toBe("800");
+    expect(second.body).toEqual(first.body);
+  });
+
+  test("opening an older null-state PPTX hydrates its real slides", async () => {
+    const runId = await createSandboxRun(owner);
+    const deck = migrateSlidesToDeck([
+      { title: "Recovered deck", body: "Loaded from the published PPTX bytes", notes: "" },
+    ]);
+    const pptx = await artifactFormats.renderArtifactExport({ deck }, "pptx");
+    const digest = createHash("sha256").update(pptx.bytes).digest("hex");
+    await storage.put(digest, pptx.bytes);
+    const created = await createArtifactRecord({
+      orgId: owner.orgId,
+      userId: owner.email,
+      runId,
+      threadId: runId,
+      sourcePath: "/root/work/legacy-deck.pptx",
+      name: "legacy-deck.pptx",
+      contentType: pptx.contentType,
+      sizeBytes: pptx.bytes.byteLength,
+      sha256: digest,
+      storageKey: digest,
+      workpieceKind: "presentation",
+      workpieceState: null,
+    });
+
+    const result = await json<{
+      workpiece: { state_revision: number };
+      state: { deck?: { slides: { blocks: { content: string }[] }[] } };
+    }>(`/api/artifacts/${created.row.id}/workpiece`, { cookies: owner.cookies });
+
+    expect(result.status).toBe(200);
+    expect(result.body.workpiece.state_revision).toBe(0);
+    const content = result.body.state.deck?.slides[0]?.blocks.map((block) => block.content);
+    expect(content).toContain("Recovered deck");
+    expect(content).toContain("Loaded from the published PPTX bytes");
+  });
+
+  test("opening an older image-only PPTX preserves its slide artwork", async () => {
+    const runId = await createSandboxRun(owner);
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const pptx = new PptxGenJS();
+    pptx.defineLayout({ name: "DECK", width: 10, height: 5.625 });
+    pptx.layout = "DECK";
+    pptx.addSlide().addImage({ data: `image/png;base64,${png}`, x: 0, y: 0, w: 10, h: 5.625 });
+    const written = await pptx.write({ outputType: "nodebuffer" });
+    const bytes = written instanceof Uint8Array ? written : new Uint8Array(written as ArrayBuffer);
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    await storage.put(digest, bytes);
+    const created = await createArtifactRecord({
+      orgId: owner.orgId,
+      userId: owner.email,
+      runId,
+      threadId: runId,
+      sourcePath: "/root/work/legacy-image-deck.pptx",
+      name: "legacy-image-deck.pptx",
+      contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      sizeBytes: bytes.byteLength,
+      sha256: digest,
+      storageKey: digest,
+      workpieceKind: "presentation",
+      workpieceState: null,
+    });
+
+    const result = await json<{
+      state: { deck?: { slides: { background?: { type: string; url?: string } }[] } };
+    }>(`/api/artifacts/${created.row.id}/workpiece`, { cookies: owner.cookies });
+
+    expect(result.status).toBe(200);
+    const background = result.body.state.deck?.slides[0]?.background;
+    expect(background?.type).toBe("image");
+    expect(background?.url).toMatch(/^\/api\/artifacts\/[^/]+\/content$/);
   });
 
   test("artifact_publish maps a full-slide PPTX picture to the deck background and dedupes assets", async () => {

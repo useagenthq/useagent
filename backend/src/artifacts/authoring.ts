@@ -120,7 +120,7 @@ export async function exportWorkpieceState<Kind extends ArtifactWorkpieceKind>(i
   };
 }
 
-async function stateFromNativeUpload(input: {
+export async function stateFromNativeArtifact(input: {
   readonly kind: ArtifactWorkpieceKind;
   readonly name: string;
   readonly contentType: string;
@@ -183,7 +183,7 @@ async function stateFromUploadedSource(input: {
     );
   }
 
-  const native = await stateFromNativeUpload(input);
+  const native = await stateFromNativeArtifact(input);
   if (native) return native;
 
   const direct = buildInitialWorkpieceState({

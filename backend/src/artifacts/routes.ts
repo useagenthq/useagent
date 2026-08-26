@@ -12,23 +12,31 @@ import {
 import {
   applyPdfPageOperation,
   buildArtifactBundle,
+  extractPptxDeck,
   PdfPageOperationError,
   type ArtifactBundleEntry,
   type PdfPageOperation,
 } from "@useagent/artifact-formats";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
-import { ArtifactAuthoringError, createAuthoredArtifact, exportWorkpieceState } from "./authoring";
+import {
+  ArtifactAuthoringError,
+  createAuthoredArtifact,
+  exportWorkpieceState,
+  stateFromNativeArtifact,
+} from "./authoring";
 import { canPreviewInline } from "./mime";
 import {
   applyArtifactPdfPageRevision,
   getArtifactForOrg,
   listArtifactsForOrg,
+  seedArtifactWorkpieceStateIfMissing,
   toArtifactDescriptor,
   updateArtifactWorkpiece,
   type ArtifactRecord,
 } from "./repo";
 import { artifactStorage, type ArtifactByteRange } from "./storage";
+import { materializePptxImages } from "./publish";
 import { parseWorkpieceState } from "./workpiece";
 import {
   acceptWorkpieceProposal,
@@ -227,6 +235,53 @@ function canonicalWorkpieceState(artifact: ArtifactRecord): ArtifactWorkpieceSta
   return state;
 }
 
+/** Older companion-less Office publications can have valid immutable bytes but
+ * a null editor state. Hydrate once from those bytes and persist the canonical
+ * state without advancing revision 0; later opens are ordinary indexed reads. */
+async function hydrateNativeWorkpieceState(artifact: ArtifactRecord): Promise<ArtifactRecord> {
+  if (
+    artifact.workpieceState ||
+    !artifact.workpieceKind ||
+    artifact.workpieceKind === "pdf"
+  ) {
+    return artifact;
+  }
+  try {
+    const bytes = await artifactStorage().read(artifact.storageKey);
+    let state: ArtifactWorkpieceState | null = null;
+    if (artifact.workpieceKind === "presentation") {
+      const imported = await extractPptxDeck(bytes);
+      if (imported) {
+        const deck = await materializePptxImages(imported, {
+          orgId: artifact.orgId,
+          userId: artifact.userId,
+          run: { id: artifact.runId, threadId: artifact.threadId },
+          sourcePath: artifact.sourcePath,
+          deckName: artifact.name,
+        });
+        state = parseWorkpieceState("presentation", { deck });
+      }
+    }
+    state ??= await stateFromNativeArtifact({
+      kind: artifact.workpieceKind,
+      name: artifact.name,
+      contentType: artifact.contentType,
+      bytes,
+    });
+    if (!state) return artifact;
+    const seeded = await seedArtifactWorkpieceStateIfMissing({
+      orgId: artifact.orgId,
+      id: artifact.id,
+      kind: artifact.workpieceKind,
+      state,
+    });
+    return seeded ?? (await getArtifactForOrg(artifact.orgId, artifact.id)) ?? artifact;
+  } catch (error) {
+    console.log(`[office-import] lazy hydration unavailable for ${artifact.name}: ${error}`);
+    return artifact;
+  }
+}
+
 function workpieceResponse(artifact: ArtifactRecord) {
   return {
     workpiece: toArtifactDescriptor(artifact).workpiece,
@@ -235,8 +290,9 @@ function workpieceResponse(artifact: ArtifactRecord) {
 }
 
 artifactRoutes.get("/:id/workpiece", async (c) => {
-  const artifact = await getArtifactForOrg(c.get("orgId"), c.req.param("id"));
+  let artifact = await getArtifactForOrg(c.get("orgId"), c.req.param("id"));
   if (!artifact?.workpieceKind) return c.json({ error: "not found" }, 404);
+  artifact = await hydrateNativeWorkpieceState(artifact);
   return c.json(workpieceResponse(artifact));
 });
 
