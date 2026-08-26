@@ -47,12 +47,12 @@ ENV
 cat > /etc/useagent/gateway.env <<ENV
 GATEWAY_DATABASE_URL=postgres://useagent_gateway:${PG_GATEWAY_PASSWORD}@localhost:5432/useagent
 ENV
-chown -R skynet:skynet /opt/useagent
+chown -R useagent:useagent /opt/useagent
 
 # Link the file: workspace packages so their inter-deps and subpath exports
 # (e.g. @useagent/agent-harness/canonical) resolve during the frontend type-check.
 for p in /opt/useagent/packages/*/; do
-  [ -f "${p}package.json" ] && sudo -u skynet bash -lc "cd '$p' && bun install"
+  [ -f "${p}package.json" ] && sudo -u useagent bash -lc "cd '$p' && bun install"
 done
 
 # systemd units
@@ -61,7 +61,7 @@ cat > /etc/systemd/system/useagent-backend.service <<UNIT
 Description=UseAgent backend
 After=network.target postgresql.service
 [Service]
-User=skynet
+User=useagent
 WorkingDirectory=/opt/useagent/backend
 EnvironmentFile=/etc/useagent/backend.env
 ExecStart=/usr/local/bin/bun run src/index.ts
@@ -75,7 +75,7 @@ cat > /etc/systemd/system/useagent-frontend.service <<UNIT
 Description=UseAgent frontend
 After=network.target useagent-backend.service
 [Service]
-User=skynet
+User=useagent
 WorkingDirectory=/opt/useagent/frontend
 Environment=PORT=3400
 ExecStart=/usr/local/bin/bun run start
@@ -84,8 +84,8 @@ Restart=on-failure
 WantedBy=multi-user.target
 UNIT
 
-sudo -u skynet bash -lc 'cd /opt/useagent/backend && bun install --frozen-lockfile || bun install'
-sudo -u skynet bash -lc 'cd /opt/useagent/frontend && (bun install --frozen-lockfile || bun install) && bun run build'
+sudo -u useagent bash -lc 'cd /opt/useagent/backend && bun install --frozen-lockfile || bun install'
+sudo -u useagent bash -lc 'cd /opt/useagent/frontend && (bun install --frozen-lockfile || bun install) && bun run build'
 
 # Caddy: TLS/HTTP reverse proxy to the frontend (which proxies /api to :3201).
 cat > /etc/caddy/Caddyfile <<CADDY

@@ -67,8 +67,8 @@ write_files:
       sudo -u postgres psql -v ON_ERROR_STOP=1 -d useagent -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       # App service account + install root.
-      id skynet >/dev/null 2>&1 || useradd --system --create-home --home-dir /opt/useagent --shell /bin/bash skynet
-      install -d -o skynet -g skynet /opt/useagent
+      id useagent >/dev/null 2>&1 || useradd --system --create-home --home-dir /opt/useagent --shell /bin/bash useagent
+      install -d -o useagent -g useagent /opt/useagent
 
       touch /opt/useagent-provision/READY
 
