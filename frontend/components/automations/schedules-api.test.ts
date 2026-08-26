@@ -110,7 +110,7 @@ describe("Automations API client", () => {
           cache: "no-store",
           credentials: "include",
           headers: {
-            "x-skynet-client-release": "run-events-v1:dev",
+            "x-useagent-client-release": "run-events-v1:dev",
           },
           signal: controller.signal,
         },
@@ -132,7 +132,7 @@ describe("Automations API client", () => {
           cache: "no-store",
           credentials: "include",
           headers: {
-            "x-skynet-client-release": "run-events-v1:dev",
+            "x-useagent-client-release": "run-events-v1:dev",
           },
           signal: controller.signal,
         },
@@ -160,7 +160,7 @@ describe("Automations API client", () => {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            "x-skynet-client-release": "run-events-v1:dev",
+            "x-useagent-client-release": "run-events-v1:dev",
           },
           body: JSON.stringify(input),
           credentials: "include",
@@ -182,7 +182,7 @@ describe("Automations API client", () => {
           method: "PATCH",
           headers: {
             "content-type": "application/json",
-            "x-skynet-client-release": "run-events-v1:dev",
+            "x-useagent-client-release": "run-events-v1:dev",
           },
           body: JSON.stringify({ enabled: true }),
           credentials: "include",
@@ -204,7 +204,7 @@ describe("Automations API client", () => {
           method: "POST",
           credentials: "include",
           headers: {
-            "x-skynet-client-release": "run-events-v1:dev",
+            "x-useagent-client-release": "run-events-v1:dev",
           },
         },
       },
@@ -223,7 +223,7 @@ describe("Automations API client", () => {
           method: "DELETE",
           credentials: "include",
           headers: {
-            "x-skynet-client-release": "run-events-v1:dev",
+            "x-useagent-client-release": "run-events-v1:dev",
           },
         },
       },

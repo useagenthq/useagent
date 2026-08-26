@@ -10,14 +10,14 @@ import type { ScopedRecall } from "./team-memory";
 const plan: ScopedMemoryPlan = {
   scope: "personal",
   orgId: "org-1",
-  agentId: "skynet-backend",
+  agentId: "useagent-backend",
   sessionId: "thread-9",
   actorUserId: "u-42",
   readPools: [
-    { sourceScope: "personal", identity: { teamId: "org-1", agentId: "skynet-backend", userId: "u-42", actorUserId: "u-42", sessionId: "thread-9", runId: "run-1" } },
-    { sourceScope: "org", identity: { teamId: "org-1", agentId: "skynet-backend", userId: "org:org-1", actorUserId: "u-42", sessionId: "thread-9", runId: "run-1" } },
+    { sourceScope: "personal", identity: { teamId: "org-1", agentId: "useagent-backend", userId: "u-42", actorUserId: "u-42", sessionId: "thread-9", runId: "run-1" } },
+    { sourceScope: "org", identity: { teamId: "org-1", agentId: "useagent-backend", userId: "org:org-1", actorUserId: "u-42", sessionId: "thread-9", runId: "run-1" } },
   ],
-  writePool: { sourceScope: "personal", identity: { teamId: "org-1", agentId: "skynet-backend", userId: "u-42", actorUserId: "u-42", sessionId: "thread-9", runId: "run-1" } },
+  writePool: { sourceScope: "personal", identity: { teamId: "org-1", agentId: "useagent-backend", userId: "u-42", actorUserId: "u-42", sessionId: "thread-9", runId: "run-1" } },
 };
 
 const recall: ScopedRecall = {
@@ -56,7 +56,7 @@ describe("buildRetrievalPayload", () => {
     expect(p.scope).toEqual({
       orgId: "org-1",
       actorUserId: "u-42",
-      agentId: "skynet-backend",
+      agentId: "useagent-backend",
       sessionId: "thread-9",
     });
     expect(p.itemCount).toBe(2);

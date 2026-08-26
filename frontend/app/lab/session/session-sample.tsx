@@ -246,8 +246,8 @@ export function SessionSample() {
               <span className="text-mono-label text-text-tertiary">Session</span>
               <GitChips
                 refs={[
-                  { repo: "skynet/gateway", branch: "main" },
-                  { repo: "skynet/infra", branch: "rl-staging" },
+                  { repo: "useagent/gateway", branch: "main" },
+                  { repo: "useagent/infra", branch: "rl-staging" },
                 ]}
               />
               <div className="ml-auto flex items-center gap-2">

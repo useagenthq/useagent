@@ -27,7 +27,7 @@ function isMutating(method: string | undefined): boolean {
 export function withClientReleaseHeader(path: string, init?: RequestInit): RequestInit | undefined {
   if (!isBrowser() || !isApiPath(path)) return init;
   const headers = new Headers(init?.headers);
-  headers.set("x-skynet-client-release", CLIENT_RELEASE_FINGERPRINT);
+  headers.set("x-useagent-client-release", CLIENT_RELEASE_FINGERPRINT);
   return { ...init, headers };
 }
 
@@ -43,7 +43,9 @@ export function scheduleReleaseReload(): void {
 }
 
 export function handleReleaseMismatch(response: Response, init?: RequestInit): void {
-  const serverFingerprint = response.headers.get("x-skynet-release-fingerprint");
+  const serverFingerprint =
+    response.headers.get("x-useagent-release-fingerprint") ??
+    response.headers.get("x-skynet-release-fingerprint");
   if (!serverFingerprint || serverFingerprint === CLIENT_RELEASE_FINGERPRINT) return;
   if (serverFingerprint.endsWith(":dev")) return;
   scheduleReleaseReload();

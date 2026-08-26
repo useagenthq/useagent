@@ -47,17 +47,17 @@ describe("GitHub-backed gateway delegation", () => {
 
     const calls = [
       executeRepositoryTool(claims, "github_clone_repository", {
-        query: "upstream-org/backend",
+        query: "acme-org/backend",
       }),
       executeContextTool(claims, "context_read", {
-        source_ref: "code:upstream-org/backend@abc123:src/index.ts#L10",
+        source_ref: "code:acme-org/backend@abc123:src/index.ts#L10",
       }),
       executeResourceTool(claims, "resource_catalog_search", {
         provider: "github",
         query: "backend",
       }),
       executeGithubTool(claims, "github_changeset_prepare", {
-        repository: "upstream-org/backend",
+        repository: "acme-org/backend",
         targetBranch: "main",
         bundlePath: "/root/work/github-change-bundle.json",
       }),
@@ -82,13 +82,13 @@ describe("GitHub-backed gateway delegation", () => {
       {
         family: "repository",
         name: "github_clone_repository",
-        arguments: { query: "upstream-org/backend" },
+        arguments: { query: "acme-org/backend" },
       },
       {
         family: "context",
         name: "context_read",
         arguments: {
-          source_ref: "code:upstream-org/backend@abc123:src/index.ts#L10",
+          source_ref: "code:acme-org/backend@abc123:src/index.ts#L10",
         },
       },
       {
@@ -100,7 +100,7 @@ describe("GitHub-backed gateway delegation", () => {
         family: "github",
         name: "github_changeset_prepare",
         arguments: {
-          repository: "upstream-org/backend",
+          repository: "acme-org/backend",
           targetBranch: "main",
           bundlePath: "/root/work/github-change-bundle.json",
         },
@@ -143,10 +143,10 @@ describe("GitHub-backed gateway delegation", () => {
 
     const results = await Promise.all([
       executeRepositoryTool(claims, "github_clone_repository", {
-        query: "upstream-org/backend",
+        query: "acme-org/backend",
       }),
       executeContextTool(claims, "context_read", {
-        source_ref: "code:upstream-org/backend@abc123:src/index.ts#L10",
+        source_ref: "code:acme-org/backend@abc123:src/index.ts#L10",
       }),
       executeResourceTool(claims, "resource_catalog_search", {
         provider: "github",

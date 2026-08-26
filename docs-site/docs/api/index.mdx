@@ -66,9 +66,9 @@ product reference.
   duplicating work (a reused key against a different payload is `409
   idempotency_key_reused`).
 - **Release compatibility.** Every `/api/*` response carries
-  `x-skynet-release-fingerprint` (`run-events-v1:<commit>`) and
-  `x-skynet-api-compat` (`run-events-v1`). A client may send
-  `x-skynet-client-release`; a mutating request (`POST`, `PUT`, `PATCH`,
+  `x-useagent-release-fingerprint` (`run-events-v1:<commit>`) and
+  `x-useagent-api-compat` (`run-events-v1`). A client may send
+  `x-useagent-client-release`; a mutating request (`POST`, `PUT`, `PATCH`,
   `DELETE`) with an incompatible value is rejected `409 {
   "error": "frontend_release_mismatch", "release" }`. A request is compatible
   when it sends no client header, its value matches exactly, or the server is a

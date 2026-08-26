@@ -13,24 +13,24 @@ local archive is **not disaster recovery** until it leaves the host.
 
 Each archive bundles:
 
-- A PostgreSQL dump of the `skynet` database (`pg_dump --format=custom`).
-- The host configuration and durable state: `/etc/skynet`,
-  `/var/lib/skynet/artifacts`, `/var/lib/skynet/runs`, and
-  `/var/lib/skynet/secrets`.
+- A PostgreSQL dump of the `useagent` database (`pg_dump --format=custom`).
+- The host configuration and durable state: `/etc/useagent`,
+  `/var/lib/useagent/artifacts`, `/var/lib/useagent/runs`, and
+  `/var/lib/useagent/secrets`.
 - A manifest and SHA-256 checksums for both payloads.
 
 The bundle is encrypted with AES-256-CBC (PBKDF2 key derivation) using the
-passphrase file at `/etc/skynet/backup-passphrase`, and written to
-`/var/lib/skynet/backups/skynet-backup-<timestamp>.tar.gz.enc`. Every new
+passphrase file at `/etc/useagent/backup-passphrase`, and written to
+`/var/lib/useagent/backups/useagent-backup-<timestamp>.tar.gz.enc`. Every new
 archive is verified immediately after it is written.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `skynet-backup.sh backup` | Create, verify, and retain a new encrypted archive. |
-| `skynet-backup.sh verify --archive PATH` | Decrypt, check the checksums, and validate both payloads without touching live state. |
-| `skynet-backup.sh restore --archive PATH --yes` | Stop the runtime services, restore the database and durable files, and restart. |
+| `useagent-backup.sh backup` | Create, verify, and retain a new encrypted archive. |
+| `useagent-backup.sh verify --archive PATH` | Decrypt, check the checksums, and validate both payloads without touching live state. |
+| `useagent-backup.sh restore --archive PATH --yes` | Stop the runtime services, restore the database and durable files, and restart. |
 
 Restore refuses to run without `--yes`. Set `DRY_RUN=1` with `backup` or
 `restore` to print the work without mutating state.

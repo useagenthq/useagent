@@ -16,7 +16,7 @@
  *  - refuses to run unless backend/.env is gitignored (checked by the caller /
  *    CLAUDE.md), so secrets can't land in a commit.
  *
- * GITHUB_ORG selects which App installation to use; it defaults to upstream-org
+ * GITHUB_ORG selects which App installation to use; it defaults to the operator's GitHub org
  * (the org the App is installed on) when absent from both files.
  */
 import { existsSync, readFileSync, appendFileSync } from "node:fs";
@@ -28,7 +28,7 @@ const BACKEND_ENV = resolve(import.meta.dir, "../.env");
 /** Keys to carry over from the root .env (in this order). */
 const APP_KEYS = ["GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY"] as const;
 /** Default org for installation selection, added if neither file sets it. */
-const ORG_DEFAULT = "GITHUB_ORG=upstream-org";
+const ORG_DEFAULT = "GITHUB_ORG=useagenthq";
 
 /** Parse only which keys are DEFINED in an env file (never expose values). */
 function definedKeys(path: string): Set<string> {
@@ -83,7 +83,7 @@ function main(): void {
     const rootOrg = rawLine(ROOT_ENV, "GITHUB_ORG");
     toAppend.push(rootOrg ?? ORG_DEFAULT);
     console.log(
-      `[sync-github-app-env] GITHUB_ORG: added (${rootOrg ? "from root .env" : "default upstream-org"})`,
+      `[sync-github-app-env] GITHUB_ORG: added (${rootOrg ? "from root .env" : "default useagenthq"})`,
     );
   }
 

@@ -30,13 +30,16 @@ export interface RepoMultiPickerProps {
   emptyLabel?: string;
 }
 
-const RECENTS_KEY = "skynet:recent-repos";
+const RECENTS_KEY = "useagent:recent-repos";
+const LEGACY_RECENTS_KEY = "skynet:recent-repos";
 const RECENTS_MAX = 5;
 
 function readRecents(): string[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(RECENTS_KEY);
+    const raw =
+      window.localStorage.getItem(RECENTS_KEY) ??
+      window.localStorage.getItem(LEGACY_RECENTS_KEY);
     const parsed = raw ? (JSON.parse(raw) as unknown) : [];
     return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
   } catch {

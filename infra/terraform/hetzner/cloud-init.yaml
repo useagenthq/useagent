@@ -17,7 +17,7 @@ packages:
   - docker-compose-v2
 
 write_files:
-  - path: /opt/skynet-provision/provision.sh
+  - path: /opt/useagent-provision/provision.sh
     permissions: "0755"
     content: |
       #!/usr/bin/env bash
@@ -67,10 +67,10 @@ write_files:
       sudo -u postgres psql -v ON_ERROR_STOP=1 -d useagent -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       # App service account + install root.
-      id skynet >/dev/null 2>&1 || useradd --system --create-home --home-dir /opt/skynet --shell /bin/bash skynet
-      install -d -o skynet -g skynet /opt/skynet
+      id skynet >/dev/null 2>&1 || useradd --system --create-home --home-dir /opt/useagent --shell /bin/bash skynet
+      install -d -o skynet -g skynet /opt/useagent
 
-      touch /opt/skynet-provision/READY
+      touch /opt/useagent-provision/READY
 
 runcmd:
-  - bash /opt/skynet-provision/provision.sh 2>&1 | tee /var/log/skynet-provision.log
+  - bash /opt/useagent-provision/provision.sh 2>&1 | tee /var/log/skynet-provision.log

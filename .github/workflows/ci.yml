@@ -113,7 +113,7 @@ jobs:
           bun test
           ./deploy/hetzner/migrate-postgres-identity.test.ts
           ./deploy/hetzner/postgres-identity-contract.test.ts
-          ./deploy/hetzner/skynet-backup.test.ts
+          ./deploy/hetzner/useagent-backup.test.ts
           ./deploy/hetzner/gateway-db-grants.test.ts
           ./backend/src/db/gateway-grants.test.ts
           ./backend/src/commands/admission-ownership.test.ts
