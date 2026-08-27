@@ -87,7 +87,8 @@ export const MEMORY_TOOLS = [
       "Search this user/organization's team memory (Tencent L0 ground evidence, L1 " +
       "distilled facts, org L2 scenes, and org L3 persona) for relevant facts. Returns " +
       "bounded, provider-cited results with stable refs (tencent:l0:<id> / " +
-      "tencent:l1:<id> / tencent:l2:<id> / tencent:l3:<id>). Use whenever a " +
+      "tencent:l1:<id> / tencent:l2:<id> / tencent:l3:<id>). A just-finished " +
+      "capture may carry a temporary useagent:provisional:<id> ref until delivery. Use whenever a " +
       "task references something you should already know about the user.",
     inputSchema: {
       type: "object",
@@ -313,6 +314,7 @@ async function doSearch(claims: ToolTokenClaims, args: Record<string, unknown>):
       scope: i.sourceScope,
       layer: i.citation.layer,
       ref: i.citation.ref,
+      provider: i.citation.provider,
       score: i.citation.score,
     })),
   });
@@ -320,6 +322,12 @@ async function doSearch(claims: ToolTokenClaims, args: Record<string, unknown>):
 
 async function doRead(claims: ToolTokenClaims, args: Record<string, unknown>): Promise<ToolCallResult> {
   const ref = (typeof args.memoryRef === "string" ? args.memoryRef : "").trim();
+  if (isProvisionalRef(ref)) {
+    return textResult(
+      "This is a provisional local memory already returned in full by memory_search. Wait for delivery, then run memory_search again for a stable provider ref.",
+      { ref, provisional: true },
+    );
+  }
   const m = /^tencent:(l0|l1|l2|l3):(.+)$/.exec(ref);
   if (!m) return textResult("memory_read needs a ref like tencent:l1:<id> from memory_search.", undefined, true);
   const [, layer, id] = m as unknown as [string, "l0" | "l1" | "l2" | "l3", string];
@@ -403,8 +411,22 @@ function parseRef(ref: string): { layer: "l0" | "l1"; id: string } | null {
   return m ? { layer: m[1] as "l0" | "l1", id: m[2]! } : null;
 }
 
+function isProvisionalRef(ref: string): boolean {
+  return /^useagent:provisional:[^\s]+$/.test(ref.trim());
+}
+
+function provisionalMutationResult(operation: "correct" | "forget", ref: string): ToolCallResult {
+  return textResult(
+    `This memory is still pending delivery and cannot be ${operation === "correct" ? "corrected" : "forgotten"} yet. Wait for delivery, then run memory_search again and use the stable provider ref.`,
+    { ref, provisional: true, retry: "memory_search" },
+    true,
+  );
+}
+
 async function doCorrect(claims: ToolTokenClaims, args: Record<string, unknown>): Promise<ToolCallResult> {
-  const parsed = parseRef(typeof args.memoryRef === "string" ? args.memoryRef : "");
+  const ref = typeof args.memoryRef === "string" ? args.memoryRef.trim() : "";
+  if (isProvisionalRef(ref)) return provisionalMutationResult("correct", ref);
+  const parsed = parseRef(ref);
   const content = (typeof args.content === "string" ? args.content : "").trim().slice(0, CONTENT_MAX);
   if (!parsed || !content) return textResult("memory_correct needs a memoryRef and corrected `content`.", undefined, true);
 
@@ -451,7 +473,9 @@ async function doCorrect(claims: ToolTokenClaims, args: Record<string, unknown>)
 }
 
 async function doForget(claims: ToolTokenClaims, args: Record<string, unknown>): Promise<ToolCallResult> {
-  const parsed = parseRef(typeof args.memoryRef === "string" ? args.memoryRef : "");
+  const ref = typeof args.memoryRef === "string" ? args.memoryRef.trim() : "";
+  if (isProvisionalRef(ref)) return provisionalMutationResult("forget", ref);
+  const parsed = parseRef(ref);
   if (!parsed) return textResult("memory_forget needs a memoryRef from memory_search.", undefined, true);
 
   const run = await resolveAuthorizedToolRun(claims);
