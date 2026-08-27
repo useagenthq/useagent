@@ -48,8 +48,8 @@ export const FREE_MODELS: { value: string; label: string; tint: string }[] = [
   { value: "minimax/minimax-m3:free", label: "MiniMax M3", tint: "text-emerald-500" },
   { value: "nvidia/nemotron-3-super-120b-a12b:free", label: "Nemotron 3 Super", tint: "text-rose-500" },
   {
-    value: "inclusionai/ling-3.0-flash-fin:free",
-    label: "Ling 3.0 Flash Fin",
+    value: "dots-studio/dots-3-note-preview:free",
+    label: "Dots 3 Note",
     tint: "text-indigo-500",
   },
 ];
