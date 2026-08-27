@@ -29,8 +29,8 @@ import {
 import {
   ENGINES,
   type EngineId,
-  isFreeModel,
   modelOptionsForEngine,
+  partitionModelOptions,
   selectableModelsForEngine,
 } from "@/components/chat/types";
 import { AgentThinking } from "@/components/application/agent-thinking/agent-thinking";
@@ -107,10 +107,10 @@ export function NewTaskComposer({
       label: m.label,
       markTint: m.tint,
     });
-    const paid = selectableModels.filter((m) => !isFreeModel(m.value));
-    const free = selectableModels.filter((m) => isFreeModel(m.value));
+    // Zero-cost OpenRouter ":free" variants (OpenCode only) get their own
+    // section; membership is manifest-driven via the shared partition.
+    const { paid, free } = partitionModelOptions(selectableModels);
     const groups: PickerGroup[] = [{ label: "Models", options: paid.map(toOption) }];
-    // Zero-cost OpenRouter ":free" variants (OpenCode only) get their own section.
     if (free.length > 0) groups.push({ label: "Free", options: free.map(toOption) });
     return groups;
   }, [selectableModels]);

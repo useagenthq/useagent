@@ -1,6 +1,7 @@
 import type { EngineId } from "../db/schema";
 import { chatModelCatalog } from "../chat/models";
 import { chatModel } from "../chat/stream";
+import { freeModelLane, isAllowedFreeModel } from "./free-model-lane";
 
 export const KIMI_K3_MODEL = "moonshotai/kimi-k3";
 export const DEEPSEEK_V4_FLASH_MODEL = "deepseek/deepseek-v4-flash";
@@ -33,22 +34,13 @@ export const OPENCODE_ALLOWED_MODELS = {
   ],
 } as const;
 
-/**
- * The Free lane: OpenRouter ":free" variants, allowed for the OpenCode engine
- * only. They ride the same OpenRouter gateway path as the paid slugs, so a
- * user's own connected OpenRouter key is spent when present and the shared
- * house key serves only where that fallback is allowed. Slugs verified against
- * the live OpenRouter catalog; all four support tool calls.
- */
-export const FREE_OPENCODE_MODELS = [
-  "nvidia/nemotron-3.5-lightning:free",
-  "thinkingmachines/inkling:free",
-  "poolside/laguna-s-2.1:free",
-  "inclusionai/ling-3.0-flash-fin:free",
-] as const;
+// The Free lane (OpenRouter ":free" variants, OpenCode only) is DYNAMIC: it is
+// derived from OpenRouter's public catalog with a TTL cache and a curated seed
+// fallback - see ./free-model-lane. Free slugs ride the same OpenRouter gateway
+// path as the paid ones, so a user's own connected OpenRouter key is spent when
+// present and the shared house key serves only where that fallback is allowed.
 
 const OPENCODE_MODELS = new Set<string>(Object.values(OPENCODE_ALLOWED_MODELS).flat());
-const FREE_MODELS = new Set<string>(FREE_OPENCODE_MODELS);
 const CLAUDE_MODELS = new Set<string>(OPENCODE_ALLOWED_MODELS.anthropic);
 export const DEFAULT_OPENCODE_MODEL = FAST_OPENCODE_MODEL;
 export const DEFAULT_CLAUDE_MODEL = "claude-opus-5";
@@ -70,7 +62,7 @@ export function allowedModelsForEngine(
 ): readonly string[] {
   switch (engine) {
     case "opencode":
-      return [...Object.values(OPENCODE_ALLOWED_MODELS).flat(), ...FREE_OPENCODE_MODELS];
+      return [...Object.values(OPENCODE_ALLOWED_MODELS).flat(), ...freeModelLane()];
     case "daytona":
     case "pi":
       return Object.values(OPENCODE_ALLOWED_MODELS).flat();
@@ -120,7 +112,7 @@ export function isModelAllowedForEngine(
     case "mock":
       return true;
     case "opencode":
-      return OPENCODE_MODELS.has(model) || FREE_MODELS.has(model);
+      return OPENCODE_MODELS.has(model) || isAllowedFreeModel(model);
     case "daytona":
     case "pi":
       return OPENCODE_MODELS.has(model);

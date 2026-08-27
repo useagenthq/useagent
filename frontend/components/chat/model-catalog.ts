@@ -31,9 +31,14 @@ export const MODELS: { value: string; label: string; tint: string }[] = [
   { value: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
 ];
 
-/** The Free lane: OpenRouter ":free" variants, OpenCode only (backend policy).
- * Zero cost, and they run on a user's own connected OpenRouter key when one is
- * connected. Rendered under a "Free" section label in the pickers. */
+/** The Free lane SEED: curated labels for the backend's fallback lane and the
+ * offline picker default. The lane itself is DYNAMIC - the backend derives it
+ * from OpenRouter's public catalog and advertises it via the manifest; Free
+ * section MEMBERSHIP comes from the id's ":free" suffix (isFreeModel), so a
+ * newly advertised free model appears here with no frontend change (its raw id
+ * doubles as the label until it earns a curated entry). OpenCode only (backend
+ * policy); free turns run on a user's own connected OpenRouter key when one is
+ * connected. */
 export const FREE_MODELS: { value: string; label: string; tint: string }[] = [
   {
     value: "nvidia/nemotron-3.5-lightning:free",
@@ -52,6 +57,19 @@ export const FREE_MODELS: { value: string; label: string; tint: string }[] = [
 /** OpenRouter marks zero-cost variants with a ":free" slug suffix. */
 export function isFreeModel(value: string): boolean {
   return value.endsWith(":free");
+}
+
+/** Partition picker options into the paid catalog and the Free lane (shared by
+ * every picker's "Free" section; membership is manifest-driven via the id
+ * suffix, never a hardcoded list). */
+export function partitionModelOptions(options: ModelOption[]): {
+  paid: ModelOption[];
+  free: ModelOption[];
+} {
+  return {
+    paid: options.filter((option) => !isFreeModel(option.value)),
+    free: options.filter((option) => isFreeModel(option.value)),
+  };
 }
 
 /** Codex model ids are the backend-policy ids accepted by the Codex runner. */
