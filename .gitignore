@@ -58,6 +58,7 @@ self_improving.md
 docs/internal/
 CLAUDE.local.md
 progress/
+/plans/
 .worktrees/
 
 # Internal ops (kept local, not public)
