@@ -9,6 +9,9 @@ const cloudInit = await Bun.file(
 const variables = await Bun.file(
   new URL("./hetzner/variables.tf", import.meta.url),
 ).text();
+const bootstrap = await Bun.file(
+  new URL("../../backend/scripts/bootstrap-admin.ts", import.meta.url),
+).text();
 const remoteInvocation = deploy.slice(
   deploy.indexOf('echo "== write env + build + start (remote) =="'),
   deploy.indexOf("<<'REMOTE'"),
@@ -61,11 +64,37 @@ describe("public self-host security contract", () => {
     expect(cloudInit).not.toContain("set -eux");
     expect(cloudInit).not.toContain("tee /var/log");
     expect(cloudInit).toContain('permissions: "0700"');
+    const rendered = cloudInit
+      .replaceAll("${postgres_password}", "owner-password-sentinel")
+      .replaceAll("${gateway_postgres_password}", "gateway-password-sentinel");
+    const passwordLines = rendered
+      .split("\n")
+      .filter((line) => line.includes("password-sentinel"));
+    expect(passwordLines).toHaveLength(2);
+    expect(passwordLines.every((line) => line.trimStart().startsWith("ALTER ROLE"))).toBe(true);
+    expect(rendered).toContain('psql -v ON_ERROR_STOP=1 -f "$password_sql"');
   });
 
   test("requires restricted SSH source ranges", () => {
     expect(variables).toContain("default     = []");
-    expect(variables).toContain('cidr != "0.0.0.0/0"');
-    expect(variables).toContain('cidr != "::/0"');
+    expect(variables).toContain("can(cidrhost(cidr, 0))");
+    expect(variables).toContain('tonumber(regex("/([0-9]+)$", cidr)[0])');
+  });
+
+  test("bootstraps the first user through Better Auth without weakening the backend", () => {
+    expect(bootstrap).toContain('process.env.NODE_ENV = "development"');
+    expect(bootstrap).toContain('process.env.USEAGENT_DEV_MODE = "true"');
+    expect(bootstrap).toContain("auth.api.signUpEmail");
+    expect(bootstrap).toContain("where(eq(user.email, email))");
+    expect(deploy).toContain("useagent-bootstrap-admin.service");
+    expect(deploy).toContain("rm -f /etc/useagent/bootstrap-admin.env");
+  });
+
+  test("requires active services and bounded local plus public health checks", () => {
+    expect(deploy).toContain("for attempt in $(seq 1 30)");
+    expect(deploy).toContain("systemctl is-active --quiet");
+    expect(deploy).toContain("health_check http://localhost:3201/api/health backend");
+    expect(deploy).toContain('health_check "https://${PUBLIC_DOMAIN}/api/health" public-https');
+    expect(deploy).not.toContain("status useagent-backend useagent-frontend || true");
   });
 });
