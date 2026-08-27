@@ -41,8 +41,8 @@ export const MODELS: { value: string; label: string; tint: string }[] = [
  * connected. */
 export const FREE_MODELS: { value: string; label: string; tint: string }[] = [
   {
-    value: "nvidia/nemotron-3.5-lightning:free",
-    label: "Nemotron 3.5 Lightning",
+    value: "nvidia/nemotron-3-ultra-550b-a55b:free",
+    label: "Nemotron 3 Ultra",
     tint: "text-lime-500",
   },
   { value: "minimax/minimax-m3:free", label: "MiniMax M3", tint: "text-emerald-500" },
