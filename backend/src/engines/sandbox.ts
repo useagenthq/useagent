@@ -29,6 +29,7 @@ import {
   providerGatewaySandboxLabels,
   providerGatewayWired,
 } from "../provider-gateway/sandbox-config";
+import { unsupportedExecutionCapabilitySnapshot } from "./execution-capabilities";
 import {
   forgetLiveThreadSandbox,
   getLiveThreadSandbox,
@@ -759,7 +760,8 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           return { exitCode: exitCode ?? 0, state, produced };
         };
 
-        await stagePrompt(composeTurnPrompt(ctx, Boolean(resumeId)));
+        const executionCapabilities = unsupportedExecutionCapabilitySnapshot("sandbox", ctx.workdir);
+        await stagePrompt(composeTurnPrompt(ctx, Boolean(resumeId), executionCapabilities));
         await ctx.emit({ kind: "task", label: `Running ${spec.id} in sandbox…`, chip: spec.id });
         let turn = await execTurn(resumeId);
         if (turn.exitCode !== 0 && !(turn.exitCode === 137 && turn.produced)) {
@@ -768,7 +770,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           if (!(resumeId && !turn.produced)) {
             throw sandboxExitError(spec.id, turn.exitCode, turn.state.rawTail, redact);
           }
-          await stagePrompt(composeTurnPrompt(ctx, false));
+          await stagePrompt(composeTurnPrompt(ctx, false, executionCapabilities));
           turn = await execTurn(undefined);
           if (turn.exitCode !== 0 && !(turn.exitCode === 137 && turn.produced)) {
             throw sandboxExitError(spec.id, turn.exitCode, turn.state.rawTail, redact);

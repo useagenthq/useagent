@@ -135,7 +135,9 @@ describe("T3 run adapter gate", () => {
 
   test("keeps semantic prompt composition and native T3 activity projection", () => {
     const source = readFileSync(new URL("./runtime-adapter.ts", import.meta.url), "utf8");
-    expect(source).toContain("composeTurnPrompt(ctx, established.resumed)");
+    expect(source).toContain(
+      "composeTurnPrompt(ctx, established.resumed, executionCapabilities)",
+    );
     expect(source).toContain("await establishProviderSession({");
     expect(source).toContain("const priorSnapshot = await readThreadSnapshot(ctx, sandbox);");
     expect(source).not.toContain("established.resumed\n          ? await readThreadSnapshot");
