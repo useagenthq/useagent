@@ -30,7 +30,7 @@ import {
   selectSessionCommandCatalog,
   selectSessionCommands,
 } from "@/components/chat/canonical-timeline";
-import { Conversation, type Turn } from "@/components/chat/conversation";
+import { Conversation } from "@/components/chat/conversation";
 import { DesktopPane } from "@/components/chat/desktop-pane";
 import { DiffPane } from "@/components/chat/diff-pane";
 import { EditorPane } from "@/components/chat/editor-pane";
@@ -39,7 +39,6 @@ import {
   type GatewayApprovalSignal,
   useGatewayApprovals,
 } from "@/components/chat/use-gateway-approvals";
-import type { NativeSnapshot } from "@/components/chat/native-store";
 import { OrbBootIndicator } from "@/components/chat/orb-boot-indicator";
 import { type PendingQuestion, selectPendingQuestion } from "@/components/chat/question-state";
 import {
@@ -55,7 +54,6 @@ import { SubagentChips } from "@/components/chat/subagent-pane";
 import { type SurfaceChoice, SurfaceChooser } from "@/components/chat/surface-chooser";
 import { TerminalPane } from "@/components/chat/terminal-pane";
 import { terminalRunIdForThread } from "@/components/chat/terminal-run-state";
-import type { ThreadRunView } from "@/components/chat/thread-store";
 import type { TimelineArtifact } from "@/components/chat/timeline";
 import { ComposerPrefillProvider } from "@/components/chat/composer-prefill-context";
 import { SessionLatestRunProvider } from "@/components/chat/session-run-context";
@@ -76,6 +74,8 @@ import {
   supportsPreSessionModelSelection,
 } from "@/components/chat/types";
 import { shouldRetireOptimistic, useThreadStream } from "@/components/chat/use-thread-stream";
+import { useWindowedThread } from "@/components/chat/use-windowed-thread";
+import type { ApiThreadOutlineTurn } from "@/components/chat/windowed-thread";
 import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
 import { Button } from "@/components/base/buttons/button";
 import { CloseButton } from "@/components/base/buttons/close-button";
@@ -102,7 +102,17 @@ const RAIL_TAB_LABEL_COLLAPSE = "@max-[40rem]:sr-only";
  * A reply starts a child run in the same thread and arrives on the open stream -
  * never navigating away, never reconnecting.
  */
-export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
+export function SessionView({
+  initialThread,
+  initialOutline = null,
+}: {
+  initialThread: ApiRun[];
+  /** Windowed initial loading (long threads): the WHOLE thread's per-turn
+   *  skeleton, while `initialThread` carries only the root + the fully-loaded
+   *  tail. Turns known only by outline render as sized placeholders and are
+   *  fetched in islands as the user scrolls into them. Null = full load. */
+  initialOutline?: ApiThreadOutlineTurn[] | null;
+}) {
   const root = initialThread[0];
   if (!root) throw new Error("SessionView requires a non-empty thread");
 
@@ -123,9 +133,17 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // (durable steps + native frames + live narration) is owned by the thread store,
   // so no run-switch transition can blank/freeze a turn or target the wrong run.
   const rootId = root.id;
-  const { snapshot, reconcile } = useThreadStream(rootId, initialThread);
+  const { snapshot, reconcile, mergeRuns } = useThreadStream(rootId, initialThread);
   const thread = snapshot.runs.length ? snapshot.runs : initialThread;
   const newest = thread.at(-1) ?? root;
+
+  const { turns, onTurnsNeeded: handleTurnsNeeded } = useWindowedThread({
+    rootId,
+    thread,
+    snapshot,
+    initialOutline,
+    mergeRuns,
+  });
 
   // The ONE active native-session id, from the CURRENT (newest) run's `session.started` - NEVER a
   // findLast over historical runs (which surfaces a REPLACED session while the new run has not
@@ -158,61 +176,6 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // Once negotiated capabilities exist, an explicit false remains authoritative.
   const modelSelection = caps?.modelSelection ?? supportsPreSessionModelSelection(newest.engine);
 
-  // Every run renders from its OWN thread-store slice - no active-run selection, no
-  // projection cache: a reply never makes another turn render less than it already
-  // showed, because nothing switches the subscription (root-fix of the reply flash).
-  //
-  // Per-run Turn objects are identity-stable while their store view (or fallback
-  // ApiRun) is unchanged: the store rebuilds only mutated runs' views, so a
-  // streaming sibling no longer hands every settled (memoized) TurnBlock a fresh
-  // `turn` prop each SSE animation frame.
-  const turnCacheRef = useRef(new Map<string, { source: ApiRun | ThreadRunView; turn: Turn }>());
-  const turns: Turn[] = useMemo(() => {
-    // A settled turn shows its native timeline ONLY when it actually has native
-    // frames (opencode tool rows live only on the native lane); a settled turn with
-    // no frames (mock / non-native engines) falls back to the worklog+answer
-    // rendering, exactly as before. A live turn always uses its native timeline.
-    const nativeFor = (v: ThreadRunView): NativeSnapshot | undefined =>
-      isLiveStatus(v.status) ? v.native : v.native.nativeFrames.length > 0 ? v.native : undefined;
-    const cache = turnCacheRef.current;
-    const next = new Map<string, { source: ApiRun | ThreadRunView; turn: Turn }>();
-    const list = thread.map((run) => {
-      const v = snapshot.byId.get(run.id);
-      const source = v ?? run;
-      const cached = cache.get(run.id);
-      if (cached && cached.source === source) {
-        next.set(run.id, cached);
-        return cached.turn;
-      }
-      const turn: Turn = v
-        ? {
-            run: v.run,
-            steps: v.native.steps,
-            status: v.status,
-            summary: v.summary,
-            live: isLiveStatus(v.status),
-            liveText: v.liveText,
-            liveReasoning: v.liveReasoning,
-            native: nativeFor(v),
-            canonical: v.canonical,
-            canonicalComplete: v.canonicalComplete,
-          }
-        : {
-            run,
-            steps: run.steps,
-            status: run.status,
-            summary: run.summary,
-            live: false,
-            liveText: "",
-            liveReasoning: "",
-            native: undefined,
-          };
-      next.set(run.id, { source, turn });
-      return turn;
-    });
-    turnCacheRef.current = next;
-    return list;
-  }, [thread, snapshot.byId]);
   const allSteps = useMemo(() => turns.flatMap((t) => t.steps), [turns]);
   const allCanonicalEvents = useMemo(() => turns.flatMap((t) => t.canonical ?? []), [turns]);
   // Subagent fidelity is derived from native frames across the WHOLE thread.
@@ -899,8 +862,17 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           </div>
 
           {/* Fan-out subagents in this thread that aren't on the main reply line —
-              each opens in the temporary viewing pane. Empty until threading lands. */}
-          <SubagentChips rootId={rootId} excludeIds={thread.map((r) => r.id)} />
+              each opens in the temporary viewing pane. Empty until threading lands.
+              Outline-known turns are main-line too - a not-yet-loaded windowed
+              turn must not surface as a chip. */}
+          <SubagentChips
+            rootId={rootId}
+            excludeIds={
+              initialOutline
+                ? [...new Set([...initialOutline.map((e) => e.id), ...thread.map((r) => r.id)])]
+                : thread.map((r) => r.id)
+            }
+          />
           {/* PRIMARY CHAT = our native React conversation (user decision
               2026-08-05, second pass): owning the rendering layer keeps the
               extension surface ours — artifact/PPT/PDF viewers, custom panes —
@@ -941,6 +913,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             repoRevisions={Object.fromEntries(
               newest.repo_specs.map((spec) => [spec.repo, spec.branch]),
             )}
+            onTurnsNeeded={initialOutline ? handleTurnsNeeded : undefined}
           />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the
               moment the first step streams in (Thinking block takes over).

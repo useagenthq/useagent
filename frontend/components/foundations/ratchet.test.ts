@@ -146,7 +146,7 @@ const FRONTEND_SIZE_BASELINE: Record<string, number> = {
   "app/agent/artifacts/[id]/artifact-editor-surfaces.tsx": 1083,
   "components/agent-ui/rich-approval-card.tsx": 880,
   "components/chat/composer.tsx": 808,
-  "components/chat/session-view.tsx": 1239,
+  "components/chat/session-view.tsx": 1214,
   "components/chat/types.ts": 801,
 };
 

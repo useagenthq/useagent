@@ -1,4 +1,9 @@
-import type { ApiRun, ApiRunSummary, ApiStep } from "@useagent/agent-client/wire";
+import type {
+  ApiRun,
+  ApiRunSummary,
+  ApiStep,
+  ApiThreadOutlineTurn,
+} from "@useagent/agent-client/wire";
 import {
   and,
   desc,
@@ -10,6 +15,7 @@ import {
   lt,
   ne,
   or,
+  sql,
 } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import {
@@ -31,7 +37,12 @@ import { publicRunCondition } from "./visibility";
 // truth; packages never import apps). Re-exported so the many backend modules that
 // read them from `../runs/repo` keep one import path; the serializers below
 // `satisfies` them, so any field or optionality drift is a compile error here.
-export type { ApiRun, ApiRunSummary, ApiStep } from "@useagent/agent-client/wire";
+export type {
+  ApiRun,
+  ApiRunSummary,
+  ApiStep,
+  ApiThreadOutlineTurn,
+} from "@useagent/agent-client/wire";
 
 // ---------------------------------------------------------------------------
 // API serialization — preserve the exact snake_case shapes the frontend reads
@@ -514,6 +525,71 @@ export async function getThreadForRun(
     .select()
     .from(runs)
     .where(and(eq(runs.threadId, run.threadId), eq(runs.orgId, orgId)))
+    .orderBy(runs.createdAt, runs.id);
+  return withSteps(runRows);
+}
+
+/** Per-turn SKELETON of the thread `id` belongs to, oldest→newest: run id,
+ * status, step count, has-summary flag, created_at - no step bodies, no JSON
+ * payloads (an index-friendly read: `idx_runs_org_thread_created` for the runs,
+ * a correlated count over `idx_steps_run` per turn). Powers windowed initial
+ * loading. Org-scoped exactly like getThreadForRun: a cross-org (or missing)
+ * id resolves to null (→ 404). */
+export async function getThreadOutlineForRun(
+  orgId: string,
+  id: string,
+): Promise<ApiThreadOutlineTurn[] | null> {
+  const run = await getRunForOrg(orgId, id);
+  if (!run) return null;
+  const rows = await db
+    .select({
+      id: runs.id,
+      status: runs.status,
+      hasSummary: sql<boolean>`${runs.summary} is not null`,
+      // Explicitly table-qualified: drizzle renders interpolated columns
+      // UNQUALIFIED inside sql`` fragments, and the inner scope would resolve
+      // a bare "id" to steps.id (counting nothing).
+      stepCount: sql<number>`(select count(*)::int from steps where steps.run_id = runs.id)`,
+      createdAt: runs.createdAt,
+    })
+    .from(runs)
+    .where(and(eq(runs.threadId, run.threadId), eq(runs.orgId, orgId)))
+    .orderBy(runs.createdAt, runs.id);
+  return rows.map(
+    (row) =>
+      ({
+        id: row.id,
+        status: row.status,
+        step_count: row.stepCount,
+        has_summary: row.hasSummary,
+        created_at: row.createdAt.toISOString(),
+      }) satisfies ApiThreadOutlineTurn,
+  );
+}
+
+/** The REQUESTED runs of the thread `id` belongs to, oldest→newest, with full
+ * steps - the on-demand island fetch behind windowed initial loading. Reuses
+ * the exact getThreadForRun serialization (one wire shape). Ids outside the
+ * thread (or the org) are silently dropped, never leaked; a cross-org (or
+ * missing) `id` resolves to null (→ 404). */
+export async function getThreadRunsByIds(
+  orgId: string,
+  id: string,
+  ids: readonly string[],
+): Promise<ApiRun[] | null> {
+  const run = await getRunForOrg(orgId, id);
+  if (!run) return null;
+  if (ids.length === 0) return [];
+  const runRows = await db
+    .select()
+    .from(runs)
+    .where(
+      and(
+        eq(runs.threadId, run.threadId),
+        eq(runs.orgId, orgId),
+        inArray(runs.id, [...ids]),
+      ),
+    )
     .orderBy(runs.createdAt, runs.id);
   return withSteps(runRows);
 }
