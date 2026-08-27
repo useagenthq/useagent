@@ -15,7 +15,9 @@ equivalent), bun, Node, Docker, PostgreSQL 16 with pgvector, and Caddy.
    then run [`deploy-app.sh`](deploy-app.sh) from your machine:
 
    ```bash
-   SERVER_IP=<host-ip> PG_PASSWORD=... PG_GATEWAY_PASSWORD=... OPENROUTER_API_KEY=... \
+   SERVER_IP=<host-ip> PUBLIC_ORIGIN=https://useagent.example.com \
+     PG_PASSWORD=... PG_GATEWAY_PASSWORD=... \
+     BETTER_AUTH_SECRET=... SECRETS_ENCRYPTION_KEY=... OPENROUTER_API_KEY=... \
      ./deploy-app.sh /path/to/useagent/repo
    ```
 
@@ -26,7 +28,9 @@ equivalent), bun, Node, Docker, PostgreSQL 16 with pgvector, and Caddy.
    requirement - port the ~200 lines of Terraform to your provider of choice
    and everything downstream is identical.
 
-Either path yields a signed-in web UI with model-backed chat. Full production
+Either path yields the production web UI and model-backed chat for provisioned
+users. The public UI does not expose self-service signup; operators must
+provision access through their chosen identity/admin lane. Full production
 operation (release gates, backups, systemd units) is documented in
 The provisioning scripts (host setup, systemd units, sandbox image) -
 those scripts address the host by SSH and are provider-agnostic.
@@ -50,3 +54,19 @@ the fleet on your own metal.
 Cloudflare DNS boundary for the hosted deployment and is not needed for
 self-hosting; point any DNS record at your host and set the domain in the
 backend environment.
+
+`deploy-app.sh` requires a public HTTPS origin and configures Caddy to obtain
+and renew its TLS certificate. Point the domain at the server before deploying
+and allow inbound ports 80 and 443. Generate `BETTER_AUTH_SECRET` and
+`SECRETS_ENCRYPTION_KEY` once (at least 32 characters each), store them safely,
+and reuse the same values for every redeploy. Rotating either key is a separate
+operator procedure; silently regenerating them invalidates sessions or makes
+stored org secrets unreadable.
+
+For example, generate each application secret separately with
+`openssl rand -hex 32`. Use URL-safe database passwords because they are placed
+in PostgreSQL connection URLs.
+
+Production is the default (`USEAGENT_DEV_MODE=false`). A disposable development
+deployment may opt in explicitly with `USEAGENT_DEV_MODE=true`; never expose that
+mode to untrusted users.

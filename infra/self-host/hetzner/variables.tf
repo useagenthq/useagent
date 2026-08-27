@@ -1,6 +1,6 @@
 variable "server_name" {
   type        = string
-  default     = "skynet-repro"
+  default     = "useagent-self-host"
   description = "Name/label for the server and its firewall."
 }
 
@@ -36,14 +36,22 @@ variable "create_ssh_key" {
 
 variable "ssh_key_name" {
   type        = string
-  default     = "skynet-repro-key"
+  default     = "useagent-self-host-key"
   description = "Name of the SSH key: created under this name, or looked up by it when create_ssh_key = false."
 }
 
 variable "allowed_ssh_cidrs" {
   type        = list(string)
-  default     = ["0.0.0.0/0", "::/0"]
-  description = "Source CIDRs allowed to reach SSH. Tighten to your IP for anything long-lived."
+  default     = []
+  description = "Explicit source CIDRs allowed to reach SSH, normally your public IP with /32 (IPv4) or /128 (IPv6)."
+
+  validation {
+    condition = length(var.allowed_ssh_cidrs) > 0 && alltrue([
+      for cidr in var.allowed_ssh_cidrs :
+      can(cidrnetmask(cidr)) && cidr != "0.0.0.0/0" && cidr != "::/0"
+    ])
+    error_message = "allowed_ssh_cidrs must contain valid restricted CIDRs; world-open /0 SSH access is forbidden."
+  }
 }
 
 variable "postgres_password" {

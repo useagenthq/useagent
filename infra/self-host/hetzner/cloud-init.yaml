@@ -18,10 +18,10 @@ packages:
 
 write_files:
   - path: /opt/useagent-provision/provision.sh
-    permissions: "0755"
+    permissions: "0700"
     content: |
       #!/usr/bin/env bash
-      set -euxo pipefail
+      set -euo pipefail
       export DEBIAN_FRONTEND=noninteractive
 
       # Swap gives the Next.js build headroom on an 8 GB box.
@@ -71,6 +71,7 @@ write_files:
       install -d -o useagent -g useagent /opt/useagent
 
       touch /opt/useagent-provision/READY
+      rm -f /opt/useagent-provision/provision.sh
 
 runcmd:
-  - bash /opt/useagent-provision/provision.sh 2>&1 | tee /var/log/skynet-provision.log
+  - bash /opt/useagent-provision/provision.sh
