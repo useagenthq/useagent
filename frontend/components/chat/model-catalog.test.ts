@@ -65,7 +65,7 @@ describe("engine model catalog", () => {
     }
     expect(MODELS.some((model) => isFreeModel(model.value))).toBe(false);
     const opencode = selectableModelsForEngine("opencode").map((m) => m.value);
-    expect(opencode).toContain("nvidia/nemotron-3-ultra-550b-a55b:free");
+    expect(opencode).not.toContain("nvidia/nemotron-3-ultra-550b-a55b:free");
     // Appended after the paid catalog so the default (first entry) stays paid.
     expect(opencode.slice(MODELS.length)).toEqual(FREE_MODELS.map((m) => m.value));
     for (const engine of ["pi", "codex", "chat"] as const) {

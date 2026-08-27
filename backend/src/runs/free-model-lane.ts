@@ -26,7 +26,6 @@ const MIN_CONTEXT_LENGTH = 65_536;
 // or immediate free-tier throttling, so unproven new entries never auto-ship.
 export const HOSTED_VERIFIED_FREE_MODELS = [
   "minimax/minimax-m3:free",
-  "nvidia/nemotron-3-ultra-550b-a55b:free",
   "dots-studio/dots-3-note-preview:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
 ] as const;
@@ -35,7 +34,6 @@ const HOSTED_VERIFIED_FREE_MODEL_SET = new Set<string>(HOSTED_VERIFIED_FREE_MODE
 /** Curated fallback lane (verified tool-capable free models): the boot state
  * and the safety net whenever the live catalog is unreachable or garbage. */
 export const FREE_MODEL_LANE_SEED = [
-  "nvidia/nemotron-3-ultra-550b-a55b:free",
   "minimax/minimax-m3:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
   "dots-studio/dots-3-note-preview:free",
