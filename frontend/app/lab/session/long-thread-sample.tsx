@@ -210,7 +210,7 @@ export function LongThreadSample() {
       <div
         ref={surfaceRef}
         data-testid="long-thread-surface"
-        className="h-[76vh] overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default"
+        className="flex h-[76vh] flex-col overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default"
       >
         <Conversation
           turns={longThreadTurns.slice(0, turnCount)}
