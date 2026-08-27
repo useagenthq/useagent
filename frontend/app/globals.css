@@ -461,18 +461,18 @@ html {
   .dark {
     --brand-orbit: 212.06 100% 60%; /* #3392ff BoardUI accent (blue-400) */
     /* -------------------------------------------------------------------
-     * Midnight - Tokyo Night dark theme (the product default dark ramp).
+     * Midnight - achromatic graphite (the product default dark ramp).
      *
      * The default dark ramp: pure achromatic neutrals measured from the
      * upstream BoardUI dark system (2026-08-28; supersedes the earlier
-     * Tokyo Night indigo - surfaces carry zero hue, the interactive accent
+     * indigo surface ramp - surfaces carry zero hue, the interactive accent
      * alone stays blue): page backdrop #121212, panel/card/composer #262626
      * (bg-white-0), chrome/inset #171717 (bg-soft-200/bg-weak-50), raised/
      * hover #2e2e2e (bg-sub-300), text #fafafa (text-strong-950), muted
      * #a1a1a1 (text-sub-600), hairline #333333 (stroke-soft-200). The interactive accent stays the
      * STANDARD blue ramp (below) - personality lives in surfaces + text, per
      * the harbor decision (2026-08-23); the orange/red/green/purple/sky/pink/
-     * teal primitives already carry Tokyo Night status/syntax hues. Components
+     * teal primitives preserve the established status/syntax hues. Components
      * consume semantic bg/text/stroke/status tokens, never page-specific
      * colors. Hex in comments is the sRGB value each HSL triple encodes; keep
      * in sync with the .theme-swatch-dark preview and the un-layered `.dark`
@@ -668,7 +668,7 @@ html {
     /* -------------------------------------------------------------------
      * Aura - violet dark theme.
      *
-     * A dark-scheme sibling of the Tokyo Night ("Midnight") ramp, tuned to a
+     * A dark-scheme sibling of the default graphite ("Midnight") ramp, tuned to a
      * vivid-violet accent over a violet-tinted neutral canvas. Values are
      * translated from an OKLCH reference palette into the SAME semantic token
      * slots the `.dark` block uses (canvas -> bg-white-0, raised -> bg-sub-300,
@@ -871,7 +871,7 @@ html {
      * Harbor - deep blue-slate dark theme.
      * (adapted from a "Midnight Harbor" OKLCH reference palette)
      *
-     * A dark-scheme sibling of the Tokyo Night ("Midnight") and Aura ramps,
+     * A dark-scheme sibling of the default graphite ("Midnight") and Aura ramps,
      * tuned to a soft-periwinkle accent over a layered graphite canvas (lifted
      * off the original near-black navy, 2026-08-27). Values fill the SAME
      * semantic token slots the `.dark`/`.aura` blocks use (canvas ->
@@ -1925,12 +1925,11 @@ html {
  *
  * `.dark` (Midnight) is included here too, but for a DIFFERENT reason than the
  * standalone themes: `.dark` DOES inherit theme.css's `.dark` semantic block,
- * but that block maps every surface/text/border to the FLAT BoardUI neutral
- * ramp (--color-neutral-925 #121212 / -900 #171717 / -800 #262626 ...), which
- * reads brownish-gray. The block below re-points ONLY the neutral-driven
- * surface/text/border/foreground slots at Midnight's Tokyo Night AlignUI ramp
- * (the layered `.dark` block in @layer base), so the canvas/chrome/cards/text
- * become true Tokyo Night blue-purple. Slots it does NOT declare (interactive
+ * whose vendor surface roles are intentionally flat. The block below re-points
+ * ONLY the neutral-driven surface/text/border/foreground slots at Midnight's
+ * achromatic AlignUI ramp (the layered `.dark` block in @layer base), so the
+ * canvas/chrome/cards/text follow the product's graphite elevation ladder.
+ * Slots it does NOT declare (interactive
  * accent, status discs, badges, calendar chips, error/danger) fall through to
  * theme.css's `.dark`, keeping the accent the STANDARD blue ramp and status
  * colors standard - personality lives in surfaces + text only (harbor

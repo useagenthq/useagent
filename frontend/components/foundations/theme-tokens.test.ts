@@ -67,8 +67,11 @@ const lightTokens = parseTokens(extractBlock(":root,"));
 const darkTokens = parseTokens(extractBlock(".dark {"));
 
 describe("shared theme tokens", () => {
-  test("light theme anchors the legacy semantic vars on the BoardUI gray/accent ramp", () => {
+  test("light theme maps the warm neutral ramp through the legacy semantic tokens", () => {
     expect(lightTokens["--neutral-950"]).toBe("0 0% 3.92%");
+    expect(lightTokens["--neutral-200"]).toBe("40 12.5% 90.59%");
+    expect(lightTokens["--neutral-100"]).toBe("45 16.67% 95.29%");
+    expect(lightTokens["--neutral-50"]).toBe("45 28.57% 97.25%");
     expect(lightTokens["--neutral-0"]).toBe("0 0% 100%");
     expect(lightTokens["--blue-500"]).toBe("216.23 100% 58.43%");
 
@@ -80,9 +83,14 @@ describe("shared theme tokens", () => {
     expect(lightTokens["--stroke-soft-200"]).toBe("var(--neutral-200)");
     expect(lightTokens["--success-dark"]).toBe("var(--green-950)");
     expect(lightTokens["--feature-base"]).toBe("var(--purple-500)");
+    expect(resolveToken(lightTokens, "--bg-weak-50")).toBe("45 16.67% 95.29%");
+    expect(resolveToken(lightTokens, "--stroke-soft-200")).toBe("40 12.5% 90.59%");
+
+    expect(contrast("#0a0a0a", "#faf9f6")).toBeGreaterThanOrEqual(7);
+    expect(contrast("#737373", "#faf9f6")).toBeGreaterThanOrEqual(4.5);
   });
 
-  test("dark theme maps the Midnight ramp through the legacy semantic tokens", () => {
+  test("dark theme maps the achromatic graphite ramp through the legacy semantic tokens", () => {
     // The measured achromatic graphite ladder (canvas #121212, panel #262626)
     // - matches the reference neutral ramp, zero hue tint in surfaces.
     expect(resolveToken(darkTokens, "--bg-white-0")).toBe("0 0% 14.9%");
@@ -102,19 +110,16 @@ describe("shared theme tokens", () => {
     expect(resolveToken(darkTokens, "--success-dark")).toBe("88.8 50.51% 61.18%");
     expect(resolveToken(darkTokens, "--error-dark")).toBe("348.84 88.97% 71.57%");
 
-    // WCAG AA on the lifted surfaces: primary and muted text against the
-    // canvas (#1f212d) and raised (#252838) steps.
-    expect(contrast("#cdd5f7", "#1f212d")).toBeGreaterThanOrEqual(7);
-    expect(contrast("#8a8fb0", "#1f212d")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#8a8fb0", "#252838")).toBeGreaterThanOrEqual(4.5);
+    // WCAG AA on the actual graphite surfaces: primary and muted text against
+    // the page backdrop (#121212), panel (#262626), and raised (#2e2e2e) steps.
+    expect(contrast("#fafafa", "#121212")).toBeGreaterThanOrEqual(7);
+    expect(contrast("#fafafa", "#262626")).toBeGreaterThanOrEqual(7);
+    expect(contrast("#a1a1a1", "#121212")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#a1a1a1", "#262626")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#a1a1a1", "#2e2e2e")).toBeGreaterThanOrEqual(4.5);
   });
 
-  test("dark theme preserves readable foreground contrast on BoardUI surfaces", () => {
-    // Primary text (#fafafa) on the dark canvas (#121212).
-    expect(contrast("#fafafa", "#121212")).toBeGreaterThanOrEqual(7);
-    // Secondary text (#737373) on the dark canvas: BoardUI's dark text/secondary
-    // sits at ~3.9:1, above the large-text floor but below AA body text.
-    expect(contrast("#737373", "#121212")).toBeGreaterThanOrEqual(3);
+  test("primary CTA label preserves readable contrast", () => {
     // White label on the primary CTA gradient's darker stop (blue-600 #155dfc).
     expect(contrast("#ffffff", "#155dfc")).toBeGreaterThanOrEqual(4.5);
   });
