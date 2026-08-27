@@ -178,7 +178,7 @@ html {
   .theme-light {
     --brand-orbit: 212.06 100% 60%; /* #3392ff BoardUI accent (blue-400) */
     /* BoardUI neutral ramp (pure grays; Tailwind v4 neutrals with BoardUI's
-       #f7f7f7 / #ebebeb overrides and #0a0a0a at the 950 anchor). Unconverted
+       warm #f5f4f1 / #eae8e4 overrides and #0a0a0a at the 950 anchor). Unconverted
        AlignUI surfaces keep their utility names but resolve to these values. */
     --neutral-950: 0 0% 3.92%; /* #0a0a0a */
     --neutral-900: 0 0% 9.02%; /* #171717 */
@@ -188,9 +188,9 @@ html {
     --neutral-500: 0 0% 45.1%; /* #737373 */
     --neutral-400: 0 0% 63.14%; /* #a1a1a1 */
     --neutral-300: 0 0% 83.14%; /* #d4d4d4 */
-    --neutral-200: 0 0% 92.16%; /* #ebebeb */
-    --neutral-100: 0 0% 96.86%; /* #f7f7f7 */
-    --neutral-50: 0 0% 98.04%; /* #fafafa */
+    --neutral-200: 40 12.5% 90.59%; /* #eae8e4 - warm hairline (matches theme.css) */
+    --neutral-100: 45 16.67% 95.29%; /* #f5f4f1 - warm panel fill (matches theme.css) */
+    --neutral-50: 45 28.57% 97.25%; /* #faf9f6 - warm canvas (matches theme.css) */
     --neutral-0: 0 0% 100%;
 
     --neutral-alpha-24: 0 0% 63.14% / 24%;
@@ -391,7 +391,7 @@ html {
     --bg-surface-800: var(--neutral-800);
     --bg-sub-300: var(--neutral-300);
     --bg-soft-200: var(--neutral-200);
-    /* neutral-100, not -50: BoardUI's background/secondary (#f7f7f7 canvas). */
+    /* neutral-100, not -50: BoardUI's background/secondary (#f5f4f1 panel). */
     --bg-weak-50: var(--neutral-100);
     --bg-white-0: var(--neutral-0);
 
@@ -3287,7 +3287,7 @@ html {
   background-image: linear-gradient(135deg, var(--swatch-canvas) 0 50%, var(--swatch-accent) 50% 100%);
 }
 .theme-swatch-light {
-  --swatch-canvas: #f7f7f7;
+  --swatch-canvas: #f5f4f1;
   --swatch-accent: #3392ff;
 }
 .theme-swatch-dark {
