@@ -47,7 +47,6 @@ describe("deriveFreeModelLane (catalog filter)", () => {
         entry("nvidia/nemotron-3-ultra-550b-a55b:free", 1_000_000),
         entry("dots-studio/dots-3-note-preview:free", 512_000),
         entry("nvidia/nemotron-3-super-120b-a12b:free", 262_144),
-        entry("inclusionai/ling-3.0-flash-fin:free", 262_144),
         entry("vendor/unproven:free", 2_000_000),
         entry("vendor/paid-model", 200_000), // not :free
         entry("vendor/no-tools:free", 200_000, ["temperature"]), // no tool calls
@@ -63,7 +62,6 @@ describe("deriveFreeModelLane (catalog filter)", () => {
       "nvidia/nemotron-3-ultra-550b-a55b:free",
       "dots-studio/dots-3-note-preview:free",
       "nvidia/nemotron-3-super-120b-a12b:free",
-      "inclusionai/ling-3.0-flash-fin:free",
     ]);
   });
 
