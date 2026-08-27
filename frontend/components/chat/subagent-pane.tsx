@@ -17,7 +17,6 @@ import {
   type ApiRun,
   type EngineId,
   type RunStatus,
-  toThread,
 } from "@/components/chat/types";
 import { deriveSubagents } from "@/components/chat/subagents";
 
@@ -333,47 +332,26 @@ function SubagentChip({ run }: { run: ThreadRun }) {
 }
 
 /**
- * A strip of subagent chips for a session. Polls `GET /api/runs/:id?thread=1`
- * for the thread rooted at `rootId` and renders every related run that is *not*
- * already shown inline in the conversation (`excludeIds`) as a clickable chip —
- * i.e. genuine fan-out subagents beyond the main reply line. Clicking a chip
- * opens that run in the pane.
+ * A strip of durable gateway-child chips for a session. It derives from the
+ * `thread` runs the page already owns: the thread SSE stream keeps that set
+ * current, so this surface never polls the full thread independently.
  *
- * The linear conversation already renders its own thread turns, so excluding
- * them keeps this strip free of duplicates. It renders nothing until threading
- * lands (no `thread` array → nothing extra), so it is safe to mount today.
+ * `parent_run_id` alone is deliberately insufficient because ordinary replies
+ * use it too. Only rows explicitly stamped `child_session` are gateway children.
  */
 export function SubagentChips({
   rootId,
+  thread,
   excludeIds = [],
 }: {
   rootId: string;
+  thread: readonly ThreadRun[];
   excludeIds?: string[];
 }) {
-  const [thread, setThread] = useState<ThreadRun[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await backendFetch(`/api/runs/${rootId}?thread=1`);
-        if (!res.ok) return;
-        const data = toThread(await res.json());
-        if (!cancelled) setThread(data);
-      } catch {
-        // threading not live yet — leave the strip empty
-      }
-    };
-    void load();
-    const timer = setInterval(load, 8000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [rootId]);
-
   const exclude = new Set([rootId, ...excludeIds]);
-  const subs = thread.filter((r) => !exclude.has(r.id));
+  const subs = thread.filter(
+    (run) => run.child_session && run.parent_run_id !== null && !exclude.has(run.id),
+  );
   if (subs.length === 0) return null;
 
   return (
