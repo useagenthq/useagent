@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   mergeEngineModelCatalog,
+  parseEngineReadinessCatalog,
   requestModelCatalogRefresh,
 } from "@/components/chat/engine-picker";
 
@@ -18,6 +19,27 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 describe("requestModelCatalogRefresh", () => {
+  test("preserves configured-but-unready engine diagnostics", () => {
+    expect(parseEngineReadinessCatalog({
+      claude: {
+        ready: false,
+        reason: "provider_unhealthy",
+        provider: "anthropic",
+        providerHealth: "insufficient_credit",
+        message: "Add credits in Settings, then retry.",
+      },
+      bogus: { ready: false, reason: "provider_unhealthy" },
+    })).toEqual({
+      claude: {
+        ready: false,
+        reason: "provider_unhealthy",
+        provider: "anthropic",
+        providerHealth: "insufficient_credit",
+        message: "Add credits in Settings, then retry.",
+      },
+    });
+  });
+
   test("merges a rotated lane without invalidating an already selected model", () => {
     expect(
       mergeEngineModelCatalog(

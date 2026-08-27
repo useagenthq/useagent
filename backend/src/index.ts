@@ -80,7 +80,13 @@ import { providerConnectionsRoutes } from "./provider-connections/routes";
 import { integrationRoutes } from "./integrations/routes";
 import { codexSubscriptionRelayRoutes } from "./provider-connections/codex-subscription-relay";
 import { wikiGenRoutes } from "./wiki-gen/routes";
-import { engineModelsForReadyEngines, readyUserFacingEngines } from "./runs/engine-readiness";
+import {
+  configuredEngineReadiness,
+  configuredUserFacingEngines,
+  engineModelsForConfiguredEngines,
+  engineModelsForReadyEngines,
+  readyUserFacingEngines,
+} from "./runs/engine-readiness";
 import {
   forceRefreshFreeModelLane,
   freeModelLane,
@@ -261,18 +267,23 @@ app.get("/api/config", (c) => {
   // instantly; a fresh catalog result lands for subsequent requests. The
   // refresh never rejects, so it can never fail /api/config.
   void refreshFreeModelLane();
-  // Which agent engines are ACTUALLY selectable. This is stricter than the raw
-  // ENABLED_ENGINES flag: optional engines must also be readiness-proven, and an
-  // explicit provider health failure removes the engine from the public picker.
-  // mock/daytona/claude-sdk/acp remain internal ids.
+  // Configured engines stay discoverable even while a provider needs attention;
+  // the additive readiness map explains why without weakening the fail-closed
+  // POST /api/runs dispatch gate. mock/daytona/claude-sdk/acp remain internal.
   const engines = readyUserFacingEngines();
+  const configuredEngines = configuredUserFacingEngines();
+  const engineReadiness = configuredEngineReadiness();
   const models = engineModelsForReadyEngines();
+  const configuredModels = engineModelsForConfiguredEngines();
   return c.json({
     auth: { google: googleAuthEnabled(), emailPassword: true },
     allowDevOrg: allowDevOrg(),
     release: currentReleaseFingerprint(),
     engines,
+    configuredEngines,
+    engineReadiness,
     models,
+    configuredModels,
     sandbox: { provider: sandboxProviderKind() },
     capabilities: {
       github: githubConfigured(),
@@ -306,6 +317,7 @@ app.post("/api/config/models/refresh", async (c) => {
       reason: outcome.reason,
       free: freeModelLane(),
       models: engineModelsForReadyEngines(),
+      configuredModels: engineModelsForConfiguredEngines(),
     }, 502);
   }
   return c.json({
@@ -313,6 +325,7 @@ app.post("/api/config/models/refresh", async (c) => {
     stale: false,
     free: freeModelLane(),
     models: engineModelsForReadyEngines(),
+    configuredModels: engineModelsForConfiguredEngines(),
   });
 });
 

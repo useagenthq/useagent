@@ -35,3 +35,13 @@ export async function createRun(body: unknown, idempotencyKey = crypto.randomUUI
   await new Promise((resolve) => setTimeout(resolve, 100));
   return backendFetch("/api/runs", init);
 }
+
+export async function runCreateFailureMessage(
+  response: Response,
+  fallback = "Couldn't start the thread. Check Settings and try again.",
+): Promise<string> {
+  const payload = (await response.json().catch(() => null)) as { message?: unknown } | null;
+  return typeof payload?.message === "string" && payload.message.trim()
+    ? payload.message.trim()
+    : fallback;
+}

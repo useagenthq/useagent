@@ -216,7 +216,7 @@ describe("runs", () => {
     expect(list.body.runs[0]).not.toHaveProperty("engine_session_id");
   });
 
-  test("user-facing run lists hide internal parity traffic without deleting it", async () => {
+  test("user-facing run lists hide every internal origin without deleting it", async () => {
     const session = await createOrgSession("summary-internal-hidden");
     const publicId = crypto.randomUUID();
     const internalId = crypto.randomUUID();
@@ -240,7 +240,7 @@ describe("runs", () => {
         engine: "mock",
         status: "completed",
         threadId: internalId,
-        origin: "internal:release-parity",
+        origin: "internal:historical-probe",
       },
     ]);
 
