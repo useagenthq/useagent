@@ -161,6 +161,10 @@ describe("engine readiness advertisement", () => {
       "moonshotai/kimi-k3",
       "deepseek/deepseek-v4-flash",
       "google/gemini-3.7-flash",
+      "nvidia/nemotron-3.5-lightning:free",
+      "thinkingmachines/inkling:free",
+      "poolside/laguna-s-2.1:free",
+      "inclusionai/ling-3.0-flash-fin:free",
     ]);
   });
 

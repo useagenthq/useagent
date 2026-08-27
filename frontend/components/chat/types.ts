@@ -81,108 +81,21 @@ export function engineLabel(id: EngineId): string {
   return ENGINES.find((e) => e.id === id)?.label ?? id;
 }
 
-/** The curated model set (single source of truth for every picker). Bare ids →
- * Anthropic direct; provider/model ids → OpenRouter. */
-export const MODELS: { value: string; label: string; tint: string }[] = [
-  { value: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna · Fast", tint: "text-sky-500" },
-  {
-    value: "moonshotai/kimi-k3",
-    label: "Kimi K3",
-    tint: "text-fuchsia-500",
-  },
-  {
-    value: "deepseek/deepseek-v4-flash",
-    label: "DeepSeek V4 Flash · Wafer Fast",
-    tint: "text-cyan-500",
-  },
-  {
-    value: "google/gemini-3.7-flash",
-    label: "Gemini 3.7 Flash · Fast",
-    tint: "text-blue-500",
-  },
-  { value: "claude-opus-5", label: "Opus 5", tint: "text-orange-500" },
-  { value: "claude-sonnet-5", label: "Sonnet 5", tint: "text-blue-500" },
-  { value: "claude-fable-5", label: "Fable 5", tint: "text-purple-500" },
-  { value: "claude-haiku-4-5", label: "Haiku 4.5", tint: "text-green-500" },
-  { value: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol", tint: "text-teal-500" },
-  { value: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
-];
-
-/** Codex model ids are the backend-policy ids accepted by the Codex runner. */
-export const CODEX_MODELS: { value: string; label: string; tint: string }[] = [
-  { value: "gpt-5.6-luna", label: "GPT-5.6 Luna · Fast", tint: "text-sky-500" },
-  { value: "gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
-  { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", tint: "text-teal-500" },
-];
-
-export const CHAT_MODELS: { value: string; label: string; tint: string }[] = [
-  {
-    value: "anthropic/claude-sonnet-5",
-    label: "Claude Sonnet 5",
-    tint: "text-blue-500",
-  },
-  {
-    value: "anthropic/claude-opus-4.8",
-    label: "Claude Opus 4.8",
-    tint: "text-orange-500",
-  },
-  {
-    value: "anthropic/claude-haiku-4.5",
-    label: "Claude Haiku 4.5",
-    tint: "text-green-500",
-  },
-  { value: "z-ai/glm-5.2", label: "GLM 5.2", tint: "text-purple-500" },
-];
-
-export type ModelOption = { value: string; label: string; tint: string };
-
-export function selectableModelsForEngine(engine: EngineId): ModelOption[] {
-  const normalized = normalizeEngine(engine);
-  if (normalized === "opencode") return MODELS;
-  if (normalized === "pi") return MODELS;
-  if (normalized === "codex") return CODEX_MODELS;
-  if (normalized === "chat") return CHAT_MODELS;
-  return [];
-}
-
-/**
- * Pre-session model-selection capability. The durable `session.started`
- * capability map remains authoritative once it arrives; this catalog-backed
- * fallback keeps the picker usable while a new native session is booting.
- */
-export function supportsPreSessionModelSelection(engine: EngineId): boolean {
-  return selectableModelsForEngine(engine).length > 0;
-}
-
-export function modelOptionsForEngine(
-  engine: EngineId,
-  allowedModelIds?: readonly string[],
-): ModelOption[] {
-  const known = selectableModelsForEngine(engine);
-  if (known.length === 0) return [];
-  if (!allowedModelIds) return known;
-  return allowedModelIds.map(
-    (value) =>
-      known.find((model) => model.value === value) ?? {
-        value,
-        label: value,
-        tint: "text-text-secondary",
-      },
-  );
-}
-
-export function modelLabel(value: string, engine: EngineId = "opencode"): string {
-  return selectableModelsForEngine(engine).find((m) => m.value === value)?.label ?? value;
-}
-
-/** Fold a legacy engine id into its current sandbox equivalent (the backend
- * aliases them the same way), so old threads pick up the modern picker entry
- * instead of surfacing a raw legacy id. */
-export function normalizeEngine(id: EngineId): EngineId {
-  if (id === "claude-sdk") return "claude";
-  if (id === "daytona") return "opencode";
-  return id;
-}
+// The model catalog (paid per-engine sets + the Free lane) lives in
+// ./model-catalog; re-exported here so this module's many consumers keep one path.
+export {
+  CHAT_MODELS,
+  CODEX_MODELS,
+  FREE_MODELS,
+  isFreeModel,
+  MODELS,
+  type ModelOption,
+  modelLabel,
+  modelOptionsForEngine,
+  normalizeEngine,
+  selectableModelsForEngine,
+  supportsPreSessionModelSelection,
+} from "./model-catalog";
 
 /** A run is "live" while the backend worker is still producing steps. */
 export function isLiveStatus(status: RunStatus): boolean {
