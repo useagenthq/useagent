@@ -31,13 +31,13 @@ export function Sidebar({
   footer?: ReactNode;
 }) {
   return (
-    <div className="h-full w-full p-3">
+    <div className="h-full w-full p-2">
       <aside
         aria-label={ariaLabel}
         className="flex h-full w-full flex-col overflow-hidden rounded-3xl border border-border-button-white bg-background-secondary-default shadow-sidebar"
       >
         {header}
-        <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1.5">{children}</nav>
+        <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1.5">{children}</nav>
         {footer}
       </aside>
     </div>
@@ -45,7 +45,7 @@ export function Sidebar({
 }
 
 export function SidebarSectionLabel({ children }: { children: ReactNode }) {
-  return <p className="text-mono-label px-2.5 pb-1 pt-5 text-text-tertiary">{children}</p>;
+  return <p className="text-mono-label px-2.5 pb-1 pt-3 text-text-tertiary">{children}</p>;
 }
 
 export type NavIconTone = "blue" | "purple" | "green" | "orange" | "primary";
@@ -87,22 +87,24 @@ export function SidebarNavItem({
       href={href}
       aria-current={active ? "page" : undefined}
       className={cx(
-        "flex items-center gap-2.5 rounded-2lg px-2.5 py-2 text-body-2-medium transition-colors",
+        "flex items-center gap-2 rounded-2lg px-2.5 py-1.5 text-body-medium transition-colors",
         active
           ? "bg-linear-to-b from-accent-500 to-accent-600 text-white shadow-nav-selected"
           : "text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary",
       )}
     >
-      {leading ??
-        (Icon ? (
-          <Icon
-            className={cx(
-              "size-3.5 shrink-0",
-              active ? "text-white" : tone ? NAV_ICON_TONE[tone] : "text-foreground-icon-tertiary",
-            )}
-            aria-hidden
-          />
-        ) : null)}
+      <span className="flex w-4 shrink-0 items-center justify-center">
+        {leading ??
+          (Icon ? (
+            <Icon
+              className={cx(
+                "size-3.5 shrink-0",
+                active ? "text-white" : tone ? NAV_ICON_TONE[tone] : "text-foreground-icon-tertiary",
+              )}
+              aria-hidden
+            />
+          ) : null)}
+      </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {trailing}
     </Link>

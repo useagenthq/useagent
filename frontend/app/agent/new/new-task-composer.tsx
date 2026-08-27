@@ -409,7 +409,7 @@ export function NewTaskComposer({
           rim light carries the working state: it paints the card surface itself,
           so the PromptInput goes transparent (bg/border/shadow) for that window
           and hands the surface back when idle. Geometry is untouched. */}
-      <ComposerLoader active={submitting} radius={16} className="relative z-10">
+      <ComposerLoader active={submitting} radius={20} className="relative z-10">
         <PromptInput
           value={prompt}
           onValueChange={(value) => {
@@ -421,7 +421,11 @@ export function NewTaskComposer({
           maxHeight={260}
           disabled={submitting}
           className={cx(
-            "rounded-[16px] p-2 shadow-card transition-colors",
+            // Idle and focused, the composer matches the rest of the UI
+            // chrome; focus lifts the border one step (never a boxed focus
+            // ring). While submitting, the ComposerLoader rim light is the
+            // animated gradient ring, so the card surface goes transparent.
+            "rounded-20 p-2 shadow-card transition-colors focus-within:border-border-button-hover",
             submitting && "border-transparent bg-transparent opacity-100 shadow-none",
           )}
         >
@@ -503,7 +507,7 @@ export function NewTaskComposer({
                   <div
                     role="menu"
                     aria-label="Add context"
-                    className="absolute top-full left-0 z-30 mt-2 w-72 max-w-[calc(100vw-2rem)] origin-top-left rounded-[14px] border border-border-button-default bg-background-primary-default p-2 shadow-card"
+                    className="absolute top-full left-0 z-30 mt-2 w-72 max-w-[calc(100vw-2rem)] origin-top-left rounded-[14px] border border-border-button-default bg-background-primary-default p-1.5 shadow-card"
                   >
                     <AddFilesRow
                       inline
@@ -597,7 +601,7 @@ export function NewTaskComposer({
           are chosen, their branch pickers. Wrapped in a disabled fieldset so it
           goes inert during submit, exactly like the in-card controls. */}
       <fieldset disabled={submitting} className="contents">
-        <div className="relative z-0 mx-2.5 -mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-b-[12px] border-x border-b border-border-button-default bg-background-tertiary-default px-3 pt-3.5 pb-1.5">
+        <div className="relative z-0 mx-2.5 -mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-b-[16px] border-x border-b border-border-button-default bg-background-tertiary-default px-3 pt-3.5 pb-1.5">
           {/* Project chooser: the same repositories selector as the "+" menu,
               rendered as the notch's quiet "Choose project" chip. */}
           <RepoMultiPicker

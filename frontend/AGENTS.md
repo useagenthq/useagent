@@ -111,38 +111,40 @@ Full source of truth: `tailwind.config.ts` (token scale) + `app/globals.css`
 
 Exception: brand icon tiles / the AsteriskMark may use `currentColor` freely.
 
-## Dark theme - Tokyo Night
+## Default dark theme - achromatic graphite
 
-**Dark is the default theme.** The dark semantic ramp is mapped from the
-upstream Tokyo Night theme used by T3 Code. The canvas is `#1a1b26`, chrome is
-`#16161e`, raised surfaces are `#1e202e`, primary text is `#c0caf5`, muted text
-is `#787c99`, borders are `#292e42`, and the focused accent is `#7aa2f7`.
-Light-mode tokens remain independent and unchanged. Components consume the
-semantic tokens below and never hard-code dark values.
+**Dark is the default theme.** Its surface and text ramp is achromatic
+graphite: the page backdrop is `#121212`, panels/cards are `#262626`,
+chrome/insets are `#171717`, raised surfaces are `#2e2e2e`, primary text is
+`#fafafa`, muted text is `#a1a1a1`, and borders are `#333333`. The interactive
+accent remains blue. The light theme is independent and uses warm neutrals:
+canvas `#faf9f6`, panel fill `#f5f4f1`, and hairlines `#eae8e4`. Components
+consume the semantic tokens below and never hard-code theme values.
 
 Use these tokens for the elevation ladder (dark values shown; they invert
 correctly in light):
 
 | Role | Token (utility) | Dark value |
 |------|-----------------|-----------|
-| Base page / canvas | `bg-bg-white-0` | `#1a1b26` |
-| Muted row / hover | `bg-bg-weak-50` | `#13131a` |
-| Chrome / card | `bg-bg-soft-200` | `#16161e` |
-| Raised / active | `bg-bg-sub-300` | `#1e202e` |
-| Hairline border | `border`/`ring`/`stroke` + `-stroke-soft-200` | `#292e42` |
-| Stronger border | `...-stroke-sub-300` | `#3b3e52` |
-| Primary text | `text-text-strong-950` | `#c0caf5` |
-| Secondary text | `text-text-sub-600` | `#a9b1d6` |
-| Muted text | `text-text-soft-400` | `#787c99` |
-| Modal / command palette scrim | `bg-overlay` | `#101014` @ 72% |
+| Page backdrop | `background-full` | `#121212` |
+| Panel / card | `bg-bg-white-0` | `#262626` |
+| Chrome / inset | `bg-bg-weak-50` / `bg-bg-soft-200` | `#171717` |
+| Raised / active | `bg-bg-sub-300` | `#2e2e2e` |
+| Hairline border | `border`/`ring`/`stroke` + `-stroke-soft-200` | `#333333` |
+| Stronger border | `...-stroke-sub-300` | `#404040` |
+| Primary text | `text-text-strong-950` | `#fafafa` |
+| Secondary text | `text-text-sub-600` | `#a1a1a1` |
+| Muted text | `text-text-soft-400` | `#737373` |
+| Modal / command palette scrim | `bg-overlay` | `#0f0f0f` @ 72% |
 
 Rules for the four sibling page agents:
 - Sidebar, top nav, cards, command-palette backdrop, and tables all read from
   the tokens above.
-- Base surfaces = `bg-bg-white-0`; lift one step (`bg-bg-weak-50`) for cards, a
-  second step (`bg-bg-soft-200`) for menus/hover. Separate with
-  `border-stroke-soft-200`, not shadows.
-- Do not touch light-mode neutrals when adjusting the Tokyo Night mapping.
+- Page backdrops use `background-full`; panels/cards use `bg-bg-white-0`;
+  chrome and inset fills use `bg-bg-weak-50` / `bg-bg-soft-200`; raised and
+  active surfaces use `bg-bg-sub-300`. Separate with `border-stroke-soft-200`,
+  not shadows.
+- Keep the warm light-mode neutrals independent when adjusting the dark ramp.
 - The `<html>` element also carries `bg-bg-white-0`, so overscroll never flashes
   black/white.
 

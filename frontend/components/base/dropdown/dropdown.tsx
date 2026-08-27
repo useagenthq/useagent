@@ -30,7 +30,7 @@ import { useDismissOnOutsidePress, useTriggerToggle } from "@/utils/use-dismiss-
  * - Appear animation: 150ms fade + scale-95 + 2px blur in and out.
  * - Rows: rounded-2lg, background/secondary/hover on hover and on the selected
  *   row, body-medium labels, 4px apart (the panel's flex column carries a
- *   gap-1, the same rhythm as the Select listbox).
+ *   gap-0.5, the same rhythm as the Select listbox).
  *
  * Composition:
  *
@@ -150,9 +150,9 @@ export function DropdownPopover({
         className,
       )}
     >
-      {/* gap-1 keeps bare DropdownItems 4px apart, the same rhythm as the
+      {/* gap-0.5 keeps bare DropdownItems 2px apart, the same rhythm as the
           Select listbox; DropdownDivider's margins are sized to absorb it. */}
-      <AriaDialog aria-label={ariaLabel} className={cx("flex flex-col gap-1 outline-none", dialogClassName)}>
+      <AriaDialog aria-label={ariaLabel} className={cx("flex flex-col gap-0.5 outline-none", dialogClassName)}>
         {children}
       </AriaDialog>
     </AriaPopover>
@@ -162,7 +162,7 @@ export function DropdownPopover({
 /* ----------------------------------------------------------------- content */
 
 export interface DropdownGroupProps {
-  /** Muted body-medium heading above the rows. */
+  /** Muted body-2-medium heading above the rows. */
   label?: string;
   className?: string;
   children: ReactNode;
@@ -173,9 +173,9 @@ export function DropdownGroup({ label, className, children }: DropdownGroupProps
     // pt-1 is spacing for the group LABEL — a label-less group must not
     // carry it, or its first row floats 4px lower than the panel padding
     // implies (visible as extra space above the first item's hover pill).
-    <div className={cx("flex w-full flex-col gap-1.5", label && "pt-1", className)}>
-      {label && <span className="pl-2 text-body-medium text-text-secondary">{label}</span>}
-      <div className="flex w-full flex-col gap-1">{children}</div>
+    <div className={cx("flex w-full flex-col gap-1", label && "pt-1", className)}>
+      {label && <span className="pl-2 text-body-2-medium text-text-secondary">{label}</span>}
+      <div className="flex w-full flex-col gap-0.5">{children}</div>
     </div>
   );
 }
@@ -210,8 +210,8 @@ export function DropdownItem({ selected, onSelect, className, children }: Dropdo
   );
 }
 
-/** Full-bleed 1px divider between groups (bleeds through the panel's p-2.5).
- *  my-1.5 + the dialog's gap-1 on both sides = the original 10px breathing room. */
+/** Full-bleed 1px divider between groups (bleeds through the panel's p-1.5).
+ *  my-1 + the dialog's gap-0.5 on both sides = 6px of breathing room. */
 export function DropdownDivider({ className }: { className?: string }) {
-  return <div className={cx("-mx-2.5 my-1.5 h-px shrink-0 bg-border-button-default", className)} />;
+  return <div className={cx("-mx-1.5 my-1 h-px shrink-0 bg-border-button-default", className)} />;
 }

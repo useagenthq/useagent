@@ -42,14 +42,16 @@ function renderTree(
   );
 }
 
-test("the curved tree connector draws exactly one elbow per thread", () => {
+test("children render as indented doc rows without connector lines", () => {
   for (const count of [1, 3, 5]) {
     const threads = Array.from({ length: count }, (_, i) => thread(`r${i}`, `Thread ${i}`));
     const html = renderTree([group({ threads })]);
-    // Connector paths carry the signature "M0.5 0 V…" elbow, distinct from the
-    // folder icon's own svg path — one per thread.
-    const elbows = html.match(/M0\.5 0 V/g) ?? [];
-    expect(elbows).toHaveLength(count);
+    // No connector overlay survives; each child is an indented row on the
+    // shared uniform height with the one-step indent.
+    expect(html).not.toContain("Project thread connector");
+    expect(html.match(/data-session-ui="thread-row"/g) ?? []).toHaveLength(count);
+    expect(html.match(/h-8 w-full/g) ?? []).toHaveLength(count);
+    expect(html.match(/pl-6/g) ?? []).toHaveLength(count);
   }
 });
 
