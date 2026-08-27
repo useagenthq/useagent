@@ -18,7 +18,7 @@ export type ThreadSidebarActive = "new" | "dashboard" | "usage" | "library" | "s
 
 function ThreadSidebarFooter({ active }: { active?: ThreadSidebarActive }) {
   return (
-    <nav aria-label="Workspace utilities" className="p-3">
+    <nav aria-label="Workspace utilities" className="p-2">
       <SidebarNavItem
         href="/settings#usage"
         icon={RiBarChartBoxLine}

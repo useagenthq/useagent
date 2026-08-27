@@ -48,3 +48,13 @@ export function relativeTime(
   if (day < 7) return `${day}d ago`;
   return `${Math.floor(day / 7)}w ago`;
 }
+
+/** Compact relative time for dense rails ("8h", "3d", "now") - same buckets as
+ * `relativeTime`, without the " ago" suffix that eats sidebar row width. */
+export function relativeTimeShort(
+  value?: string | number | null,
+  now: number = Date.now(),
+): string {
+  const long = relativeTime(value, now);
+  return long === "just now" ? "now" : long.replace(" ago", "");
+}

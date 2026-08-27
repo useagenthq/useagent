@@ -9,7 +9,7 @@ export function SidebarBrand({ label = "UseAgent" }: { label?: string }) {
   const working = useWorkingSignal();
 
   return (
-    <div className="flex h-12 shrink-0 items-center px-3">
+    <div className="flex h-12 shrink-0 items-center px-2">
       <Link
         href="/agent/new"
         aria-label="UseAgent new thread"

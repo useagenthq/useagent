@@ -3349,50 +3349,6 @@ html {
   mask-image: linear-gradient(to bottom, black, transparent);
 }
 
-/* composer-halo - the main composer's luminous gradient ring: the panel fill
- * paints the padding-box while a soft teal-to-violet sweep paints the border
- * ring (border-box), so a transparent border reveals it as a quiet aurora
- * edge around the pill. Focus deepens the same sweep instead of swapping to
- * a flat focus border. All stops ride semantic/chart tokens, so every theme
- * (and the light theme) tints its own halo. */
-@utility composer-halo {
-  /* !important: PromptInput's own border-border-button-default / border
-   * utilities land in the same cascade layer and would otherwise win the
-   * property battle (clsx joins the class lists without conflict merging).
-   * The halo owns the ring: transparent 1.5px border reveals the border-box
-   * gradient below. */
-  border-color: transparent !important;
-  border-width: 1.5px !important;
-  background-image:
-    linear-gradient(
-      var(--color-background-primary-default),
-      var(--color-background-primary-default)
-    ),
-    linear-gradient(
-      105deg,
-      color-mix(in oklab, var(--color-chart-1) 62%, transparent) 0%,
-      color-mix(in oklab, var(--color-chart-1) 20%, transparent) 30%,
-      hsl(var(--stroke-sub-300) / 55%) 55%,
-      color-mix(in oklab, var(--color-chart-5) 45%, transparent) 100%
-    );
-  background-origin: border-box;
-  background-clip: padding-box, border-box;
-
-  &:focus-within {
-    background-image:
-      linear-gradient(
-        var(--color-background-primary-default),
-        var(--color-background-primary-default)
-      ),
-      linear-gradient(
-        105deg,
-        color-mix(in oklab, var(--color-chart-1) 88%, transparent) 0%,
-        color-mix(in oklab, var(--color-chart-1) 34%, transparent) 30%,
-        hsl(var(--stroke-sub-300) / 80%) 55%,
-        color-mix(in oklab, var(--color-chart-5) 66%, transparent) 100%
-      );
-  }
-}
 
 /* ---------------------------------------------------------------------------
  * aurora-blob - the dashboard mesh-aurora (aurora-backdrop.tsx): heavily

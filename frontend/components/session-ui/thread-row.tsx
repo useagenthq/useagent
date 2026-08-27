@@ -25,7 +25,7 @@
 // - Their per-thread branch/jump chip becomes our git identity line: when the
 //   run carries repos, a second row of GitChips (repo shortname + chosen
 //   branch from `repo_specs`) renders under the title and the row trades its
-//   fixed h-8 for a two-line py-1.5 layout.
+//   fixed h-9 for a two-line py-1.5 layout.
 // - T3 shadcn tokens -> our semantic tokens (sidebar-row-active/hover ->
 //   bg-weak-50, sidebar-muted-foreground -> text-sub-600, secondary-label ->
 //   text-soft-400); their rounded-md px-2 follows this rail's rounded-lg
@@ -40,7 +40,7 @@ import { type DotTone, StatusDot } from "@/components/shared/status-dot";
 import type { SidebarRun } from "@/components/shell/working-project-status";
 import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
 import { cx as cn } from "@/utils/cx";
-import { relativeTime } from "@/utils/format";
+import { relativeTimeShort } from "@/utils/format";
 import type { RunStatus } from "@useagent/agent-client/wire";
 
 export interface ThreadRowPill {
@@ -71,16 +71,16 @@ export function resolveThreadRowPill(input: {
   return null;
 }
 
-/** Upstream resolveThreadRowClassName: compact fixed-height rows, active rows
+/** Upstream resolveThreadRowClassName: uniform 36px rows, active rows
  * hold their fill, resting rows brighten on hover. Selection branch dropped
  * (no multi-select here). `gitLine` swaps the fixed h-8 single line for a
  * two-line column so the git identity chips fit under the title. */
 export function resolveThreadRowClassName(input: { active: boolean; gitLine?: boolean }): string {
   const base = cn(
-    "w-full cursor-pointer select-none rounded-lg px-2.5 text-body-2-medium transition-colors",
+    "w-full cursor-pointer select-none rounded-lg px-2.5 text-body-medium transition-colors",
     input.gitLine
       ? "flex flex-col justify-center gap-0.5 py-1.5"
-      : "flex h-8 items-center gap-1.5",
+      : "flex h-9 items-center gap-1.5",
   );
   if (input.active) {
     return cn(base, "bg-background-secondary-default font-medium text-text-primary");
@@ -104,7 +104,7 @@ export function threadRowTimestamp(
 }
 
 /**
- * The T3 sidebar thread row: `[status pill] Title… [time]` in a compact h-8
+ * The T3 sidebar thread row: `[status pill] Title… [time]` in a uniform h-9
  * hover row. Purely presentational; feed it a run from the existing runs lane.
  */
 export const ThreadRow = memo(function ThreadRow({
@@ -146,11 +146,11 @@ export const ThreadRow = memo(function ThreadRow({
         {timestampMs !== null ? (
           <span
             className={cn(
-              "shrink-0 text-[10px] tabular-nums",
+              "shrink-0 text-caption-1-medium tabular-nums",
               active ? "text-text-primary" : "text-text-tertiary",
             )}
           >
-            {relativeTime(timestampMs)}
+            {relativeTimeShort(timestampMs)}
           </span>
         ) : null}
       </span>
