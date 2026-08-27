@@ -1,4 +1,3 @@
-import { EventEmitter } from "node:events";
 import { lstat, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -9,9 +8,8 @@ import {
   setRunEngineSession,
   setRunStatus,
   updateStepCode,
-  type ApiStep,
 } from "./runs/repo";
-import type { EngineId, RunStatus, StepKind } from "./db/schema";
+import type { EngineId } from "./db/schema";
 import { resolveProviderRegistration, runProviderTurn } from "./engines";
 import { engineModelReadyForDispatch } from "./runs/engine-readiness";
 import type { EmitStep, EngineRunContext, RunInputFile } from "./engines/types";
@@ -54,25 +52,10 @@ import {
   buildResourceAccessSnapshot,
   formatResourceAccessContext,
 } from "./resources/access-snapshot";
+import { runMock } from "./worker-mock.js";
+import { bus, channel, RUN_SPAWNED, type BusEvent } from "./worker-events.js";
 
-// ---------------------------------------------------------------------------
-// Event bus — the worker pushes trace events here; SSE clients subscribe.
-// ---------------------------------------------------------------------------
-
-export type BusEvent =
-  | { type: "step"; step: ApiStep }
-  | { type: "end"; status: RunStatus };
-
-export const bus = new EventEmitter();
-bus.setMaxListeners(0); // any number of concurrent SSE subscribers
-
-export const channel = (runId: string): string => `run:${runId}`;
-
-// Global lifecycle signal: fired once per run the instant its actor is spawned,
-// BEFORE any step/end event, carrying the runId. Connectors (src/connectors/*)
-// subscribe here to attach a per-run feed without threading through every run
-// creation path (API, Slack, schedules). Distinct from the per-run `channel`.
-export const RUN_SPAWNED = "run:spawned";
+export { bus, channel, RUN_SPAWNED, type BusEvent } from "./worker-events.js";
 
 // ---------------------------------------------------------------------------
 // Actor-lite registry: one logical worker per run id.
@@ -81,32 +64,6 @@ export const RUN_SPAWNED = "run:spawned";
 // SDK loop (migration step 2). It exists to prove the durable event log + SSE
 // streaming path end-to-end — now writing into Postgres via Drizzle.
 // ---------------------------------------------------------------------------
-
-interface ScriptedStep {
-  kind: StepKind;
-  label: string;
-  chip: string | null;
-  code?: unknown;
-  /** delay before this step is emitted, in ms */
-  delayMs: number;
-}
-
-const SCRIPT: ScriptedStep[] = [
-  { kind: "command", label: "Cloning repository", chip: "git", delayMs: 1600 },
-  { kind: "command", label: "Running Command", chip: "script", delayMs: 1800 },
-  { kind: "task", label: "Analyzing codebase", chip: "task", delayMs: 1600 },
-  { kind: "file", label: "Editing file", chip: "file", delayMs: 1600 },
-  { kind: "file", label: "Editing file", chip: "file", delayMs: 1400 },
-  { kind: "file", label: "Editing file", chip: "file", delayMs: 1400 },
-  {
-    kind: "command",
-    label: "Running Command",
-    chip: "script",
-    code: { taskId: "1", status: "completed" },
-    delayMs: 1800,
-  },
-  { kind: "done", label: "Done", chip: null, delayMs: 300 },
-];
 
 const registry = new Map<string, Promise<void>>();
 
@@ -129,23 +86,6 @@ export function signalCancel(runId: string, reason: string): boolean {
   if (!cancel) return false;
   cancel(reason);
   return true;
-}
-
-/** Sleep that resolves early if `signal` aborts — so a scripted mock turn stops
- *  within one step of a cancel instead of running to its next tick. */
-function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve) => {
-    const onAbort = () => {
-      clearTimeout(t);
-      resolve();
-    };
-    const t = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
 }
 
 type InitializeGitBoundary = (workdir: string) => Promise<boolean>;
@@ -185,19 +125,6 @@ export async function ensureRunWorkdir(
   } catch {
     return RUN_TIMING_OUTCOMES.unavailable;
   }
-}
-
-// Optional test/dev knob: collapse the scripted per-step delay so a run
-// completes near-instantly. Unset in normal operation (real cadence preserved).
-const STEP_DELAY_OVERRIDE_MS = process.env.WORKER_STEP_DELAY_MS
-  ? Number(process.env.WORKER_STEP_DELAY_MS)
-  : null;
-
-function summarize(steps: ScriptedStep[]): string {
-  const work = steps.filter((s) => s.kind !== "done");
-  const files = work.filter((s) => s.kind === "file").length;
-  const commands = work.filter((s) => s.kind === "command").length;
-  return `${work.length} tools, edited ${files} files, ran ${commands} commands`;
 }
 
 /** Resolve the terminal status/summary when an engine adapter RETURNS normally
@@ -559,62 +486,6 @@ async function runWorker(runId: string): Promise<void> {
     // Free the thread and dispatch its next turn — whatever the outcome.
     cancellers.delete(runId);
     await onRunSettled(runId, run.threadId);
-  }
-}
-
-async function runMock(
-  runId: string,
-  threadId: string,
-  orgId: string | null,
-  signal: AbortSignal,
-  wasCancelled: () => string | null,
-): Promise<void> {
-  const startedAt = Date.now();
-  await setRunStatus(runId, "running");
-  // Wake connected thread streams to re-project the queued→running transition
-  // (the status change carries no worker step of its own).
-  publishRunLifecycleChange({ orgId, threadId, runId, kind: "running" });
-
-  let idx = 0;
-  try {
-    for (const scripted of SCRIPT) {
-      await abortableSleep(STEP_DELAY_OVERRIDE_MS ?? scripted.delayMs, signal);
-      // A user cancel settles the run honestly as "Stopped by user".
-      const reason = wasCancelled();
-      if (reason !== null) {
-        const done = await insertStep({
-          runId,
-          idx,
-          kind: "done",
-          label: reason,
-          chip: null,
-          code: null,
-        }).catch(() => null);
-        if (done) bus.emit(channel(runId), { type: "step", step: done } satisfies BusEvent);
-        await finalizeRun(runId, "failed", reason, Date.now() - startedAt);
-        bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
-        return;
-      }
-      // Bail if the run vanished (e.g. deleted) — defensive, keeps FK sane.
-      if (!(await getRun(runId))) return;
-      const step = await insertStep({
-        runId,
-        idx,
-        kind: scripted.kind,
-        label: scripted.label,
-        chip: scripted.chip,
-        code: scripted.code ?? null,
-      });
-      idx += 1;
-      bus.emit(channel(runId), { type: "step", step } satisfies BusEvent);
-    }
-
-    await finalizeRun(runId, "completed", summarize(SCRIPT), Date.now() - startedAt);
-    bus.emit(channel(runId), { type: "end", status: "completed" } satisfies BusEvent);
-  } catch (err) {
-    console.error(`[worker] run ${runId} failed:`, err);
-    await finalizeRun(runId, "failed", "worker error", Date.now() - startedAt);
-    bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
   }
 }
 
