@@ -103,10 +103,10 @@ const CommandGroup = React.forwardRef<
     <Command.Group
       ref={forwardedRef}
       className={cx(
-        "relative px-2 py-3",
+        "relative px-2 py-2",
         // heading
         "[&>[cmdk-group-heading]]:text-label-xs [&>[cmdk-group-heading]]:text-text-secondary",
-        "[&>[cmdk-group-heading]]:mb-2 [&>[cmdk-group-heading]]:px-3 [&>[cmdk-group-heading]]:pt-1",
+        "[&>[cmdk-group-heading]]:mb-1.5 [&>[cmdk-group-heading]]:px-3 [&>[cmdk-group-heading]]:pt-1",
         className,
       )}
       {...rest}
@@ -117,7 +117,7 @@ CommandGroup.displayName = "CommandGroup";
 
 const commandItemVariants = tv({
   base: [
-    "flex items-center gap-3 rounded-10 bg-background-primary-default",
+    "flex items-center gap-2.5 rounded-10 bg-background-primary-default",
     "cursor-pointer text-paragraph-sm text-text-primary",
     "transition duration-200 ease-out",
     // hover/selected
@@ -125,8 +125,8 @@ const commandItemVariants = tv({
   ],
   variants: {
     size: {
-      small: "px-3 py-2.5",
-      medium: "px-3 py-3",
+      small: "px-3 py-1.5",
+      medium: "px-3 py-2",
     },
   },
   defaultVariants: {

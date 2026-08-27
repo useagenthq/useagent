@@ -40,10 +40,10 @@ describe("thread status pill (upstream running/failed/settled treatment)", () =>
 });
 
 describe("row density (upstream resolveThreadRowClassName)", () => {
-  test("rows are uniform 36px hover targets", () => {
+  test("rows are uniform 32px hover targets", () => {
     for (const active of [true, false]) {
       const className = resolveThreadRowClassName({ active });
-      expect(className).toContain("h-9");
+      expect(className).toContain("h-8");
       expect(className).toContain("px-2.5");
       expect(className).toContain("select-none");
     }
@@ -61,7 +61,7 @@ describe("row density (upstream resolveThreadRowClassName)", () => {
       const className = resolveThreadRowClassName({ active, gitLine: true });
       expect(className).toContain("flex-col");
       expect(className).toContain("py-1.5");
-      expect(className).not.toContain("h-9");
+      expect(className).not.toContain("h-8");
       expect(className).toContain("px-2.5");
       expect(className).toContain("select-none");
     }

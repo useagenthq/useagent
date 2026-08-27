@@ -113,28 +113,29 @@ Exception: brand icon tiles / the AsteriskMark may use `currentColor` freely.
 
 ## Dark theme - Tokyo Night
 
-**Dark is the default theme.** The dark semantic ramp is mapped from the
-upstream Tokyo Night theme used by T3 Code. The canvas is `#1a1b26`, chrome is
-`#16161e`, raised surfaces are `#1e202e`, primary text is `#c0caf5`, muted text
-is `#787c99`, borders are `#292e42`, and the focused accent is `#7aa2f7`.
-Light-mode tokens remain independent and unchanged. Components consume the
-semantic tokens below and never hard-code dark values.
+**Dark is the default theme.** The dark semantic ramp derives from the
+upstream Tokyo Night palette, lifted off near-black to a layered
+graphite-indigo (2026-08-27). The canvas is `#1f212d`, chrome is `#1b1c25`,
+raised surfaces are `#252838`, primary text is `#cdd5f7`, muted text is
+`#8a8fb0`, and borders are `#323852`. Light-mode tokens remain independent
+and unchanged. Components consume the semantic tokens below and never
+hard-code dark values.
 
 Use these tokens for the elevation ladder (dark values shown; they invert
 correctly in light):
 
 | Role | Token (utility) | Dark value |
 |------|-----------------|-----------|
-| Base page / canvas | `bg-bg-white-0` | `#1a1b26` |
-| Muted row / hover | `bg-bg-weak-50` | `#13131a` |
-| Chrome / card | `bg-bg-soft-200` | `#16161e` |
-| Raised / active | `bg-bg-sub-300` | `#1e202e` |
-| Hairline border | `border`/`ring`/`stroke` + `-stroke-soft-200` | `#292e42` |
-| Stronger border | `...-stroke-sub-300` | `#3b3e52` |
-| Primary text | `text-text-strong-950` | `#c0caf5` |
-| Secondary text | `text-text-sub-600` | `#a9b1d6` |
-| Muted text | `text-text-soft-400` | `#787c99` |
-| Modal / command palette scrim | `bg-overlay` | `#101014` @ 72% |
+| Base page / canvas | `bg-bg-white-0` | `#1f212d` |
+| Muted row / hover | `bg-bg-weak-50` | `#1b1c25` |
+| Chrome / card | `bg-bg-soft-200` | `#1b1c25` |
+| Raised / active | `bg-bg-sub-300` | `#252838` |
+| Hairline border | `border`/`ring`/`stroke` + `-stroke-soft-200` | `#323852` |
+| Stronger border | `...-stroke-sub-300` | `#485075` |
+| Primary text | `text-text-strong-950` | `#cdd5f7` |
+| Secondary text | `text-text-sub-600` | `#8a8fb0` |
+| Muted text | `text-text-soft-400` | `#5f6997` |
+| Modal / command palette scrim | `bg-overlay` | `#14151c` @ 72% |
 
 Rules for the four sibling page agents:
 - Sidebar, top nav, cards, command-palette backdrop, and tables all read from

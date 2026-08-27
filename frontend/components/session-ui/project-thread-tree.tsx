@@ -43,7 +43,7 @@ export interface ProjectMenuControl {
 }
 
 /** Thread row under an open folder - one indent step past the folder icon, a
- *  doc icon in the shared 16px icon column, the same uniform 36px row height
+ *  doc icon in the shared 16px icon column, the same uniform 32px row height
  *  as every other rail row, and a plain right-aligned muted relative time.
  *  Navigates to the thread; the active thread holds a rounded pill fill. */
 function ThreadItem({
@@ -65,7 +65,7 @@ function ThreadItem({
       aria-current={active ? "page" : undefined}
       title={thread.label}
       className={cx(
-        "flex h-9 w-full items-center gap-2 rounded-2lg pr-2 pl-6 transition-colors duration-150 ease",
+        "flex h-8 w-full items-center gap-2 rounded-2lg pr-2 pl-6 transition-colors duration-150 ease",
         active
           ? "bg-background-secondary-hover text-text-primary"
           : "hover:bg-background-secondary-hover",
@@ -76,7 +76,7 @@ function ThreadItem({
       </span>
       <span
         className={cx(
-          "min-w-0 flex-1 truncate text-body-medium",
+          "min-w-0 flex-1 truncate text-body-2-medium",
           active ? "text-text-primary" : "text-text-secondary",
         )}
       >
@@ -129,12 +129,12 @@ function ProjectFolder({
           type="button"
           aria-expanded={expanded}
           onClick={() => onToggle(group.key)}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-2lg px-2.5 py-2 transition-colors duration-150 ease hover:bg-background-secondary-hover"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-2lg px-2.5 py-1.5 transition-colors duration-150 ease hover:bg-background-secondary-hover"
         >
           <span className="flex w-4 shrink-0 items-center justify-center">
             <Icon className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
           </span>
-          <span className="min-w-0 flex-1 truncate text-left text-body-medium whitespace-nowrap text-text-secondary">
+          <span className="min-w-0 flex-1 truncate text-left text-body-2-medium whitespace-nowrap text-text-secondary">
             {group.label}
           </span>
         </button>
@@ -152,7 +152,7 @@ function ProjectFolder({
             <>
               <ul
                 aria-label={`Threads in ${group.label}`}
-                className="flex w-full flex-col gap-0.5 pt-0.5"
+                className="flex w-full flex-col"
               >
                 {visibleThreads.map((thread) => (
                   <li key={thread.id}>
@@ -203,7 +203,7 @@ export function ProjectThreadTree({
   renderMenu?: (group: ProjectGroup, control: ProjectMenuControl) => ReactNode;
 }) {
   return (
-    <nav aria-label="Projects" className="flex w-full flex-col gap-1">
+    <nav aria-label="Projects" className="flex w-full flex-col">
       {groups.map((group) => (
         <ProjectFolder
           key={group.key}
