@@ -87,7 +87,7 @@ export function SidebarNavItem({
       href={href}
       aria-current={active ? "page" : undefined}
       className={cx(
-        "flex items-center gap-2.5 rounded-2lg px-2.5 py-2 text-body-2-medium transition-colors",
+        "flex items-center gap-2.5 rounded-2lg px-2.5 py-2 text-body-medium transition-colors",
         active
           ? "bg-linear-to-b from-accent-500 to-accent-600 text-white shadow-nav-selected"
           : "text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary",
