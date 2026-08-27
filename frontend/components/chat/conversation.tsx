@@ -32,6 +32,7 @@ import {
   hasNarration,
   type TimelineNode,
 } from "@/components/chat/timeline";
+import { TurnWindow } from "@/components/chat/turn-window";
 import { MD_CLASS, MD_CLASS_REASONING, Timeline } from "@/components/chat/timeline-view";
 // Re-exported so existing importers (lab samples, workspace sample) keep working.
 export { Timeline } from "@/components/chat/timeline-view";
@@ -678,16 +679,23 @@ export const Conversation = memo(function Conversation({
           }}
           className="scrollbar-slim h-full space-y-8 overflow-y-auto px-5 py-6"
         >
-          {renderedTurns.map((turn, index) => (
-            <TurnBlock
-              key={turn.run.id}
-              turn={turn}
-              queuePosition={queuedPositions.get(turn.run.id)}
-              onSendNow={turn.run.id === sendNowFor ? onSendNow : undefined}
-              childSessions={childSessionsByParent.get(turn.run.id)}
-              isLatestTurn={index === renderedTurns.length - 1}
-            />
-          ))}
+          {/* Long threads render through the turn window: only turns near the
+              viewport mount real DOM, the rest hold their measured height as
+              placeholders, and scroll stays anchor-stabilized while rows swap.
+              Short threads bypass it entirely (identical DOM to before). */}
+          <TurnWindow
+            turns={renderedTurns}
+            scrollRef={scrollRef}
+            renderTurn={(turn, index) => (
+              <TurnBlock
+                turn={turn}
+                queuePosition={queuedPositions.get(turn.run.id)}
+                onSendNow={turn.run.id === sendNowFor ? onSendNow : undefined}
+                childSessions={childSessionsByParent.get(turn.run.id)}
+                isLatestTurn={index === renderedTurns.length - 1}
+              />
+            )}
+          />
           {pendingQuestion && onAnswerQuestion && (
             <QuestionCard
               key={pendingQuestion.id}
