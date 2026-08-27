@@ -35,6 +35,7 @@ async function createQueuedPinnedRun(input: {
     engine: "mock",
     parentRunId: null,
     requestedRepos: [],
+    requestedResources: [],
     attachmentIds: [],
     memoryScope: "org",
     skillId: input.skillId,

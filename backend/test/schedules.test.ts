@@ -357,6 +357,7 @@ describe("schedules API", () => {
       engine: schedule.engine,
       parentRunId: null,
       requestedRepos: schedule.repos,
+      requestedResources: [],
       attachmentIds: [],
       memoryScope: "org",
       skillId: schedule.skillId,

@@ -5,6 +5,7 @@ import {
 } from "../src/commands/fingerprint";
 import type { RunCommandInput, RunCommandIntent } from "../src/commands/types";
 import type { RunResource } from "../src/resources/types";
+import { decodeRunResourceSelections } from "../src/resources/run-intake";
 
 // Pure single-purpose unit: the idempotency fingerprint depends ONLY on the
 // user's intent (prompt/model/engine/parent), never on the pre-allocated run id
@@ -106,6 +107,39 @@ describe("runIntentFingerprint", () => {
       }],
     });
     expect(withThread).not.toBe(withoutResources);
+  });
+
+  test("raw resource key order canonicalizes to one deterministic fingerprint", () => {
+    const intent = runIntentFromAcceptedRun(base);
+    const first = decodeRunResourceSelections([{
+      kind: "code.change",
+      provider: "github",
+      locator: {
+        type: "github.pull_request",
+        repository: "acme/api",
+        number: 42,
+        revision: null,
+      },
+    }]);
+    const reordered = decodeRunResourceSelections([{
+      locator: {
+        revision: null,
+        number: 42,
+        repository: "acme/api",
+        type: "github.pull_request",
+      },
+      provider: "github",
+      kind: "code.change",
+    }]);
+    expect(first).not.toBeNull();
+    expect(reordered).not.toBeNull();
+    expect(runIntentFingerprint({
+      ...intent,
+      requestedResources: first!,
+    })).toBe(runIntentFingerprint({
+      ...intent,
+      requestedResources: reordered!,
+    }));
   });
 
   test("derived resources, provider revisions, and provenance never affect intent", () => {
