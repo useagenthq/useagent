@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { requestModelCatalogRefresh } from "@/components/chat/engine-picker";
+import {
+  mergeEngineModelCatalog,
+  requestModelCatalogRefresh,
+} from "@/components/chat/engine-picker";
 
 // The picker's "Refresh free models" affordance: POST the manual-refresh
 // endpoint, parse the refreshed per-engine manifest, and hand it back for an
@@ -15,6 +18,19 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 describe("requestModelCatalogRefresh", () => {
+  test("merges a rotated lane without invalidating an already selected model", () => {
+    expect(
+      mergeEngineModelCatalog(
+        { opencode: ["old/paid", "vendor/old:free"], codex: ["old-codex"] },
+        { opencode: ["new/paid", "vendor/new:free"], codex: ["new-codex"] },
+        "vendor/old:free",
+      ),
+    ).toEqual({
+      opencode: ["new/paid", "vendor/new:free", "vendor/old:free"],
+      codex: ["new-codex"],
+    });
+  });
+
   test("POSTs the refresh endpoint and returns the parsed manifest", async () => {
     const seen: { url: string; method?: string }[] = [];
     const catalog = await requestModelCatalogRefresh(async (url, init) => {

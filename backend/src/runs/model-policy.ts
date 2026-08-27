@@ -127,3 +127,32 @@ export function isModelAllowedForEngine(
       return false;
   }
 }
+
+/**
+ * Revalidate an already-accepted durable run without making a catalog rotation
+ * turn it into a policy failure. New work still goes through
+ * `isModelAllowedForEngine`; this narrower replay seam accepts only
+ * provider-qualified OpenRouter free variants in addition to the current lane.
+ */
+export function isPersistedModelAllowedForEngine(
+  engine: EngineId,
+  model: string,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  if (engine === "opencode" && model.includes("/") && model.endsWith(":free")) {
+    return true;
+  }
+  return isModelAllowedForEngine(engine, model, env);
+}
+
+/** A reply may inherit its durable parent's accepted model after a restart;
+ * explicit switches must still be present in the current catalog. */
+export function isReplyModelAllowedForEngine(
+  engine: EngineId,
+  model: string,
+  parentModel: string | null,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return isModelAllowedForEngine(engine, model, env) ||
+    (model === parentModel && isPersistedModelAllowedForEngine(engine, model, env));
+}

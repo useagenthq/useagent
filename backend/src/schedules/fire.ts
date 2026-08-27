@@ -117,6 +117,7 @@ export async function fireScheduleWithOutcome(
       idempotencyKey,
       orgId: schedule.orgId,
       actorId: schedule.userId,
+      acceptedModelPolicy: "persisted",
       intent,
       run: {
         id: runId,

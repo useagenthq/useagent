@@ -3,6 +3,7 @@ import {
   allowedModelsForEngine,
   defaultModelForEngine,
   isModelAllowedForEngine,
+  isPersistedModelAllowedForEngine,
 } from "./model-policy";
 import { providerForEngine, type ProviderId } from "../provider-gateway/provider";
 import { engineAuthMode, engineUsesProviderGateway } from "./engine-auth-mode";
@@ -100,6 +101,17 @@ export function engineModelReadyForDispatch(
 ): boolean {
   return engineReadyForDispatch(engine, env) &&
     isModelAllowedForEngine(engine, model, env) &&
+    modelProviderReadyForEngine(engine, model, env);
+}
+
+/** Readiness for a run that already crossed the acceptance transaction. */
+export function persistedEngineModelReadyForDispatch(
+  engine: EngineId,
+  model: string,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return engineReadyForDispatch(engine, env) &&
+    isPersistedModelAllowedForEngine(engine, model, env) &&
     modelProviderReadyForEngine(engine, model, env);
 }
 

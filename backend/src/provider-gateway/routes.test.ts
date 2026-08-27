@@ -239,6 +239,7 @@ describe("provider gateway routes", () => {
       orgId: claims.orgId,
       userId: claims.userId,
       provider: "openrouter",
+      model: run.model,
     });
     expect(captured.authorization).toBe("Bearer user-owned-key");
   });
@@ -360,8 +361,8 @@ describe("provider gateway routes", () => {
     expect((await request()).status).toBe(200);
     expect((await request()).status).toBe(200);
     expect(credentialInputs).toEqual([
-      { orgId: "org-a", userId: "user-a", provider: "anthropic" },
-      { orgId: "org-a", userId: "user-a", provider: "anthropic" },
+      { orgId: "org-a", userId: "user-a", provider: "anthropic", model: activeRun.model },
+      { orgId: "org-a", userId: "user-a", provider: "anthropic", model: activeRun.model },
     ]);
     expect(upstreamKeys).toEqual([
       "anthropic-key-before-rotation",

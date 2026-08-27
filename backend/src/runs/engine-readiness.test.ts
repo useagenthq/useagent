@@ -6,6 +6,7 @@ import {
   engineReadyForDispatch,
   engineReadiness,
   modelProviderReadyForEngine,
+  persistedEngineModelReadyForDispatch,
   readyUserFacingEngines,
   resolveAcceptedEngine,
 } from "./engine-readiness";
@@ -183,6 +184,15 @@ describe("engine readiness advertisement", () => {
     expect(engineModelReadyForDispatch("opencode", "claude-opus-5", env)).toBe(false);
     expect(engineModelReadyForDispatch("opencode", "openai/gpt-5.6-sol", env)).toBe(true);
     expect(engineModelReadyForDispatch("opencode", "made-up/provider-model", env)).toBe(false);
+    expect(
+      persistedEngineModelReadyForDispatch("opencode", "rotated/model:free", {
+        ...env,
+        PROVIDER_HEALTH_OPENROUTER: "verified",
+      }),
+    ).toBe(true);
+    expect(
+      persistedEngineModelReadyForDispatch("opencode", "rotated/model:free", env),
+    ).toBe(false);
   });
 });
 

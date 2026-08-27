@@ -44,7 +44,14 @@ export interface ForceRefreshResult {
   readonly admitted: boolean;
   readonly retryAfterMs: number;
   /** Settles when the admitted (or joined in-flight) refresh completes. */
-  readonly done: Promise<void>;
+  readonly done: Promise<FreeModelLaneRefreshOutcome>;
+}
+
+export interface FreeModelLaneRefreshOutcome {
+  readonly updated: boolean;
+  readonly stale: boolean;
+  readonly reason: "updated" | "fresh" | "http_error" | "invalid_catalog" | "request_failed";
+  readonly lane: readonly string[];
 }
 
 /**
@@ -91,10 +98,11 @@ export function deriveFreeModelLane(catalog: unknown): string[] {
 
 export class FreeModelLaneCache {
   #lane: readonly string[] = FREE_MODEL_LANE_SEED;
+  #allowed = new Set<string>(FREE_MODEL_LANE_SEED);
   #fetchedAt = 0;
   #failedAt = 0;
   #forcedAt = 0;
-  #inflight: Promise<void> | null = null;
+  #inflight: Promise<FreeModelLaneRefreshOutcome> | null = null;
   #fetcher: CatalogFetcher | null;
   readonly #ttlMs: number;
   readonly #retryMs: number;
@@ -122,22 +130,19 @@ export class FreeModelLaneCache {
   /** Acceptance = seed UNION current lane: a run keeps its selected free model
    * across a lane rotation, and the curated seed never regresses. */
   isAllowed(model: string): boolean {
-    return (
-      this.#lane.includes(model) ||
-      (FREE_MODEL_LANE_SEED as readonly string[]).includes(model)
-    );
+    return this.#allowed.has(model);
   }
 
   /** TTL-gated background refresh (stale-while-revalidate): single-flight,
    * failure-cooled, never rejects. Reads keep serving the current lane. */
-  refresh(deps: FreeModelLaneRefreshDeps = {}): Promise<void> {
+  refresh(deps: FreeModelLaneRefreshDeps = {}): Promise<FreeModelLaneRefreshOutcome> {
     if (this.#inflight) return this.#inflight;
     const now = deps.nowMs ?? Date.now();
     if (this.#fetchedAt > 0 && now - this.#fetchedAt < this.#ttlMs) {
-      return Promise.resolve();
+      return Promise.resolve({ updated: false, stale: false, reason: "fresh", lane: this.#lane });
     }
     if (this.#failedAt > 0 && now - this.#failedAt < this.#retryMs) {
-      return Promise.resolve();
+      return Promise.resolve({ updated: false, stale: true, reason: "fresh", lane: this.#lane });
     }
     return this.#start(now, deps.fetcher);
   }
@@ -145,42 +150,64 @@ export class FreeModelLaneCache {
   /** Manual refresh: busts the TTL (and any failure cool-down) but keeps
    * single-flight and the manual cool-down so OpenRouter is protected. */
   forceRefresh(deps: FreeModelLaneRefreshDeps = {}): ForceRefreshResult {
-    if (this.#inflight) {
-      return { admitted: true, retryAfterMs: 0, done: this.#inflight };
-    }
     const now = deps.nowMs ?? Date.now();
     const sinceForce = now - this.#forcedAt;
     if (this.#forcedAt > 0 && sinceForce < this.#forceCooldownMs) {
       return {
         admitted: false,
         retryAfterMs: this.#forceCooldownMs - sinceForce,
-        done: Promise.resolve(),
+        done: Promise.resolve({
+          updated: false,
+          stale: false,
+          reason: "fresh",
+          lane: this.#lane,
+        }),
       };
     }
     this.#forcedAt = now;
+    if (this.#inflight) {
+      return { admitted: true, retryAfterMs: 0, done: this.#inflight };
+    }
     return { admitted: true, retryAfterMs: 0, done: this.#start(now, deps.fetcher) };
   }
 
-  #start(now: number, fetcher = this.#fetcher ?? (fetch as CatalogFetcher)): Promise<void> {
+  #start(
+    now: number,
+    fetcher = this.#fetcher ?? (fetch as CatalogFetcher),
+  ): Promise<FreeModelLaneRefreshOutcome> {
     this.#inflight = (async () => {
       let lane: string[] = [];
+      let reason: FreeModelLaneRefreshOutcome["reason"] = "request_failed";
       try {
         const response = await fetcher(CATALOG_URL, {
           headers: { accept: "application/json" },
           signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
         });
-        if (response.ok) lane = deriveFreeModelLane(await response.json());
+        if (response.ok) {
+          lane = deriveFreeModelLane(await response.json());
+          reason = lane.length > 0 ? "updated" : "invalid_catalog";
+        } else {
+          reason = "http_error";
+        }
       } catch {
-        // Network/parse failure: handled by the empty-lane branch below.
+        reason = "request_failed";
       }
       if (lane.length > 0) {
         this.#lane = lane;
+        for (const model of lane) this.#allowed.add(model);
         this.#fetchedAt = now;
         this.#failedAt = 0;
       } else {
         this.#failedAt = now;
+        console.warn(`[free-model-lane] refresh failed reason=${reason}; serving stale lane`);
       }
       this.#inflight = null;
+      return {
+        updated: lane.length > 0,
+        stale: lane.length === 0,
+        reason,
+        lane: this.#lane,
+      };
     })();
     return this.#inflight;
   }
@@ -193,6 +220,8 @@ export class FreeModelLaneCache {
   /** Restore the cold boot state (seed lane). Test isolation seam. */
   reset(): void {
     this.#lane = FREE_MODEL_LANE_SEED;
+    this.#allowed.clear();
+    for (const model of FREE_MODEL_LANE_SEED) this.#allowed.add(model);
     this.#fetchedAt = 0;
     this.#failedAt = 0;
     this.#forcedAt = 0;
@@ -211,7 +240,9 @@ export function isAllowedFreeModel(model: string): boolean {
   return freeModelLaneCache.isAllowed(model);
 }
 
-export function refreshFreeModelLane(deps?: FreeModelLaneRefreshDeps): Promise<void> {
+export function refreshFreeModelLane(
+  deps?: FreeModelLaneRefreshDeps,
+): Promise<FreeModelLaneRefreshOutcome> {
   return freeModelLaneCache.refresh(deps);
 }
 

@@ -144,6 +144,40 @@ describe("resolveProviderCredentialForRun precedence", () => {
     );
     expect(resolved).toEqual({ value: "sk-org", source: "org_secret" });
   });
+
+  test("production house fallback is restricted to provider-qualified OpenRouter free models", async () => {
+    const free = await resolveProviderCredentialForRun(
+      {
+        orgId: "org-a",
+        userId: "user-a",
+        provider: "openrouter",
+        model: "vendor/model:free",
+      },
+      deps({
+        resolveUserConnection: async () => null,
+        resolveOrgSecret: async () => null,
+        env: { OPENROUTER_API_KEY: "sk-house" },
+        devModeEnabled: () => false,
+      }),
+    );
+    expect(free).toEqual({ value: "sk-house", source: "backend_env" });
+
+    const paid = await resolveProviderCredentialForRun(
+      {
+        orgId: "org-a",
+        userId: "user-a",
+        provider: "openrouter",
+        model: "vendor/model",
+      },
+      deps({
+        resolveUserConnection: async () => null,
+        resolveOrgSecret: async () => null,
+        env: { OPENROUTER_API_KEY: "sk-house" },
+        devModeEnabled: () => false,
+      }),
+    );
+    expect(paid).toBeNull();
+  });
 });
 
 describe("resolveProviderCredential (tenant-first, no user)", () => {

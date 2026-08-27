@@ -113,6 +113,23 @@ describe("FreeModelLaneCache", () => {
     expect(cache.lane()).toEqual(["bigco/huge-context:free"]);
   });
 
+  test("catalog rotation never invalidates a model accepted earlier in this process", async () => {
+    const cache = new FreeModelLaneCache({ ttlMs: 1 });
+    const first = fetcherOf(() =>
+      catalogResponse({ data: [entry("vendor/first:free", 200_000)] }),
+    );
+    const second = fetcherOf(() =>
+      catalogResponse({ data: [entry("vendor/second:free", 300_000)] }),
+    );
+
+    await cache.refresh({ fetcher: first.fetcher, nowMs: 1_000 });
+    await cache.refresh({ fetcher: second.fetcher, nowMs: 2_000 });
+
+    expect(cache.lane()).toEqual(["vendor/second:free"]);
+    expect(cache.isAllowed("vendor/first:free")).toBe(true);
+    expect(cache.isAllowed("vendor/second:free")).toBe(true);
+  });
+
   test("TTL gates background refreshes; expiry admits exactly one", async () => {
     const cache = new FreeModelLaneCache({ ttlMs: 500 });
     const { fetcher, calls } = fetcherOf(() => catalogResponse(FRESH));
@@ -181,20 +198,26 @@ describe("FreeModelLaneCache", () => {
     await later.done;
     expect(calls()).toBe(3);
 
-    // While a refresh is in flight, force JOINS it instead of stacking fetches.
+    // A first manual request may JOIN an automatic in-flight refresh, but it
+    // still starts the manual cool-down so an immediate repeat cannot stack.
     const gate = Promise.withResolvers<Response>();
     let gatedCalls = 0;
     const gated: CatalogFetcher = () => {
       gatedCalls += 1;
       return gate.promise;
     };
-    const inflight = cache.forceRefresh({ fetcher: gated, nowMs: 100_000 });
+    const automatic = cache.refresh({ fetcher: gated, nowMs: 100_000 });
     const joined = cache.forceRefresh({ fetcher: gated, nowMs: 100_001 });
-    expect(inflight.admitted).toBe(true);
+    const repeated = cache.forceRefresh({ fetcher: gated, nowMs: 100_002 });
     expect(joined.admitted).toBe(true);
+    expect(repeated.admitted).toBe(false);
     expect(gatedCalls).toBe(1);
     gate.resolve(catalogResponse(FRESH));
-    await Promise.all([inflight.done, joined.done]);
+    await Promise.all([automatic, joined.done]);
+
+    const afterJoin = cache.forceRefresh({ fetcher: gated, nowMs: 100_003 });
+    expect(afterJoin.admitted).toBe(false);
+    expect(afterJoin.retryAfterMs).toBe(29_998);
   });
 });
 

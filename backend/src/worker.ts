@@ -11,7 +11,7 @@ import {
 } from "./runs/repo";
 import type { EngineId } from "./db/schema";
 import { resolveProviderRegistration, runProviderTurn } from "./engines";
-import { engineModelReadyForDispatch } from "./runs/engine-readiness";
+import { persistedEngineModelReadyForDispatch } from "./runs/engine-readiness";
 import type { EmitStep, EngineRunContext, RunInputFile } from "./engines/types";
 import { classifyTurnFailure } from "./engines/turn-failure-classification";
 import { recallScopedMemory } from "./memory/team-memory";
@@ -682,7 +682,7 @@ async function runEngine(
   // DB write), refuse to spawn its adapter unless the engine is explicitly enabled
   // (ENABLED_ENGINES). Fail the run closed rather than activating it.
   const engine = engineId as EngineId;
-  if (!engineModelReadyForDispatch(engine, model)) {
+  if (!persistedEngineModelReadyForDispatch(engine, model)) {
     await finalizeRun(runId, "failed", `engine/model not ready: ${engineId}/${model}`, 0);
     bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
     return;

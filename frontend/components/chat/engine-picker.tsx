@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ENGINES,
   type EngineId,
+  isFreeModel,
   modelLabel,
   modelOptionsForEngine,
   partitionModelOptions,
@@ -36,6 +37,25 @@ function parseEngineModelCatalog(raw: unknown): EngineModelCatalog {
   return out;
 }
 
+/** A manual refresh may rotate the live lane, but selections already offered in
+ * this browser session stay submit-able while newly discovered models append. */
+export function mergeEngineModelCatalog(
+  current: EngineModelCatalog,
+  refreshed: EngineModelCatalog,
+  preserveModel?: string,
+): EngineModelCatalog {
+  const merged: EngineModelCatalog = { ...refreshed };
+  if (!preserveModel || !isFreeModel(preserveModel)) return merged;
+  for (const engine of ENGINES) {
+    const next = refreshed[engine.id];
+    if (!next || !current[engine.id]?.includes(preserveModel) || next.includes(preserveModel)) {
+      continue;
+    }
+    merged[engine.id] = [...next, preserveModel];
+  }
+  return merged;
+}
+
 /**
  * Ask the backend to re-derive the Free model lane from the live catalog
  * (POST busts its TTL cache) and return the refreshed per-engine manifest.
@@ -65,7 +85,7 @@ export function useEnabledEngineConfig(): {
   readinessKnown: boolean;
   /** Manual Free-lane refresh: swaps the refreshed manifest in place; a failed
    * or rate-limited request keeps the current catalog. */
-  refreshModels: () => Promise<void>;
+  refreshModels: (preserveModel?: string) => Promise<void>;
 } {
   const [config, setConfig] = useState<{
     engines: EngineId[];
@@ -115,10 +135,13 @@ export function useEnabledEngineConfig(): {
       cancelled = true;
     };
   }, []);
-  const refreshModels = useCallback(async () => {
+  const refreshModels = useCallback(async (preserveModel?: string) => {
     const models = await requestModelCatalogRefresh();
     if (!models || Object.keys(models).length === 0) return;
-    setConfig((c) => ({ ...c, models: { ...c.models, ...models } }));
+    setConfig((c) => ({
+      ...c,
+      models: mergeEngineModelCatalog(c.models, models, preserveModel),
+    }));
   }, []);
   return { ...config, refreshModels };
 }
@@ -165,7 +188,7 @@ export function ModelPicker({
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await refreshModels();
+      await refreshModels(model);
     } finally {
       setRefreshing(false);
     }
