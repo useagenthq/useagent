@@ -1,9 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeNegotiatedCapabilities, type HarnessSession } from "@useagent/agent-harness/canonical";
+import {
+  normalizeNegotiatedCapabilities,
+  type ExecutionCapabilitySnapshot,
+  type HarnessSession,
+} from "@useagent/agent-harness/canonical";
 import type { ProviderDriver } from "@useagent/agent-harness/control";
 import {
   establishProviderSession,
   providerSessionStartedEvent,
+  recordProviderSessionStarted,
 } from "./provider-turn";
 
 const capabilities = normalizeNegotiatedCapabilities({
@@ -11,6 +16,18 @@ const capabilities = normalizeNegotiatedCapabilities({
   resume: true,
   stop: true,
 });
+const executionCapabilities: ExecutionCapabilitySnapshot = {
+  version: 1,
+  runtime: "sandbox",
+  facilities: {
+    files: { availability: "ready", access: { kind: "native" } },
+    shell: { availability: "ready", access: { kind: "native" } },
+    terminal: { availability: "ready", access: { kind: "native" } },
+    desktop: { availability: "unsupported", access: { kind: "none" } },
+    browser: { availability: "unsupported", access: { kind: "none" } },
+    tools: { availability: "unsupported", access: { kind: "none" } },
+  },
+};
 
 function session(nativeSessionId: string): HarnessSession {
   return {
@@ -67,6 +84,40 @@ const ctx = {
 };
 
 describe("production provider turn lifecycle", () => {
+  test("does not steer when authoritative session capability persistence fails", async () => {
+    const calls: string[] = [];
+    const provider = driver(calls);
+    const established = await establishProviderSession({
+      driver: provider,
+      ctx,
+      runtime: { kind: "sandbox", id: "sandbox-1" },
+      capabilities,
+      executionCapabilities,
+      persistSession: async () => {},
+    });
+
+    const dispatch = async () => {
+      await recordProviderSessionStarted(
+        ctx,
+        established.session,
+        { provider: "native-test", source: "native-test" },
+        async () => {
+          throw new Error("database unavailable");
+        },
+      );
+      await provider.steer({
+        runId: ctx.runId,
+        threadId: ctx.threadId,
+        session: established.session,
+        input: { kind: "prompt", text: "must not send", model: ctx.model },
+        signal: ctx.signal,
+      });
+    };
+
+    await expect(dispatch()).rejects.toThrow("database unavailable");
+    expect(calls).toEqual(["start"]);
+  });
+
   test("resumes and persists the canonical session before steering", async () => {
     const calls: string[] = [];
     const timings: string[] = [];
@@ -83,6 +134,7 @@ describe("production provider turn lifecycle", () => {
       },
       runtime: { kind: "sandbox", id: "sandbox-1" },
       capabilities,
+      executionCapabilities,
       persistSession: async (nativeSessionId) => {
         calls.push(`persist:${nativeSessionId}`);
       },
@@ -117,7 +169,7 @@ describe("production provider turn lifecycle", () => {
       provider: "native-test",
       eventType: "session.started",
       nativeSessionId: "session-existing",
-      payload: { source: "native-test", capabilities },
+      payload: { source: "native-test", capabilities, executionCapabilities },
     });
   });
 
@@ -134,6 +186,7 @@ describe("production provider turn lifecycle", () => {
       ctx: { ...ctx, engineSessionId: "session-existing" },
       runtime: { kind: "sandbox", id: "sandbox-1" },
       capabilities,
+      executionCapabilities,
       persistSession: async (nativeSessionId) => {
         calls.push(`persist:${nativeSessionId}`);
       },
@@ -161,10 +214,14 @@ describe("production provider turn lifecycle", () => {
       },
       runtime: { kind: "sandbox", id: "sandbox-1" },
       capabilities,
+      executionCapabilities,
       persistSession: async () => {},
     });
 
-    expect(established).toEqual({ session: session("session-new"), resumed: false });
+    expect(established).toEqual({
+      session: { ...session("session-new"), executionCapabilities },
+      resumed: false,
+    });
     expect(calls).toEqual(["resume:session-stale", "start"]);
     expect(timings).toEqual([
       "provider.session_resume:miss",
@@ -181,6 +238,7 @@ describe("production provider turn lifecycle", () => {
       ctx: { ...ctx, engineSessionId: "session-retained" },
       runtime: { kind: "sandbox", id: "sandbox-1" },
       capabilities,
+      executionCapabilities,
       persistSession: async () => {},
     })).rejects.toThrow("resume error: transport unavailable");
     expect(calls).toEqual(["resume:session-retained"]);
@@ -203,6 +261,7 @@ describe("production provider turn lifecycle", () => {
         },
         runtime: { kind: "sandbox", id: "sandbox-1" },
         capabilities,
+        executionCapabilities,
         persistSession: async (nativeSessionId) => {
           calls.push(`persist:${nativeSessionId}`);
           throw new Error("database unavailable");

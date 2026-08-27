@@ -63,6 +63,7 @@ import {
   resolveSandboxResourceTarget,
   sandboxMeetsResourceTarget,
 } from "./daytona-resources";
+import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
 
 // ---------------------------------------------------------------------------
 // Resident claude/codex via ACP — the opencode-server equivalent for the other
@@ -1453,11 +1454,26 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             }
           }
 
+          const negotiatedCapabilities = sessionCapabilities(cfg.id, {
+            desktop: desktop.available,
+            knowledgeTools: knowledgeMcpServers.length > 0,
+          });
+          const executionCapabilities = buildExecutionCapabilitySnapshot({
+            runtime: "sandbox",
+            workspaceRoot: live.workdir,
+            gatewayAvailable: knowledgeMcpServers.length > 0,
+            desktopAvailability: desktop.available
+              ? "ready"
+              : knowledgeMcpServers.length > 0
+                ? "on_demand"
+                : "unsupported",
+          });
+
           // Emit session.started with the ONE negotiated capability map the UI gates on (never a
           // provider-name guess). Durable via the provider-events lane -> canonical session.started.
           // Runtime resources are advertised from their real provisioning
           // results, never from the engine name.
-          void recordProviderEvent({
+          await recordProviderEvent({
             id: `${ctx.runId}:${sessionId}:session`,
             runId: ctx.runId,
             threadId: ctx.threadId ?? ctx.runId,
@@ -1466,15 +1482,13 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             nativeSessionId: sessionId,
             payload: {
               source: cfg.id,
-              capabilities: sessionCapabilities(cfg.id, {
-                desktop: desktop.available,
-                knowledgeTools: knowledgeMcpServers.length > 0,
-              }),
+              capabilities: negotiatedCapabilities,
+              executionCapabilities,
             },
-          });
+          }, { critical: true, required: true });
 
           await ctx.emit({ kind: "task", label: `Running ${cfg.id} (resident)…`, chip: cfg.id });
-          const promptText = composeTurnPrompt(ctx, resumed);
+          const promptText = composeTurnPrompt(ctx, resumed, executionCapabilities);
           acceptingTurnOutput = true;
           ctx.timing?.mark("dispatch");
           const result = await request("session/prompt", {

@@ -51,7 +51,7 @@ import {
 } from "@useagent/agent-harness/control";
 import {
   establishProviderSession,
-  providerSessionStartedEvent,
+  recordProviderSessionStarted,
 } from "./provider-turn";
 import { sessionCapabilities } from "./capabilities";
 import {
@@ -111,6 +111,7 @@ import {
 } from "./daytona-resources";
 import { claimCubeWarmSandbox } from "../sandboxes/cube-warm-pool";
 import { errorMessage } from "../util/error-message";
+import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -1455,11 +1456,22 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         desktop: desktop.available,
         knowledgeTools: gatewayState.knowledge,
       });
+      const executionCapabilities = buildExecutionCapabilitySnapshot({
+        runtime: "sandbox",
+        workspaceRoot: workdir,
+        gatewayAvailable: gatewayState.knowledge,
+        desktopAvailability: desktop.available
+          ? "ready"
+          : gatewayState.knowledge
+            ? "on_demand"
+            : "unsupported",
+      });
       const established = await establishProviderSession({
         driver,
         ctx,
         runtime: { kind: "sandbox", id: box.id },
         capabilities: negotiatedCapabilities,
+        executionCapabilities,
         persistSession: async (nativeSessionId) => {
           if (!ctx.saveEngineSessionId) {
             throw new Error("OpenCode session persistence is unavailable");
@@ -1470,13 +1482,10 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const session = established.session;
       const sessionId = session.nativeSessionId;
       const resumed = established.resumed;
-      await recordProviderEvent(
-        providerSessionStartedEvent(ctx, session, {
-          provider: "opencode",
-          source: "opencode",
-        }),
-        { critical: true },
-      );
+      await recordProviderSessionStarted(ctx, session, {
+        provider: "opencode",
+        source: "opencode",
+      });
 
       // Capture the provider's CURRENT replacement catalog concurrently with
       // the turn. Ordinary prompts do not pay this fetch in TTFT; every capture
@@ -2024,7 +2033,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
           session,
           input: {
             kind: "prompt",
-            text: composeTurnPrompt(ctx, resumed),
+            text: composeTurnPrompt(ctx, resumed, executionCapabilities),
             model,
           },
           signal: turnAbort.signal,

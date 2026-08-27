@@ -604,6 +604,9 @@ export function translateOpenCode(
         produced.push(push(f.eventId, f.provider, {
           kind: "session.started",
           capabilities: parsed.capabilities,
+          ...(parsed.executionCapabilities
+            ? { executionCapabilities: parsed.executionCapabilities }
+            : {}),
           source: parsed.source ?? f.provider,
         }, ident));
       } else suppressed = "session.started without a capabilities map";
