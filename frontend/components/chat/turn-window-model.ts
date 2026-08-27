@@ -109,6 +109,29 @@ export type AnchorRow = {
   readonly real: boolean;
 };
 
+/** Select the anchor from the layout that exists BEFORE pending measurements
+ * are applied. Capturing this first is essential: a row above the viewport can
+ * expand far enough to intersect it, but it must not replace the reader's
+ * original anchor for the correction calculation. */
+export function selectAnchorFromLayout(
+  heights: readonly number[],
+  real: ReadonlySet<number>,
+  gap: number,
+  scrollTop: number,
+  viewportHeight: number,
+): number {
+  const offsets = rowOffsets(heights, gap);
+  return selectAnchor(
+    heights.map((height, index) => ({
+      top: offsets[index],
+      height,
+      real: real.has(index),
+    })),
+    scrollTop,
+    viewportHeight,
+  );
+}
+
 /** The row whose viewport position must hold still when heights above it
  *  change: the topmost visible REAL row, else the topmost visible placeholder.
  *  Returns the row index, or -1 when nothing intersects the viewport. */

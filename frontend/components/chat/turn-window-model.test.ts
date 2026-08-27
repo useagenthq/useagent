@@ -7,6 +7,7 @@ import {
   rowOffsets,
   scrollCorrection,
   selectAnchor,
+  selectAnchorFromLayout,
   TURN_GAP_PX,
 } from "./turn-window-model";
 
@@ -124,6 +125,19 @@ describe("selectAnchor", () => {
 });
 
 describe("scrollCorrection", () => {
+  test("uses the pre-change anchor when an above-viewport row expands to 900px", () => {
+    // Before layout: four 300px rows, viewport starts at row 3. Row 1 then
+    // expands from 300px to 900px. Selecting from the post-change geometry
+    // would incorrectly make row 1 the anchor and apply no correction.
+    const before = [300, 300, 300, 300];
+    const anchor = selectAnchorFromLayout(before, new Set([0, 1, 2, 3]), 0, 900, 300);
+    expect(anchor).toBe(3);
+    expect(scrollCorrection([{ index: 1, delta: 600 }], anchor)).toBe(600);
+
+    const after = [300, 900, 300, 300];
+    expect(selectAnchorFromLayout(after, new Set([0, 1, 2, 3]), 0, 900, 300)).toBe(1);
+  });
+
   test("sums only height deltas strictly above the anchor", () => {
     const changes = [
       { index: 0, delta: 40 },

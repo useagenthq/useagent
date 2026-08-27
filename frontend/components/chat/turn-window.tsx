@@ -12,7 +12,6 @@
 // exactly as before. All geometry decisions live in ./turn-window-model.
 
 import {
-  Fragment,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -22,13 +21,13 @@ import {
   useState,
 } from "react";
 import type { Turn } from "@/components/chat/conversation";
+import { TurnUiStateProvider } from "./turn-ui-state";
 import {
   computeRealRows,
   estimateTurnHeight,
-  rowOffsets,
-  scrollCorrection,
-  selectAnchor,
   SHORT_TRANSCRIPT_LIMIT,
+  scrollCorrection,
+  selectAnchorFromLayout,
   TURN_GAP_PX,
 } from "./turn-window-model";
 
@@ -65,7 +64,7 @@ export function TurnWindow({
   turns: readonly Turn[];
   /** The conversation's own scroll container - the window reads its viewport. */
   scrollRef: RefObject<HTMLDivElement | null>;
-  renderTurn: (turn: Turn, index: number) => ReactNode;
+  renderTurn: (turn: Turn, index: number, windowOwnsRunMarker: boolean) => ReactNode;
 }) {
   const bypass = turns.length <= SHORT_TRANSCRIPT_LIMIT;
 
@@ -125,6 +124,21 @@ export function TurnWindow({
       const list = turnsRef.current;
       if (list.length <= SHORT_TRANSCRIPT_LIMIT) return;
       const indexByKey = new Map(list.map((t, i) => [t.run.id, i] as const));
+      const beforeHeights = list.map(
+        (turn) => laidOutRef.current.get(turn.run.id) ?? heightOf(turn),
+      );
+      const realIndices = new Set<number>();
+      for (let index = 0; index < list.length; index++) {
+        if (renderedRealRef.current.has(list[index].run.id)) realIndices.add(index);
+      }
+      const scrollTop = Math.max(0, el.scrollTop - contentTop(el));
+      const anchor = selectAnchorFromLayout(
+        beforeHeights,
+        realIndices,
+        TURN_GAP_PX,
+        scrollTop,
+        el.clientHeight,
+      );
       const changes: { index: number; delta: number }[] = [];
       for (const entry of entries) {
         const key = (entry.target as HTMLElement).dataset.turnRow;
@@ -140,18 +154,6 @@ export function TurnWindow({
       if (changes.length === 0) return;
       const pinned = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
       if (!pinned) {
-        const heights = list.map((t) => laidOutRef.current.get(t.run.id) ?? heightOf(t));
-        const offsets = rowOffsets(heights, TURN_GAP_PX);
-        const scrollTop = Math.max(0, el.scrollTop - contentTop(el));
-        const anchor = selectAnchor(
-          list.map((t, i) => ({
-            top: offsets[i],
-            height: heights[i],
-            real: renderedRealRef.current.has(t.run.id),
-          })),
-          scrollTop,
-          el.clientHeight,
-        );
         const delta = scrollCorrection(changes, anchor);
         if (delta !== 0) el.scrollTop += delta;
       }
@@ -235,16 +237,16 @@ export function TurnWindow({
       // the first real measurement corrects scroll by the true delta.
       if (!real) laidOutRef.current.set(key, height);
       return (
-        // data-run-id keeps the message scroller rail's observation + jump
-        // targets stable across placeholder/real swaps (the wrapper never
-        // unmounts); data-turn-row keys ResizeObserver entries back to rows.
-        <div key={key} ref={rowRef(key)} data-turn-row={key} data-run-id={key}>
-          {real ? (
-            renderTurn(turn, index)
-          ) : (
-            <div style={{ height }} aria-hidden data-testid="turn-placeholder" />
-          )}
-        </div>
+        <TurnWindowRow
+          key={key}
+          turn={turn}
+          index={index}
+          windowed
+          real={real}
+          height={height}
+          rowRef={rowRef(key)}
+          renderTurn={renderTurn}
+        />
       );
     });
   }
@@ -258,10 +260,60 @@ export function TurnWindow({
     return (
       <>
         {turns.map((turn, index) => (
-          <Fragment key={turn.run.id}>{renderTurn(turn, index)}</Fragment>
+          <TurnWindowRow
+            key={turn.run.id}
+            turn={turn}
+            index={index}
+            windowed={false}
+            real
+            height={0}
+            renderTurn={renderTurn}
+          />
         ))}
       </>
     );
   }
   return <>{rows}</>;
+}
+
+function TurnWindowRow({
+  turn,
+  index,
+  windowed,
+  real,
+  height,
+  rowRef,
+  renderTurn,
+}: {
+  turn: Turn;
+  index: number;
+  windowed: boolean;
+  real: boolean;
+  height: number;
+  rowRef?: (node: HTMLDivElement | null) => () => void;
+  renderTurn: (turn: Turn, index: number, windowOwnsRunMarker: boolean) => ReactNode;
+}) {
+  const content = real ? (
+    renderTurn(turn, index, windowed)
+  ) : (
+    <div style={{ height }} aria-hidden data-testid="turn-placeholder" />
+  );
+  return (
+    <TurnUiStateProvider>
+      {windowed ? (
+        // This wrapper is the sole rail marker for a windowed turn. TurnBlock
+        // omits its marker in this mode, so IntersectionObserver never tracks
+        // duplicate nodes for the same run.
+        <div
+          ref={rowRef}
+          data-turn-row={turn.run.id}
+          data-run-id={turn.run.id}
+        >
+          {content}
+        </div>
+      ) : (
+        content
+      )}
+    </TurnUiStateProvider>
+  );
 }
