@@ -23,15 +23,13 @@ const LANE_CAP = 8;
 const MIN_CONTEXT_LENGTH = 65_536;
 // Catalog-visible but rejected by OpenRouter for this hosted application even
 // when invoked through the full OpenCode harness (release canary 2026-08-27).
-const INCOMPATIBLE_HOSTED_MODELS = new Set([
-  "thinkingmachines/inkling-small:free",
-]);
+const INCOMPATIBLE_HOSTED_MODEL_PREFIXES = ["thinkingmachines/"];
 
 /** Curated fallback lane (verified tool-capable free models): the boot state
  * and the safety net whenever the live catalog is unreachable or garbage. */
 export const FREE_MODEL_LANE_SEED = [
   "nvidia/nemotron-3.5-lightning:free",
-  "thinkingmachines/inkling:free",
+  "minimax/minimax-m3:free",
   "poolside/laguna-s-2.1:free",
   "inclusionai/ling-3.0-flash-fin:free",
 ] as const;
@@ -81,7 +79,7 @@ export function deriveFreeModelLane(catalog: unknown): string[] {
       supported_parameters?: unknown;
     };
     if (typeof entry.id !== "string" || !entry.id.endsWith(":free")) continue;
-    if (INCOMPATIBLE_HOSTED_MODELS.has(entry.id)) continue;
+    if (INCOMPATIBLE_HOSTED_MODEL_PREFIXES.some((prefix) => entry.id.startsWith(prefix))) continue;
     if (
       typeof entry.context_length !== "number" ||
       entry.context_length < MIN_CONTEXT_LENGTH
