@@ -664,6 +664,213 @@ html {
     --social-zendesk: 0 0% 100%;
   }
 
+  /* Dusk - the previous Midnight: cool Tokyo-Night-derived indigo dark,
+   * kept as its own theme for those who prefer it. */
+  .dusk {
+      --brand-orbit: 212.06 100% 60%; /* #3392ff BoardUI accent (blue-400) */
+      /* -------------------------------------------------------------------
+       * Midnight - Tokyo Night dark theme (the product default dark ramp).
+       *
+       * The Tokyo Night palette mapped through the inverted dark ramp, lifted
+       * off near-black to a layered graphite-indigo (2026-08-27):
+       * canvas = #1f212d (bg-white-0), chrome = #1b1c25 (bg-soft-200/bg-weak-50,
+       * the darker sidebar surface), raised = #252838 (bg-sub-300), text =
+       * #cdd5f7 lavender (text-strong-950), muted text = #8a8fb0 (text-sub-600),
+       * border = #323852 (stroke-soft-200). The interactive accent stays the
+       * STANDARD blue ramp (below) - personality lives in surfaces + text, per
+       * the harbor decision (2026-08-23); the orange/red/green/purple/sky/pink/
+       * teal primitives already carry Tokyo Night status/syntax hues. Components
+       * consume semantic bg/text/stroke/status tokens, never page-specific
+       * colors. Hex in comments is the sRGB value each HSL triple encodes; keep
+       * in sync with the .theme-swatch-dark preview and the un-layered `.dark`
+       * BoardUI-semantic override in the themes section below.
+       * ------------------------------------------------------------------- */
+      --neutral-0: 0 0% 100%;
+      --neutral-50: 228.57 72.41% 88.63%; /* #cdd5f7 - primary text (lifted Tokyo Night lavender) */
+      --neutral-100: 229.76 35.65% 77.45%; /* #b1b8da - secondary text (derived) */
+      --neutral-200: 232.11 19.39% 61.57%; /* #8a8fb0 - muted text */
+      --neutral-300: 229.29 22.76% 48.24%; /* #5f6997 - soft text (derived) */
+      --neutral-400: 229.33 23.81% 37.06%; /* #485075 - stronger border / disabled (derived) */
+      --neutral-500: 230 23.08% 30.59%; /* #3c4260 - surface step (derived) */
+      --neutral-600: 230.77 23.21% 21.96%; /* #2b2f45 - surface step (derived) */
+      --neutral-700: 230.53 20.43% 18.24%; /* #252838 - raised surface */
+      --neutral-800: 231.43 18.42% 14.9%; /* #1f212d - canvas (lifted graphite-indigo) */
+      --neutral-900: 234 15.63% 12.55%; /* #1b1c25 - chrome */
+      --neutral-950: 232.5 16.67% 9.41%; /* #14151c - darkest (derived) */
+
+      --neutral-alpha-24: 232.11 19.39% 61.57% / 24%; /* #8a8fb0 muted-lavender wash */
+      --neutral-alpha-16: 232.11 19.39% 61.57% / 16%;
+      --neutral-alpha-10: 232.11 19.39% 61.57% / 10%;
+
+      /* BoardUI's accent primitives are theme-invariant; only the -100/-50 tint
+         steps go translucent so light-pastel chips don't glow on the dark canvas. */
+      --blue-950: 226.88 59.26% 21.18%; /* #162456 */
+      --blue-900: 224.74 67.06% 33.33%; /* #1c398e */
+      --blue-800: 226.79 76.08% 40.98%; /* #193cb8 */
+      --blue-700: 225.43 84% 49.02%; /* #1447e6 */
+      --blue-600: 221.3 97.47% 53.53%; /* #155dfc */
+      --blue-500: 216.23 100% 58.43%; /* #2b7fff */
+      --blue-400: 212.06 100% 60%; /* #3392ff */
+      --blue-300: 210.8 100% 77.84%; /* #8ec5ff */
+      --blue-200: 213.23 100% 87.25%; /* #bedbff */
+      --blue-100: 216.23 100% 58.43% / 24%;
+      --blue-50: 216.23 100% 58.43% / 16%;
+
+      --blue-alpha-24: 216.23 100% 58.43% / 24%;
+      --blue-alpha-16: 216.23 100% 58.43% / 16%;
+      --blue-alpha-10: 216.23 100% 58.43% / 10%;
+
+      --orange-600: 22.45 100% 69.61%; /* #ff9e64 */
+      --orange-500: 22.45 100% 69.61%; /* #ff9e64 */
+      --orange-400: 35.5 65.93% 64.31%; /* #e0af68 */
+
+      --orange-alpha-24: 22.45 100% 69.61% / 24%;
+      --orange-alpha-16: 22.45 100% 69.61% / 16%;
+      --orange-alpha-10: 22.45 100% 69.61% / 10%;
+
+      --red-600: 0 66.67% 57.65%; /* #db4b4b */
+      --red-500: 348.84 88.97% 71.57%; /* #f7768e */
+      --red-400: 348.84 88.97% 71.57%; /* #f7768e */
+
+      --red-alpha-24: 348.84 88.97% 71.57% / 24%;
+      --red-alpha-16: 348.84 88.97% 71.57% / 16%;
+      --red-alpha-10: 348.84 88.97% 71.57% / 10%;
+
+      --green-600: 187.76 47.15% 48.24%; /* #41a6b5 */
+      --green-500: 170.68 58.19% 65.29%; /* #73daca */
+      --green-400: 88.8 50.51% 61.18%; /* #9ece6a */
+
+      --green-alpha-24: 170.68 58.19% 65.29% / 24%;
+      --green-alpha-16: 170.68 58.19% 65.29% / 16%;
+      --green-alpha-10: 170.68 58.19% 65.29% / 10%;
+
+      --yellow-600: 35.5 65.93% 64.31%; /* #e0af68 */
+      --yellow-500: 35.5 65.93% 64.31%; /* #e0af68 */
+      --yellow-400: 35.5 65.93% 64.31%; /* #e0af68 */
+
+      --yellow-alpha-24: 35.5 65.93% 64.31% / 24%;
+      --yellow-alpha-16: 35.5 65.93% 64.31% / 16%;
+      --yellow-alpha-10: 35.5 65.93% 64.31% / 10%;
+
+      --purple-600: 261.52 54.12% 66.67%; /* #9d7cd8 */
+      --purple-500: 261.29 85.32% 78.63%; /* #bb9af7 */
+      --purple-400: 261.29 85.32% 78.63%; /* #bb9af7 */
+
+      --purple-alpha-24: 261.29 85.32% 78.63% / 24%;
+      --purple-alpha-16: 261.29 85.32% 78.63% / 16%;
+      --purple-alpha-10: 261.29 85.32% 78.63% / 10%;
+
+      --sky-600: 189 73.17% 51.76%; /* #2ac3de */
+      --sky-500: 202.15 100% 74.51%; /* #7dcfff */
+      --sky-400: 202.15 100% 74.51%; /* #7dcfff */
+
+      --sky-alpha-24: 202.15 100% 74.51% / 24%;
+      --sky-alpha-16: 202.15 100% 74.51% / 16%;
+      --sky-alpha-10: 202.15 100% 74.51% / 10%;
+
+      --pink-600: 348.84 88.97% 71.57%; /* #f7768e */
+      --pink-500: 348.84 88.97% 71.57%; /* #f7768e */
+      --pink-400: 348.84 88.97% 71.57%; /* #f7768e */
+
+      --pink-alpha-24: 348.84 88.97% 71.57% / 24%;
+      --pink-alpha-16: 348.84 88.97% 71.57% / 16%;
+      --pink-alpha-10: 348.84 88.97% 71.57% / 10%;
+
+      --teal-600: 187.76 47.15% 48.24%; /* #41a6b5 */
+      --teal-500: 170.68 58.19% 65.29%; /* #73daca */
+      --teal-400: 170.68 58.19% 65.29%; /* #73daca */
+
+      --teal-alpha-24: 170.68 58.19% 65.29% / 24%;
+      --teal-alpha-16: 170.68 58.19% 65.29% / 16%;
+      --teal-alpha-10: 170.68 58.19% 65.29% / 10%;
+
+      /* BoardUI keeps the same accent CTA in dark (no muted primary). */
+      --primary-dark: var(--blue-800);
+      --primary-darker: var(--blue-700);
+      --primary-base: var(--blue-500);
+      --primary-alpha-24: var(--blue-alpha-24);
+      --primary-alpha-16: var(--blue-alpha-16);
+      --primary-alpha-10: var(--blue-alpha-10);
+
+      --bg-strong-950: var(--neutral-50);
+      --bg-surface-800: var(--neutral-100);
+      --bg-sub-300: var(--neutral-700);
+      --bg-soft-200: var(--neutral-900);
+      --bg-weak-50: 234 15.63% 12.55%; /* #1b1c25 - chrome/surface (matches bg-soft-200) */
+      --bg-white-0: var(--neutral-800);
+
+      --text-strong-950: var(--neutral-50);
+      --text-sub-600: var(--neutral-200); /* #8a8fb0 - muted text */
+      --text-soft-400: var(--neutral-300); /* #5f6997 - soft text */
+      --text-disabled-300: var(--neutral-400);
+      --text-white-0: var(--neutral-800);
+
+      --stroke-strong-950: var(--neutral-50);
+      --stroke-sub-300: var(--neutral-400);
+      --stroke-soft-200: 228.75 24.24% 25.88%; /* #323852 - lifted border */
+      --stroke-white-0: var(--neutral-800);
+
+      --faded-dark: var(--neutral-100);
+      --faded-base: var(--neutral-200);
+      --faded-light: var(--neutral-alpha-24);
+      --faded-lighter: var(--neutral-alpha-16);
+
+      --information-dark: var(--blue-400);
+      --information-base: var(--blue-500);
+      --information-light: var(--blue-alpha-24);
+      --information-lighter: var(--blue-alpha-16);
+
+      --warning-dark: var(--orange-400);
+      --warning-base: var(--orange-500);
+      --warning-light: var(--orange-alpha-24);
+      --warning-lighter: var(--orange-alpha-16);
+
+      --error-dark: var(--red-400);
+      --error-base: var(--red-600);
+      --error-light: var(--red-alpha-24);
+      --error-lighter: var(--red-alpha-16);
+
+      --success-dark: var(--green-400);
+      --success-base: var(--green-600);
+      --success-light: var(--green-alpha-24);
+      --success-lighter: var(--green-alpha-16);
+
+      --away-dark: var(--yellow-400);
+      --away-base: var(--yellow-600);
+      --away-light: var(--yellow-alpha-24);
+      --away-lighter: var(--yellow-alpha-16);
+
+      --feature-dark: var(--purple-400);
+      --feature-base: var(--purple-500);
+      --feature-light: var(--purple-alpha-24);
+      --feature-lighter: var(--purple-alpha-16);
+
+      --verified-dark: var(--sky-400);
+      --verified-base: var(--sky-600);
+      --verified-light: var(--sky-alpha-24);
+      --verified-lighter: var(--sky-alpha-16);
+
+      --highlighted-dark: var(--pink-400);
+      --highlighted-base: var(--pink-600);
+      --highlighted-light: var(--pink-alpha-24);
+      --highlighted-lighter: var(--pink-alpha-16);
+
+      --stable-dark: var(--teal-400);
+      --stable-base: var(--teal-600);
+      --stable-light: var(--teal-alpha-24);
+      --stable-lighter: var(--teal-alpha-16);
+
+      --overlay: 232.5 16.67% 9.41% / 72%; /* #14151c scrim (darkest step) */
+
+      --social-apple: 0 0% 100%;
+      --social-twitter: 0 0% 100%;
+      --social-github: 0 0% 100%;
+      --social-notion: 0 0% 100%;
+      --social-tidal: 0 0% 100%;
+      --social-amazon: 0 0% 100%;
+      --social-zendesk: 0 0% 100%;
+    }
+
   .aura {
     /* -------------------------------------------------------------------
      * Aura - violet dark theme.
@@ -1879,6 +2086,7 @@ html {
   }
 
   .dark,
+  .dusk,
   .aura,
   .harbor,
   .phosphor,
@@ -2012,6 +2220,98 @@ html {
   --color-border-button-group:     color-mix(in srgb, hsl(var(--neutral-300)) 60%, transparent);
   --color-border-sidebar-profile-hover: hsl(var(--neutral-300));
   --color-separator-border:        hsl(0 0% 20%); /* #333333 hairline border */
+  --color-separator-border-strong: color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+
+  /* Charts: neutral structure only (categorical/status bars keep theme.css) */
+  --color-chart-track:   hsl(var(--neutral-700));
+  --color-chart-cursor:  hsl(var(--neutral-400));
+  --color-chart-neutral: hsl(var(--neutral-700));
+
+  /* Disabled primary CTA: neutral fill (danger gradient keeps theme.css red) */
+  --gradient-button-primary-disabled: linear-gradient(
+    180deg,
+    hsl(var(--neutral-400)) 0%,
+    hsl(var(--neutral-700)) 100%
+  );
+}
+
+/* Dusk (legacy token layer) - previous Midnight ramp. */
+.dusk {
+  /* Foreground (neutral-driven; icon-error / disabled-danger keep theme.css red) */
+  --color-foreground-full:            hsl(var(--neutral-400));
+  --color-foreground-icon-primary:    hsl(var(--neutral-50));
+  --color-foreground-icon-hover:      hsl(var(--neutral-0));
+  --color-foreground-icon-tertiary:   hsl(var(--neutral-200));
+  --color-foreground-icon-quaternary: hsl(var(--neutral-300));
+  --color-foreground-icon-disabled:   hsl(228.75 24.24% 25.88%); /* #323852 */
+  --color-foreground-disabled:        hsl(var(--neutral-400));
+  --color-input-disabled-foreground:  hsl(var(--neutral-300));
+  --color-icon-button-disabled-foreground: hsl(var(--neutral-200));
+  --color-button-primary-disabled-foreground: hsl(var(--neutral-200));
+
+  /* Text (secondary is not in theme.css's .dark; set it so it lands lavender) */
+  --color-text-primary:   hsl(var(--neutral-50));
+  --color-text-secondary: hsl(var(--neutral-100));
+  --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-disabled:  hsl(228.75 24.24% 25.88%); /* #323852 */
+  --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
+
+  /* Background */
+  --color-background-full:              hsl(230 20.69% 11.37%); /* #171923 derived deep backdrop - page canvas sits BELOW the floating sidebar panel (user elevation decision 2026-08-23) */
+  --color-background-primary-default:   hsl(var(--neutral-700)); /* #252838 raised */
+  --color-background-inner-default:     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+  --color-background-primary-hover:     color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-background-primary-active:    hsl(var(--neutral-700));
+  --color-background-primary-disabled:  hsl(var(--neutral-700));
+  --color-input-disabled-background:    color-mix(in srgb, hsl(var(--neutral-700)) 30%, transparent);
+  --color-switch-off-chip-start:        var(--color-background-tertiary-default);
+  --color-switch-off-chip-end:          var(--color-background-tertiary-default);
+  --color-background-secondary-default: hsl(var(--neutral-800)); /* #1f212d - floating panel/chrome, LIGHTER than the backdrop */
+  --color-background-secondary-hover:   hsl(var(--neutral-700));
+  --color-background-tertiary-default:  hsl(var(--neutral-900)); /* #1b1c25 inset fills, between backdrop and panel */
+  --color-background-tertiary-hover:    hsl(var(--neutral-400));
+  --color-background-quaternary-default: hsl(var(--neutral-400));
+  --color-background-quaternary-hover:   hsl(var(--neutral-300));
+  --color-background-recent-hire-role:  color-mix(in srgb, hsl(var(--neutral-900)) 60%, transparent);
+  --color-avatar-neutral-background:    var(--color-background-primary-default);
+  --color-file-upload-icon-background:  hsl(var(--neutral-300));
+  --color-file-upload-icon-foreground:  hsl(var(--neutral-100));
+  --color-file-upload-icon-foreground-hover: hsl(var(--neutral-50));
+  --color-stat-card-icon-background:    hsl(var(--neutral-700));
+  --color-segmented-control-background:          hsl(var(--neutral-800));
+  --color-segmented-control-selected-background: hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-background:       hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-selected-background: hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-background:       hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-hover-background: hsl(var(--neutral-300));
+  --color-agent-progress-ring:                   color-mix(in srgb, hsl(var(--neutral-0)) 50%, transparent);
+  --color-dropdown-item-hover-background:        color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-kbd-background:                        hsl(var(--neutral-400));
+  --color-kbd-foreground:                        hsl(var(--neutral-100));
+  --color-docs-code-background:                  var(--color-background-full);
+  --color-docs-install-rail:                     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+
+  /* Neutral surfaces nested inside otherwise-colored groups */
+  --color-badge-neutral-background:       hsl(var(--neutral-700));
+  --color-team-menu-count-background:     hsl(var(--neutral-400));
+  --color-team-menu-count-foreground:     hsl(var(--neutral-100));
+  --color-notification-center-background: hsl(var(--neutral-900));
+  --color-pill-tab-blue-hover-background: hsl(var(--neutral-700));
+
+  /* Borders and separators (error border keeps theme.css red) */
+  --color-border-button-default:   hsl(var(--neutral-400));
+  --color-border-button-hover:     hsl(var(--neutral-200));
+  --color-border-button-active:    hsl(var(--neutral-300));
+  --color-border-button-white:     hsl(228.75 24.24% 25.88%); /* #323852 */
+  --color-border-checkbox-default: hsl(var(--neutral-400));
+  --color-border-checkbox-hover:   hsl(var(--neutral-200));
+  --color-border-checkbox-active:  hsl(var(--neutral-200));
+  --color-border-component-detail-container: hsl(228.75 24.24% 25.88%);
+  --color-border-ai-profile-card:  hsl(228.75 24.24% 25.88%);
+  --color-border-table:            hsl(228.75 24.24% 25.88%);
+  --color-border-button-group:     color-mix(in srgb, hsl(var(--neutral-300)) 60%, transparent);
+  --color-border-sidebar-profile-hover: hsl(var(--neutral-300));
+  --color-separator-border:        hsl(228.75 24.24% 25.88%); /* #323852 lifted border */
   --color-separator-border-strong: color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
 
   /* Charts: neutral structure only (categorical/status bars keep theme.css) */
@@ -3294,6 +3594,11 @@ html {
   --swatch-canvas: #262626;
   --swatch-accent: #2b7fff;
 }
+
+.theme-swatch-dusk {
+  --swatch-canvas: #1f212d;
+  --swatch-accent: #2b7fff;
+}
 .theme-swatch-aura {
   --swatch-canvas: #15141b;
   --swatch-accent: #a277ff;
@@ -3352,6 +3657,7 @@ html {
 /* Dark canvases stay CLEAN (reference grammar): the dot field reads as noise
  * on graphite, so dark/harbor mute it to near-invisible. Light keeps texture. */
 .dark .bg-halftone,
+.dusk .bg-halftone,
 .harbor .bg-halftone {
   background-image: radial-gradient(
     color-mix(in oklab, hsl(var(--text-strong-950)) 3%, transparent) 1px,
@@ -3595,6 +3901,8 @@ html {
  * ------------------------------------------------------------------------- */
 .dark .shiki,
 .dark .shiki span,
+.dusk .shiki,
+.dusk .shiki span,
 .aura .shiki,
 .aura .shiki span,
 .harbor .shiki,
@@ -3734,6 +4042,7 @@ html {
   color-scheme: light;
 }
 html.dark,
+html.dusk,
 html.aura,
 html.harbor,
 html.phosphor,
@@ -3750,6 +4059,8 @@ html.sakura-night {
 }
 .dark .theme-logo-light,
 .dark .theme-asset-light,
+.dusk .theme-logo-light,
+.dusk .theme-asset-light,
 .aura .theme-logo-light,
 .aura .theme-asset-light,
 .harbor .theme-logo-light,
@@ -3764,6 +4075,8 @@ html.sakura-night {
 }
 .dark .theme-logo-dark,
 .dark .theme-asset-dark,
+.dusk .theme-logo-dark,
+.dusk .theme-asset-dark,
 .aura .theme-logo-dark,
 .aura .theme-asset-dark,
 .harbor .theme-logo-dark,
@@ -3782,6 +4095,7 @@ html.sakura-night {
  * styles/theme.css `.dark` and the `.aura`/`.harbor` blocks above) so
  * class-based theming adjusts shadow opacity under every dark-scheme theme. */
 .dark .shadow-2xs,
+.dusk .shadow-2xs,
 .aura .shadow-2xs,
 .harbor .shadow-2xs,
 .phosphor .shadow-2xs,
@@ -3790,6 +4104,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-2xs);
 }
 .dark .shadow-xs,
+.dusk .shadow-xs,
 .aura .shadow-xs,
 .harbor .shadow-xs,
 .phosphor .shadow-xs,
@@ -3798,6 +4113,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-xs);
 }
 .dark .shadow-sm,
+.dusk .shadow-sm,
 .aura .shadow-sm,
 .harbor .shadow-sm,
 .phosphor .shadow-sm,
@@ -3806,6 +4122,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-sm);
 }
 .dark .shadow-md,
+.dusk .shadow-md,
 .aura .shadow-md,
 .harbor .shadow-md,
 .phosphor .shadow-md,
@@ -3814,6 +4131,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-md);
 }
 .dark .shadow-lg,
+.dusk .shadow-lg,
 .aura .shadow-lg,
 .harbor .shadow-lg,
 .phosphor .shadow-lg,
@@ -3822,6 +4140,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-lg);
 }
 .dark .shadow-xl,
+.dusk .shadow-xl,
 .aura .shadow-xl,
 .harbor .shadow-xl,
 .phosphor .shadow-xl,
@@ -3830,6 +4149,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-xl);
 }
 .dark .shadow-card,
+.dusk .shadow-card,
 .aura .shadow-card,
 .harbor .shadow-card,
 .phosphor .shadow-card,
@@ -3838,6 +4158,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-card);
 }
 .dark .shadow-dropdown,
+.dusk .shadow-dropdown,
 .aura .shadow-dropdown,
 .harbor .shadow-dropdown,
 .phosphor .shadow-dropdown,
@@ -3846,6 +4167,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-dropdown);
 }
 .dark .shadow-sidebar,
+.dusk .shadow-sidebar,
 .aura .shadow-sidebar,
 .harbor .shadow-sidebar,
 .phosphor .shadow-sidebar,
@@ -3854,6 +4176,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-sidebar);
 }
 .dark .shadow-waitlist,
+.dusk .shadow-waitlist,
 .aura .shadow-waitlist,
 .harbor .shadow-waitlist,
 .phosphor .shadow-waitlist,
@@ -4164,6 +4487,7 @@ input[type='search']::-webkit-search-cancel-button {
   color: color-mix(in oklab, currentColor 75%, transparent);
 }
 .dark .bui-agent-thinking-stars,
+.dusk .bui-agent-thinking-stars,
 .aura .bui-agent-thinking-stars,
 .harbor .bui-agent-thinking-stars,
 .phosphor .bui-agent-thinking-stars,

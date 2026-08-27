@@ -65,6 +65,22 @@ const resolveToken = (tokens: TokenMap, name: string): string => {
 
 const lightTokens = parseTokens(extractBlock(":root,"));
 const darkTokens = parseTokens(extractBlock(".dark {"));
+const duskTokens = parseTokens(extractBlock(".dusk {"));
+
+const extractSelectorList = (selector: string): string => {
+  const selectorIndex = globals.indexOf(selector);
+  if (selectorIndex === -1) throw new Error(`missing ${selector} rule`);
+
+  const previousClose = globals.lastIndexOf("}", selectorIndex);
+  const open = globals.indexOf("{", selectorIndex);
+  if (open === -1) throw new Error(`missing opening brace for ${selector}`);
+
+  return globals.slice(previousClose + 1, open);
+};
+
+const expectSharedDarkRuleIncludesDusk = (darkSelector: string, duskSelector: string): void => {
+  expect(extractSelectorList(darkSelector)).toContain(duskSelector);
+};
 
 describe("shared theme tokens", () => {
   test("light theme maps the warm neutral ramp through the legacy semantic tokens", () => {
@@ -117,6 +133,45 @@ describe("shared theme tokens", () => {
     expect(contrast("#a1a1a1", "#121212")).toBeGreaterThanOrEqual(4.5);
     expect(contrast("#a1a1a1", "#262626")).toBeGreaterThanOrEqual(4.5);
     expect(contrast("#a1a1a1", "#2e2e2e")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test("Dusk keeps its legacy canvas and uses its actual primary accent", () => {
+    expect(resolveToken(duskTokens, "--bg-white-0")).toBe("231.43 18.42% 14.9%");
+    expect(resolveToken(duskTokens, "--primary-base")).toBe("216.23 100% 58.43%");
+
+    const swatchTokens = parseTokens(extractBlock(".theme-swatch-dusk {"));
+    expect(swatchTokens["--swatch-canvas"]).toBe("#1f212d");
+    expect(swatchTokens["--swatch-accent"]).toBe("#2b7fff");
+  });
+
+  test("Dusk participates in every shared dark-theme behavior", () => {
+    expectSharedDarkRuleIncludesDusk(".dark,", ".dusk");
+    expectSharedDarkRuleIncludesDusk(".dark .bg-halftone,", ".dusk .bg-halftone");
+    expectSharedDarkRuleIncludesDusk(".dark .shiki,", ".dusk .shiki");
+    expectSharedDarkRuleIncludesDusk("html.dark,", "html.dusk");
+    expectSharedDarkRuleIncludesDusk(".dark .theme-logo-light,", ".dusk .theme-logo-light");
+    expectSharedDarkRuleIncludesDusk(".dark .theme-asset-light,", ".dusk .theme-asset-light");
+    expectSharedDarkRuleIncludesDusk(".dark .theme-logo-dark,", ".dusk .theme-logo-dark");
+    expectSharedDarkRuleIncludesDusk(".dark .theme-asset-dark,", ".dusk .theme-asset-dark");
+    expectSharedDarkRuleIncludesDusk(
+      ".dark .bui-agent-thinking-stars,",
+      ".dusk .bui-agent-thinking-stars",
+    );
+
+    for (const shadow of [
+      "2xs",
+      "xs",
+      "sm",
+      "md",
+      "lg",
+      "xl",
+      "card",
+      "dropdown",
+      "sidebar",
+      "waitlist",
+    ]) {
+      expectSharedDarkRuleIncludesDusk(`.dark .shadow-${shadow},`, `.dusk .shadow-${shadow}`);
+    }
   });
 
   test("primary CTA label preserves readable contrast", () => {

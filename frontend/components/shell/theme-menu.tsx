@@ -29,6 +29,7 @@ import { cx } from '@/utils/cx';
 export const THEME_OPTIONS = [
   { value: 'light', label: 'Light', swatch: 'theme-swatch-light' },
   { value: 'dark', label: 'Midnight', swatch: 'theme-swatch-dark' },
+  { value: 'dusk', label: 'Dusk', swatch: 'theme-swatch-dusk' },
   { value: 'aura', label: 'Aura', swatch: 'theme-swatch-aura' },
   { value: 'harbor', label: 'Dark', swatch: 'theme-swatch-harbor' },
   { value: 'phosphor', label: 'Dark Green', swatch: 'theme-swatch-phosphor' },
