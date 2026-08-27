@@ -14,7 +14,8 @@
 // groupWorkEntryOverflow in ./work-entry.ts. Tokens are our semantic tokens.
 
 import { RiArrowDownSLine } from "@remixicon/react";
-import { memo, useState } from "react";
+import { memo } from "react";
+import { useTurnUiState } from "@/components/chat/turn-ui-state";
 import { cx as cn } from "@/utils/cx";
 import {
   groupWorkEntryOverflow,
@@ -32,13 +33,16 @@ export const WorkGroup = memo(function WorkGroup({
   workspaceRoot,
   turnSettled = true,
   maxVisible = MAX_VISIBLE_WORK_ENTRIES,
+  stateKey = "work-group",
 }: {
   entries: readonly WorkEntry[];
   workspaceRoot?: string;
   turnSettled?: boolean;
   maxVisible?: number;
+  /** Stable identity inside a turn so virtualization can restore the toggle. */
+  stateKey?: string;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useTurnUiState(stateKey, false);
   const { visible, hiddenCount, onlyToolEntries } = groupWorkEntryOverflow(
     entries,
     expanded,

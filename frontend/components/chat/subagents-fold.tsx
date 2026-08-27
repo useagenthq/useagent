@@ -11,7 +11,7 @@
 
 import { RiArrowDownSLine, RiExternalLinkLine, RiRobot2Line } from "@remixicon/react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { childStatusLabel, isChildActive } from "@/components/chat/agents-rail";
 import {
   deriveChildrenView,
@@ -26,6 +26,7 @@ import {
 } from "@/components/chat/gateway-children";
 import type { NativeFrame } from "@/components/chat/native-events";
 import type { SubagentCard } from "@/components/chat/subagents";
+import { useTurnUiState } from "@/components/chat/turn-ui-state";
 import { type ApiStep, engineLabel } from "@/components/chat/types";
 import {
   formatSubagentModelLabel,
@@ -156,7 +157,7 @@ export function SubagentsFold({
     () => deriveChildrenView(steps, frames, canonicalEvents),
     [steps, frames, canonicalEvents],
   );
-  const [toggled, setToggled] = useState<boolean | null>(null);
+  const [toggled, setToggled] = useTurnUiState<boolean | null>("subagents", null);
 
   const count = view.cards.length + childSessions.length;
   if (count === 0) return null;
