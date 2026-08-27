@@ -44,9 +44,9 @@ describe("deriveFreeModelLane (catalog filter)", () => {
     const lane = deriveFreeModelLane({
       data: [
         entry("minimax/minimax-m3:free", 1_048_576),
-        entry("nvidia/nemotron-3-ultra-550b-a55b:free", 1_000_000),
         entry("dots-studio/dots-3-note-preview:free", 512_000),
         entry("nvidia/nemotron-3-super-120b-a12b:free", 262_144),
+        entry("nvidia/nemotron-3-ultra-550b-a55b:free", 1_000_000),
         entry("vendor/unproven:free", 2_000_000),
         entry("vendor/paid-model", 200_000), // not :free
         entry("vendor/no-tools:free", 200_000, ["temperature"]), // no tool calls
@@ -59,7 +59,6 @@ describe("deriveFreeModelLane (catalog filter)", () => {
     });
     expect(lane).toEqual([
       "minimax/minimax-m3:free",
-      "nvidia/nemotron-3-ultra-550b-a55b:free",
       "dots-studio/dots-3-note-preview:free",
       "nvidia/nemotron-3-super-120b-a12b:free",
     ]);
@@ -129,7 +128,7 @@ describe("FreeModelLaneCache", () => {
 
   test("catalog rotation never invalidates a model accepted earlier in this process", async () => {
     const cache = new FreeModelLaneCache({ ttlMs: 1 });
-    const firstModel = "nvidia/nemotron-3-ultra-550b-a55b:free";
+    const firstModel = "minimax/minimax-m3:free";
     const secondModel = "dots-studio/dots-3-note-preview:free";
     const first = fetcherOf(() =>
       catalogResponse({ data: [entry(firstModel, 1_000_000)] }),
