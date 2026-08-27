@@ -14,8 +14,9 @@ if (password.length < 12) {
 process.env.NODE_ENV = "development";
 process.env.USEAGENT_DEV_MODE = "true";
 
-const [{ auth }, { client, db }, { user }] = await Promise.all([
+const [{ auth }, { createPersonalOrgForUser }, { client, db }, { member, user }] = await Promise.all([
   import("../src/auth"),
+  import("../src/auth-hooks"),
   import("../src/db/client"),
   import("../src/db/auth-schema"),
 ]);
@@ -27,11 +28,30 @@ try {
     .where(eq(user.email, email))
     .limit(1);
 
-  if (existing) {
+  let userId = existing?.id;
+  if (userId) {
     console.log(`bootstrap user already exists: ${email}`);
   } else {
-    await auth.api.signUpEmail({ body: { email, password, name } });
+    const created = await auth.api.signUpEmail({ body: { email, password, name } });
+    userId = created.user.id;
     console.log(`bootstrap user created: ${email}`);
+  }
+
+  let [membership] = await db
+    .select({ role: member.role })
+    .from(member)
+    .where(eq(member.userId, userId))
+    .limit(1);
+  if (!membership) {
+    await createPersonalOrgForUser({ id: userId, email, name });
+    [membership] = await db
+      .select({ role: member.role })
+      .from(member)
+      .where(eq(member.userId, userId))
+      .limit(1);
+  }
+  if (membership?.role !== "owner") {
+    throw new Error("bootstrap user was not provisioned as an organization owner");
   }
 } finally {
   await client.end();
