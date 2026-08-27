@@ -17,10 +17,9 @@ import type { RunCreateBody } from "./routes";
  * tool insert a run with acceptRunCommand and then ask THIS process to pump
  * the thread, so execution and the relay share one process.
  *
- * AUTH: the host-local operator secret as a bearer token, compared in constant
- * time. Proxied requests are rejected outright - Caddy and the Next rewrite
- * always append X-Forwarded-For, so only direct loopback callers (who already
- * hold the host's environment) can present the header-free shape.
+ * AUTH: a dedicated host-local operator secret as a bearer token, compared in
+ * constant time. The actual socket peer must be loopback and proxy-origin
+ * headers are rejected. Header absence is never treated as locality evidence.
  */
 
 interface OperatorOps {
@@ -48,12 +47,40 @@ function secretMatches(presented: string, expected: string): boolean {
   return a.length === b.length && a.length > 0 && timingSafeEqual(a, b);
 }
 
+function isLoopbackAddress(address: string | undefined): boolean {
+  if (!address) return false;
+  if (address === "::1") return true;
+  const ipv4 = address.startsWith("::ffff:") ? address.slice("::ffff:".length) : address;
+  const octets = ipv4.split(".");
+  return (
+    octets.length === 4 &&
+    octets[0] === "127" &&
+    octets.every((part) => /^\d{1,3}$/.test(part))
+  );
+}
+
+function hasProxyOriginHeaders(c: Context<AppEnv>): boolean {
+  return ["forwarded", "x-forwarded-for", "x-real-ip"].some((name) =>
+    Boolean(c.req.header(name)),
+  );
+}
+
+function operatorSecret(): string {
+  const secret = process.env.USEAGENT_OPERATOR_SECRET?.trim() ?? "";
+  const authSecret = process.env.BETTER_AUTH_SECRET?.trim() ?? "";
+  if (secret.length < 32 || (authSecret && secret === authSecret)) return "";
+  return secret;
+}
+
 export function createOperatorRoutes(ops: OperatorOps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
 
   routes.use("*", async (c, next) => {
-    if (c.req.header("x-forwarded-for")) return c.json({ error: "not_found" }, 404);
-    const secret = process.env.BETTER_AUTH_SECRET?.trim() ?? "";
+    const peer = c.env?.requestIP?.(c.req.raw)?.address;
+    if (!isLoopbackAddress(peer) || hasProxyOriginHeaders(c)) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    const secret = operatorSecret();
     if (!secret || !secretMatches(bearer(c.req.header("authorization")), secret)) {
       return c.json({ error: "unauthorized" }, 401);
     }
