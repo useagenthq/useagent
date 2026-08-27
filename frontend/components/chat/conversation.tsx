@@ -420,6 +420,7 @@ function ReplyComposer({
   threadError,
   onDismissThreadError,
   engineUnavailable,
+  engineUnavailableMessage,
   draftKey,
   prefill,
   enableMentions,
@@ -446,6 +447,7 @@ function ReplyComposer({
   threadError?: string | null;
   onDismissThreadError?: () => void;
   engineUnavailable?: boolean;
+  engineUnavailableMessage?: string;
   /** Thread key for per-thread draft persistence (the root run id). */
   draftKey?: string | null;
   /** Externally seed the composer (conflicted-proposal "Ask agent to redo"). */
@@ -479,6 +481,7 @@ function ReplyComposer({
           threadError={threadError}
           onDismissThreadError={onDismissThreadError}
           engineUnavailable={engineUnavailable}
+          engineUnavailableMessage={engineUnavailableMessage}
           draftKey={draftKey}
           prefill={prefill}
         />
@@ -687,8 +690,16 @@ export const Conversation = memo(function Conversation({
   // conservative loading fallback as evidence that an engine is unavailable.
   const engineConfig = useEnabledEngineConfig();
   const engineUnavailable =
-    unavailableEngineLabel(defaultEngine, engineConfig.engines, engineConfig.readinessKnown) !==
+    unavailableEngineLabel(
+      defaultEngine,
+      engineConfig.engines,
+      engineConfig.readinessKnown,
+      engineConfig.readiness,
+    ) !==
     null;
+  const engineUnavailableMessage = engineConfig.readiness[defaultEngine]?.ready === false
+    ? engineConfig.readiness[defaultEngine]?.message
+    : undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -778,6 +789,7 @@ export const Conversation = memo(function Conversation({
         threadError={threadError}
         onDismissThreadError={handleDismissThreadError}
         engineUnavailable={engineUnavailable}
+        engineUnavailableMessage={engineUnavailableMessage}
         draftKey={turns[0]?.run.id ?? null}
         prefill={prefill}
         enableMentions={composerAcceptsRunResources(pendingQuestion ?? null)}

@@ -29,6 +29,7 @@ import {
 import {
   ENGINES,
   type EngineId,
+  engineLabel,
   modelOptionsForEngine,
   partitionModelOptions,
   selectableModelsForEngine,
@@ -40,6 +41,7 @@ import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt
 import { backendFetch } from "@/lib/backend-fetch";
 import {
   createRun,
+  runCreateFailureMessage,
   type RunCreateAttempt,
   selectRunCreateAttempt,
 } from "@/lib/create-run";
@@ -48,16 +50,6 @@ import { RepoBranchBar } from "./repo-branch-bar";
 import { type RepoItem, RepoMultiPicker } from "./repo-multi-picker";
 import { type PickerGroup, SearchablePicker } from "./searchable-picker";
 import type { Skill } from "./skills-data";
-
-/** Composer-specific caption for each selectable engine (POST /api/runs `engine`).
- * Partial because the legacy EngineId values are never offered in the picker, so
- * they need no caption. */
-const ENGINE_CAPTIONS: Partial<Record<EngineId, string>> = {
-  chat: "direct model · no sandbox",
-  opencode: "any model · cloud sandbox",
-  claude: "cloud sandbox",
-  codex: "cloud sandbox",
-};
 
 /**
  * The New Task composer: a prompt textarea over a control row of searchable
@@ -296,7 +288,8 @@ export function NewTaskComposer({
     if (preskill && skills.some((s) => s.id === preskill)) setPlaybook(preskill);
   }, [skills]);
 
-  // The engine picker's options, filtered to the server-enabled set.
+  // Keep configured engines discoverable; readiness decorates an engine with
+  // actionable status instead of deleting it from the picker.
   const engineGroups: PickerGroup[] = useMemo(
     () => [
       {
@@ -305,13 +298,13 @@ export function NewTaskComposer({
           (e) => ({
             value: e.id,
             label: e.label,
-            caption: ENGINE_CAPTIONS[e.id],
+            caption: `${e.hint}${engineConfig.readiness[e.id]?.ready === false ? " · needs attention" : ""}`,
             icon: RiCpuLine,
           }),
         ),
       },
     ],
-    [enabledEngines],
+    [enabledEngines, engineConfig.readiness],
   );
 
   // One combined picker over the shared substrate: an explicit "none" option, then
@@ -340,6 +333,11 @@ export function NewTaskComposer({
   async function submit() {
     const text = prompt.trim();
     if (!text) return;
+    const readiness = engineConfig.readiness[engineId];
+    if (readiness && !readiness.ready) {
+      setError(readiness.message ?? `${engineLabel(engineId)} is not ready. Check Settings and retry.`);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     // Close the add-context shelf so the rim light wraps the full rounded card
@@ -386,7 +384,11 @@ export function NewTaskComposer({
 
     try {
       const res = await createRun(body, attempt.idempotencyKey);
-      if (!res.ok) throw new Error(String(res.status));
+      if (!res.ok) {
+        setError(await runCreateFailureMessage(res));
+        setSubmitting(false);
+        return;
+      }
       const data = (await res.json()) as { id?: string };
       if (!data.id) throw new Error("missing run id");
       runCreateAttempt.current = null;

@@ -170,6 +170,8 @@ export type ComposerProps = {
    *  (GET /api/config `engines`, see unavailableEngineLabel) - shows the slim
    *  provider status banner. Computed by the call site; no fetch here. */
   engineUnavailable?: boolean;
+  /** Actionable provider/readiness detail from the server manifest. */
+  engineUnavailableMessage?: string;
   /** Persist the in-progress draft per thread (localStorage, client only): a
    *  reload or thread switch restores unsent text. Cleared on submit. Absent
    *  keeps the composer stateless (hero/new-task surfaces). */
@@ -221,6 +223,7 @@ export function Composer({
   threadError,
   onDismissThreadError,
   engineUnavailable = false,
+  engineUnavailableMessage,
   draftKey,
   prefill,
 }: ComposerProps) {
@@ -271,6 +274,7 @@ export function Composer({
   // the draft + its idempotency key so a resend of the same text reuses the key.
   const [submitting, setSubmitting] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [failureMessage, setFailureMessage] = useState<string | null>(null);
   const retry = useRef<{ text: string; key: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const runUploads = useRunUploads();
@@ -385,6 +389,7 @@ export function Composer({
       retry.current && retry.current.text === text ? retry.current.key : crypto.randomUUID();
     setSubmitting(true);
     setFailed(false);
+    setFailureMessage(null);
     setValue(""); // optimistic clear — the pending bubble shows the text meanwhile
     try {
       // A typed native-command intent when the text is a `/known-command ...` for THIS
@@ -408,12 +413,13 @@ export function Composer({
       retry.current = null; // accepted — drop the retry key
       runUploads.clearAccepted();
       mentions.clear(); // accepted — drop the chips (their text tokens already sent)
-    } catch {
+    } catch (error) {
       // Never silently swallow: restore the draft and show an explicit failed
       // state; keep the key so the next send retries idempotently.
       retry.current = { text, key };
       setValue(text);
       setFailed(true);
+      setFailureMessage(error instanceof Error ? error.message : null);
     } finally {
       setSubmitting(false);
     }
@@ -527,7 +533,7 @@ export function Composer({
           className="text-red-500 mb-1.5 flex items-center gap-1.5 px-1 text-caption-1-regular"
         >
           <RiErrorWarningLine className="size-3.5 shrink-0" aria-hidden />
-          Couldn&apos;t send - your message is restored. Press send to try again.
+          {failureMessage ?? "Couldn't send - your message is restored. Press send to try again."}
         </div>
       )}
 
@@ -553,7 +559,12 @@ export function Composer({
           {threadError && (
             <ThreadErrorBanner error={threadError} onDismiss={onDismissThreadError} />
           )}
-          {engineUnavailable && <ProviderStatusBanner engineLabel={engineLabel(engine)} />}
+          {engineUnavailable && (
+            <ProviderStatusBanner
+              engineLabel={engineLabel(engine)}
+              description={engineUnavailableMessage}
+            />
+          )}
           {running && onStop && (
             <BackgroundStatusPill
               label="Run in progress"

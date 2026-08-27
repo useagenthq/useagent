@@ -6,6 +6,12 @@ test("a listed engine is never flagged", () => {
   expect(unavailableEngineLabel("opencode", ["opencode", "claude"], true)).toBeNull();
 });
 
+test("a listed but unready engine remains visible and is flagged", () => {
+  expect(unavailableEngineLabel("claude", ["opencode", "claude"], true, {
+    claude: { ready: false, reason: "provider_unhealthy" },
+  })).toBe("Claude Code");
+});
+
 test("an engine missing from the manifest resolves to its display label", () => {
   expect(unavailableEngineLabel("claude", ["opencode"], true)).toBe("Claude Code");
   expect(unavailableEngineLabel("codex", ["opencode", "claude"], true)).toBe("Codex");
@@ -32,4 +38,15 @@ test("renders an accessible dismiss control when a handler is supplied", () => {
     <ProviderStatusBanner engineLabel="Codex" onDismiss={() => {}} />,
   );
   expect(html).toContain('aria-label="Dismiss Codex status"');
+});
+
+test("renders the actionable provider detail from the manifest", () => {
+  const html = renderToStaticMarkup(
+    <ProviderStatusBanner
+      engineLabel="Claude Code"
+      description="Anthropic reports insufficient credits. Add credits in Settings."
+    />,
+  );
+  expect(html).toContain("Anthropic reports insufficient credits");
+  expect(html).toContain("Add credits in Settings");
 });
