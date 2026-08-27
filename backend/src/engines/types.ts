@@ -137,7 +137,7 @@ export interface EngineRunContext {
   /** Replace a previously emitted step's code_json and re-push it to SSE
    *  subscribers (same idx → the UI upserts in place). Lets an adapter surface a
    *  tool call the moment it's invoked and attach its output when it finishes —
-   *  reference bot's tool_call → tool_result contract on an append-only log. */
+   *  a peer tool's tool_call → tool_result contract on an append-only log. */
   updateStep?(stepId: string, code: unknown): Promise<void>;
   /** Publish a live assistant delta to the run's turn-stream. In-memory and
    *  synchronous (no DB round-trip) so live-typing narration reaches the SSE

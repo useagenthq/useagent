@@ -91,7 +91,7 @@ export async function ensureRepoClone(
   // destination so we NEVER rm -rf an unexpected directory:
   //   reuse       - a checkout of the RIGHT repo on the right branch -> fast skip.
   //   branch      - the RIGHT repo, wrong branch -> switch in place (fetch+checkout).
-  //   owned-stale - a checkout WE created (carries the `.git/skynet-owned` marker) of a
+  //   owned-stale - a checkout WE created (carries the `.git/useAgent-owned` marker) of a
   //                 different repo -> safe to replace (we own it).
   //   foreign     - a git repo we do NOT own with a different origin -> FAIL CLOSED.
   //   occupied    - a non-git file/dir we do NOT own -> FAIL CLOSED.

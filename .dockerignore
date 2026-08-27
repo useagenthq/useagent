@@ -1,10 +1,4 @@
 **
 !deploy/
-!deploy/hetzner/
-!deploy/hetzner/Dockerfile.sandbox
-!deploy/hetzner/Dockerfile.t3-fork-layer
-!deploy/hetzner/stage-t3-dist.sh
-!deploy/hetzner/skynet-record-start
-!deploy/hetzner/skynet-record-stop
 !t3-dist/
 !t3-dist/**

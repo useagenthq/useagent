@@ -187,7 +187,7 @@ describe("resolveScopedMemory", () => {
       threadId: "thread-a",
       id: "run-a",
       memoryScope: "org",
-      origin: "internal:t3-parity",
+      origin: "internal:release-parity",
     })!;
     const second = resolveScopedMemory({
       orgId: "org-1",
@@ -195,7 +195,7 @@ describe("resolveScopedMemory", () => {
       threadId: "thread-b",
       id: "run-b",
       memoryScope: "org",
-      origin: "internal:t3-parity",
+      origin: "internal:release-parity",
     })!;
     expect(first.agentId).toBe(second.agentId);
     expect(first.writePool?.identity.userId).toBe(second.writePool?.identity.userId);

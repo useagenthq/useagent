@@ -1,5 +1,5 @@
 /**
- * Surgical cleanup of the sweep's throwaway fixtures on the SHARED `skynet` DB.
+ * Surgical cleanup of the sweep's throwaway fixtures on the SHARED `useAgent` DB.
  * Deletes ONLY rows tagged `uisweep` (runs, skills, schedules, knowledge records
  * + documents), child tables first where there's no FK cascade. Never psql.
  * Idempotent.

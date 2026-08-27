@@ -1,5 +1,5 @@
 // A bounded, dependency-free spreadsheet formula engine (our own, like the
-// cloudflare-os sheet). It evaluates a workbook on the client at render/edit time:
+// a reference sheet engine sheet). It evaluates a workbook on the client at render/edit time:
 // arithmetic (+ - * /), cell refs, ranges, SUM, AVG/AVERAGE, MIN, MAX, COUNT, IF,
 // comparisons, and cross-sheet refs (Sheet2!A1). Formulas are the source of truth;
 // this computes the display value. Cycles yield #CYCLE!, bad refs #REF!, and

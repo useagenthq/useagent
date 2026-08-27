@@ -8,8 +8,8 @@ import { member, organization, user } from "./db/schema";
 // unauthenticated in local dev. Seeded idempotently at boot.
 // ---------------------------------------------------------------------------
 
-export const DEV_ORG_ID = "org-skynet-dev";
-export const DEV_ORG_SLUG = "skynet-dev";
+export const DEV_ORG_ID = "org-useagent-dev";
+export const DEV_ORG_SLUG = "useagent-dev";
 export const DEV_ORG_NAME = "useAgent Dev";
 export const DEV_USER_ID = "user-useagent-dev";
 export const DEV_USER_EMAIL = "dev@useagent.local";

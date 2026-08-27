@@ -4,7 +4,7 @@
 // worker builds the candidate off that committed row — retryable, dead-lettering,
 // and it never fails an already-completed run. Also proves the verified-outcome
 // gate (6.4): an unverified completion enqueues an intent but produces NO
-// procedure candidate. DB-backed (skynet_test).
+// procedure candidate. DB-backed (useAgent_test).
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
@@ -79,7 +79,7 @@ describe("learning outbox — enqueue is inside finalizeRun's terminal transacti
   });
 
   test("an INTERNAL-origin run enqueues NO learning intent (no eval traffic)", async () => {
-    const id = await freshRun("parity probe", { origin: "internal:t3-parity" });
+    const id = await freshRun("parity probe", { origin: "internal:release-parity" });
     await finalizeRun(id, "completed", "Listed files across the repo tree", 500);
     expect(await getLearningIntent(id)).toBeNull();
   });

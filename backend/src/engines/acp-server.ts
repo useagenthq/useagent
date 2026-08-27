@@ -997,7 +997,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         };
         ctx.signal.addEventListener("abort", onParentAbort, { once: true });
 
-        // Live translation state (reference bot contract: call → step, update → enrich).
+        // Live translation state (a peer tool contract: call → step, update → enrich).
         const toolSteps = new Map<string, string>(); // toolCallId → persisted step id
         const toolCalls = new Map<
           string,

@@ -1,5 +1,5 @@
-// Minimal SMTP client over Bun's raw TCP (`Bun.connect`). NOT a reference bot port —
-// reference bot's email path uses provider SDKs; this is original, written for
+// Minimal SMTP client over Bun's raw TCP (`Bun.connect`). NOT a a peer tool port —
+// a peer tool's email path uses provider SDKs; this is original, written for
 // useAgent's "no new heavyweight deps" constraint (nodemailer et al. pull a large
 // tree). It speaks just enough SMTP to deliver a plain-text message:
 //

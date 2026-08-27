@@ -141,7 +141,7 @@ first terminal writer wins (`backend/src/runs/repo.ts:L638-L665`).
 (`packages/sandbox-contract/src/index.ts:L14-L20`, `packages/sandbox-contract/src/index.ts:L174-L185`).
 The code default is Daytona when `SANDBOX_PROVIDER` is unset
 (`backend/src/sandboxes/provider.ts:L24-L28`); the checked-in Hetzner production configuration
-selects Cube (`deploy/hetzner/configure-host.sh:L247-L259`).
+selects Cube (`infra/self-host/configure-host.sh:L247-L259`).
 
 Capacity is represented by one optional admission row per run and a history of leases, with at
 most one active/reclaiming lease per run (`backend/src/db/schema/fleet.ts:L59-L105`,
@@ -173,8 +173,8 @@ Production sandbox secret delivery is **gateway-only**, not dotenv injection:
 - Provider credentials are always withheld from untrusted sandboxes; trusted gateway tools or the
   provider gateway resolve them server-side (`backend/src/secrets/inject.ts:L159-L184`).
 - The checked-in host configuration explicitly sets `SANDBOX_SECRET_MODE=gateway_only` and writes
-  a separate root-owned gateway environment (`deploy/hetzner/configure-host.sh:L222-L243`,
-  `deploy/hetzner/configure-host.sh:L296-L305`).
+  a separate root-owned gateway environment (`infra/self-host/configure-host.sh:L222-L243`,
+  `infra/self-host/configure-host.sh:L296-L305`).
 
 Development compatibility mode is a separate, dev-only path that can write non-provider org
 secrets as `0600` files under a `0700` directory
@@ -237,7 +237,7 @@ inventory is:
 |---|---|
 | Repository/project license grant | None at the root and no `license` field in the root, backend, frontend, docs-site, or package manifests. The root manifest is private (`package.json:L1-L4`). |
 | Vendored Beautiful UI | A complete MIT license is committed at `frontend/vendor/beautiful-ui/LICENSE:L1-L20`. |
-| Third-party attribution | `NOTICE:L1-L14` attributes reference bot as Apache-2.0, QM as an adapted reference, and the listed UI foundations as vendored/ported MIT work. `NOTICE` is attribution, not a repository-wide license grant. |
+| Third-party attribution | `NOTICE:L1-L14` attributes a peer tool as Apache-2.0, QM as an adapted reference, and the listed UI foundations as vendored/ported MIT work. `NOTICE` is attribution, not a repository-wide license grant. |
 | Extracted packages | All seven `packages/*/package.json` manifests are private; external-package readiness is explicitly not claimed. |
 
 Therefore the accurate statement is: the repository has third-party license/notice obligations,

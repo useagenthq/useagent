@@ -86,7 +86,7 @@ the desktop need more that an operator supplies:
 | Sandbox agent runs | A sandbox provider (Daytona or Cube) and, for Cube, a **baked sandbox template** (`bake-sandbox-template.sh`). |
 | Team memory (English) | The memory-core container (`memory/docker-compose.yml`) and an `MEMORY_LLM_*` key. |
 | Managed Codex / provider keys | Provider connections configured in the app. |
-| Everything | The env in `deploy/hetzner/configure-host.sh` (service accounts, secrets). |
+| Everything | Host provisioning env (service accounts, secrets) set during setup. |
 
 Point the extra env at `/etc/useagent/backend.env` and restart `useagent-backend`.
 

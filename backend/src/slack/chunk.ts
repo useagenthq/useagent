@@ -2,24 +2,24 @@
  * Split a long mrkdwn reply into sequential Slack messages instead of
  * truncating it.
  *
- * PORTED from the reference-bot bot's `split_message` (reference-bot-eval
+ * PORTED from a reference bot's `split_message` (reference-eval
  * src/kiro_crew/slack/format.py:361): same 3,900-char per-message bound
  * (`SLACK_MSG_LIMIT = 3900` - "API rejects above ~4000"), same boundary-seeking
  * cuts, same `_(continued…)_` marker on non-final chunks, and the same
  * first-message-is-the-head / followups-into-the-thread delivery shape
  * (handler.py `_safe_final_update`). Two deliberate improvements over the
  * source:
- *   - cuts prefer PARAGRAPH boundaries (reference-bot cuts at the last newline);
+ *   - cuts prefer PARAGRAPH boundaries (a reference implementation cuts at the last newline);
  *   - fenced code blocks survive the split: a fence is treated as one atomic
  *     segment, and when a block alone exceeds the bound it is closed at the cut
  *     and reopened (language tag included) at the head of the next message, so
  *     every posted chunk renders valid mrkdwn.
  */
 
-/** Per-message character bound (reference-bot SLACK_MSG_LIMIT, format.py:332). */
+/** Per-message character bound (a reference implementation SLACK_MSG_LIMIT, format.py:332). */
 export const SLACK_MSG_LIMIT = 3900;
 
-/** Appended to every non-final chunk (reference-bot CONTINUATION, format.py:334). */
+/** Appended to every non-final chunk (a reference implementation CONTINUATION, format.py:334). */
 const CONTINUATION = "\n\n_(continued…)_";
 
 const FENCE_LINE = /^\s*```(\S*)\s*$/;
@@ -116,7 +116,7 @@ export function chunkSlackText(text: string, limit = SLACK_MSG_LIMIT): string[] 
   if (text.length <= limit) return [text];
   // Every chunk reserves room for the continuation marker (the last chunk just
   // runs slightly short); the floor keeps progress for degenerate tiny limits
-  // (reference-bot's max(., 1) termination guard, format.py:379).
+  // (a reference bot's max(., 1) termination guard, format.py:379).
   const budget = Math.max(1, limit - CONTINUATION.length);
 
   const chunks: string[] = [];

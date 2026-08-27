@@ -78,7 +78,7 @@ describe("groupSkills", () => {
   test("merges ladder-suffixed duplicates into one row, most-used first", () => {
     const original = makeSkill({
       name: "refactoring-guru",
-      sourceRepo: "acme/reference-skills",
+      sourceRepo: "acme/sample-skills",
       sourcePath: "skills/refactoring-guru/SKILL.md",
       usageCount: 2,
     });

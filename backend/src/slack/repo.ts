@@ -28,7 +28,7 @@ export interface SlackRunResponseTarget extends SlackThreadTarget {
   fallbackMessageTs: string | null;
 }
 
-/** The skynet root run for a Slack thread, or null if the bot hasn't engaged it. */
+/** The useAgent root run for a Slack thread, or null if the bot hasn't engaged it. */
 export async function findSlackThread(
   teamId: string,
   channel: string,

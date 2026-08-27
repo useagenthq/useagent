@@ -4,7 +4,7 @@
 // deliberately irrelevant.
 
 export const INTERNAL_RUN_ORIGINS = [
-  "internal:t3-parity",
+  "internal:release-parity",
   "internal:eval",
   "internal:canary",
   "internal:hosted-release-canary",

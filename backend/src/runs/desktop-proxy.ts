@@ -17,7 +17,7 @@ import { errorMessage } from "../util/error-message";
 
 // ---------------------------------------------------------------------------
 // DESKTOP PROXY — same-origin bridge to the noVNC GUI running INSIDE a thread's
-// sandbox (multi-repo "watch the agent's screen"). The skynet-agent snapshot
+// sandbox ("watch the agent's screen"). The useAgent-agent snapshot
 // ships Xvfb :1 + XFCE + x11vnc :5900 (no password) + noVNC/websockify on :6080.
 //
 //   browser (iframe) → GET /api/desktop-proxy/<threadId>/vnc.html?…&path=<self>/websockify

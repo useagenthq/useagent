@@ -59,7 +59,7 @@ export const runs = pgTable(
     threadId: text("thread_id").notNull(),
     // The engine's OWN session id for this run (opencode ses_*, claude-sdk UUID,
     // codex session id). Persisted so the thread's next turn resumes the engine's
-    // native conversation EXPLICITLY by id — reference bot's set_resume_session_id
+    // native conversation EXPLICITLY by id — a peer tool's set_resume_session_id
     // model — instead of relying on "most recent" heuristics. Null for engines
     // without native sessions (mock) or pre-feature runs.
     engineSessionId: text("engine_session_id"),

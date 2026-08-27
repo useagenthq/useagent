@@ -153,7 +153,7 @@ Production gateway-only mode: `backend/src/secrets/inject.ts:L128-L144` and
 `backend/src/secrets/inject.ts:L470-L480`. Token identity and expiry:
 `backend/src/knowledge/gateway/token.ts:L35-L48`; live-run revalidation:
 `backend/src/knowledge/gateway/run-authorization.ts:L40-L76`. Checked-in production selection:
-`deploy/hetzner/configure-host.sh:L222-L243`.
+`infra/self-host/configure-host.sh:L222-L243`.
 
 ## F. Core relations with nullability
 

@@ -1,6 +1,6 @@
 // Phase 1 pre-React gate: prove canonical<->legacy timeline equivalence for the node
 // types the protected 281-tool fixture does NOT exercise - assistant TEXT (single +
-// multi message), skynet context MARKERS, and CHILD/subagent routing. Each scenario
+// multi message), useAgent context MARKERS, and CHILD/subagent routing. Each scenario
 // runs the SAME synthetic frames+steps through legacy buildTimeline and through
 // translateOpenCode -> buildTimelineFromCanonical, and asserts identical (kind,key).
 

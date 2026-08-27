@@ -3,7 +3,7 @@
 // no incomplete snapshot marked done (source-watermark stability), no partial-permanent
 // output (explicit `complete` is the only terminal state, retries full-replace until then)
 // — plus crash recovery, concurrent-claim safety, and the backoff/dead-letter policy.
-// DB-backed (skynet_test).
+// DB-backed (useAgent_test).
 
 import { describe, expect, test, beforeAll } from "bun:test";
 import { eq, sql } from "drizzle-orm";

@@ -197,9 +197,7 @@ The important variables are:
 
 ## Deploy and Terraform
 
-- `deploy/hetzner/deploy-release.sh` refuses tracked local changes, snapshots source, and runs the release gate.
-- `deploy/hetzner/release-gate.sh` handles the hosted release workflow.
-- `deploy/hetzner/configure-host.sh` provisions one backend, a separate restricted gateway service, Cube, memory, and systemd wiring. Production sets `REQUIRE_SINGLE_BACKEND=true` because ambient org invalidation is process-local.
+- the provisioning scripts provisions one backend, a separate restricted gateway service, Cube, memory, and systemd wiring. Production sets `REQUIRE_SINGLE_BACKEND=true` because ambient org invalidation is process-local.
 - `infra/terraform/prod/README.md` documents the Terraform scope. It only manages Cloudflare DNS.
 
 ## Current Versus Bounded

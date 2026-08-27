@@ -51,7 +51,7 @@ const toolSigningSecret = `tool-live-${crypto.randomUUID()}-${crypto.randomUUID(
 const secretsEncryptionKey = `encryption-live-${crypto.randomUUID()}-${crypto.randomUUID()}`;
 const MARKER = `teal-${crypto.randomUUID().slice(0, 8)}`;
 // Unauthenticated runs resolve to the seeded dev org (org middleware fallback),
-// so the memory pool is team_id=org-skynet-dev / user_id=org:org-skynet-dev.
+// so the memory pool is team_id=org-useAgent-dev / user_id=org:org-useAgent-dev.
 const POOL_TEAM = "org-skynet-dev";
 const POOL_USER = `org:${POOL_TEAM}`;
 
