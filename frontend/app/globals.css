@@ -697,11 +697,11 @@ html {
       --neutral-800: 231.43 18.42% 14.9%; /* #1f212d - canvas (lifted graphite-indigo) */
       --neutral-900: 234 15.63% 12.55%; /* #1b1c25 - chrome */
       --neutral-950: 232.5 16.67% 9.41%; /* #14151c - darkest (derived) */
-  
+
       --neutral-alpha-24: 232.11 19.39% 61.57% / 24%; /* #8a8fb0 muted-lavender wash */
       --neutral-alpha-16: 232.11 19.39% 61.57% / 16%;
       --neutral-alpha-10: 232.11 19.39% 61.57% / 10%;
-  
+
       /* BoardUI's accent primitives are theme-invariant; only the -100/-50 tint
          steps go translucent so light-pastel chips don't glow on the dark canvas. */
       --blue-950: 226.88 59.26% 21.18%; /* #162456 */
@@ -715,75 +715,75 @@ html {
       --blue-200: 213.23 100% 87.25%; /* #bedbff */
       --blue-100: 216.23 100% 58.43% / 24%;
       --blue-50: 216.23 100% 58.43% / 16%;
-  
+
       --blue-alpha-24: 216.23 100% 58.43% / 24%;
       --blue-alpha-16: 216.23 100% 58.43% / 16%;
       --blue-alpha-10: 216.23 100% 58.43% / 10%;
-  
+
       --orange-600: 22.45 100% 69.61%; /* #ff9e64 */
       --orange-500: 22.45 100% 69.61%; /* #ff9e64 */
       --orange-400: 35.5 65.93% 64.31%; /* #e0af68 */
-  
+
       --orange-alpha-24: 22.45 100% 69.61% / 24%;
       --orange-alpha-16: 22.45 100% 69.61% / 16%;
       --orange-alpha-10: 22.45 100% 69.61% / 10%;
-  
+
       --red-600: 0 66.67% 57.65%; /* #db4b4b */
       --red-500: 348.84 88.97% 71.57%; /* #f7768e */
       --red-400: 348.84 88.97% 71.57%; /* #f7768e */
-  
+
       --red-alpha-24: 348.84 88.97% 71.57% / 24%;
       --red-alpha-16: 348.84 88.97% 71.57% / 16%;
       --red-alpha-10: 348.84 88.97% 71.57% / 10%;
-  
+
       --green-600: 187.76 47.15% 48.24%; /* #41a6b5 */
       --green-500: 170.68 58.19% 65.29%; /* #73daca */
       --green-400: 88.8 50.51% 61.18%; /* #9ece6a */
-  
+
       --green-alpha-24: 170.68 58.19% 65.29% / 24%;
       --green-alpha-16: 170.68 58.19% 65.29% / 16%;
       --green-alpha-10: 170.68 58.19% 65.29% / 10%;
-  
+
       --yellow-600: 35.5 65.93% 64.31%; /* #e0af68 */
       --yellow-500: 35.5 65.93% 64.31%; /* #e0af68 */
       --yellow-400: 35.5 65.93% 64.31%; /* #e0af68 */
-  
+
       --yellow-alpha-24: 35.5 65.93% 64.31% / 24%;
       --yellow-alpha-16: 35.5 65.93% 64.31% / 16%;
       --yellow-alpha-10: 35.5 65.93% 64.31% / 10%;
-  
+
       --purple-600: 261.52 54.12% 66.67%; /* #9d7cd8 */
       --purple-500: 261.29 85.32% 78.63%; /* #bb9af7 */
       --purple-400: 261.29 85.32% 78.63%; /* #bb9af7 */
-  
+
       --purple-alpha-24: 261.29 85.32% 78.63% / 24%;
       --purple-alpha-16: 261.29 85.32% 78.63% / 16%;
       --purple-alpha-10: 261.29 85.32% 78.63% / 10%;
-  
+
       --sky-600: 189 73.17% 51.76%; /* #2ac3de */
       --sky-500: 202.15 100% 74.51%; /* #7dcfff */
       --sky-400: 202.15 100% 74.51%; /* #7dcfff */
-  
+
       --sky-alpha-24: 202.15 100% 74.51% / 24%;
       --sky-alpha-16: 202.15 100% 74.51% / 16%;
       --sky-alpha-10: 202.15 100% 74.51% / 10%;
-  
+
       --pink-600: 348.84 88.97% 71.57%; /* #f7768e */
       --pink-500: 348.84 88.97% 71.57%; /* #f7768e */
       --pink-400: 348.84 88.97% 71.57%; /* #f7768e */
-  
+
       --pink-alpha-24: 348.84 88.97% 71.57% / 24%;
       --pink-alpha-16: 348.84 88.97% 71.57% / 16%;
       --pink-alpha-10: 348.84 88.97% 71.57% / 10%;
-  
+
       --teal-600: 187.76 47.15% 48.24%; /* #41a6b5 */
       --teal-500: 170.68 58.19% 65.29%; /* #73daca */
       --teal-400: 170.68 58.19% 65.29%; /* #73daca */
-  
+
       --teal-alpha-24: 170.68 58.19% 65.29% / 24%;
       --teal-alpha-16: 170.68 58.19% 65.29% / 16%;
       --teal-alpha-10: 170.68 58.19% 65.29% / 10%;
-  
+
       /* BoardUI keeps the same accent CTA in dark (no muted primary). */
       --primary-dark: var(--blue-800);
       --primary-darker: var(--blue-700);
@@ -791,77 +791,77 @@ html {
       --primary-alpha-24: var(--blue-alpha-24);
       --primary-alpha-16: var(--blue-alpha-16);
       --primary-alpha-10: var(--blue-alpha-10);
-  
+
       --bg-strong-950: var(--neutral-50);
       --bg-surface-800: var(--neutral-100);
       --bg-sub-300: var(--neutral-700);
       --bg-soft-200: var(--neutral-900);
       --bg-weak-50: 234 15.63% 12.55%; /* #1b1c25 - chrome/surface (matches bg-soft-200) */
       --bg-white-0: var(--neutral-800);
-  
+
       --text-strong-950: var(--neutral-50);
       --text-sub-600: var(--neutral-200); /* #8a8fb0 - muted text */
       --text-soft-400: var(--neutral-300); /* #5f6997 - soft text */
       --text-disabled-300: var(--neutral-400);
       --text-white-0: var(--neutral-800);
-  
+
       --stroke-strong-950: var(--neutral-50);
       --stroke-sub-300: var(--neutral-400);
       --stroke-soft-200: 228.75 24.24% 25.88%; /* #323852 - lifted border */
       --stroke-white-0: var(--neutral-800);
-  
+
       --faded-dark: var(--neutral-100);
       --faded-base: var(--neutral-200);
       --faded-light: var(--neutral-alpha-24);
       --faded-lighter: var(--neutral-alpha-16);
-  
+
       --information-dark: var(--blue-400);
       --information-base: var(--blue-500);
       --information-light: var(--blue-alpha-24);
       --information-lighter: var(--blue-alpha-16);
-  
+
       --warning-dark: var(--orange-400);
       --warning-base: var(--orange-500);
       --warning-light: var(--orange-alpha-24);
       --warning-lighter: var(--orange-alpha-16);
-  
+
       --error-dark: var(--red-400);
       --error-base: var(--red-600);
       --error-light: var(--red-alpha-24);
       --error-lighter: var(--red-alpha-16);
-  
+
       --success-dark: var(--green-400);
       --success-base: var(--green-600);
       --success-light: var(--green-alpha-24);
       --success-lighter: var(--green-alpha-16);
-  
+
       --away-dark: var(--yellow-400);
       --away-base: var(--yellow-600);
       --away-light: var(--yellow-alpha-24);
       --away-lighter: var(--yellow-alpha-16);
-  
+
       --feature-dark: var(--purple-400);
       --feature-base: var(--purple-500);
       --feature-light: var(--purple-alpha-24);
       --feature-lighter: var(--purple-alpha-16);
-  
+
       --verified-dark: var(--sky-400);
       --verified-base: var(--sky-600);
       --verified-light: var(--sky-alpha-24);
       --verified-lighter: var(--sky-alpha-16);
-  
+
       --highlighted-dark: var(--pink-400);
       --highlighted-base: var(--pink-600);
       --highlighted-light: var(--pink-alpha-24);
       --highlighted-lighter: var(--pink-alpha-16);
-  
+
       --stable-dark: var(--teal-400);
       --stable-base: var(--teal-600);
       --stable-light: var(--teal-alpha-24);
       --stable-lighter: var(--teal-alpha-16);
-  
+
       --overlay: 232.5 16.67% 9.41% / 72%; /* #14151c scrim (darkest step) */
-  
+
       --social-apple: 0 0% 100%;
       --social-twitter: 0 0% 100%;
       --social-github: 0 0% 100%;
@@ -2086,6 +2086,7 @@ html {
   }
 
   .dark,
+  .dusk,
   .aura,
   .harbor,
   .phosphor,
@@ -3596,7 +3597,7 @@ html {
 
 .theme-swatch-dusk {
   --swatch-canvas: #1f212d;
-  --swatch-accent: #7aa2f7;
+  --swatch-accent: #2b7fff;
 }
 .theme-swatch-aura {
   --swatch-canvas: #15141b;
@@ -3656,6 +3657,7 @@ html {
 /* Dark canvases stay CLEAN (reference grammar): the dot field reads as noise
  * on graphite, so dark/harbor mute it to near-invisible. Light keeps texture. */
 .dark .bg-halftone,
+.dusk .bg-halftone,
 .harbor .bg-halftone {
   background-image: radial-gradient(
     color-mix(in oklab, hsl(var(--text-strong-950)) 3%, transparent) 1px,
@@ -3899,6 +3901,8 @@ html {
  * ------------------------------------------------------------------------- */
 .dark .shiki,
 .dark .shiki span,
+.dusk .shiki,
+.dusk .shiki span,
 .aura .shiki,
 .aura .shiki span,
 .harbor .shiki,
@@ -4038,6 +4042,7 @@ html {
   color-scheme: light;
 }
 html.dark,
+html.dusk,
 html.aura,
 html.harbor,
 html.phosphor,
@@ -4054,6 +4059,8 @@ html.sakura-night {
 }
 .dark .theme-logo-light,
 .dark .theme-asset-light,
+.dusk .theme-logo-light,
+.dusk .theme-asset-light,
 .aura .theme-logo-light,
 .aura .theme-asset-light,
 .harbor .theme-logo-light,
@@ -4068,6 +4075,8 @@ html.sakura-night {
 }
 .dark .theme-logo-dark,
 .dark .theme-asset-dark,
+.dusk .theme-logo-dark,
+.dusk .theme-asset-dark,
 .aura .theme-logo-dark,
 .aura .theme-asset-dark,
 .harbor .theme-logo-dark,
@@ -4086,6 +4095,7 @@ html.sakura-night {
  * styles/theme.css `.dark` and the `.aura`/`.harbor` blocks above) so
  * class-based theming adjusts shadow opacity under every dark-scheme theme. */
 .dark .shadow-2xs,
+.dusk .shadow-2xs,
 .aura .shadow-2xs,
 .harbor .shadow-2xs,
 .phosphor .shadow-2xs,
@@ -4094,6 +4104,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-2xs);
 }
 .dark .shadow-xs,
+.dusk .shadow-xs,
 .aura .shadow-xs,
 .harbor .shadow-xs,
 .phosphor .shadow-xs,
@@ -4102,6 +4113,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-xs);
 }
 .dark .shadow-sm,
+.dusk .shadow-sm,
 .aura .shadow-sm,
 .harbor .shadow-sm,
 .phosphor .shadow-sm,
@@ -4110,6 +4122,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-sm);
 }
 .dark .shadow-md,
+.dusk .shadow-md,
 .aura .shadow-md,
 .harbor .shadow-md,
 .phosphor .shadow-md,
@@ -4118,6 +4131,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-md);
 }
 .dark .shadow-lg,
+.dusk .shadow-lg,
 .aura .shadow-lg,
 .harbor .shadow-lg,
 .phosphor .shadow-lg,
@@ -4126,6 +4140,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-lg);
 }
 .dark .shadow-xl,
+.dusk .shadow-xl,
 .aura .shadow-xl,
 .harbor .shadow-xl,
 .phosphor .shadow-xl,
@@ -4134,6 +4149,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-xl);
 }
 .dark .shadow-card,
+.dusk .shadow-card,
 .aura .shadow-card,
 .harbor .shadow-card,
 .phosphor .shadow-card,
@@ -4142,6 +4158,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-card);
 }
 .dark .shadow-dropdown,
+.dusk .shadow-dropdown,
 .aura .shadow-dropdown,
 .harbor .shadow-dropdown,
 .phosphor .shadow-dropdown,
@@ -4150,6 +4167,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-dropdown);
 }
 .dark .shadow-sidebar,
+.dusk .shadow-sidebar,
 .aura .shadow-sidebar,
 .harbor .shadow-sidebar,
 .phosphor .shadow-sidebar,
@@ -4158,6 +4176,7 @@ html.sakura-night {
   --tw-shadow: var(--shadow-sidebar);
 }
 .dark .shadow-waitlist,
+.dusk .shadow-waitlist,
 .aura .shadow-waitlist,
 .harbor .shadow-waitlist,
 .phosphor .shadow-waitlist,
@@ -4468,6 +4487,7 @@ input[type='search']::-webkit-search-cancel-button {
   color: color-mix(in oklab, currentColor 75%, transparent);
 }
 .dark .bui-agent-thinking-stars,
+.dusk .bui-agent-thinking-stars,
 .aura .bui-agent-thinking-stars,
 .harbor .bui-agent-thinking-stars,
 .phosphor .bui-agent-thinking-stars,
