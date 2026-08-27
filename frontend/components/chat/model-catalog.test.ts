@@ -71,7 +71,7 @@ describe("engine model catalog", () => {
     for (const engine of ["pi", "codex", "chat"] as const) {
       expect(selectableModelsForEngine(engine).some((m) => isFreeModel(m.value))).toBe(false);
     }
-    expect(modelLabel("thinkingmachines/inkling:free", "opencode")).toBe("Inkling");
+    expect(modelLabel("minimax/minimax-m3:free", "opencode")).toBe("MiniMax M3");
   });
 
   test("Free section membership is manifest-driven via the id suffix, not the seed list", () => {
