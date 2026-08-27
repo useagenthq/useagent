@@ -198,7 +198,7 @@ The important variables are:
 ## Deploy and Terraform
 
 - the provisioning scripts provisions one backend, a separate restricted gateway service, Cube, memory, and systemd wiring. Production sets `REQUIRE_SINGLE_BACKEND=true` because ambient org invalidation is process-local.
-- `infra/terraform/prod/README.md` documents the Terraform scope. It only manages Cloudflare DNS.
+- `infra/self-host/README.md` documents the Terraform scope. It only manages Cloudflare DNS.
 
 ## Current Versus Bounded
 
