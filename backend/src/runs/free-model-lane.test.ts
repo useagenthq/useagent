@@ -22,6 +22,8 @@ function catalogResponse(payload: unknown): Response {
   });
 }
 
+const FRESH_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
+
 /** Counting fixture fetcher. */
 function fetcherOf(respond: () => Response | Promise<Response>): {
   fetcher: CatalogFetcher;
@@ -38,13 +40,16 @@ function fetcherOf(respond: () => Response | Promise<Response>): {
 }
 
 describe("deriveFreeModelLane (catalog filter)", () => {
-  test("keeps tool-capable :free ids with a usable context, largest first, capped at 8", () => {
-    const qualifying = Array.from({ length: 10 }, (_, i) =>
-      entry(`vendor/model-${i}:free`, 70_000 + i * 10_000),
-    );
+  test("keeps hosted-proven tool-capable free ids with usable context, largest first", () => {
     const lane = deriveFreeModelLane({
       data: [
-        ...qualifying,
+        entry("minimax/minimax-m3:free", 1_048_576),
+        entry("nvidia/nemotron-3-ultra-550b-a55b:free", 1_000_000),
+        entry("nvidia/nemotron-3.5-lightning:free", 1_000_000),
+        entry("dots-studio/dots-3-note-preview:free", 512_000),
+        entry("nvidia/nemotron-3-super-120b-a12b:free", 262_144),
+        entry("inclusionai/ling-3.0-flash-fin:free", 262_144),
+        entry("vendor/unproven:free", 2_000_000),
         entry("vendor/paid-model", 200_000), // not :free
         entry("vendor/no-tools:free", 200_000, ["temperature"]), // no tool calls
         entry("vendor/tiny-context:free", 32_000), // below the context floor
@@ -54,10 +59,14 @@ describe("deriveFreeModelLane (catalog filter)", () => {
         "garbage",
       ],
     });
-    // Top 8 by context, descending: model-9 (160k) down to model-2 (90k).
-    expect(lane).toEqual(
-      Array.from({ length: 8 }, (_, i) => `vendor/model-${9 - i}:free`),
-    );
+    expect(lane).toEqual([
+      "minimax/minimax-m3:free",
+      "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "nvidia/nemotron-3.5-lightning:free",
+      "dots-studio/dots-3-note-preview:free",
+      "nvidia/nemotron-3-super-120b-a12b:free",
+      "inclusionai/ling-3.0-flash-fin:free",
+    ]);
   });
 
   test("returns [] for empty or malformed payloads", () => {
@@ -69,7 +78,7 @@ describe("deriveFreeModelLane (catalog filter)", () => {
     expect(deriveFreeModelLane("html error page")).toEqual([]);
   });
 
-  test("excludes catalog-visible models rejected by the hosted OpenCode harness", () => {
+  test("excludes catalog-visible models without hosted agent-path proof", () => {
     expect(deriveFreeModelLane({
       data: [
         entry("thinkingmachines/inkling:free", 1_048_576),
@@ -80,7 +89,7 @@ describe("deriveFreeModelLane (catalog filter)", () => {
 });
 
 describe("FreeModelLaneCache", () => {
-  const FRESH = { data: [entry("bigco/huge-context:free", 400_000)] };
+  const FRESH = { data: [entry(FRESH_MODEL, 1_000_000)] };
 
   test("boots on the curated seed and swaps to a fetched lane", async () => {
     const cache = new FreeModelLaneCache();
@@ -88,9 +97,9 @@ describe("FreeModelLaneCache", () => {
 
     const { fetcher } = fetcherOf(() => catalogResponse(FRESH));
     await cache.refresh({ fetcher, nowMs: 1_000 });
-    expect(cache.lane()).toEqual(["bigco/huge-context:free"]);
+    expect(cache.lane()).toEqual([FRESH_MODEL]);
     // Acceptance is seed UNION lane: rotation never strands a selection.
-    expect(cache.isAllowed("bigco/huge-context:free")).toBe(true);
+    expect(cache.isAllowed(FRESH_MODEL)).toBe(true);
     expect(cache.isAllowed(FREE_MODEL_LANE_SEED[0])).toBe(true);
     expect(cache.isAllowed("vendor/unknown:free")).toBe(false);
   });
@@ -105,38 +114,40 @@ describe("FreeModelLaneCache", () => {
 
     const { fetcher: ok } = fetcherOf(() => catalogResponse(FRESH));
     await cache.refresh({ fetcher: ok, nowMs: 2_000 });
-    expect(cache.lane()).toEqual(["bigco/huge-context:free"]);
+    expect(cache.lane()).toEqual([FRESH_MODEL]);
 
     const { fetcher: notOk } = fetcherOf(() => new Response(null, { status: 503 }));
     await cache.refresh({ fetcher: notOk, nowMs: 3_000 });
-    expect(cache.lane()).toEqual(["bigco/huge-context:free"]);
+    expect(cache.lane()).toEqual([FRESH_MODEL]);
 
     const { fetcher: empty } = fetcherOf(() => catalogResponse({ data: [] }));
     await cache.refresh({ fetcher: empty, nowMs: 4_000 });
-    expect(cache.lane()).toEqual(["bigco/huge-context:free"]);
+    expect(cache.lane()).toEqual([FRESH_MODEL]);
 
     const { fetcher: garbage } = fetcherOf(
       () => new Response("<html>rate limited</html>", { status: 200 }),
     );
     await cache.refresh({ fetcher: garbage, nowMs: 5_000 });
-    expect(cache.lane()).toEqual(["bigco/huge-context:free"]);
+    expect(cache.lane()).toEqual([FRESH_MODEL]);
   });
 
   test("catalog rotation never invalidates a model accepted earlier in this process", async () => {
     const cache = new FreeModelLaneCache({ ttlMs: 1 });
+    const firstModel = "nvidia/nemotron-3-ultra-550b-a55b:free";
+    const secondModel = "dots-studio/dots-3-note-preview:free";
     const first = fetcherOf(() =>
-      catalogResponse({ data: [entry("vendor/first:free", 200_000)] }),
+      catalogResponse({ data: [entry(firstModel, 1_000_000)] }),
     );
     const second = fetcherOf(() =>
-      catalogResponse({ data: [entry("vendor/second:free", 300_000)] }),
+      catalogResponse({ data: [entry(secondModel, 512_000)] }),
     );
 
     await cache.refresh({ fetcher: first.fetcher, nowMs: 1_000 });
     await cache.refresh({ fetcher: second.fetcher, nowMs: 2_000 });
 
-    expect(cache.lane()).toEqual(["vendor/second:free"]);
-    expect(cache.isAllowed("vendor/first:free")).toBe(true);
-    expect(cache.isAllowed("vendor/second:free")).toBe(true);
+    expect(cache.lane()).toEqual([secondModel]);
+    expect(cache.isAllowed(firstModel)).toBe(true);
+    expect(cache.isAllowed(secondModel)).toBe(true);
   });
 
   test("TTL gates background refreshes; expiry admits exactly one", async () => {
@@ -179,7 +190,7 @@ describe("FreeModelLaneCache", () => {
 
     gate.resolve(catalogResponse(FRESH));
     await Promise.all([first, second]);
-    expect(cache.lane()).toEqual(["bigco/huge-context:free"]);
+    expect(cache.lane()).toEqual([FRESH_MODEL]);
   });
 
   test("forceRefresh busts the TTL but is cool-down rate-limited and single-flight", async () => {
@@ -243,18 +254,18 @@ describe("dynamic lane -> policy and manifest integration", () => {
     // this background refresh.
     freeModelLaneCache.reset();
     setFreeModelCatalogFetcherForTest(async () =>
-      catalogResponse({ data: [entry("bigco/huge-context:free", 400_000)] }),
+      catalogResponse({ data: [entry(FRESH_MODEL, 1_000_000)] }),
     );
     await refreshFreeModelLane();
 
-    expect(allowedModelsForEngine("opencode", {})).toContain("bigco/huge-context:free");
-    expect(isModelAllowedForEngine("opencode", "bigco/huge-context:free")).toBe(true);
+    expect(allowedModelsForEngine("opencode", {})).toContain(FRESH_MODEL);
+    expect(isModelAllowedForEngine("opencode", FRESH_MODEL)).toBe(true);
     // Seed models stay accepted after a rotation (in-flight selections survive)...
     expect(isModelAllowedForEngine("opencode", FREE_MODEL_LANE_SEED[0])).toBe(true);
     // ...but only the current lane is advertised.
     expect(allowedModelsForEngine("opencode", {})).not.toContain(FREE_MODEL_LANE_SEED[0]);
     // The lane stays OpenCode-only.
-    expect(isModelAllowedForEngine("pi", "bigco/huge-context:free")).toBe(false);
+    expect(isModelAllowedForEngine("pi", FRESH_MODEL)).toBe(false);
 
     const models = engineModelsForReadyEngines({
       NODE_ENV: "production",
@@ -264,6 +275,6 @@ describe("dynamic lane -> policy and manifest integration", () => {
       PROVIDER_HEALTH_OPENAI: "verified",
       PROVIDER_HEALTH_OPENROUTER: "verified",
     });
-    expect(models.opencode).toContain("bigco/huge-context:free");
+    expect(models.opencode).toContain(FRESH_MODEL);
   });
 });
