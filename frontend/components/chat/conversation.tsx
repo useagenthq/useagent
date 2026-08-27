@@ -94,6 +94,11 @@ export type Turn = {
    *  canonical lane drives the UI ONLY when true - otherwise the legacy native lane does,
    *  so a still-provisional (partial, retrying) snapshot never renders. */
   canonicalComplete?: boolean;
+  /** Present ONLY on a not-yet-loaded outline stub (windowed initial loading):
+   *  the cheap skeleton that sizes this turn's placeholder row. The turn window
+   *  never materializes a stub; the full run (island fetch or SSE snapshot)
+   *  replaces the whole Turn, dropping this. */
+  pendingOutline?: { readonly stepCount: number; readonly hasSummary: boolean };
 };
 
 
@@ -521,6 +526,7 @@ export const Conversation = memo(function Conversation({
   runStartedAt,
   prefill,
   repoRevisions,
+  onTurnsNeeded,
 }: {
   turns: Turn[];
   defaultEngine: EngineId;
@@ -569,6 +575,10 @@ export const Conversation = memo(function Conversation({
    *  proposal); each request carries a fresh nonce so repeats re-apply. */
   prefill?: { readonly text: string; readonly nonce: number } | null;
   repoRevisions?: Readonly<Record<string, string | null>>;
+  /** Windowed initial loading: called with the run ids of not-yet-loaded
+   *  (outline stub) turns entering the render window, so their island can be
+   *  fetched. Absent on fully-loaded threads. */
+  onTurnsNeeded?: (runIds: readonly string[]) => void;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
   // stream, but ONLY while the user is already near the bottom — scrolling up
@@ -698,6 +708,7 @@ export const Conversation = memo(function Conversation({
           <TurnWindow
             turns={renderedTurns}
             scrollRef={scrollRef}
+            onTurnsNeeded={onTurnsNeeded}
             renderTurn={(turn, index, windowOwnsRunMarker) => (
               <TurnBlock
                 turn={turn}

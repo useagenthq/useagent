@@ -24,6 +24,7 @@ import type { Turn } from "@/components/chat/conversation";
 import { TurnUiStateProvider } from "./turn-ui-state";
 import {
   computeRealRows,
+  estimateOutlineHeight,
   estimateTurnHeight,
   SHORT_TRANSCRIPT_LIMIT,
   scrollCorrection,
@@ -56,17 +57,28 @@ function contentTop(el: HTMLElement): number {
   return Number.parseFloat(getComputedStyle(el).paddingTop) || 0;
 }
 
+/** Whether the window machinery is needed: past the short-thread limit, or any
+ *  outline stub present (a stub has no TurnBlock - only a sized placeholder). */
+function windowed(list: readonly Turn[]): boolean {
+  return list.length > SHORT_TRANSCRIPT_LIMIT || list.some((t) => t.pendingOutline);
+}
+
 export function TurnWindow({
   turns,
   scrollRef,
   renderTurn,
+  onTurnsNeeded,
 }: {
   turns: readonly Turn[];
   /** The conversation's own scroll container - the window reads its viewport. */
   scrollRef: RefObject<HTMLDivElement | null>;
   renderTurn: (turn: Turn, index: number, windowOwnsRunMarker: boolean) => ReactNode;
+  /** Windowed initial loading: notified with the ids of outline-stub turns
+   *  (`turn.pendingOutline`) entering the window, so the caller can fetch
+   *  their island. Stubs render as placeholders until their data arrives. */
+  onTurnsNeeded?: (runIds: readonly string[]) => void;
 }) {
-  const bypass = turns.length <= SHORT_TRANSCRIPT_LIMIT;
+  const bypass = !windowed(turns);
 
   // Measured row heights by run id - the placeholder size source. Written only
   // from real rows' ResizeObserver measurements, so a row swapping back to a
@@ -88,16 +100,26 @@ export function TurnWindow({
   // agree and a huge thread never mounts fully just to be windowed.
   const [realKeys, setRealKeys] = useState<ReadonlySet<string> | null>(null);
 
-  const heightOf = useCallback(
-    (turn: Turn) => measuredRef.current.get(turn.run.id) ?? estimateTurnHeight(turn),
-    [],
-  );
+  const heightOf = useCallback((turn: Turn) => {
+    const measured = measuredRef.current.get(turn.run.id);
+    if (measured !== undefined) return measured;
+    // An outline stub sizes from its skeleton (step count + has-summary); a
+    // loaded turn from its real shape.
+    return turn.pendingOutline
+      ? estimateOutlineHeight(turn.status, turn.pendingOutline)
+      : estimateTurnHeight(turn);
+  }, []);
+
+  // Island fetches are the caller's job; a ref keeps recompute identity-stable
+  // across callback re-creations.
+  const onTurnsNeededRef = useRef(onTurnsNeeded);
+  onTurnsNeededRef.current = onTurnsNeeded;
 
   const recompute = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const list = turnsRef.current;
-    if (list.length <= SHORT_TRANSCRIPT_LIMIT) return;
+    if (!windowed(list)) return;
     const heights = list.map(heightOf);
     const real = computeRealRows(
       heights,
@@ -107,9 +129,16 @@ export function TurnWindow({
       forcedIndices(list),
     );
     const next = new Set<string>();
+    // Outline stubs the window wants real = the island to fetch (the islet
+    // merge already folded small placeholder runs into it). They stay
+    // placeholders until their full turns replace them.
+    const needed: string[] = [];
     for (let i = 0; i < list.length; i++) {
-      if (real[i]) next.add(list[i].run.id);
+      if (!real[i]) continue;
+      next.add(list[i].run.id);
+      if (list[i].pendingOutline) needed.push(list[i].run.id);
     }
+    if (needed.length > 0) onTurnsNeededRef.current?.(needed);
     setRealKeys((prev) => (prev !== null && sameKeys(prev, next) ? prev : next));
   }, [scrollRef, heightOf]);
 
@@ -122,7 +151,7 @@ export function TurnWindow({
       const el = scrollRef.current;
       if (!el) return;
       const list = turnsRef.current;
-      if (list.length <= SHORT_TRANSCRIPT_LIMIT) return;
+      if (!windowed(list)) return;
       const indexByKey = new Map(list.map((t, i) => [t.run.id, i] as const));
       const beforeHeights = list.map(
         (turn) => laidOutRef.current.get(turn.run.id) ?? heightOf(turn),
@@ -230,7 +259,11 @@ export function TurnWindow({
   if (!bypass) {
     rows = turns.map((turn, index) => {
       const key = turn.run.id;
-      const real = index === lastIndex || turn.live || (realKeys?.has(key) ?? false);
+      // An outline stub is NEVER real - there is nothing to render until its
+      // island loads; the window range marks it wanted (fetched above) instead.
+      const real =
+        !turn.pendingOutline &&
+        (index === lastIndex || turn.live || (realKeys?.has(key) ?? false));
       if (real) realNow.add(key);
       const height = heightOf(turn);
       // A placeholder occupies exactly this height - record it as laid out so

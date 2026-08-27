@@ -246,6 +246,20 @@ export type ApiRunSummary = Pick<
   | "updated_at"
 >;
 
+/** One turn's skeleton in a thread outline (`GET /api/runs/:id/thread-outline`):
+ *  just enough to order the thread and size a placeholder row - no prompt, no
+ *  summary text, no step bodies. Powers windowed initial loading: the client
+ *  renders unloaded turns from this and fetches full `ApiRun`s on demand. */
+export interface ApiThreadOutlineTurn {
+  id: string;
+  status: RunStatus;
+  /** Number of durable steps the run holds (feeds the placeholder height estimate). */
+  step_count: number;
+  /** Whether the run settled with a summary (an answer block will render). */
+  has_summary: boolean;
+  created_at: string;
+}
+
 // ── Run/step boundary decoders ──────────────────────────────────────────────
 
 const RUN_STATUS_SET: ReadonlySet<string> = new Set(RUN_STATUSES);
@@ -424,6 +438,29 @@ export function decodeApiRunSummary(value: unknown): ApiRunSummary | null {
     repo_specs: repoSpecs as RepoRef[],
     created_at: record.created_at,
     updated_at: record.updated_at,
+  };
+}
+
+/** Decode one thread-outline turn skeleton at an untrusted HTTP boundary. */
+export function decodeThreadOutlineTurn(value: unknown): ApiThreadOutlineTurn | null {
+  const record = asRecord(value);
+  if (
+    !record ||
+    typeof record.id !== "string" ||
+    typeof record.status !== "string" ||
+    !RUN_STATUS_SET.has(record.status) ||
+    typeof record.step_count !== "number" ||
+    typeof record.has_summary !== "boolean" ||
+    typeof record.created_at !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: record.id,
+    status: record.status as RunStatus,
+    step_count: record.step_count,
+    has_summary: record.has_summary,
+    created_at: record.created_at,
   };
 }
 

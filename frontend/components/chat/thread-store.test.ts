@@ -290,4 +290,41 @@ describe("thread-store", () => {
     expect(settled.liveReasoning).toBe(""); // thinking is live-only
     expect(settled.liveText).toBe("");
   });
+
+  test("out-of-order merges keep canonical thread order (windowed islands)", () => {
+    const s = createThreadStore();
+    const at = (minute: number) => new Date(minute * 60_000).toISOString();
+    const runAt = (id: string, minute: number): ApiRun => ({
+      ...makeRun(id),
+      created_at: at(minute),
+      updated_at: at(minute),
+    });
+
+    // Windowed initial loading seeds the root + the tail first...
+    s.applySnapshot([runAt("root", 0), runAt("tail-1", 8), runAt("tail-2", 9)]);
+    // ...then a mid-thread island merges LATER; snapshot order must stay
+    // chronological (`newest = runs.at(-1)` anchors replies).
+    s.applySnapshot([runAt("mid-1", 3), runAt("mid-2", 4)]);
+    s.upsertRun(runAt("new", 12));
+    expect(s.getSnapshot().runs.map((r) => r.id)).toEqual([
+      "root",
+      "mid-1",
+      "mid-2",
+      "tail-1",
+      "tail-2",
+      "new",
+    ]);
+
+    // Same-timestamp ties break by id, matching the backend's (created_at, id).
+    s.upsertRun(runAt("tail-1a", 8));
+    expect(s.getSnapshot().runs.map((r) => r.id)).toEqual([
+      "root",
+      "mid-1",
+      "mid-2",
+      "tail-1",
+      "tail-1a",
+      "tail-2",
+      "new",
+    ]);
+  });
 });
