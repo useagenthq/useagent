@@ -13,7 +13,7 @@ import {
 import { uid } from "./helpers";
 
 // The durable parked state + timing policy for the adaptive reconciler (#63).
-// Pure policy is unit-tested; the repo is exercised against skynet_test (importing
+// Pure policy is unit-tested; the repo is exercised against useAgent_test (importing
 // ./helpers runs the boot migrator, so this also proves migration 0025 applies).
 
 describe("reconcile timing policy (pure)", () => {

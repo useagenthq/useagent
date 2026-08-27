@@ -3,7 +3,7 @@
 // matching provider + native session id + catalog snapshot revision; the org priming cache is
 // UI-only and NEVER authorizes execution. An unknown/malformed/stale intent is 400; a plain prompt
 // that merely starts with "/" (no intent) stays a normal prompt with commandName null. DB-backed
-// (skynet_test), dev-org scoped.
+// (useAgent_test), dev-org scoped.
 import { describe, expect, test, beforeAll } from "bun:test";
 import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";

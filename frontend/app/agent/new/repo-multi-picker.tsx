@@ -48,7 +48,7 @@ function readRecents(): string[] {
 }
 
 /**
- * multi-repo multi-select repository picker: a BoardUI dropdown with a
+ * multi-select repository picker: a BoardUI dropdown with a
  * searchable, checkbox list of the org's real repos, sectioned into "Recent"
  * (recently picked, from localStorage) and "All repositories" grouped by org.
  * Selecting toggles a repo and keeps the popover open. The trigger shows the

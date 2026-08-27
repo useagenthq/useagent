@@ -21,7 +21,7 @@ import { approvalArgumentsHash, mintApprovalCapability } from "./approval-capabi
 const REQUEST_TTL_MS = 15 * 60_000;
 const LIST_LIMIT = 50;
 
-/** Timeline provider lane for approval cards (mirrors "skynet-knowledge"). */
+/** Timeline provider lane for approval cards (mirrors "useAgent-knowledge"). */
 const EVENT_PROVIDER = "skynet-gateway";
 
 export type ApprovalRequestRecord = typeof gatewayApprovalRequests.$inferSelect;

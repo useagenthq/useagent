@@ -90,8 +90,8 @@ SERVER_IP=<host-ip> PG_PASSWORD=... OPENROUTER_API_KEY=... \
 Sandboxes are pluggable: **Daytona** (managed service - pairs with a host on
 any cloud, easiest start) or **CubeSandbox** (self-hosted runtime on your own
 hardware - full data locality). Production deploy lanes are documented in
-[`deploy/hetzner/`](deploy/hetzner/); the scripts address the host over SSH
-and are provider-agnostic.
+[`infra/self-host/`](infra/self-host/); the provisioning is provider-agnostic
+and addresses the host over SSH.
 
 ## Architecture
 
@@ -107,7 +107,6 @@ frontend (Next.js)  ->  backend (Bun + Hono + Postgres)  ->  sandboxes (Daytona/
 | [`backend/`](backend/README.md) | Control plane: auth, runs, sandboxes, engines, knowledge, memory, artifacts, connectors |
 | [`packages/`](packages/) | Shared contracts: thread events, canonical engine events, workpieces, renderers |
 | [`docs-site/`](docs-site/README.md) | Documentation site: concepts, architecture, API, operations |
-| [`deploy/hetzner/`](deploy/hetzner/) | Release gate, fast deploy lane, atomic frontend release |
 | [`infra/self-host/`](infra/self-host/README.md) | Self-hosting on any provider + Hetzner reference Terraform |
 | [`memory/`](memory/README.md) | Optional team-memory service |
 

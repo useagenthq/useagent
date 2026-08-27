@@ -117,7 +117,7 @@ export interface PresentationDeck {
 
 /** Bumped when the workbook shape changes; v1 `{ csv }` states upgrade to this. */
 export const SPREADSHEET_SCHEMA_VERSION = 2 as const;
-/** Honest dimension caps (well below cloudflare-os's 50000x702). Clamped, never
+/** Honest dimension caps (well below a reference sheet engine's 50000x702). Clamped, never
  * a hard reject: an over-cap sheet is trimmed to fit, not dropped. */
 export const SHEET_MAX_ROWS = 10_000;
 export const SHEET_MAX_COLS = 256;

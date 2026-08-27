@@ -1,7 +1,7 @@
 /**
  * Aggressive browser-level UI E2E sweep — Playwright headless
  * (system Chrome) against the isolated stack (frontend :3413 → backend :3513,
- * real `skynet` DB, committed HEAD). Each scenario asserts and logs PASS/FAIL/SKIP.
+ * real `useAgent` DB, committed HEAD). Each scenario asserts and logs PASS/FAIL/SKIP.
  *
  * Run:  cd <worktree>/frontend && bun uisweep/sweep.ts
  * Filter: SCENARIOS=1,4,8 bun uisweep/sweep.ts

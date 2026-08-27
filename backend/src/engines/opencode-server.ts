@@ -488,7 +488,7 @@ export async function prepareOpencodeSandboxConfig(
 ): Promise<PreparedOpenCodeConfig | null> {
   const gw = toolGatewayConfig();
   const providerOptions = opencodeProviderGatewayOptions(ctx);
-  // GUI automation is provided by the trusted skynet-knowledge computer_* tools.
+  // GUI automation is provided by the trusted useAgent-knowledge computer_* tools.
   // Remove any stale Playwright MCP entry from retained OpenCode configuration.
   const browser = null;
   const state = {
@@ -608,7 +608,7 @@ export async function writeOpencodeSandboxConfig(
  * Overwrite the v17 snapshot's `/memory` skill (new_mem_prompt.md section 7) with
  * honest, tools-based text BEFORE `opencode serve` boots, so the resident agent
  * uses the Tencent-backed memory TOOLS instead of the snapshot's false claim that
- * `/root/.skynet/memory.md` "is synced back ... and reloaded into your next
+ * `/root/.useAgent/memory.md` "is synced back ... and reloaded into your next
  * session". Base64 write (no shell-escaping hazard, nothing sensitive here).
  * Best-effort: a failure logs and continues (the corrected text is not
  * load-bearing for authorization, only guidance). A WARM resumed thread already
@@ -1113,7 +1113,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
     // makes an OpenCode create eligible for a Daytona warm pool (a pool serves
     // only creates that use the snapshot's default user with no custom env,
     // volumes, or secrets). The BASH_ENV compatibility path is baked into the
-    // snapshot image instead (build-opencode-snapshot.ts). Raw provider
+    // snapshot image instead (built by the sandbox-image ops tooling). Raw provider
     // credentials are never placed in an untrusted sandbox regardless - the
     // generated OpenCode provider config points only at the trusted gateway. The
     // names-only marker is recorded only after the files are materialized.

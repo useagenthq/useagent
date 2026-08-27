@@ -45,7 +45,7 @@ import { errorMessage } from "../util/error-message";
 // (background launch + poll-tail — Daytona's own session-command streaming API
 // starves against real sandboxes, verified live), and exit policy. Each engine
 // contributes a small spec: how to build its command, how to translate its
-// JSONL, and how its native session id is captured/resumed — the reference bot model
+// JSONL, and how its native session id is captured/resumed — the a peer tool model
 // (explicit ids, persisted in the runs table via ctx.saveEngineSessionId,
 // resumed via ctx.engineSessionId).
 // ---------------------------------------------------------------------------
@@ -81,7 +81,7 @@ const SPAWN_TOOLS_CLAUDE = new Set(["Task", "Agent"]);
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** A claude tool call already SURFACED as a step (reference bot's tool_call event);
+/** A claude tool call already SURFACED as a step (a peer tool's tool_call event);
  *  kept so its tool_result can enrich that same step with output. */
 interface PendingTool {
   name: string;
@@ -106,7 +106,7 @@ const newParseState = (): ParseState => ({
   pendingTools: new Map(),
 });
 
-/** What a spec's line handler asks the runner to do — mirrors reference bot's event
+/** What a spec's line handler asks the runner to do — mirrors a peer tool's event
  *  contract: `step` ≙ tool_call/spawn surfaced immediately, `update` ≙
  *  tool_result enriching that same step, `delta` ≙ chat_chunk live narration. */
 interface SpecAction {
@@ -123,7 +123,7 @@ interface SandboxEngineSpec {
   /** Engine id as registered (also the step chip). */
   id: "claude" | "codex";
   /** Shell command for one turn. The runner feeds the staged prompt via STDIN
-   *  (`< /tmp/skynet-prompt.txt`) — never as a positional argument, because a
+   *  (`< /tmp/useAgent-prompt.txt`) — never as a positional argument, because a
    *  prompt whose first line starts with `---` (the team-memory block header)
    *  parses as a flag and kills the CLI with a usage error. All three engines
    *  read a piped prompt (verified live). */
@@ -488,7 +488,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       };
 
       // The org's snapshot (2 vCPU / 8 GiB, opencode preinstalled). The bare
-      // "skynet-agent" name does NOT exist — a wrong name silently drops every
+      // "useAgent-agent" name does NOT exist — a wrong name silently drops every
       // opencode run onto the tiny default image, which OOM-kills (137) the
       // npx-installed CLI mid-run. Keep this in sync with the configured template inventory.
       // A STOPPED sandbox keeps its disk (workspace + engine sessions) at ~zero

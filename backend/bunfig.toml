@@ -1,5 +1,5 @@
 [test]
-# Runs once before any test file — points the app at skynet_test and strips the
+# Runs once before any test file — points the app at useAgent_test and strips the
 # LLM/embedding keys so distillation degrades to its built-in stub (no network).
 preload = ["./test/preload.ts"]
 

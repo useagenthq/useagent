@@ -76,7 +76,7 @@ async function startBackend(): Promise<Proc> {
   // Disable memory with an EMPTY value (present-but-falsy) rather than delete:
   // Bun auto-loads backend/.env in the child and would re-add a deleted key, but
   // it will NOT override a key already present in the spawn env. Same reason the
-  // DATABASE_URL override below wins over .env's shared-`skynet` value.
+  // DATABASE_URL override below wins over .env's shared-`useAgent` value.
   env.MEMORY_API_URL = "";
   env.PORT = String(PORT);
   env.DATABASE_URL = DB_URL;

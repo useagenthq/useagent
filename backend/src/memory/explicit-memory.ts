@@ -8,7 +8,7 @@
  * retries, versions and corrections reconcile against Tencent WITHOUT a second
  * fact store in Postgres. Pure + dependency-free so it unit-tests standalone.
  *
- *   [skynet-explicit-memory]
+ *   [useAgent-explicit-memory]
  *   logical_id: <stable uuid across versions/corrections>
  *   operation_id: <stable idempotency id for THIS write>
  *   version: 1

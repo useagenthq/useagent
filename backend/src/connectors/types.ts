@@ -1,5 +1,5 @@
-// Ported from reference bot (Apache-2.0): src/kiro_crew/messaging/transport.py
-// Ported from reference bot (Apache-2.0): src/kiro_crew/messaging/renderer.py
+// Ported from a peer tool (Apache-2.0): src/kiro_crew/messaging/transport.py
+// Ported from a peer tool (Apache-2.0): src/kiro_crew/messaging/renderer.py
 //
 // The channel-neutral connector contracts: a `Transport` (inbound/outbound for a
 // messaging surface), a `Renderer` (maps abstract output events onto that
@@ -83,7 +83,7 @@ export interface InboundMessage {
 
 /** Channel-neutral inbound/outbound contract for a messaging channel. A new
  *  channel = implement this interface + an inbound adapter, with zero change to
- *  the shared run-feed core (connectors/runFeed.ts). Mirrors reference bot's
+ *  the shared run-feed core (connectors/runFeed.ts). Mirrors a peer tool's
  *  `MessagingTransport` ABC. */
 export interface Transport {
   readonly channelType: string;
@@ -154,7 +154,7 @@ export interface OutputEvent {
 }
 
 /** Maps abstract `OutputEvent`s onto a transport's native surface. Mirrors
- *  reference bot's `Renderer` ABC (approval `on_prompt_choice` omitted). Handlers may
+ *  a peer tool's `Renderer` ABC (approval `on_prompt_choice` omitted). Handlers may
  *  be sync or async. */
 export interface Renderer {
   readonly channelType: string;

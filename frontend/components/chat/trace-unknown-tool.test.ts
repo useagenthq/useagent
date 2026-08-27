@@ -59,7 +59,7 @@ describe("deriveTrace — uncatalogued tool", () => {
   });
 
   test("shows the gateway provider as its product name, not the wire id", () => {
-    // Gateway tools are tagged server "skynet-knowledge" (the coupled wire name);
+    // Gateway tools are tagged server "useAgent-knowledge" (the coupled wire name);
     // the attribution label reads as "useAgent" while the wire value stays put.
     const trace = deriveTrace(
       commandStep("mcp__skynet-knowledge__skill_activate", { name: "fast-installs" }, "skynet-knowledge"),

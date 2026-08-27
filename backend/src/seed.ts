@@ -8,7 +8,7 @@ import { member, organization, user } from "./db/schema";
 // unauthenticated in local dev. Seeded idempotently at boot.
 // ---------------------------------------------------------------------------
 
-export const DEV_ORG_ID = "org-skynet-dev";
+export const DEV_ORG_ID = "org-skynet-dev"; // documented legacy id - existing dev DBs depend on it
 export const DEV_ORG_SLUG = "skynet-dev";
 export const DEV_ORG_NAME = "useAgent Dev";
 export const DEV_USER_ID = "user-useagent-dev";

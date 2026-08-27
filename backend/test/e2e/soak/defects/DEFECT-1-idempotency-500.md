@@ -6,7 +6,7 @@
   rounds → 30 checks, 0 failures (was ~all-losers-500). Storm stays in rotation to
   guard against regression.
 - **Found by:** soak storm `idempotency` (SIGKILL-free, pure concurrency)
-- **Commit found against:** 75b12ae … 8bf24d7 (rebuild/skynet-a)
+- **Commit found against:** 75b12ae … 8bf24d7 (rebuild/useAgent-a)
 - **Severity:** HIGH (availability + correctness of the Idempotency-Key contract).
   Data integrity is NOT compromised — exactly one run/command is still created.
 - **Repro:**

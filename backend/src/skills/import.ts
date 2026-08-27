@@ -9,7 +9,7 @@ import type { SkillContent } from "./format";
 import { importSkillFromSource, listImportedPaths } from "./import-repo";
 
 // ---------------------------------------------------------------------------
-// Turn a repo's SKILL.md files into versioned org skills (multi-repo import).
+// Turn a repo's SKILL.md files into versioned org skills (import).
 // The GitHub I/O lives in src/github/discovery.ts; this module parses the raw
 // markdown into the portable SkillContent shape (frontmatter name/description +
 // Overview/Procedure/Verify sections) and orchestrates scan + import over the

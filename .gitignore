@@ -59,3 +59,7 @@ docs/internal/
 CLAUDE.local.md
 progress/
 .worktrees/
+
+# Internal ops (kept local, not public)
+/deploy/hetzner/
+/infra/terraform/prod/

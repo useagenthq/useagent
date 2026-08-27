@@ -3,7 +3,7 @@
 // exactly what a Daytona-buffered SSE stream leaves behind) still canonicalizes
 // with a child.started for the child session AND a child.completed that carries
 // the child's REAL identity, result, and cumulative usage summed from its
-// part.step-finish frames. DB-backed (skynet_test), through the REAL
+// part.step-finish frames. DB-backed (useAgent_test), through the REAL
 // finalize -> canonicalization outbox -> sealed rows path.
 
 import { describe, expect, test, beforeAll } from "bun:test";
@@ -32,7 +32,7 @@ const THREAD = RUN;
 // Real child session ids are globally unique (ses_*); keep the fixture's unique
 // per execution too - provider_events.id is the PRIMARY KEY and the lifecycle
 // row id is derived from the session id, so a reused session id would collide
-// with a previous execution's row in the persistent skynet_test database.
+// with a previous execution's row in the persistent useAgent_test database.
 const PARENT = `ses_parent_${RUN.slice(3, 11)}`;
 const CHILD = `ses_child_${RUN.slice(3, 11)}`;
 

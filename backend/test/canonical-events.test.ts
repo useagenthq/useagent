@@ -2,7 +2,7 @@
 // (2) an IMMUTABLE thread-wide delivery cursor separate from per-run source order,
 // (3) append-only revisions, and (4) THREAD-channel publish/subscribe. The headline
 // proof is the two-run reconnect: after the first run's final cursor, replay returns
-// EVERY event from a SECOND run created while the SSE stayed open. DB-backed (skynet_test).
+// EVERY event from a SECOND run created while the SSE stayed open. DB-backed (useAgent_test).
 
 import { describe, expect, test, beforeAll } from "bun:test";
 import { sql } from "drizzle-orm";

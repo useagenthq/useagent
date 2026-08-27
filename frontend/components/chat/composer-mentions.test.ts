@@ -27,7 +27,7 @@ describe("detectMentionTrigger - caret + word boundary", () => {
   });
 
   test("does NOT open when @ is glued to a preceding word (email-like)", () => {
-    expect(detectMentionTrigger("me@example", 11)).toBeNull();
+    expect(detectMentionTrigger("me@example", 10)).toBeNull();
   });
 
   test("closes once whitespace follows the @ (mention finished)", () => {

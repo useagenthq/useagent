@@ -160,7 +160,7 @@ export async function recordForcedDrain(input: {
 
 /**
  * Bounded deployment-only view of work that must settle before restart.
- * Consumed via a dynamic `await import()` in deploy/hetzner/drain-inflight-runs.ts,
+ * Consumed via a dynamic `await import()` by the drain-inflight-runs ops script,
  * so a static dead-code sweep cannot see this export - do not remove it.
  */
 export async function deploymentInflightSnapshot(

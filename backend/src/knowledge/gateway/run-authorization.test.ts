@@ -59,7 +59,7 @@ describe("knowledge gateway run authorization", () => {
       threadId,
       status: "running",
       memoryScope: "personal",
-      origin: "internal:t3-parity",
+      origin: "internal:release-parity",
     });
 
     const tokenClaims = claims({
@@ -76,7 +76,7 @@ describe("knowledge gateway run authorization", () => {
       userId: "user-a",
       threadId,
       memoryScope: "personal",
-      origin: "internal:t3-parity",
+      origin: "internal:release-parity",
     });
     expect(await resolveToolRunIdentity(tokenClaims)).toEqual(tokenClaims);
   });

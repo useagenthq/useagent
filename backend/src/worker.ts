@@ -827,7 +827,7 @@ async function runEngine(
   // conversation share the filesystem AND — because childEnv jails HOME into the
   // workdir — the engine's own on-disk session store. That gives engines with
   // native session support (opencode `-c`) FULL first-party conversation memory
-  // across turns, reference bot-style, instead of a reconstructed text preamble.
+  // across turns, a peer tool-style, instead of a reconstructed text preamble.
   const timing = createRunTimer(runId, threadId);
   const workdir = join(RUNS_ROOT, threadId);
   // Make the workdir a self-contained project root. A `.git` boundary stops an

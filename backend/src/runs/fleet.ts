@@ -111,7 +111,7 @@ interface SandboxRow {
 }
 
 /**
- * Cached raw provider inventory (skynet-labeled boxes only; org-independent — the
+ * Cached raw provider inventory (useAgent-labeled boxes only; org-independent — the
  * org filter is applied per-request against the runs table). Provider listing is
  * slow and latency-variable (seconds to minutes), so it is NEVER awaited on the
  * request path: a stale entry is served immediately while a single background
