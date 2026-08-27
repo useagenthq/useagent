@@ -2,7 +2,7 @@ import type { ToolCallResult } from "./tools";
 import { errorResult, textResult } from "./tool-results";
 import { mintToolToken, type ToolTokenClaims } from "./token";
 import { getRunForOrg } from "../../runs/repo";
-import { engineModelReadyForDispatch } from "../../runs/engine-readiness";
+import { persistedEngineModelReadyForDispatch } from "../../runs/engine-readiness";
 import { sessionCapabilities } from "../../engines/capabilities";
 import {
   childSessionEventLimit,
@@ -166,7 +166,7 @@ export async function childSessionToolsEnabled(
   });
   return (
     capabilities.gatewayChildSessions &&
-    engineModelReadyForDispatch(run.engine, run.model)
+    persistedEngineModelReadyForDispatch(run.engine, run.model)
   );
 }
 

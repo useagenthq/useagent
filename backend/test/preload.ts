@@ -47,6 +47,15 @@ delete process.env.CODE_INDEX_INTERVAL_MIN;
 
 process.env.WORKER_STEP_DELAY_MS = process.env.WORKER_STEP_DELAY_MS ?? "5";
 
+// The Free model lane refreshes itself from OpenRouter's public catalog on
+// manifest traffic. Pin the SHARED cache's fetcher to an instant failure so no
+// test ever leaves the process (the lane then serves its curated seed); suites
+// that exercise the refresh install their own fixture fetcher per test.
+const { setFreeModelCatalogFetcherForTest } = await import(
+  "../src/runs/free-model-lane"
+);
+setFreeModelCatalogFetcherForTest(async () => new Response(null, { status: 503 }));
+
 // Fleet capacity defaults are conservative for the single prod host; the general
 // unit suite predates capacity gating and submits freely, so open the limits wide
 // here (a deploy keeps the real defaults). The dedicated fleet tests set small

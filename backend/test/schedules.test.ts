@@ -10,6 +10,7 @@ import { getScheduleForOrg } from "../src/schedules/repo";
 import { db } from "../src/db/client";
 import { runs, skillRevisions } from "../src/db/schema";
 import { createOrgSession, json, waitFor } from "./helpers";
+import { freeModelLaneCache, refreshFreeModelLane } from "../src/runs/free-model-lane";
 
 interface AutomationListResponse {
   readonly automations: ApiSchedule[];
@@ -394,6 +395,42 @@ describe("schedules API", () => {
 
     const replay = await fireScheduleWithOutcome(schedule, "cron", occurrence);
     expect(replay).toMatchObject({ runId, created: false, firingRecorded: true });
+  });
+
+  test("a stored dynamic free model still fires after the catalog cache restarts", async () => {
+    const s = await createOrgSession("schedule-free-model-restart");
+    const model = "vendor/scheduled-agent:free";
+    freeModelLaneCache.reset();
+    try {
+      await refreshFreeModelLane({
+        fetcher: async () => Response.json({
+          data: [{
+            id: model,
+            context_length: 200_000,
+            supported_parameters: ["tools"],
+          }],
+        }),
+      });
+      const created = await createSchedule(s.cookies, {
+        name: "Durable free model",
+        cron: "37 5 * * *",
+        prompt: "run with the stored free model",
+        engine: "opencode",
+        model,
+      });
+      const schedule = await getScheduleForOrg(s.orgId, created.id);
+      if (!schedule) throw new Error("expected schedule");
+
+      freeModelLaneCache.reset();
+      const fired = await fireScheduleWithOutcome(
+        schedule,
+        "cron",
+        new Date("2026-08-27T05:37:00.000Z"),
+      );
+      expect(fired.created).toBe(true);
+    } finally {
+      freeModelLaneCache.reset();
+    }
   });
 
   test("org isolation: another org cannot see, patch, run, or read history", async () => {

@@ -1,12 +1,14 @@
 "use client";
 
-import { RiArrowDownSLine, RiCheckLine, RiCpuLine } from "@remixicon/react";
-import { useEffect, useState } from "react";
+import { RiArrowDownSLine, RiCheckLine, RiCpuLine, RiRefreshLine } from "@remixicon/react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ENGINES,
   type EngineId,
+  isFreeModel,
   modelLabel,
   modelOptionsForEngine,
+  partitionModelOptions,
   selectableModelsForEngine,
 } from "@/components/chat/types";
 import { cx as cn } from "@/utils/cx";
@@ -35,6 +37,44 @@ function parseEngineModelCatalog(raw: unknown): EngineModelCatalog {
   return out;
 }
 
+/** A manual refresh may rotate the live lane, but selections already offered in
+ * this browser session stay submit-able while newly discovered models append. */
+export function mergeEngineModelCatalog(
+  current: EngineModelCatalog,
+  refreshed: EngineModelCatalog,
+  preserveModel?: string,
+): EngineModelCatalog {
+  const merged: EngineModelCatalog = { ...refreshed };
+  if (!preserveModel || !isFreeModel(preserveModel)) return merged;
+  for (const engine of ENGINES) {
+    const next = refreshed[engine.id];
+    if (!next || !current[engine.id]?.includes(preserveModel) || next.includes(preserveModel)) {
+      continue;
+    }
+    merged[engine.id] = [...next, preserveModel];
+  }
+  return merged;
+}
+
+/**
+ * Ask the backend to re-derive the Free model lane from the live catalog
+ * (POST busts its TTL cache) and return the refreshed per-engine manifest.
+ * Null on failure or rate-limit - the caller keeps its current catalog.
+ * The fetcher seam keeps this testable without a network.
+ */
+export async function requestModelCatalogRefresh(
+  fetcher: (url: string, init?: RequestInit) => Promise<Response> = fetch,
+): Promise<EngineModelCatalog | null> {
+  try {
+    const res = await fetcher("/api/config/models/refresh", { method: "POST" });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { models?: unknown };
+    return parseEngineModelCatalog(j.models);
+  } catch {
+    return null;
+  }
+}
+
 export function useEnabledEngineConfig(): {
   engines: EngineId[];
   models: EngineModelCatalog;
@@ -43,6 +83,9 @@ export function useEnabledEngineConfig(): {
   loaded: boolean;
   /** True only when the server returned an engines manifest. */
   readinessKnown: boolean;
+  /** Manual Free-lane refresh: swaps the refreshed manifest in place; a failed
+   * or rate-limited request keeps the current catalog. */
+  refreshModels: (preserveModel?: string) => Promise<void>;
 } {
   const [config, setConfig] = useState<{
     engines: EngineId[];
@@ -92,7 +135,15 @@ export function useEnabledEngineConfig(): {
       cancelled = true;
     };
   }, []);
-  return config;
+  const refreshModels = useCallback(async (preserveModel?: string) => {
+    const models = await requestModelCatalogRefresh();
+    if (!models || Object.keys(models).length === 0) return;
+    setConfig((c) => ({
+      ...c,
+      models: mergeEngineModelCatalog(c.models, models, preserveModel),
+    }));
+  }, []);
+  return { ...config, refreshModels };
 }
 
 /**
@@ -103,10 +154,6 @@ export function useEnabledEngineConfig(): {
  */
 export function useEnabledEngines(): EngineId[] {
   return useEnabledEngineConfig().engines;
-}
-
-export function useEngineModelCatalog(): EngineModelCatalog {
-  return useEnabledEngineConfig().models;
 }
 
 /**
@@ -126,8 +173,26 @@ export function ModelPicker({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const modelCatalog = useEngineModelCatalog();
+  const [refreshing, setRefreshing] = useState(false);
+  const { models: modelCatalog, refreshModels } = useEnabledEngineConfig();
   const models = modelOptionsForEngine(engine, modelCatalog[engine]);
+  // The zero-cost OpenRouter ":free" variants render under their own section;
+  // membership is manifest-driven (":free" id suffix), never a hardcoded list.
+  const { paid, free } = partitionModelOptions(models);
+  const sections = [
+    { label: "Model", options: paid },
+    { label: "Free", options: free },
+  ].filter((section) => section.options.length > 0);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await refreshModels(model);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
     <div className={cn("relative", className)}>
@@ -150,33 +215,61 @@ export function ModelPicker({
         <>
           <div className="fixed inset-0 z-10" aria-hidden onClick={() => setOpen(false)} />
           <div className="border-border-button-default bg-background-primary-default shadow-dropdown absolute bottom-11 right-0 z-20 w-56 rounded-2xl border p-1.5">
-            <p className="text-mono-label text-text-tertiary px-2 pb-1 pt-1.5">Model</p>
-            {models.map((e) => {
-              const selected = e.value === model;
-              return (
-                <button
-                  key={e.value}
-                  type="button"
-                  onClick={() => {
-                    onChange(e.value);
-                    setOpen(false);
-                  }}
-                  className="hover:bg-background-primary-hover flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-colors"
-                >
-                  <span
-                    className={cn(
-                      "flex size-4 shrink-0 items-center justify-center",
-                      selected ? "text-orange-500" : "text-transparent",
-                    )}
-                  >
-                    <RiCheckLine className="size-4" aria-hidden />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="text-body-2-medium text-text-primary block">{e.label}</span>
-                  </span>
-                </button>
-              );
-            })}
+            {sections.map((section) => (
+              <div key={section.label}>
+                <div className="flex items-center justify-between">
+                  <p className="text-mono-label text-text-tertiary px-2 pb-1 pt-1.5">
+                    {section.label}
+                  </p>
+                  {/* The Free lane tracks OpenRouter's live catalog; the refresh
+                      re-derives it on demand (settings "Refresh" grammar:
+                      RiRefreshLine spinning while in flight). */}
+                  {section.label === "Free" ? (
+                    <button
+                      type="button"
+                      aria-label="Refresh free models"
+                      title="Refresh"
+                      disabled={refreshing}
+                      onClick={() => void handleRefresh()}
+                      className="text-text-tertiary hover:text-text-primary mr-1 rounded-md p-1 transition-colors disabled:opacity-50"
+                    >
+                      <RiRefreshLine
+                        className={cn("size-3.5", refreshing && "animate-spin")}
+                        aria-hidden
+                      />
+                    </button>
+                  ) : null}
+                </div>
+                {section.options.map((e) => {
+                  const selected = e.value === model;
+                  return (
+                    <button
+                      key={e.value}
+                      type="button"
+                      onClick={() => {
+                        onChange(e.value);
+                        setOpen(false);
+                      }}
+                      className="hover:bg-background-primary-hover flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-colors"
+                    >
+                      <span
+                        className={cn(
+                          "flex size-4 shrink-0 items-center justify-center",
+                          selected ? "text-orange-500" : "text-transparent",
+                        )}
+                      >
+                        <RiCheckLine className="size-4" aria-hidden />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="text-body-2-medium text-text-primary block">
+                          {e.label}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </>
       )}

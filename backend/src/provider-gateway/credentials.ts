@@ -72,6 +72,7 @@ export async function resolveProviderCredentialForRun(
     orgId: string;
     userId?: string | null;
     provider: ProviderId;
+    model?: string | null;
   },
   deps: ProviderCredentialResolvers = {},
 ): Promise<ResolvedProviderCredential | null> {
@@ -84,7 +85,22 @@ export async function resolveProviderCredentialForRun(
     });
     if (userCredential) return { value: userCredential, source: "user_connection" };
   }
-  return resolveProviderCredential(input.orgId, input.provider, deps);
+  const resolved = await resolveProviderCredential(input.orgId, input.provider, deps);
+  if (resolved) return resolved;
+
+  // The public Free lane is the one production exception to the paid-provider
+  // tenant boundary: `:free` OpenRouter variants cost no shared provider quota,
+  // so the hosted key can make the advertised zero-cost lane usable without a
+  // per-user connection. Paid models remain tenant/BYOK-only in production.
+  if (
+    input.provider === "openrouter" &&
+    input.model?.includes("/") &&
+    input.model.endsWith(":free")
+  ) {
+    const houseKey = (deps.env ?? process.env).OPENROUTER_API_KEY?.trim();
+    if (houseKey) return { value: houseKey, source: "backend_env" };
+  }
+  return null;
 }
 
 /**

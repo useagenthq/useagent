@@ -30,6 +30,7 @@ import {
   ENGINES,
   type EngineId,
   modelOptionsForEngine,
+  partitionModelOptions,
   selectableModelsForEngine,
 } from "@/components/chat/types";
 import { AgentThinking } from "@/components/application/agent-thinking/agent-thinking";
@@ -100,19 +101,19 @@ export function NewTaskComposer({
   const enabledEngines = engineConfig.engines;
   const engineId = engine as EngineId;
   const selectableModels = modelOptionsForEngine(engineId, engineConfig.models[engineId]);
-  const modelGroups: PickerGroup[] = useMemo(
-    () => [
-      {
-        label: "Models",
-        options: selectableModels.map((m) => ({
-          value: m.value,
-          label: m.label,
-          markTint: m.tint,
-        })),
-      },
-    ],
-    [selectableModels],
-  );
+  const modelGroups: PickerGroup[] = useMemo(() => {
+    const toOption = (m: (typeof selectableModels)[number]) => ({
+      value: m.value,
+      label: m.label,
+      markTint: m.tint,
+    });
+    // Zero-cost OpenRouter ":free" variants (OpenCode only) get their own
+    // section; membership is manifest-driven via the shared partition.
+    const { paid, free } = partitionModelOptions(selectableModels);
+    const groups: PickerGroup[] = [{ label: "Models", options: paid.map(toOption) }];
+    if (free.length > 0) groups.push({ label: "Free", options: free.map(toOption) });
+    return groups;
+  }, [selectableModels]);
   // Per-repo branch overrides (repo full_name -> branch). An absent entry means
   // "clone the repo's default branch"; only overrides are sent to the backend.
   const [branches, setBranches] = useState<Record<string, string>>({});
