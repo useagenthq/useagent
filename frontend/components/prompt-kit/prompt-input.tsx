@@ -126,7 +126,11 @@ function PromptInputTextarea({
 
   const adjustHeight = (el: HTMLTextAreaElement | null) => {
     if (!el || disableAutosize) return;
-    el.style.height = "auto";
+    // Collapse before measuring. `height: auto` can inherit a transiently
+    // stretched grid/flex track while the session rail is booting, turning the
+    // textarea's used height into its next scrollHeight and freezing a tall
+    // empty composer until another state change remeasures it.
+    el.style.height = "0px";
     if (typeof maxHeight === "number") {
       el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
     } else {
@@ -142,7 +146,7 @@ function PromptInputTextarea({
   useLayoutEffect(() => {
     if (!textareaRef.current || disableAutosize) return;
     const el = textareaRef.current;
-    el.style.height = "auto";
+    el.style.height = "0px";
     if (typeof maxHeight === "number") {
       el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
     } else {
