@@ -43,13 +43,14 @@ describe("runs", () => {
   });
 
   test("loopback parity admission persists an internal origin and remains hidden", async () => {
-    const previousSecret = process.env.BETTER_AUTH_SECRET;
-    process.env.BETTER_AUTH_SECRET = "parity-operator-test-secret";
+    const previousSecret = process.env.USEAGENT_OPERATOR_SECRET;
+    const operatorSecret = "parity-operator-test-secret-with-32-chars";
+    process.env.USEAGENT_OPERATOR_SECRET = operatorSecret;
     try {
       const created = await json<{ id: string }>("/api/internal/operator/admit-release-eval", {
         method: "POST",
         headers: {
-          authorization: "Bearer parity-operator-test-secret",
+          authorization: `Bearer ${operatorSecret}`,
           "idempotency-key": `release-eval:${crypto.randomUUID()}`,
         },
         body: {
@@ -69,8 +70,8 @@ describe("runs", () => {
       const listed = await json<{ runs: Array<{ id: string }> }>("/api/runs?all=1");
       expect(listed.body.runs.some((run) => run.id === created.body.id)).toBe(false);
     } finally {
-      if (previousSecret === undefined) delete process.env.BETTER_AUTH_SECRET;
-      else process.env.BETTER_AUTH_SECRET = previousSecret;
+      if (previousSecret === undefined) delete process.env.USEAGENT_OPERATOR_SECRET;
+      else process.env.USEAGENT_OPERATOR_SECRET = previousSecret;
     }
   });
 
