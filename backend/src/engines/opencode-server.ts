@@ -60,6 +60,8 @@ import {
   threadTokenMemoOptions,
 } from "../util/token-memo";
 import { createHash } from "node:crypto";
+import { taskChildSessionId } from "./opencode-child-identity";
+export { taskChildSessionId } from "./opencode-child-identity";
 import { MEMORY_SKILL_PATH, memorySkillText } from "../memory/memory-skill-text";
 import {
   composeSecretEnv,
@@ -235,28 +237,6 @@ export function redactOpenCodeSessionLifecycleInfo<T extends Record<string, unkn
     if (typeof info[key] === "string") safe[key] = info[key];
   }
   return safe as T;
-}
-
-const TASK_OUTPUT_CHILD_ID = /<task\s+id="(ses_[^"]+)"/;
-
-/** The REAL child session id a `task` ToolPart names: the pin-era
- *  `state.metadata.sessionId`, else the `<task id="ses_…">` marker the task tool
- *  writes into its output. The SubtaskPart carries NO child-session field (its
- *  `sessionID` is the PARENT session), so this ToolPart correlation - plus the
- *  session.created parentID frames - is the only native source of child identity.
- *  (The canonical translator resolves the same fields; see opencode-canonical.) */
-export function taskChildSessionId(state: {
-  output?: unknown;
-  metadata?: unknown;
-}): string | null {
-  const metadata =
-    state.metadata && typeof state.metadata === "object"
-      ? (state.metadata as Record<string, unknown>)
-      : null;
-  const fromMetadata = metadata?.sessionId ?? metadata?.sessionID;
-  if (typeof fromMetadata === "string" && fromMetadata) return fromMetadata;
-  const output = typeof state.output === "string" ? state.output : "";
-  return TASK_OUTPUT_CHILD_ID.exec(output)?.[1] ?? null;
 }
 
 /** Boot (or confirm) `opencode serve` inside the sandbox and resolve its
