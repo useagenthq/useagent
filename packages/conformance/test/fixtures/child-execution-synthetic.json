@@ -1,0 +1,82 @@
+[
+  {
+    "adapter": "codex",
+    "syntheticChildLifecycle": true,
+    "parent": "codex-parent",
+    "child": "codex-child",
+    "spawn": { "senderThreadId": "codex-parent", "receiverThreadIds": ["codex-child"] },
+    "activity": { "threadId": "codex-child", "itemId": "codex-tool", "text": "checked price" },
+    "wait": { "senderThreadId": "codex-parent", "receiverThreadIds": ["codex-child"] },
+    "result": { "threadId": "codex-child", "result": "done" }
+  },
+  {
+    "adapter": "claude-runtime",
+    "syntheticChildLifecycle": true,
+    "parent": "claude-parent",
+    "child": "claude-child",
+    "spawn": { "parent_tool_use_id": "claude-parent", "task_id": "claude-child" },
+    "activity": { "session_id": "claude-child", "tool_use_id": "claude-tool", "text": "checked price" },
+    "wait": { "session_id": "claude-parent", "task_ids": ["claude-child"] },
+    "result": { "task_id": "claude-child", "result": "done" }
+  },
+  {
+    "adapter": "claude-acp",
+    "syntheticChildLifecycle": false,
+    "parent": "claude-acp-parent",
+    "child": "claude-acp-child",
+    "spawn": { "sessionId": "claude-acp-parent", "childSessionId": "claude-acp-child" },
+    "activity": { "sessionId": "claude-acp-child", "toolCallId": "claude-acp-tool", "text": "checked price" },
+    "wait": { "sessionId": "claude-acp-parent", "childSessionIds": ["claude-acp-child"] },
+    "result": { "sessionId": "claude-acp-child", "result": "done" }
+  },
+  {
+    "adapter": "codex-acp",
+    "syntheticChildLifecycle": true,
+    "parent": "codex-acp-parent",
+    "child": "codex-acp-child",
+    "spawn": { "parentThreadId": "codex-acp-parent", "threadId": "codex-acp-child" },
+    "activity": { "threadId": "codex-acp-child", "toolCallId": "codex-acp-tool", "text": "checked price" },
+    "wait": { "sessionId": "codex-acp-parent", "threadIds": ["codex-acp-child"] },
+    "result": { "threadId": "codex-acp-child", "result": "done" }
+  },
+  {
+    "adapter": "opencode",
+    "syntheticChildLifecycle": true,
+    "parent": "opencode-parent",
+    "child": "opencode-child",
+    "spawn": { "parentID": "opencode-parent", "sessionID": "opencode-child" },
+    "activity": { "sessionID": "opencode-child", "partID": "opencode-tool", "text": "checked price" },
+    "wait": { "sessionID": "opencode-parent", "children": ["opencode-child"] },
+    "result": { "sessionID": "opencode-child", "result": "done" }
+  },
+  {
+    "adapter": "acp",
+    "syntheticChildLifecycle": false,
+    "parent": "acp-parent",
+    "child": "acp-child",
+    "spawn": { "sessionId": "acp-parent", "childSessionId": "acp-child" },
+    "activity": { "sessionId": "acp-child", "toolCallId": "acp-tool", "text": "checked price" },
+    "wait": { "sessionId": "acp-parent", "childSessionIds": ["acp-child"] },
+    "result": { "sessionId": "acp-child", "result": "done" }
+  },
+  {
+    "adapter": "pi",
+    "syntheticChildLifecycle": true,
+    "parent": "pi-parent",
+    "child": "pi-child",
+    "spawn": { "parentSessionId": "pi-parent", "subagentId": "pi-child" },
+    "activity": { "subagentId": "pi-child", "callId": "pi-tool", "text": "checked price" },
+    "wait": { "sessionId": "pi-parent", "subagentIds": ["pi-child"] },
+    "result": { "subagentId": "pi-child", "result": "done" }
+  },
+  {
+    "adapter": "dsh",
+    "syntheticChildLifecycle": false,
+    "parent": "dsh-parent",
+    "child": "dsh-child",
+    "spawn": { "session_id": "dsh-parent", "child_session_id": "dsh-child" },
+    "activity": { "session_id": "dsh-child", "tool_call_id": "dsh-tool", "text": "checked price" },
+    "wait": { "session_id": "dsh-parent", "child_session_ids": ["dsh-child"] },
+    "result": { "session_id": "dsh-child", "result": "done" }
+  }
+]

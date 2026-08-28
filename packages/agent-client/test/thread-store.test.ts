@@ -89,6 +89,61 @@ describe("canonical thread store", () => {
     expect(s.getSnapshot().completeRuns.has("run_1")).toBe(true);
   });
 
+  test("owns one incremental execution summary across repeated reads and stale replay", () => {
+    const s = createCanonicalThreadStore({ threadId: "thr_1" });
+    const empty = s.getExecutionSummary();
+    expect(s.getExecutionSummary()).toBe(empty);
+
+    const started = ev({
+      eventId: "child-start",
+      kind: "child.started",
+      childId: "child-a",
+      title: "Alpha",
+      deliverySeq: 1,
+    });
+    expect(s.ingest(started)).toBe(true);
+    const accepted = s.getExecutionSummary();
+    expect(accepted.children.map((child) => child.id)).toEqual(["child-a"]);
+    expect(s.getExecutionSummary()).toBe(accepted);
+    expect(s.executionSummaryRetention().acceptedEvents).toBe(1);
+
+    expect(s.ingest(started)).toBe(false);
+    expect(s.getExecutionSummary()).toBe(accepted);
+    expect(s.executionSummaryRetention().acceptedEvents).toBe(1);
+  });
+
+  test("accepted identity revisions clean up the prior child without replaying history", () => {
+    const s = createCanonicalThreadStore();
+    s.ingest(ev({
+      eventId: "child-start",
+      kind: "child.started",
+      childId: "child-a",
+      deliverySeq: 1,
+    }));
+    expect(s.ingest(ev({
+      eventId: "child-start",
+      kind: "child.started",
+      childId: "child-b",
+      revision: 1,
+      deliverySeq: 2,
+    }))).toBe(true);
+    expect(s.getExecutionSummary().children.map((child) => child.id)).toEqual(["child-b"]);
+    expect(s.executionSummaryRetention().acceptedEvents).toBe(1);
+  });
+
+  test("one canonical store cannot mix root threads", () => {
+    const s = createCanonicalThreadStore({ threadId: "thr_1" });
+    expect(() => s.ingest(ev({
+      eventId: "other-thread",
+      kind: "child.started",
+      childId: "child-a",
+      threadId: "thr_2",
+      deliverySeq: 1,
+    }))).toThrow("bound to thread thr_1");
+    expect(s.getSnapshot().events).toEqual([]);
+    expect(s.getExecutionSummary().children).toEqual([]);
+  });
+
   test("selectors derive assistant text + tool calls from the transcript", () => {
     const s = createCanonicalThreadStore();
     s.batch(() => {

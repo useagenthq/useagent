@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { createCanonicalThreadStore, type CanonicalThreadEvent } from "@useagent/agent-client";
 import type { CanonicalChildEventLike } from "./canonical-children";
+import { EXECUTION_SUMMARY_ROLLOUT_MODE } from "./execution-summary-rollout";
 import { type GatewayChildSession, SubagentsFold } from "./subagents-fold";
 
 const canonicalChild = (over: Partial<CanonicalChildEventLike> = {}): CanonicalChildEventLike => ({
@@ -31,6 +33,41 @@ const gatewayChild = (over: Partial<GatewayChildSession> = {}): GatewayChildSess
 });
 
 describe("subagents fold (inline conversation group)", () => {
+  test("production fold reads the supplied turn-scoped store snapshot", () => {
+    const event = (
+      childId: string,
+      revision: number,
+      deliverySeq: number,
+    ): CanonicalThreadEvent => ({
+      schemaVersion: 1,
+      eventId: "corrected-child",
+      seq: deliverySeq,
+      runId: "run-1",
+      threadId: "thread-1",
+      ts: 1_000 + deliverySeq,
+      identity: { provider: "codex", nativeSessionId: "parent" },
+      deliverySeq,
+      revision,
+      kind: "child.started",
+      childId,
+      title: childId,
+    });
+    const events = [event("child-a", 0, 1), event("child-b", 1, 2)];
+    const store = createCanonicalThreadStore({ threadId: "thread-1" });
+    for (const item of events) store.ingest(item);
+    const html = renderToStaticMarkup(
+      <SubagentsFold
+        steps={[]}
+        live
+        canonicalEvents={events as unknown as readonly CanonicalChildEventLike[]}
+        executionSummary={store.getExecutionSummary()}
+      />,
+    );
+    expect(html).toContain(
+      EXECUTION_SUMMARY_ROLLOUT_MODE === "read" ? "1 subagent" : "2 subagents",
+    );
+  });
+
   test("renders nothing when the turn spawned no children", () => {
     const html = renderToStaticMarkup(<SubagentsFold steps={[]} live={false} />);
     expect(html).toBe("");

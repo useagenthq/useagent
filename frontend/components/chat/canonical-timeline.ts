@@ -25,8 +25,10 @@ export interface CanonicalEventLike {
   readonly seq: number;
   readonly ts?: number;
   readonly identity?: {
+    readonly provider?: string;
     readonly nativeEventId?: string;
     readonly nativeSessionId?: string;
+    readonly nativeParentSessionId?: string;
     readonly nativeSeq?: number;
     readonly nativeMessageId?: string;
     readonly nativePartId?: string;
