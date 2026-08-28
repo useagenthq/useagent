@@ -82,6 +82,8 @@ export interface CanonicalPlanEntry {
  *  future numeric counters remain losslessly available to newer consumers. */
 export type CanonicalChildUsage = Readonly<Record<string, number>>;
 
+export type CanonicalDelegationControlKind = "wait" | "send" | "resume" | "close" | "gather";
+
 /** Optional provider snapshot carried alongside the legacy child lifecycle fields.
  *  Values are additive so readers of schema v1 rows can ignore this object, while
  *  richer consumers do not have to infer lifecycle state from display summaries. */
@@ -247,6 +249,13 @@ export type CanonicalEventBody =
       status: "ok" | "error";
       result?: string;
       state?: CanonicalChildState;
+    }
+  | {
+      kind: "delegation.control";
+      delegationKind: CanonicalDelegationControlKind;
+      toolCallId: string;
+      targetChildIds: readonly string[];
+      status: "ok" | "error";
     }
   | { kind: "approval.requested"; approvalId: string; operation: string; options: readonly string[] }
   | { kind: "approval.resolved"; approvalId: string; decision: string }

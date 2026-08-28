@@ -30,7 +30,8 @@ function assertKnownKind(e: CanonicalAgentEvent): void {
     case "tool.started": case "tool.progress": case "tool.completed":
     case "file.changed": case "artifact.created": case "artifact.delivered":
     case "terminal.output": case "child.started":
-    case "child.updated": case "child.completed": case "approval.requested":
+    case "child.updated": case "child.completed": case "delegation.control":
+    case "approval.requested":
     case "approval.resolved": case "question.requested": case "question.resolved":
     case "commands.updated": case "mode.updated": case "usage.updated":
     case "context.marker": case "harness.warning": case "harness.error":
@@ -1062,6 +1063,9 @@ describe("T3 activity fidelity", () => {
 
   test("wait/send/resume/close remain parent-owned control events", () => {
     for (const [index, delegationKind] of ["wait", "send", "resume", "close"].entries()) {
+      const targetChildIds = delegationKind === "wait"
+        ? ["child-control", "child-control-2"]
+        : ["child-control"];
       const result = translateOpenCode([
         t3Frame(`control-${delegationKind}`, index + 1, "t3.activity.tool.completed", {
           id: `activity-${delegationKind}`,
@@ -1070,6 +1074,7 @@ describe("T3 activity fidelity", () => {
           payload: {
             toolUseId: `control-${delegationKind}`,
             childSessionId: "child-control",
+            ...(delegationKind === "wait" ? { receiverThreadIds: targetChildIds } : {}),
             delegationKind,
             itemType: "collab_agent_tool_call",
             toolName: delegationKind,
@@ -1078,10 +1083,21 @@ describe("T3 activity fidelity", () => {
       ], CTX);
 
       expect(result.events.some((event) => event.kind.startsWith("child."))).toBe(false);
-      expect(result.events.map((event) => event.kind)).toEqual(["tool.started", "tool.completed"]);
+      expect(result.events.map((event) => event.kind)).toEqual([
+        "tool.started",
+        "tool.completed",
+        "delegation.control",
+      ]);
       expect(result.events[0]).toMatchObject({
         kind: "tool.started",
         toolCallId: `control-${delegationKind}`,
+      });
+      expect(result.events[2]).toMatchObject({
+        kind: "delegation.control",
+        delegationKind,
+        toolCallId: `control-${delegationKind}`,
+        targetChildIds,
+        status: "ok",
       });
     }
   });
