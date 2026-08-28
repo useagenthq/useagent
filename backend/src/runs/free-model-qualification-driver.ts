@@ -94,7 +94,7 @@ export function classifyFailedQualificationRun(
     return { classification: "system_failure", latencyMs, httpStatus, errorCode: "timeout" };
   }
   if (httpStatus === 429 || text.includes("rate limit")) {
-    return { classification: "model_failure", latencyMs, httpStatus, errorCode: "rate_limited" };
+    return { classification: "system_failure", latencyMs, httpStatus, errorCode: "rate_limited" };
   }
   if (text.includes("tool")) {
     return { classification: "model_failure", latencyMs, httpStatus, errorCode: "tool_call_failed" };

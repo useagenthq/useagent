@@ -210,6 +210,56 @@ describe("free model registry repository", () => {
     expect(state?.probesClaimedToday).toBe(1);
   });
 
+  test("only one candidate lease is active globally across independent pools", async () => {
+    const firstModel = `test/global-owner-a-${crypto.randomUUID()}:free`;
+    const secondModel = `test/global-owner-b-${crypto.randomUUID()}:free`;
+    await insertCandidate(firstModel);
+    await insertCandidate(secondModel);
+    await client.unsafe(`
+      update free_model_candidates
+      set next_probe_at = case
+        when model_id in ('${firstModel}', '${secondModel}')
+          then now() - interval '1 second'
+        else now() + interval '1 day'
+      end`);
+
+    const [first, second] = await Promise.all([
+      claimDueFreeModelCandidates({ limit: 1, leaseMs: 60_000 }, dbA),
+      claimDueFreeModelCandidates({ limit: 1, leaseMs: 60_000 }, dbB),
+    ]);
+    expect([...first, ...second]).toHaveLength(1);
+    const blockedPool = first.length > 0 ? dbB : dbA;
+    await expect(claimDueFreeModelCandidates(
+      { limit: 1, leaseMs: 60_000 },
+      blockedPool,
+    )).resolves.toEqual([]);
+  });
+
+  test("a recent systemic failure pauses claims durably across replicas", async () => {
+    const modelId = `test/system-pause-${crypto.randomUUID()}:free`;
+    await insertCandidate(modelId);
+    await makeOnlyDue(modelId);
+    await client.unsafe(`
+      update free_model_registry_state
+      set last_publish_outcome = 'preserved_system_failure',
+        last_publish_at = now()
+      where lane = 'opencode_free'`);
+
+    await expect(claimDueFreeModelCandidates(
+      { limit: 1, leaseMs: 60_000 },
+      dbA,
+    )).resolves.toEqual([]);
+
+    await client.unsafe(`
+      update free_model_registry_state
+      set last_publish_at = now() - interval '31 minutes'
+      where lane = 'opencode_free'`);
+    await expect(claimDueFreeModelCandidates(
+      { limit: 1, leaseMs: 60_000 },
+      dbB,
+    )).resolves.toHaveLength(1);
+  });
+
   test("an expired lease is reclaimed and the stale worker cannot write", async () => {
     const modelId = `test/reclaim-${crypto.randomUUID()}:free`;
     await insertCandidate(modelId);
@@ -383,6 +433,10 @@ describe("free model registry repository", () => {
       set probe_budget_day = ((now() at time zone 'UTC')::date - 1),
         probes_claimed_today = 1
       where lane = 'opencode_free'`);
+    await client.unsafe(`
+      update free_model_candidates
+      set claim_expires_at = now() - interval '1 second'
+      where claim_token is not null`);
     const afterReset = await claimDueFreeModelCandidates(
       { limit: 1, leaseMs: 60_000 },
       testDb,

@@ -6,9 +6,11 @@ import type {
 import type { ClaimedFreeModelCandidate } from "./free-model-registry-repo";
 import type { FreeModelQualificationResult } from "./free-model-qualification-driver";
 import {
+  desiredPublishedLane,
   fetchOpenRouterFreeModelCandidates,
   freeModelQualifierEnabled,
   runFreeModelQualifierTick,
+  startFreeModelRegistryHydrator,
   type FreeModelQualifierRepository,
 } from "./free-model-qualifier-worker";
 
@@ -164,6 +166,28 @@ describe("free-model qualifier worker", () => {
     expect(freeModelQualifierEnabled({ FREE_MODEL_QUALIFIER_ENABLED: "1" })).toBe(true);
   });
 
+  test("registry hydration is default off and schedules every enabled replica", () => {
+    let scheduled: (() => void) | null = null;
+    let intervalMs = 0;
+    let unrefCalled = false;
+    const deps = {
+      hydrate: async () => true,
+      schedule: (run: () => void, interval: number) => {
+        scheduled = run;
+        intervalMs = interval;
+        return { unref: () => { unrefCalled = true; } };
+      },
+    };
+    expect(startFreeModelRegistryHydrator(deps, {})).toBe(false);
+    expect(startFreeModelRegistryHydrator(
+      deps,
+      { FREE_MODEL_REGISTRY_READ_ENABLED: "1" },
+    )).toBe(true);
+    expect(scheduled).not.toBeNull();
+    expect(intervalMs).toBe(60_000);
+    expect(unrefCalled).toBe(true);
+  });
+
   test("catalog fetch classifies provider failures without reading response bodies", async () => {
     await expect(fetchOpenRouterFreeModelCandidates(async () =>
       new Response("secret upstream body", { status: 503 })
@@ -257,6 +281,24 @@ describe("free-model qualifier worker", () => {
     expect(adopted).toEqual([[seed.modelId, fresh.modelId]]);
   });
 
+  test("one partial catalog response cannot evict a currently qualified model", () => {
+    const first = candidate("vendor/current-a:free", {
+      state: "qualified",
+      everQualified: true,
+    });
+    const temporarilyMissing = candidate("vendor/current-b:free", {
+      state: "qualified",
+      everQualified: true,
+    });
+    expect(desiredPublishedLane(
+      {
+        state: registryState([first.modelId, temporarilyMissing.modelId]),
+        candidates: [first, temporarilyMissing],
+      },
+      [{ id: first.modelId, contextLength: 100_000 }],
+    )).toEqual([first.modelId, temporarilyMissing.modelId]);
+  });
+
   test("account-wide failure stops the batch and preserves last-good", async () => {
     const first = candidate("vendor/first:free");
     const second = candidate("vendor/second:free");
@@ -304,8 +346,8 @@ describe("free-model qualifier worker", () => {
     const agent = driver({
       classification: "model_failure",
       latencyMs: 30,
-      httpStatus: 429,
-      errorCode: "rate_limited",
+      httpStatus: 403,
+      errorCode: "hosted_app_restricted",
     });
     const result = await runFreeModelQualifierTick({
       driver: agent.driver,

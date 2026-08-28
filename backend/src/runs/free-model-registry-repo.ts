@@ -15,6 +15,7 @@ export const FREE_MODEL_LANE = "opencode_free";
 export const DEFAULT_DAILY_FREE_MODEL_PROBE_BUDGET = 24;
 export const FREE_MODEL_QUALIFICATION_STREAK = 2;
 export const FREE_MODEL_DISQUALIFICATION_STREAK = 2;
+export const FREE_MODEL_SYSTEM_PAUSE_MS = 30 * 60_000;
 
 export interface ClaimedFreeModelCandidate {
   readonly modelId: string;
@@ -91,7 +92,10 @@ export async function claimDueFreeModelCandidates(
     const [budget] = await tx.execute(sql`
       select daily_probe_budget, probes_claimed_today,
         probe_budget_day::text as probe_budget_day,
-        ((now() at time zone 'UTC')::date)::text as utc_day
+        ((now() at time zone 'UTC')::date)::text as utc_day,
+        last_publish_outcome,
+        last_publish_at > now() - (${FREE_MODEL_SYSTEM_PAUSE_MS}::bigint * interval '1 millisecond')
+          as system_paused
       from free_model_registry_state
       where lane = ${lane}
       for update`);
@@ -110,6 +114,23 @@ export async function claimDueFreeModelCandidates(
           updated_at = now()
         where lane = ${lane}`);
     }
+
+    if (
+      budget.last_publish_outcome === "preserved_system_failure" &&
+      budget.system_paused === true
+    ) {
+      return [];
+    }
+
+    // The registry-row lock serializes this check with every other replica's
+    // claim transaction. One unexpired candidate lease therefore means one
+    // globally active provider probe, not one active probe per process.
+    const [active] = await tx.execute(sql`
+      select exists(
+        select 1 from free_model_candidates
+        where claim_token is not null and claim_expires_at > now()
+      ) as active`);
+    if (active?.active === true) return [];
 
     const claimLimit = Math.min(
       input.limit,

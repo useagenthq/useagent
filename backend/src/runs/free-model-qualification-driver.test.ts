@@ -162,6 +162,24 @@ describe("internal OpenCode free-model qualification driver", () => {
     });
   });
 
+  test("account-wide rate limiting pauses qualification instead of quarantining one model", async () => {
+    const fixture = servicesFor(async () =>
+      run("failed", "429 free-tier rate limit exceeded")
+    );
+    const driver = createInternalOpenCodeQualificationDriver(
+      { orgId: "org", timeoutMs: 100, pollMs: 1 },
+      fixture.services,
+    );
+    await expect(driver.qualify({
+      modelId: "vendor/model:free",
+      claimToken: crypto.randomUUID(),
+    })).resolves.toMatchObject({
+      classification: "system_failure",
+      httpStatus: 429,
+      errorCode: "rate_limited",
+    });
+  });
+
   test("timeout is bounded, cancelled, and classified as systemic", async () => {
     let now = 0;
     const fixture = servicesFor(
