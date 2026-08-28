@@ -4,7 +4,6 @@ import { RiSidebarFoldLine, RiSidebarUnfoldLine } from "@remixicon/react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useIsTabletBand } from "@/hooks/use-is-mobile";
 import { cx } from "@/utils/cx";
 import { AuroraBackdrop } from "./aurora-backdrop";
 import { CompactSidebarRail } from "./compact-sidebar-rail";
@@ -13,17 +12,14 @@ import { useWorkingSignal } from "./working-signal";
 export interface AppShellProps {
   sidebar: ReactNode;
   children: ReactNode;
-  /** Session workspaces can opt into the compact tablet rail. Library and
-   * settings pages keep their normal navigation unless they opt in too. */
-  collapseSidebarAtTablet?: boolean;
 }
 
 /**
  * Full-bleed application frame shared by threads and Library pages. The global
  * header and selected sidebar stay fixed while the page owns the scrollable
- * workspace. The sidebar renders as a BoardUI floating panel inset from the
- * viewport edge (see sidebar-nav.tsx); the frame itself is never wrapped in a
- * decorative floating card.
+ * workspace. The expanded sidebar is a flat edge-to-edge
+ * column (see sidebar-nav.tsx); only the collapsed compact rail floats. The
+ * frame itself is never wrapped in a decorative floating card.
  *
  * `<main>` is a bounded scroll container (`flex-1 min-h-0 overflow-y-auto`), so
  * page content flows and scrolls, while a full-height child (e.g. the session
@@ -33,7 +29,7 @@ export interface AppShellProps {
  * Below md the open-nav trigger lives in an IN-FLOW header row above `<main>`
  * (never a floating overlay), so no page header can render underneath it.
  */
-export function AppShell({ sidebar, children, collapseSidebarAtTablet = false }: AppShellProps) {
+export function AppShell({ sidebar, children }: AppShellProps) {
   const working = useWorkingSignal();
   const previousWorking = useRef(working);
   const sidebarContainerRef = useRef<HTMLDivElement>(null);
@@ -51,15 +47,6 @@ export function AppShell({ sidebar, children, collapseSidebarAtTablet = false }:
     if (working && !previousWorking.current) collapseSidebar();
     previousWorking.current = working;
   }, [collapseSidebar, working]);
-
-  // Session workspaces may opt into the tablet fold because they own a second
-  // resizable rail. Ordinary AppShell consumers remain route-neutral.
-  const tabletBand = useIsTabletBand();
-  const previousBand = useRef(false);
-  useEffect(() => {
-    if (collapseSidebarAtTablet && tabletBand && !previousBand.current) collapseSidebar();
-    previousBand.current = tabletBand;
-  }, [collapseSidebar, collapseSidebarAtTablet, tabletBand]);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -98,7 +85,7 @@ export function AppShell({ sidebar, children, collapseSidebarAtTablet = false }:
           type="button"
           onClick={collapseSidebar}
           aria-label="Collapse navigation"
-          className="absolute left-[12.5rem] top-6 z-40 hidden size-8 items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none transition-colors hover:bg-background-secondary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring md:flex"
+          className="absolute left-[13.5rem] top-[8px] z-40 hidden size-8 items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none transition-colors hover:bg-background-secondary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring md:flex"
         >
           <RiSidebarFoldLine className="size-4" aria-hidden />
         </button>
