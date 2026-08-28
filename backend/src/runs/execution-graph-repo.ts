@@ -1,4 +1,4 @@
-import { and, asc, eq, or, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gt, or, sql } from "drizzle-orm";
 import { db, type Db, type Executor } from "../db/client";
 import {
   agentExecutions,
@@ -477,6 +477,106 @@ export interface ExecutionGraph {
   readonly graphCursor: number;
   readonly executions: AgentExecutionRow[];
   readonly delegationEdges: DelegationEdgeRow[];
+}
+
+export interface ExecutionGraphPageCursor {
+  readonly graphCursor: number;
+  readonly execution: {
+    readonly createdAt: string;
+    readonly id: string;
+  } | null;
+  readonly delegationEdge: {
+    readonly cursorSeq: number;
+  } | null;
+}
+
+export interface ExecutionGraphPage extends ExecutionGraph {
+  readonly executionHasMore: boolean;
+  readonly delegationEdgeHasMore: boolean;
+  readonly nextCursor: ExecutionGraphPageCursor;
+}
+
+export async function getExecutionGraphPageForRun(
+  orgId: string,
+  runId: string,
+  input: {
+    readonly limit: number;
+    readonly cursor: ExecutionGraphPageCursor;
+  },
+  exec: Executor = db,
+): Promise<ExecutionGraphPage | null> {
+  const [owningRun] = await exec
+    .select({ id: runs.id })
+    .from(runs)
+    .where(and(eq(runs.orgId, orgId), eq(runs.id, runId)))
+    .limit(1);
+  if (!owningRun) return null;
+
+  const executionCursor = input.cursor.execution;
+  const edgeCursor = input.cursor.delegationEdge;
+  const executionPage = exec
+    .select({
+      ...getTableColumns(agentExecutions),
+      cursorCreatedAt: sql<string>`${agentExecutions.createdAt}::text`,
+    })
+    .from(agentExecutions)
+    .where(and(
+      eq(agentExecutions.orgId, orgId),
+      eq(agentExecutions.runId, runId),
+      executionCursor
+        ? or(
+            sql`${agentExecutions.createdAt} > ${executionCursor.createdAt}::timestamptz`,
+            and(
+              sql`${agentExecutions.createdAt} = ${executionCursor.createdAt}::timestamptz`,
+              gt(agentExecutions.id, executionCursor.id),
+            ),
+          )
+        : undefined,
+    ))
+    .orderBy(asc(agentExecutions.createdAt), asc(agentExecutions.id))
+    .limit(input.limit + 1);
+  const edgePage = exec
+    .select()
+    .from(delegationEdges)
+    .where(and(
+      eq(delegationEdges.orgId, orgId),
+      eq(delegationEdges.runId, runId),
+      edgeCursor
+        ? gt(delegationEdges.cursorSeq, edgeCursor.cursorSeq)
+        : undefined,
+    ))
+    .orderBy(asc(delegationEdges.cursorSeq))
+    .limit(input.limit + 1);
+
+  const [executionRows, edgeRows] = await Promise.all([executionPage, edgePage]);
+  const executions = executionRows.slice(0, input.limit);
+  const delegationEdgesPage = edgeRows.slice(0, input.limit);
+  const lastExecution = executions.at(-1);
+  const lastEdge = delegationEdgesPage.at(-1);
+  const graphCursor = Math.max(
+    input.cursor.graphCursor,
+    ...executions.map((execution) => execution.lastDeliverySeq),
+    ...delegationEdgesPage.map((edge) => edge.observedDeliverySeq),
+  );
+
+  return {
+    version: 1,
+    runId,
+    graphCursor,
+    executions,
+    delegationEdges: delegationEdgesPage,
+    executionHasMore: executionRows.length > input.limit,
+    delegationEdgeHasMore: edgeRows.length > input.limit,
+    nextCursor: {
+      graphCursor,
+      execution: lastExecution
+        ? { createdAt: lastExecution.cursorCreatedAt, id: lastExecution.id }
+        : executionCursor,
+      delegationEdge: lastEdge
+        ? { cursorSeq: lastEdge.cursorSeq }
+        : edgeCursor,
+    },
+  };
 }
 
 export async function getExecutionGraphForRun(
