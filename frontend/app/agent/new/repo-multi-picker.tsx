@@ -1,11 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { RiFolderLine, RiSearchLine } from "@remixicon/react";
+import { RiFolderLine } from "@remixicon/react";
 import { CheckboxGlyph } from "@/components/base/checkbox/checkbox-glyph";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandItemGlyph,
+  CommandList,
+} from "@/components/base/command/command";
+import {
   Dropdown,
-  DropdownItem,
   DropdownPopover,
   DropdownTrigger,
 } from "@/components/base/dropdown/dropdown";
@@ -48,11 +56,11 @@ function readRecents(): string[] {
 }
 
 /**
- * multi-select repository picker: a BoardUI dropdown with a
- * searchable, checkbox list of the org's real repos, sectioned into "Recent"
- * (recently picked, from localStorage) and "All repositories" grouped by org.
- * Selecting toggles a repo and keeps the popover open. The trigger shows the
- * count ("N selected"). Mirrors the composer's other pill triggers + panels.
+ * Multi-select repository picker on the shared Command list grammar
+ * (components/base/command): search row, "Recent" + per-org sections, checkbox
+ * rows. Selecting toggles a repo and keeps the popover open; the trigger shows
+ * the count ("N selected"). Filtering stays manual (the same repo appears in
+ * both Recent and its org section, so cmdk's value-keyed filter can't own it).
  */
 export function RepoMultiPicker({
   repos,
@@ -116,10 +124,13 @@ export function RepoMultiPicker({
 
   const triggerLabel = value.length === 0 ? (emptyLabel ?? "Repositories") : `${value.length} selected`;
 
-  const Row = ({ repo }: { repo: RepoItem }) => {
+  // The same repo renders in both Recent and its org section, so cmdk item
+  // values carry a section prefix to stay unique (identity only - filtering
+  // is manual via `filtered`, with shouldFilter off).
+  const Row = ({ repo, section }: { repo: RepoItem; section: string }) => {
     const checked = selectedSet.has(repo.full_name);
     return (
-      <DropdownItem onSelect={() => toggle(repo.full_name)} className="gap-2.5">
+      <CommandItem value={`${section}:${repo.full_name}`} onSelect={() => toggle(repo.full_name)}>
         <CheckboxGlyph
           state={{
             isSelected: checked,
@@ -129,11 +140,11 @@ export function RepoMultiPicker({
             isHovered: false,
           }}
         />
-        <RiFolderLine className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />
-        <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-primary">
-          {repo.name}
-        </span>
-      </DropdownItem>
+        <CommandItemGlyph>
+          <RiFolderLine className="size-4 shrink-0" aria-hidden />
+        </CommandItemGlyph>
+        <span className="min-w-0 flex-1 truncate">{repo.name}</span>
+      </CommandItem>
     );
   };
 
@@ -152,7 +163,7 @@ export function RepoMultiPicker({
           triggerClassName,
         )}
       >
-        <RiFolderLine className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />
+        <RiFolderLine className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
         <span className="truncate">{triggerLabel}</span>
       </DropdownTrigger>
       <DropdownPopover
@@ -161,42 +172,33 @@ export function RepoMultiPicker({
         offset={6}
         className="w-[280px]"
       >
-        <div className="-mx-2.5 -mt-1 mb-1 flex items-center gap-2 border-b border-border-button-default px-3 pb-2.5 pt-1">
-          <RiSearchLine className="size-4 shrink-0 text-foreground-icon-tertiary" aria-hidden />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
+        <Command label="Select repositories" shouldFilter={false}>
+          <CommandInput
             placeholder="Search repositories..."
             aria-label="Search repositories"
-            className="min-w-0 flex-1 bg-transparent text-body-2-medium text-text-primary outline-none placeholder:text-text-tertiary"
+            value={query}
+            onValueChange={setQuery}
           />
-        </div>
-        <div className="flex max-h-[288px] flex-col gap-1.5 overflow-y-auto">
-          {filtered.length === 0 ? (
-            <p className="px-2 py-2 text-body-2-medium text-text-tertiary">
+          <CommandList className="max-h-[288px]">
+            <CommandEmpty>
               {repos.length === 0 ? "No repositories available" : "No results"}
-            </p>
-          ) : (
-            <>
-              {recentItems.length > 0 ? (
-                <div className="flex flex-col gap-1">
-                  <span className="text-mono-label px-2 pt-1 text-text-tertiary">Recent</span>
-                  {recentItems.map((repo) => (
-                    <Row key={`recent-${repo.full_name}`} repo={repo} />
-                  ))}
-                </div>
-              ) : null}
-              {byOrg.map(([org, items]) => (
-                <div key={org} className="flex flex-col gap-1">
-                  <span className="text-mono-label px-2 pt-1 text-text-tertiary">{org}</span>
-                  {items.map((repo) => (
-                    <Row key={repo.full_name} repo={repo} />
-                  ))}
-                </div>
-              ))}
-            </>
-          )}
-        </div>
+            </CommandEmpty>
+            {recentItems.length > 0 ? (
+              <CommandGroup heading="Recent">
+                {recentItems.map((repo) => (
+                  <Row key={`recent-${repo.full_name}`} repo={repo} section="recent" />
+                ))}
+              </CommandGroup>
+            ) : null}
+            {byOrg.map(([org, items]) => (
+              <CommandGroup key={org} heading={org}>
+                {items.map((repo) => (
+                  <Row key={repo.full_name} repo={repo} section="all" />
+                ))}
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
       </DropdownPopover>
     </Dropdown>
   );

@@ -7,9 +7,10 @@ import {
   RiCloseLine,
   RiCpuLine,
   RiFlashlightLine,
+  RiRefreshLine,
 } from "@remixicon/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AddFilesRow,
   AddMenuDivider,
@@ -93,6 +94,21 @@ export function NewTaskComposer({
   const enabledEngines = engineConfig.engines;
   const engineId = engine as EngineId;
   const selectableModels = modelOptionsForEngine(engineId, engineConfig.models[engineId]);
+  // The Free lane tracks OpenRouter's live catalog; the heading's refresh
+  // re-derives it on demand (same affordance as the chat surface's picker).
+  const [refreshingModels, setRefreshingModels] = useState(false);
+  const { refreshModels } = engineConfig;
+  const refreshFreeModels = useCallback(
+    async (preserveModel: string) => {
+      setRefreshingModels(true);
+      try {
+        await refreshModels(preserveModel);
+      } finally {
+        setRefreshingModels(false);
+      }
+    },
+    [refreshModels],
+  );
   const modelGroups: PickerGroup[] = useMemo(() => {
     const toOption = (m: (typeof selectableModels)[number]) => ({
       value: m.value,
@@ -103,9 +119,32 @@ export function NewTaskComposer({
     // section; membership is manifest-driven via the shared partition.
     const { paid, free } = partitionModelOptions(selectableModels);
     const groups: PickerGroup[] = [{ label: "Models", options: paid.map(toOption) }];
-    if (free.length > 0) groups.push({ label: "Free", options: free.map(toOption) });
+    if (free.length > 0) {
+      groups.push({
+        label: "Free",
+        // tabIndex -1: the heading row is presentation-only inside the list,
+        // so the refresh stays a pointer affordance (never a tab stop).
+        action: (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="Refresh free models"
+            title="Refresh"
+            disabled={refreshingModels}
+            onClick={() => void refreshFreeModels(model)}
+            className="rounded p-0.5 text-text-tertiary transition-colors hover:text-text-primary disabled:opacity-50"
+          >
+            <RiRefreshLine
+              className={cx("size-3.5", refreshingModels && "animate-spin")}
+              aria-hidden
+            />
+          </button>
+        ),
+        options: free.map(toOption),
+      });
+    }
     return groups;
-  }, [selectableModels]);
+  }, [selectableModels, refreshingModels, refreshFreeModels, model]);
   // Per-repo branch overrides (repo full_name -> branch). An absent entry means
   // "clone the repo's default branch"; only overrides are sent to the backend.
   const [branches, setBranches] = useState<Record<string, string>>({});
