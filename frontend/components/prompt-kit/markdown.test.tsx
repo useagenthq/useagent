@@ -10,7 +10,7 @@ describe("Markdown links", () => {
 
     expect(html).toContain('href="/api/artifacts/report.pdf"');
     expect(html).toContain("Download report");
-    expect(html).toContain(">PDF<");
+    expect(html).toContain(">D<"); // round badge shows the label initial
     expect(html).toContain("rounded-full");
   });
 
