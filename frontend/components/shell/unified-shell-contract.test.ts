@@ -217,9 +217,16 @@ describe("unified shell contract", () => {
 
   test("folds the project rail to a useful compact rail on a real working transition", () => {
     const { appShell, compactSidebarRail } = shellSources();
+    const threadLayout = readFromFrontend("app/session/(thread)/layout.tsx");
 
     expect(appShell).toContain("useWorkingSignal()");
     expect(appShell).toContain("previousWorking.current");
+    // The session route explicitly opts into the tablet fold; library and
+    // settings consumers of AppShell do not inherit session layout policy.
+    expect(appShell).toContain("useIsTabletBand()");
+    expect(appShell).toContain("previousBand.current");
+    expect(appShell).toContain("collapseSidebarAtTablet && tabletBand");
+    expect(threadLayout).toContain("collapseSidebarAtTablet");
     expect(appShell).toContain("setSidebarCollapsed(true)");
     expect(appShell).toContain("inert={sidebarCollapsed}");
     expect(appShell).toContain("aria-hidden={sidebarCollapsed}");
