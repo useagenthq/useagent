@@ -30,6 +30,7 @@ import {
 import {
   t3ActivityKind,
   t3DelegationKind,
+  t3DelegationTargetIds,
   t3Errored,
   t3Payload,
   t3Preview,
@@ -597,6 +598,15 @@ export function translateOpenCode(
             activityKind.endsWith(".failed") ||
             activityKind.endsWith(".denied");
           emitToolActivity(callId, name, title, terminal, errored);
+          if (terminal && delegationKind !== "spawn") {
+            produced.push(push(f.eventId, f.provider, {
+              kind: "delegation.control",
+              delegationKind,
+              toolCallId: callId,
+              targetChildIds: t3DelegationTargetIds(payload),
+              status: errored ? "error" : "ok",
+            }, ident, "#delegation-control"));
+          }
         } else if (itemType === "collab_agent_tool_call" && explicitChildId) {
           suppressed = "ambiguous t3 collaboration wrapper without delegation kind";
         } else {

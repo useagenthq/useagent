@@ -37,6 +37,7 @@ function describeKind(e: CanonicalEventBody): string {
     case "child.started": return "child started";
     case "child.updated": return "child updated";
     case "child.completed": return "child completed";
+    case "delegation.control": return "delegation control";
     case "approval.requested": return "approval requested";
     case "approval.resolved": return "approval resolved";
     case "question.requested": return "question requested";
@@ -82,6 +83,14 @@ describe("canonical event vocabulary", () => {
         artifact: { artifactId: "a1", bytes: 42, sha256: "a".repeat(64), contentType: "application/pdf" },
       },
       { ...base("child.started"), kind: "child.started", childId: "c1" },
+      {
+        ...base("delegation.control"),
+        kind: "delegation.control",
+        delegationKind: "wait",
+        toolCallId: "t-wait",
+        targetChildIds: ["c1"],
+        status: "ok",
+      },
       { ...base("usage.updated"), kind: "usage.updated", outputTokens: 42 },
       { ...base("harness.error"), kind: "harness.error", message: "boom", fatal: true },
     ];
