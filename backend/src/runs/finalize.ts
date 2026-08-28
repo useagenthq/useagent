@@ -32,6 +32,11 @@ import { enqueueCanonicalization } from "./canonicalization-outbox";
 import { canonicalEngine } from "../engines/engine-alias";
 import { enqueueLearning } from "../learning/learning-outbox";
 import { releaseLeaseForRun } from "../fleet/lease-repo";
+import { executionGraphRolloutMode } from "./execution-graph-rollout";
+import {
+  prepareExecutionGraphSeal,
+  sealExecutionGraphAfterFinalizeTx,
+} from "./execution-graph-seal";
 
 /** Providers whose runs project native events and/or `steps` into the canonical lane.
  *  OpenCode, Pi, and the ACP engines (acp/claude/codex). Legacy aliases (daytona -> opencode,
@@ -153,6 +158,8 @@ export async function finalizeRun(
   summary: string,
   durationMs: number,
 ): Promise<void> {
+  const executionGraphMode = executionGraphRolloutMode();
+  await prepareExecutionGraphSeal(runId, executionGraphMode);
   let kickSlack = false;
   let settledThreadId: string | null = null;
   let settledOrgId: string | null = null;
@@ -182,6 +189,17 @@ export async function finalizeRun(
       return;
     }
     await releaseLeaseForRun(runId, tx);
+    if (executionGraphMode !== "off" && run.orgId) {
+      if (status !== "completed" && status !== "failed") {
+        throw new Error("execution_graph_seal_requires_terminal_run");
+      }
+      await sealExecutionGraphAfterFinalizeTx({
+        orgId: run.orgId,
+        runId,
+        status,
+        mode: executionGraphMode,
+      }, tx);
+    }
 
     // Memory capture — completed runs only, into the run's WRITE pool
     // (personal→personal, org→org), resolved from the run row's memory_scope +
