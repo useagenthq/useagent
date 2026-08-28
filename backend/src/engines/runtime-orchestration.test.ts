@@ -20,6 +20,8 @@ import {
 } from "./runtime-orchestration";
 import { createSecretRedactor } from "../secrets/redact";
 import { DEEPSEEK_V4_FLASH_MODEL } from "../runs/model-policy";
+import { makeNativeFrame } from "../runs/native-events";
+import { translateOpenCode } from "./opencode-canonical";
 
 const context = { runId: "run/unsafe", threadId: "thread unsafe", model: "gpt-5.6-luna" };
 const baselineRedactor = createSecretRedactor([]);
@@ -729,6 +731,26 @@ describe("T3 orchestration projection", () => {
       nativeParentSessionId: "root-native-session",
       nativeCallId: "child-native-session",
     });
+    expect(runtimeActivityProviderEvent(
+      { runId: "run-child", threadId: "thread-1" },
+      "root-native-session",
+      {
+        id: "child-status",
+        tone: "info",
+        kind: "task.updated",
+        summary: "Researcher still running",
+        payload: {
+          taskId: "child-native-session",
+          agentKind: "agent",
+          status: "running",
+        },
+        turnId: "turn-1",
+      },
+      baselineRedactor,
+    )).toMatchObject({
+      nativeSessionId: "child-native-session",
+      nativeParentSessionId: null,
+    });
 
     const control = runtimeActivityProviderEvent(
       { runId: "run-child", threadId: "thread-1" },
@@ -778,6 +800,54 @@ describe("T3 orchestration projection", () => {
           parentSessionID: "root-native-session",
           childSessionID: "child-native-session",
         },
+      },
+    });
+  });
+
+  test("runtime child ownership reaches canonical projection exactly once", () => {
+    const captured = runtimeActivityProviderEvent(
+      { runId: "run-pipeline", threadId: "thread-pipeline" },
+      "root-native-session",
+      {
+        id: "child-start",
+        tone: "info",
+        kind: "task.started",
+        summary: "Researcher",
+        payload: {
+          taskId: "child-native-session",
+          agentKind: "agent",
+          parentAgentId: "root-native-session",
+          status: "running",
+        },
+        turnId: "turn-1",
+      },
+      baselineRedactor,
+    );
+    const frame = makeNativeFrame({
+      eventId: captured.id,
+      seq: 0,
+      provider: captured.provider,
+      eventType: captured.eventType,
+      sessionId: captured.nativeSessionId ?? null,
+      parentSessionId: captured.nativeParentSessionId ?? null,
+      messageId: captured.nativeMessageId ?? null,
+      partId: captured.nativePartId ?? null,
+      callId: captured.nativeCallId ?? null,
+      payloadText: JSON.stringify(captured.payload),
+    });
+    const canonical = translateOpenCode([frame], {
+      runId: "run-pipeline",
+      threadId: "thread-pipeline",
+      engine: "codex",
+    }).events;
+
+    expect(canonical).toHaveLength(1);
+    expect(canonical[0]).toMatchObject({
+      kind: "child.started",
+      childId: "child-native-session",
+      identity: {
+        nativeSessionId: "child-native-session",
+        nativeParentSessionId: "root-native-session",
       },
     });
   });

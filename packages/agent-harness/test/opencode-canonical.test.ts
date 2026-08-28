@@ -602,12 +602,20 @@ describe("T3 activity fidelity", () => {
     eventType: string,
     payload: unknown,
     callId: string | null = null,
+    native: Partial<OpenCodeFrame["native"]> = {},
   ): OpenCodeFrame => ({
     eventId,
     seq,
     provider: "t3",
     eventType,
-    native: { sessionId: "ses_t3", parentSessionId: null, messageId: null, partId: null, callId },
+    native: {
+      sessionId: "ses_t3",
+      parentSessionId: null,
+      messageId: null,
+      partId: null,
+      callId,
+      ...native,
+    },
     payload,
   });
 
@@ -927,6 +935,34 @@ describe("T3 activity fidelity", () => {
     ]);
   });
 
+  test("structured T3 child ownership does not duplicate its lifecycle start", () => {
+    const result = translateOpenCode([
+      t3Frame("task-start-owned", 1, "t3.activity.task.started", {
+        id: "act-task-owned",
+        kind: "task.started",
+        payload: {
+          taskId: "child-owned",
+          parentAgentId: "root-owned",
+          agentKind: "agent",
+          status: "running",
+        },
+      }, null, {
+        sessionId: "child-owned",
+        parentSessionId: "root-owned",
+      }),
+    ], CTX);
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      kind: "child.started",
+      childId: "child-owned",
+      identity: {
+        nativeSessionId: "child-owned",
+        nativeParentSessionId: "root-owned",
+      },
+    });
+  });
+
   test("suppresses agent tasks that lack a provider child identity", () => {
     const result = translateOpenCode([
       t3Frame("task-start-missing-id", 1, "t3.activity.task.started", {
@@ -977,6 +1013,7 @@ describe("T3 activity fidelity", () => {
         payload: {
           toolUseId: "tool_wrap_2",
           childSessionId: "child_2",
+          delegationKind: "spawn",
           itemType: "collab_agent_tool_call",
           toolName: "subagent",
         },
@@ -988,6 +1025,7 @@ describe("T3 activity fidelity", () => {
         payload: {
           toolUseId: "tool_wrap_2",
           childSessionId: "child_2",
+          delegationKind: "spawn",
           itemType: "collab_agent_tool_call",
         },
       }),
@@ -998,6 +1036,7 @@ describe("T3 activity fidelity", () => {
         payload: {
           toolUseId: "tool_wrap_2",
           childSessionId: "child_2",
+          delegationKind: "spawn",
           itemType: "collab_agent_tool_call",
         },
       }),
@@ -1019,6 +1058,32 @@ describe("T3 activity fidelity", () => {
       status: "ok",
       result: "Quote found",
     });
+  });
+
+  test("wait/send/resume/close remain parent-owned control events", () => {
+    for (const [index, delegationKind] of ["wait", "send", "resume", "close"].entries()) {
+      const result = translateOpenCode([
+        t3Frame(`control-${delegationKind}`, index + 1, "t3.activity.tool.completed", {
+          id: `activity-${delegationKind}`,
+          kind: "tool.completed",
+          summary: `${delegationKind} agent`,
+          payload: {
+            toolUseId: `control-${delegationKind}`,
+            childSessionId: "child-control",
+            delegationKind,
+            itemType: "collab_agent_tool_call",
+            toolName: delegationKind,
+          },
+        }),
+      ], CTX);
+
+      expect(result.events.some((event) => event.kind.startsWith("child."))).toBe(false);
+      expect(result.events.map((event) => event.kind)).toEqual(["tool.started", "tool.completed"]);
+      expect(result.events[0]).toMatchObject({
+        kind: "tool.started",
+        toolCallId: `control-${delegationKind}`,
+      });
+    }
   });
 
   test("does not invent child identity from a standalone collaboration tool call", () => {

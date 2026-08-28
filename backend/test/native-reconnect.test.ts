@@ -4,6 +4,7 @@ import { fetchApi, readSse } from "./helpers";
 import { db } from "../src/db/client";
 import { providerEvents } from "../src/db/schema";
 import { recordProviderEvent } from "../src/runs/provider-events";
+import { getNativeFramesSince, subscribeNative, type NativeFrame } from "../src/runs/native-events";
 import { createRun, setRunStatus } from "../src/runs/repo";
 
 // Regression for GAP 1: reconnect can lose native events. The reconnect cursor
@@ -95,6 +96,44 @@ describe("native lane — unique/monotonic seq (reconnect losslessness)", () => 
     expect(byId.get(evId(id, "b"))).toBe(1);
     expect(byId.get(evId(id, "a"))).toBe(2); // revised above b; seq 0 is vacated, not reused
     expect(new Set(rows.map((r) => r.seq)).size).toBe(rows.length); // still unique
+  });
+
+  test("a same-id revision keeps persisted replay identity equal to the live frame", async () => {
+    const id = await runningRun("revision identity");
+    const eventId = evId(id, "identity");
+    const live: NativeFrame[] = [];
+    const unsubscribe = subscribeNative(id, (frame) => live.push(structuredClone(frame)));
+    await recordProviderEvent({
+      id: eventId,
+      runId: id,
+      threadId: id,
+      provider: "t3",
+      eventType: "t3.activity.task.started",
+      nativeSessionId: "root-session",
+      nativePartId: "identity",
+      payload: { state: "starting" },
+    });
+    await recordProviderEvent({
+      id: eventId,
+      runId: id,
+      threadId: id,
+      provider: "t3",
+      eventType: "t3.activity.task.updated",
+      nativeSessionId: "child-session",
+      nativeParentSessionId: "root-session",
+      nativePartId: "identity",
+      payload: { state: "running" },
+    });
+    unsubscribe();
+
+    const replay = await getNativeFramesSince(id, -1);
+    expect(replay).toHaveLength(1);
+    expect(replay[0]?.native).toMatchObject({
+      sessionId: "child-session",
+      parentSessionId: "root-session",
+    });
+    expect(live.at(-1)?.native).toEqual(replay[0]?.native);
+    expect(live.at(-1)?.eventType).toBe(replay[0]?.eventType);
   });
 
   test("reconnect from cursor replays every later frame — client store loses nothing", async () => {
