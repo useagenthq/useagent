@@ -38,7 +38,7 @@ describe("T3 provider drivers", () => {
       expect(driver.provider).toBe(provider);
       expect(driver.descriptor.protocol).toEqual({
         name: "t3-orchestration",
-        version: "useagent-runtime-v4",
+        version: "useagent-runtime-v5",
       });
     }
   });
