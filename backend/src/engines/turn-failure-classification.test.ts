@@ -56,4 +56,14 @@ describe("turn failure classification", () => {
       isTransientStreamDrop(new Error("stream parse error: invalid JSON frame")),
     ).toBe(false);
   });
+
+  test("redacts provider credentials before they enter a durable failure summary", () => {
+    const secret = "sk-or-v1-super-secret";
+    const failure = classifyTurnFailure(
+      new Error(`401 invalid API key ${secret}`),
+      (text) => text.replaceAll(secret, "<redacted>"),
+    );
+    expect(failure.summary).toBe("error: 401 invalid API key <redacted>");
+    expect(failure.summary).not.toContain(secret);
+  });
 });

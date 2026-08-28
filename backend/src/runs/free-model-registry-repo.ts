@@ -299,6 +299,7 @@ export interface PublishFreeModelLaneInput {
   readonly modelIds: readonly string[];
   readonly systemFailure?: boolean;
   readonly lane?: string;
+  readonly expectedGeneration?: number;
 }
 
 export type PublishFreeModelLaneResult =
@@ -326,8 +327,14 @@ export async function publishFreeModelLane(
 
   return database.transaction(async (tx) => {
     const [locked] = await tx.execute(sql`
-      select lane from free_model_registry_state where lane = ${lane} for update`);
+      select lane, generation from free_model_registry_state where lane = ${lane} for update`);
     if (!locked) throw new Error("free_model_registry_state_missing");
+    if (
+      input.expectedGeneration !== undefined &&
+      Number(locked.generation) !== input.expectedGeneration
+    ) {
+      throw new Error("free_model_publish_generation_conflict");
+    }
 
     const preservedOutcome = input.systemFailure
       ? "preserved_system_failure"

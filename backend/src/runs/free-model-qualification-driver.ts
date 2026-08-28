@@ -1,8 +1,9 @@
 import type { ApiRun } from "@useagent/agent-client/wire";
 import type { RunCommandInput, RunCommandOutcome } from "../commands/types";
 import type { FreeModelProbeErrorCode } from "../db/schema";
+import { MODEL_QUALIFICATION_RUN_ORIGIN } from "./origin";
 
-export const FREE_MODEL_QUALIFICATION_ORIGIN = "internal:model-qualification" as const;
+export const FREE_MODEL_QUALIFICATION_ORIGIN = MODEL_QUALIFICATION_RUN_ORIGIN;
 export const FREE_MODEL_QUALIFICATION_PRIORITY = -100;
 export const FREE_MODEL_QUALIFICATION_MARKER = "USEAGENT_MODEL_QUALIFICATION_OK";
 
@@ -39,6 +40,7 @@ export interface InternalQualificationRunServices {
   readonly pump: (threadId: string) => Promise<string | null>;
   readonly read: (orgId: string, runId: string) => Promise<ApiRun | null>;
   readonly cancel: (orgId: string, runId: string) => Promise<void>;
+  readonly admission?: () => Promise<{ readonly open: boolean }>;
   readonly sleep?: (ms: number) => Promise<void>;
   readonly nowMs?: () => number;
 }
@@ -60,6 +62,61 @@ function statusFromSummary(summary: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function qualificationShellSucceeded(steps: readonly ApiRun["steps"][number][]): boolean {
+  return steps.some((step) => {
+    if (step.kind !== "command" || !step.code_json) return false;
+    let code: Record<string, unknown> | null = null;
+    try {
+      code = record(JSON.parse(step.code_json));
+    } catch {
+      return false;
+    }
+    const input = record(code?.input);
+    const command = typeof input?.command === "string"
+      ? input.command
+      : typeof code?.command === "string"
+        ? code.command
+        : "";
+    const output = typeof code?.output === "string" ? code.output : "";
+    const failed = code?.error === true || code?.status === "failed";
+    return !failed &&
+      command.includes("printf") &&
+      command.includes(FREE_MODEL_QUALIFICATION_MARKER) &&
+      output.includes(FREE_MODEL_QUALIFICATION_MARKER);
+  });
+}
+
+class QualificationDeadlineError extends Error {}
+
+async function withinDeadline<T>(
+  operation: () => Promise<T>,
+  deadlineAt: number,
+): Promise<T> {
+  const remainingMs = deadlineAt - Date.now();
+  if (remainingMs <= 0) throw new QualificationDeadlineError("qualification deadline elapsed");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new QualificationDeadlineError("qualification deadline elapsed")),
+          remainingMs,
+        );
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export function classifyFailedQualificationRun(
   summary: string | null,
   latencyMs: number,
@@ -73,6 +130,15 @@ export function classifyFailedQualificationRun(
     text.includes("application is not authorized")
   ) {
     return { classification: "model_failure", latencyMs, httpStatus, errorCode: "hosted_app_restricted" };
+  }
+  if (httpStatus === 429) {
+    return { classification: "system_failure", latencyMs, httpStatus, errorCode: "rate_limited" };
+  }
+  if (httpStatus === 401 || httpStatus === 402) {
+    return { classification: "system_failure", latencyMs, httpStatus, errorCode: "authentication_failed" };
+  }
+  if (httpStatus !== null && httpStatus >= 500) {
+    return { classification: "system_failure", latencyMs, httpStatus, errorCode: "provider_capacity" };
   }
   if (
     text.includes("api key") ||
@@ -93,7 +159,7 @@ export function classifyFailedQualificationRun(
   if (text.includes("timed out") || text.includes("timeout")) {
     return { classification: "system_failure", latencyMs, httpStatus, errorCode: "timeout" };
   }
-  if (httpStatus === 429 || text.includes("rate limit")) {
+  if (text.includes("rate limit")) {
     return { classification: "system_failure", latencyMs, httpStatus, errorCode: "rate_limited" };
   }
   if (text.includes("tool")) {
@@ -120,8 +186,14 @@ export function createInternalOpenCodeQualificationDriver(
   return {
     async qualify(request) {
       const startedAt = nowMs();
+      const deadlineAt = Date.now() + timeoutMs;
       const runId = crypto.randomUUID();
-      const accepted = await services.accept({
+      const cancelBestEffort = (acceptedRunId: string): void => {
+        void services.cancel(options.orgId, acceptedRunId).catch(() => {});
+      };
+      let accepted: RunCommandOutcome;
+      try {
+        accepted = await withinDeadline(() => services.accept({
         idempotencyKey: `free-model-qualification:${request.claimToken}`,
         orgId: options.orgId,
         actorId: null,
@@ -147,7 +219,15 @@ export function createInternalOpenCodeQualificationDriver(
           commandSessionId: null,
           commandCatalogRevision: null,
         },
-      });
+        }), deadlineAt);
+      } catch (error) {
+        return {
+          classification: "system_failure",
+          latencyMs: nowMs() - startedAt,
+          httpStatus: null,
+          errorCode: error instanceof QualificationDeadlineError ? "timeout" : "transport_error",
+        };
+      }
       if (accepted.status === "conflict") {
         return {
           classification: "system_failure",
@@ -157,30 +237,94 @@ export function createInternalOpenCodeQualificationDriver(
         };
       }
       const acceptedRunId = accepted.runId;
-      if (accepted.status === "created") {
-        try {
-          await services.pump(acceptedRunId);
-        } catch {
-          await services.cancel(options.orgId, acceptedRunId);
+      const admissionOpen = async (): Promise<boolean> => {
+        if (!services.admission) return true;
+        return (await withinDeadline(services.admission, deadlineAt)).open;
+      };
+      try {
+        if (!(await admissionOpen())) {
+          cancelBestEffort(acceptedRunId);
           return {
             classification: "system_failure",
             latencyMs: nowMs() - startedAt,
             httpStatus: null,
-            errorCode: "transport_error",
+            errorCode: "policy_rejected",
+          };
+        }
+      } catch (error) {
+        cancelBestEffort(acceptedRunId);
+        return {
+          classification: "system_failure",
+          latencyMs: nowMs() - startedAt,
+          httpStatus: null,
+          errorCode: error instanceof QualificationDeadlineError ? "timeout" : "transport_error",
+        };
+      }
+      if (accepted.status === "created") {
+        try {
+          await withinDeadline(() => services.pump(acceptedRunId), deadlineAt);
+        } catch (error) {
+          cancelBestEffort(acceptedRunId);
+          return {
+            classification: "system_failure",
+            latencyMs: nowMs() - startedAt,
+            httpStatus: null,
+            errorCode: error instanceof QualificationDeadlineError ? "timeout" : "transport_error",
           };
         }
       }
 
-      while (nowMs() - startedAt < timeoutMs) {
+      while (nowMs() - startedAt < timeoutMs && Date.now() < deadlineAt) {
+        try {
+          if (!(await admissionOpen())) {
+            cancelBestEffort(acceptedRunId);
+            return {
+              classification: "system_failure",
+              latencyMs: nowMs() - startedAt,
+              httpStatus: null,
+              errorCode: "policy_rejected",
+            };
+          }
+        } catch (error) {
+          cancelBestEffort(acceptedRunId);
+          return {
+            classification: "system_failure",
+            latencyMs: nowMs() - startedAt,
+            httpStatus: null,
+            errorCode: error instanceof QualificationDeadlineError ? "timeout" : "transport_error",
+          };
+        }
         let run: ApiRun | null;
         try {
-          run = await services.read(options.orgId, acceptedRunId);
-        } catch {
-          await sleep(pollMs);
+          run = await withinDeadline(
+            () => services.read(options.orgId, acceptedRunId),
+            deadlineAt,
+          );
+        } catch (error) {
+          if (error instanceof QualificationDeadlineError) {
+            cancelBestEffort(acceptedRunId);
+            return {
+              classification: "system_failure",
+              latencyMs: nowMs() - startedAt,
+              httpStatus: null,
+              errorCode: "timeout",
+            };
+          }
+          try {
+            await withinDeadline(() => sleep(pollMs), deadlineAt);
+          } catch {
+            cancelBestEffort(acceptedRunId);
+            return {
+              classification: "system_failure",
+              latencyMs: nowMs() - startedAt,
+              httpStatus: null,
+              errorCode: "timeout",
+            };
+          }
           continue;
         }
         if (run?.status === "completed") {
-          const hasShellTool = run.steps.some((step) => step.kind === "command");
+          const hasShellTool = qualificationShellSucceeded(run.steps);
           const hasMarker = run.summary?.trim() === FREE_MODEL_QUALIFICATION_MARKER;
           if (hasShellTool && hasMarker) {
             return {
@@ -200,10 +344,14 @@ export function createInternalOpenCodeQualificationDriver(
         if (run?.status === "failed") {
           return classifyFailedQualificationRun(run.summary, nowMs() - startedAt);
         }
-        await sleep(pollMs);
+        try {
+          await withinDeadline(() => sleep(pollMs), deadlineAt);
+        } catch {
+          break;
+        }
       }
 
-      await services.cancel(options.orgId, acceptedRunId);
+      cancelBestEffort(acceptedRunId);
       return {
         classification: "system_failure",
         latencyMs: nowMs() - startedAt,

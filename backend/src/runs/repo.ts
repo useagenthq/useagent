@@ -32,6 +32,7 @@ import type { RunResource } from "../resources/types";
 import { ensureProject } from "../projects/repo";
 import { listUploadsForRuns, type RunUploadDescriptor } from "../uploads/repo";
 import { publicRunCondition } from "./visibility";
+import { MODEL_QUALIFICATION_RUN_ORIGIN } from "./origin";
 
 // The run/step API shapes are the agent-client WIRE CONTRACT (single source of
 // truth; packages never import apps). Re-exported so the many backend modules that
@@ -396,6 +397,41 @@ export async function getRunForOrg(
   return row ?? null;
 }
 
+/** Customer-facing lookup. Release canaries retain their authenticated direct
+ * diagnostics, while autonomous model-qualification runs stay undiscoverable. */
+export async function getCustomerRunForOrg(
+  orgId: string,
+  id: string,
+  exec: Executor = db,
+): Promise<RunRecord | null> {
+  const [row] = await exec
+    .select()
+    .from(runs)
+    .where(
+      and(
+        eq(runs.id, id),
+        eq(runs.orgId, orgId),
+        or(isNull(runs.origin), ne(runs.origin, MODEL_QUALIFICATION_RUN_ORIGIN)),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+export async function getCustomerRunWithSteps(
+  orgId: string,
+  id: string,
+): Promise<ApiRun | null> {
+  const run = await getCustomerRunForOrg(orgId, id);
+  if (!run) return null;
+  const [stepRows, uploadsByRun, childRuns] = await Promise.all([
+    db.select().from(steps).where(eq(steps.runId, id)).orderBy(steps.idx),
+    listUploadsForRuns([id]),
+    gatewayChildRunIds([id]),
+  ]);
+  return toRun(run, stepRows, uploadsByRun.get(id) ?? [], childRuns.has(id));
+}
+
 export async function getRunWithSteps(
   orgId: string,
   id: string,
@@ -519,7 +555,7 @@ export async function getThreadForRun(
   orgId: string,
   id: string,
 ): Promise<ApiRun[] | null> {
-  const run = await getRunForOrg(orgId, id);
+  const run = await getCustomerRunForOrg(orgId, id);
   if (!run) return null;
   const runRows = await db
     .select()
@@ -539,7 +575,7 @@ export async function getThreadOutlineForRun(
   orgId: string,
   id: string,
 ): Promise<ApiThreadOutlineTurn[] | null> {
-  const run = await getRunForOrg(orgId, id);
+  const run = await getCustomerRunForOrg(orgId, id);
   if (!run) return null;
   const rows = await db
     .select({
@@ -577,7 +613,7 @@ export async function getThreadRunsByIds(
   id: string,
   ids: readonly string[],
 ): Promise<ApiRun[] | null> {
-  const run = await getRunForOrg(orgId, id);
+  const run = await getCustomerRunForOrg(orgId, id);
   if (!run) return null;
   if (ids.length === 0) return [];
   const runRows = await db

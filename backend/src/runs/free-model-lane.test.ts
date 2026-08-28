@@ -97,6 +97,18 @@ describe("deriveFreeModelLane (catalog filter)", () => {
       ],
     })).toEqual([]);
   });
+
+  test("legacy default-off filtering cannot lose a hosted model ranked after discovery cap", () => {
+    const higherContextUnverified = Array.from({ length: 100 }, (_, index) =>
+      entry(`vendor/unverified-${index}:free`, 2_000_000 - index)
+    );
+    expect(deriveFreeModelLane({
+      data: [
+        ...higherContextUnverified,
+        entry("minimax/minimax-m3:free", 100_000),
+      ],
+    })).toEqual(["minimax/minimax-m3:free"]);
+  });
 });
 
 describe("FreeModelLaneCache", () => {

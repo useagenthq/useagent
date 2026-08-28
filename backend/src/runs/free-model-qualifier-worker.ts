@@ -76,6 +76,7 @@ export interface FreeModelQualifierRepository {
   readonly publish: (input: {
     modelIds: readonly string[];
     systemFailure?: boolean;
+    expectedGeneration?: number;
   }) => Promise<PublishFreeModelLaneResult>;
 }
 
@@ -306,7 +307,10 @@ export async function runFreeModelQualifierTick(
       publishOutcome: "unchanged",
     };
   }
-  const published = await repository.publish({ modelIds: desired });
+  const published = await repository.publish({
+    modelIds: desired,
+    ...(registry.state ? { expectedGeneration: registry.state.generation } : {}),
+  });
   deps.adoptPublishedLane?.(published.state);
   return {
     status: "completed",

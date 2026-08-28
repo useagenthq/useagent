@@ -500,4 +500,21 @@ describe("free model registry repository", () => {
       lastGoodModelIds: before?.lastGoodModelIds,
     });
   });
+
+  test("a stale publisher cannot overwrite a newer lane generation", async () => {
+    const before = await loadCurrentFreeModelLane(FREE_MODEL_LANE, testDb);
+    if (!before) throw new Error("expected seeded lane");
+    await client.unsafe(`
+      update free_model_registry_state
+      set generation = generation + 1
+      where lane = 'opencode_free'`);
+
+    await expect(publishFreeModelLane({
+      modelIds: [...SEED_MODELS],
+      expectedGeneration: before.generation,
+    }, testDb)).rejects.toThrow("free_model_publish_generation_conflict");
+    const after = await loadCurrentFreeModelLane(FREE_MODEL_LANE, testDb);
+    expect(after?.generation).toBe(before.generation + 1);
+    expect(after?.currentModelIds).toEqual(before.currentModelIds);
+  });
 });

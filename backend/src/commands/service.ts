@@ -189,12 +189,14 @@ async function acceptRunCommandWithOrigin(
   // Skills Run all accept here, so none grows its own UI notification code. Only
   // fired on a fresh `created`; an idempotent replay returns above and re-signals
   // nothing (no duplicate run signal). IDs only, never secrets/payloads.
-  publishRunLifecycleChange({
-    orgId: input.orgId,
-    threadId: input.run.threadId,
-    runId: input.run.id,
-    kind: "created",
-  });
+  if (origin === null) {
+    publishRunLifecycleChange({
+      orgId: input.orgId,
+      threadId: input.run.threadId,
+      runId: input.run.id,
+      kind: "created",
+    });
+  }
 
   return { status: "created", runId: input.run.id, commandId };
 }

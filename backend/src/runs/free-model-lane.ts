@@ -71,6 +71,7 @@ export interface OpenRouterFreeModelCandidate {
 /** Public-catalog discovery only. Qualification is a separate full-agent run. */
 export function discoverOpenRouterFreeModels(
   catalog: unknown,
+  cap = DISCOVERY_CAP,
 ): OpenRouterFreeModelCandidate[] {
   const data =
     catalog && typeof catalog === "object" && !Array.isArray(catalog)
@@ -102,7 +103,7 @@ export function discoverOpenRouterFreeModels(
   }
   return candidates
     .toSorted((a, b) => b.contextLength - a.contextLength)
-    .slice(0, DISCOVERY_CAP);
+    .slice(0, cap);
 }
 
 /**
@@ -113,7 +114,7 @@ export function discoverOpenRouterFreeModels(
  * a failed fetch and keeps its last-good lane.
  */
 export function deriveFreeModelLane(catalog: unknown): string[] {
-  return discoverOpenRouterFreeModels(catalog)
+  return discoverOpenRouterFreeModels(catalog, Number.MAX_SAFE_INTEGER)
     .filter((candidate) => HOSTED_VERIFIED_FREE_MODEL_SET.has(candidate.id))
     .slice(0, LANE_CAP)
     .map((candidate) => candidate.id);

@@ -105,6 +105,7 @@ import {
 } from "./runs/free-model-qualification-driver";
 import { acceptInternalRunCommand } from "./commands/service";
 import { acceptRunCancel } from "./commands/cancel";
+import { getRunAdmission } from "./commands/admission";
 import { getRunWithSteps } from "./runs/repo";
 import { uploadRoutes } from "./uploads/routes";
 import { startUploadCleanup } from "./uploads/cleanup";
@@ -469,6 +470,7 @@ if (freeModelQualifierEnabled()) {
           await pumpThread(outcome.threadId);
         }
       },
+      admission: getRunAdmission,
     },
   );
   startFreeModelQualifierWorker({
