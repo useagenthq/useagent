@@ -11,7 +11,7 @@ export const RUNTIME_GENERATION_LABEL = "useagent.runtime";
 // Bump this identity whenever the embedded provider runtime changes. It is
 // stamped on retained/warm sandboxes and doubles as the pool name, so a new
 // release cannot accidentally resume a thread against an older runtime binary.
-export const RUNTIME_GENERATION = "useagent-runtime-v4";
+export const RUNTIME_GENERATION = "useagent-runtime-v5";
 export const RUNTIME_CUBE_WARM_POOL_NAME = RUNTIME_GENERATION;
 // Frozen VALUE: warm sandboxes already carry a process session under this name;
 // renaming the string would strand their resident server processes.
@@ -77,7 +77,20 @@ export function runtimeNoProgressTimeoutMs(
     : DEFAULT_NO_PROGRESS_TIMEOUT_MS;
 }
 
-export function buildRuntimeEnvironmentLaunchCommand(): string {
+export function runtimeCodexChildForwardingEnabled(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  const value = operatorEnv(
+    env,
+    "RUNTIME_CODEX_CHILD_EVENT_FORWARDING",
+    "T3_CODEX_CHILD_EVENT_FORWARDING",
+  )?.trim().toLowerCase();
+  return value === "1" || value === "true" || value === "on";
+}
+
+export function buildRuntimeEnvironmentLaunchCommand(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
   return [
     "set -eu",
     `export T3CODE_HOME="${RUNTIME_ENVIRONMENT_HOME}"`,
@@ -85,6 +98,14 @@ export function buildRuntimeEnvironmentLaunchCommand(): string {
     "export T3CODE_HOST=0.0.0.0",
     `export T3CODE_PORT=${RUNTIME_ENVIRONMENT_PORT}`,
     "export T3_CODEX_REQUIRED_MCP_SERVERS=skynet-knowledge",
+    // The embedded T3 Codex adapter suppresses child-thread notifications by
+    // default. Keep a separate operator kill switch from graph READ/SHADOW.
+    ...(runtimeCodexChildForwardingEnabled(env)
+      ? [
+          "export RUNTIME_CODEX_CHILD_EVENT_FORWARDING=true",
+          "export T3_CODEX_CHILD_EVENT_FORWARDING=true",
+        ]
+      : []),
     "export T3CODE_NO_BROWSER=true",
     "export T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD=false",
     "export T3CODE_LOG_WS_EVENTS=false",
