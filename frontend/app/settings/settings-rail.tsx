@@ -11,10 +11,10 @@ import { cx } from "@/utils/cx";
 
 export const SETTINGS_SECTIONS = [
   { id: "general", label: "General" },
+  { id: "providers", label: "Providers" },
+  { id: "integrations", label: "Integrations" },
   { id: "usage", label: "Usage" },
   { id: "machine", label: "Machine" },
-  { id: "integrations", label: "Integrations" },
-  { id: "providers", label: "Providers" },
   { id: "secrets", label: "Secrets" },
   { id: "apikeys", label: "API keys" },
   { id: "team", label: "Team" },
