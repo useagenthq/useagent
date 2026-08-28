@@ -168,9 +168,12 @@ export class FreeModelLaneCache {
   }
 
   /** Adopt one non-empty DB-published generation without touching fetch state. */
-  adoptRegistryLane(lane: readonly string[]): boolean {
+  adoptRegistryLane(
+    lane: readonly string[],
+    options: { readonly allowEmpty?: boolean } = {},
+  ): boolean {
     const normalized = [...new Set(lane.map((model) => model.trim()).filter(Boolean))];
-    if (normalized.length === 0) return false;
+    if (normalized.length === 0 && !options.allowEmpty) return false;
     this.#registryLane = normalized;
     this.#registryAllowed = new Set(normalized);
     return true;

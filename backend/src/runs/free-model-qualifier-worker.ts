@@ -76,6 +76,7 @@ export interface FreeModelQualifierRepository {
   readonly publish: (input: {
     modelIds: readonly string[];
     systemFailure?: boolean;
+    allowEmpty?: boolean;
     expectedGeneration?: number;
   }) => Promise<PublishFreeModelLaneResult>;
 }
@@ -309,6 +310,7 @@ export async function runFreeModelQualifierTick(
   }
   const published = await repository.publish({
     modelIds: desired,
+    allowEmpty: true,
     ...(registry.state ? { expectedGeneration: registry.state.generation } : {}),
   });
   deps.adoptPublishedLane?.(published.state);
@@ -325,7 +327,9 @@ export async function runFreeModelQualifierTick(
 export async function hydrateFreeModelLaneFromRegistry(): Promise<boolean> {
   if (!freeModelRegistryReadEnabled()) return false;
   const state = await loadCurrentFreeModelLane();
-  return state ? freeModelLaneCache.adoptRegistryLane(state.currentModelIds) : false;
+  return state
+    ? freeModelLaneCache.adoptRegistryLane(state.currentModelIds, { allowEmpty: true })
+    : false;
 }
 
 export interface FreeModelRegistryHydratorDeps {

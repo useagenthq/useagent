@@ -113,7 +113,7 @@ function fakeRepository(input: {
           state: { ...input.state, lastPublishOutcome: "preserved_system_failure" as const },
         };
       }
-      if (publishInput.modelIds.length === 0) {
+      if (publishInput.modelIds.length === 0 && !publishInput.allowEmpty) {
         return {
           outcome: "preserved_empty" as const,
           state: { ...input.state, lastPublishOutcome: "preserved_empty" as const },
@@ -123,7 +123,9 @@ function fakeRepository(input: {
         ...input.state,
         generation: input.state.generation + 1,
         currentModelIds: [...publishInput.modelIds],
-        lastGoodModelIds: [...publishInput.modelIds],
+        lastGoodModelIds: publishInput.modelIds.length > 0
+          ? [...publishInput.modelIds]
+          : input.state.lastGoodModelIds,
       };
       return { outcome: "published" as const, state: input.state };
     },
@@ -279,6 +281,7 @@ describe("free-model qualifier worker", () => {
     expect(fake.records[0]).toMatchObject({ outcome: "success", errorCode: null });
     expect(fake.publishes).toEqual([{
       modelIds: [seed.modelId, fresh.modelId],
+      allowEmpty: true,
       expectedGeneration: 1,
     }]);
     expect(adopted).toEqual([[seed.modelId, fresh.modelId]]);
@@ -334,7 +337,7 @@ describe("free-model qualifier worker", () => {
     });
   });
 
-  test("second model failure quarantines but an empty result preserves last-good", async () => {
+  test("second model failure removes the quarantined final model from the current lane", async () => {
     const failing = candidate("vendor/failing:free", {
       state: "qualified",
       everQualified: true,
@@ -361,10 +364,17 @@ describe("free-model qualifier worker", () => {
     });
     expect(failing.state).toBe("disqualified");
     expect(fake.records[0]?.nextProbeAt.getTime()).toBe(NOW + 60 * 60_000);
-    expect(fake.publishes).toEqual([{ modelIds: [], expectedGeneration: 1 }]);
-    expect(result.publishOutcome).toBe("preserved_empty");
+    expect(fake.publishes).toEqual([{
+      modelIds: [],
+      allowEmpty: true,
+      expectedGeneration: 1,
+    }]);
+    expect(result.publishOutcome).toBe("published");
     await expect(fake.repository.loadRegistry()).resolves.toMatchObject({
-      state: { currentModelIds: [failing.modelId] },
+      state: {
+        currentModelIds: [],
+        lastGoodModelIds: [failing.modelId],
+      },
     });
   });
 

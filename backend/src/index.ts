@@ -477,7 +477,7 @@ if (freeModelQualifierEnabled()) {
     driver,
     adoptPublishedLane: (state) => {
       if (freeModelRegistryReadEnabled()) {
-        freeModelLaneCache.adoptRegistryLane(state.currentModelIds);
+        freeModelLaneCache.adoptRegistryLane(state.currentModelIds, { allowEmpty: true });
       }
     },
   });
