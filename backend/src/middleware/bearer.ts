@@ -39,6 +39,8 @@ export function extractBearerToken(authHeader: string | undefined | null): strin
  * The v1 bearer route allowlist - DENY BY DEFAULT. A key may:
  *   - GET  /api/config          read the client/engine manifest
  *   - POST /api/runs            dispatch a new run (EXACT: no sub-actions)
+ *   - POST /api/fleet/batches   atomically dispatch one bounded fan-out
+ *   - GET  /api/fleet/batches/:id read one org-owned batch manifest/status
  *   - GET  /api/runs*           read runs: list, one run/thread, timings,
  *                               uploads, and the events + thread-events SSE
  *   - GET  /api/artifacts*      read durable artifacts (writes excluded by GET)
@@ -51,7 +53,10 @@ export function isBearerAllowedPath(method: string, path: string): boolean {
   // Dispatch a run. EXACT match - cancel/reply/sandbox-release sub-routes are
   // POST/DELETE under /api/runs/:id and are intentionally NOT reachable.
   if (m === "POST" && path === "/api/runs") return true;
+  if (m === "POST" && path === "/api/fleet/batches") return true;
   if (m !== "GET") return false;
+
+  if (/^\/api\/fleet\/batches\/[^/]+$/.test(path)) return true;
 
   // Exact read-only run routes. Do not broaden this to `/api/runs/*`: the
   // interactive terminal is a GET WebSocket mounted at `/api/runs/:id/terminal`.
