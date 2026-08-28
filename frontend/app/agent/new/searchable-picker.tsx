@@ -98,6 +98,9 @@ export function SearchablePicker({
   // One left inset for every row: when any option carries a glyph, all rows
   // render the fixed leading column so plain labels share the same edge.
   const hasGlyphs = groups.some((g) => g.options.some((o) => o.icon || o.markTint));
+  const searchActions = groups.flatMap((group, index) =>
+    group.action ? [<span key={group.label ?? index}>{group.action}</span>] : [],
+  );
 
   function pick(next: string) {
     onChange(next);
@@ -137,15 +140,15 @@ export function SearchablePicker({
         className="w-[264px]"
       >
         <Command label={ariaLabel} defaultValue={selected ? selected.value || selected.label : undefined}>
-          <CommandInput placeholder={searchPlaceholder} aria-label={searchPlaceholder} />
+          <CommandInput
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+            trailing={searchActions.length > 0 ? searchActions : undefined}
+          />
           <CommandList>
             <CommandEmpty>No results</CommandEmpty>
             {groups.map((group, groupIndex) => (
-              <CommandGroup
-                key={group.label ?? groupIndex}
-                heading={group.label}
-                action={group.action}
-              >
+              <CommandGroup key={group.label ?? groupIndex} heading={group.label}>
                 {group.options.map((option) => (
                   <CommandItem
                     key={option.value || option.label}

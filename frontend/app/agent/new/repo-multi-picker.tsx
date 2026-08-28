@@ -1,22 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import { RiFolderLine } from "@remixicon/react";
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useState } from "react";
 import { CheckboxGlyph } from "@/components/base/checkbox/checkbox-glyph";
 import {
   Command,
-  CommandEmpty,
+  CommandCheckboxItem,
   CommandGroup,
   CommandInput,
-  CommandItem,
   CommandItemGlyph,
   CommandList,
 } from "@/components/base/command/command";
-import {
-  Dropdown,
-  DropdownPopover,
-  DropdownTrigger,
-} from "@/components/base/dropdown/dropdown";
+import { Dropdown, DropdownPopover, DropdownTrigger } from "@/components/base/dropdown/dropdown";
 import { cx } from "@/utils/cx";
 
 export interface RepoItem {
@@ -41,13 +36,82 @@ export interface RepoMultiPickerProps {
 const RECENTS_KEY = "useagent:recent-repos";
 const LEGACY_RECENTS_KEY = "skynet:recent-repos";
 const RECENTS_MAX = 5;
+const CHECKBOX_ROW_SELECTOR = '[data-multiselect-item=""]:not(:disabled)';
+
+function checkboxRows(scope: Element): HTMLButtonElement[] {
+  return Array.from(scope.querySelectorAll<HTMLButtonElement>(CHECKBOX_ROW_SELECTOR));
+}
+
+function focusFirstCheckbox(event: ReactKeyboardEvent<HTMLInputElement>) {
+  if (event.key !== "ArrowDown") return;
+  const root = event.currentTarget.closest('[cmdk-root=""]');
+  const first = root ? checkboxRows(root)[0] : undefined;
+  if (!first) return;
+  event.preventDefault();
+  event.stopPropagation();
+  first.focus();
+}
+
+function moveCheckboxFocus(event: ReactKeyboardEvent<HTMLButtonElement>) {
+  const direction = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
+  if (direction === 0 && event.key !== "Home" && event.key !== "End") return;
+  const root = event.currentTarget.closest('[cmdk-root=""]');
+  if (!root) return;
+  const rows = checkboxRows(root);
+  const current = rows.indexOf(event.currentTarget);
+  if (current < 0 || rows.length === 0) return;
+  const target =
+    event.key === "Home"
+      ? rows[0]
+      : event.key === "End"
+        ? rows.at(-1)
+        : rows[(current + direction + rows.length) % rows.length];
+  if (!target) return;
+  event.preventDefault();
+  event.stopPropagation();
+  target.focus();
+}
+
+function RepoOptionRow({
+  repo,
+  section,
+  checked,
+  onToggle,
+}: {
+  repo: RepoItem;
+  section: string;
+  checked: boolean;
+  onToggle: (fullName: string) => void;
+}) {
+  return (
+    <CommandCheckboxItem
+      checked={checked}
+      aria-label={`${repo.full_name}, ${checked ? "selected" : "not selected"}`}
+      data-command-value={`${section}:${repo.full_name}`}
+      onClick={() => onToggle(repo.full_name)}
+      onKeyDown={moveCheckboxFocus}
+    >
+      <CommandItemGlyph>
+        <CheckboxGlyph
+          state={{
+            isSelected: checked,
+            isIndeterminate: false,
+            isFocusVisible: false,
+            isDisabled: false,
+            isHovered: false,
+          }}
+        />
+      </CommandItemGlyph>
+      <span className="min-w-0 flex-1 truncate">{repo.name}</span>
+    </CommandCheckboxItem>
+  );
+}
 
 function readRecents(): string[] {
   if (typeof window === "undefined") return [];
   try {
     const raw =
-      window.localStorage.getItem(RECENTS_KEY) ??
-      window.localStorage.getItem(LEGACY_RECENTS_KEY);
+      window.localStorage.getItem(RECENTS_KEY) ?? window.localStorage.getItem(LEGACY_RECENTS_KEY);
     const parsed = raw ? (JSON.parse(raw) as unknown) : [];
     return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
   } catch {
@@ -86,7 +150,10 @@ export function RepoMultiPicker({
     onChange(next);
     // Record a newly-added repo as "recent" (dedupe, newest first, capped).
     if (!selectedSet.has(fullName)) {
-      const nextRecents = [fullName, ...recents.filter((r) => r !== fullName)].slice(0, RECENTS_MAX);
+      const nextRecents = [fullName, ...recents.filter((r) => r !== fullName)].slice(
+        0,
+        RECENTS_MAX,
+      );
       setRecents(nextRecents);
       try {
         window.localStorage.setItem(RECENTS_KEY, JSON.stringify(nextRecents));
@@ -122,31 +189,8 @@ export function RepoMultiPicker({
     return [...groups.entries()];
   }, [filtered]);
 
-  const triggerLabel = value.length === 0 ? (emptyLabel ?? "Repositories") : `${value.length} selected`;
-
-  // The same repo renders in both Recent and its org section, so cmdk item
-  // values carry a section prefix to stay unique (identity only - filtering
-  // is manual via `filtered`, with shouldFilter off).
-  const Row = ({ repo, section }: { repo: RepoItem; section: string }) => {
-    const checked = selectedSet.has(repo.full_name);
-    return (
-      <CommandItem value={`${section}:${repo.full_name}`} onSelect={() => toggle(repo.full_name)}>
-        <CheckboxGlyph
-          state={{
-            isSelected: checked,
-            isIndeterminate: false,
-            isFocusVisible: false,
-            isDisabled: false,
-            isHovered: false,
-          }}
-        />
-        <CommandItemGlyph>
-          <RiFolderLine className="size-4 shrink-0" aria-hidden />
-        </CommandItemGlyph>
-        <span className="min-w-0 flex-1 truncate">{repo.name}</span>
-      </CommandItem>
-    );
-  };
+  const triggerLabel =
+    value.length === 0 ? (emptyLabel ?? "Repositories") : `${value.length} selected`;
 
   return (
     <Dropdown
@@ -178,25 +222,43 @@ export function RepoMultiPicker({
             aria-label="Search repositories"
             value={query}
             onValueChange={setQuery}
+            onKeyDown={focusFirstCheckbox}
           />
-          <CommandList className="max-h-[288px]">
-            <CommandEmpty>
-              {repos.length === 0 ? "No repositories available" : "No results"}
-            </CommandEmpty>
-            {recentItems.length > 0 ? (
-              <CommandGroup heading="Recent">
-                {recentItems.map((repo) => (
-                  <Row key={`recent-${repo.full_name}`} repo={repo} section="recent" />
+          <CommandList className="max-h-[288px]" aria-multiselectable>
+            {filtered.length === 0 ? (
+              <div className="px-2 py-2 text-body-2-medium text-text-tertiary">
+                {repos.length === 0 ? "No repositories available" : "No results"}
+              </div>
+            ) : (
+              <>
+                {recentItems.length > 0 ? (
+                  <CommandGroup heading="Recent">
+                    {recentItems.map((repo) => (
+                      <RepoOptionRow
+                        key={`recent-${repo.full_name}`}
+                        repo={repo}
+                        section="recent"
+                        checked={selectedSet.has(repo.full_name)}
+                        onToggle={toggle}
+                      />
+                    ))}
+                  </CommandGroup>
+                ) : null}
+                {byOrg.map(([org, items]) => (
+                  <CommandGroup key={org} heading={org}>
+                    {items.map((repo) => (
+                      <RepoOptionRow
+                        key={repo.full_name}
+                        repo={repo}
+                        section="all"
+                        checked={selectedSet.has(repo.full_name)}
+                        onToggle={toggle}
+                      />
+                    ))}
+                  </CommandGroup>
                 ))}
-              </CommandGroup>
-            ) : null}
-            {byOrg.map(([org, items]) => (
-              <CommandGroup key={org} heading={org}>
-                {items.map((repo) => (
-                  <Row key={repo.full_name} repo={repo} section="all" />
-                ))}
-              </CommandGroup>
-            ))}
+              </>
+            )}
           </CommandList>
         </Command>
       </DropdownPopover>
