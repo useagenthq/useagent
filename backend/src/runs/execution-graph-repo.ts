@@ -68,6 +68,24 @@ export async function executionByNativeSession(
   return row ?? null;
 }
 
+export async function getExecutionForOrgRun(
+  orgId: string,
+  runId: string,
+  executionId: string,
+  exec: Executor = db,
+): Promise<AgentExecutionRow | null> {
+  const [row] = await exec
+    .select()
+    .from(agentExecutions)
+    .where(and(
+      eq(agentExecutions.orgId, orgId),
+      eq(agentExecutions.runId, runId),
+      eq(agentExecutions.id, executionId),
+    ))
+    .limit(1);
+  return row ?? null;
+}
+
 async function requireOwningRun(orgId: string, runId: string, exec: Executor): Promise<void> {
   const [row] = await exec
     .select({ id: runs.id })
