@@ -584,7 +584,7 @@ if (emailConnector) {
 console.log(`[useagent] backend listening on http://localhost:${env.PORT}`);
 
 export default {
-  hostname: "127.0.0.1",
+  hostname: process.env.USEAGENT_BIND_HOST ?? "127.0.0.1",
   port: env.PORT,
   fetch: app.fetch,
   // Bun WebSocket handler for the terminal bridge (hono/bun upgradeWebSocket).

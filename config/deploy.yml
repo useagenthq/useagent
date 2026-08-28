@@ -1,0 +1,38 @@
+service: useagent-destination-required
+image: useagenthq/useagent-destination-required
+
+minimum_version: 2.12.0
+require_destination: true
+retain_containers: 5
+deploy_timeout: 90
+drain_timeout: 30
+stop_timeout: 30
+
+servers:
+  web:
+    hosts:
+      - <%= ENV.fetch("USEAGENT_DEPLOY_HOST") %>
+    proxy: false
+    options:
+      network: host
+      init: true
+
+registry:
+  server: ghcr.io
+  username: <%= ENV.fetch("USEAGENT_REGISTRY_USER", "useagenthq") %>
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+builder:
+  arch: amd64
+  sbom: true
+  provenance: mode=max
+
+ssh:
+  user: root
+
+logging:
+  driver: local
+  options:
+    max-size: 20m
+    max-file: 5

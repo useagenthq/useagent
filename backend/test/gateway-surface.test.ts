@@ -5,7 +5,9 @@ describe("sandbox-reachable gateway surface", () => {
   const app = createGatewayApp();
 
   test("exposes health but no product/session APIs", async () => {
-    expect((await app.request("/api/health")).status).toBe(200);
+    const health = await app.request("/api/health");
+    expect(health.status).toBe(200);
+    expect(health.headers.get("x-useagent-release-fingerprint")).toBe("run-events-v1:dev");
     for (const path of ["/api/runs", "/api/config", "/api/secrets", "/api/auth/session"]) {
       expect((await app.request(path)).status).toBe(404);
     }
