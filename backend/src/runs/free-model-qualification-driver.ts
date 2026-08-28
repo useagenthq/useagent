@@ -78,13 +78,25 @@ function qualificationShellSucceeded(steps: readonly ApiRun["steps"][number][]):
       return false;
     }
     const input = record(code?.input);
+    const result = record(code?.result);
     const command = typeof input?.command === "string"
       ? input.command
       : typeof code?.command === "string"
         ? code.command
         : "";
     const output = typeof code?.output === "string" ? code.output : "";
-    const failed = code?.error === true || code?.status === "failed";
+    const exitCode = typeof code?.exit_code === "number"
+      ? code.exit_code
+      : typeof code?.exitCode === "number"
+        ? code.exitCode
+        : typeof result?.exit_code === "number"
+          ? result.exit_code
+          : typeof result?.exitCode === "number"
+            ? result.exitCode
+            : null;
+    const failed = code?.error === true ||
+      code?.status === "failed" ||
+      (exitCode !== null && exitCode !== 0);
     return !failed &&
       command.includes("printf") &&
       command.includes(FREE_MODEL_QUALIFICATION_MARKER) &&
@@ -191,9 +203,7 @@ export function createInternalOpenCodeQualificationDriver(
       const cancelBestEffort = (acceptedRunId: string): void => {
         void services.cancel(options.orgId, acceptedRunId).catch(() => {});
       };
-      let accepted: RunCommandOutcome;
-      try {
-        accepted = await withinDeadline(() => services.accept({
+      const acceptance = services.accept({
         idempotencyKey: `free-model-qualification:${request.claimToken}`,
         orgId: options.orgId,
         actorId: null,
@@ -219,8 +229,16 @@ export function createInternalOpenCodeQualificationDriver(
           commandSessionId: null,
           commandCatalogRevision: null,
         },
-        }), deadlineAt);
+      });
+      let accepted: RunCommandOutcome;
+      try {
+        accepted = await withinDeadline(() => acceptance, deadlineAt);
       } catch (error) {
+        if (error instanceof QualificationDeadlineError) {
+          void acceptance.then((late) => {
+            if (late.status !== "conflict") cancelBestEffort(late.runId);
+          }).catch(() => {});
+        }
         return {
           classification: "system_failure",
           latencyMs: nowMs() - startedAt,
