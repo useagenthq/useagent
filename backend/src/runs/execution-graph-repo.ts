@@ -48,6 +48,26 @@ async function executionBySource(
   return row ?? null;
 }
 
+export async function executionByNativeSession(
+  orgId: string,
+  runId: string,
+  provider: string,
+  nativeSessionId: string,
+  exec: Executor = db,
+): Promise<AgentExecutionRow | null> {
+  const [row] = await exec
+    .select()
+    .from(agentExecutions)
+    .where(and(
+      eq(agentExecutions.orgId, orgId),
+      eq(agentExecutions.runId, runId),
+      eq(agentExecutions.provider, provider),
+      eq(agentExecutions.nativeSessionId, nativeSessionId),
+    ))
+    .limit(1);
+  return row ?? null;
+}
+
 async function requireOwningRun(orgId: string, runId: string, exec: Executor): Promise<void> {
   const [row] = await exec
     .select({ id: runs.id })
@@ -204,12 +224,33 @@ async function insertEdge(
       target: [delegationEdges.orgId, delegationEdges.runId, delegationEdges.sourceKey],
     })
     .returning();
-  const row = inserted ?? await edgeBySource(input.orgId, input.runId, sourceKey, exec);
+  let row = inserted ?? await edgeBySource(input.orgId, input.runId, sourceKey, exec);
   if (!row) throw new Error("delegation_edge_insert_lost");
-  for (const [key, expected] of Object.entries(identity)) {
+  const immutableKeys = [
+    "parentExecutionId",
+    "childExecutionId",
+    "kind",
+    "provider",
+    "nativeTargetSessionId",
+  ] as const;
+  for (const key of immutableKeys) {
+    const expected = identity[key];
     if (row[key as keyof DelegationEdgeRow] !== expected) {
       throw new Error("delegation_source_key_identity_conflict");
     }
+  }
+  if (!inserted && row.observedDeliverySeq < identity.observedDeliverySeq) {
+    const [corrected] = await exec
+      .update(delegationEdges)
+      .set({ observedDeliverySeq: identity.observedDeliverySeq })
+      .where(and(
+        eq(delegationEdges.orgId, input.orgId),
+        eq(delegationEdges.runId, input.runId),
+        eq(delegationEdges.id, row.id),
+        sql`${delegationEdges.observedDeliverySeq} < ${identity.observedDeliverySeq}`,
+      ))
+      .returning();
+    if (corrected) row = corrected;
   }
   return { edge: row, inserted: inserted != null };
 }
@@ -311,6 +352,17 @@ export async function recordDelegationControl(
   });
 }
 
+/** Persist a provider observation without applying command-side resume effects. */
+export async function recordDelegationObservation(
+  input: RecordDelegationControlInput,
+  exec: Executor = db,
+): Promise<DelegationEdgeRow> {
+  if (input.kind === ("spawn" as DelegationKind)) {
+    throw new Error("delegation_observation_cannot_spawn");
+  }
+  return (await insertEdge(input, exec)).edge;
+}
+
 export interface AdvanceExecutionLifecycleInput {
   readonly orgId: string;
   readonly runId: string;
@@ -355,7 +407,7 @@ export async function advanceExecutionLifecycle(
   const transitionAllowed = requestsNonterminal
     ? sql`${agentExecutions.status} NOT IN ('completed', 'failed', 'cancelled')`
     : input.terminalCorrection
-      ? sql`true`
+      ? eq(agentExecutions.lastEventId, requireIdentity(input.eventId, "execution_event_id_required"))
       : or(
           sql`${agentExecutions.status} NOT IN ('completed', 'failed', 'cancelled')`,
           eq(agentExecutions.status, input.status),

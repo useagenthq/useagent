@@ -333,13 +333,27 @@ describe("execution graph repository", () => {
       executionId: child.id,
       status: "failed",
       attempt: 1,
-      eventId: "event-approved-terminal-correction",
-      eventRevision: 0,
+      eventId: "event-complete",
+      eventRevision: 1,
       deliverySeq: 13,
       terminalCorrection: true,
     }, testDb);
     expect(corrected.applied).toBe(true);
     expect(corrected.execution.status).toBe("failed");
+
+    const crossEventCorrection = await advanceExecutionLifecycle({
+      orgId,
+      runId,
+      executionId: child.id,
+      status: "completed",
+      attempt: 1,
+      eventId: "different-terminal-event",
+      eventRevision: 2,
+      deliverySeq: 14,
+      terminalCorrection: true,
+    }, testDb);
+    expect(crossEventCorrection.applied).toBe(false);
+    expect(crossEventCorrection.execution.status).toBe("failed");
 
     await recordDelegationControl({
       orgId,
@@ -350,7 +364,7 @@ describe("execution graph repository", () => {
       kind: "resume",
       provider: "codex",
       nativeEventId: "event-resume-lifecycle",
-      observedDeliverySeq: 14,
+      observedDeliverySeq: 15,
     }, testDb);
     await recordDelegationControl({
       orgId,
@@ -361,13 +375,17 @@ describe("execution graph repository", () => {
       kind: "resume",
       provider: "codex",
       nativeEventId: "event-resume-lifecycle",
-      observedDeliverySeq: 14,
+      observedDeliverySeq: 16,
     }, testDb);
     const [afterDuplicateResume] = await testDb.select().from(agentExecutions).where(
       eq(agentExecutions.id, child.id),
     );
+    const [correctedResumeEdge] = await testDb.select().from(delegationEdges).where(
+      eq(delegationEdges.sourceKey, "edge:resume:lifecycle"),
+    );
     expect(afterDuplicateResume?.attempt).toBe(2);
     expect(afterDuplicateResume?.status).toBe("queued");
+    expect(correctedResumeEdge?.observedDeliverySeq).toBe(16);
     const resumed = await advanceExecutionLifecycle({
       orgId,
       runId,
@@ -376,7 +394,7 @@ describe("execution graph repository", () => {
       attempt: 2,
       eventId: "event-resumed",
       eventRevision: 0,
-      deliverySeq: 15,
+      deliverySeq: 17,
       startedAt: new Date(),
       settledAt: null,
     }, testDb);
@@ -384,6 +402,6 @@ describe("execution graph repository", () => {
       applied: true,
       execution: { id: child.id, attempt: 2, status: "running", settledAt: null },
     });
-    expect((await getExecutionGraphForRun(orgId, runId, testDb))?.graphCursor).toBe(15);
+    expect((await getExecutionGraphForRun(orgId, runId, testDb))?.graphCursor).toBe(17);
   });
 });
