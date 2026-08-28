@@ -20,6 +20,41 @@ export function t3ActivityKind(
   return typeof activity?.kind === "string" ? activity.kind : eventType.slice("t3.activity.".length);
 }
 
+export type T3DelegationKind = "spawn" | "wait" | "send" | "resume" | "close";
+
+/** Exact provider control kind. Prefer the normalized field from the current
+ * T3 bridge, then recover older durable frames from their raw Codex item. */
+export function t3DelegationKind(
+  payload: Record<string, unknown> | null,
+): T3DelegationKind | null {
+  const data = recordValue(payload?.data);
+  const item = recordValue(data?.item);
+  const normalized = firstString(payload?.delegationKind);
+  if (
+    normalized === "spawn" ||
+    normalized === "wait" ||
+    normalized === "send" ||
+    normalized === "resume" ||
+    normalized === "close"
+  ) {
+    return normalized;
+  }
+  switch (firstString(item?.tool)) {
+    case "spawnAgent":
+      return "spawn";
+    case "wait":
+      return "wait";
+    case "sendInput":
+      return "send";
+    case "resumeAgent":
+      return "resume";
+    case "closeAgent":
+      return "close";
+    default:
+      return null;
+  }
+}
+
 export function t3ToolName(payload: Record<string, unknown> | null, summary?: unknown): string {
   const data = recordValue(payload?.data);
   const item = recordValue(data?.item);

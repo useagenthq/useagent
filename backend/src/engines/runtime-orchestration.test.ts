@@ -20,6 +20,8 @@ import {
 } from "./runtime-orchestration";
 import { createSecretRedactor } from "../secrets/redact";
 import { DEEPSEEK_V4_FLASH_MODEL } from "../runs/model-policy";
+import { makeNativeFrame } from "../runs/native-events";
+import { translateOpenCode } from "./opencode-canonical";
 
 const context = { runId: "run/unsafe", threadId: "thread unsafe", model: "gpt-5.6-luna" };
 const baselineRedactor = createSecretRedactor([]);
@@ -702,6 +704,151 @@ describe("T3 orchestration projection", () => {
       threadId: "thread-1",
       nativeSessionId: "skynet-thread-thread-1",
       payload: { turnId: "provider-turn-2" },
+    });
+  });
+
+  test("owns child activity by native child identity while controls stay parent-owned", () => {
+    const child = runtimeActivityProviderEvent(
+      { runId: "run-child", threadId: "thread-1" },
+      "root-native-session",
+      {
+        id: "child-status",
+        tone: "info",
+        kind: "task.updated",
+        summary: "Researcher running",
+        payload: {
+          taskId: "child-native-session",
+          agentKind: "agent",
+          parentAgentId: "root-native-session",
+          status: "running",
+        },
+        turnId: "turn-1",
+      },
+      baselineRedactor,
+    );
+    expect(child).toMatchObject({
+      nativeSessionId: "child-native-session",
+      nativeParentSessionId: "root-native-session",
+      nativeCallId: "child-native-session",
+    });
+    expect(runtimeActivityProviderEvent(
+      { runId: "run-child", threadId: "thread-1" },
+      "root-native-session",
+      {
+        id: "child-status",
+        tone: "info",
+        kind: "task.updated",
+        summary: "Researcher still running",
+        payload: {
+          taskId: "child-native-session",
+          agentKind: "agent",
+          status: "running",
+        },
+        turnId: "turn-1",
+      },
+      baselineRedactor,
+    )).toMatchObject({
+      nativeSessionId: "child-native-session",
+      nativeParentSessionId: null,
+    });
+
+    const control = runtimeActivityProviderEvent(
+      { runId: "run-child", threadId: "thread-1" },
+      "root-native-session",
+      {
+        id: "wait-control",
+        tone: "tool",
+        kind: "tool.completed",
+        summary: "Wait for agents",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          childSessionId: "child-native-session",
+          delegationKind: "wait",
+        },
+        turnId: "turn-1",
+      },
+      baselineRedactor,
+    );
+    expect(control).toMatchObject({
+      nativeSessionId: "root-native-session",
+      nativeParentSessionId: null,
+      payload: {
+        payload: {
+          childSessionId: "child-native-session",
+          delegationKind: "wait",
+        },
+      },
+    });
+  });
+
+  test("persists child parent identity in the task step compatibility projection", () => {
+    expect(activityStep({
+      id: "child-task",
+      tone: "info",
+      kind: "task.started",
+      summary: "Researcher",
+      payload: {
+        taskId: "child-native-session",
+        agentKind: "agent",
+        parentAgentId: "root-native-session",
+      },
+      turnId: "turn-1",
+    })).toMatchObject({
+      code_json: {
+        native: {
+          sessionID: "child-native-session",
+          parentSessionID: "root-native-session",
+          childSessionID: "child-native-session",
+        },
+      },
+    });
+  });
+
+  test("runtime child ownership reaches canonical projection exactly once", () => {
+    const captured = runtimeActivityProviderEvent(
+      { runId: "run-pipeline", threadId: "thread-pipeline" },
+      "root-native-session",
+      {
+        id: "child-start",
+        tone: "info",
+        kind: "task.started",
+        summary: "Researcher",
+        payload: {
+          taskId: "child-native-session",
+          agentKind: "agent",
+          parentAgentId: "root-native-session",
+          status: "running",
+        },
+        turnId: "turn-1",
+      },
+      baselineRedactor,
+    );
+    const frame = makeNativeFrame({
+      eventId: captured.id,
+      seq: 0,
+      provider: captured.provider,
+      eventType: captured.eventType,
+      sessionId: captured.nativeSessionId ?? null,
+      parentSessionId: captured.nativeParentSessionId ?? null,
+      messageId: captured.nativeMessageId ?? null,
+      partId: captured.nativePartId ?? null,
+      callId: captured.nativeCallId ?? null,
+      payloadText: JSON.stringify(captured.payload),
+    });
+    const canonical = translateOpenCode([frame], {
+      runId: "run-pipeline",
+      threadId: "thread-pipeline",
+      engine: "codex",
+    }).events;
+
+    expect(canonical).toHaveLength(1);
+    expect(canonical[0]).toMatchObject({
+      kind: "child.started",
+      childId: "child-native-session",
+      identity: {
+        nativeSessionId: "child-native-session",
+        nativeParentSessionId: "root-native-session",
+      },
     });
   });
 
