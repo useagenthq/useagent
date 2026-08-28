@@ -51,7 +51,7 @@ export function sessionCapabilities(engine: string, res: CapabilityResources): N
     // Honest per-engine differences:
     plans: isOpencode || isPi || isRuntime,
     usage: isOpencode || isPi || isRuntime,
-    modelSelection: isOpencode || isCodex || isPi,
+    modelSelection: isOpencode || e === "claude" || isCodex || isPi,
 
     // Pi can resume a persisted JSONL session on the next turn, but it cannot
     // yet reconstruct an in-flight reconciliation stream after backend restart.

@@ -170,6 +170,24 @@ describe("decideAcpPermission - actual response payloads (pure logic)", () => {
     }
   });
 
+  test("accepts Claude's semantic execute kind without trusting arbitrary titles", () => {
+    expect(decideAcpPermission([ALLOW_ONCE], false, "Execute", "execute")).toEqual({
+      outcome: { outcome: "selected", optionId: "opt-once" },
+    });
+    expect(decideAcpPermission([ALLOW_ONCE], false, "Run command", "execute")).toEqual({
+      outcome: { outcome: "selected", optionId: "opt-once" },
+    });
+    expect(decideAcpPermission([ALLOW_ONCE], false, "Execute", "other")).toEqual({
+      outcome: { outcome: "cancelled" },
+    });
+    expect(decideAcpPermission([ALLOW_ONCE], false, "Execute")).toEqual({
+      outcome: { outcome: "cancelled" },
+    });
+    expect(decideAcpPermission([ALLOW_ALWAYS], false, "Execute", "execute")).toEqual({
+      outcome: { outcome: "cancelled" },
+    });
+  });
+
   test("rejects unregistered gateway lookalikes and unsafe native tools", () => {
     for (const title of [
       "mcp__skynet-knowledge__gcs_delete_bucket",

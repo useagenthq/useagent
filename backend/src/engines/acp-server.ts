@@ -1324,16 +1324,24 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
                   toolCall?: { title?: string; toolCallId?: string };
                 };
                 const toolCallId = params.toolCall?.toolCallId;
-                const recordedTitle = toolCallId
-                  ? toolCalls.get(toolCallId)?.update.title
-                  : undefined;
+                const recordedTool = toolCallId ? toolCalls.get(toolCallId)?.update : undefined;
+                const recordedTitle = recordedTool?.title;
                 const toolTitle = typeof recordedTitle === "string"
                   ? recordedTitle
                   : params.toolCall?.title;
+                const recordedKind = recordedTool?.kind;
+                const toolKind = typeof recordedKind === "string"
+                  ? recordedKind
+                  : undefined;
                 void post({
                   jsonrpc: "2.0",
                   id: msg.id,
-                  result: decideAcpPermission(params.options ?? [], undefined, toolTitle),
+                  result: decideAcpPermission(
+                    params.options ?? [],
+                    undefined,
+                    toolTitle,
+                    toolKind,
+                  ),
                 }).catch(() => {});
                 continue;
               }
@@ -1487,7 +1495,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             },
           }, { critical: true, required: true });
 
-          await ctx.emit({ kind: "task", label: `Running ${cfg.id} (resident)…`, chip: cfg.id });
+          await ctx.emit({ kind: "task", label: acpRunningLabel(cfg.id), chip: cfg.id });
           const promptText = composeTurnPrompt(ctx, resumed, executionCapabilities);
           acceptingTurnOutput = true;
           ctx.timing?.mark("dispatch");
@@ -1563,3 +1571,8 @@ export const codexAcpConfig: AcpEngineConfig = {
 };
 
 export const acpCodexAdapter = makeAcpAdapter(codexAcpConfig);
+
+/** User-facing turn label. Process residency is an internal lifecycle detail. */
+export function acpRunningLabel(engine: AcpEngineConfig["id"]): string {
+  return `Running ${engine === "claude" ? "Claude Code" : "Codex"}…`;
+}

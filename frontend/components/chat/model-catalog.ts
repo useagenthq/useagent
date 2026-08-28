@@ -74,6 +74,11 @@ export const CODEX_MODELS: { value: string; label: string; tint: string }[] = [
   { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", tint: "text-teal-500" },
 ];
 
+/** Claude Code accepts the backend's exact Anthropic model policy ids. */
+export const CLAUDE_MODELS: ModelOption[] = MODELS.filter((model) =>
+  model.value.startsWith("claude-")
+);
+
 export const CHAT_MODELS: { value: string; label: string; tint: string }[] = [
   {
     value: "anthropic/claude-sonnet-5",
@@ -103,6 +108,7 @@ export function selectableModelsForEngine(engine: EngineId): ModelOption[] {
   // The Free lane is OpenCode-only backend policy; pi keeps the paid catalog.
   if (normalized === "opencode") return OPENCODE_SELECTABLE_MODELS;
   if (normalized === "pi") return MODELS;
+  if (normalized === "claude") return CLAUDE_MODELS;
   if (normalized === "codex") return CODEX_MODELS;
   if (normalized === "chat") return CHAT_MODELS;
   return [];

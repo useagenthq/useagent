@@ -34,8 +34,9 @@ export function decideAcpPermission(
   options: readonly AcpPermissionOption[],
   autoApprove: boolean = acpAutoApprove(),
   toolTitle?: string,
+  toolKind?: string,
 ): AcpPermissionOutcome {
-  const trustedActiveRunTool = isTrustedActiveRunTool(toolTitle);
+  const trustedActiveRunTool = isTrustedActiveRunTool(toolTitle, toolKind);
   if (!autoApprove && !trustedActiveRunTool) {
     return { outcome: { outcome: "cancelled" } };
   }
@@ -65,6 +66,12 @@ const TRUSTED_SANDBOX_NATIVE_TOOLS: ReadonlySet<string> = new Set([
   "Write",
 ]);
 
+// ACP providers may localize or rename the presentation title (Claude exposes
+// its shell tool as "Execute"), but the semantic kind remains stable. Trust only
+// exact native kinds whose effects are confined to the already-isolated thread
+// sandbox; arbitrary titles and MCP `other` calls still fail closed.
+const TRUSTED_SANDBOX_NATIVE_KINDS: ReadonlySet<string> = new Set(["execute"]);
+
 const GATEWAY_TOOL_PREFIXES = [
   "mcp.skynet-knowledge.",
   "mcp__skynet-knowledge__",
@@ -79,7 +86,11 @@ function registeredGatewayToolFromTitle(title: string): string | null {
   return null;
 }
 
-function isTrustedActiveRunTool(toolTitle: string | undefined): boolean {
+function isTrustedActiveRunTool(
+  toolTitle: string | undefined,
+  toolKind: string | undefined,
+): boolean {
+  if (toolKind && TRUSTED_SANDBOX_NATIVE_KINDS.has(toolKind)) return true;
   if (!toolTitle) return false;
   return TRUSTED_SANDBOX_NATIVE_TOOLS.has(toolTitle) ||
     registeredGatewayToolFromTitle(toolTitle) !== null;
