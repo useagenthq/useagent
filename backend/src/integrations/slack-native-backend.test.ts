@@ -5,6 +5,7 @@ import {
   decodeSlackStoredCredential,
   SLACK_NATIVE_RUNTIME_BINDING_ID,
   SLACK_OAUTH_CREDENTIAL_FORMAT,
+  slackNativeConnectionConfigFromEnv,
 } from "./slack-native-backend";
 import type { SlackOAuthClient, SlackOAuthCredentialBundle } from "./slack-oauth-client";
 
@@ -72,6 +73,31 @@ const config = {
 };
 
 describe("Slack native delegated backend", () => {
+  test("defaults to the provider-first callback path published by the Slack app", () => {
+    const previous = {
+      SLACK_APP_ID: process.env.SLACK_APP_ID,
+      SLACK_CLIENT_ID: process.env.SLACK_CLIENT_ID,
+      SLACK_CLIENT_SECRET: process.env.SLACK_CLIENT_SECRET,
+      SLACK_OAUTH_REDIRECT_URI: process.env.SLACK_OAUTH_REDIRECT_URI,
+      BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
+    };
+    try {
+      process.env.SLACK_APP_ID = "A0APP";
+      process.env.SLACK_CLIENT_ID = "client-id";
+      process.env.SLACK_CLIENT_SECRET = "client-secret";
+      process.env.BETTER_AUTH_URL = "https://app.useagent.org";
+      delete process.env.SLACK_OAUTH_REDIRECT_URI;
+      expect(slackNativeConnectionConfigFromEnv()?.redirectUri).toBe(
+        "https://app.useagent.org/api/integrations/slack/callback",
+      );
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   test("returns only safe projection fields while carrying sealed-storage material server-side", async () => {
     const backend = createSlackDelegatedConnectionBackend(config, {
       client: fakeClient(),
