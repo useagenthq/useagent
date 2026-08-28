@@ -9,6 +9,7 @@ export const INTERNAL_RUN_ORIGINS = [
   "internal:canary",
   "internal:hosted-release-canary",
   "internal:e2e",
+  "internal:model-qualification",
 ] as const;
 
 export type InternalRunOrigin = (typeof INTERNAL_RUN_ORIGINS)[number];

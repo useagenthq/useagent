@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   deriveFreeModelLane,
+  discoverOpenRouterFreeModels,
   FREE_MODEL_LANE_SEED,
   FreeModelLaneCache,
   freeModelLaneCache,
+  freeModelRegistryReadEnabled,
   refreshFreeModelLane,
   setFreeModelCatalogFetcherForTest,
   type CatalogFetcher,
@@ -40,6 +42,20 @@ function fetcherOf(respond: () => Response | Promise<Response>): {
 }
 
 describe("deriveFreeModelLane (catalog filter)", () => {
+  test("discovers unproven tool-capable free models without advertising them", () => {
+    const catalog = {
+      data: [
+        entry("vendor/new-agent:free", 200_000),
+        entry("vendor/no-tools:free", 200_000, ["temperature"]),
+        entry("vendor/paid", 200_000),
+      ],
+    };
+    expect(discoverOpenRouterFreeModels(catalog)).toEqual([
+      { id: "vendor/new-agent:free", contextLength: 200_000 },
+    ]);
+    expect(deriveFreeModelLane(catalog)).toEqual([]);
+  });
+
   test("keeps hosted-proven tool-capable free ids with usable context, largest first", () => {
     const lane = deriveFreeModelLane({
       data: [
@@ -97,6 +113,18 @@ describe("FreeModelLaneCache", () => {
     expect(cache.isAllowed(FRESH_MODEL)).toBe(true);
     expect(cache.isAllowed(FREE_MODEL_LANE_SEED[0])).toBe(true);
     expect(cache.isAllowed("vendor/unknown:free")).toBe(false);
+  });
+
+  test("keeps the DB-published lane isolated until the read switch selects it", () => {
+    const cache = new FreeModelLaneCache();
+    expect(cache.adoptRegistryLane(["vendor/qualified:free"])).toBe(true);
+    expect(cache.lane()).toEqual([...FREE_MODEL_LANE_SEED]);
+    expect(cache.lane(true)).toEqual(["vendor/qualified:free"]);
+    expect(cache.isAllowed(FREE_MODEL_LANE_SEED[0])).toBe(true);
+    expect(cache.isAllowed(FREE_MODEL_LANE_SEED[0], true)).toBe(false);
+    expect(cache.isAllowed("vendor/qualified:free", true)).toBe(true);
+    expect(cache.adoptRegistryLane([])).toBe(false);
+    expect(cache.lane(true)).toEqual(["vendor/qualified:free"]);
   });
 
   test("failed, non-ok, or empty catalog responses keep the last-good lane", async () => {
@@ -234,6 +262,12 @@ describe("FreeModelLaneCache", () => {
     expect(afterJoin.admitted).toBe(false);
     expect(afterJoin.retryAfterMs).toBe(29_998);
   });
+});
+
+test("registry reads are explicitly default off", () => {
+  expect(freeModelRegistryReadEnabled({})).toBe(false);
+  expect(freeModelRegistryReadEnabled({ FREE_MODEL_REGISTRY_READ_ENABLED: "0" })).toBe(false);
+  expect(freeModelRegistryReadEnabled({ FREE_MODEL_REGISTRY_READ_ENABLED: "1" })).toBe(true);
 });
 
 describe("dynamic lane -> policy and manifest integration", () => {

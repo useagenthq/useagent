@@ -10,7 +10,10 @@ import {
   loadFreeModelRegistry,
   publishFreeModelLane,
   recordFreeModelProbeResult,
+  upsertDiscoveredFreeModelCandidates,
 } from "../src/runs/free-model-registry-repo";
+import { insertCommandWithRun } from "../src/commands/repo";
+import { listRunSummaries } from "../src/runs/repo";
 
 const SEED_MODELS = [
   "minimax/minimax-m3:free",
@@ -90,6 +93,81 @@ async function makeOnlyDue(modelId: string): Promise<void> {
 }
 
 describe("free model registry repository", () => {
+  test("catalog discovery inserts pending candidates without resetting existing probe state", async () => {
+    const modelId = `test/discovery-${crypto.randomUUID()}:free`;
+    await expect(upsertDiscoveredFreeModelCandidates([{
+      modelId,
+      provider: "openrouter",
+      source: "openrouter_catalog",
+    }], testDb)).resolves.toBe(1);
+    await client.unsafe(`
+      update free_model_candidates
+      set failure_streak = 1, next_probe_at = now() + interval '2 hours'
+      where model_id = '${modelId}'`);
+    await expect(upsertDiscoveredFreeModelCandidates([{
+      modelId,
+      provider: "openrouter",
+      source: "replacement_must_not_win",
+    }], testDb)).resolves.toBe(1);
+    const [row] = await client.unsafe(`
+      select source, state, failure_streak,
+        (next_probe_at > now() + interval '1 hour') as schedule_preserved
+      from free_model_candidates where model_id = '${modelId}'`);
+    expect(row).toMatchObject({
+      source: "openrouter_catalog",
+      state: "pending",
+      failure_streak: 1,
+      schedule_preserved: true,
+    });
+  });
+
+  test("internal qualification acceptance persists low fleet priority", async () => {
+    const runId = `qualification-${crypto.randomUUID()}`;
+    const orgId = `qualification-org-${crypto.randomUUID()}`;
+    try {
+      await insertCommandWithRun({
+        commandId: crypto.randomUUID(),
+        idempotencyKey: `qualification:${runId}`,
+        orgId,
+        actorId: null,
+        payloadFingerprint: "a".repeat(64),
+        payload: "{}",
+        origin: "internal:model-qualification",
+        priority: -100,
+        run: {
+          id: runId,
+          prompt: "qualify",
+          model: SEED_MODELS[0],
+          engine: "opencode",
+          parentRunId: null,
+          threadId: runId,
+          repos: [],
+          resolvedResources: [],
+          memoryScope: "org",
+          skillId: null,
+          skillVersion: null,
+          skillContentHash: null,
+          commandName: null,
+          commandProvider: null,
+          commandSessionId: null,
+          commandCatalogRevision: null,
+        },
+      }, testDb);
+      const [row] = await client.unsafe(`
+        select r.origin, a.priority
+        from runs r join run_admissions a on a.run_id = r.id
+        where r.id = '${runId}'`);
+      expect(row).toMatchObject({
+        origin: "internal:model-qualification",
+        priority: -100,
+      });
+      await expect(listRunSummaries(orgId, { all: true })).resolves.toEqual([]);
+    } finally {
+      await client.unsafe(`delete from commands where run_id = '${runId}'`);
+      await client.unsafe(`delete from runs where id = '${runId}'`);
+    }
+  });
+
   test("migration seeds the v0.0.1 last-good lane without fabricated attempts", async () => {
     const snapshot = await loadFreeModelRegistry(FREE_MODEL_LANE, testDb);
     expect(snapshot.state).toMatchObject({
