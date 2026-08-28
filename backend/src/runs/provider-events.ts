@@ -3,6 +3,8 @@ import { db } from "../db/client";
 import { providerEvents } from "../db/schema";
 import { makeNativeFrame, publishNativeFrame } from "./native-events";
 import { errorMessage } from "../util/error-message";
+import { executionGraphWriteEnabled } from "./execution-graph-rollout";
+import { shadowWriteExecutionGraph } from "./execution-graph-shadow-writer";
 
 const PAYLOAD_CAP = 32_768; // bounded native payload (chars of JSON)
 
@@ -196,6 +198,12 @@ async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): 
       // arriving after a re-seeded counter.
       setWhere: sql`${providerEvents.seq} < ${assignedSeq}`,
     });
+
+  // Graph writes are additive and fail-open. They happen only after the native
+  // event is durable and before live publication, preserving one observed order.
+  if (executionGraphWriteEnabled()) {
+    await shadowWriteExecutionGraph(input, assignedSeq);
+  }
 
   // Live-push the versioned native frame to any SSE subscriber (north star
   // "Canonical Events"). AFTER the persist, so a subscriber never sees a frame
