@@ -9,6 +9,12 @@
 // summary. Store lifetime changes only when the root thread id changes (the hook
 // recreates it), so a constant generation is sufficient here.
 
+import {
+  createCanonicalThreadStore,
+  type CanonicalThreadStore,
+  type CanonicalThreadEvent,
+  type ExecutionSummarySnapshot,
+} from "@useagent/agent-client";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
 import type { NativeFrame } from "./native-events";
 import { createNativeStore, type NativeSnapshot, type NativeStore } from "./native-store";
@@ -34,6 +40,8 @@ export interface ThreadRunView {
    *  render path trusts the canonical lane ONLY when true - provisional rows (still being
    *  retried by the outbox) never drive the UI, so a partial snapshot can't render. */
   canonicalComplete: boolean;
+  /** Store-owned execution summary scoped to this run's durable child lifecycle. */
+  executionSummary: ExecutionSummarySnapshot | null;
 }
 
 export interface ThreadSnapshot {
@@ -41,11 +49,14 @@ export interface ThreadSnapshot {
   runs: ApiRun[];
   /** Per-run view keyed by runId. */
   byId: ReadonlyMap<string, ThreadRunView>;
+  /** One incremental projection owned by this root thread store. */
+  executionSummary: ExecutionSummarySnapshot | null;
 }
 
 export interface ThreadStore {
   subscribe(listener: () => void): () => void;
   getSnapshot(): ThreadSnapshot;
+  getExecutionSummarySnapshot(): ExecutionSummarySnapshot | null;
   /** Apply many mutations, then notify listeners ONCE. A burst of frames (e.g. an
    *  SSE replay of hundreds of native frames when opening a long settled run) would
    *  otherwise notify per frame → a full re-render + timeline rebuild each time
@@ -73,13 +84,39 @@ export interface ThreadStore {
   applyDone(runId: string, status: RunStatus): void;
 }
 
-const EMPTY_SNAPSHOT: ThreadSnapshot = { runs: [], byId: new Map() };
+export interface ThreadStoreOptions {
+  readonly rootThreadId?: string;
+  readonly executionSummaryEnabled?: boolean;
+}
+
+const EMPTY_SNAPSHOT: ThreadSnapshot = { runs: [], byId: new Map(), executionSummary: null };
+const EMPTY_EXECUTION_SUMMARY: ExecutionSummarySnapshot = {
+  version: 1,
+  children: [],
+  delegationEdges: [],
+};
 
 /** Shared frozen canonical lane for runs with no canonical events yet — one
  *  identity, so an empty lane never invalidates a memoized timeline. */
 const EMPTY_CANONICAL: readonly StoredCanonicalEvent[] = Object.freeze([]);
 
-export function createThreadStore(): ThreadStore {
+function executionSummaryForRun(
+  root: ExecutionSummarySnapshot | null,
+  runId: string,
+): ExecutionSummarySnapshot | null {
+  if (!root) return null;
+  const childIds = new Set(
+    root.children.filter((child) => child.runId === runId).map((child) => child.id),
+  );
+  if (childIds.size === 0) return EMPTY_EXECUTION_SUMMARY;
+  return {
+    version: 1,
+    children: root.children.filter((child) => childIds.has(child.id)),
+    delegationEdges: root.delegationEdges.filter((edge) => childIds.has(edge.childId)),
+  };
+}
+
+export function createThreadStore(options: ThreadStoreOptions = {}): ThreadStore {
   // Ordered run ids (oldest→newest) + per-run slices.
   const order: string[] = [];
   const runs = new Map<string, ApiRun>();
@@ -92,6 +129,17 @@ export function createThreadStore(): ThreadStore {
   const canonicalByRun = new Map<string, Map<string, StoredCanonicalEvent>>();
   // H2: runs whose canonicalization reached the durable `complete` record (trustworthy).
   const canonicalCompleteRuns = new Set<string>();
+  let executionSummaryAvailable = options.executionSummaryEnabled === true;
+  // Construct lazily on the first accepted canonical SSE event. Thread stores
+  // are seeded from a React state initializer, so eager construction here would
+  // put projector setup on the component render path even before any event can
+  // contribute to a summary.
+  let executionSummaryStore: CanonicalThreadStore | null = null;
+
+  const executionSummarySnapshot = (): ExecutionSummarySnapshot | null => {
+    if (!executionSummaryAvailable) return null;
+    return executionSummaryStore?.getExecutionSummary() ?? EMPTY_EXECUTION_SUMMARY;
+  };
 
   const listeners = new Set<() => void>();
   let snapshot: ThreadSnapshot | null = null;
@@ -242,6 +290,7 @@ export function createThreadStore(): ThreadStore {
         return snapshot;
       }
       const runsList: ApiRun[] = [];
+      const executionSummary = executionSummarySnapshot();
       // The top-level containers are fresh per rebuild (subscribers key effects
       // off snapshot/byId identity); only the per-run VIEWS are reused.
       const byId = new Map<string, ThreadRunView>();
@@ -268,14 +317,19 @@ export function createThreadStore(): ThreadStore {
             native: ensureStore(id).getSnapshot(),
             canonical,
             canonicalComplete: canonicalCompleteRuns.has(id),
+            executionSummary: executionSummaryForRun(executionSummary, id),
           };
           viewCache.set(id, view);
         }
         byId.set(id, view);
       }
       dirty.clear();
-      snapshot = { runs: runsList, byId };
+      snapshot = { runs: runsList, byId, executionSummary };
       return snapshot;
+    },
+
+    getExecutionSummarySnapshot() {
+      return executionSummarySnapshot();
     },
 
     applySnapshot(runsIn) {
@@ -334,6 +388,19 @@ export function createThreadStore(): ThreadStore {
       }
       const prev = m.get(event.eventId);
       if (prev && prev.revision >= event.revision) return;
+      if (executionSummaryAvailable) {
+        try {
+          executionSummaryStore ??= createCanonicalThreadStore({
+            threadId: options.rootThreadId,
+          });
+          executionSummaryStore.ingest(event as unknown as CanonicalThreadEvent);
+        } catch {
+          // Projection is additive. A malformed/cross-thread event disables the
+          // new read path without changing the accepted legacy canonical lane.
+          executionSummaryAvailable = false;
+          executionSummaryStore = null;
+        }
+      }
       m.set(event.eventId, event);
       canonicalSorted.delete(event.runId); // re-sort this run's lane on next read
       touch(event.runId);

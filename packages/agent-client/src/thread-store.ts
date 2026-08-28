@@ -11,6 +11,11 @@
 //     useSyncExternalStore-style consumer never tears on an unchanged read).
 
 import type { CanonicalThreadEvent } from "./thread-events";
+import {
+  createExecutionSummaryProjector,
+  type ExecutionSummaryRetention,
+  type ExecutionSummarySnapshot,
+} from "./execution-summary";
 
 export interface AgentTranscript {
   /** Canonical events, deduped by eventId (latest revision) + ordered by deliverySeq. */
@@ -30,15 +35,26 @@ export interface CanonicalThreadStore {
   /** Coalesce a burst of mutations into ONE listener notification (replay batching). */
   batch(apply: () => void): void;
   getSnapshot(): AgentTranscript;
+  /** Store-owned incremental child projection. Stable until accepted canonical input changes. */
+  getExecutionSummary(): ExecutionSummarySnapshot;
+  executionSummaryRetention(): ExecutionSummaryRetention;
   subscribe(listener: () => void): () => void;
+}
+
+export interface CanonicalThreadStoreOptions {
+  /** Bind the store/projector before first ingest; otherwise the first event binds it. */
+  readonly threadId?: string;
 }
 
 const EMPTY: AgentTranscript = { events: [], completeRuns: new Set() };
 
-export function createCanonicalThreadStore(): CanonicalThreadStore {
+export function createCanonicalThreadStore(
+  options: CanonicalThreadStoreOptions = {},
+): CanonicalThreadStore {
   const byId = new Map<string, CanonicalThreadEvent>(); // eventId -> latest-revision event
   const completeRuns = new Set<string>();
   const listeners = new Set<() => void>();
+  let executionSummary = createExecutionSummaryProjector({ threadId: options.threadId });
 
   let snapshot: AgentTranscript | null = EMPTY;
   let batchDepth = 0;
@@ -62,6 +78,7 @@ export function createCanonicalThreadStore(): CanonicalThreadStore {
   return {
     ingest(event) {
       if (!supersedes(event, byId.get(event.eventId))) return false;
+      executionSummary.ingest(event);
       byId.set(event.eventId, event);
       invalidate();
       notify();
@@ -83,6 +100,10 @@ export function createCanonicalThreadStore(): CanonicalThreadStore {
       }
       completeRuns.clear();
       for (const r of complete ?? []) completeRuns.add(r);
+      executionSummary = createExecutionSummaryProjector({ threadId: options.threadId });
+      for (const event of [...byId.values()].sort((a, b) => a.deliverySeq - b.deliverySeq)) {
+        executionSummary.ingest(event);
+      }
       invalidate();
       notify();
     },
@@ -106,6 +127,14 @@ export function createCanonicalThreadStore(): CanonicalThreadStore {
         snapshot = { events, completeRuns: new Set(completeRuns) };
       }
       return snapshot;
+    },
+
+    getExecutionSummary() {
+      return executionSummary.snapshot();
+    },
+
+    executionSummaryRetention() {
+      return executionSummary.retention();
     },
 
     subscribe(listener) {

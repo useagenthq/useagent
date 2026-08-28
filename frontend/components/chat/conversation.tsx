@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import type { ExecutionSummarySnapshot } from "@useagent/agent-client";
 import { LoadingState } from "@/components/ai/loading-state";
 import { Thinking } from "@/components/ai/thinking";
 import type { ApprovalDecision, PendingApproval } from "@/components/chat/approval-state";
@@ -90,6 +91,8 @@ export type Turn = {
   /** Canonical events for this run. Consumed only behind the
    *  canonical-timeline flag; empty/absent falls back to the native lane. */
   canonical?: readonly StoredCanonicalEvent[];
+  /** Incremental root-store projection scoped to this turn. */
+  executionSummary?: ExecutionSummarySnapshot | null;
   /** H2: whether this run's canonicalization reached the durable `complete` record. The
    *  canonical lane drives the UI ONLY when true - otherwise the legacy native lane does,
    *  so a still-provisional (partial, retrying) snapshot never renders. */
@@ -383,6 +386,7 @@ const TurnBlock = memo(function TurnBlock({
           steps={steps}
           frames={turn.native?.nativeFrames}
           canonicalEvents={turn.canonical}
+          executionSummary={turn.executionSummary}
           live={live}
           childSessions={childSessions}
         />
