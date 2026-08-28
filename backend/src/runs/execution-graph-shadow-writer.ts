@@ -194,6 +194,37 @@ function explicitControl(input: ProviderEventInput): {
   };
 }
 
+type GraphObservation =
+  | { readonly kind: "root" }
+  | { readonly kind: "spawn"; readonly spawn: NonNullable<ReturnType<typeof explicitSpawnIdentity>> }
+  | { readonly kind: "control"; readonly control: NonNullable<ReturnType<typeof explicitControl>> }
+  | { readonly kind: "lifecycle" };
+
+function graphObservation(input: ProviderEventInput): GraphObservation | null {
+  if (!SUPPORTED_PROVIDERS.has(input.provider)) return null;
+  if (input.eventType === "session.started" && stringValue(input.nativeSessionId)) {
+    return { kind: "root" };
+  }
+  const spawn = explicitSpawnIdentity(input);
+  if (spawn) return { kind: "spawn", spawn };
+  const control = explicitControl(input);
+  if (control) return { kind: "control", control };
+  if (input.provider !== "t3" || !input.eventType.startsWith("t3.activity.task.")) {
+    return null;
+  }
+  const { payload } = activityPayload(input);
+  return payload?.agentKind === "agent" &&
+    stringValue(input.nativeSessionId) &&
+    stringValue(input.nativeParentSessionId) &&
+    lifecycleStatus(input)
+    ? { kind: "lifecycle" }
+    : null;
+}
+
+export function executionGraphObservationKind(input: ProviderEventInput): GraphObservation["kind"] | null {
+  return graphObservation(input)?.kind ?? null;
+}
+
 async function advanceChild(
   orgId: string,
   input: ProviderEventInput,
@@ -232,11 +263,12 @@ async function writeExecutionGraph(
   deliverySeq: number,
   exec: Executor,
 ): Promise<void> {
-  if (!SUPPORTED_PROVIDERS.has(input.provider)) return;
+  const observation = graphObservation(input);
+  if (!observation) return;
   const orgId = await owningOrgId(input.runId, exec);
   if (!orgId) return;
 
-  if (input.eventType === "session.started") {
+  if (observation.kind === "root") {
     const nativeSessionId = stringValue(input.nativeSessionId);
     if (!nativeSessionId) return;
     const root = await createRootExecution({
@@ -261,8 +293,8 @@ async function writeExecutionGraph(
     return;
   }
 
-  const spawn = explicitSpawnIdentity(input);
-  if (spawn) {
+  if (observation.kind === "spawn") {
+    const { spawn } = observation;
     const parent = await parentExecution(orgId, input, spawn.parentSessionId, exec);
     if (!parent) return;
     const spawned = await recordNativeChildSpawn({
@@ -291,8 +323,8 @@ async function writeExecutionGraph(
     }, exec);
   }
 
-  const control = explicitControl(input);
-  if (control) {
+  if (observation.kind === "control") {
+    const { control } = observation;
     const parent = await parentExecution(orgId, input, control.parentSessionId, exec);
     if (!parent) return;
     for (const targetSessionId of control.targetSessionIds) {
@@ -315,7 +347,9 @@ async function writeExecutionGraph(
     }
   }
 
-  await advanceChild(orgId, input, deliverySeq, exec);
+  if (observation.kind === "lifecycle") {
+    await advanceChild(orgId, input, deliverySeq, exec);
+  }
 }
 
 /** Fail-open shadow writer. It never exposes payloads or rejects provider delivery. */
