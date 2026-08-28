@@ -318,7 +318,10 @@ export function translateOpenCode(
         parentChildId: f.native.parentSessionId ?? childParent.get(sid),
         ...(title ? { title } : {}),
         ...(state ? { state } : {}),
-      }, { nativeSessionId: sid }));
+      }, {
+        nativeSessionId: sid,
+        nativeParentSessionId: f.native.parentSessionId ?? childParent.get(sid),
+      }));
     }
   };
 
@@ -327,8 +330,12 @@ export function translateOpenCode(
     const p = rec(f.payload);
     const et = f.eventType;
     const produced: CanonicalEventKind[] = [];
+    const nativeSessionId = f.native.sessionId ?? undefined;
     const ident = {
-      nativeSessionId: f.native.sessionId ?? undefined,
+      nativeSessionId,
+      nativeParentSessionId: nativeSessionId
+        ? f.native.parentSessionId ?? childParent.get(nativeSessionId)
+        : undefined,
       nativeSeq: f.seq,
       nativeMessageId: f.native.messageId ?? undefined,
       nativePartId: f.native.partId ?? undefined,
@@ -810,6 +817,7 @@ export function translateOpenCode(
     const ident = {
       nativeEventId: s.id, // step id = the reducer's node key + lookup handle
       nativeSessionId: str(native?.sessionID) ?? undefined,
+      nativeParentSessionId: str(native?.parentSessionID) ?? undefined,
     };
     if (code?.source === "t3" && callID && authoritativeT3LifecycleIds.has(callID)) {
       accounting.push({

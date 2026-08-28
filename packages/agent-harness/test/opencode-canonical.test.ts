@@ -257,8 +257,26 @@ describe("opencode child state fidelity (real frame fields only)", () => {
       kind: "child.started",
       childId: "ses_child",
       parentChildId: "ses_p",
+      identity: {
+        nativeSessionId: "ses_child",
+        nativeParentSessionId: "ses_p",
+      },
       title: "Compare pricing pages",
       state: { role: "researcher", model: "claude-sonnet-5" },
+    });
+  });
+
+  test("child-owned activity retains its resolved native parent identity", () => {
+    const childUpdate = ev.find(
+      (event) => event.kind === "child.updated" && event.identity.nativePartId === "p_w",
+    );
+    expect(childUpdate).toMatchObject({
+      kind: "child.updated",
+      childId: "ses_child",
+      identity: {
+        nativeSessionId: "ses_child",
+        nativeParentSessionId: "ses_p",
+      },
     });
   });
 
