@@ -194,6 +194,12 @@ The important variables are:
 - `MEMORY_API_URL` and related memory variables to enable the optional team-memory layer.
 - `GITHUB_TOKEN` or `GITHUB_APP_*` for repository access.
 - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to enable Google sign-in.
+- `FREE_MODEL_QUALIFIER_ENABLED=1` starts the durable, low-priority OpenRouter
+  full-agent qualifier. It is off by default and also requires
+  `FREE_MODEL_QUALIFIER_ORG_ID`; deployment admission closure suppresses probes.
+- `FREE_MODEL_REGISTRY_READ_ENABLED=1` makes the synchronous OpenCode catalog
+  read the last atomically published DB generation. It is independently off by
+  default, so qualification can run in shadow mode before runtime cutover.
 
 ## Deploy and Terraform
 

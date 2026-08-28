@@ -91,6 +91,7 @@ export function preflightInternalRunCommandReplay(input: {
 async function acceptRunCommandWithOrigin(
   input: RunCommandInput,
   origin: InternalRunOrigin | null,
+  priority = 0,
 ): Promise<RunCommandOutcome> {
   const intent = input.intent ?? runIntentFromAcceptedRun(input.run);
   const fingerprint = runIntentFingerprint(intent);
@@ -163,6 +164,7 @@ async function acceptRunCommandWithOrigin(
             payload,
             run: input.run,
             origin,
+            priority,
           },
           tx,
         );
@@ -187,25 +189,30 @@ async function acceptRunCommandWithOrigin(
   // Skills Run all accept here, so none grows its own UI notification code. Only
   // fired on a fresh `created`; an idempotent replay returns above and re-signals
   // nothing (no duplicate run signal). IDs only, never secrets/payloads.
-  publishRunLifecycleChange({
-    orgId: input.orgId,
-    threadId: input.run.threadId,
-    runId: input.run.id,
-    kind: "created",
-  });
+  if (origin === null) {
+    publishRunLifecycleChange({
+      orgId: input.orgId,
+      threadId: input.run.threadId,
+      runId: input.run.id,
+      kind: "created",
+    });
+  }
 
   return { status: "created", runId: input.run.id, commandId };
 }
 
 /** Public product acceptance. Origin is always null and is not caller-settable. */
 export function acceptRunCommand(input: RunCommandInput): Promise<RunCommandOutcome> {
-  return acceptRunCommandWithOrigin(input, null);
+  return acceptRunCommandWithOrigin(input, null, 0);
 }
 
 /** Server-only acceptance for trusted canaries and inherited internal children. */
 export function acceptInternalRunCommand(
-  input: RunCommandInput & { readonly origin: InternalRunOrigin },
+  input: RunCommandInput & {
+    readonly origin: InternalRunOrigin;
+    readonly priority?: number;
+  },
 ): Promise<RunCommandOutcome> {
   assertInternalRunOrigin(input.origin);
-  return acceptRunCommandWithOrigin(input, input.origin);
+  return acceptRunCommandWithOrigin(input, input.origin, input.priority ?? 0);
 }

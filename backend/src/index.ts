@@ -90,8 +90,23 @@ import {
 import {
   forceRefreshFreeModelLane,
   freeModelLane,
+  freeModelLaneCache,
+  freeModelRegistryReadEnabled,
   refreshFreeModelLane,
 } from "./runs/free-model-lane";
+import {
+  freeModelQualifierEnabled,
+  hydrateFreeModelLaneFromRegistry,
+  startFreeModelQualifierWorker,
+  startFreeModelRegistryHydrator,
+} from "./runs/free-model-qualifier-worker";
+import {
+  createInternalOpenCodeQualificationDriver,
+} from "./runs/free-model-qualification-driver";
+import { acceptInternalRunCommand } from "./commands/service";
+import { acceptRunCancel } from "./commands/cancel";
+import { getRunAdmission } from "./commands/admission";
+import { getRunWithSteps } from "./runs/repo";
 import { uploadRoutes } from "./uploads/routes";
 import { startUploadCleanup } from "./uploads/cleanup";
 import { internalAutomationRoutes } from "./schedules/internal-routes";
@@ -116,6 +131,11 @@ await enforceSingleBackend();
 // migrator is idempotent — already-applied migrations are skipped. Path is
 // resolved from this module so cwd doesn't matter.
 await migrate(db, { migrationsFolder: `${import.meta.dir}/../drizzle` });
+
+// Default OFF. When explicitly enabled, hydrate the synchronous model-policy
+// cache from the last atomically published DB generation before serving config.
+await hydrateFreeModelLaneFromRegistry();
+startFreeModelRegistryHydrator();
 
 // Reconcile the restricted gateway role's grants on EVERY boot: a migration
 // that adds a gateway-written table ships its grant in the same commit (see
@@ -266,7 +286,7 @@ app.get("/api/config", (c) => {
   // (stale-while-revalidate): this manifest request serves the current lane
   // instantly; a fresh catalog result lands for subsequent requests. The
   // refresh never rejects, so it can never fail /api/config.
-  void refreshFreeModelLane();
+  if (!freeModelRegistryReadEnabled()) void refreshFreeModelLane();
   // Configured engines stay discoverable even while a provider needs attention;
   // the additive readiness map explains why without weakening the fail-closed
   // POST /api/runs dispatch gate. mock/daytona/claude-sdk/acp remain internal.
@@ -305,6 +325,14 @@ app.get("/api/config", (c) => {
 // org-independent, so one refresh serves every org). Returns the refreshed
 // manifest so the picker can swap its list in place.
 app.post("/api/config/models/refresh", async (c) => {
+  if (freeModelRegistryReadEnabled()) {
+    return c.json({
+      error: "managed_by_qualifier",
+      free: freeModelLane(),
+      models: engineModelsForReadyEngines(),
+      configuredModels: engineModelsForConfiguredEngines(),
+    }, 409);
+  }
   const attempt = forceRefreshFreeModelLane();
   if (!attempt.admitted) {
     return c.json({ error: "rate_limited", retry_after_ms: attempt.retryAfterMs }, 429);
@@ -422,6 +450,38 @@ app.route("/api/commands", commandsRoutes);
 // Always-on scheduler loop (60s tick). Harmless when no schedule is enabled —
 // Automations default disabled, so nothing auto-fires until a human turns it on.
 startScheduler();
+
+// Durable full-agent Free-model qualification, independently default OFF from
+// the DB-read switch. Admission is checked every tick and before every probe,
+// so deployment drain/close cannot start qualification traffic.
+if (freeModelQualifierEnabled()) {
+  const qualifierOrgId = process.env.FREE_MODEL_QUALIFIER_ORG_ID?.trim();
+  if (!qualifierOrgId) throw new Error("FREE_MODEL_QUALIFIER_ORG_ID is required");
+  const driver = createInternalOpenCodeQualificationDriver(
+    { orgId: qualifierOrgId },
+    {
+      accept: acceptInternalRunCommand,
+      pump: pumpThread,
+      read: getRunWithSteps,
+      cancel: async (orgId, runId) => {
+        const outcome = await acceptRunCancel({ orgId, actorId: null, runId });
+        if (outcome.status === "accepted" || outcome.status === "already") {
+          signalCancel(runId, "Model qualification timed out");
+          await pumpThread(outcome.threadId);
+        }
+      },
+      admission: getRunAdmission,
+    },
+  );
+  startFreeModelQualifierWorker({
+    driver,
+    adoptPublishedLane: (state) => {
+      if (freeModelRegistryReadEnabled()) {
+        freeModelLaneCache.adoptRegistryLane(state.currentModelIds, { allowEmpty: true });
+      }
+    },
+  });
+}
 
 // Abandoned pre-run uploads expire after 24h. Reclaim only their metadata;
 // content-addressed bytes may still be referenced by another durable record.

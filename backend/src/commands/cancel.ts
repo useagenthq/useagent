@@ -7,6 +7,7 @@ import { publishRunLifecycleChange } from "../runs/org-signals";
 import { RUN_CANCEL, RUN_CREATE } from "./repo";
 import { releaseLeaseForRun } from "../fleet/lease-repo";
 import { setAdmissionState } from "../fleet/admission-repo";
+import { isInternalRunOrigin } from "../runs/origin";
 
 // ---------------------------------------------------------------------------
 // Durable run cancellation (north star "Durable Commands"). A user Stop enters
@@ -66,6 +67,7 @@ export async function acceptRunCancel(input: {
     // so the thread stream would not otherwise learn it settled without a worker
     // step. Capture the thread of such a cancel and signal AFTER commit.
     let queuedCancelledThreadId: string | null = null;
+    let queuedCancelledInternal = false;
     const outcome = await db.transaction(async (tx) => {
       const [run] = await tx
         .select()
@@ -104,6 +106,7 @@ export async function acceptRunCancel(input: {
         await releaseLeaseForRun(input.runId, tx);
         await setAdmissionState(input.runId, "canceled", tx);
         queuedCancelledThreadId = run.threadId;
+        queuedCancelledInternal = isInternalRunOrigin(run.origin);
       }
 
       return { status: "accepted" as const, runStatusWas: run.status, threadId: run.threadId };
@@ -112,7 +115,7 @@ export async function acceptRunCancel(input: {
     // Post-commit thread signal (queued-cancel only): the run went failed with no
     // worker step, so wake the thread stream to re-project it. A RUNNING cancel is
     // finalized by the actor's teardown, which signals `settled` itself.
-    if (queuedCancelledThreadId) {
+    if (queuedCancelledThreadId && !queuedCancelledInternal) {
       publishRunLifecycleChange({
         orgId: input.orgId,
         threadId: queuedCancelledThreadId,

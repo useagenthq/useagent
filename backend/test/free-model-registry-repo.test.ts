@@ -10,7 +10,9 @@ import {
   loadFreeModelRegistry,
   publishFreeModelLane,
   recordFreeModelProbeResult,
+  upsertDiscoveredFreeModelCandidates,
 } from "../src/runs/free-model-registry-repo";
+import { insertCommandWithRun } from "../src/commands/repo";
 
 const SEED_MODELS = [
   "minimax/minimax-m3:free",
@@ -90,6 +92,84 @@ async function makeOnlyDue(modelId: string): Promise<void> {
 }
 
 describe("free model registry repository", () => {
+  test("catalog discovery inserts pending candidates without resetting existing probe state", async () => {
+    const modelId = `test/discovery-${crypto.randomUUID()}:free`;
+    await expect(upsertDiscoveredFreeModelCandidates([{
+      modelId,
+      provider: "openrouter",
+      source: "openrouter_catalog",
+    }], testDb)).resolves.toBe(1);
+    await client.unsafe(`
+      update free_model_candidates
+      set failure_streak = 1, next_probe_at = now() + interval '2 hours'
+      where model_id = '${modelId}'`);
+    await expect(upsertDiscoveredFreeModelCandidates([{
+      modelId,
+      provider: "openrouter",
+      source: "replacement_must_not_win",
+    }], testDb)).resolves.toBe(1);
+    const [row] = await client.unsafe(`
+      select source, state, failure_streak,
+        (next_probe_at > now() + interval '1 hour') as schedule_preserved
+      from free_model_candidates where model_id = '${modelId}'`);
+    expect(row).toMatchObject({
+      source: "openrouter_catalog",
+      state: "pending",
+      failure_streak: 1,
+      schedule_preserved: true,
+    });
+  });
+
+  test("internal qualification acceptance persists low fleet priority", async () => {
+    const runId = `qualification-${crypto.randomUUID()}`;
+    const orgId = `qualification-org-${crypto.randomUUID()}`;
+    try {
+      await insertCommandWithRun({
+        commandId: crypto.randomUUID(),
+        idempotencyKey: `qualification:${runId}`,
+        orgId,
+        actorId: null,
+        payloadFingerprint: "a".repeat(64),
+        payload: "{}",
+        origin: "internal:model-qualification",
+        priority: -100,
+        run: {
+          id: runId,
+          prompt: "qualify",
+          model: SEED_MODELS[0],
+          engine: "opencode",
+          parentRunId: null,
+          threadId: runId,
+          repos: [],
+          resolvedResources: [],
+          memoryScope: "org",
+          skillId: null,
+          skillVersion: null,
+          skillContentHash: null,
+          commandName: null,
+          commandProvider: null,
+          commandSessionId: null,
+          commandCatalogRevision: null,
+        },
+      }, testDb);
+      const [row] = await client.unsafe(`
+        select r.origin, a.priority
+        from runs r join run_admissions a on a.run_id = r.id
+        where r.id = '${runId}'`);
+      expect(row).toMatchObject({
+        origin: "internal:model-qualification",
+        priority: -100,
+      });
+      const [visibility] = await client.unsafe(`
+        select count(*)::int as count from runs
+        where org_id = '${orgId}' and origin is null`);
+      expect(Number(visibility?.count)).toBe(0);
+    } finally {
+      await client.unsafe(`delete from commands where run_id = '${runId}'`);
+      await client.unsafe(`delete from runs where id = '${runId}'`);
+    }
+  });
+
   test("migration seeds the v0.0.1 last-good lane without fabricated attempts", async () => {
     const snapshot = await loadFreeModelRegistry(FREE_MODEL_LANE, testDb);
     expect(snapshot.state).toMatchObject({
@@ -130,6 +210,56 @@ describe("free model registry repository", () => {
 
     const state = await loadCurrentFreeModelLane(FREE_MODEL_LANE, testDb);
     expect(state?.probesClaimedToday).toBe(1);
+  });
+
+  test("only one candidate lease is active globally across independent pools", async () => {
+    const firstModel = `test/global-owner-a-${crypto.randomUUID()}:free`;
+    const secondModel = `test/global-owner-b-${crypto.randomUUID()}:free`;
+    await insertCandidate(firstModel);
+    await insertCandidate(secondModel);
+    await client.unsafe(`
+      update free_model_candidates
+      set next_probe_at = case
+        when model_id in ('${firstModel}', '${secondModel}')
+          then now() - interval '1 second'
+        else now() + interval '1 day'
+      end`);
+
+    const [first, second] = await Promise.all([
+      claimDueFreeModelCandidates({ limit: 1, leaseMs: 60_000 }, dbA),
+      claimDueFreeModelCandidates({ limit: 1, leaseMs: 60_000 }, dbB),
+    ]);
+    expect([...first, ...second]).toHaveLength(1);
+    const blockedPool = first.length > 0 ? dbB : dbA;
+    await expect(claimDueFreeModelCandidates(
+      { limit: 1, leaseMs: 60_000 },
+      blockedPool,
+    )).resolves.toEqual([]);
+  });
+
+  test("a recent systemic failure pauses claims durably across replicas", async () => {
+    const modelId = `test/system-pause-${crypto.randomUUID()}:free`;
+    await insertCandidate(modelId);
+    await makeOnlyDue(modelId);
+    await client.unsafe(`
+      update free_model_registry_state
+      set last_publish_outcome = 'preserved_system_failure',
+        last_publish_at = now()
+      where lane = 'opencode_free'`);
+
+    await expect(claimDueFreeModelCandidates(
+      { limit: 1, leaseMs: 60_000 },
+      dbA,
+    )).resolves.toEqual([]);
+
+    await client.unsafe(`
+      update free_model_registry_state
+      set last_publish_at = now() - interval '31 minutes'
+      where lane = 'opencode_free'`);
+    await expect(claimDueFreeModelCandidates(
+      { limit: 1, leaseMs: 60_000 },
+      dbB,
+    )).resolves.toHaveLength(1);
   });
 
   test("an expired lease is reclaimed and the stale worker cannot write", async () => {
@@ -305,6 +435,10 @@ describe("free model registry repository", () => {
       set probe_budget_day = ((now() at time zone 'UTC')::date - 1),
         probes_claimed_today = 1
       where lane = 'opencode_free'`);
+    await client.unsafe(`
+      update free_model_candidates
+      set claim_expires_at = now() - interval '1 second'
+      where claim_token is not null`);
     const afterReset = await claimDueFreeModelCandidates(
       { limit: 1, leaseMs: 60_000 },
       testDb,
@@ -355,6 +489,28 @@ describe("free model registry repository", () => {
     expect(advertised.map((row) => row.model_id)).toEqual([modelId]);
   });
 
+  test("evidence-based quarantine may publish an honest empty current lane", async () => {
+    const before = await loadCurrentFreeModelLane(FREE_MODEL_LANE, testDb);
+    if (!before) throw new Error("expected seeded lane");
+    const published = await publishFreeModelLane({
+      modelIds: [],
+      allowEmpty: true,
+      expectedGeneration: before.generation,
+    }, testDb);
+    expect(published).toMatchObject({
+      outcome: "published",
+      state: {
+        generation: before.generation + 1,
+        currentModelIds: [],
+        lastGoodModelIds: before.lastGoodModelIds,
+      },
+    });
+    const advertised = await client.unsafe(`
+      select count(*)::int as count from free_model_candidates
+      where advertised = true`);
+    expect(Number(advertised[0]?.count)).toBe(0);
+  });
+
   test("an unqualified publish fails without changing the current generation", async () => {
     const modelId = `test/unqualified-${crypto.randomUUID()}:free`;
     await insertCandidate(modelId);
@@ -367,5 +523,22 @@ describe("free model registry repository", () => {
       currentModelIds: before?.currentModelIds,
       lastGoodModelIds: before?.lastGoodModelIds,
     });
+  });
+
+  test("a stale publisher cannot overwrite a newer lane generation", async () => {
+    const before = await loadCurrentFreeModelLane(FREE_MODEL_LANE, testDb);
+    if (!before) throw new Error("expected seeded lane");
+    await client.unsafe(`
+      update free_model_registry_state
+      set generation = generation + 1
+      where lane = 'opencode_free'`);
+
+    await expect(publishFreeModelLane({
+      modelIds: [...SEED_MODELS],
+      expectedGeneration: before.generation,
+    }, testDb)).rejects.toThrow("free_model_publish_generation_conflict");
+    const after = await loadCurrentFreeModelLane(FREE_MODEL_LANE, testDb);
+    expect(after?.generation).toBe(before.generation + 1);
+    expect(after?.currentModelIds).toEqual(before.currentModelIds);
   });
 });

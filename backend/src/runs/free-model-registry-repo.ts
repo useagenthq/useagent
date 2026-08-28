@@ -15,12 +15,53 @@ export const FREE_MODEL_LANE = "opencode_free";
 export const DEFAULT_DAILY_FREE_MODEL_PROBE_BUDGET = 24;
 export const FREE_MODEL_QUALIFICATION_STREAK = 2;
 export const FREE_MODEL_DISQUALIFICATION_STREAK = 2;
+export const FREE_MODEL_SYSTEM_PAUSE_MS = 30 * 60_000;
 
 export interface ClaimedFreeModelCandidate {
   readonly modelId: string;
   readonly provider: string;
+  readonly state: FreeModelCandidateRow["state"];
+  readonly successStreak: number;
+  readonly failureStreak: number;
+  readonly everQualified: boolean;
   readonly claimToken: string;
   readonly claimExpiresAt: Date;
+}
+
+export interface DiscoveredFreeModelCandidate {
+  readonly modelId: string;
+  readonly provider: string;
+  readonly source: string;
+}
+
+/** Persist catalog discovery without resetting qualification or retry state. */
+export async function upsertDiscoveredFreeModelCandidates(
+  candidates: readonly DiscoveredFreeModelCandidate[],
+  exec: Executor = db,
+): Promise<number> {
+  const unique = [...new Map(
+    candidates
+      .filter((candidate) => candidate.modelId.trim())
+      .map((candidate) => [candidate.modelId, candidate]),
+  ).values()];
+  if (unique.length === 0) return 0;
+  const now = new Date();
+  const rows = await exec
+    .insert(freeModelCandidates)
+    .values(unique.map((candidate) => ({
+      modelId: candidate.modelId,
+      provider: candidate.provider,
+      source: candidate.source,
+      nextProbeAt: now,
+    })))
+    .onConflictDoUpdate({
+      target: freeModelCandidates.modelId,
+      // Preserve probe scheduling, claims, streaks, and first-source provenance.
+      // updated_at is only a bounded freshness heartbeat for the catalog row.
+      set: { updatedAt: now },
+    })
+    .returning({ modelId: freeModelCandidates.modelId });
+  return rows.length;
 }
 
 export interface ClaimDueFreeModelCandidatesInput {
@@ -51,7 +92,10 @@ export async function claimDueFreeModelCandidates(
     const [budget] = await tx.execute(sql`
       select daily_probe_budget, probes_claimed_today,
         probe_budget_day::text as probe_budget_day,
-        ((now() at time zone 'UTC')::date)::text as utc_day
+        ((now() at time zone 'UTC')::date)::text as utc_day,
+        last_publish_outcome,
+        last_publish_at > now() - (${FREE_MODEL_SYSTEM_PAUSE_MS}::bigint * interval '1 millisecond')
+          as system_paused
       from free_model_registry_state
       where lane = ${lane}
       for update`);
@@ -70,6 +114,23 @@ export async function claimDueFreeModelCandidates(
           updated_at = now()
         where lane = ${lane}`);
     }
+
+    if (
+      budget.last_publish_outcome === "preserved_system_failure" &&
+      budget.system_paused === true
+    ) {
+      return [];
+    }
+
+    // The registry-row lock serializes this check with every other replica's
+    // claim transaction. One unexpired candidate lease therefore means one
+    // globally active provider probe, not one active probe per process.
+    const [active] = await tx.execute(sql`
+      select exists(
+        select 1 from free_model_candidates
+        where claim_token is not null and claim_expires_at > now()
+      ) as active`);
+    if (active?.active === true) return [];
 
     const claimLimit = Math.min(
       input.limit,
@@ -93,7 +154,8 @@ export async function claimDueFreeModelCandidates(
         limit ${claimLimit}
         for update skip locked
       )
-      returning candidate.model_id, candidate.provider,
+      returning candidate.model_id, candidate.provider, candidate.state,
+        candidate.success_streak, candidate.failure_streak, candidate.ever_qualified,
         candidate.claim_token, candidate.claim_expires_at`);
 
     if (rows.length > 0) {
@@ -106,6 +168,10 @@ export async function claimDueFreeModelCandidates(
     return rows.map((row) => ({
       modelId: String(row.model_id),
       provider: String(row.provider),
+      state: row.state as FreeModelCandidateRow["state"],
+      successStreak: Number(row.success_streak),
+      failureStreak: Number(row.failure_streak),
+      everQualified: Boolean(row.ever_qualified),
       claimToken: String(row.claim_token),
       claimExpiresAt: new Date(String(row.claim_expires_at)),
     }));
@@ -232,7 +298,9 @@ export async function recordFreeModelProbeResult(
 export interface PublishFreeModelLaneInput {
   readonly modelIds: readonly string[];
   readonly systemFailure?: boolean;
+  readonly allowEmpty?: boolean;
   readonly lane?: string;
+  readonly expectedGeneration?: number;
 }
 
 export type PublishFreeModelLaneResult =
@@ -260,12 +328,18 @@ export async function publishFreeModelLane(
 
   return database.transaction(async (tx) => {
     const [locked] = await tx.execute(sql`
-      select lane from free_model_registry_state where lane = ${lane} for update`);
+      select lane, generation from free_model_registry_state where lane = ${lane} for update`);
     if (!locked) throw new Error("free_model_registry_state_missing");
+    if (
+      input.expectedGeneration !== undefined &&
+      Number(locked.generation) !== input.expectedGeneration
+    ) {
+      throw new Error("free_model_publish_generation_conflict");
+    }
 
     const preservedOutcome = input.systemFailure
       ? "preserved_system_failure"
-      : modelIds.length === 0
+      : modelIds.length === 0 && !input.allowEmpty
         ? "preserved_empty"
         : null;
     if (preservedOutcome) {
@@ -282,23 +356,32 @@ export async function publishFreeModelLane(
       return { outcome: preservedOutcome, state };
     }
 
-    const qualified = await tx.execute(sql`
-      select model_id from free_model_candidates
-      where model_id in (${sql.join(modelIds.map((id) => sql`${id}`), sql`, `)})
-        and state = 'qualified'
-        and ever_qualified = true`);
-    if (qualified.length !== modelIds.length) {
-      throw new Error("free_model_publish_contains_unqualified_candidate");
+    if (modelIds.length > 0) {
+      const qualified = await tx.execute(sql`
+        select model_id from free_model_candidates
+        where model_id in (${sql.join(modelIds.map((id) => sql`${id}`), sql`, `)})
+          and state = 'qualified'
+          and ever_qualified = true`);
+      if (qualified.length !== modelIds.length) {
+        throw new Error("free_model_publish_contains_unqualified_candidate");
+      }
     }
 
-    await tx.execute(sql`
-      update free_model_candidates
-      set advertised = model_id in (
-          ${sql.join(modelIds.map((id) => sql`${id}`), sql`, `)}
-        ),
-        updated_at = now()
-      where advertised = true
-        or model_id in (${sql.join(modelIds.map((id) => sql`${id}`), sql`, `)})`);
+    if (modelIds.length === 0) {
+      await tx.execute(sql`
+        update free_model_candidates
+        set advertised = false, updated_at = now()
+        where advertised = true`);
+    } else {
+      await tx.execute(sql`
+        update free_model_candidates
+        set advertised = model_id in (
+            ${sql.join(modelIds.map((id) => sql`${id}`), sql`, `)}
+          ),
+          updated_at = now()
+        where advertised = true
+          or model_id in (${sql.join(modelIds.map((id) => sql`${id}`), sql`, `)})`);
+    }
 
     const encodedModelIds = JSON.stringify(modelIds);
     const [state] = await tx
@@ -306,7 +389,9 @@ export async function publishFreeModelLane(
       .set({
         generation: sql`${freeModelRegistryState.generation} + 1`,
         currentModelIds: sql`${encodedModelIds}::jsonb`,
-        lastGoodModelIds: sql`${encodedModelIds}::jsonb`,
+        ...(modelIds.length > 0
+          ? { lastGoodModelIds: sql`${encodedModelIds}::jsonb` }
+          : {}),
         lastPublishOutcome: "published",
         lastPublishAt: sql`now()`,
         updatedAt: sql`now()`,

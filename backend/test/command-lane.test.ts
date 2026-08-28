@@ -16,6 +16,9 @@ import { claimNextRun, settleCommandForRun } from "../src/commands/dispatch";
 import { completeRun, getRunWithSteps, getThreadForRun } from "../src/runs/repo";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
 import { createChildSession } from "../src/runs/child-sessions";
+import { subscribeOrg, type OrgChange } from "../src/runs/org-signals";
+import { beginEngineRun } from "../src/worker";
+import { finalizeRun } from "../src/runs/finalize";
 
 // Mailbox primitives for the durable per-session command lane. These drive the
 // claim/settle CAS directly (no worker execution) so ordering, one-in-flight,
@@ -42,6 +45,31 @@ async function retire(threadId: string): Promise<void> {
 }
 
 describe("durable command lane", () => {
+  test("internal qualification acceptance emits no customer org run signal", async () => {
+    const changes: OrgChange[] = [];
+    const unsubscribe = subscribeOrg(ORG, (change) => changes.push(change));
+    const runId = crypto.randomUUID();
+    try {
+      expect(await acceptInternalRunCommand({
+        ...commandForTest(
+          runId,
+          `model-qualification:${crypto.randomUUID()}`,
+          runIntentForTest("internal model qualification"),
+        ),
+        origin: "internal:model-qualification",
+        priority: -100,
+      })).toMatchObject({ status: "created", runId });
+      await beginEngineRun(runId, runId, ORG, "internal:model-qualification");
+      await finalizeRun(runId, "completed", "qualified", 1);
+      expect(changes.some(
+        (change) => change.type === "run" && change.runId === runId,
+      )).toBe(false);
+    } finally {
+      unsubscribe();
+      await retire(runId);
+    }
+  });
+
   test("trusted internal acceptance persists and replays only within the same origin", async () => {
     const runId = crypto.randomUUID();
     const key = `shared:${crypto.randomUUID()}`;

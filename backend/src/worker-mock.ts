@@ -1,6 +1,7 @@
 import type { StepKind } from "./db/schema.js";
 import { finalizeRun } from "./runs/finalize.js";
 import { publishRunLifecycleChange } from "./runs/org-signals.js";
+import { isInternalRunOrigin } from "./runs/origin.js";
 import { getRun, insertStep, setRunStatus } from "./runs/repo.js";
 import { bus, channel, type BusEvent } from "./worker-events.js";
 
@@ -59,12 +60,15 @@ export async function runMock(
   runId: string,
   threadId: string,
   orgId: string | null,
+  origin: string | null,
   signal: AbortSignal,
   wasCancelled: () => string | null,
 ): Promise<void> {
   const startedAt = Date.now();
   await setRunStatus(runId, "running");
-  publishRunLifecycleChange({ orgId, threadId, runId, kind: "running" });
+  if (!isInternalRunOrigin(origin)) {
+    publishRunLifecycleChange({ orgId, threadId, runId, kind: "running" });
+  }
 
   let idx = 0;
   try {
