@@ -13,6 +13,7 @@ import {
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
+  MAX_DURABLE_BATCH_TASKS,
   MAX_FLEET_CONCURRENCY,
   MAX_FLEET_TASKS,
   type FleetClient,
@@ -59,6 +60,29 @@ export const FLEET_TOOLS: Tool[] = [
         qc: { type: "string", description: "Optional verifier prompt to reuse with get_run_result." },
       },
       required: ["tasks"],
+    },
+  },
+  {
+    name: "dispatch_batch",
+    description:
+      "Atomically accept 1-20 tasks as one durable server-owned batch. Requires an idempotency key and returns the ordered child run queue immediately.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tasks: {
+          type: "array",
+          items: TASK_SHAPE,
+          minItems: 1,
+          maxItems: MAX_DURABLE_BATCH_TASKS,
+          description: "Tasks to accept in caller order.",
+        },
+        idempotencyKey: {
+          type: "string",
+          minLength: 1,
+          description: "Stable key for safe lost-response retries.",
+        },
+      },
+      required: ["tasks", "idempotencyKey"],
     },
   },
   {
@@ -152,6 +176,27 @@ export async function handleToolCall(
       );
       const qc = str(args, "qc");
       return jsonResult(qc ? { runs, qc } : { runs });
+    }
+    case "dispatch_batch": {
+      const rawTasks = Array.isArray(args.tasks) ? args.tasks : null;
+      if (!rawTasks) return errorResult("dispatch_batch needs a `tasks` array");
+      if (rawTasks.length < 1 || rawTasks.length > MAX_DURABLE_BATCH_TASKS) {
+        return errorResult(
+          `dispatch_batch accepts between 1 and ${MAX_DURABLE_BATCH_TASKS} tasks`,
+        );
+      }
+      const tasks = rawTasks.map(coerceTask);
+      if (tasks.some((task) => task === null)) {
+        return errorResult('every task needs a non-empty "prompt"');
+      }
+      const idempotencyKey = str(args, "idempotencyKey");
+      if (!idempotencyKey) return errorResult("dispatch_batch needs an `idempotencyKey`");
+      return jsonResult(
+        await client.dispatchBatch(
+          tasks.filter((task): task is NonNullable<typeof task> => task !== null),
+          { idempotencyKey },
+        ),
+      );
     }
     case "get_run_result": {
       const runId = str(args, "runId");

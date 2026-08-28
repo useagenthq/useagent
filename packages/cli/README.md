@@ -71,6 +71,7 @@ Start a stdio MCP server exposing the fleet to a local agent. Tools:
 
 - `dispatch_task` - dispatch one task, return the run id immediately.
 - `dispatch_parallel` - dispatch many (bounded concurrency), return run ids immediately.
+- `dispatch_batch` - atomically accept 1-20 tasks as one durable idempotent batch.
 - `get_run_result` - settle-aware collect; pass `qc` to also run an in-thread verifier.
 - `list_recent_runs` - recent runs for the org.
 

@@ -1,12 +1,13 @@
 // Fleet dispatch: fan monotonous tasks out to a hosted org from a LOCAL machine and
-// collect verified results. A thin, authenticated layer OVER the existing AgentClient
-// (src/api.ts) - it adds NO new wire protocol. Every run it submits is a normal
-// POST /api/runs; every result it reads is the normal thread endpoint; every QC check
-// is itself a normal reply run recorded in the SAME ledger thread. Runtime-neutral
+// collect verified results. The legacy lane remains a thin layer over POST /api/runs;
+// the opt-in durable lane accepts one server-owned batch through /api/fleet/batches.
+// Every result still reads the normal thread endpoint and every QC check is itself a
+// normal reply run recorded in the SAME ledger thread. Runtime-neutral
 // (inject fetch, or default to the ambient global) so it runs in a CLI, a worker, or a
 // browser without pulling in Node, provider, or product code.
 
 import {
+  AgentClientError,
   createAgentClient,
   type FetchLike,
   type ResponseLike,
@@ -59,6 +60,34 @@ export interface DispatchManyOptions {
   idempotencyPrefix?: string;
 }
 
+export interface DispatchBatchOptions {
+  /** Required batch-level key. Retrying the same request with this key is safe. */
+  idempotencyKey: string;
+}
+
+export interface FleetBatchQueue {
+  readonly state: string | null;
+  readonly reason: string | null;
+}
+
+export interface FleetBatchRun {
+  readonly ordinal: number;
+  readonly runId: string;
+  readonly status: string;
+  readonly queue: FleetBatchQueue;
+  readonly url: string;
+}
+
+export interface FleetBatch {
+  readonly batchId: string;
+  readonly status: string;
+  readonly createdAt: string;
+  /** True only when POST returned a previously accepted idempotent request. */
+  readonly replayed: boolean;
+  /** Child runs in caller-request order. */
+  readonly runs: readonly FleetBatchRun[];
+}
+
 export interface AwaitSettledOptions {
   /** Give up after this long and return status "timeout" (default 15 min). */
   timeoutMs?: number;
@@ -109,6 +138,10 @@ export interface FleetClient {
   dispatch(task: FleetTask): Promise<DispatchedRun>;
   /** Fan tasks out with bounded concurrency. Resolves per-task; never rejects wholesale. */
   dispatchMany(tasks: readonly FleetTask[], options?: DispatchManyOptions): Promise<DispatchOutcome[]>;
+  /** Atomically accept 1-20 tasks as one durable server-owned batch. */
+  dispatchBatch(tasks: readonly FleetTask[], options: DispatchBatchOptions): Promise<FleetBatch>;
+  /** Read the durable batch and its ordered child queue state. */
+  getBatch(batchId: string): Promise<FleetBatch>;
   /** One thread read: the run's current status + answer, without waiting. */
   getRun(runId: string): Promise<RunSnapshot>;
   /** Poll the thread endpoint until the run is completed/failed (or times out). */
@@ -128,6 +161,7 @@ export const DEFAULT_BASE_URL = "https://app.useagent.org";
 export const DEFAULT_CONCURRENCY = 4;
 export const MAX_FLEET_CONCURRENCY = 20;
 export const MAX_FLEET_TASKS = 100;
+export const MAX_DURABLE_BATCH_TASKS = 20;
 export const DEFAULT_SETTLE_TIMEOUT_MS = 15 * 60 * 1000;
 export const DEFAULT_POLL_MS = 3 * 1000;
 
@@ -186,6 +220,69 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+function batchTaskBody(task: FleetTask): Record<string, unknown> {
+  const body: Record<string, unknown> = { prompt: task.prompt };
+  if (task.engine) body.engine = task.engine;
+  if (task.model) body.model = task.model;
+  if (task.repos) body.repos = task.repos;
+  return body;
+}
+
+function decodeFleetBatch(
+  value: unknown,
+  urlFor: (runId: string) => string,
+): FleetBatch | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.batch_id !== "string" ||
+    typeof row.status !== "string" ||
+    typeof row.created_at !== "string" ||
+    typeof row.replayed !== "boolean" ||
+    !Array.isArray(row.runs)
+  ) return null;
+  const runs: FleetBatchRun[] = [];
+  for (const raw of row.runs) {
+    if (!raw || typeof raw !== "object") return null;
+    const run = raw as Record<string, unknown>;
+    if (
+      !Number.isInteger(run.ordinal) ||
+      (run.ordinal as number) < 0 ||
+      typeof run.run_id !== "string" ||
+      typeof run.status !== "string"
+    ) return null;
+    const rawQueue = run.queue;
+    if (rawQueue !== null && (!rawQueue || typeof rawQueue !== "object")) return null;
+    const queue = rawQueue as Record<string, unknown> | null;
+    if (
+      (queue && typeof queue.state !== "string") ||
+      (queue &&
+        queue.reason !== null &&
+        queue.reason !== undefined &&
+        typeof queue.reason !== "string")
+    ) return null;
+    runs.push({
+      ordinal: run.ordinal as number,
+      runId: run.run_id,
+      status: run.status,
+      queue: {
+        state: queue && typeof queue.state === "string" ? queue.state : null,
+        reason: queue && typeof queue.reason === "string" ? queue.reason : null,
+      },
+      url: urlFor(run.run_id),
+    });
+  }
+  runs.sort((a, b) => a.ordinal - b.ordinal);
+  if (runs.some((run, ordinal) => run.ordinal !== ordinal)) return null;
+  return {
+    batchId: row.batch_id,
+    status: row.status,
+    createdAt: row.created_at,
+    replayed: row.replayed,
+    runs,
+  };
+}
+
 /**
  * Build a fleet client bound to one hosted org + API key. The key is attached as a
  * plain `Authorization: Bearer <key>` header on every request (the contract the
@@ -193,8 +290,9 @@ function errorMessage(e: unknown): string {
  */
 export function createFleetClient(config: FleetClientConfig): FleetClient {
   const baseUrl = (config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const fetcher = config.fetch ?? defaultFetch;
   const agent = createAgentClient({
-    fetch: config.fetch ?? defaultFetch,
+    fetch: fetcher,
     baseUrl,
     headers: () => ({ Authorization: `Bearer ${config.apiKey}` }),
   });
@@ -239,6 +337,67 @@ export function createFleetClient(config: FleetClientConfig): FleetClient {
       }
     });
   }
+
+  async function batchRequest(
+    path: string,
+    init: { method?: string; body?: unknown; idempotencyKey?: string } = {},
+  ): Promise<FleetBatch> {
+    const headers: Record<string, string> = { Authorization: `Bearer ${config.apiKey}` };
+    if (init.body !== undefined) headers["content-type"] = "application/json";
+    if (init.idempotencyKey !== undefined) headers["Idempotency-Key"] = init.idempotencyKey;
+    let response: ResponseLike;
+    try {
+      response = await fetcher(`${baseUrl}${path}`, {
+        method: init.method ?? "GET",
+        headers,
+        body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+      });
+    } catch (e) {
+      throw new AgentClientError(
+        "network_error",
+        `request to ${path} failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+    if (!response.ok) {
+      throw new AgentClientError(
+        "http_error",
+        `${init.method ?? "GET"} ${path} -> HTTP ${response.status}`,
+        response.status,
+      );
+    }
+    let json: unknown;
+    try {
+      json = await response.json();
+    } catch (e) {
+      throw new AgentClientError(
+        "decode_error",
+        `${path} returned an undecodable body: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+    const decoded = decodeFleetBatch(json, urlFor);
+    if (!decoded) throw new AgentClientError("decode_error", `${path} returned an invalid fleet batch`);
+    return decoded;
+  }
+
+  async function dispatchBatch(
+    tasks: readonly FleetTask[],
+    options: DispatchBatchOptions,
+  ): Promise<FleetBatch> {
+    if (tasks.length < 1 || tasks.length > MAX_DURABLE_BATCH_TASKS) {
+      throw new RangeError(`a durable fleet batch must contain between 1 and ${MAX_DURABLE_BATCH_TASKS} tasks`);
+    }
+    if (!options.idempotencyKey.trim()) {
+      throw new RangeError("a durable fleet batch needs an idempotency key");
+    }
+    return batchRequest("/api/fleet/batches", {
+      method: "POST",
+      body: { tasks: tasks.map(batchTaskBody) },
+      idempotencyKey: options.idempotencyKey,
+    });
+  }
+
+  const getBatch = (batchId: string): Promise<FleetBatch> =>
+    batchRequest(`/api/fleet/batches/${encodeURIComponent(batchId)}`);
 
   async function getRun(runId: string): Promise<RunSnapshot> {
     const snapshot = await agent.getThread(runId);
@@ -297,5 +456,16 @@ export function createFleetClient(config: FleetClientConfig): FleetClient {
   const listRecent = (limit = 20): Promise<readonly ApiRunSummary[]> =>
     agent.listRuns({ limit });
 
-  return { baseUrl, dispatch, dispatchMany, getRun, awaitSettled, verify, listRecent, urlFor };
+  return {
+    baseUrl,
+    dispatch,
+    dispatchMany,
+    dispatchBatch,
+    getBatch,
+    getRun,
+    awaitSettled,
+    verify,
+    listRecent,
+    urlFor,
+  };
 }
