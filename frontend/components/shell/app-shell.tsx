@@ -21,9 +21,9 @@ export interface AppShellProps {
 /**
  * Full-bleed application frame shared by threads and Library pages. The global
  * header and selected sidebar stay fixed while the page owns the scrollable
- * workspace. The sidebar renders as a BoardUI floating panel inset from the
- * viewport edge (see sidebar-nav.tsx); the frame itself is never wrapped in a
- * decorative floating card.
+ * workspace. The expanded sidebar is a flat edge-to-edge
+ * column (see sidebar-nav.tsx); only the collapsed compact rail floats. The
+ * frame itself is never wrapped in a decorative floating card.
  *
  * `<main>` is a bounded scroll container (`flex-1 min-h-0 overflow-y-auto`), so
  * page content flows and scrolls, while a full-height child (e.g. the session
@@ -98,7 +98,7 @@ export function AppShell({ sidebar, children, collapseSidebarAtTablet = false }:
           type="button"
           onClick={collapseSidebar}
           aria-label="Collapse navigation"
-          className="absolute left-[12.5rem] top-6 z-40 hidden size-8 items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none transition-colors hover:bg-background-secondary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring md:flex"
+          className="absolute left-[13.5rem] top-[8px] z-40 hidden size-8 items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none transition-colors hover:bg-background-secondary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring md:flex"
         >
           <RiSidebarFoldLine className="size-4" aria-hidden />
         </button>
