@@ -43,11 +43,9 @@ import { OrbBootIndicator } from "@/components/chat/orb-boot-indicator";
 import { type PendingQuestion, selectPendingQuestion } from "@/components/chat/question-state";
 import {
   RAIL_DEFAULT,
-  RAIL_MAX,
-  RAIL_MIN,
   RailResizer,
-  railWidthForKey,
-  railWidthFromPointer,
+  useRailWidth,
+  useSplitTooNarrow,
 } from "@/components/chat/rail-resizer";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import { SubagentChips } from "@/components/chat/subagent-pane";
@@ -527,73 +525,21 @@ export function SessionView({
   // CLOSED (chat full-bleed): an explicit open - the thread bar's opener or a
   // workpiece auto-open, both of which set railOverride - slides it up.
   const isMobile = useIsMobile();
-  const mobileSurfacesOpen = railOverride ?? false;
-  // Rail resize: a dragger between the conversation and the rail (md+). Width
-  // in px, persisted per browser; null → the 32% default. Loaded in an effect
-  // (not the initializer) so SSR and first client render agree.
   const bodyRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLElement>(null);
-  const [railWidth, setRailWidth] = useState<number | null>(null);
-  useEffect(() => {
-    const saved = Number(localStorage.getItem("useagent.rail-width"));
-    if (!Number.isFinite(saved) || saved < RAIL_MIN) return;
-    // Apply the saved width through the same 0.6-of-container ceiling as the
-    // drag/keyboard paths: a width persisted on a wide desktop must never
-    // starve the conversation on a narrower window (tablet split).
-    const bounds = bodyRef.current?.getBoundingClientRect();
-    const containerMax = bounds ? Math.min(bounds.width * 0.6, RAIL_MAX) : RAIL_MAX;
-    setRailWidth(Math.round(Math.min(saved, containerMax)));
-  }, []);
-  // The drag itself is ZERO-React: each (rAF-coalesced) pointer move writes the
-  // rail's `--rail-w` var imperatively against container bounds cached once per
-  // drag - no layout read, no setState, no re-render per move. React state (and
-  // localStorage) commit ONCE on pointerup via persistRailWidth; the committed
-  // style prop then re-writes the same var value, so nothing jumps.
-  const dragBoundsRef = useRef<DOMRect | null>(null);
-  const dragWidthRef = useRef<number | null>(null);
-  const resizeRailFromPointer = useCallback((pointerX: number) => {
-    dragBoundsRef.current ??= bodyRef.current?.getBoundingClientRect() ?? null;
-    const bounds = dragBoundsRef.current;
-    if (!bounds) return;
-    const width = railWidthFromPointer({
-      containerRight: bounds.right,
-      containerWidth: bounds.width,
-      pointerX,
-    });
-    dragWidthRef.current = width;
-    railRef.current?.style.setProperty("--rail-w", `${width}px`);
-  }, []);
-  const persistRailWidth = useCallback(() => {
-    dragBoundsRef.current = null;
-    const width = dragWidthRef.current;
-    dragWidthRef.current = null;
-    if (width === null) return; // pointerdown without movement - nothing to commit
-    setRailWidth(width);
-    localStorage.setItem("useagent.rail-width", String(width));
-  }, []);
-  const resetRailWidth = useCallback(() => {
-    dragBoundsRef.current = null;
-    dragWidthRef.current = null;
-    // Clear the imperative var too: a drag that was never committed lives only
-    // on the element, where React's style diffing would not remove it.
-    railRef.current?.style.removeProperty("--rail-w");
-    setRailWidth(null);
-    localStorage.removeItem("useagent.rail-width");
-  }, []);
-  function resizeRailWithKeyboard(key: string) {
-    const containerMax = bodyRef.current
-      ? Math.min(bodyRef.current.getBoundingClientRect().width * 0.6, RAIL_MAX)
-      : RAIL_MAX;
-    const ratioDefault = bodyRef.current
-      ? Math.round(bodyRef.current.getBoundingClientRect().width * 0.286)
-      : RAIL_DEFAULT;
-    const current = railWidth ?? Math.min(ratioDefault, containerMax);
-    const next = railWidthForKey({ key, current, maximum: containerMax });
-    if (next === null) return;
-    const rounded = Math.round(next);
-    setRailWidth(rounded);
-    localStorage.setItem("useagent.rail-width", String(rounded));
-  }
+  // The sheet's md+ trigger is INSUFFICIENT WIDTH, not a second breakpoint:
+  // when the split container cannot hold the conversation floor plus the rail
+  // minimum side by side (SPLIT_MIN, e.g. the sidebar re-expanded on a
+  // tablet-width window), the same slide-over takes over. Below md the
+  // max-md:* classes own first paint; the measurement only extends the
+  // trigger upward.
+  const splitTooNarrow = useSplitTooNarrow(bodyRef);
+  const surfacesSheet = isMobile || splitTooNarrow;
+  const sheetSurfacesOpen = railOverride ?? false;
+  // Rail resize: a dragger between the conversation and the rail (side-by-side
+  // only); the width state + zero-React drag mechanics live in rail-resizer.
+  const { railWidth, resizeRailFromPointer, persistRailWidth, resetRailWidth, resizeRailWithKeyboard } =
+    useRailWidth({ containerRef: bodyRef, railRef });
   // Canonical workpieces opened from the conversation into the Workspace surface.
   // Every open workpiece stays mounted (visibility-toggled) so a tab switch never
   // drops in-flight edits; the Workspace tab appears only once one is open.
@@ -626,10 +572,10 @@ export function SessionView({
   const railTab =
     railTabOverride ??
     (hasSubagents ? "agents" : hasFiles ? "artifacts" : hasCommands ? "terminal" : null);
-  // Mobile sheet grammar: the chooser card grid is a md+ surface - the sheet's
-  // pill tabs ARE the chooser on a phone, so opening on a quiet thread lands on
+  // Sheet grammar: the chooser card grid is a side-by-side surface - the
+  // sheet's pill tabs ARE the chooser, so opening on a quiet thread lands on
   // a concrete tab (Files); the pane body's null branch falls back the same way.
-  const openMobileSurfaces = useCallback(() => {
+  const openSurfacesSheet = useCallback(() => {
     setRailOverride(true);
     if (railTab === null) setRailTabOverride("artifacts");
   }, [railTab]);
@@ -715,20 +661,20 @@ export function SessionView({
     window.addEventListener("keydown", restoreOnEscape);
     return () => window.removeEventListener("keydown", restoreOnEscape);
   }, [railExpanded]);
-  // Expand/Restore is md+ grammar; entering the phone layout drops it so the
+  // Expand/Restore is side-by-side grammar; entering the sheet drops it so the
   // conversation (which railExpanded hides) can never be stranded off-screen.
   useEffect(() => {
-    if (isMobile && railExpanded) setRailExpanded(false);
-  }, [isMobile, railExpanded]);
-  // The mobile sheet dismisses like the nav drawer: Close X, backdrop, or Escape.
+    if (surfacesSheet && railExpanded) setRailExpanded(false);
+  }, [surfacesSheet, railExpanded]);
+  // The sheet dismisses like the nav drawer: Close X, backdrop, or Escape.
   useEffect(() => {
-    if (!isMobile || !mobileSurfacesOpen) return;
+    if (!surfacesSheet || !sheetSurfacesOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setRailOverride(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [isMobile, mobileSurfacesOpen]);
+  }, [surfacesSheet, sheetSurfacesOpen]);
 
   // Slash-command catalog for the reply composer's "/" autocomplete - the SELECTED engine's
   // real native commands, capability-driven (no provider-name gate). Authoritative source is
@@ -844,18 +790,18 @@ export function SessionView({
               {/* Status pill + New session removed (user 2026-08-23): run state
                   already lives in the composer/timeline and New thread in the
                   sidebar - the header stays quiet. Stop remains the composer's. */}
-              {/* Below md the surfaces rail is a slide-over sheet; this is its
-                  opener (the rail's own reopen strip covers md+). */}
-              {hasRuntimeSurfaces && !mobileSurfacesOpen && (
+              {/* In sheet mode (below md, or a too-narrow md+ split) this is
+                  the rail's opener (the reopen strip covers side-by-side). */}
+              {hasRuntimeSurfaces && !sheetSurfacesOpen && (
                 <Button
                   variant="ghost"
                   size="small"
                   iconOnly
                   leadingIcon={RiLayoutRightLine}
-                  onClick={openMobileSurfaces}
+                  onClick={openSurfacesSheet}
                   title="Open surfaces panel"
                   aria-label="Open surfaces panel"
-                  className="md:hidden"
+                  className={splitTooNarrow ? undefined : "md:hidden"}
                 />
               )}
             </div>
@@ -934,7 +880,7 @@ export function SessionView({
           )}
         </section>
 
-        {railOpen && !railExpanded && (
+        {railOpen && !railExpanded && !splitTooNarrow && (
           <RailResizer
             value={railWidth ?? RAIL_DEFAULT}
             onMove={resizeRailFromPointer}
@@ -944,13 +890,16 @@ export function SessionView({
           />
         )}
 
-        {/* Sheet backdrop (<md only): same dismiss grammar as the nav drawer. */}
-        {railOpen && mobileSurfacesOpen && (
+        {/* Sheet backdrop: same dismiss grammar as the nav drawer. */}
+        {railOpen && sheetSurfacesOpen && (
           <button
             type="button"
             aria-label="Close surfaces panel"
             onClick={() => setRailOverride(false)}
-            className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
+            className={cx(
+              "fixed inset-0 z-40 bg-black/50 backdrop-blur-sm",
+              !splitTooNarrow && "md:hidden",
+            )}
           />
         )}
 
@@ -960,8 +909,8 @@ export function SessionView({
           // is dropped so this panel owns the single card edge).
           <section
             ref={railRef}
-            inert={isMobile && !mobileSurfacesOpen}
-            aria-hidden={isMobile && !mobileSurfacesOpen ? true : undefined}
+            inert={surfacesSheet && !sheetSurfacesOpen}
+            aria-hidden={surfacesSheet && !sheetSurfacesOpen ? true : undefined}
             style={
               railWidth !== null
                 ? ({ "--rail-w": `${railWidth}px` } as React.CSSProperties)
@@ -982,16 +931,27 @@ export function SessionView({
               // safe-area padded, pill-tab header unchanged) with a translate-y
               // open/close transition per the subagent-pane mechanics.
               "max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-50 max-md:h-[85dvh] max-md:rounded-t-2xl max-md:border-t max-md:border-border-button-default max-md:pb-[env(safe-area-inset-bottom)] max-md:transition-transform max-md:duration-300 max-md:ease-out",
-              mobileSurfacesOpen
+              sheetSurfacesOpen
                 ? "max-md:translate-y-0"
                 : "max-md:pointer-events-none max-md:translate-y-full",
-              railExpanded
-                ? "flex-1 md:w-auto"
-                : // Width always reads the var (drag writes it imperatively even
-                  // before any committed state); 360px is the uncustomized default.
-                  // The calc ceiling pairs with the conversation's md:min-w-80
-                  // floor so a persisted width can never overflow the split.
-                  "md:w-[var(--rail-w,28.6%)] md:max-w-[calc(100%-20rem)] md:shrink-0",
+              // A too-narrow md+ split (measured, not a breakpoint) puts the
+              // rail into the SAME slide-over sheet grammar the phone uses.
+              splitTooNarrow
+                ? cx(
+                    "fixed inset-x-0 bottom-0 z-50 h-[85dvh] rounded-t-2xl border-t border-border-button-default pb-[env(safe-area-inset-bottom)] transition-transform duration-300 ease-out",
+                    sheetSurfacesOpen
+                      ? "translate-y-0"
+                      : "pointer-events-none translate-y-full",
+                  )
+                : railExpanded
+                  ? "flex-1 md:w-auto"
+                  : // Width always reads the var (drag writes it imperatively even
+                    // before any committed state); the max() floor keeps the rail
+                    // at the 360px (22.5rem) uncustomized default instead of
+                    // letting the 28.6% share crush the terminal on a narrow
+                    // split. The calc ceiling pairs with the conversation's
+                    // md:min-w-80 floor so a persisted width can never overflow.
+                    "md:w-[max(22.5rem,var(--rail-w,28.6%))] md:max-w-[calc(100%-20rem)] md:shrink-0",
             )}
           >
             <div className="@container border-border-button-default/50 flex h-12 shrink-0 items-center gap-2 border-b px-2">
@@ -1091,7 +1051,7 @@ export function SessionView({
                 }
                 aria-pressed={railExpanded}
                 aria-keyshortcuts={railExpanded ? "Escape" : undefined}
-                className="hidden shrink-0 md:flex"
+                className={cx("hidden shrink-0", !splitTooNarrow && "md:flex")}
               />
               <Button
                 variant="ghost"
@@ -1104,14 +1064,14 @@ export function SessionView({
                 }}
                 title="Collapse panel"
                 aria-label="Collapse side panel"
-                className="hidden shrink-0 md:flex"
+                className={cx("hidden shrink-0", !splitTooNarrow && "md:flex")}
               />
-              {/* On the phone sheet a single Close X replaces Expand/Collapse. */}
+              {/* On the sheet a single Close X replaces Expand/Collapse. */}
               <CloseButton
                 size="md"
                 aria-label="Close surfaces panel"
                 onClick={() => setRailOverride(false)}
-                className="md:hidden"
+                className={splitTooNarrow ? undefined : "md:hidden"}
               />
             </div>
             <div className="relative min-h-0 flex-1">
@@ -1152,10 +1112,10 @@ export function SessionView({
               {railTab !== "desktop" && railTab !== "workspace" && (
                 <div className="absolute inset-0">
                   {railTab === null ? (
-                    // The chooser card grid is md+ grammar; in the phone sheet
-                    // the pill tabs ARE the chooser, so a null tab lands on
-                    // Files instead of a full-screen card grid.
-                    isMobile ? (
+                    // The chooser card grid is side-by-side grammar; in the
+                    // sheet the pill tabs ARE the chooser, so a null tab lands
+                    // on Files instead of a full-screen card grid.
+                    surfacesSheet ? (
                       <ArtifactsRail threadId={rootId} live={live} />
                     ) : (
                       <SurfaceChooser
@@ -1198,7 +1158,11 @@ export function SessionView({
             onClick={() => setRailOverride(true)}
             title="Open the editor/terminal panel"
             aria-label="Open side panel"
-            className="hidden shrink-0 flex-col items-center gap-3 rounded-2xl border border-border-button-default bg-background-primary-default px-2 py-4 text-foreground-icon-tertiary transition-colors hover:bg-background-primary-hover hover:text-foreground-icon-secondary md:flex"
+            className={cx(
+              "hidden shrink-0 flex-col items-center gap-3 rounded-2xl border border-border-button-default bg-background-primary-default px-2 py-4 text-foreground-icon-tertiary transition-colors hover:bg-background-primary-hover hover:text-foreground-icon-secondary",
+              // In sheet mode the thread bar's opener owns reopening.
+              !splitTooNarrow && "md:flex",
+            )}
           >
             <RiCodeSSlashLine className="size-4" aria-hidden />
             <RiFileList2Line className="size-4" aria-hidden />
