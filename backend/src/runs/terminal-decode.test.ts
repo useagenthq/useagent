@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createTerminalChunkDecoder } from "./terminal-decode";
 
 // The terminal bridge must decode PTY chunks in streaming mode: a multi-byte
 // UTF-8 sequence split across two chunks has to survive reassembly. This pins
@@ -10,8 +11,8 @@ describe("terminal PTY chunk decoding", () => {
     const a = bytes.slice(0, cut);
     const b = bytes.slice(cut);
 
-    const streaming = new TextDecoder("utf-8");
-    const joined = streaming.decode(a, { stream: true }) + streaming.decode(b, { stream: true });
+    const decode = createTerminalChunkDecoder();
+    const joined = decode(a) + decode(b);
     expect(joined).toBe("┌─ box ─┐ αβγ");
 
     // The old per-chunk decode demonstrably mangles the same input.

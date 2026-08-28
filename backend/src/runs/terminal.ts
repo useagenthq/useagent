@@ -5,6 +5,7 @@ import { orgScope } from "../middleware/org";
 import { getRunForOrg } from "./repo";
 import { resolvePreviewSandbox } from "./preview-proxy";
 import { errorMessage } from "../util/error-message";
+import { createTerminalChunkDecoder } from "./terminal-decode";
 
 // ---------------------------------------------------------------------------
 // Interactive terminal — a WebSocket bridge from the browser's xterm.js into
@@ -68,13 +69,13 @@ terminalRoutes.get(
             // and a multi-byte UTF-8 sequence split across chunks must carry
             // over - non-streaming decode() mangles the tail of every burst
             // into replacement glyphs (the "gibberish on reattach" bug).
-            const decoder = new TextDecoder("utf-8");
+            const decodeChunk = createTerminalChunkDecoder();
             const handle = await sandbox.process.createPty({
               id: `skynet-term-${run.id.slice(0, 8)}-${Math.random().toString(36).slice(2, 8)}`,
               cols,
               rows,
               onData: (data: Uint8Array) => {
-                if (!closed) send(decoder.decode(data, { stream: true }));
+                if (!closed) send(decodeChunk(data));
               },
             });
             await handle.waitForConnection();
