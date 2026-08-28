@@ -22,7 +22,7 @@ console.log(`[useagent] sandbox gateway listening on http://localhost:${port}`);
 export const GATEWAY_MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024;
 
 export default {
-  hostname: "127.0.0.1",
+  hostname: process.env.USEAGENT_BIND_HOST ?? "127.0.0.1",
   port,
   fetch: app.fetch,
   idleTimeout: 255,

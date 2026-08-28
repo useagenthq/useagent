@@ -20,6 +20,8 @@ __pycache__/
 # env / secrets
 .env
 .env.*
+.kamal/secrets*
+!.kamal/secrets.example
 
 # terraform local state / operator inputs
 infra/terraform/**/.terraform/

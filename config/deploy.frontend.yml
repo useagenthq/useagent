@@ -1,0 +1,14 @@
+service: useagent-frontend
+image: useagenthq/useagent-frontend
+
+builder:
+  dockerfile: Dockerfile.frontend
+  args:
+    RELEASE_COMMIT: <%= `git rev-parse HEAD`.strip %>
+
+env:
+  clear:
+    NODE_ENV: production
+    PORT: 3400
+    USEAGENT_API_ORIGIN: http://127.0.0.1:3201
+    NEXT_PUBLIC_USEAGENT_RELEASE_COMMIT: <%= `git rev-parse HEAD`.strip %>
