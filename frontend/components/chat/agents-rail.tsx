@@ -6,7 +6,7 @@ import {
   RiErrorWarningLine,
   RiRobot2Line,
 } from "@remixicon/react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ExecutionSummarySnapshot } from "@useagent/agent-client";
 import {
   type ChildTimelineEntry,
@@ -14,8 +14,16 @@ import {
   legacySpawnStepIdForCanonical,
   type MergedChildFidelity,
 } from "@/components/chat/canonical-children";
-import type { CanonicalEventLike } from "@/components/chat/canonical-timeline";
+import type {
+  CanonicalEventLike,
+} from "@/components/chat/canonical-timeline";
 import { deriveChildrenViewFromExecutionSummary } from "@/components/chat/execution-summary-rollout";
+import {
+  EXECUTION_GRAPH_CLIENT_MODE,
+  executionHistoryKey,
+  fetchExecutionTranscript,
+  mergeExecutionTranscript,
+} from "@/components/chat/execution-graph-client";
 import {
   firstLine,
   type GatewayChildSession,
@@ -234,6 +242,7 @@ function AgentDetail({
   ownerByStep,
   spawnStepId,
   canonicalEvents,
+  historyLoading,
   onBack,
 }: {
   card: SubagentCard;
@@ -243,6 +252,7 @@ function AgentDetail({
   ownerByStep: ReadonlyMap<string, string>;
   spawnStepId: string;
   canonicalEvents: readonly CanonicalEventLike[];
+  historyLoading: boolean;
   onBack: () => void;
 }) {
   const status = statusOf(fidelity, runLive);
@@ -402,6 +412,10 @@ function AgentDetail({
               />
             ))}
           </div>
+        ) : historyLoading ? (
+          <p className="text-body-2-regular text-text-tertiary py-6 text-center">
+            Loading child history…
+          </p>
         ) : live ? (
           <p className="text-body-2-regular text-text-tertiary py-6 text-center">
             Waiting for the first native activity…
@@ -418,6 +432,7 @@ function AgentDetail({
 }
 
 export function AgentsRail({
+  rootRunId = null,
   steps,
   live,
   frames = [],
@@ -425,6 +440,7 @@ export function AgentsRail({
   executionSummary = null,
   childSessions = [],
 }: {
+  rootRunId?: string | null;
   steps: ApiStep[];
   live: boolean;
   frames?: readonly NativeFrame[];
@@ -449,9 +465,60 @@ export function AgentsRail({
     (card) => !card.aliases.some((alias) => gatewayIds.has(alias)),
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [lazyHistory, setLazyHistory] = useState<{
+    readonly key: string;
+    readonly events: readonly CanonicalEventLike[];
+  } | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   // Fallback liveness for cards without a native status frame: the run is live
   // and hasn't emitted its terminal `done` step.
   const runLive = live && !steps.some((s) => s.kind === "done");
+
+  const selected = selectedId ? nativeCards.find((card) => card.id === selectedId) ?? null : null;
+
+  useEffect(() => {
+    if (
+      EXECUTION_GRAPH_CLIENT_MODE !== "read" ||
+      !rootRunId ||
+      !selected?.childSessionId
+    ) {
+      setHistoryLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    const key = executionHistoryKey(rootRunId, selected.id);
+    setLazyHistory((current) => current?.key === key ? current : null);
+    setHistoryLoading(true);
+    void fetchExecutionTranscript(
+      rootRunId,
+      selected.childSessionId,
+      controller.signal,
+      (events) => {
+        if (!controller.signal.aborted) setLazyHistory({ key, events });
+      },
+    )
+      .then((events) => {
+        if (!controller.signal.aborted) {
+          setLazyHistory(events ? { key, events } : null);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setLazyHistory(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setHistoryLoading(false);
+      });
+    return () => controller.abort();
+  }, [rootRunId, selected?.childSessionId, selected?.id]);
+
+  const detailEvents = useMemo(() => {
+    if (
+      !selected ||
+      !rootRunId ||
+      lazyHistory?.key !== executionHistoryKey(rootRunId, selected.id)
+    ) return canonicalEvents;
+    return mergeExecutionTranscript(lazyHistory.events, canonicalEvents);
+  }, [canonicalEvents, lazyHistory, selected]);
 
   if (nativeCards.length === 0 && childSessions.length === 0) {
     return (
@@ -464,7 +531,6 @@ export function AgentsRail({
   }
 
   // Selection survives live re-derivation because card ids are stable.
-  const selected = selectedId ? nativeCards.find((c) => c.id === selectedId) : null;
   if (selected) {
     const f = fidelityFor(selected, fidelity);
     // A legacy card's id IS its spawn step; a canonical card resolves through the
@@ -478,7 +544,8 @@ export function AgentsRail({
         steps={steps}
         ownerByStep={ownerByStep}
         spawnStepId={spawnStepId}
-        canonicalEvents={canonicalEvents}
+        canonicalEvents={detailEvents}
+        historyLoading={historyLoading}
         onBack={() => setSelectedId(null)}
       />
     );

@@ -1166,6 +1166,7 @@ export function SessionView({
                     )
                   ) : railTab === "agents" ? (
                     <AgentsRail
+                      rootRunId={rootId}
                       steps={allSteps}
                       live={live}
                       frames={allFrames}

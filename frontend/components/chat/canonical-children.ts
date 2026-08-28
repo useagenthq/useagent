@@ -401,11 +401,23 @@ export function deriveChildTimeline(
   const lifecycles = collectToolLifecycles(owned);
   const entries: { entry: ChildTimelineEntry; seq: number }[] = [];
   const seenTextPart = new Set<string>();
+  const completedMessages = new Set(
+    owned.flatMap((event) =>
+      event.kind === "message.completed" && event.messageId && event.text?.trim()
+        ? [event.messageId]
+        : [],
+    ),
+  );
 
   for (const event of owned) {
-    if (event.kind === "message.delta") {
+    if (event.kind === "message.delta" || event.kind === "message.completed") {
       if (!event.text?.trim()) continue;
-      const key = event.identity?.nativePartId ?? event.identity?.nativeEventId ?? String(event.seq);
+      if (event.kind === "message.delta" && event.messageId && completedMessages.has(event.messageId)) {
+        continue;
+      }
+      const key = event.kind === "message.completed"
+        ? event.messageId ?? event.identity?.nativeEventId ?? String(event.seq)
+        : event.identity?.nativePartId ?? event.identity?.nativeEventId ?? String(event.seq);
       if (seenTextPart.has(key)) continue;
       seenTextPart.add(key);
       entries.push({
