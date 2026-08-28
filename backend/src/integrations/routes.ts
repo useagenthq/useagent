@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Handler } from "hono";
 import { env } from "../env";
 import type { AppEnv } from "../http";
 import { orgAdminScope, orgScope } from "../middleware/org";
@@ -16,8 +16,8 @@ export function createIntegrationRoutes(deps?: IntegrationServiceDependencies): 
   const routes = new Hono<AppEnv>();
   const service = createIntegrationService(deps);
 
-  routes.get("/callback/:provider", async (c) => {
-    const provider = c.req.param("provider").trim();
+  const completePublicCallback: Handler<AppEnv> = async (c) => {
+    const provider = c.req.param("provider")?.trim() ?? "";
     const state = c.req.query("state")?.trim();
     const fallback = new URL("/settings?integration=error#integrations", env.FRONTEND_ORIGIN);
     if (!provider || !state || state.length > 256) return c.redirect(fallback.toString(), 303);
@@ -35,7 +35,12 @@ export function createIntegrationRoutes(deps?: IntegrationServiceDependencies): 
     } catch {
       return c.redirect(fallback.toString(), 303);
     }
-  });
+  };
+
+  // Keep the provider-first callback used by the published Slack app while
+  // retaining the original callback-first route for in-flight OAuth sessions.
+  routes.get("/:provider/callback", completePublicCallback);
+  routes.get("/callback/:provider", completePublicCallback);
 
   routes.use("*", orgScope);
 

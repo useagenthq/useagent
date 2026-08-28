@@ -42,6 +42,11 @@ const PUBLIC_API_EXACT = new Set([
   // GitHub gateway lane - authenticates and revalidates its short-lived run
   // capability before backend-only GitHub credentials can be resolved.
   "/api/internal/github-operations",
+  // OAuth callbacks authenticate with a one-use, provider-bound state token.
+  // Keep both exact path orders during the Slack callback-path transition;
+  // every other integration route remains cookie/org scoped.
+  "/api/integrations/slack/callback",
+  "/api/integrations/callback/slack",
 ]);
 const PUBLIC_API_PREFIXES = [
   "/api/auth/",

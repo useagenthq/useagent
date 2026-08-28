@@ -74,7 +74,7 @@ export function slackNativeConnectionConfigFromEnv(): SlackNativeConnectionConfi
   const publicOrigin = process.env.BETTER_AUTH_URL?.trim() || process.env.FRONTEND_ORIGIN?.trim();
   const redirectUri = process.env.SLACK_OAUTH_REDIRECT_URI?.trim()
     || (publicOrigin
-      ? new URL("/api/integrations/callback/slack", publicOrigin).toString()
+      ? new URL("/api/integrations/slack/callback", publicOrigin).toString()
       : "");
   if (!redirectUri) {
     console.warn("[integrations] Slack customer OAuth redirect URI is not configured");
