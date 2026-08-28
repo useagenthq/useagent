@@ -64,13 +64,17 @@ terminalRoutes.get(
 
             const cols = Number(c.req.query("cols") ?? 100) || 100;
             const rows = Number(c.req.query("rows") ?? 30) || 30;
-            const decoder = new TextDecoder();
+            // Streaming decode: PTY output arrives in arbitrary byte chunks,
+            // and a multi-byte UTF-8 sequence split across chunks must carry
+            // over - non-streaming decode() mangles the tail of every burst
+            // into replacement glyphs (the "gibberish on reattach" bug).
+            const decoder = new TextDecoder("utf-8");
             const handle = await sandbox.process.createPty({
               id: `skynet-term-${run.id.slice(0, 8)}-${Math.random().toString(36).slice(2, 8)}`,
               cols,
               rows,
               onData: (data: Uint8Array) => {
-                if (!closed) send(decoder.decode(data));
+                if (!closed) send(decoder.decode(data, { stream: true }));
               },
             });
             await handle.waitForConnection();
