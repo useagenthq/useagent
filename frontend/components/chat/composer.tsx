@@ -505,21 +505,11 @@ export function Composer({
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.96, y: 4 }}
                   transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-                  className="w-[300px] max-w-full origin-bottom-left rounded-2xl border border-border-button-default bg-background-primary-default p-1.5 shadow-dropdown"
+                  className="w-[340px] max-w-full origin-bottom-left rounded-2xl border border-border-button-default bg-background-primary-default p-1.5 shadow-dropdown"
                 >
-                  <AddFilesRow
-                    onPick={() => {
-                      setAddMenuOpen(false);
-                      fileInput.current?.click();
-                    }}
-                  />
+                  <AddFilesRow inline onPick={() => { setAddMenuOpen(false); fileInput.current?.click(); }} />
                   <AddMenuDivider />
-                  <CreateRows
-                    onSeed={(seed) => {
-                      setAddMenuOpen(false);
-                      setValue((prev) => (prev.trim() ? prev : seed));
-                    }}
-                  />
+                  <CreateRows inline onSeed={(seed) => { setAddMenuOpen(false); setValue((prev) => (prev.trim() ? prev : seed)); }} />
                 </motion.div>
               </div>
             </>

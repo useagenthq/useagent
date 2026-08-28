@@ -110,7 +110,7 @@ describe("unified shell contract", () => {
     const shellAndDesktop = `${Object.values(shellSources()).join("\n")}\n${desktopPane}\n${sessionView}`;
 
     expect(desktopPane).toContain("/api/desktop-proxy/");
-    expect(proxy).toContain("NextResponse.redirect(new URL('/login', request.url))");
+    expect(proxy).toContain('NextResponse.redirect(new URL("/login", request.url))');
     expect(shellAndDesktop).not.toContain("auth-bypass");
     expect(shellAndDesktop).not.toContain("authBypass");
     expect(shellAndDesktop).not.toContain("/preview/");
