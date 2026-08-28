@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  bigserial,
   check,
   foreignKey,
   index,
@@ -114,6 +115,9 @@ export const delegationEdges = pgTable(
     nativeEventId: text("native_event_id"),
     nativeTargetSessionId: text("native_target_session_id"),
     observedDeliverySeq: bigint("observed_delivery_seq", { mode: "number" }).notNull().default(0),
+    /** Database-monotonic insertion cursor. Provider delivery seq can be shared
+     * by multiple target edges from one event, so it is not a safe page key. */
+    cursorSeq: bigserial("cursor_seq", { mode: "number" }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -140,6 +144,7 @@ export const delegationEdges = pgTable(
     }).onDelete("cascade"),
     uniqueIndex("uq_delegation_edges_source").on(t.orgId, t.runId, t.sourceKey),
     index("idx_delegation_edges_graph").on(t.orgId, t.runId, t.observedDeliverySeq, t.id),
+    index("idx_delegation_edges_cursor").on(t.orgId, t.runId, t.cursorSeq),
     index("idx_delegation_edges_parent").on(
       t.orgId, t.runId, t.parentExecutionId, t.observedDeliverySeq, t.id,
     ),
