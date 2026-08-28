@@ -26,6 +26,7 @@ export function useSplitTooNarrow(containerRef: RefObject<HTMLDivElement | null>
     const el = containerRef.current;
     if (!el) return;
     let width = el.getBoundingClientRect().width;
+    setTooNarrow(width < SPLIT_MIN);
     let settleTimer: ReturnType<typeof setTimeout> | null = null;
     const observer = new ResizeObserver((entries) => {
       width = entries.at(-1)?.contentRect.width ?? width;
@@ -71,7 +72,7 @@ export function useRailWidth({
     // starve the conversation on a narrower window (tablet split).
     const bounds = containerRef.current?.getBoundingClientRect();
     const containerMax = bounds ? Math.min(bounds.width * 0.6, RAIL_MAX) : RAIL_MAX;
-    setRailWidth(Math.round(Math.min(saved, containerMax)));
+    setRailWidth(Math.round(Math.max(RAIL_MIN, Math.min(saved, containerMax))));
   }, [containerRef]);
   const dragBoundsRef = useRef<DOMRect | null>(null);
   const dragWidthRef = useRef<number | null>(null);
@@ -111,7 +112,7 @@ export function useRailWidth({
     const bounds = containerRef.current?.getBoundingClientRect();
     const containerMax = bounds ? Math.min(bounds.width * 0.6, RAIL_MAX) : RAIL_MAX;
     const ratioDefault = bounds ? Math.round(bounds.width * 0.286) : RAIL_DEFAULT;
-    const current = railWidth ?? Math.min(ratioDefault, containerMax);
+    const current = railWidth ?? Math.max(RAIL_MIN, Math.min(ratioDefault, containerMax));
     const next = railWidthForKey({ key, current, maximum: containerMax });
     if (next === null) return;
     const rounded = Math.round(next);
@@ -136,7 +137,7 @@ export function railWidthFromPointer({
   readonly minimum?: number;
   readonly maximum?: number;
 }): number {
-  const containerMaximum = Math.min(containerWidth * 0.6, maximum);
+  const containerMaximum = Math.max(minimum, Math.min(containerWidth * 0.6, maximum));
   return Math.round(
     Math.min(Math.max(containerRight - edgeInset - pointerX, minimum), containerMaximum),
   );
@@ -153,10 +154,11 @@ export function railWidthForKey({
   readonly maximum: number;
   readonly minimum?: number;
 }): number | null {
-  if (key === "ArrowLeft") return Math.min(current + 16, maximum);
+  const boundedMaximum = Math.max(minimum, maximum);
+  if (key === "ArrowLeft") return Math.min(current + 16, boundedMaximum);
   if (key === "ArrowRight") return Math.max(current - 16, minimum);
   if (key === "Home") return minimum;
-  if (key === "End") return maximum;
+  if (key === "End") return boundedMaximum;
   return null;
 }
 
