@@ -121,6 +121,7 @@ import { approveApprovalRequestAsRunOwner } from "./knowledge/gateway/approval-r
 import { currentReleaseFingerprint, isClientReleaseCompatible } from "./release";
 import { dashboardRoutes } from "./dashboard/routes";
 import { fleetBatchRoutes } from "./fleet/batch-routes";
+import { assertCanonicalExecutionTranscriptIndexForBoot } from "./db/online-indexes/canonical-execution-transcript";
 
 // Acquire the per-database singleton before ANY shared-state mutation. In strict
 // production mode an unavailable/contended lock fails boot closed, so a duplicate
@@ -132,6 +133,11 @@ await enforceSingleBackend();
 // migrator is idempotent — already-applied migrations are skipped. Path is
 // resolved from this module so cwd doesn't matter.
 await migrate(db, { migrationsFolder: `${import.meta.dir}/../drizzle` });
+
+// READ serves child transcripts from the canonical execution identity lookup.
+// The large online index is managed separately from transactional migrations;
+// fail boot closed in READ rather than silently serving an unindexed scan.
+await assertCanonicalExecutionTranscriptIndexForBoot();
 
 // Default OFF. When explicitly enabled, hydrate the synchronous model-policy
 // cache from the last atomically published DB generation before serving config.
