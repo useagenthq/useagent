@@ -110,18 +110,18 @@ const INITIAL_COMPONENTS: Partial<Components> = {
         ext === "CSV" || ext === "XLSX" ? "bg-green-600" :
         ext === "MP4" || ext === "WEBM" ? "bg-purple-500" :
         ext === "PPTX" ? "bg-orange-500" : "bg-blue-500";
+      const initial = (label.trim().charAt(0) || "F").toUpperCase();
       return (
         <a
+          data-chip
           href={url}
           target="_blank"
           rel="noreferrer"
-          className="mx-0.5 inline-flex translate-y-[-1px] items-center gap-1 rounded-full border border-border-button-default bg-background-primary-default py-px pl-1 pr-1.5 align-middle text-caption-1-medium text-text-secondary no-underline transition-colors hover:border-border-button-hover hover:text-text-primary"
+          className="mx-0.5 inline-flex translate-y-[-1px] items-center gap-1.5 rounded-full bg-background-secondary-default py-0.5 pl-1 pr-2 align-middle text-caption-1-medium text-text-primary no-underline transition-colors hover:bg-background-secondary-hover"
         >
-          {ext ? (
-            <span aria-hidden className={`flex h-3.5 items-center justify-center rounded-[4px] px-1 text-[8px] font-semibold leading-none text-white ${tone}`}>
-              {ext}
-            </span>
-          ) : null}
+          <span aria-hidden className={`flex size-4 items-center justify-center rounded-full text-[9px] font-semibold leading-none text-white ${tone}`}>
+            {initial}
+          </span>
           <span className="max-w-56 truncate">{label}</span>
           <span aria-hidden className="text-text-tertiary">↗</span>
         </a>
@@ -165,7 +165,7 @@ const FLOW_CLASS = cx(
   "[&_h3]:text-body-2-semibold [&_h3]:mt-3 [&_h3]:mb-1",
   "[&_h4]:text-caption-1-medium [&_h4]:mt-3 [&_h4]:mb-1",
   "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1",
-  "[&_a]:text-blue-500 [&_a]:underline [&_a]:underline-offset-2 [&_strong]:font-medium",
+  "[&_a:not([data-chip])]:text-blue-500 [&_a:not([data-chip])]:underline [&_a:not([data-chip])]:underline-offset-2 [&_strong]:font-medium",
 );
 
 const MemoizedMarkdownBlock = memo(
