@@ -92,6 +92,36 @@ describe("Pi RPC canonical bridge mapping", () => {
     expect(completed.eventType).toBe("part.tool.completed");
   });
 
+  test("preserves Pi child identity across provider-event revisions", () => {
+    const frames = new NativeBridgeSequencer("parent-session", () => 1);
+    const started = piBridgeProviderEvent(
+      { runId: "run", threadId: "thread" },
+      frames.frame({
+        kind: "child.started",
+        childId: "child-a",
+        title: "Inspect module",
+        launchToolCallId: "launch-call",
+      }),
+    );
+    const updated = piBridgeProviderEvent(
+      { runId: "run", threadId: "thread" },
+      frames.frame({ kind: "child.updated", childId: "child-a", status: "running" }),
+    );
+    const completed = piBridgeProviderEvent(
+      { runId: "run", threadId: "thread" },
+      frames.frame({ kind: "child.completed", childId: "child-a", status: "ok", result: "done" }),
+    );
+
+    for (const event of [started, updated, completed]) {
+      expect(event.nativeSessionId).toBe("parent-session");
+      expect(event.nativeParentSessionId).toBe("parent-session");
+      expect(event.payload).toMatchObject({ childSessionId: "child-a" });
+    }
+    expect(started.payload).toMatchObject({ childEventKind: "child.started" });
+    expect(updated.payload).toMatchObject({ childEventKind: "child.updated" });
+    expect(completed.payload).toMatchObject({ childEventKind: "child.completed" });
+  });
+
   test("coalesces token-sized Pi reasoning deltas into one durable Thought row", () => {
     const map = createPiRpcFrameMapper("pi-message-run");
     const first = map({

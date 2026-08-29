@@ -150,7 +150,11 @@ export function translateOpenCode(
   const childSessions = new Set<string>();
   const childParent = new Map<string, string>();
   for (const f of orderedFrames) {
-    if (f.native.parentSessionId && f.native.sessionId) {
+    if (
+      f.native.parentSessionId &&
+      f.native.sessionId &&
+      f.native.parentSessionId !== f.native.sessionId
+    ) {
       childSessions.add(f.native.sessionId);
       childParent.set(f.native.sessionId, f.native.parentSessionId);
     }
@@ -161,9 +165,16 @@ export function translateOpenCode(
   // completion; without this pre-scan the running frame uses callId while the
   // completion uses ses_*, splitting one child into two cards.
   const taskChildIdByCallId = new Map<string, string>();
+  const explicitChildIdsByCallId = new Map<string, Set<string>>();
   for (const f of orderedFrames) {
     const p = rec(f.payload);
     const callId = f.native.callId;
+    const explicitChildId = firstString(p?.childSessionId);
+    if (callId && explicitChildId) {
+      const childIds = explicitChildIdsByCallId.get(callId) ?? new Set<string>();
+      childIds.add(explicitChildId);
+      explicitChildIdsByCallId.set(callId, childIds);
+    }
     if (!callId || !f.eventType.startsWith("part.tool") || p?.tool !== "task") continue;
     const resolved = taskChildId(rec(p.state), null);
     if (resolved) taskChildIdByCallId.set(callId, resolved);
@@ -707,7 +718,22 @@ export function translateOpenCode(
       else produced.push(push(f.eventId, f.provider, { kind: "reasoning.delta", messageId: mid, text: str(p?.text) ?? "" }, ident));
     } else if (et.startsWith("part.tool") || et.startsWith("part.subtask")) {
       const callId = f.native.callId;
-      const isTask = p?.tool === "task" || et.startsWith("part.subtask");
+      const taskState = rec(p?.state);
+      const explicitTaskChildId = firstString(
+        p?.childSessionId,
+        taskChildId(taskState, null),
+      );
+      // Pi emits one parent-owned task wrapper plus explicit part.subtask rows
+      // for every real child. Only the rows with childSessionId own child
+      // lifecycle; treating the wrapper as another child invents a shared
+      // launch-call pseudo-child beside the real children. Retain the older
+      // terminal shape when its task result names an actual child session.
+      const isPiParentTaskWrapper = f.provider === "pi" &&
+        et.startsWith("part.tool") &&
+        p?.tool === "task" &&
+        !explicitTaskChildId;
+      const isTask = !isPiParentTaskWrapper &&
+        (p?.tool === "task" || et.startsWith("part.subtask"));
       const todoPlan = p?.tool === "todowrite"
         ? planEntries(rec(p?.state)?.input ?? p?.input)
         : null;
@@ -719,39 +745,51 @@ export function translateOpenCode(
           entries: todoPlan,
         }, ident));
       } else if (isTask && callId) {
-        const state = rec(p?.state);
+        const state = taskState;
         const output = str(state?.output) ?? "";
-        const childId = taskChildIdByCallId.get(callId) ?? callId;
+        const childId = firstString(p?.childSessionId, taskChildIdByCallId.get(callId), callId)!;
+        const childIdentity = firstString(p?.childSessionId, callId)!;
+        const childIdent = p?.childSessionId
+          ? {
+              ...ident,
+              nativeSessionId: childId,
+              nativeParentSessionId: f.native.parentSessionId ?? f.native.sessionId ?? undefined,
+            }
+          : ident;
         // Frame-authoritative lifecycle status (the task tool's own state) wins;
         // the merged snapshot adds the accumulated child-session activity plus
         // the pre-scanned role/model, so the lifecycle events carry REAL state.
         const childState = childStateOf(childId, canonicalChildState(state) ?? {});
-        if (!seenTaskCall.has(callId)) {
-          seenTaskCall.add(callId);
+        if (!seenTaskCall.has(childIdentity)) {
+          seenTaskCall.add(childIdentity);
+          const launchAliases = explicitChildIdsByCallId.get(callId);
+          const launchToolCallId = launchAliases && launchAliases.size > 1 ? undefined : callId;
           produced.push(push(f.eventId, f.provider, {
             kind: "child.started",
             childId,
-            launchToolCallId: callId,
+            ...(launchToolCallId ? { launchToolCallId } : {}),
             title: firstString(p?.title, state?.title, childSeed.get(childId)?.title) ?? undefined,
             ...(childState ? { state: childState } : {}),
-          }, ident, "#child-start"));
+          }, childIdent, "#child-start"));
         }
         if (terminal) {
-          const result = TASK_RESULT.exec(output)?.[1]?.trim();
+          const result = f.provider === "pi" && firstString(p?.childSessionId)
+            ? boundedPreview(output)
+            : TASK_RESULT.exec(output)?.[1]?.trim();
           produced.push(push(f.eventId, f.provider, {
             kind: "child.completed",
             childId,
             status: errored ? "error" : "ok",
             result: result || undefined,
             ...(childState ? { state: childState } : {}),
-          }, ident, "#child-done"));
+          }, childIdent, "#child-done"));
         } else {
           produced.push(push(f.eventId, f.provider, {
             kind: "child.updated",
             childId,
             status: "running",
             ...(childState ? { state: childState } : {}),
-          }, ident, "#child-upd"));
+          }, childIdent, "#child-upd"));
         }
       } else if (callId && !seenTool.has(callId) && !terminal) {
         seenTool.add(callId);

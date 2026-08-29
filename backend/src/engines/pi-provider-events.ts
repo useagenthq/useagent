@@ -104,6 +104,8 @@ export function piBridgeProviderEvent(
           : body.childId,
         nativeParentSessionId: frame.sessionId,
         payload: {
+          childSessionId: body.childId,
+          childEventKind: body.kind,
           title: body.kind === "child.started" ? body.title : undefined,
           state: {
             ...(body.state ?? {}),
