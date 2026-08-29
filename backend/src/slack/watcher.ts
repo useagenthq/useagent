@@ -1,7 +1,10 @@
 /**
  * Live progress feedback for a Slack-originated run. Progress is throttled and
- * routed through the durable Slack outbox as native stream task_update chunks,
- * with the Block Kit card update carried as fallback in the same outbox row.
+ * routed through the durable Slack outbox as native stream chunks - task cards
+ * pairing start/complete per tool step, one plan_update per plan/todos step,
+ * and exact-offset narration markdown - with the Block Kit card update carried
+ * as fallback in the same outbox row. DM threads additionally get the free-text
+ * working shimmer (assistant thread status), cleared when the run settles.
  *
  * This watcher is best-effort: it can miss live progress if the process dies.
  * Terminal delivery is stronger and happens in finalizeRun via durable
@@ -10,14 +13,25 @@
 import { getRun } from "../runs/repo";
 import type { RunStatus } from "../db/schema";
 import { bus, channel as runChannel, type BusEvent } from "../worker";
+import { turnStream } from "../runs/turn-stream";
 import { env } from "../env";
-import { buildRunCard, deriveTitle, sessionUrl } from "./card";
+import { buildRunCard, deriveTitle, sessionUrl, type RunCardInput } from "./card";
 import { parseRepoRef } from "../github/repo-ref";
-import { enqueueAppendStream, enqueueSessionStatus } from "./outbox";
-import { runningTaskChunk } from "./streaming";
+import { enqueueAppendStream, enqueueSessionStatus, enqueueThreadStatus } from "./outbox";
+import {
+  createNarrationBuffer,
+  directMessageChannel,
+  markdownChunksFor,
+  planUpdateFromStep,
+  statusTextForStep,
+  stepProgressChunks,
+  type SlackStreamChunk,
+} from "./streaming";
 
 /** Min gap between progress updates so a chatty run doesn't spam Slack. */
 const STATUS_THROTTLE_MS = 2_000;
+/** Narration flush cadence - coalesces deltas into bounded appends. */
+const NARRATION_FLUSH_MS = 2_500;
 
 /** A monotonic min-gap throttle: `allow(now)` returns true at most once per
  *  `minGapMs`, coalescing a burst of step events into a bounded update rate. The
@@ -46,36 +60,76 @@ export function watchSlackRun(opts: {
   const { runId, rootRunId, teamId, channel, threadTs } = opts;
   let settled = false;
   const throttle = createProgressThrottle(STATUS_THROTTLE_MS);
+  const dm = directMessageChannel(channel);
+  let lastStep: { id: string; label: string } | null = null;
 
-  const enqueueProgress = (stepId: string, stepLabel: string): void => {
+  /** The card chrome (title/model/repos/url) resolved once and reused for every
+   *  fallback card this watcher enqueues. */
+  let cardBase: Promise<Omit<RunCardInput, "phase" | "workingStep"> | null> | null = null;
+  const loadCardBase = (): Promise<Omit<RunCardInput, "phase" | "workingStep"> | null> => {
+    cardBase ??= getRun(rootRunId).then((run) =>
+      run
+        ? {
+            title: deriveTitle(run.prompt),
+            model: run.model,
+            repoSpecs: run.repos.map(parseRepoRef),
+            webUrl: sessionUrl(env.FRONTEND_ORIGIN, run.threadId),
+          }
+        : null,
+    );
+    return cardBase;
+  };
+
+  const enqueueChunks = (input: {
+    idempotencyKey: string;
+    chunks: readonly SlackStreamChunk[];
+    workingStep?: string;
+    narrationOffset?: number;
+  }): void => {
     void (async () => {
-      const run = await getRun(rootRunId);
-      if (!run) return;
-      const card = buildRunCard({
-        title: deriveTitle(run.prompt),
-        phase: "running",
-        model: run.model,
-        repoSpecs: run.repos.map(parseRepoRef),
-        webUrl: sessionUrl(env.FRONTEND_ORIGIN, run.threadId),
-        workingStep: stepLabel,
-      });
+      const base = await loadCardBase();
+      if (!base) return;
+      const card = buildRunCard({ ...base, phase: "running", workingStep: input.workingStep });
       await enqueueAppendStream({
-        idempotencyKey: `slack-stream:step:${teamId}:${runId}:${stepId}`,
+        idempotencyKey: input.idempotencyKey,
         teamId,
         channel,
         threadTs,
         runId,
-        chunks: [runningTaskChunk({ id: stepId, label: stepLabel })],
+        chunks: input.chunks,
+        narrationOffset: input.narrationOffset,
         fallbackBlocks: card.blocks,
         fallbackText: card.text,
       });
     })().catch(() => {});
   };
 
+  // ── narration: buffered deltas flushed as exact-offset markdown appends ──
+  const narration = createNarrationBuffer();
+  let narrationSeq = 0;
+  const flushNarration = (): void => {
+    const segment = narration.take();
+    if (!segment) return;
+    narrationSeq += 1;
+    enqueueChunks({
+      idempotencyKey: `slack-stream:text:${teamId}:${runId}:${narrationSeq}`,
+      chunks: markdownChunksFor(segment.text),
+      narrationOffset: segment.offset,
+    });
+  };
+  const unsubscribe = turnStream.subscribe(runId, (delta, kind) => {
+    if (kind !== undefined) return; // reasoning stays out of the message body
+    narration.push(delta);
+  });
+  const narrationTimer = setInterval(flushNarration, NARRATION_FLUSH_MS);
+  narrationTimer.unref?.();
+
   const finish = (): void => {
     if (settled) return;
     settled = true;
     bus.off(runChannel(runId), onEvent);
+    unsubscribe();
+    clearInterval(narrationTimer);
     void enqueueSessionStatus({
       idempotencyKey: `slack-status:end:${teamId}:${runId}`,
       teamId,
@@ -83,6 +137,15 @@ export function watchSlackRun(opts: {
       threadTs,
       status: "active",
     }).catch(() => {});
+    if (dm) {
+      void enqueueThreadStatus({
+        idempotencyKey: `slack-thread-status:end:${teamId}:${runId}`,
+        teamId,
+        channel,
+        threadTs,
+        status: "",
+      }).catch(() => {});
+    }
   };
 
   const onEvent = (ev: BusEvent): void => {
@@ -90,11 +153,38 @@ export function watchSlackRun(opts: {
       finish();
       return;
     }
-    if (ev.type === "step" && !settled) {
-      // Live progress, throttled + coalesced; skip the terminal "done" step.
-      if (ev.step.kind !== "done" && throttle.allow(Date.now())) {
-        enqueueProgress(ev.step.id, ev.step.label);
-      }
+    if (ev.type !== "step" || settled || ev.step.kind === "done") return;
+
+    // A plan/todos step surfaces as ONE plan_update chunk, throttle-exempt
+    // (plans change rarely and the chunk is idempotent per step).
+    const plan = planUpdateFromStep({ label: ev.step.label, chip: ev.step.chip, codeJson: ev.step.code_json });
+    if (plan) {
+      enqueueChunks({
+        idempotencyKey: `slack-stream:plan:${teamId}:${runId}:${ev.step.id}`,
+        chunks: [plan],
+        workingStep: ev.step.label,
+      });
+      return;
+    }
+
+    // Live tool progress, throttled + coalesced: the previous task completes,
+    // the new one starts. An enrichment of the SAME step never self-completes.
+    if (!throttle.allow(Date.now())) return;
+    const progress = stepProgressChunks(lastStep, { id: ev.step.id, label: ev.step.label });
+    lastStep = progress.next;
+    enqueueChunks({
+      idempotencyKey: `slack-stream:step:${teamId}:${runId}:${ev.step.id}`,
+      chunks: progress.chunks,
+      workingStep: ev.step.label,
+    });
+    if (dm) {
+      void enqueueThreadStatus({
+        idempotencyKey: `slack-thread-status:step:${teamId}:${runId}:${ev.step.id}`,
+        teamId,
+        channel,
+        threadTs,
+        status: statusTextForStep(ev.step.label),
+      }).catch(() => {});
     }
   };
 

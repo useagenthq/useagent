@@ -5,7 +5,7 @@
  * that Slack thread resolves to the root and becomes a `parent_run_id` reply,
  * so the thread stays one useAgent conversation with clean, un-nested prompts.
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { slackRunResponses, slackThreads } from "../db/schema";
 import type { SlackStreamTaskDisplayMode } from "./streaming";
@@ -26,6 +26,8 @@ export interface SlackRunResponseTarget extends SlackThreadTarget {
   nativeStreamTs: string | null;
   nativeStreamMode: SlackStreamTaskDisplayMode | null;
   fallbackMessageTs: string | null;
+  /** Narration chars the native stream has accepted (offset fence + stop tail). */
+  streamedChars: number;
 }
 
 /** The useAgent root run for a Slack thread, or null if the bot hasn't engaged it. */
@@ -161,6 +163,7 @@ export async function findSlackRunResponse(
       nativeStreamTs: slackRunResponses.nativeStreamTs,
       nativeStreamMode: slackRunResponses.nativeStreamMode,
       fallbackMessageTs: slackRunResponses.fallbackMessageTs,
+      streamedChars: slackRunResponses.streamedChars,
     })
     .from(slackRunResponses)
     .where(eq(slackRunResponses.runId, runId))
@@ -176,6 +179,25 @@ export async function setSlackNativeStream(
   await db
     .update(slackRunResponses)
     .set({ nativeStreamTs, nativeStreamMode, updatedAt: new Date() })
+    .where(eq(slackRunResponses.runId, runId));
+}
+
+/** The native stream failed for this run: forget its ts so every later append
+ *  and the stop ride the Block Kit card path instead (fall back ONCE, no
+ *  doomed per-row stream calls). */
+export async function disableSlackNativeStream(runId: string): Promise<void> {
+  await db
+    .update(slackRunResponses)
+    .set({ nativeStreamTs: null, updatedAt: new Date() })
+    .where(eq(slackRunResponses.runId, runId));
+}
+
+/** Count narration chars the native stream ACCEPTED (after a successful append). */
+export async function addSlackStreamedChars(runId: string, chars: number): Promise<void> {
+  if (chars <= 0) return;
+  await db
+    .update(slackRunResponses)
+    .set({ streamedChars: sql`${slackRunResponses.streamedChars} + ${chars}`, updatedAt: new Date() })
     .where(eq(slackRunResponses.runId, runId));
 }
 

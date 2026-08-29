@@ -67,13 +67,24 @@ export interface SlackClient {
     threadTs: string;
     status: SlackSessionStatus;
   }): Promise<DeliveryResult>;
+  /** Free-text working status on an assistant thread (assistant.threads.setStatus):
+   * renders as "<App> <status>" with the native shimmer. An empty status clears
+   * it. Documented for DM assistant threads only. */
+  setThreadStatus(args: {
+    channel: string;
+    threadTs: string;
+    status: string;
+  }): Promise<DeliveryResult>;
   /** Start a Slack-native streaming reply. Blocks are intentionally not
-   * accepted here; Slack only allows blocks at stopStream. */
+   * accepted here; Slack only allows blocks at stopStream. The recipient ids
+   * are required by Slack when streaming into a channel (not a DM). */
   startStream(args: {
     channel: string;
     threadTs: string;
     taskDisplayMode: SlackStreamTaskDisplayMode;
     chunks: readonly SlackStreamChunk[];
+    recipientTeamId?: string;
+    recipientUserId?: string;
   }): Promise<DeliveryResult>;
   appendStream(args: {
     channel: string;
@@ -104,6 +115,21 @@ const PERMANENT_ERRORS = new Set([
   "not_authed",
   "restricted_action",
   "invalid_arguments",
+  // AI-app surfaces: these signal the feature/surface is unavailable or the
+  // stream can no longer be written - a retry will never succeed.
+  "feature_disabled",
+  "method_not_supported_for_channel_type",
+  "invalid_chunks",
+  "invalid_status",
+  "thread_ts_required",
+  "thread_ts_not_allowed",
+  "missing_recipient_team_id",
+  "missing_recipient_user_id",
+  "cannot_provide_both_markdown_text_and_chunks",
+  "message_not_in_streaming_state",
+  "message_not_owned_by_app",
+  "streaming_mode_mismatch",
+  "stopped_by_user",
 ]);
 
 /** Real client: thin `fetch` wrapper that classifies the Slack response. */
@@ -175,12 +201,20 @@ export function httpSlackClient(config: SlackClientConfig): SlackClient {
         thread_ts: threadTs,
         status,
       }),
-    startStream: ({ channel, threadTs, taskDisplayMode, chunks }) =>
+    setThreadStatus: ({ channel, threadTs, status }) =>
+      call("assistant.threads.setStatus", {
+        channel_id: channel,
+        thread_ts: threadTs,
+        status,
+      }),
+    startStream: ({ channel, threadTs, taskDisplayMode, chunks, recipientTeamId, recipientUserId }) =>
       call("chat.startStream", {
         channel,
         thread_ts: threadTs,
         task_display_mode: taskDisplayMode,
         chunks,
+        ...(recipientTeamId ? { recipient_team_id: recipientTeamId } : {}),
+        ...(recipientUserId ? { recipient_user_id: recipientUserId } : {}),
       }),
     appendStream: ({ channel, threadTs, messageTs, chunks }) =>
       call("chat.appendStream", {

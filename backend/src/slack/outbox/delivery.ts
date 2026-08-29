@@ -7,13 +7,20 @@ import { artifactStorage } from "../../artifacts/storage";
 import { recordProviderEvent } from "../../runs/provider-events";
 import { claimDue, markDead, markDelivered, markRetry, resetStuckDelivering, updatePayload, type ClaimedRow } from "./repo";
 import {
+  addSlackStreamedChars,
   createSlackRunResponse,
+  disableSlackNativeStream,
   findSlackRunResponse,
   setSlackFallbackMessageTs,
   setSlackNativeStream,
 } from "../repo";
 import type { ProcessResult, SlackDeliveryOutcome } from "./types";
-import type { SlackSessionStatus, SlackStreamChunk, SlackStreamTaskDisplayMode } from "../streaming";
+import {
+  markdownChunksFor,
+  type SlackSessionStatus,
+  type SlackStreamChunk,
+  type SlackStreamTaskDisplayMode,
+} from "../streaming";
 import { findSlackWorkspace } from "../workspaces";
 import { resolveSlackBotTokenForWorkspace } from "../../integrations/slack-token-resolver";
 
@@ -34,13 +41,56 @@ function backoffMs(attempt: number): number {
   return exp + Math.floor(Math.random() * Math.min(1000, exp * 0.25));
 }
 
+/** Normalize a stored chunk to the DOCUMENTED wire shape. Pre-migration rows
+ *  carried a `markdown_text` text field, `task_update` fields nested under
+ *  `task` (with `task_id`), and plan items typed `task` - Slack rejected all of
+ *  them, so legacy plan items are dropped and the rest are converted. */
+function normalizeStreamChunk(raw: unknown): SlackStreamChunk | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const chunk = raw as Record<string, unknown>;
+  if (chunk.type === "markdown_text") {
+    const text =
+      typeof chunk.text === "string" && chunk.text
+        ? chunk.text
+        : typeof chunk.markdown_text === "string" && chunk.markdown_text
+          ? chunk.markdown_text
+          : null;
+    return text ? { type: "markdown_text", text } : null;
+  }
+  if (chunk.type === "plan_update") {
+    return typeof chunk.title === "string" && chunk.title ? { type: "plan_update", title: chunk.title } : null;
+  }
+  if (chunk.type === "task_update") {
+    const source = (
+      chunk.task && typeof chunk.task === "object" && !Array.isArray(chunk.task) ? chunk.task : chunk
+    ) as Record<string, unknown>;
+    const id =
+      typeof source.id === "string" && source.id
+        ? source.id
+        : typeof source.task_id === "string" && source.task_id
+          ? source.task_id
+          : null;
+    const title = typeof source.title === "string" && source.title ? source.title : null;
+    const status =
+      source.status === "in_progress" || source.status === "complete" || source.status === "error"
+        ? source.status
+        : null;
+    if (!id || !title || !status) return null;
+    return {
+      type: "task_update",
+      id,
+      title,
+      status,
+      ...(typeof source.details === "string" && source.details ? { details: source.details } : {}),
+      ...(typeof source.output === "string" && source.output ? { output: source.output } : {}),
+    };
+  }
+  return null;
+}
+
 function streamChunks(value: unknown): readonly SlackStreamChunk[] {
   return Array.isArray(value)
-    ? value.filter((chunk): chunk is SlackStreamChunk => {
-        if (!chunk || typeof chunk !== "object" || Array.isArray(chunk)) return false;
-        const type = (chunk as { type?: unknown }).type;
-        return type === "markdown_text" || type === "task_update" || type === "task";
-      })
+    ? value.map(normalizeStreamChunk).filter((chunk): chunk is SlackStreamChunk => chunk !== null)
     : [];
 }
 
@@ -49,7 +99,10 @@ function sessionStatus(value: unknown): SlackSessionStatus | undefined {
 }
 
 function taskDisplayMode(value: unknown): SlackStreamTaskDisplayMode | undefined {
-  return value === "task_update" || value === "plan" ? value : undefined;
+  if (value === "plan") return "plan";
+  // Legacy rows stored the retired "task_update" mode; it meant the timeline.
+  if (value === "timeline" || value === "task_update") return "timeline";
+  return undefined;
 }
 
 async function postFallbackChunks(
@@ -217,6 +270,17 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
       }
       return client.setSessionStatus({ channel, threadTs, status });
     }
+    case "set_thread_status": {
+      const teamId = string("teamId");
+      const channel = string("channel");
+      const threadTs = string("threadTs");
+      // The empty string is meaningful: it CLEARS the shimmer.
+      const status = typeof p.status === "string" ? p.status : undefined;
+      if (!teamId || !channel || !threadTs || status === undefined) {
+        return { ok: false, class: "permanent", message: "invalid_payload" };
+      }
+      return client.setThreadStatus({ channel, threadTs, status });
+    }
     case "start_stream": {
       const teamId = string("teamId");
       const channel = string("channel");
@@ -230,12 +294,22 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
         return { ok: false, class: "permanent", message: "invalid_payload" };
       }
       await createSlackRunResponse({ runId, teamId, channel, threadTs });
-      const stream = await client.startStream({ channel, threadTs, taskDisplayMode: mode, chunks });
-      if (stream.ok) {
-        if (stream.ts) await setSlackNativeStream(runId, stream.ts, mode);
-        return stream.ts ? stream : { ok: false, class: "transient", message: "stream_ts_missing" };
+      const stream = await client.startStream({
+        channel,
+        threadTs,
+        taskDisplayMode: mode,
+        chunks,
+        recipientTeamId: string("recipientTeamId"),
+        recipientUserId: string("recipientUserId"),
+      });
+      if (stream.ok && stream.ts) {
+        await setSlackNativeStream(runId, stream.ts, mode);
+        return stream;
       }
-      if (stream.class !== "permanent") return stream;
+      if (!stream.ok && stream.class === "rate_limited") return stream;
+      // ANY other stream outcome (feature off, restricted workspace, invalid,
+      // missing ts) falls back ONCE to the Block Kit card for this run - the
+      // stream ts stays null so every later row rides the card path too.
       const fallback = await client.postMessage({ channel, threadTs, text: fallbackText, blocks: fallbackBlocks });
       if (fallback.ok && fallback.ts) await setSlackFallbackMessageTs(runId, fallback.ts);
       return fallback;
@@ -246,6 +320,10 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
       const threadTs = string("threadTs");
       const runId = string("runId") ?? string("rootRunId");
       const chunks = streamChunks(p.chunks);
+      const narrationOffset =
+        typeof p.narrationOffset === "number" && Number.isFinite(p.narrationOffset)
+          ? p.narrationOffset
+          : undefined;
       const fallbackBlocks = Array.isArray(p.fallbackBlocks) ? p.fallbackBlocks : undefined;
       const fallbackText = string("fallbackText");
       if (!teamId || !channel || !threadTs || !runId || chunks.length === 0 || !fallbackText) {
@@ -253,13 +331,39 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
       }
       const response = await findSlackRunResponse(runId);
       if (!response) return { ok: false, class: "transient", message: "stream_not_started" };
+      let nativeJustDisabled = false;
       if (response.nativeStreamTs) {
+        // Offset fence for narration text: retries and backoff can reorder
+        // outbox rows, but streamed text must stay exact. Behind the accepted
+        // offset means a crash replay already delivered this segment (done);
+        // ahead means an earlier segment is still pending (retry later).
+        if (narrationOffset !== undefined) {
+          if (response.streamedChars > narrationOffset) return { ok: true };
+          if (response.streamedChars < narrationOffset) {
+            return { ok: false, class: "transient", message: "narration_gap" };
+          }
+        }
         const stream = await client.appendStream({ channel, threadTs, messageTs: response.nativeStreamTs, chunks });
-        if (stream.ok || stream.class !== "permanent") return stream;
+        if (stream.ok) {
+          const markdownChars = chunks.reduce(
+            (n, c) => (c.type === "markdown_text" ? n + c.text.length : n),
+            0,
+          );
+          await addSlackStreamedChars(runId, markdownChars);
+          return stream;
+        }
+        if (stream.class === "rate_limited") return stream;
+        // The stream can no longer be written (stopped, expired, restricted):
+        // fall back ONCE for this run instead of storming retries.
+        await disableSlackNativeStream(runId);
+        nativeJustDisabled = true;
       }
       if (response.fallbackMessageTs) {
         return client.updateMessage({ channel, ts: response.fallbackMessageTs, text: fallbackText, blocks: fallbackBlocks });
       }
+      // Progress is best-effort: with the stream just disabled and no card to
+      // update, drop the row rather than post stray surfaces after the fact.
+      if (nativeJustDisabled) return { ok: true };
       return { ok: false, class: "transient", message: "stream_not_started" };
     }
     case "stop_stream": {
@@ -269,7 +373,12 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
       const runId = string("runId") ?? string("rootRunId");
       const text = string("text");
       const chunks = streamChunks(p.chunks);
+      const narrationText = string("narrationText") ?? "";
+      const closingMarkdown = string("closingMarkdown") ?? "";
       const blocks = Array.isArray(p.blocks) ? p.blocks : undefined;
+      // Full final card (with the answer) for the card-update path; legacy rows
+      // carried a single blocks set for both paths.
+      const cardBlocks = Array.isArray(p.fallbackBlocks) ? p.fallbackBlocks : blocks;
       const fallbackChunks = Array.isArray(p.fallbackChunks)
         ? p.fallbackChunks.filter((c): c is string => typeof c === "string" && c.length > 0)
         : [];
@@ -278,11 +387,22 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
       }
       const response = await findSlackRunResponse(runId);
       if (response?.nativeStreamTs) {
-        const stopped = await client.stopStream({ channel, threadTs, messageTs: response.nativeStreamTs, chunks, blocks });
-        if (stopped.ok || stopped.class !== "permanent") return stopped;
+        // Append exactly the reply text the body does NOT yet contain: the
+        // narration tail past the accepted offset, then the closing markdown.
+        const tail = narrationText.slice(Math.min(response.streamedChars, narrationText.length));
+        const stopChunks = [...markdownChunksFor(tail + closingMarkdown), ...chunks];
+        const stopped = await client.stopStream({
+          channel,
+          threadTs,
+          messageTs: response.nativeStreamTs,
+          chunks: stopChunks,
+          blocks,
+        });
+        if (stopped.ok || stopped.class === "rate_limited") return stopped;
+        await disableSlackNativeStream(runId);
       }
       if (response?.fallbackMessageTs) {
-        const updated = await client.updateMessage({ channel, ts: response.fallbackMessageTs, text, blocks });
+        const updated = await client.updateMessage({ channel, ts: response.fallbackMessageTs, text, blocks: cardBlocks });
         if (updated.ok || updated.class !== "permanent") return updated;
       }
       return postFallbackChunks(client, row, p, channel, threadTs, fallbackChunks);

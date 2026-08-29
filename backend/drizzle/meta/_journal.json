@@ -477,6 +477,13 @@
 			"when": 1790700000000,
 			"tag": "0069_execution_graph_cursor",
 			"breakpoints": true
+		},
+		{
+			"idx": 68,
+			"version": "7",
+			"when": 1790800000000,
+			"tag": "0070_slack_stream_progress",
+			"breakpoints": true
 		}
 	]
 }
