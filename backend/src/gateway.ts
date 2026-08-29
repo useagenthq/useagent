@@ -18,6 +18,12 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
 }
 
 console.log(`[useagent] sandbox gateway listening on http://localhost:${port}`);
+// Artifact/tool links handed to models are absolute URLs built from
+// FRONTEND_ORIGIN. Announce the resolved origin at boot so a stale env file
+// (e.g. a domain rename that missed gateway.env) is one journal line away
+// instead of a debugging session - links silently pointing at an old domain
+// was a real incident.
+console.log(`[useagent] gateway public links resolve against ${process.env.FRONTEND_ORIGIN?.trim() || "(FRONTEND_ORIGIN unset)"}`);
 
 export const GATEWAY_MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024;
 
