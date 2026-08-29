@@ -1,7 +1,8 @@
 <h1 align="center">useAgent</h1>
 
 <p align="center">
-  The open-source, self-hostable control plane for coding agents.
+  <b>Hand off the work. Get back the result.</b><br>
+  The open-source AI coworker for your team.
 </p>
 
 <p align="center">
@@ -32,8 +33,13 @@
 > and APIs/schemas may change between releases. It already runs real daily
 > workloads, but pin a tag if you need stability.
 
-Run Codex, Claude Code, and OpenCode as durable, threaded sessions in isolated
-Linux sandboxes. One event contract, one UI, your infrastructure.
+useAgent turns the AI agents you already use - Claude Code, Codex, OpenCode -
+into coworkers with their own cloud computer, your tools, and your company
+context. They hand back finished work, not just answers: live websites, decks,
+spreadsheets, research reports, and tested pull requests.
+
+Under the hood: durable, threaded sessions in isolated Linux sandboxes. One
+event contract, one UI, your infrastructure.
 
 Every run is an event-sourced timeline in Postgres: it survives restarts,
 renders through one session grammar regardless of engine, and stays
