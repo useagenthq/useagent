@@ -172,6 +172,29 @@ describe("buildRunCard shape", () => {
     expect(header.text.text).not.toContain("*bold*");
   });
 
+  test("the header title is a bold mrkdwn link to the web session", () => {
+    const { blocks } = buildRunCard(base);
+    const header = firstOfType(blocks, "section");
+    expect(header.text.text).toContain("<https://app.example.com/session/thread-1|Add a dark mode toggle>");
+    // Bold wraps the whole header line (emoji + label + linked title).
+    expect(header.text.text.startsWith("*")).toBe(true);
+    expect(header.text.text.endsWith("*")).toBe(true);
+  });
+
+  test("link-breaking chars in a title cannot escape the link label", () => {
+    const { blocks } = buildRunCard({ ...base, title: "a>b|c" });
+    const header = firstOfType(blocks, "section");
+    expect(header.text.text).toContain("<https://app.example.com/session/thread-1|a b c>");
+  });
+
+  test("omitAnswer keeps a terminal card chrome-only (the stream body has the reply)", () => {
+    const { blocks } = buildRunCard({ ...base, phase: "completed", answer: "the reply", omitAnswer: true });
+    expect(allOfType(blocks, "divider")).toHaveLength(0);
+    expect(allOfType(blocks, "section")).toHaveLength(1); // header only
+    const actions = firstOfType(blocks, "actions");
+    expect(actions.elements[0].text.text).toBe("Open in useAgent");
+  });
+
   test("the fallback text for a non-terminal card summarizes status + title + model", () => {
     const { text } = buildRunCard({ ...base, phase: "queued", repoSpecs: [ref("a/b")] });
     expect(text).toContain("Queued: Add a dark mode toggle");

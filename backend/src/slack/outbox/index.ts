@@ -88,8 +88,11 @@ export async function enqueueStopStreamTx(
     threadTs: string;
     runId: string;
     chunks: readonly SlackStreamChunk[];
+    narrationText?: string;
+    closingMarkdown?: string;
     blocks: readonly unknown[];
     text: string;
+    fallbackBlocks?: readonly unknown[];
     fallbackText: string;
   },
 ): Promise<boolean> {
@@ -103,8 +106,11 @@ export async function enqueueStopStreamTx(
         threadTs: entry.threadTs,
         runId: entry.runId,
         chunks: entry.chunks,
+        ...(entry.narrationText ? { narrationText: entry.narrationText } : {}),
+        ...(entry.closingMarkdown ? { closingMarkdown: entry.closingMarkdown } : {}),
         blocks: entry.blocks,
         text: entry.text,
+        ...(entry.fallbackBlocks ? { fallbackBlocks: entry.fallbackBlocks } : {}),
         fallbackChunks: chunkSlackText(entry.fallbackText),
       },
     },
@@ -142,6 +148,8 @@ export async function enqueueStartStreamTx(
     runId: string;
     taskDisplayMode: SlackStreamTaskDisplayMode;
     chunks: readonly SlackStreamChunk[];
+    recipientTeamId?: string;
+    recipientUserId?: string;
     fallbackBlocks: readonly unknown[];
     fallbackText: string;
   },
@@ -157,9 +165,33 @@ export async function enqueueStartStreamTx(
         runId: entry.runId,
         taskDisplayMode: entry.taskDisplayMode,
         chunks: entry.chunks,
+        ...(entry.recipientTeamId ? { recipientTeamId: entry.recipientTeamId } : {}),
+        ...(entry.recipientUserId ? { recipientUserId: entry.recipientUserId } : {}),
         fallbackBlocks: entry.fallbackBlocks,
         fallbackText: entry.fallbackText,
       },
+    },
+    exec,
+  );
+}
+
+/** Free-text working status (native shimmer) on a DM assistant thread, INSIDE a
+ *  caller's transaction. An empty `status` clears it. */
+export async function enqueueThreadStatusTx(
+  exec: Executor,
+  entry: {
+    idempotencyKey: string;
+    teamId: string;
+    channel: string;
+    threadTs: string;
+    status: string;
+  },
+): Promise<boolean> {
+  return enqueue(
+    {
+      kind: "set_thread_status",
+      idempotencyKey: entry.idempotencyKey,
+      payload: { teamId: entry.teamId, channel: entry.channel, threadTs: entry.threadTs, status: entry.status },
     },
     exec,
   );
@@ -282,6 +314,8 @@ export async function enqueueStartStream(entry: {
   runId: string;
   taskDisplayMode: SlackStreamTaskDisplayMode;
   chunks: readonly SlackStreamChunk[];
+  recipientTeamId?: string;
+  recipientUserId?: string;
   fallbackBlocks: readonly unknown[];
   fallbackText: string;
 }): Promise<void> {
@@ -295,6 +329,8 @@ export async function enqueueStartStream(entry: {
       runId: entry.runId,
       taskDisplayMode: entry.taskDisplayMode,
       chunks: entry.chunks,
+      ...(entry.recipientTeamId ? { recipientTeamId: entry.recipientTeamId } : {}),
+      ...(entry.recipientUserId ? { recipientUserId: entry.recipientUserId } : {}),
       fallbackBlocks: entry.fallbackBlocks,
       fallbackText: entry.fallbackText,
     },
@@ -309,6 +345,7 @@ export async function enqueueAppendStream(entry: {
   threadTs: string;
   runId: string;
   chunks: readonly SlackStreamChunk[];
+  narrationOffset?: number;
   fallbackBlocks: readonly unknown[];
   fallbackText: string;
 }): Promise<void> {
@@ -321,9 +358,26 @@ export async function enqueueAppendStream(entry: {
       threadTs: entry.threadTs,
       runId: entry.runId,
       chunks: entry.chunks,
+      ...(entry.narrationOffset !== undefined ? { narrationOffset: entry.narrationOffset } : {}),
       fallbackBlocks: entry.fallbackBlocks,
       fallbackText: entry.fallbackText,
     },
+  });
+  if (created) kickSlackOutbox();
+}
+
+/** Durable free-text working status update (DM shimmer). Idempotent by key. */
+export async function enqueueThreadStatus(entry: {
+  idempotencyKey: string;
+  teamId: string;
+  channel: string;
+  threadTs: string;
+  status: string;
+}): Promise<void> {
+  const created = await enqueue({
+    kind: "set_thread_status",
+    idempotencyKey: entry.idempotencyKey,
+    payload: { teamId: entry.teamId, channel: entry.channel, threadTs: entry.threadTs, status: entry.status },
   });
   if (created) kickSlackOutbox();
 }

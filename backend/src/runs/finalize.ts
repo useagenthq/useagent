@@ -1,6 +1,6 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
-import { artifacts, runs, type RunStatus } from "../db/schema";
+import { artifacts, runs, steps, type RunStatus } from "../db/schema";
 import { completeRun } from "./repo";
 import { resolveScopedMemory } from "../memory/scope";
 import { enqueueCapture } from "../memory/capture-outbox";
@@ -21,10 +21,17 @@ import {
   enqueuePostMessageTx,
   enqueueSessionStatusTx,
   enqueueStopStreamTx,
+  enqueueThreadStatusTx,
   enqueueUploadFileTx,
   kickSlackOutbox,
 } from "../slack/outbox";
-import { terminalStreamChunks } from "../slack/streaming";
+import {
+  composeStreamClosing,
+  directMessageChannel,
+  STREAM_NARRATION_CAP,
+  terminalTaskChunks,
+} from "../slack/streaming";
+import { turnStream } from "./turn-stream";
 import { env, slackConfig } from "../env";
 import { findScheduleForRun } from "../schedules/repo";
 import { publishRunLifecycleChange } from "./org-signals";
@@ -60,24 +67,47 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
   const slack = await findSlackRunResponse(run.id, tx);
   if (!slack) return false;
 
-  const finalCard = buildRunCard({
-    title: deriveTitle(run.prompt),
-    phase: phaseForStatus(status),
-    model: run.model,
-    repoSpecs: run.repos.map(parseRepoRef),
-    webUrl: sessionUrl(env.FRONTEND_ORIGIN, run.threadId),
-    answer: summary,
-  });
+  const title = deriveTitle(run.prompt);
+  const phase = phaseForStatus(status);
+  const webUrl = sessionUrl(env.FRONTEND_ORIGIN, run.threadId);
+  const repoSpecs = run.repos.map(parseRepoRef);
+  // Two final cards: the FULL card (answer section) advances the Block Kit
+  // fallback message in place; the CHROME card (linked title + context +
+  // button, no answer) closes the native stream, whose body carries the reply.
+  const finalCard = buildRunCard({ title, phase, model: run.model, repoSpecs, webUrl, answer: summary });
+  const chromeCard = buildRunCard({ title, phase, model: run.model, repoSpecs, webUrl, answer: summary, omitAnswer: true });
   const replyText = composeSlackReplyText(status, summary);
+
+  // The last started tool task settles alongside the root task at stop.
+  const [lastStep] = await tx
+    .select({ id: steps.id, label: steps.label })
+    .from(steps)
+    .where(and(eq(steps.runId, run.id), ne(steps.kind, "done")))
+    .orderBy(desc(steps.idx))
+    .limit(1);
+
+  // Narration the live watcher streamed into the message body (process-local
+  // buffer; empty after a restart). The stop delivery appends exactly the tail
+  // the stream has not accepted yet, then the closing markdown.
+  const narration = (turnStream.snapshot(run.id) ?? "").slice(0, STREAM_NARRATION_CAP);
+  const closingMarkdown = composeStreamClosing({
+    status: status === "failed" ? "failed" : "completed",
+    summary,
+    narration,
+  });
+
   let kickSlack = await enqueueStopStreamTx(tx, {
     idempotencyKey: `slack-reply:${slack.teamId}:${run.id}`,
     teamId: slack.teamId,
     channel: slack.channel,
     threadTs: slack.threadTs,
     runId: run.id,
-    chunks: terminalStreamChunks({ phase: phaseForStatus(status), answerText: replyText }),
-    blocks: finalCard.blocks,
+    chunks: terminalTaskChunks({ phase, title, lastStep: lastStep ?? null }),
+    narrationText: narration,
+    closingMarkdown,
+    blocks: chromeCard.blocks,
     text: finalCard.text,
+    fallbackBlocks: finalCard.blocks,
     fallbackText: replyText,
   });
   const statusCreated = await enqueueSessionStatusTx(tx, {
@@ -88,6 +118,18 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
     status: "active",
   });
   kickSlack = kickSlack || statusCreated;
+  // DM threads: clear the free-text working shimmer durably (the in-process
+  // watcher also clears it, but only this survives a restart).
+  if (directMessageChannel(slack.channel)) {
+    const shimmerCleared = await enqueueThreadStatusTx(tx, {
+      idempotencyKey: `slack-thread-status:final:${slack.teamId}:${run.id}`,
+      teamId: slack.teamId,
+      channel: slack.channel,
+      threadTs: slack.threadTs,
+      status: "",
+    });
+    kickSlack = kickSlack || shimmerCleared;
+  }
 
   if (status === "completed") {
     const SHARE_LIMIT = 5;

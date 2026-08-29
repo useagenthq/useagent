@@ -45,6 +45,7 @@ beforeAll(() => {
     updateMessage: async () => ({ ok: true }),
     addReaction: async () => ({ ok: true }),
     setSessionStatus: async () => ({ ok: true }),
+    setThreadStatus: async () => ({ ok: true }),
     startStream: async () => ({ ok: true, ts: "stream.1" }),
     appendStream: async () => ({ ok: true }),
     stopStream: async () => ({ ok: true }),

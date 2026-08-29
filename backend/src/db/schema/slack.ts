@@ -72,8 +72,14 @@ export const slackRunResponses = pgTable(
     channel: text("channel").notNull(),
     threadTs: text("thread_ts").notNull(),
     nativeStreamTs: text("native_stream_ts"),
-    nativeStreamMode: text("native_stream_mode").$type<"task_update" | "plan">(),
+    // Display mode of the native stream. Legacy rows may carry the retired
+    // "task_update" value; nothing branches on it after start.
+    nativeStreamMode: text("native_stream_mode").$type<"timeline" | "plan">(),
     fallbackMessageTs: text("fallback_message_ts"),
+    // Total narration chars ACCEPTED by the native stream so far. Orders the
+    // narration appends (each row carries its expected offset) and lets the
+    // stop delivery append exactly the un-streamed tail of the reply.
+    streamedChars: integer("streamed_chars").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -111,6 +117,7 @@ export type SlackOutboxKind =
   | "post_card"
   | "update_card"
   | "set_session_status"
+  | "set_thread_status"
   | "start_stream"
   | "append_stream"
   | "stop_stream";

@@ -31,6 +31,10 @@ export interface RunCardInput {
   readonly workingStep?: string;
   /** The final answer (agent Markdown), set when the run settles. */
   readonly answer?: string;
+  /** True for the card that closes a NATIVE stream: the streamed message body
+   *  already carries the reply, so the card stays chrome-only (linked title,
+   *  context row, button) and never repeats the answer. */
+  readonly omitAnswer?: boolean;
 }
 
 // Block Kit length caps (Slack docs): a header plain_text tops out at 150 chars,
@@ -95,14 +99,17 @@ function contextText(model: string, repoSpecs: readonly RepoRef[]): string {
   return truncate(parts.join("   ·   "), CONTEXT_CAP);
 }
 
-/** The header line: status emoji + label (literal), then the escaped, truncated
- *  title. Only the title is escaped - a `:emoji:` shortcode must keep its colons
- *  and underscores intact, and the phase label is fixed chrome. */
+/** The header line: status emoji + label (literal), then the title as a BOLD
+ *  LINK to the run's web session. Only the title is escaped - a `:emoji:`
+ *  shortcode must keep its colons and underscores intact, and the phase label
+ *  is fixed chrome. A mrkdwn link label additionally cannot contain `>` or `|`
+ *  (they terminate the link), so those become spaces. */
 function headerText(input: RunCardInput): string {
   const meta = PHASE_META[input.phase];
   const prefix = `${meta.emoji} ${meta.label}: `;
-  const title = escapeMrkdwn(truncate(input.title, Math.max(1, HEADER_CAP - prefix.length)));
-  return prefix + title;
+  const title = escapeMrkdwn(truncate(input.title, Math.max(1, HEADER_CAP - prefix.length)))
+    .replace(/[>|]/g, " ");
+  return `${prefix}<${input.webUrl}|${title}>`;
 }
 
 /**
@@ -155,8 +162,10 @@ export function buildRunCard(input: RunCardInput): { blocks: unknown[]; text: st
   return { blocks, text: fallbackText(input, meta.label) };
 }
 
-/** The settled answer as a capped mrkdwn section, or null while non-terminal. */
+/** The settled answer as a capped mrkdwn section, or null while non-terminal
+ *  (or when the streamed message body already carries the reply). */
 function answerSection(input: RunCardInput): string | null {
+  if (input.omitAnswer) return null;
   if (input.phase !== "completed" && input.phase !== "failed") return null;
   const answer = input.answer?.trim() ? toSlackMrkdwn(input.answer.trim()) : "";
   if (input.phase === "completed") {
