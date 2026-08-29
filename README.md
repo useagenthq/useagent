@@ -68,6 +68,17 @@ inspectable after the fact.
 - **Native artifacts** - DOCX, XLSX, PPTX, and PDF with revisioned editing and
   native renderers.
 
+## Integrations
+
+Work arrives from anywhere and tools stay behind the gateway:
+
+| | |
+|---|---|
+| **Channels in** | Web app, Slack, REST API, schedules - every channel enters through the same run door |
+| **Native** | Slack (mentions, threads, approvals, delivery), GitHub (App auth, clones, PRs) |
+| **Via connectors** | Gmail, Linear, Notion, HubSpot - OAuth handled by the broker, tokens sealed server-side |
+| **Workspace surfaces** | Knowledge base, team memory, skills and playbooks, scheduled automations |
+
 ## Quick Start
 
 Requires [bun](https://bun.sh) and Postgres 16+ with the
@@ -113,11 +124,20 @@ and addresses the host over SSH.
 
 ## Architecture
 
-```
-frontend (Next.js)  ->  backend (Bun + Hono + Postgres)  ->  sandboxes (Daytona/Cube)
-        UI renders the event log        event-sourced runs,          isolated Linux
-        never a live process            trusted tool gateway         workstations
-```
+<p align="center">
+  <img src="docs/media/architecture.svg" alt="useAgent architecture: entry channels feed a self-hosted control plane (Run API, Postgres event log, engine adapters, session UI); adapters spawn an isolated cloud sandbox per thread; every integration crosses the trusted gateway; finished work comes back as editable artifacts" width="100%">
+</p>
+
+Three properties do the heavy lifting:
+
+1. **The engine is a plug.** Claude Code, Codex, OpenCode, and Pi all speak one
+   canonical event contract through the engine adapters - swap engines and your
+   threads, artifacts, and memory stay.
+2. **Every run is an event log.** Postgres is the source of truth: runs survive
+   backend restarts, replay exactly, and stay inspectable after the fact.
+3. **Credentials never enter the sandbox.** The agent's computer is isolated;
+   every integration call crosses the trusted gateway as a typed tool, and the
+   keys live only on your control plane.
 
 | Path | What it owns |
 |---|---|
