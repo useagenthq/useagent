@@ -499,6 +499,83 @@ describe("provider-neutral native lifecycle identity", () => {
   });
 });
 
+describe("Pi bridge child identity", () => {
+  test("keeps concurrent children distinct when one launch call starts both", () => {
+    const frame = (
+      seq: number,
+      childSessionId: string,
+      terminal = false,
+    ): OpenCodeFrame => ({
+      eventId: `pi-${childSessionId}-${terminal ? "done" : "start"}`,
+      seq,
+      provider: "pi",
+      eventType: terminal ? "part.subtask.completed" : "part.subtask",
+      payload: {
+        childSessionId,
+        childEventKind: terminal ? "child.completed" : "child.started",
+        state: {
+          status: terminal ? "ok" : "running",
+          ...(terminal ? { output: childSessionId === "child-a" ? "A" : "B" } : {}),
+        },
+      },
+      native: {
+        sessionId: "parent-session",
+        parentSessionId: "parent-session",
+        messageId: null,
+        partId: null,
+        callId: terminal ? childSessionId : "launch-call",
+      },
+    });
+    const translated = translateOpenCode([
+      {
+        eventId: "pi-parent-task-wrapper",
+        seq: 0,
+        provider: "pi",
+        eventType: "part.tool",
+        payload: { tool: "task", state: { status: "running" } },
+        native: {
+          sessionId: "parent-session",
+          parentSessionId: null,
+          messageId: null,
+          partId: null,
+          callId: "launch-call",
+        },
+      },
+      frame(1, "child-a"),
+      frame(2, "child-b"),
+      frame(3, "child-a", true),
+      frame(4, "child-b", true),
+    ], { runId: "run", threadId: "thread", engine: "pi" });
+
+    const children = translated.events.filter(
+      (event) => event.kind === "child.started" || event.kind === "child.completed",
+    );
+    expect(children.map((event) => [event.kind, event.childId])).toEqual([
+      ["child.started", "child-a"],
+      ["child.started", "child-b"],
+      ["child.completed", "child-a"],
+      ["child.completed", "child-b"],
+    ]);
+    expect(children.map((event) => event.identity.nativeSessionId)).toEqual([
+      "child-a",
+      "child-b",
+      "child-a",
+      "child-b",
+    ]);
+    expect(children.filter((event) => event.kind === "child.started").every(
+      (event) => event.launchToolCallId === undefined,
+    )).toBe(true);
+    expect(children.filter((event) => event.kind === "child.completed").map(
+      (event) => [event.childId, event.result],
+    )).toEqual([
+      ["child-a", "A"],
+      ["child-b", "B"],
+    ]);
+    expect(children.some((event) => event.childId === "launch-call")).toBe(false);
+    expect(children.some((event) => event.childId === "parent-session")).toBe(false);
+  });
+});
+
 describe("OpenCode native todowrite plans", () => {
   test("maps a valid native todowrite frame to a canonical plan without a generic tool row", () => {
     const result = translateOpenCode([{

@@ -3,8 +3,10 @@ import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
+import { NativeBridgeSequencer } from "@useagent/agent-harness/bridge";
 import * as schema from "../src/db/schema";
 import { agentExecutions, delegationEdges, runs } from "../src/db/schema";
+import { piBridgeProviderEvent } from "../src/engines/pi-provider-events";
 import { executionGraphWriteEnabled } from "../src/runs/execution-graph-rollout";
 import {
   executionGraphObservationKind,
@@ -381,25 +383,55 @@ describe("execution graph shadow writer", () => {
     )).map((edge) => edge.kind)).toEqual(["spawn", "resume"]);
   });
 
-  test("does not fabricate a Pi child from its current parent-owned event shape", async () => {
+  test("projects explicit Pi child identities without treating the parent session as the child", async () => {
     const orgId = `org-${crypto.randomUUID()}`;
     const runId = await seedRun(orgId);
     await shadowWriteExecutionGraph({
-      id: `${runId}:child-progress`,
+      id: `${runId}:root`,
       runId,
       threadId: runId,
       provider: "pi",
-      eventType: "part.subtask",
+      eventType: "session.started",
       nativeSessionId: "parent",
-      nativeParentSessionId: "parent",
-      nativeCallId: "child",
-      payload: { state: { status: "running" } },
-    }, 1, testDb);
-    expect(await testDb.select().from(agentExecutions).where(and(
-      eq(agentExecutions.runId, runId),
-      eq(agentExecutions.mode, "native_child"),
-    ))).toEqual([]);
+    }, 0, testDb);
+    const frames = new NativeBridgeSequencer("parent", () => 1);
+    const events = [
+      { kind: "child.started", childId: "child-a", launchToolCallId: "launch-call" },
+      { kind: "child.started", childId: "child-b", launchToolCallId: "launch-call" },
+      { kind: "child.updated", childId: "child-a", status: "running" },
+      { kind: "child.completed", childId: "child-b", status: "ok", result: "B" },
+      { kind: "child.completed", childId: "child-a", status: "ok", result: "A" },
+    ] as const;
+    for (const [index, body] of events.entries()) {
+      await shadowWriteExecutionGraph(
+        piBridgeProviderEvent({ runId, threadId: runId }, frames.frame(body)),
+        index + 1,
+        testDb,
+      );
+    }
 
+    const executions = await testDb.select().from(agentExecutions).where(and(
+      eq(agentExecutions.runId, runId),
+      eq(agentExecutions.provider, "pi"),
+    ));
+    expect(executions.map((row) => [row.mode, row.nativeSessionId, row.status]).sort()).toEqual([
+      ["native_child", "child-a", "completed"],
+      ["native_child", "child-b", "completed"],
+      ["root", "parent", "running"],
+    ]);
+    const root = executions.find((row) => row.mode === "root");
+    const children = executions.filter((row) => row.mode === "native_child");
+    expect(children.every((row) => row.nativeParentSessionId === "parent")).toBe(true);
+    expect((await testDb.select().from(delegationEdges).where(
+      eq(delegationEdges.runId, runId),
+    )).map((edge) => ({
+      parent: edge.parentExecutionId,
+      kind: edge.kind,
+      target: edge.nativeTargetSessionId,
+    })).sort((a, b) => (a.target ?? "").localeCompare(b.target ?? ""))).toEqual([
+      { parent: root?.id, kind: "spawn", target: "child-a" },
+      { parent: root?.id, kind: "spawn", target: "child-b" },
+    ]);
   });
 
   test("fails open for unsupported and malformed observations", async () => {
