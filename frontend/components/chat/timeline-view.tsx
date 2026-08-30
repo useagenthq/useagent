@@ -24,6 +24,7 @@ import { FollowUpRows } from "@/components/chat/follow-up-rows";
 import { SourceChip } from "@/components/chat/source-chip";
 import {
   deriveTurnSources,
+  type TimelineArtifact,
   type TimelineMarker,
   type TimelineNode,
   type TurnSource,
@@ -82,32 +83,44 @@ const TextBurst = memo(function TextBurst({ text }: { text: string }) {
 });
 
 function ArtifactActions({
-  id,
-  name,
-  previewLabel = `Preview ${name}`,
+  artifact,
+  onOpen,
+  previewLabel = `Preview ${artifact.name}`,
 }: {
-  id: string;
-  name: string;
+  artifact: TimelineArtifact;
+  onOpen?: () => void;
   previewLabel?: string;
 }) {
-  const content = `/api/artifacts/${id}/content`;
+  const content = `/api/artifacts/${artifact.id}/content`;
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <a
-        href={content}
-        target="_blank"
-        rel="noreferrer"
-        aria-label={previewLabel}
-        title={previewLabel}
-        className="flex size-8 items-center justify-center rounded-lg text-text-secondary outline-none hover:bg-background-primary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
-      >
-        <RiExternalLinkLine aria-hidden className="size-4" />
-      </a>
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`Open ${artifact.name} in workspace`}
+          title="Open in workspace"
+          className="flex size-8 items-center justify-center rounded-lg text-text-secondary outline-none hover:bg-background-primary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+        >
+          <RiExternalLinkLine aria-hidden className="size-4" />
+        </button>
+      ) : (
+        <a
+          href={content}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={previewLabel}
+          title={previewLabel}
+          className="flex size-8 items-center justify-center rounded-lg text-text-secondary outline-none hover:bg-background-primary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+        >
+          <RiExternalLinkLine aria-hidden className="size-4" />
+        </a>
+      )}
       <a
         href={`${content}?download=1`}
-        download={name}
-        aria-label={`Download ${name}`}
-        title={`Download ${name}`}
+        download={artifact.name}
+        aria-label={`Download ${artifact.name}`}
+        title={`Download ${artifact.name}`}
         className="flex size-8 items-center justify-center rounded-lg text-text-secondary outline-none hover:bg-background-primary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         <RiDownloadLine aria-hidden className="size-4" />
@@ -183,7 +196,12 @@ function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" 
           className="size-4 shrink-0 text-text-tertiary"
         />
       )}
-      {!artifact.destination && <ArtifactActions id={artifact.id} name={artifact.name} />}
+      {!artifact.destination && (
+        <ArtifactActions
+          artifact={artifact}
+          onOpen={canOpen ? () => openWorkpiece?.(artifact) : undefined}
+        />
+      )}
       {expanded && (
         <ExpandedImageDialog
           preview={{
@@ -214,8 +232,13 @@ function FileChangeRow({ node }: { node: Extract<TimelineNode, { kind: "file" }>
       </div>
       {file.diff && (
         <ArtifactActions
-          id={file.diff.artifactId}
-          name={`${name}.diff`}
+          artifact={{
+            id: file.diff.artifactId,
+            name: `${name}.diff`,
+            bytes: file.diff.bytes,
+            sha256: file.diff.sha256,
+            contentType: file.diff.contentType,
+          }}
           previewLabel={`View diff for ${name}`}
         />
       )}

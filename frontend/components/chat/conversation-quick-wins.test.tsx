@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
 import type { ApiRun, RunStatus } from "./types";
+import { WorkspaceOpenProvider } from "./workspace-open-context";
 
 // The canonical-timeline flag is read at module load; flip it on BEFORE importing
 // the conversation so these turns render through the canonical lane.
@@ -168,4 +169,35 @@ test("image artifacts get the click-to-expand affordance; other artifacts do not
   expect(html).toContain('aria-label="Expand screenshot.png"');
   expect(html).toContain("cursor-zoom-in");
   expect(html).not.toContain('aria-label="Expand report.pdf"');
+});
+
+test("workpiece Preview actions open the session workspace and keep Download separate", () => {
+  const turn = makeTurn("run-settled", "completed", [
+    ev("artifact.created", {
+      name: "quarterly-budget.xlsx",
+      artifact: {
+        artifactId: "art-sheet",
+        bytes: 4096,
+        sha256: "b2",
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+    }),
+  ]);
+  const html = renderToStaticMarkup(
+    <WorkspaceOpenProvider value={() => {}}>
+      <Conversation
+        turns={[turn]}
+        defaultEngine="opencode"
+        defaultModel="claude-sonnet-5"
+        defaultMemoryScope="org"
+        pendingReply={null}
+        onReply={async () => {}}
+      />
+    </WorkspaceOpenProvider>,
+  );
+
+  expect(html).toContain('aria-label="Open quarterly-budget.xlsx in workspace"');
+  expect(html).not.toContain('aria-label="Preview quarterly-budget.xlsx"');
+  expect(html).toContain('href="/api/artifacts/art-sheet/content?download=1"');
+  expect(html).toContain('aria-label="Download quarterly-budget.xlsx"');
 });

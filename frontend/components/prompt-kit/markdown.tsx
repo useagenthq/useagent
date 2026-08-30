@@ -3,13 +3,15 @@
 // (`bg-primary-foreground`) → `bg-background-secondary-default`. Block-splitting +
 // per-block memoization keep re-renders cheap while text streams in.
 
-import { cx } from "@/utils/cx";
 import { marked } from "marked";
-import { memo, useId, useMemo } from "react";
+import { memo, useEffect, useId, useMemo, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "@/components/ai/code-block";
+import { type OpenWorkpiece, useOpenWorkpiece } from "@/components/chat/workspace-open-context";
+import { backendFetch } from "@/lib/backend-fetch";
+import { cx } from "@/utils/cx";
 
 export type MarkdownProps = {
   children: string;
@@ -27,6 +29,120 @@ function extractLanguage(className?: string): string {
   if (!className) return "plaintext";
   const match = className.match(/language-(\w+)/);
   return match ? match[1] : "plaintext";
+}
+
+type WorkspaceEligibility = "loading" | "raw" | "workspace";
+
+export function artifactPayloadSupportsWorkspace(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const artifact = (value as { artifact?: unknown }).artifact;
+  if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) return false;
+  const descriptor = artifact as { workpiece?: unknown; preview_pdf_url?: unknown };
+  return (
+    (descriptor.workpiece !== null &&
+      typeof descriptor.workpiece === "object" &&
+      !Array.isArray(descriptor.workpiece)) ||
+    (typeof descriptor.preview_pdf_url === "string" && descriptor.preview_pdf_url.length > 0)
+  );
+}
+
+function ArtifactMarkdownChip({
+  url,
+  label,
+  tone,
+  initial,
+  openWorkpiece,
+}: {
+  readonly url: string;
+  readonly label: string;
+  readonly tone: string;
+  readonly initial: string;
+  readonly openWorkpiece: OpenWorkpiece;
+}) {
+  const [origin, setOrigin] = useState<string | null>(null);
+  const [eligibility, setEligibility] = useState<WorkspaceEligibility>("loading");
+  useEffect(() => setOrigin(window.location.origin), []);
+  const previewTarget = useMemo(
+    () => (origin ? artifactWorkspaceTarget(url, label, origin) : null),
+    [label, origin, url],
+  );
+
+  useEffect(() => {
+    if (!previewTarget) {
+      setEligibility("raw");
+      return;
+    }
+    const controller = new AbortController();
+    setEligibility("loading");
+    void (async () => {
+      try {
+        const response = await backendFetch(
+          `/api/artifacts/${encodeURIComponent(previewTarget.id)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        if (!response.ok) {
+          setEligibility("raw");
+          return;
+        }
+        setEligibility(
+          artifactPayloadSupportsWorkspace(await response.json()) ? "workspace" : "raw",
+        );
+      } catch {
+        if (!controller.signal.aborted) setEligibility("raw");
+      }
+    })();
+    return () => controller.abort();
+  }, [previewTarget]);
+
+  const chipClassName =
+    "mx-0.5 inline-flex translate-y-[-1px] items-center gap-1.5 rounded-full bg-background-secondary-default py-0.5 pl-1 pr-2 align-middle text-caption-1-medium text-text-primary no-underline transition-colors hover:bg-background-secondary-hover";
+  const content = (
+    <>
+      <span
+        aria-hidden
+        className={`flex size-4 items-center justify-center rounded-full text-[9px] font-semibold leading-none text-white ${tone}`}
+      >
+        {initial}
+      </span>
+      <span className="max-w-56 truncate">{label}</span>
+      <span aria-hidden className="text-text-tertiary">
+        ↗
+      </span>
+    </>
+  );
+
+  if (previewTarget && eligibility === "workspace") {
+    return (
+      <button
+        type="button"
+        data-chip
+        onClick={() => openWorkpiece(previewTarget)}
+        aria-label={`Open ${previewTarget.name} in workspace`}
+        className={chipClassName}
+      >
+        {content}
+      </button>
+    );
+  }
+  if (previewTarget && eligibility === "loading") {
+    return (
+      <button
+        type="button"
+        data-chip
+        disabled
+        aria-busy="true"
+        aria-label={`Loading preview for ${previewTarget.name}`}
+        className={chipClassName}
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <a data-chip href={url} target="_blank" rel="noreferrer" className={chipClassName}>
+      {content}
+    </a>
+  );
 }
 
 const INITIAL_COMPONENTS: Partial<Components> = {
@@ -81,9 +197,7 @@ const INITIAL_COMPONENTS: Partial<Components> = {
     return <thead className="bg-background-secondary-default">{children}</thead>;
   },
   tr: function TrComponent({ children }) {
-    return (
-      <tr className="border-border-button-default border-b">{children}</tr>
-    );
+    return <tr className="border-border-button-default border-b">{children}</tr>;
   },
   th: function ThComponent({ children }) {
     return (
@@ -93,24 +207,46 @@ const INITIAL_COMPONENTS: Partial<Components> = {
     );
   },
   td: function TdComponent({ children }) {
-    return (
-      <td className="text-text-primary px-3 py-2 align-top">{children}</td>
-    );
+    return <td className="text-text-primary px-3 py-2 align-top">{children}</td>;
   },
   a: function AnchorComponent({ href, children }) {
     const url = typeof href === "string" ? href : "";
+    const openWorkpiece = useOpenWorkpiece();
     // Artifact/media links render as dense source chips (type badge + label +
     // arrow), matching the retrieval-chip grammar; ordinary links stay links.
-    const isArtifact = /\/api\/artifacts\//.test(url);
-    const ext = (url.match(/\.(mp4|webm|pdf|docx|xlsx|pptx|csv|png|jpg|zip)(?:\?|$)/i)?.[1] ?? "").toUpperCase();
+    const isArtifact = /\/(?:api|agent)\/artifacts\//.test(url);
+    const ext = (
+      url.match(/\.(mp4|webm|pdf|docx|xlsx|pptx|csv|png|jpg|zip)(?:\?|$)/i)?.[1] ?? ""
+    ).toUpperCase();
     if (isArtifact || ext) {
-      const label = typeof children === "string" ? children : Array.isArray(children) ? children.join("") : "Open";
+      const label =
+        typeof children === "string"
+          ? children
+          : Array.isArray(children)
+            ? children.join("")
+            : "Open";
       const tone =
-        ext === "PDF" ? "bg-red-500" :
-        ext === "CSV" || ext === "XLSX" ? "bg-green-600" :
-        ext === "MP4" || ext === "WEBM" ? "bg-purple-500" :
-        ext === "PPTX" ? "bg-orange-500" : "bg-blue-500";
+        ext === "PDF"
+          ? "bg-red-500"
+          : ext === "CSV" || ext === "XLSX"
+            ? "bg-green-600"
+            : ext === "MP4" || ext === "WEBM"
+              ? "bg-purple-500"
+              : ext === "PPTX"
+                ? "bg-orange-500"
+                : "bg-blue-500";
       const initial = (label.trim().charAt(0) || "F").toUpperCase();
+      if (openWorkpiece) {
+        return (
+          <ArtifactMarkdownChip
+            url={url}
+            label={label}
+            tone={tone}
+            initial={initial}
+            openWorkpiece={openWorkpiece}
+          />
+        );
+      }
       return (
         <a
           data-chip
@@ -119,11 +255,16 @@ const INITIAL_COMPONENTS: Partial<Components> = {
           rel="noreferrer"
           className="mx-0.5 inline-flex translate-y-[-1px] items-center gap-1.5 rounded-full bg-background-secondary-default py-0.5 pl-1 pr-2 align-middle text-caption-1-medium text-text-primary no-underline transition-colors hover:bg-background-secondary-hover"
         >
-          <span aria-hidden className={`flex size-4 items-center justify-center rounded-full text-[9px] font-semibold leading-none text-white ${tone}`}>
+          <span
+            aria-hidden
+            className={`flex size-4 items-center justify-center rounded-full text-[9px] font-semibold leading-none text-white ${tone}`}
+          >
             {initial}
           </span>
           <span className="max-w-56 truncate">{label}</span>
-          <span aria-hidden className="text-text-tertiary">↗</span>
+          <span aria-hidden className="text-text-tertiary">
+            ↗
+          </span>
         </a>
       );
     }
@@ -144,6 +285,37 @@ const INITIAL_COMPONENTS: Partial<Components> = {
     return <hr className="border-border-button-default my-4" />;
   },
 };
+
+export function artifactWorkspaceTarget(
+  value: string,
+  label: string,
+  origin: string,
+): { readonly id: string; readonly name: string } | null {
+  if (!/^preview\b/i.test(label.trim())) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(value, origin);
+  } catch {
+    return null;
+  }
+  if (parsed.origin !== origin) return null;
+  if (parsed.searchParams.get("download") === "1") return null;
+  const pathname = parsed.pathname;
+  const match = /^\/(?:api\/artifacts\/([^/]+)\/content|agent\/artifacts\/([^/]+))$/.exec(pathname);
+  const encodedId = match?.[1] ?? match?.[2];
+  if (!encodedId) return null;
+  try {
+    const id = decodeURIComponent(encodedId);
+    const name =
+      label
+        .trim()
+        .replace(/^preview\s+(?:the\s+)?/i, "")
+        .trim() || "Artifact";
+    return { id, name };
+  } catch {
+    return null;
+  }
+}
 
 // Flow-element prose styling shared by EVERY Markdown consumer. The
 // foundation ships no @tailwindcss/typography, and Tailwind preflight strips
@@ -177,10 +349,7 @@ const MemoizedMarkdownBlock = memo(
     components?: Partial<Components>;
   }) {
     return (
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkBreaks]}
-        components={components}
-      >
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={components}>
         {content}
       </ReactMarkdown>
     );
