@@ -174,8 +174,11 @@
   --color-icon-button-disabled-foreground: var(--color-neutral-300);
   --color-button-primary-disabled-foreground: var(--color-neutral-400);
 
-  /* Text */
-  --color-text-primary:         var(--color-neutral-950);
+  /* Text - primary is a soft near-black (#242528) rather than pure neutral-950,
+   * so hover/active/dropdown text reads refined instead of harsh on light
+   * surfaces. neutral-950 stays available via text-strong-950 for true-black
+   * emphasis. */
+  --color-text-primary:         #242528;
   --color-text-secondary:       var(--color-neutral-500);
   --color-text-tertiary:        var(--color-neutral-400);
   --color-text-disabled:        var(--color-neutral-300);

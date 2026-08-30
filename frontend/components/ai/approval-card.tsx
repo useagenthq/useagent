@@ -68,7 +68,7 @@ export function ApprovalCard({
           </button>
         </div>
 
-        <div className="mt-3 flex flex-col gap-0.5">
+        <div className="mt-2.5 flex flex-col gap-1">
           {options.map((option, index) => {
             const active = selected === index && !customActive;
             return (
@@ -100,7 +100,7 @@ export function ApprovalCard({
                 <span className="min-w-0">
                   <span
                     className={cx(
-                      "block text-body-2-medium transition-colors duration-200",
+                      "block text-body-2-regular transition-colors duration-200",
                       active ? "text-text-primary" : "text-text-secondary",
                     )}
                   >

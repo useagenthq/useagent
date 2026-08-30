@@ -101,7 +101,7 @@ function ActionButton({
       aria-pressed={active}
       onClick={onClick}
       className={cx(
-        "flex size-7 items-center justify-center rounded-lg transition-colors duration-100",
+        "flex size-6 items-center justify-center rounded-md transition-colors duration-100",
         "hover:bg-background-secondary-hover hover:text-text-secondary",
         active ? "text-text-primary" : "text-text-tertiary",
       )}
@@ -174,10 +174,10 @@ export function StreamingText({
 
   return (
     <div className={cx("w-full", className)}>
-      <p className="text-body-regular leading-relaxed whitespace-pre-wrap text-text-primary">
+      <p className="text-body-2-regular leading-relaxed whitespace-pre-wrap text-text-primary">
         {visible}
         {active && (
-          <span className="ai-caret ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 rounded-full bg-foreground-icon-primary align-text-bottom" />
+          <span className="ai-caret ml-0.5 inline-block h-3 w-0.5 translate-y-0.5 rounded-full bg-foreground-icon-primary align-text-bottom" />
         )}
       </p>
 
@@ -220,7 +220,7 @@ export function StreamingText({
             type="button"
             aria-expanded={sourcesOpen}
             onClick={() => setSourcesOpen((o) => !o)}
-            className="ml-1.5 flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-left transition-colors duration-150 hover:bg-background-secondary-hover"
+            className="ml-1.5 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors duration-150 hover:bg-background-secondary-hover"
           >
             <span className="flex -space-x-1.5">
               {sources.slice(0, 3).map((source) => (
@@ -247,7 +247,7 @@ export function StreamingText({
           }}
         >
           <div className="overflow-hidden">
-            <div className="mt-1.5 flex flex-col rounded-xl border border-border-button-default bg-background-primary-default p-1 shadow-card">
+            <div className="mt-1.5 flex flex-col rounded-[10px] bg-background-primary-default p-1 shadow-sm">
               {sources.map((source) => (
                 <a
                   key={source.url}
@@ -258,7 +258,7 @@ export function StreamingText({
                 >
                   <SourceAvatar source={source} className="size-4 shrink-0 rounded" />
                   <span className="truncate">{source.name}</span>
-                  <span className="ml-auto shrink-0 font-mono text-caption-1-regular text-text-tertiary">
+                  <span className="ml-auto shrink-0 font-mono text-caption-2-regular text-text-tertiary">
                     {hostOf(source.url)}
                   </span>
                 </a>
