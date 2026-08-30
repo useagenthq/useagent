@@ -68,7 +68,69 @@ export interface TimelineArtifact {
   readonly bytes: number;
   readonly sha256: string;
   readonly contentType: string;
+  /** Delivery receipts enrich the artifact without replacing its content row. */
+  readonly destinations?: readonly string[];
+  /** @deprecated Accept legacy single-destination nodes while callers migrate. */
   readonly destination?: string;
+}
+
+export interface TimelineArtifactReceipt {
+  readonly key: string;
+  readonly seq: number;
+  readonly created: boolean;
+  readonly artifact: TimelineArtifact;
+  readonly destination?: string;
+}
+
+/** Fold an artifact lifecycle into one stable row. Creation owns the row position;
+ * delivery receipts only add deterministic, provider-neutral destinations. */
+export function reconcileTimelineArtifacts(
+  receipts: readonly TimelineArtifactReceipt[],
+): readonly { key: string; seq: number; artifact: TimelineArtifact }[] {
+  const artifacts = new Map<
+    string,
+    {
+      key: string;
+      seq: number;
+      created: boolean;
+      artifact: TimelineArtifact;
+      destinations: Set<string>;
+    }
+  >();
+
+  for (const receipt of receipts) {
+    const current = artifacts.get(receipt.artifact.id);
+    if (!current) {
+      artifacts.set(receipt.artifact.id, {
+        key: receipt.key,
+        seq: receipt.seq,
+        created: receipt.created,
+        artifact: receipt.artifact,
+        destinations: new Set(receipt.destination ? [receipt.destination] : []),
+      });
+      continue;
+    }
+    if (receipt.destination) current.destinations.add(receipt.destination);
+    if (receipt.created && (!current.created || receipt.seq < current.seq)) {
+      current.key = receipt.key;
+      current.seq = receipt.seq;
+      current.created = true;
+      current.artifact = receipt.artifact;
+    } else if (!current.created && receipt.seq < current.seq) {
+      current.key = receipt.key;
+      current.seq = receipt.seq;
+      current.artifact = receipt.artifact;
+    }
+  }
+
+  return [...artifacts.values()].map(({ key, seq, artifact, destinations }) => ({
+    key,
+    seq,
+    artifact: {
+      ...artifact,
+      ...(destinations.size > 0 ? { destinations: [...destinations].toSorted() } : {}),
+    },
+  }));
 }
 
 /** A durable file receipt. The patch body stays out of the event stream; when a
@@ -149,7 +211,10 @@ export function parseFollowups(eventType: string, payload: unknown): readonly st
   return suggestions.length > 0 ? suggestions : null;
 }
 
-function parseArtifact(eventType: string, payload: unknown): TimelineArtifact | null {
+function parseArtifact(
+  eventType: string,
+  payload: unknown,
+): { artifact: TimelineArtifact; destination?: string } | null {
   if (eventType !== "artifact.created" && eventType !== "artifact.delivered") return null;
   const item = asRecord(payload);
   if (
@@ -163,11 +228,13 @@ function parseArtifact(eventType: string, payload: unknown): TimelineArtifact | 
     return null;
   }
   return {
-    id: item.id,
-    name: item.name,
-    bytes: item.size_bytes,
-    sha256: item.sha256,
-    contentType: item.content_type,
+    artifact: {
+      id: item.id,
+      name: item.name,
+      bytes: item.size_bytes,
+      sha256: item.sha256,
+      contentType: item.content_type,
+    },
     ...(eventType === "artifact.delivered" && typeof item.destination === "string"
       ? { destination: item.destination }
       : {}),
@@ -325,17 +392,27 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
   type Ranked = { node: TimelineNode; k0: number; k1: number; k2: number };
   const ranked: Ranked[] = [];
 
-  // Durable artifact lifecycle rows appear after the turn's narration/tools.
-  // Creation exposes preview/download; delivery is a separate connector receipt.
+  // Durable artifacts appear after the turn's narration/tools. Delivery receipts
+  // enrich the creation row instead of rendering a provider-specific duplicate.
+  const artifactReceipts: TimelineArtifactReceipt[] = [];
   for (const f of nativeFrames) {
     if (f.provider !== "skynet") continue;
-    const artifact = parseArtifact(f.eventType, f.payload);
-    if (!artifact) continue;
+    const parsed = parseArtifact(f.eventType, f.payload);
+    if (!parsed) continue;
+    artifactReceipts.push({
+      key: f.eventId,
+      seq: f.seq,
+      created: f.eventType === "artifact.created",
+      artifact: parsed.artifact,
+      ...(parsed.destination ? { destination: parsed.destination } : {}),
+    });
+  }
+  for (const receipt of reconcileTimelineArtifacts(artifactReceipts)) {
     ranked.push({
-      node: { kind: "artifact", key: f.eventId, artifact },
+      node: { kind: "artifact", key: receipt.key, artifact: receipt.artifact },
       k0: Number.MAX_SAFE_INTEGER,
       k1: 2,
-      k2: f.seq,
+      k2: receipt.seq,
     });
   }
 
