@@ -1,0 +1,6 @@
+source=https://github.com/pingdotgg/t3code
+base_commit=3c7d3894bf26be1d79405055b5673ad049c84965
+source_commit=2c79d9c7c5a05b927d8f5e2f47e1a23b49d62c5a
+patch_sha256=93ec1c003ce3e4c220ba91df875726ae368dc075da8900d6a90099ea3bedd4b5
+bundle_sha256=85fe37e525c34b44d3d5f98c29ce28902bef41ee70a611a404f6903ac07186bc
+contract=opencode-codex-child-transcript-claude-first-turn-v3

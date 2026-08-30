@@ -11,7 +11,7 @@ export const RUNTIME_GENERATION_LABEL = "useagent.runtime";
 // Bump this identity whenever the embedded provider runtime changes. It is
 // stamped on retained/warm sandboxes and doubles as the pool name, so a new
 // release cannot accidentally resume a thread against an older runtime binary.
-export const RUNTIME_GENERATION = "useagent-runtime-v5";
+export const RUNTIME_GENERATION = "useagent-runtime-v8";
 export const RUNTIME_CUBE_WARM_POOL_NAME = RUNTIME_GENERATION;
 // Frozen VALUE: warm sandboxes already carry a process session under this name;
 // renaming the string would strand their resident server processes.

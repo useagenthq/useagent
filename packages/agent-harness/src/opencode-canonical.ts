@@ -473,6 +473,7 @@ export function translateOpenCode(
       ): void {
         if (activityKind.endsWith(".started")) {
           seenChild.add(childId);
+          emittedChild.add(childId);
           produced.push(push(f.eventId, f.provider, {
             kind: "child.started",
             childId,
@@ -547,6 +548,43 @@ export function translateOpenCode(
 
       if (activityKind.startsWith("context-window.")) {
         suppressed = "t3 context-window diagnostic (not a timeline node)";
+      } else if (activityKind.startsWith("child.message.")) {
+        const childId = firstString(payload?.childSessionId, payload?.agentId);
+        const messageId = firstString(payload?.messageId, payload?.itemId, f.native.messageId);
+        const text = str(payload?.text) ?? "";
+        const completed = activityKind.endsWith(".completed") || payload?.status === "completed";
+        const streamKind = str(payload?.streamKind);
+        if (!childId || !messageId) {
+          suppressed = "t3 child message without child or message identity";
+        } else if (streamKind === "reasoning_text") {
+          produced.push(push(f.eventId, f.provider, {
+            kind: "reasoning.delta",
+            messageId,
+            text,
+          }, ident, "#reasoning"));
+          if (completed) {
+            produced.push(push(f.eventId, f.provider, {
+              kind: "reasoning.completed",
+              messageId,
+            }, ident, "#reasoning-done"));
+          }
+        } else {
+          produced.push(push(f.eventId, f.provider, {
+            kind: "message.started",
+            messageId,
+          }, ident, "#message-start"));
+          produced.push(push(f.eventId, f.provider, {
+            kind: "message.delta",
+            messageId,
+            text,
+          }, ident, "#message"));
+          if (completed) {
+            produced.push(push(f.eventId, f.provider, {
+              kind: "message.completed",
+              messageId,
+            }, ident, "#message-done"));
+          }
+        }
       } else if (activityKind.startsWith("task.")) {
         const nativeTaskId = firstString(payload?.taskId, f.native.callId);
         const launchToolCallId = firstString(payload?.toolUseId, payload?.toolCallId) ?? undefined;
@@ -627,7 +665,9 @@ export function translateOpenCode(
           const terminal = activityKind.endsWith(".completed") || activityKind.endsWith(".error") || activityKind.endsWith(".failed") || activityKind.endsWith(".denied");
 
           emitToolActivity(callId, name, title, terminal, errored);
-          const owningChildId = firstString(payload?.taskId);
+          const owningChildId = payload?.timelineBypass === true
+            ? firstString(payload?.taskId, payload?.childSessionId, payload?.agentId)
+            : firstString(payload?.taskId);
           if (owningChildId && seenChild.has(owningChildId)) {
             const childSummary = preview ?? `Running ${name}`;
             produced.push(push(f.eventId, f.provider, {

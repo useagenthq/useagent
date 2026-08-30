@@ -230,8 +230,9 @@ export function shouldProjectRuntimeActivity(
   activity: RuntimeActivity,
   activities: readonly RuntimeActivity[] = [],
 ): boolean {
-  if (!activity.kind.startsWith("tool.")) return true;
   const payload = record(activity.payload);
+  if (payload?.timelineBypass === true && !activity.kind.startsWith("task.")) return false;
+  if (!activity.kind.startsWith("tool.")) return true;
   const itemType = typeof payload?.itemType === "string" ? payload.itemType : null;
   if (
     (itemType === "dynamic_tool_call" || itemType === "mcp_tool_call") &&
@@ -539,7 +540,7 @@ function toolActivityName(
 
 // The literal "t3" source tag in step code_json below is a frozen stored VALUE:
 // historical steps carry it and the frontend matches on it.
-export function activityStep(activity: RuntimeActivity): EmitStep {
+export function activityStep(activity: RuntimeActivity, rootSessionId?: string): EmitStep {
   const payload = record(activity.payload);
   const detail = typeof payload?.detail === "string" ? payload.detail : undefined;
   if (activity.kind === "turn.plan.updated") {
@@ -562,9 +563,7 @@ export function activityStep(activity: RuntimeActivity): EmitStep {
   if (activity.kind.startsWith("task.")) {
     const isAgent = payload?.agentKind === "agent";
     const taskId = typeof payload?.taskId === "string" ? payload.taskId : undefined;
-    const parentAgentId = typeof payload?.parentAgentId === "string"
-      ? payload.parentAgentId
-      : undefined;
+    const parentSessionId = runtimeChildParentSessionId(payload, rootSessionId);
     const title = taskActivityLabel(activity, payload ?? {}, isAgent);
     return {
       kind: "task",
@@ -585,7 +584,7 @@ export function activityStep(activity: RuntimeActivity): EmitStep {
         error: activity.tone === "error",
         native: {
           sessionID: isAgent ? taskId : undefined,
-          parentSessionID: isAgent ? parentAgentId ?? undefined : undefined,
+          parentSessionID: isAgent ? parentSessionId ?? undefined : undefined,
           callID: taskId,
           childSessionID: isAgent ? taskId : undefined,
           activity: activity.payload,
@@ -599,6 +598,10 @@ export function activityStep(activity: RuntimeActivity): EmitStep {
     const projection = runtimeToolProjection(activity);
     const toolCallId = runtimeToolCallId(activity);
     const childSessionId = isSubagent ? runtimeChildSessionId(activity) : null;
+    const attributedChildId = runtimeAttributedChildId(activity, payload);
+    const attributedParentId = attributedChildId
+      ? runtimeAttributedChildParentSessionId(activity, payload, rootSessionId)
+      : null;
     const tool = toolActivityName(itemType, projection.tool, isSubagent);
     return {
       kind: itemType === "file_change" ? "file" : isSubagent ? "task" : "command",
@@ -616,7 +619,10 @@ export function activityStep(activity: RuntimeActivity): EmitStep {
           activity.kind === "tool.denied" ||
           runtimeToolResultFailed(activity),
         native: {
-          sessionID: typeof payload?.taskId === "string" ? payload.taskId : undefined,
+          sessionID: attributedChildId ?? (
+            typeof payload?.taskId === "string" ? payload.taskId : undefined
+          ),
+          parentSessionID: attributedParentId ?? undefined,
           callID: toolCallId ?? activity.id,
           childSessionID: childSessionId ?? undefined,
           activity: activity.payload,
@@ -643,6 +649,41 @@ function record(value: unknown): Readonly<Record<string, unknown>> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Readonly<Record<string, unknown>>
     : null;
+}
+
+function runtimeChildParentSessionId(
+  payload: Readonly<Record<string, unknown>> | null,
+  rootSessionId?: string,
+): string | null {
+  return firstNonEmptyString(
+    payload?.parentAgentId,
+    payload?.agentId,
+    rootSessionId,
+  );
+}
+
+function runtimeAttributedChildParentSessionId(
+  activity: RuntimeActivity,
+  payload: Readonly<Record<string, unknown>> | null,
+  rootSessionId?: string,
+): string | null {
+  if (activity.kind.startsWith("task.") && payload?.agentKind === "agent") {
+    return runtimeChildParentSessionId(payload, rootSessionId);
+  }
+  return firstNonEmptyString(payload?.parentAgentId, rootSessionId);
+}
+
+function runtimeAttributedChildId(
+  activity: RuntimeActivity,
+  payload: Readonly<Record<string, unknown>> | null,
+): string | null {
+  if (activity.kind.startsWith("task.") && payload?.agentKind === "agent") {
+    return firstNonEmptyString(payload.taskId);
+  }
+  if (payload?.timelineBypass === true) {
+    return firstNonEmptyString(payload.childSessionId, payload.agentId);
+  }
+  return null;
 }
 
 export function runtimeQuestionRequest(
@@ -697,14 +738,15 @@ export function runtimeActivityProviderEvent(
   const payload = record(activity.payload);
   const requestId = typeof payload?.requestId === "string" ? payload.requestId : null;
   const taskId = typeof payload?.taskId === "string" ? payload.taskId : null;
-  const childOwned = activity.kind.startsWith("task.") &&
-    payload?.agentKind === "agent" &&
-    taskId !== null;
-  const parentAgentId = typeof payload?.parentAgentId === "string"
-    ? payload.parentAgentId
+  const attributedChildId = runtimeAttributedChildId(activity, payload);
+  const childOwned = attributedChildId !== null;
+  const nativeSessionId = attributedChildId ?? sessionId;
+  const nativeParentSessionId = childOwned
+    ? runtimeAttributedChildParentSessionId(activity, payload, sessionId)
+    : firstNonEmptyString(payload?.parentAgentId);
+  const nativeMessageId = activity.kind.startsWith("child.message.")
+    ? firstNonEmptyString(payload?.messageId, payload?.itemId)
     : null;
-  const nativeSessionId = childOwned ? taskId : sessionId;
-  const nativeParentSessionId = parentAgentId;
   const eventType = approval
     ? "approval.requested"
     : activity.kind === "approval.resolved" && requestId
@@ -730,8 +772,13 @@ export function runtimeActivityProviderEvent(
     eventType,
     nativeSessionId,
     nativeParentSessionId,
+    nativeMessageId,
     nativePartId: activity.id,
-    nativeCallId: activity.kind.startsWith("task.") ? taskId : null,
+    nativeCallId: activity.kind.startsWith("task.")
+      ? taskId
+      : activity.kind.startsWith("tool.")
+        ? runtimeToolCallId(activity)
+        : null,
     payload: question
       ? redactProviderQuestionPayload(question, redact)
       : activity.kind === "user-input.resolved" && requestId
