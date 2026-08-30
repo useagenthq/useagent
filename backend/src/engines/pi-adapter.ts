@@ -76,7 +76,7 @@ export const piAdapter: EngineAdapter = {
         bridge,
         prompt: composeTurnPrompt(ctx, established.resumed, executionCapabilities),
         mapFrame: createPiRpcFrameMapper(`pi-message-${ctx.runId}`),
-        redact: prepared.redact.text,
+        redact: prepared.redact,
       });
       await ctx.emit({ kind: "done", label: "Done", chip: null });
       ctx.setSummary(summary.trim() || "Pi run completed", Date.now() - startedAt);

@@ -45,8 +45,8 @@ export function publishNativeFrame(runId: string, frame: NativeFrame): void {
   nativeBus.emit(nativeChannel(runId), frame);
 }
 
-/** Parse a stored (bounded) payload string. A truncated/over-cap payload is no
- *  longer valid JSON, so surface a bounded marker instead of throwing. */
+/** Parse a stored bounded payload. Legacy rows may contain invalid sliced JSON,
+ *  so retain the compatibility marker instead of throwing. */
 function parseStoredPayload(text: string | null): unknown {
   if (text == null) return null;
   try {

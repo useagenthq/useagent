@@ -37,13 +37,13 @@ export function DashboardShell({ contained = false }: { contained?: boolean } = 
       {/* Desktop sidebar (in-flow) */}
       <div
         className={cx(
-          "sticky top-3 z-10 hidden shrink-0 py-0 pl-3 lg:block",
+          "sticky top-0 z-10 hidden shrink-0 lg:block",
           contained
-            ? "h-[calc(var(--template-preview-height)-24px)]"
-            : "h-[calc(100vh-24px)]",
+            ? "h-[var(--template-preview-height)]"
+            : "h-dvh",
         )}
       >
-        <DashboardSidebar />
+        <DashboardSidebar flat />
       </div>
 
       {/* Mobile sidebar remains beneath the dashboard content. */}

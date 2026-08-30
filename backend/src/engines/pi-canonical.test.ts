@@ -8,6 +8,26 @@ import { createPiRpcFrameMapper, piRpcFrameBodies } from "./pi-canonical";
 import { piBridgeProviderEvent } from "./pi-provider-events";
 import { translateOpenCode, type OpenCodeFrame } from "@useagent/agent-harness/opencode";
 
+function providerFrame(
+  event: ReturnType<typeof piBridgeProviderEvent>,
+  seq: number,
+): OpenCodeFrame {
+  return {
+    eventId: event.id,
+    seq,
+    provider: event.provider,
+    eventType: event.eventType,
+    payload: event.payload,
+    native: {
+      sessionId: event.nativeSessionId ?? null,
+      parentSessionId: event.nativeParentSessionId ?? null,
+      messageId: event.nativeMessageId ?? null,
+      partId: event.nativePartId ?? null,
+      callId: event.nativeCallId ?? null,
+    },
+  };
+}
+
 describe("Pi RPC canonical bridge mapping", () => {
   test("maps a bounded MCP tool lifecycle without losing call identity", () => {
     expect(piRpcFrameBodies({
@@ -75,6 +95,216 @@ describe("Pi RPC canonical bridge mapping", () => {
       childId: "child-1",
       state: { lastToolName: "read", usage: { tokens: 42, costUsd: 0.01, durationMs: 250 } },
     });
+  });
+
+  test("maps live Pi subagent events onto child-owned transcript frames", () => {
+    const map = createPiRpcFrameMapper("root-message");
+    expect(map({
+      type: "subagent_event",
+      payload: {
+        id: "child-a",
+        event: {
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: "child text" },
+        },
+      },
+    })).toEqual([
+      {
+        kind: "message.started",
+        messageId: "root-message-child-child-a",
+        ownerChildId: "child-a",
+      },
+      {
+        kind: "message.delta",
+        messageId: "root-message-child-child-a",
+        text: "child text",
+        ownerChildId: "child-a",
+      },
+    ]);
+    expect(map({
+      type: "subagent_event",
+      payload: { id: "child-a", event: { type: "agent_end", isTerminal: true, messages: [] } },
+    })).toEqual([{ kind: "turn.completed", ownerChildId: "child-a" }]);
+  });
+
+  test("reconstructs child tool lifecycle from reconciled Pi messages", () => {
+    const map = createPiRpcFrameMapper("root-message");
+    expect(map({
+      type: "subagent_event",
+      payload: {
+        id: "child-a",
+        event: {
+          type: "message_end",
+          message: {
+            role: "assistant",
+            timestamp: 123,
+            stopReason: "toolUse",
+            usage: {},
+            content: [{ type: "toolCall", id: "tool-a", name: "read", arguments: { path: "a" } }],
+          },
+        },
+      },
+    })).toContainEqual({
+      kind: "tool.started",
+      toolCallId: "tool-a",
+      name: "read",
+      input: { path: "a" },
+      ownerChildId: "child-a",
+    });
+    expect(map({
+      type: "subagent_event",
+      payload: {
+        id: "child-a",
+        event: {
+          type: "message_end",
+          message: {
+            role: "toolResult",
+            toolCallId: "tool-a",
+            toolName: "read",
+            content: [{ type: "text", text: "ok" }],
+            isError: false,
+            timestamp: 124,
+          },
+        },
+      },
+    })).toEqual([expect.objectContaining({
+      kind: "tool.completed",
+      toolCallId: "tool-a",
+      name: "read",
+      status: "ok",
+      ownerChildId: "child-a",
+    })]);
+  });
+
+  test("persists Pi child transcript frames under the child execution identity", () => {
+    const sequencer = new NativeBridgeSequencer("parent-session", () => 1);
+    const event = piBridgeProviderEvent(
+      { runId: "run", threadId: "thread" },
+      sequencer.frame({
+        kind: "message.delta",
+        messageId: "child-message",
+        text: "child text",
+        ownerChildId: "child-a",
+      }),
+    );
+    expect(event).toMatchObject({
+      provider: "pi",
+      eventType: "part.text",
+      nativeSessionId: "child-a",
+      nativeParentSessionId: "parent-session",
+      nativeMessageId: "child-message",
+      payload: { text: "child text" },
+    });
+  });
+
+  test("canonical replay keeps Pi child text on the child transcript", () => {
+    const map = createPiRpcFrameMapper("root-message");
+    const bodies = [
+      ...map({
+        type: "subagent_lifecycle",
+        payload: {
+          id: "child-a",
+          agent: "task",
+          agentSource: "bundled",
+          status: "started",
+          index: 0,
+          parentToolCallId: "launch-call",
+        },
+      }),
+      ...map({
+        type: "subagent_event",
+        payload: {
+          id: "child-a",
+          event: {
+            type: "message_end",
+            message: {
+              role: "assistant",
+              timestamp: 123,
+              stopReason: "stop",
+              usage: { input: 2, output: 1 },
+              content: [{ type: "text", text: "child final" }],
+            },
+          },
+        },
+      }),
+      ...map({
+        type: "subagent_lifecycle",
+        payload: {
+          id: "child-a",
+          agent: "task",
+          agentSource: "bundled",
+          status: "completed",
+          index: 0,
+          parentToolCallId: "launch-call",
+        },
+      }),
+    ];
+    const sequencer = new NativeBridgeSequencer("parent-session", () => 1);
+    const frames = bodies.map((body, index) => providerFrame(
+      piBridgeProviderEvent(
+        { runId: "run", threadId: "thread" },
+        sequencer.frame(body),
+      ),
+      index,
+    ));
+    const translated = translateOpenCode(frames, {
+      runId: "run",
+      threadId: "thread",
+      engine: "pi",
+    });
+    expect(translated.events).toContainEqual(expect.objectContaining({
+      kind: "message.delta",
+      text: "child final",
+      identity: expect.objectContaining({
+        nativeSessionId: "child-a",
+        nativeParentSessionId: "parent-session",
+      }),
+    }));
+    expect(translated.events.some(
+      (event) => event.kind === "message.delta" &&
+        event.text === "child final" &&
+        event.identity.nativeSessionId === "parent-session",
+    )).toBe(false);
+  });
+
+  test("live and reconciled Pi child messages reuse the same durable identities", () => {
+    const map = createPiRpcFrameMapper("root-message");
+    const update = {
+      type: "subagent_event",
+      payload: {
+        id: "child-a",
+        event: {
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: "child draft" },
+        },
+      },
+    };
+    const completed = {
+      type: "subagent_event",
+      payload: {
+        id: "child-a",
+        event: {
+          type: "message_end",
+          message: {
+            role: "assistant",
+            timestamp: 123,
+            stopReason: "stop",
+            usage: { input: 2, output: 1 },
+            content: [{ type: "text", text: "child final" }],
+          },
+        },
+      },
+    };
+    const sequencer = new NativeBridgeSequencer("parent-session", () => 1);
+    const ids = (frames: readonly NativeBridgeFrameBody[]) => frames.map((body) =>
+      piBridgeProviderEvent(
+        { runId: "run", threadId: "thread" },
+        sequencer.frame(body),
+      ).id
+    );
+    const liveIds = new Set(ids([...map(update), ...map(completed)]));
+    const reconciledIds = ids(map(completed));
+    expect(reconciledIds.every((id) => liveIds.has(id))).toBe(true);
   });
 
   test("uses one stable provider-event id for tool revisions", () => {

@@ -6,7 +6,28 @@ import { errorMessage } from "../util/error-message";
 import { executionGraphWriteEnabled } from "./execution-graph-rollout";
 import { shadowWriteExecutionGraph } from "./execution-graph-shadow-writer";
 
-const PAYLOAD_CAP = 32_768; // bounded native payload (chars of JSON)
+export const PROVIDER_PAYLOAD_CAP_BYTES = 32 * 1_024;
+export const CHILD_TRANSCRIPT_PAYLOAD_CAP_BYTES = 512 * 1_024;
+const textEncoder = new TextEncoder();
+
+export function serializeProviderPayload(
+  value: unknown,
+  capBytes = PROVIDER_PAYLOAD_CAP_BYTES,
+): string | null {
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) return null;
+    const bytes = textEncoder.encode(serialized).byteLength;
+    if (bytes <= capBytes) return serialized;
+    return JSON.stringify({
+      _truncated: true,
+      _original_bytes: bytes,
+      _reason: "provider payload exceeded durable byte limit",
+    });
+  } catch {
+    return null;
+  }
+}
 
 export type ProviderEventInput = {
   /** Stable id — one row per native part (revisions upsert) or lifecycle key. */
@@ -22,6 +43,22 @@ export type ProviderEventInput = {
   nativeCallId?: string | null;
   payload?: unknown;
 };
+
+export function providerPayloadCapBytes(
+  input: Pick<ProviderEventInput,
+    | "eventType"
+    | "nativeSessionId"
+    | "nativeParentSessionId"
+    | "nativeMessageId"
+  >,
+): number {
+  return input.eventType.startsWith("t3.activity.child.message.") &&
+      !!input.nativeSessionId &&
+      !!input.nativeParentSessionId &&
+      !!input.nativeMessageId
+    ? CHILD_TRANSCRIPT_PAYLOAD_CAP_BYTES
+    : PROVIDER_PAYLOAD_CAP_BYTES;
+}
 
 /** Namespace provider-native event ids by run before using the global row key. */
 export function scopedProviderEventId(runId: string, eventId: string): string {
@@ -157,11 +194,7 @@ async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): 
 
   let payload: string | null = null;
   if (input.payload !== undefined) {
-    try {
-      payload = JSON.stringify(input.payload).slice(0, PAYLOAD_CAP);
-    } catch {
-      payload = null;
-    }
+    payload = serializeProviderPayload(input.payload, providerPayloadCapBytes(input));
   }
   await db
     .insert(providerEvents)

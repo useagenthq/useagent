@@ -1,5 +1,7 @@
 import type { EngineId } from "../db/schema";
 import type { SandboxHandle } from "../sandboxes/provider";
+import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   claudeProviderGatewayEnvironment,
   markProviderGatewaySandboxCurrent,
@@ -28,6 +30,8 @@ const RUNTIME_SETTINGS_PATH = `${RUNTIME_ENVIRONMENT_HOME}/userdata/settings.jso
 const RUNTIME_BIN_DIRECTORY = `${RUNTIME_ENVIRONMENT_HOME}/skynet-bin`;
 const RUNTIME_CLAUDE_WRAPPER = `${RUNTIME_BIN_DIRECTORY}/claude`;
 const RUNTIME_CLAUDE_WRAPPER_PLACEHOLDER = "__USEAGENT_T3_CLAUDE_WRAPPER__";
+const CLAUDE_STATUS_CACHE_PATH = `${RUNTIME_ENVIRONMENT_HOME}/caches/claudeAgent.json`;
+const CLAUDE_READY_POLL_MS = 150;
 
 interface BootstrapState {
   readonly command: string;
@@ -44,15 +48,24 @@ type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
 
 export interface RuntimeProviderBridgeLease extends CodexSubscriptionLease {
   readonly authPath: CodexBridgeAuthPath | null;
+  readonly readiness: RuntimeProviderReadiness | null;
+}
+
+export interface RuntimeProviderReadiness {
+  readonly instanceId: "claudeAgent";
+  readonly driver: "claudeAgent";
+  readonly displayName: string;
 }
 
 const NOOP_PROVIDER_BRIDGE_LEASE: RuntimeProviderBridgeLease = {
   authPath: null,
+  readiness: null,
   async close() {},
 };
 
 const CODEX_GATEWAY_BRIDGE_LEASE: RuntimeProviderBridgeLease = {
   authPath: "provider_gateway",
+  readiness: null,
   async close() {},
 };
 
@@ -65,6 +78,22 @@ function assertSafeUrl(value: string): void {
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error("the provider runtime provider gateway URL must use HTTP(S)");
   }
+}
+
+export function claudeProviderReadiness(
+  claudeEnvironment: Readonly<Record<string, string>>,
+): RuntimeProviderReadiness {
+  const anthropicBaseUrl = claudeEnvironment.ANTHROPIC_BASE_URL ?? "";
+  const claudeConfigDir = claudeEnvironment.CLAUDE_CONFIG_DIR ?? "";
+  const fingerprint = createHash("sha256")
+    .update(`${anthropicBaseUrl}\0${claudeConfigDir}\0${RUNTIME_CLAUDE_WRAPPER}`)
+    .digest("hex")
+    .slice(0, 12);
+  return {
+    instanceId: "claudeAgent",
+    driver: "claudeAgent",
+    displayName: `UseAgent Claude gateway ${fingerprint}`,
+  };
 }
 
 /**
@@ -82,6 +111,7 @@ export function buildRuntimeProviderBootstrapCommand(
     throw new Error("the provider runtime Claude provider gateway configuration is incomplete");
   }
   assertSafeUrl(anthropicBaseUrl);
+  const readiness = claudeProviderReadiness(claudeEnvironment);
 
   const wrapper = [
     "#!/bin/sh",
@@ -91,6 +121,13 @@ export function buildRuntimeProviderBootstrapCommand(
     'exec claude --mcp-config "$CLAUDE_CONFIG_DIR/skynet-mcp.json" "$@"',
     "",
   ].join("\n");
+  const claudeProviderConfig = {
+    enabled: true,
+    binaryPath: RUNTIME_CLAUDE_WRAPPER_PLACEHOLDER,
+    homePath: claudeConfigDir,
+    customModels: [],
+    launchArgs: "",
+  };
   const settingsPatch = {
     enableAgentBrowserAccess: false,
     providers: {
@@ -102,19 +139,21 @@ export function buildRuntimeProviderBootstrapCommand(
         launchArgs: "",
         customModels: [],
       },
-      claudeAgent: {
-        enabled: true,
-        binaryPath: RUNTIME_CLAUDE_WRAPPER_PLACEHOLDER,
-        homePath: claudeConfigDir,
-        customModels: [],
-        launchArgs: "",
-      },
+      claudeAgent: claudeProviderConfig,
       opencode: {
         enabled: true,
         binaryPath: "opencode",
         serverUrl: "",
         serverPassword: "",
         customModels: [],
+      },
+    },
+    providerInstances: {
+      claudeAgent: {
+        driver: "claudeAgent",
+        displayName: readiness.displayName,
+        enabled: true,
+        config: claudeProviderConfig,
       },
     },
   };
@@ -128,8 +167,82 @@ export function buildRuntimeProviderBootstrapCommand(
     `printf %s '${encode(wrapper)}' | base64 -d > "$CLAUDE_WRAPPER"`,
     'chmod 700 "$CLAUDE_WRAPPER"',
     `export PATCH_B64='${encode(JSON.stringify(settingsPatch))}'`,
-    `node -e 'const fs=require("node:fs");const path=process.argv[1];const wrapper=process.argv[2];const patch=JSON.parse(Buffer.from(process.env.PATCH_B64,"base64").toString("utf8"));patch.providers.claudeAgent.binaryPath=wrapper;let current={};try{current=JSON.parse(fs.readFileSync(path,"utf8"))}catch{};current.enableAgentBrowserAccess=patch.enableAgentBrowserAccess;current.providers={...(current.providers??{}),...patch.providers};const tmp=path+".tmp";fs.writeFileSync(tmp,JSON.stringify(current));fs.chmodSync(tmp,0o600);fs.renameSync(tmp,path)' "$SETTINGS" "$CLAUDE_WRAPPER"`,
+    `node -e 'const fs=require("node:fs");const path=process.argv[1];const wrapper=process.argv[2];const patch=JSON.parse(Buffer.from(process.env.PATCH_B64,"base64").toString("utf8"));patch.providers.claudeAgent.binaryPath=wrapper;patch.providerInstances.claudeAgent.config.binaryPath=wrapper;let current={};try{current=JSON.parse(fs.readFileSync(path,"utf8"))}catch{};current.enableAgentBrowserAccess=patch.enableAgentBrowserAccess;current.providers={...(current.providers??{}),...patch.providers};current.providerInstances={...(current.providerInstances??{}),...patch.providerInstances};const tmp=path+".tmp";fs.writeFileSync(tmp,JSON.stringify(current));fs.chmodSync(tmp,0o600);fs.renameSync(tmp,path)' "$SETTINGS" "$CLAUDE_WRAPPER"`,
   ].join("\n");
+}
+
+/** Probe the status cache rather than settings.json: the settings file only
+ * proves that Pro wrote the gateway instance, while this marker proves T3
+ * reconciled and published that exact instance. This is intentionally not a
+ * provider-health gate: Claude's valid capability probe can take up to 29s,
+ * and session startup owns that health/error path. */
+export function buildRuntimeProviderReadyProbeCommand(
+  readiness: RuntimeProviderReadiness,
+): string {
+  const script = [
+    'const fs=require("node:fs")',
+    "let v",
+    'try{v=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch{process.exit(1)}',
+    `process.exit(v&&v.instanceId===${JSON.stringify(readiness.instanceId)}&&v.driver===${JSON.stringify(readiness.driver)}&&v.displayName===${JSON.stringify(readiness.displayName)}&&v.enabled===true&&v.availability!=="unavailable"?0:1)`,
+  ].join(";");
+  return [
+    "set -eu",
+    `node -e ${JSON.stringify(script)} ${JSON.stringify(CLAUDE_STATUS_CACHE_PATH)}`,
+  ].join("\n");
+}
+
+async function awaitWithAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return await new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    operation.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+export async function awaitRuntimeProviderReady(
+  sandbox: Pick<SandboxHandle, "process">,
+  signal: AbortSignal,
+  deadlineMs: number,
+  readiness: RuntimeProviderReadiness,
+): Promise<boolean> {
+  const command = buildRuntimeProviderReadyProbeCommand(readiness);
+  const deadlineSignal = AbortSignal.timeout(Math.max(1, deadlineMs));
+  const probeSignal = AbortSignal.any([signal, deadlineSignal]);
+  while (true) {
+    signal.throwIfAborted();
+    if (deadlineSignal.aborted) return false;
+    let probe;
+    try {
+      probe = await awaitWithAbort(
+        sandbox.process.executeCommand(command, undefined, undefined, 5).catch(() => null),
+        probeSignal,
+      );
+    } catch (error) {
+      signal.throwIfAborted();
+      if (deadlineSignal.aborted) return false;
+      throw error;
+    }
+    signal.throwIfAborted();
+    if (deadlineSignal.aborted) return false;
+    if ((probe?.exitCode ?? 1) === 0) return true;
+    try {
+      await delay(CLAUDE_READY_POLL_MS, undefined, { signal: probeSignal });
+    } catch (error) {
+      if (signal.aborted) throw signal.reason;
+      if (deadlineSignal.aborted) return false;
+      throw error;
+    }
+  }
 }
 
 async function ensureRuntimeProviderBootstrap(
@@ -228,6 +341,7 @@ export async function prepareRuntimeProviderBridge(
       const lease = await prepareCodexSubscription({ sandbox, ctx, workdir, runtime: subscription });
       return {
         authPath: "subscription",
+        readiness: null,
         close: () => lease.close(),
       };
     }
@@ -235,6 +349,13 @@ export async function prepareRuntimeProviderBridge(
   }
 
   await ensureRuntimeProviderBootstrap(sandbox, command);
+  if (engine === "claude") {
+    return {
+      authPath: null,
+      readiness: claudeProviderReadiness(claudeEnvironment),
+      async close() {},
+    };
+  }
   return engine === "codex" ? CODEX_GATEWAY_BRIDGE_LEASE : NOOP_PROVIDER_BRIDGE_LEASE;
 }
 

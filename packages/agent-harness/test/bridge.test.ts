@@ -42,6 +42,22 @@ describe("native bridge contract", () => {
     })[0]).toMatchObject({ text: "Let me think" });
   });
 
+  test("keeps identical child message ids in separate durable accumulators", () => {
+    const accumulator = new NativeBridgeDeltaAccumulator();
+    expect(accumulator.durable({
+      kind: "message.delta",
+      messageId: "message",
+      text: "A",
+      ownerChildId: "child-a",
+    })).toEqual([expect.objectContaining({ text: "A", ownerChildId: "child-a" })]);
+    expect(accumulator.durable({
+      kind: "message.delta",
+      messageId: "message",
+      text: "B",
+      ownerChildId: "child-b",
+    })).toEqual([expect.objectContaining({ text: "B", ownerChildId: "child-b" })]);
+  });
+
   test("segments long streams without exceeding durable JSON capacity or losing text", () => {
     const accumulator = new NativeBridgeDeltaAccumulator();
     accumulator.durable({ kind: "message.delta", messageId: "long-message", text: "discarded draft" });

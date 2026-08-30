@@ -392,6 +392,10 @@ export interface AdvanceExecutionLifecycleInput {
   readonly deliverySeq: number;
   /** Explicit provider correction authority for a newer terminal verdict. */
   readonly terminalCorrection?: boolean;
+  /** Recovery authority for terminal evidence that was durably observed before
+   * the child's later spawn row. Settles only a nonterminal execution and keeps
+   * the newer delivery watermark. */
+  readonly outOfOrderTerminalRecovery?: boolean;
   readonly startedAt?: Date | null;
   readonly settledAt?: Date | null;
 }
@@ -422,6 +426,7 @@ export async function advanceExecutionLifecycle(
   if (input.settledAt !== undefined) timestamps.settledAt = input.settledAt;
   const requestsNonterminal =
     input.status === "queued" || input.status === "running" || input.status === "waiting";
+  const requestsTerminal = !requestsNonterminal;
   const transitionAllowed = requestsNonterminal
     ? sql`${agentExecutions.status} NOT IN ('completed', 'failed', 'cancelled')`
     : input.terminalCorrection
@@ -437,7 +442,9 @@ export async function advanceExecutionLifecycle(
       attempt: input.attempt,
       lastEventId: requireIdentity(input.eventId, "execution_event_id_required"),
       lastEventRevision: input.eventRevision,
-      lastDeliverySeq: input.deliverySeq,
+      lastDeliverySeq: input.outOfOrderTerminalRecovery
+        ? sql`greatest(${agentExecutions.lastDeliverySeq}, ${input.deliverySeq})`
+        : input.deliverySeq,
       ...timestamps,
       updatedAt: new Date(),
     })
@@ -453,6 +460,12 @@ export async function advanceExecutionLifecycle(
           eq(agentExecutions.lastDeliverySeq, input.deliverySeq),
           sql`${agentExecutions.lastEventRevision} < ${input.eventRevision}`,
         ),
+        input.outOfOrderTerminalRecovery && requestsTerminal
+          ? and(
+              sql`${agentExecutions.lastDeliverySeq} > ${input.deliverySeq}`,
+              sql`${agentExecutions.status} NOT IN ('completed', 'failed', 'cancelled')`,
+            )
+          : sql`false`,
       ),
     ))
     .returning();
