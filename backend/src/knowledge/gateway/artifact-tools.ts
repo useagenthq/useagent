@@ -5,7 +5,11 @@ import { publishSandboxArtifact } from "../../artifacts/publish";
 import { acceptWorkpieceProposal, proposeWorkpieceEdit } from "../../artifacts/proposals";
 import { toArtifactDescriptor, type ArtifactDescriptor } from "../../artifacts/repo";
 import { isProtectedInjectedSecretPath } from "../../secrets/inject";
-import { absoluteArtifactUrl, absoluteArtifactUrlContent } from "./artifact-links";
+import {
+  absoluteArtifactPreviewUrl,
+  absoluteArtifactUrl,
+  absoluteArtifactUrlContent,
+} from "./artifact-links";
 import type { ToolTokenClaims } from "./token";
 import { WORKPIECE_STATE_INPUT_SCHEMA } from "./workpiece-state-schema";
 
@@ -266,7 +270,7 @@ export async function executeArtifactTool(
       `${verb} ${published.artifact.name} ` +
         `(${published.artifact.size_bytes} bytes) as artifact ${published.artifact.id}.\n` +
         "Preview URL (use exactly as written, never substitute another host): " +
-        `${absoluteArtifactUrl(published.artifact.preview_url)}\n` +
+        `${absoluteArtifactPreviewUrl(published.artifact)}\n` +
         `Download URL (use exactly as written): ${absoluteArtifactUrl(published.artifact.download_url)}`,
       {
         artifact: published.artifact,
@@ -452,7 +456,7 @@ async function workpieceCreateTool(
       `Created ${created.artifact.name} as artifact ${created.artifact.id}. It renders natively and ` +
         `is now open in the user's workspace; Export produces the Office file.${note}\n` +
         "Preview URL (use exactly as written, never substitute another host): " +
-        `${absoluteArtifactUrl(created.artifact.preview_url)}\n` +
+        `${absoluteArtifactPreviewUrl(created.artifact)}\n` +
         `Download URL (use exactly as written): ${absoluteArtifactUrl(created.artifact.download_url)}`,
       {
         artifact: created.artifact,
