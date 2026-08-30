@@ -100,9 +100,9 @@ export function FilterTable({
         aria-pressed={on}
         onClick={() => setActive(id)}
         className={cx(
-          "flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-caption-1-medium transition-colors duration-200",
+          "flex h-6.5 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-caption-1-medium transition-colors duration-200",
           on
-            ? "bg-background-primary-default text-text-primary shadow-sm ring-border-button-default ring-1"
+            ? "bg-background-primary-default text-text-primary shadow-sm"
             : "text-text-secondary hover:bg-background-primary-hover",
         )}
       >
@@ -110,7 +110,7 @@ export function FilterTable({
         {label}
         <span
           className={cx(
-            "rounded px-1 text-[10.5px] tabular-nums",
+            "rounded-[4px] px-1 text-[10.5px] tabular-nums",
             on ? "bg-background-secondary-default text-text-secondary" : "text-text-tertiary",
           )}
         >
@@ -140,7 +140,7 @@ export function FilterTable({
           <div
             className={cx(
               COLS,
-              "border-border-button-default text-caption-1-medium text-text-tertiary border-b px-3 py-2",
+              "border-border-button-default text-body-2-medium text-text-secondary border-b px-3 py-2",
             )}
           >
             <span>{h.name}</span>
@@ -155,7 +155,7 @@ export function FilterTable({
                 key={`${row.name}-${i}`}
                 className={cx(
                   COLS,
-                  "border-border-button-default hover:bg-background-primary-hover items-center border-b px-3 py-2 text-caption-1-regular transition-colors duration-100 last:border-0",
+                  "border-border-button-default hover:bg-background-primary-hover items-center border-b px-3 py-2 text-body-2-regular transition-colors duration-100 last:border-0",
                 )}
               >
                 <span className="text-text-primary truncate font-medium">
@@ -166,7 +166,7 @@ export function FilterTable({
                   {status && (
                     <span
                       className={cx(
-                        "inline-flex h-5 items-center rounded-md px-1.5 text-[11px] font-medium",
+                        "inline-flex h-[23px] items-center rounded-lg border border-border-button-default px-[7px] text-body-2-medium",
                         tone[status.tone].pill,
                       )}
                     >

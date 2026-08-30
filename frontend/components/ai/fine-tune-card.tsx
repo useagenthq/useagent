@@ -45,7 +45,7 @@ export function FineTuneCard() {
     layout !== "Row" || width !== 324 || height !== 96 || radius !== 28 || opacity !== 100;
 
   return (
-    <div className="w-full max-w-xs rounded-2xl border border-border-button-default bg-background-primary-default shadow-md">
+    <div className="w-full max-w-60 rounded-2xl border border-border-button-default bg-background-primary-default shadow-card">
       <div className="flex items-center justify-between border-b border-border-button-default px-3 py-2.5">
         <span className="text-body-2-medium text-text-primary">Flavor card</span>
         <span className={`text-caption-1-regular ${edited ? "text-lime-600" : "text-accent-500"}`}>
