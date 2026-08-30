@@ -1122,7 +1122,7 @@ describe("slack native stream and Block Kit fallback", () => {
 
 describe("slack durable inbox", () => {
   test("persists one duplicate event while closed and drains it once after restart/open", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const operationId = `slack-deferred-test:${crypto.randomUUID()}`;
     const marker = uid("deferred");
     const channel = `C${uid("ch")}`;
@@ -1176,7 +1176,7 @@ describe("slack durable inbox", () => {
         const [row] = await db.select().from(commands).where(eq(commands.id, inboxKey));
         return row?.state === "queued" && row.attemptCount === 0 ? row : null;
       });
-      stopSlackInboxPumpForTest();
+      await stopSlackInboxPumpForTest();
       const [delayed] = await db.select().from(commands).where(eq(commands.id, inboxKey));
       const defer = (JSON.parse(delayed.payload!) as {
         defer: { reason: string; nextAttemptAt: string };
@@ -1232,7 +1232,7 @@ describe("slack durable inbox", () => {
   });
 
   test("fails closed when the persisted sender binding changes before replay", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const marker = uid("rebind");
     const envelope = eventCallback({
       type: "app_mention",
@@ -1264,7 +1264,7 @@ describe("slack durable inbox", () => {
   });
 
   test("a stale worker cannot complete a claim reclaimed by a new worker", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const envelope = eventCallback({
       type: "app_mention",
       channel: `C${uid("ch")}`,
@@ -1300,7 +1300,7 @@ describe("slack durable inbox", () => {
   });
 
   test("the eighth processing error permanently fails the inbox row", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const envelope = eventCallback({
       type: "app_mention",
       channel: `C${uid("ch")}`,
@@ -1319,7 +1319,7 @@ describe("slack durable inbox", () => {
   });
 
   test("retryable unavailability is delayed and resumes when due", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const envelope = eventCallback({
       type: "app_mention",
       channel: `C${uid("ch")}`,
@@ -1365,7 +1365,7 @@ describe("slack durable inbox", () => {
   });
 
   test("an unrelated reply probation expires once into a retention-eligible no-op", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const envelope = eventCallback({
       type: "message",
       channel: `C${uid("ch")}`,
@@ -1413,7 +1413,7 @@ describe("slack durable inbox", () => {
   });
 
   test("fails an exhausted stale dispatch left by a crashed process", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const envelope = eventCallback({
       type: "app_mention",
       channel: `C${uid("ch")}`,
@@ -1451,7 +1451,7 @@ describe("slack durable inbox", () => {
   });
 
   test("reply persists before the root INSERT commits, then attaches exactly once", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const marker = uid("root-commit-race");
     const channel = `C${uid("ch")}`;
     const rootTs = `${uid("root")}.1`;
@@ -1538,7 +1538,7 @@ describe("slack durable inbox", () => {
   });
 
   test("Slack root-thread lookup uses the existing commands thread-state index", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const prefix = `slack-plan-${crypto.randomUUID()}`;
     const targetThread = `${prefix}-target`;
     try {
@@ -1572,7 +1572,7 @@ describe("slack durable inbox", () => {
   });
 
   test("closed root then reply both drain after admission reopens", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const operationId = `slack-root-reply:${crypto.randomUUID()}`;
     const marker = uid("closed-thread");
     const channel = `C${uid("ch")}`;
@@ -1632,7 +1632,7 @@ describe("slack durable inbox", () => {
   });
 
   test("a reply processed before its pending root waits durably then attaches", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const marker = uid("reverse-thread");
     const channel = `C${uid("ch")}`;
     const rootTs = `${uid("root")}.1`;
@@ -1675,7 +1675,7 @@ describe("slack durable inbox", () => {
   });
 
   test("a healthy claim heartbeat prevents reclaim after more than 30 seconds", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const envelope = eventCallback({
       type: "app_mention",
       channel: `C${uid("ch")}`,
@@ -1714,7 +1714,7 @@ describe("slack durable inbox", () => {
   }, 45_000);
 
   test("canonical storage drops unknown fields and terminal retention redacts then deletes", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const secret = `provider-secret-${uid("secret")}`;
     const envelope = {
       ...eventCallback({
@@ -2341,7 +2341,7 @@ describe("slack inbound attachments", () => {
   });
 
   test("a close after file staging checkpoints IDs and replay does not redownload", async () => {
-    stopSlackInboxPumpForTest();
+    await stopSlackInboxPumpForTest();
     const operationId = `slack-stage-reclose:${crypto.randomUUID()}`;
     const marker = uid("reclose");
     const fileName = `${marker}.txt`;

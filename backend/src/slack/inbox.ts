@@ -648,31 +648,36 @@ export async function maintainSlackInboxRetention(): Promise<SlackInboxRetention
 let handler: SlackInboxHandler | null = null;
 let pumpTimer: ReturnType<typeof setInterval> | null = null;
 let pumpInFlight = false;
+let pumpCompletion: Promise<void> | null = null;
 let rerunRequested = false;
 let lastRetentionSweepAt = 0;
 
-async function pump(): Promise<void> {
-  if (!handler) return;
+function pump(): Promise<void> {
+  if (!handler) return Promise.resolve();
   if (pumpInFlight) {
     rerunRequested = true;
-    return;
+    return pumpCompletion ?? Promise.resolve();
   }
   pumpInFlight = true;
-  try {
-    await processSlackInbox(handler);
-    if (Date.now() - lastRetentionSweepAt >= RETENTION_INTERVAL_MS) {
-      await maintainSlackInboxRetention();
-      lastRetentionSweepAt = Date.now();
+  pumpCompletion = (async () => {
+    try {
+      await processSlackInbox(handler);
+      if (Date.now() - lastRetentionSweepAt >= RETENTION_INTERVAL_MS) {
+        await maintainSlackInboxRetention();
+        lastRetentionSweepAt = Date.now();
+      }
+    } catch (error) {
+      console.error("[slack] inbox pump failed:", (error as Error).message);
+    } finally {
+      pumpInFlight = false;
+      pumpCompletion = null;
+      if (rerunRequested) {
+        rerunRequested = false;
+        queueMicrotask(() => void pump());
+      }
     }
-  } catch (error) {
-    console.error("[slack] inbox pump failed:", (error as Error).message);
-  } finally {
-    pumpInFlight = false;
-    if (rerunRequested) {
-      rerunRequested = false;
-      queueMicrotask(() => void pump());
-    }
-  }
+  })();
+  return pumpCompletion;
 }
 
 /** Start boot recovery plus low-latency interval processing. */
@@ -689,10 +694,10 @@ export function kickSlackInbox(): void {
   void pump();
 }
 
-export function stopSlackInboxPumpForTest(): void {
+export async function stopSlackInboxPumpForTest(): Promise<void> {
   handler = null;
   rerunRequested = false;
   if (pumpTimer) clearInterval(pumpTimer);
   pumpTimer = null;
-  pumpInFlight = false;
+  await pumpCompletion;
 }
