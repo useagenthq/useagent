@@ -4,14 +4,16 @@
  *   1. read the RAW body (needed byte-for-byte for signature verification),
  *   2. verify the Slack request signature (401 on failure),
  *   3. answer the one-time `url_verification` challenge (synchronous),
- *   4. ACK `event_callback`s with a 200 IMMEDIATELY and process async.
+ *   4. persist `event_callback`s in the durable inbox,
+ *   5. ACK only after that commit succeeds.
  *
  * The route is also self-gated: with the adapter unconfigured it 404s, so it is
  * inert even if somehow mounted.
  */
 import { Hono } from "hono";
 import { slackConfig } from "../env";
-import { handleSlackEvent, type SlackEnvelope } from "./events";
+import { slackEventIsEarlyNoop, type SlackEnvelope } from "./events";
+import { classifySlackInboxEvent, persistSlackInboxEvent } from "./inbox";
 import { verifySlackSignature } from "./verify";
 
 export const slackRoutes = new Hono();
@@ -42,24 +44,24 @@ slackRoutes.post("/events", async (c) => {
   }
 
   if (body.type === "event_callback") {
-    // ACK-FIRST: the 200 goes back within milliseconds of signature
-    // verification - Slack's 3s ack budget must never wait on run acceptance
-    // (DB writes, attachment downloads). Processing continues asynchronously;
-    // failures are logged, never surfaced (a 5xx would make Slack retry-storm
-    // us). A RETRY delivery (x-slack-retry-num) is acked the same way and is
-    // never reprocessed into a second run: the dedupe lanes (in-memory
-    // channel:ts + the durable slack-event command key) collapse it. The header
-    // alone is NOT used to drop the event - a retry can also mean the first
-    // attempt never reached us, and then it is the only delivery we get.
+    if (slackEventIsEarlyNoop(body)) return c.body(null, 200);
+    // Slack gets a 200 only after the authenticated envelope and its resolved
+    // identity commit. A DB failure intentionally returns 503 so Slack retries;
+    // run acceptance, attachment downloads, and provider work remain async.
     const retryNum = c.req.header("x-slack-retry-num");
     if (retryNum) {
       console.log(
         `[slack] retry delivery (num ${retryNum}, reason ${c.req.header("x-slack-retry-reason") ?? "unknown"})`,
       );
     }
-    void handleSlackEvent(body).catch((err) => {
-      console.error("[slack] event handler error:", (err as Error).message);
-    });
+    try {
+      const decision = await classifySlackInboxEvent(body);
+      if (decision === "drop") return c.body(null, 200);
+      await persistSlackInboxEvent(body, decision);
+    } catch (error) {
+      console.error("[slack] inbox persistence failed:", (error as Error).message);
+      return c.json({ error: "slack_ingress_unavailable" }, 503);
+    }
   }
 
   return c.body(null, 200);
