@@ -13,6 +13,7 @@ const thread = (id: string, label: string, over: Partial<ProjectThread> = {}): P
   id,
   label,
   time: "2h ago",
+  status: "completed",
   ...over,
 });
 
@@ -85,6 +86,25 @@ test("threads show a relative-time chip and mark the active thread", () => {
   expect(html).toContain("2h ago");
   expect(html).toContain("1d ago");
   expect(html).toContain('aria-current="page"'); // the selected thread only
+});
+
+test("active statuses render truthful dots with non-color aria labels", () => {
+  const html = renderTree([
+    group({
+      threads: [
+        thread("running", "Live thread", { status: "running" }),
+        thread("queued", "Waiting thread", { status: "queued" }),
+        thread("done", "Finished thread", { status: "completed" }),
+        thread("failed", "Broken thread", { status: "failed" }),
+      ],
+    }),
+  ]);
+  expect(html).toContain('aria-label="Running"');
+  expect(html).toContain('aria-label="Queued"');
+  expect(html).toContain('aria-label="Failed"');
+  expect(html).not.toContain('aria-label="Completed"');
+  expect(html).toContain("bg-lime-500");
+  expect(html).toContain("border-orange-500");
 });
 
 test("each project shows at most six threads until its own disclosure is expanded", () => {

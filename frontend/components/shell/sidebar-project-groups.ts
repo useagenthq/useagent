@@ -11,8 +11,8 @@
  */
 
 import { repoShortname } from "@/components/session-ui/git-chip";
-import { threadRowTimestamp } from "@/components/session-ui/thread-row";
 import { primaryRepo } from "@/lib/runs";
+import { rankThreads, threadActivityTimestamp } from "./thread-discovery";
 import type { SidebarRun } from "./working-project-status";
 
 export interface ProjectRepo {
@@ -42,7 +42,13 @@ export function runPrimaryRepo(run: SidebarRun): string | null {
 }
 
 function recency(run: SidebarRun): number {
-  return threadRowTimestamp(run) ?? 0;
+  return threadActivityTimestamp(run) ?? 0;
+}
+
+function groupRecency(group: ProjectGroup): number {
+  let latest = 0;
+  for (const run of group.threads) latest = Math.max(latest, recency(run));
+  return latest;
 }
 
 /**
@@ -58,7 +64,7 @@ export function groupThreadsByProject(
 ): ProjectGroup[] {
   const threadsByRepo = new Map<string, SidebarRun[]>();
   const unattached: SidebarRun[] = [];
-  for (const run of runs) {
+  for (const run of rankThreads(runs)) {
     const key = runPrimaryRepo(run);
     if (key === null) {
       unattached.push(run);
@@ -76,7 +82,7 @@ export function groupThreadsByProject(
 
   const groups: ProjectGroup[] = [];
   for (const key of repoKeys) {
-    const threads = (threadsByRepo.get(key) ?? []).toSorted((a, b) => recency(b) - recency(a));
+    const threads = rankThreads(threadsByRepo.get(key) ?? []);
     groups.push({
       key,
       name: repoName.get(key) ?? repoShortname(key),
@@ -88,7 +94,7 @@ export function groupThreadsByProject(
   const withThreads = groups
     .filter((group) => group.threads.length > 0)
     .toSorted((a, b) => {
-      const byRecency = recency(b.threads[0]) - recency(a.threads[0]);
+      const byRecency = groupRecency(b) - groupRecency(a);
       return byRecency !== 0 ? byRecency : a.name.localeCompare(b.name);
     });
   const zeroThreads = groups
@@ -101,7 +107,7 @@ export function groupThreadsByProject(
       key: UNATTACHED_KEY,
       name: "No project",
       fullName: null,
-      threads: unattached.toSorted((a, b) => recency(b) - recency(a)),
+      threads: rankThreads(unattached),
     });
   }
   ordered.push(...zeroThreads);
@@ -114,7 +120,11 @@ export function groupThreadsByProject(
  *  and rows looked missing. Dedupe BEFORE any visible/overflow split. */
 export function dedupeProjectRepos(repos: readonly ProjectRepo[]): ProjectRepo[] {
   const seen = new Set<string>();
-  return repos.filter((repo) => (seen.has(repo.fullName) ? false : (seen.add(repo.fullName), true)));
+  return repos.filter((repo) => {
+    if (seen.has(repo.fullName)) return false;
+    seen.add(repo.fullName);
+    return true;
+  });
 }
 
 export interface VisibleProjectGroups {

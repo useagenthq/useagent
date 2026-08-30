@@ -96,6 +96,9 @@ describe("AgentClient HTTP", () => {
       id: "run_a", prompt: "p", model: "m", engine: "opencode", status: "completed",
       summary: "done", duration_ms: 10, repo: null, repos: [], repo_specs: [],
       created_at: "2026-08-24T00:00:00.000Z", updated_at: "2026-08-24T00:00:00.000Z",
+      latest_run_id: "run_a", latest_status: "completed",
+      latest_created_at: "2026-08-24T00:00:00.000Z",
+      latest_updated_at: "2026-08-24T00:00:00.000Z",
     };
     const client = createAgentClient({
       baseUrl: "https://x",

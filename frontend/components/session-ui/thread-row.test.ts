@@ -5,11 +5,18 @@ import { resolveThreadRowClassName, resolveThreadRowPill, threadRowTimestamp } f
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
-describe("thread status pill (upstream running/failed/settled treatment)", () => {
-  test("running threads read Working with a pulsing dot", () => {
+describe("thread status pill", () => {
+  test("running threads read Running with a pulsing green dot", () => {
     const pill = resolveThreadRowPill({ status: "running" });
-    expect(pill?.label).toBe("Working");
+    expect(pill?.label).toBe("Running");
+    expect(pill?.dot.tone).toBe("success");
     expect(pill?.dot.pulse).toBe(true);
+  });
+
+  test("queued threads carry an outlined amber dot and visible label", () => {
+    const pill = resolveThreadRowPill({ status: "queued" });
+    expect(pill?.label).toBe("Queued");
+    expect(pill?.dot).toMatchObject({ tone: "away", hollow: true });
   });
 
   test("failed threads read Failed with a steady error dot", () => {
@@ -20,22 +27,8 @@ describe("thread status pill (upstream running/failed/settled treatment)", () =>
     expect(pill?.textClass).toBe("text-text-error-primary");
   });
 
-  test("failure stays visible even when marked unread", () => {
-    expect(resolveThreadRowPill({ status: "failed", unread: true })?.label).toBe("Failed");
-  });
-
-  test("unread completion is the only settled pill (unread affordance)", () => {
-    const pill = resolveThreadRowPill({ status: "completed", unread: true });
-    expect(pill?.label).toBe("Completed");
-    expect(pill?.dot.tone).toBe("success");
-  });
-
-  test("a seen completion rests unlabeled (inbox-zero)", () => {
+  test("completed threads have no status dot", () => {
     expect(resolveThreadRowPill({ status: "completed" })).toBeNull();
-  });
-
-  test("queued threads rest unlabeled", () => {
-    expect(resolveThreadRowPill({ status: "queued" })).toBeNull();
   });
 });
 
@@ -119,8 +112,9 @@ describe("sidebar wiring contract", () => {
     expect(tree).not.toContain("TreeConnector");
     expect(projects).toContain("<ProjectThreadTree");
     expect(projects).toContain("usePathname");
-    // The data owner reuses the existing runs + repos lanes - no new endpoint.
-    expect(projects).toContain("fetchSidebarRuns");
+    // The tree consumes the AppShell's shared run snapshot and keeps the
+    // existing repository lane - no second runs fetch.
+    expect(projects).toContain("useSidebarThreads");
     expect(projects).toContain("useOrgChanges");
     expect(projects).toContain('backendFetch("/api/repos"');
     expect(projects).toContain("groupThreadsByProject");
