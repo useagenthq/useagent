@@ -79,7 +79,7 @@ import { Button } from "@/components/base/buttons/button";
 import { CloseButton } from "@/components/base/buttons/close-button";
 import { PillTab, PillTabList } from "@/components/base/tabs/pill-tab";
 import { useIsMobile } from "@/hooks/use-is-mobile";
-import { backendFetch } from "@/lib/backend-fetch";
+import { backendFetch, DEMO_READONLY } from "@/lib/backend-fetch";
 import { createRun, runCreateFailureMessage } from "@/lib/create-run";
 import { cx } from "@/utils/cx";
 
@@ -571,7 +571,21 @@ export function SessionView({
   );
   const railTab =
     railTabOverride ??
-    (hasSubagents ? "agents" : hasFiles ? "artifacts" : hasCommands ? "terminal" : null);
+    // Demo: prefer Session files and never auto-open the (empty, no live process)
+    // terminal - land on Files, else Agents, else the surface chooser.
+    (DEMO_READONLY
+      ? hasFiles
+        ? "artifacts"
+        : hasSubagents
+          ? "agents"
+          : null
+      : hasSubagents
+        ? "agents"
+        : hasFiles
+          ? "artifacts"
+          : hasCommands
+            ? "terminal"
+            : null);
   // Sheet grammar: the chooser card grid is a side-by-side surface - the
   // sheet's pill tabs ARE the chooser, so opening on a quiet thread lands on
   // a concrete tab (Files); the pane body's null branch falls back the same way.
