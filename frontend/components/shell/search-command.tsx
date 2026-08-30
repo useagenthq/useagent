@@ -11,6 +11,7 @@ import {
   RiCornerDownLeftLine,
   RiDashboardLine,
   RiDatabase2Line,
+  RiFileTextLine,
   RiFlashlightLine,
   RiFlaskLine,
   RiGitPullRequestLine,
@@ -27,7 +28,18 @@ import * as React from "react";
 
 import { Kbd } from "@/components/base/kbd/kbd";
 import * as CommandMenu from "@/components/session-ui/command-palette";
+import { StatusDot } from "@/components/shared/status-dot";
 import { cx } from "@/utils/cx";
+import { relativeTimeShort } from "@/utils/format";
+import { runPrimaryRepo } from "./sidebar-project-groups";
+import { useSidebarThreads } from "./sidebar-threads-provider";
+import {
+  effectiveThreadStatus,
+  filterCommandEntries,
+  findThreadMatches,
+  threadActivityTimestamp,
+  threadStatusPresentation,
+} from "./thread-discovery";
 
 type IconComponent = ComponentType<{
   className?: string;
@@ -79,6 +91,7 @@ const GROUP_ORDER: Cmd["group"][] = ["Threads", "Customize", "Developer"];
  */
 export function SearchCommand({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
+  const runs = useSidebarThreads();
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
 
@@ -105,9 +118,9 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
   }
 
   const query = search.trim().toLowerCase();
-  const matchCount = query
-    ? COMMANDS.filter((c) => c.label.toLowerCase().includes(query)).length
-    : COMMANDS.length;
+  const matchingCommands = React.useMemo(() => filterCommandEntries(COMMANDS, query), [query]);
+  const matchingThreads = React.useMemo(() => findThreadMatches(runs, query), [runs, query]);
+  const matchCount = matchingCommands.length + matchingThreads.length;
 
   return (
     <>
@@ -146,7 +159,7 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
 
         <CommandMenu.List>
           <Command.Empty className="px-5 py-8 text-center text-body-2-regular text-text-tertiary">
-            No commands found
+            No commands or threads found
           </Command.Empty>
           {GROUP_ORDER.map((group) => (
             <CommandMenu.Group
@@ -154,28 +167,70 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
               heading={group}
               className="[&>[cmdk-group-heading]]:text-text-tertiary"
             >
-              {COMMANDS.filter((c) => c.group === group).map((cmd) => (
-                <CommandMenu.Item
-                  key={cmd.href}
-                  value={cmd.label}
-                  onSelect={() => go(cmd.href)}
-                  className="bg-transparent text-text-primary data-[selected=true]:bg-background-primary-hover"
-                >
-                  <CommandMenu.ItemIcon
-                    as={cmd.icon}
-                    className="text-foreground-icon-secondary"
-                    aria-hidden
-                  />
-                  <span className="min-w-0 flex-1 truncate">{cmd.label}</span>
-                </CommandMenu.Item>
-              ))}
+              {group === "Threads"
+                ? matchingThreads.map((run) => {
+                    const status = threadStatusPresentation(effectiveThreadStatus(run));
+                    const repo = runPrimaryRepo(run);
+                    const timestamp = threadActivityTimestamp(run);
+                    const title = run.prompt || "Untitled run";
+                    const meta = [status.label, relativeTimeShort(timestamp)].join(" · ");
+                    return (
+                      <CommandMenu.Item
+                        key={`thread:${run.id}`}
+                        value={`${title} ${repo ?? ""} ${run.id}`}
+                        onSelect={() => go(`/session/${run.id}`)}
+                        aria-label={`${title}, ${meta}${repo ? `, ${repo}` : ""}`}
+                        className="bg-transparent text-text-primary data-[selected=true]:bg-background-primary-hover"
+                      >
+                        <span className="flex size-5 shrink-0 items-center justify-center">
+                          {status.dot ? (
+                            <StatusDot {...status.dot} />
+                          ) : (
+                            <RiFileTextLine
+                              className="size-4 text-foreground-icon-secondary"
+                              aria-hidden
+                            />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{title}</span>
+                          {repo ? (
+                            <span className="block truncate text-caption-1-regular text-text-tertiary">
+                              {repo}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="shrink-0 text-caption-1-regular text-text-tertiary tabular-nums">
+                          {meta}
+                        </span>
+                      </CommandMenu.Item>
+                    );
+                  })
+                : null}
+              {matchingCommands
+                .filter((c) => c.group === group)
+                .map((cmd) => (
+                  <CommandMenu.Item
+                    key={cmd.href}
+                    value={cmd.label}
+                    onSelect={() => go(cmd.href)}
+                    className="bg-transparent text-text-primary data-[selected=true]:bg-background-primary-hover"
+                  >
+                    <CommandMenu.ItemIcon
+                      as={cmd.icon}
+                      className="text-foreground-icon-secondary"
+                      aria-hidden
+                    />
+                    <span className="min-w-0 flex-1 truncate">{cmd.label}</span>
+                  </CommandMenu.Item>
+                ))}
             </CommandMenu.Group>
           ))}
         </CommandMenu.List>
 
         <CommandMenu.Footer>
           <span className="text-caption-1-regular text-text-secondary">
-            {matchCount} {matchCount === 1 ? "command" : "commands"}
+            {matchCount} {query ? (matchCount === 1 ? "result" : "results") : "commands"}
           </span>
           <div className="flex items-center gap-1.5 text-caption-1-regular text-text-tertiary">
             <Kbd>
