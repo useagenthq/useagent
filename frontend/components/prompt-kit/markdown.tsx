@@ -291,7 +291,8 @@ export function artifactWorkspaceTarget(
   label: string,
   origin: string,
 ): { readonly id: string; readonly name: string } | null {
-  if (!/^preview\b/i.test(label.trim())) return null;
+  const normalizedLabel = label.trim();
+  if (!/^(?:preview\b|open\b.*\bpreview\b)/i.test(normalizedLabel)) return null;
   let parsed: URL;
   try {
     parsed = new URL(value, origin);
@@ -307,9 +308,10 @@ export function artifactWorkspaceTarget(
   try {
     const id = decodeURIComponent(encodedId);
     const name =
-      label
-        .trim()
+      normalizedLabel
         .replace(/^preview\s+(?:the\s+)?/i, "")
+        .replace(/^open\s+/i, "")
+        .replace(/\s+preview$/i, "")
         .trim() || "Artifact";
     return { id, name };
   } catch {
