@@ -45,10 +45,10 @@ describe("unified shell contract", () => {
     );
   });
 
-  test("limits primary sidebar navigation to projects, threads, usage, customize, and settings", () => {
+  test("limits primary sidebar navigation to projects, threads, customize, and settings", () => {
     const { threadSidebar } = shellSources();
     const projectTree = read("../session-ui/project-thread-tree.tsx");
-    const primaryDestinations = ["Dashboard", "Threads", "Usage", "Customize", "Settings"];
+    const primaryDestinations = ["Dashboard", "Threads", "Customize", "Settings"];
     const displacedDestinations = [
       "New chat",
       "New task",
@@ -73,6 +73,8 @@ describe("unified shell contract", () => {
       expect(threadSidebar).not.toContain(`label='${label}'`);
     }
     expect(threadSidebar).not.toContain('label="All projects"');
+    expect(threadSidebar).not.toContain('label="Usage"');
+    expect(threadSidebar).not.toContain('href="/settings#usage"');
     expect(threadSidebar.match(/href="\/dashboard"/g)).toHaveLength(1);
   });
 
