@@ -220,14 +220,14 @@ export function httpSlackClient(config: SlackClientConfig): SlackClient {
       call("chat.appendStream", {
         channel,
         thread_ts: threadTs,
-        message_ts: messageTs,
+        ts: messageTs,
         chunks,
       }),
     stopStream: ({ channel, threadTs, messageTs, chunks, blocks }) =>
       call("chat.stopStream", {
         channel,
         thread_ts: threadTs,
-        message_ts: messageTs,
+        ts: messageTs,
         chunks,
         ...(blocks ? { blocks } : {}),
       }),

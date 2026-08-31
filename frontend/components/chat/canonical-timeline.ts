@@ -16,7 +16,14 @@
 // comes from the parts' native ids. Tool detail is still read from the durable step
 // sidecar keyed by identity.nativeEventId (the "bounded raw sidecar").
 
-import { isNarration, parseMarker, type TimelineMarker, type TimelineNode } from "./timeline";
+import {
+  isNarration,
+  parseMarker,
+  reconcileTimelineArtifacts,
+  type TimelineArtifactReceipt,
+  type TimelineMarker,
+  type TimelineNode,
+} from "./timeline";
 import { type ApiStep, deriveTrace, isRenderableTimelineStep } from "./types";
 
 /** Structural view of a canonical event (envelope base + flattened body fields). */
@@ -330,6 +337,37 @@ export function buildTimelineFromCanonical(
   const unpartedText = new Map<string, { text: string; firstSeq: number; order: number }>();
   const unpartedReasoning = new Map<string, { text: string; firstSeq: number }>();
 
+  const artifactReceipts: TimelineArtifactReceipt[] = [];
+  for (const e of ordered) {
+    if (
+      (e.kind !== "artifact.created" && e.kind !== "artifact.delivered") ||
+      !e.artifact ||
+      !e.name
+    )
+      continue;
+    artifactReceipts.push({
+      key: e.identity?.nativeEventId ?? String(e.seq),
+      seq: e.identity?.nativeSeq ?? e.seq,
+      created: e.kind === "artifact.created",
+      artifact: {
+        id: e.artifact.artifactId,
+        name: e.name,
+        bytes: e.artifact.bytes,
+        sha256: e.artifact.sha256,
+        contentType: e.artifact.contentType,
+      },
+      ...(e.kind === "artifact.delivered" && e.destination ? { destination: e.destination } : {}),
+    });
+  }
+  for (const receipt of reconcileTimelineArtifacts(artifactReceipts)) {
+    ranked.push({
+      node: { kind: "artifact", key: receipt.key, artifact: receipt.artifact },
+      k0: MAX,
+      k1: 2,
+      k2: receipt.seq,
+    });
+  }
+
   for (const e of ordered) {
     // ── context markers (useAgent lane): lead the turn ──────────────────────────
     if (e.kind === "context.marker") {
@@ -345,32 +383,7 @@ export function buildTimelineFromCanonical(
       });
       continue;
     }
-    if (
-      (e.kind === "artifact.created" || e.kind === "artifact.delivered") &&
-      e.artifact &&
-      e.name
-    ) {
-      ranked.push({
-        node: {
-          kind: "artifact",
-          key: e.identity?.nativeEventId ?? String(e.seq),
-          artifact: {
-            id: e.artifact.artifactId,
-            name: e.name,
-            bytes: e.artifact.bytes,
-            sha256: e.artifact.sha256,
-            contentType: e.artifact.contentType,
-            ...(e.kind === "artifact.delivered" && e.destination
-              ? { destination: e.destination }
-              : {}),
-          },
-        },
-        k0: MAX,
-        k1: 2,
-        k2: e.identity?.nativeSeq ?? e.seq,
-      });
-      continue;
-    }
+    if (e.kind === "artifact.created" || e.kind === "artifact.delivered") continue;
     // ── assistant text bursts (root, step-messages only; child text -> its pane) ─
     if (e.kind === "message.delta") {
       const sid = e.identity?.nativeSessionId;

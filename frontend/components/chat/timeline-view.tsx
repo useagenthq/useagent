@@ -12,9 +12,12 @@ import {
   RiFileEditLine,
   RiFileLine,
   RiImageLine,
-  RiSlackLine,
 } from "@remixicon/react";
-import { artifactAuthoringProfile, inferWorkpieceKind } from "@useagent/artifact-workspace";
+import {
+  artifactAuthoringProfile,
+  canPreviewInline,
+  inferWorkpieceKind,
+} from "@useagent/artifact-workspace";
 import { memo, useMemo, useState } from "react";
 import { PlanChecklist } from "@/components/agent-ui/plan-checklist";
 import { Thinking } from "@/components/ai/thinking";
@@ -33,10 +36,7 @@ import { MarkerRow } from "@/components/chat/tool-step-row";
 import { basename } from "@/components/chat/types";
 import { useOpenWorkpiece } from "@/components/chat/workspace-open-context";
 import { Markdown } from "@/components/prompt-kit/markdown";
-import {
-  segmentTimeline,
-  type TimelineSegment,
-} from "@/components/session-ui/adapter";
+import { segmentTimeline, type TimelineSegment } from "@/components/session-ui/adapter";
 import {
   ContextRecallFold,
   isContextRecallMarker,
@@ -129,39 +129,104 @@ function ArtifactActions({
   );
 }
 
+function artifactDestinations(artifact: TimelineArtifact): readonly string[] {
+  return [
+    ...new Set([
+      ...(artifact.destinations ?? []),
+      ...(artifact.destination ? [artifact.destination] : []),
+    ]),
+  ].toSorted();
+}
+
+function destinationLabel(destination: string): string {
+  return destination
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function ArtifactDeliveryBadges({ destinations }: { destinations: readonly string[] }) {
+  if (destinations.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {destinations.map((destination) => {
+        const label = destinationLabel(destination);
+        return (
+          <span
+            key={destination}
+            className="rounded-md bg-background-primary-default px-1.5 py-0.5 text-caption-2-medium text-text-tertiary"
+          >
+            Delivered to {label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" }> }) {
   const { artifact } = node;
-  const image = artifact.contentType.startsWith("image/");
+  const image = artifact.contentType.startsWith("image/") && canPreviewInline(artifact.contentType);
   const media = image || artifact.contentType.startsWith("video/");
   const Icon = media ? RiImageLine : RiFileLine;
-  // Click-to-expand lightbox for image artifacts with local content (delivered
-  // artifacts have no content endpoint here). Leaf-local state only - no store.
+  const content = `/api/artifacts/${artifact.id}/content`;
+  const destinations = artifactDestinations(artifact);
+  // Click-to-expand state stays local to the image artifact row.
   const [expanded, setExpanded] = useState(false);
-  const expandable = image && !artifact.destination;
-  // A canonical workpiece (document/spreadsheet/deck/pdf, not a delivered copy)
-  // opens IN the session side pane; raw binaries keep card/download. The provider
-  // is null outside a session (the standalone artifacts page), so the card keeps
-  // its plain behavior there.
+  // A canonical workpiece (document/spreadsheet/deck/pdf) opens IN the session
+  // side pane; raw binaries keep card/download. Delivery does not change content.
   const openWorkpiece = useOpenWorkpiece();
-  const workpieceKind =
-    openWorkpiece && !artifact.destination
-      ? inferWorkpieceKind(artifact.name, artifact.contentType, artifact.bytes)
-      : null;
+  const workpieceKind = openWorkpiece
+    ? inferWorkpieceKind(artifact.name, artifact.contentType, artifact.bytes)
+    : null;
   const canOpen = !!openWorkpiece && workpieceKind !== null;
-  const subtitle = artifact.destination
-    ? `Delivered to ${artifact.destination}`
-    : workpieceKind
-      ? `${artifactAuthoringProfile(workpieceKind).label} · ${formatArtifactSize(artifact.bytes)} · Click to open`
-      : `${media ? "Generated media" : "Artifact"} · ${formatArtifactSize(artifact.bytes)}`;
+  const subtitle = workpieceKind
+    ? `${artifactAuthoringProfile(workpieceKind).label} · ${formatArtifactSize(artifact.bytes)} · Click to open`
+    : `${media ? "Generated media" : "Artifact"} · ${formatArtifactSize(artifact.bytes)}`;
   const body = (
     <>
       <Icon aria-hidden className="size-5 shrink-0 text-text-secondary" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-body-2-medium text-text-primary">{artifact.name}</p>
         <p className="text-caption-1-regular text-text-tertiary">{subtitle}</p>
+        <ArtifactDeliveryBadges destinations={destinations} />
       </div>
     </>
   );
+
+  if (image) {
+    return (
+      <div className="min-w-0 overflow-hidden rounded-xl border border-border-button-default bg-background-secondary-default">
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-label={`Expand ${artifact.name}`}
+          className="block w-full cursor-zoom-in bg-background-primary-default outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring"
+        >
+          {/* biome-ignore lint/performance/noImgElement: authenticated dynamic artifact content is not a Next Image optimization target. */}
+          <img
+            src={content}
+            alt={`Preview of ${artifact.name}`}
+            loading="lazy"
+            decoding="async"
+            className="max-h-96 w-full object-contain"
+          />
+        </button>
+        <div className="flex min-w-0 items-center gap-3 px-3 py-2.5">
+          {body}
+          <ArtifactActions artifact={artifact} />
+        </div>
+        {expanded && (
+          <ExpandedImageDialog
+            preview={{ images: [{ src: content, name: artifact.name }], index: 0 }}
+            onClose={() => setExpanded(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -178,39 +243,13 @@ function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" 
         >
           {body}
         </button>
-      ) : expandable ? (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          aria-label={`Expand ${artifact.name}`}
-          className="flex min-w-0 flex-1 cursor-zoom-in items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
-        >
-          {body}
-        </button>
       ) : (
         body
       )}
-      {artifact.destination === "slack" && (
-        <RiSlackLine
-          aria-label="Delivered to Slack"
-          className="size-4 shrink-0 text-text-tertiary"
-        />
-      )}
-      {!artifact.destination && (
-        <ArtifactActions
-          artifact={artifact}
-          onOpen={canOpen ? () => openWorkpiece?.(artifact) : undefined}
-        />
-      )}
-      {expanded && (
-        <ExpandedImageDialog
-          preview={{
-            images: [{ src: `/api/artifacts/${artifact.id}/content`, name: artifact.name }],
-            index: 0,
-          }}
-          onClose={() => setExpanded(false)}
-        />
-      )}
+      <ArtifactActions
+        artifact={artifact}
+        onOpen={canOpen ? () => openWorkpiece?.(artifact) : undefined}
+      />
     </div>
   );
 }
@@ -276,12 +315,19 @@ function groupContextRecall(segs: readonly TimelineSegment[]): FlowUnit[] {
       units.push({ kind: "recall", key: `recall-${run[0].key}`, markers: run });
     } else if (run.length === 1) {
       const { key, marker } = run[0];
-      units.push({ kind: "seg", seg: { kind: "node", key, node: { kind: "marker", key, marker } } });
+      units.push({
+        kind: "seg",
+        seg: { kind: "node", key, node: { kind: "marker", key, marker } },
+      });
     }
     run = [];
   };
   for (const seg of segs) {
-    if (seg.kind === "node" && seg.node.kind === "marker" && isContextRecallMarker(seg.node.marker)) {
+    if (
+      seg.kind === "node" &&
+      seg.node.kind === "marker" &&
+      isContextRecallMarker(seg.node.marker)
+    ) {
       run.push({ key: seg.key, marker: seg.node.marker });
     } else {
       flush();
@@ -327,10 +373,7 @@ export function Timeline({
    *  suggestions under scrolled-back history are noise). */
   showFollowups?: boolean;
 }) {
-  const { segments, workingLabel } = useMemo(
-    () => segmentTimeline(nodes, live),
-    [nodes, live],
-  );
+  const { segments, workingLabel } = useMemo(() => segmentTimeline(nodes, live), [nodes, live]);
   // Artifacts are deliverables, not narration: they render AFTER the prose and
   // tool activity so an answer never appears below its own attachment.
   // Follow-ups close the turn after everything else.

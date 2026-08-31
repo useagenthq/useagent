@@ -18,6 +18,8 @@
 import { slackConfig } from "../env";
 import { startSlackOutboxRelay } from "./outbox";
 import { startSlackSocketMode } from "./socket-mode";
+import { handleSlackEvent, slackEventIsEarlyNoop } from "./events";
+import { startSlackInboxPump, verifySlackInboxIdentity } from "./inbox";
 
 export { slackRoutes } from "./routes";
 export { slackEnabled } from "../env";
@@ -27,11 +29,33 @@ export { syncSlackWorkspaceBindings } from "./workspaces";
 
 /** Start the durable outbox delivery relay (boot recovery + interval) and,
  *  when SLACK_APP_TOKEN is set, the Socket Mode ingress (WebSocket lane - no
- *  public URL required; shares the HTTP path's handler + deduper). Called
+ *  public URL required; both transports persist into the same inbox). Called
  *  from src/index.ts only when Slack is configured. No-op if unconfigured. */
 export function startSlackOutbox(): void {
   const cfg = slackConfig();
   if (!cfg) return;
   startSlackOutboxRelay(cfg);
+  startSlackInboxPump(async ({ payload, checkpointStagedAttachmentIds }) => {
+    if (slackEventIsEarlyNoop(payload.envelope)) return { status: "completed" };
+    const identity = await verifySlackInboxIdentity(payload);
+    if (identity.status === "ignored") return { status: "completed" };
+    if (identity.status === "rebound") {
+      return { status: "permanent", error: identity.error };
+    }
+    const outcome = await handleSlackEvent(payload.envelope, {
+      identity,
+      stagedAttachmentIds: payload.stagedAttachmentIds,
+      checkpointStagedAttachmentIds,
+    });
+    if (
+      outcome.status === "accepted" ||
+      outcome.status === "replayed" ||
+      outcome.status === "permanent_noop"
+    ) {
+      return { status: "completed" };
+    }
+    if (outcome.status === "waiting_for_root") return { status: "waiting_for_root" };
+    return { status: "retryable_unavailable", error: outcome.reason };
+  });
   startSlackSocketMode();
 }

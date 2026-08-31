@@ -1,7 +1,7 @@
 /**
  * Slack Events-API ingest, adapted to the runs model. Given a verified
- * `event_callback` envelope, this resolves the workspace to a tenant identity
- * (fail closed), decides whether the message is for us, stages inbound
+ * `event_callback` envelope plus the immutable identity captured by the durable
+ * inbox, this decides whether the message is for us, stages inbound
  * attachments, maps it onto a run (root or `parent_run_id` reply), 👀-acks, and
  * registers a completion watcher. Kept deliberately small — QM's turn-handler
  * (approvals, reactions, mirroring, agent-requests) is DEFERRED.
@@ -28,7 +28,6 @@ import { pumpThread } from "../worker";
 import { stageInboundSlackFiles, type SlackInboundFileMeta } from "./inbound-files";
 import { createSlackRunResponse, findOrAdoptSlackThread, linkSlackThread } from "./repo";
 import { watchSlackRun } from "./watcher";
-import { resolveSlackSender, resolveSlackWorkspace } from "./workspaces";
 import {
   enqueueAddReactionTx,
   enqueuePostMessage,
@@ -58,33 +57,9 @@ import {
 } from "../resources/run-intake";
 import { resolveSlackBotTokenForWorkspace } from "../integrations/slack-token-resolver";
 
-// Bounded FIFO deduper — collapses Slack retries AND the app_mention/message
-// pair for a channel mention (both carry the same `channel:ts`). No LRU dep;
-// a Set is insertion-ordered so the oldest key evicts first.
-function createDeduper(max = 1000): { seen(key: string): boolean; forget(key: string): void } {
-  const set = new Set<string>();
-  return {
-    seen(key) {
-      if (set.has(key)) return true;
-      set.add(key);
-      if (set.size > max) {
-        const oldest = set.values().next().value;
-        if (oldest !== undefined) set.delete(oldest);
-      }
-      return false;
-    },
-    forget(key) {
-      set.delete(key);
-    },
-  };
-}
-
-let deduper = createDeduper();
-
-/** TEST ONLY: drop all in-memory dedupe state, simulating a process restart so
- *  suites can prove the DURABLE dedupe (the command-lane idempotency key). */
+/** Compatibility no-op: ingress dedupe now lives in the durable Slack inbox. */
 export function resetSlackDeduperForTest(): void {
-  deduper = createDeduper();
+  // Intentionally empty.
 }
 
 const TERMINAL_STATUSES = new Set<RunStatus>(["completed", "failed"]);
@@ -211,38 +186,108 @@ function cleanPrompt(text: string, botUserId: string): string {
   return t.replace(/\s+/g, " ").trim();
 }
 
-/**
- * Process a verified `event_callback`. Runs ASYNC behind the transport ack
- * (both the HTTP route and Socket Mode ack first, then hand the envelope here),
- * so run acceptance, attachment staging, and outbound calls never eat into
- * Slack's 3s ack budget.
- */
-export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
+/** Pure transport-envelope gates that never need tenant identity or mutation. */
+export function slackEventIsEarlyNoop(body: SlackEnvelope): boolean {
   const config = slackConfig();
-  if (!config) return;
+  if (!config) return true;
+  const event = body.event;
+  const type = event?.type;
+  if (!event || (type !== "app_mention" && type !== "message")) return true;
+  if (event.bot_id) return true;
+  const botUserId = botUserIdOf(body);
+  if (botUserId && event.user === botUserId) return true;
+  if (type === "message" && event.subtype && event.subtype !== "file_share") return true;
+  const channel = event.channel;
+  const ts = event.ts;
+  if (!channel || !ts || !body.team_id) return true;
+  if (config.channelAllowlist.size > 0 && !config.channelAllowlist.has(channel)) return true;
+  if (event.channel_type === "im" || type !== "message") return false;
+  const rawText = typeof event.text === "string" ? event.text : "";
+  const isMention = botUserId ? rawText.includes(`<@${botUserId}>`) : false;
+  const isThreadReply = Boolean(event.thread_ts && event.thread_ts !== ts);
+  return isMention || !isThreadReply;
+}
+
+export interface SlackEventHandlingOptions {
+  /** Immutable tenant identity captured before the transport ACK. */
+  readonly identity: { readonly orgId: string; readonly actorId: string | null };
+  /** null/undefined means file staging has not run; an array means reuse its
+   * exact result so a close-vs-accept race never redownloads attachments. */
+  readonly stagedAttachmentIds?: readonly string[] | null;
+  /** Persist staging progress into the fenced inbox claim before acceptance. */
+  readonly checkpointStagedAttachmentIds?: (ids: readonly string[]) => Promise<void>;
+}
+
+export type SlackEventOutcome =
+  | { readonly status: "accepted"; readonly runId: string }
+  | { readonly status: "replayed"; readonly runId: string }
+  | { readonly status: "permanent_noop"; readonly reason: string }
+  | { readonly status: "retryable_unavailable"; readonly reason: string }
+  | { readonly status: "waiting_for_root"; readonly threadTs: string };
+
+async function handleAdmissionClosed(input: {
+  readonly error: RunAdmissionClosedError;
+  readonly teamId: string;
+  readonly channel: string;
+  readonly ts: string;
+  readonly threadTs: string;
+}): Promise<SlackEventOutcome> {
+  await enqueuePostMessage({
+    idempotencyKey: `slack-admission-queued:${input.teamId}:${input.channel}:${input.ts}`,
+    teamId: input.teamId,
+    channel: input.channel,
+    threadTs: input.threadTs,
+    text: "Your request is queued during the deployment and will start automatically when service resumes.",
+  });
+  return { status: "retryable_unavailable", reason: input.error.code };
+}
+
+/**
+ * Process one durably accepted inbox event. Transports invoke this only through
+ * the inbox pump after persistence has succeeded and the ACK has been sent.
+ */
+export async function handleSlackEvent(
+  body: SlackEnvelope,
+  options: SlackEventHandlingOptions,
+): Promise<SlackEventOutcome> {
+  if (slackEventIsEarlyNoop(body)) {
+    return { status: "permanent_noop", reason: "early_envelope_gate" };
+  }
+  const config = slackConfig();
+  if (!config) return { status: "retryable_unavailable", reason: "slack_not_configured" };
 
   const event = body.event;
   const type = event?.type;
-  if (!event || (type !== "app_mention" && type !== "message")) return;
+  if (!event || (type !== "app_mention" && type !== "message")) {
+    return { status: "permanent_noop", reason: "unsupported_event" };
+  }
 
   // Never react to bot-authored messages (loop guard) or non-plain message
   // subtypes (edits/deletes/joins — deferred). `file_share` is the one subtype
   // let through: it is how a plain message with attachments arrives.
-  if (event.bot_id) return;
+  if (event.bot_id) return { status: "permanent_noop", reason: "bot_message" };
   const botUserId = botUserIdOf(body);
-  if (botUserId && event.user === botUserId) return;
-  if (type === "message" && event.subtype && event.subtype !== "file_share") return;
+  if (botUserId && event.user === botUserId) {
+    return { status: "permanent_noop", reason: "self_message" };
+  }
+  if (type === "message" && event.subtype && event.subtype !== "file_share") {
+    return { status: "permanent_noop", reason: "unsupported_message_subtype" };
+  }
 
   const channel = event.channel;
   const ts = event.ts;
   const teamId = body.team_id;
-  if (!channel || !ts || !teamId) return;
+  if (!channel || !ts || !teamId) {
+    return { status: "permanent_noop", reason: "missing_message_identity" };
+  }
 
   // Operator channel allowlist: when set, ONLY events from listed channel ids
   // are processed (DMs included - a DM channel id is not in the list). Keeps a
   // freshly connected workspace scoped to a designated test channel until the
   // adapter is opened up.
-  if (config.channelAllowlist.size > 0 && !config.channelAllowlist.has(channel)) return;
+  if (config.channelAllowlist.size > 0 && !config.channelAllowlist.has(channel)) {
+    return { status: "permanent_noop", reason: "channel_not_allowed" };
+  }
 
   const rawText = typeof event.text === "string" ? event.text : "";
   const threadTs = typeof event.thread_ts === "string" ? event.thread_ts : undefined;
@@ -252,23 +297,17 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
 
   // Gating for non-DM plain `message` events.
   if (!isDm && type === "message") {
-    if (isMention) return; // the paired app_mention handles it
-    if (!isThreadReply) return; // untargeted channel chatter
+    if (isMention) return { status: "permanent_noop", reason: "paired_message_event" };
+    if (!isThreadReply) return { status: "permanent_noop", reason: "untargeted_channel_message" };
   }
 
-  // Workspace identity — FAIL CLOSED. An event from a workspace with no
-  // slack_workspaces mapping is ignored (logged once per team id); nothing ever
-  // falls back to a seeded org. Resolved BEFORE dedupe so an unmapped
-  // workspace's event never reserves a dedupe key (a retry after the operator
-  // adds the mapping still lands).
-  const workspace = await resolveSlackWorkspace(teamId);
-  if (!workspace) return;
+  const orgId = options.identity.orgId;
   const botToken = await resolveSlackBotTokenForWorkspace({
-    orgId: workspace.orgId,
+    orgId,
     teamId,
     config,
   });
-  if (!botToken) return;
+  if (!botToken) return { status: "retryable_unavailable", reason: "bot_token_unavailable" };
 
   // A message threads under its thread root (replies) or under itself (top-level).
   const slackThreadTs = threadTs ?? ts;
@@ -276,16 +315,18 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     teamId,
     channel,
     threadTs: slackThreadTs,
-    orgId: workspace.orgId,
+    orgId,
   });
-  if (!isDm && type === "message" && isThreadReply && !link) return;
+  if (!isDm && type === "message" && isThreadReply && !link) {
+    return { status: "waiting_for_root", threadTs: slackThreadTs };
+  }
 
   // Workspace mapping establishes the tenant only. Every run also receives org
   // memory, provider access, and sandbox secrets, so an unmapped sender cannot
   // safely run even an apparently "org-only" prompt. Require the explicit
   // per-Slack-user mapping before dedupe or any durable work.
-  const sender = await resolveSlackSender(workspace, teamId, event.user);
-  if (!sender) {
+  const userId = options.identity.actorId;
+  if (!userId) {
     await enqueuePostMessage({
       idempotencyKey: `slack-sender-guidance:${teamId}:${channel}:${ts}`,
       teamId,
@@ -293,19 +334,10 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       threadTs: slackThreadTs,
       text: "Your Slack user is not linked to a product account. Ask an operator to add a SLACK_USER_BINDINGS mapping and retry.",
     });
-    return;
+    return { status: "permanent_noop", reason: "sender_not_linked" };
   }
 
-  // Dedupe last, so a genuinely-ours message reserves its key exactly once.
-  const key = `${teamId}:${channel}:${ts}`;
-  if (deduper.seen(key)) return;
-
-  const orgId = workspace.orgId;
-  const userId = sender.userId;
-
-  const durableKey = body.event_id
-    ? `slack-event:${teamId}:${body.event_id}`
-    : `slack-event:${teamId}:${channel}:${ts}`;
+  const durableKey = `slack-event:${teamId}:${channel}:${ts}`;
   const files = Array.isArray(event.files) ? event.files : [];
 
   let prompt = cleanPrompt(rawText, botUserId);
@@ -313,8 +345,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     // A files-only message still runs (the attachments ARE the request); an
     // empty message with no attached files stays a no-op.
     if (files.length === 0) {
-      deduper.forget(key);
-      return;
+      return { status: "permanent_noop", reason: "empty_message" };
     }
     prompt = "Review the attached files.";
   }
@@ -360,7 +391,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
           threadTs: slackThreadTs,
           text: "This thread uses personal resources and your Slack user is not linked to its owner. Link the sender identity or start a new org-scoped thread.",
         });
-        return;
+        return { status: "permanent_noop", reason: "personal_thread_owner_mismatch" };
       }
     }
   }
@@ -382,16 +413,16 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     if (rest) prompt = rest;
     else if (files.length === 0) {
       await guide("Include your request in the same message as the directive, e.g. `model:sol summarize this thread`.");
-      return;
+      return { status: "permanent_noop", reason: "directive_without_prompt" };
     }
     if (directives.engine) {
       if (!isSlackSwitchableEngine(directives.engine)) {
         await guide(`Unknown engine \`${directives.engine}\`. Available: opencode, claude, codex.`);
-        return;
+        return { status: "permanent_noop", reason: "unknown_engine_directive" };
       }
       if (parent && directives.engine !== engine) {
         await guide(`This thread runs on \`${engine}\` and cannot switch engines mid-thread. Start a new thread to use \`${directives.engine}\`.`);
-        return;
+        return { status: "permanent_noop", reason: "cross_engine_thread_switch" };
       }
       if (!parent && directives.engine !== engine) {
         engine = directives.engine;
@@ -402,7 +433,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       const resolved = resolveModelToken(engine, directives.model);
       if (!resolved) {
         await guide(`Unknown model \`${directives.model}\` for \`${engine}\`. Available: ${modelCatalogLine(engine)}.`);
-        return;
+        return { status: "permanent_noop", reason: "unknown_model_directive" };
       }
       model = resolved;
     }
@@ -445,15 +476,13 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     });
   } catch (error) {
     if (!(error instanceof RunAdmissionClosedError)) throw error;
-    deduper.forget(key);
-    await enqueuePostMessage({
-      idempotencyKey: `slack-admission-guidance:${teamId}:${channel}:${ts}`,
+    return handleAdmissionClosed({
+      error,
       teamId,
       channel,
+      ts,
       threadTs: slackThreadTs,
-      text: "New runs are temporarily paused for a deployment. Retry this message shortly.",
     });
-    return;
   }
   if (replay) {
     if (replay.status === "replayed" && !link) {
@@ -469,14 +498,28 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       await healSlackRunDelivery({ runId: replay.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts, slackUserId: event.user });
     }
     console.log(`[slack] duplicate event ignored (${replay.status}): ${durableKey}`);
-    return;
+    return replay.status === "replayed"
+      ? { status: "replayed", runId: replay.runId }
+      : {
+          status: "permanent_noop",
+          reason: replay.status === "conflict" ? `run_replay_${replay.reason}` : "unexpected_replay_state",
+        };
   }
 
   // Only a first acceptance downloads and stages Slack files. A lost-response
   // retry above uses Slack's stable file identity and never touches the CDN.
-  const attachmentIds = files.length > 0
-    ? await stageInboundSlackFiles({ files, botToken, orgId, userId })
-    : [];
+  const attachmentIds = options.stagedAttachmentIds != null
+    ? [...options.stagedAttachmentIds]
+    : files.length > 0
+      ? await stageInboundSlackFiles({ files, botToken, orgId, userId })
+      : [];
+  if (
+    files.length > 0 &&
+    options.stagedAttachmentIds == null &&
+    options.checkpointStagedAttachmentIds
+  ) {
+    await options.checkpointStagedAttachmentIds(attachmentIds);
+  }
 
   let resources: readonly RunResource[];
   let boundRepos: string[];
@@ -513,13 +556,12 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       threadTs: slackThreadTs,
       text: `${error.diagnostic.message} ${error.diagnostic.action}`,
     });
-    return;
+    return { status: "permanent_noop", reason: "resource_intake_rejected" };
   }
 
-  // Enter through the durable command lane keyed by the SLACK EVENT IDENTITY
-  // (event_id when present - retries reuse it - else channel:ts), so a
-  // duplicate delivery that outlives the in-memory deduper (restart, cross-lane
-  // HTTP+socket double delivery) still collapses to ONE run. The mailbox pump
+  // Enter through the durable command lane keyed by the Slack MESSAGE identity
+  // (team + channel + ts), so transport retries or two delivery IDs for the
+  // same message still collapse to ONE run. The mailbox pump
   // preserves per-thread order: a reply in an active Slack thread waits for the
   // prior turn.
   let outcome;
@@ -556,15 +598,13 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     });
   } catch (error) {
     if (!(error instanceof RunAdmissionClosedError)) throw error;
-    deduper.forget(key);
-    await enqueuePostMessage({
-      idempotencyKey: `slack-admission-guidance:${teamId}:${channel}:${ts}`,
+    return handleAdmissionClosed({
+      error,
       teamId,
       channel,
+      ts,
       threadTs: slackThreadTs,
-      text: "New runs are temporarily paused for a deployment. Retry this message shortly.",
     });
-    return;
   }
 
   // A durable duplicate (the in-memory fast path missed it - restart or
@@ -581,7 +621,9 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       await healSlackRunDelivery({ runId: outcome.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts, slackUserId: event.user });
     }
     console.log(`[slack] duplicate event ignored (${outcome.status}): ${durableKey}`);
-    return;
+    return outcome.status === "replayed"
+      ? { status: "replayed", runId: outcome.runId }
+      : { status: "permanent_noop", reason: `run_accept_${outcome.reason}` };
   }
 
   // First bot interaction in this Slack thread → remember it as the root. Linked
@@ -595,4 +637,5 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   await pumpThread(threadId);
 
   watchSlackRun({ runId, rootRunId: threadId, teamId, channel, threadTs: slackThreadTs });
+  return { status: "accepted", runId };
 }

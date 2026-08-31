@@ -18,9 +18,9 @@ import {
   test,
 } from "bun:test";
 import { createHmac } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
-import { artifacts, runs, slackOutbox, slackRunResponses, slackThreads, userUploads } from "../src/db/schema";
+import { artifacts, commands, runs, slackOutbox, slackRunResponses, slackThreads, userUploads } from "../src/db/schema";
 import { artifactStorage } from "../src/artifacts/storage";
 import { finalizeRun } from "../src/runs/finalize";
 import { createRun } from "../src/runs/repo";
@@ -42,8 +42,24 @@ import { markdownChunksFor, openingStreamChunks, runningTaskChunk } from "../src
 import { turnStream } from "../src/runs/turn-stream";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import { setSlackClientForTest } from "../src/slack";
-import { resetSlackDeduperForTest } from "../src/slack/events";
+import { handleSlackEvent, resetSlackDeduperForTest, type SlackEnvelope } from "../src/slack/events";
 import { setInboundFileDownloaderForTest } from "../src/slack/inbound-files";
+import {
+  persistSlackInboxEvent,
+  processSlackInbox,
+  maintainSlackInboxRetention,
+  setSlackInboxBeforePersistInsertForTest,
+  setSlackInboxPersisterForTest,
+  slackInboxKey,
+  slackInboxThreadId,
+  SLACK_INBOX_EVENT,
+  startSlackInboxPump,
+  stopSlackInboxPumpForTest,
+  verifySlackInboxIdentity,
+  type SlackInboxClaim,
+  type SlackInboxOutcome,
+  type SlackInboxPayload,
+} from "../src/slack/inbox";
 import { dispatchSocketFrame } from "../src/slack/socket-mode";
 import { composeSlackReplyText } from "../src/slack/reply";
 import {
@@ -54,6 +70,7 @@ import {
   upsertSlackWorkspace,
 } from "../src/slack/workspaces";
 import { fetchApi, json, uid, waitFor } from "./helpers";
+import { setRunAdmission } from "../src/commands";
 
 // This DB-backed integration suite shares the CI Postgres service with the
 // full backend matrix. Keep its bounded async waits above Bun's 5s unit-test
@@ -283,6 +300,30 @@ async function deleteSlackDeliveryRows(runId: string, teamId = TEAM): Promise<vo
   `);
 }
 
+async function replaySlackInboxClaim(claim: SlackInboxClaim): Promise<SlackInboxOutcome> {
+  const identity = await verifySlackInboxIdentity(claim.payload);
+  if (identity.status === "ignored") return { status: "completed" };
+  if (identity.status === "rebound") return { status: "permanent", error: identity.error };
+  const outcome = await handleSlackEvent(claim.payload.envelope, {
+    identity,
+    stagedAttachmentIds: claim.payload.stagedAttachmentIds,
+    checkpointStagedAttachmentIds: claim.checkpointStagedAttachmentIds,
+  });
+  if (
+    outcome.status === "accepted" ||
+    outcome.status === "replayed" ||
+    outcome.status === "permanent_noop"
+  ) {
+    return { status: "completed" };
+  }
+  if (outcome.status === "waiting_for_root") return { status: "waiting_for_root" };
+  return { status: "retryable_unavailable", error: outcome.reason };
+}
+
+function restartSlackInboxPumpForTest(): void {
+  startSlackInboxPump(replaySlackInboxClaim);
+}
+
 describe("slack signature verification", () => {
   test("url_verification handshake echoes the challenge (signed)", async () => {
     const res = await postSlack({ type: "url_verification", challenge: "c-123" });
@@ -313,6 +354,26 @@ describe("slack signature verification", () => {
       headers: { "content-type": "application/json" },
     });
     expect(res.status).toBe(401);
+  });
+
+  test("a verified HTTP event is not ACKed when inbox persistence fails", async () => {
+    const marker = uid("persist-fail");
+    setSlackInboxPersisterForTest(async () => {
+      throw new Error("synthetic inbox outage");
+    });
+    try {
+      const res = await postSlack(eventCallback({
+        type: "app_mention",
+        channel: `C${uid("ch")}`,
+        user: "U-HUMAN",
+        text: `<@${BOT}> ${marker}`,
+        ts: `${uid("ts")}.1`,
+      }));
+      expect(res.status).toBe(503);
+      expect(await findRunByPrompt(marker)).toBeNull();
+    } finally {
+      setSlackInboxPersisterForTest(null);
+    }
   });
 });
 
@@ -689,20 +750,21 @@ describe("slack event → run", () => {
 
   test("a non-mention channel message in an unknown thread is ignored", async () => {
     const marker = uid("ignore");
-    const res = await postSlack(
-      eventCallback({
-        type: "message",
-        channel: `C${uid("ch")}`,
-        channel_type: "channel",
-        user: "U-HUMAN",
-        text: `noise ${marker}`,
-        ts: `${uid("ts")}.1`,
-      }),
-    );
+    const envelope = eventCallback({
+      type: "message",
+      channel: `C${uid("ch")}`,
+      channel_type: "channel",
+      user: "U-HUMAN",
+      text: `noise ${marker}`,
+      ts: `${uid("ts")}.1`,
+    }) as SlackEnvelope;
+    const res = await postSlack(envelope);
     expect(res.status).toBe(200); // acknowledged...
     // ...but no run created (give any async work a beat to NOT happen).
     await new Promise((r) => setTimeout(r, 150));
     expect(await findRunByPrompt(`noise ${marker}`)).toBeNull();
+    const [inbox] = await db.select().from(commands).where(eq(commands.id, slackInboxKey(envelope)));
+    expect(inbox).toBeUndefined(); // pure envelope gate runs before persistence
   });
 
   test("the bot's own message is ignored (loop guard)", async () => {
@@ -1058,10 +1120,656 @@ describe("slack native stream and Block Kit fallback", () => {
   });
 });
 
+describe("slack durable inbox", () => {
+  test("persists one duplicate event while closed and drains it once after restart/open", async () => {
+    await stopSlackInboxPumpForTest();
+    const operationId = `slack-deferred-test:${crypto.randomUUID()}`;
+    const marker = uid("deferred");
+    const channel = `C${uid("ch")}`;
+    const ts = `${uid("ts")}.1`;
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel,
+      user: "U-HUMAN",
+      text: `<@${BOT}> queued ${marker}`,
+      ts,
+    }) as SlackEnvelope;
+    const inboxKey = slackInboxKey(envelope);
+
+    await setRunAdmission({
+      open: false,
+      operationId,
+      actor: "test",
+      reason: "Slack deployment deferral test",
+    });
+    try {
+      expect((await postSlack(envelope)).status).toBe(200);
+      resetSlackDeduperForTest();
+      expect((await postSlack(envelope)).status).toBe(200);
+
+      const inbox = await waitFor(async () => {
+        const rows = await db
+          .select()
+          .from(commands)
+          .where(eq(commands.id, inboxKey));
+        return rows.length > 0 ? rows : null;
+      });
+      expect(inbox).toHaveLength(1);
+      expect(inbox[0]!.kind).toBe(SLACK_INBOX_EVENT);
+      expect(inbox[0]!.state).toBe("queued");
+      expect(inbox[0]!.orgId).toBe(DEV_ORG_ID);
+      expect(inbox[0]!.actorId).toBe(DEV_USER_ID);
+      expect(await findRunByPrompt(`queued ${marker}`)).toBeNull();
+
+      restartSlackInboxPumpForTest();
+      await waitFor(async () => {
+        const rows = await db
+          .select({ payload: slackOutbox.payload })
+          .from(slackOutbox)
+          .where(eq(
+            slackOutbox.idempotencyKey,
+            `slack-admission-queued:${TEAM}:${channel}:${ts}`,
+          ));
+        return rows[0] ?? null;
+      });
+      await waitFor(async () => {
+        const [row] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+        return row?.state === "queued" && row.attemptCount === 0 ? row : null;
+      });
+      await stopSlackInboxPumpForTest();
+      const [delayed] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+      const defer = (JSON.parse(delayed.payload!) as {
+        defer: { reason: string; nextAttemptAt: string };
+      }).defer;
+      expect(defer.reason).toBe("run_admission_closed");
+      expect(Date.parse(defer.nextAttemptAt)).toBeGreaterThan(Date.now());
+      expect(await processSlackInbox(replaySlackInboxClaim)).toMatchObject({ claimed: 0 });
+      expect(await findRunByPrompt(`queued ${marker}`)).toBeNull();
+
+      // Simulate the deployment restart: the inbox row remains authoritative.
+      await setRunAdmission({
+        open: true,
+        operationId,
+        actor: "test",
+        reason: "deployment complete",
+      });
+      restartSlackInboxPumpForTest();
+      await waitFor(async () => findRunByPrompt(`queued ${marker}`));
+
+      resetSlackDeduperForTest();
+      expect((await postSlack(envelope)).status).toBe(200);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const { body } = await json<{ runs: any[] }>("/api/runs?all=1");
+      expect(body.runs.filter((run) => run.prompt === `queued ${marker}`)).toHaveLength(1);
+      const [completed] = await db
+        .select({ state: commands.state, attemptCount: commands.attemptCount })
+        .from(commands)
+        .where(eq(commands.id, inboxKey));
+      expect(completed).toEqual({ state: "completed", attemptCount: 1 });
+      const queuedNotices = await db
+        .select({ payload: slackOutbox.payload })
+        .from(slackOutbox)
+        .where(eq(
+          slackOutbox.idempotencyKey,
+          `slack-admission-queued:${TEAM}:${channel}:${ts}`,
+        ));
+      expect(queuedNotices).toHaveLength(1);
+      expect(queuedNotices[0]!.payload).toContain("start automatically");
+      expect(
+        rec.messages.some(
+          (message) => message.channel === channel && message.text.includes("Retry this message"),
+        ),
+      ).toBe(false);
+    } finally {
+      await setRunAdmission({
+        open: true,
+        operationId,
+        actor: "test",
+        reason: "test cleanup",
+      });
+      restartSlackInboxPumpForTest();
+    }
+  });
+
+  test("fails closed when the persisted sender binding changes before replay", async () => {
+    await stopSlackInboxPumpForTest();
+    const marker = uid("rebind");
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel: `C${uid("ch")}`,
+      user: "U-HUMAN",
+      text: `<@${BOT}> rebind ${marker}`,
+      ts: `${uid("ts")}.1`,
+    }) as SlackEnvelope;
+    const inboxKey = slackInboxKey(envelope);
+    try {
+      expect((await postSlack(envelope)).status).toBe(200);
+      await db.execute(sql`delete from slack_users where team_id = ${TEAM} and slack_user_id = 'U-HUMAN'`);
+      restartSlackInboxPumpForTest();
+      const failed = await waitFor(async () => {
+        const [row] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+        return row?.state === "failed" ? row : null;
+      });
+      expect(failed.error).toBe("slack_sender_binding_changed");
+      expect(await findRunByPrompt(`rebind ${marker}`)).toBeNull();
+    } finally {
+      await upsertSlackUser({
+        teamId: TEAM,
+        slackUserId: "U-HUMAN",
+        orgId: DEV_ORG_ID,
+        userId: DEV_USER_ID,
+      });
+      restartSlackInboxPumpForTest();
+    }
+  });
+
+  test("a stale worker cannot complete a claim reclaimed by a new worker", async () => {
+    await stopSlackInboxPumpForTest();
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel: `C${uid("ch")}`,
+      user: "U-HUMAN",
+      text: `<@${BOT}> fence ${uid("fence")}`,
+      ts: `${uid("ts")}.1`,
+    }) as SlackEnvelope;
+    const inboxKey = slackInboxKey(envelope);
+    await persistSlackInboxEvent(envelope);
+    let entered!: () => void;
+    const claimed = new Promise<void>((resolve) => { entered = resolve; });
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const staleWorker = processSlackInbox(async () => {
+      entered();
+      await blocked;
+      return { status: "completed" };
+    });
+    await claimed;
+    await db
+      .update(commands)
+      .set({ updatedAt: new Date(Date.now() - 31_000) })
+      .where(eq(commands.id, inboxKey));
+    expect(await processSlackInbox(async () => ({ status: "completed" }))).toMatchObject({
+      claimed: 1,
+      completed: 1,
+    });
+    release();
+    expect(await staleWorker).toMatchObject({ claimed: 1, completed: 0 });
+    const [row] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+    expect(row.state).toBe("completed");
+    restartSlackInboxPumpForTest();
+  });
+
+  test("the eighth processing error permanently fails the inbox row", async () => {
+    await stopSlackInboxPumpForTest();
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel: `C${uid("ch")}`,
+      user: "U-HUMAN",
+      text: `<@${BOT}> retry cap ${uid("cap")}`,
+      ts: `${uid("ts")}.1`,
+    }) as SlackEnvelope;
+    const inboxKey = slackInboxKey(envelope);
+    await persistSlackInboxEvent(envelope);
+    for (let attempt = 1; attempt <= 8; attempt++) {
+      await processSlackInbox(async () => { throw new Error(`failure ${attempt}`); });
+    }
+    const [row] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+    expect(row).toMatchObject({ state: "failed", attemptCount: 8, error: "failure 8" });
+    restartSlackInboxPumpForTest();
+  });
+
+  test("retryable unavailability is delayed and resumes when due", async () => {
+    await stopSlackInboxPumpForTest();
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel: `C${uid("ch")}`,
+      user: "U-HUMAN",
+      text: `<@${BOT}> unavailable ${uid("unavailable")}`,
+      ts: `${uid("ts")}.1`,
+    }) as SlackEnvelope;
+    const inboxKey = slackInboxKey(envelope);
+    try {
+      await persistSlackInboxEvent(envelope);
+      await processSlackInbox(async (claim) =>
+        slackInboxKey(claim.payload.envelope) === inboxKey
+          ? { status: "retryable_unavailable", error: "provider_unavailable" }
+          : replaySlackInboxClaim(claim));
+      let [row] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+      const deferred = (JSON.parse(row.payload!) as {
+        defer: { count: number; reason: string; nextAttemptAt: string };
+      }).defer;
+      expect(deferred).toMatchObject({ count: 1, reason: "provider_unavailable" });
+      expect(Date.parse(deferred.nextAttemptAt)).toBeGreaterThan(Date.now());
+
+      await processSlackInbox(async () => ({ status: "completed" }));
+      [row] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+      expect(row.state).toBe("queued");
+      expect(row.attemptCount).toBe(0);
+
+      const payload = JSON.parse(row.payload!) as SlackInboxPayload;
+      await db.update(commands).set({
+        payload: JSON.stringify({
+          ...payload,
+          defer: { ...payload.defer!, nextAttemptAt: new Date(Date.now() - 1_000).toISOString() },
+        }),
+      }).where(eq(commands.id, inboxKey));
+      await processSlackInbox(async (claim) =>
+        slackInboxKey(claim.payload.envelope) === inboxKey
+          ? { status: "completed" }
+          : replaySlackInboxClaim(claim));
+      [row] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+      expect(row.state).toBe("completed");
+    } finally {
+      restartSlackInboxPumpForTest();
+    }
+  });
+
+  test("an unrelated reply probation expires once into a retention-eligible no-op", async () => {
+    await stopSlackInboxPumpForTest();
+    const envelope = eventCallback({
+      type: "message",
+      channel: `C${uid("ch")}`,
+      channel_type: "channel",
+      user: "U-HUMAN",
+      text: `unrelated ${uid("expire")}`,
+      ts: `${uid("ts")}.1`,
+      thread_ts: `${uid("unrelated-root")}.0`,
+    }) as SlackEnvelope;
+    const inboxKey = slackInboxKey(envelope);
+    try {
+      expect((await postSlack(envelope)).status).toBe(200);
+      const [queued] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+      const payload = JSON.parse(queued.payload!) as SlackInboxPayload;
+      expect(payload.defer).toMatchObject({ reason: "awaiting_root_commit", count: 0 });
+      expect(await processSlackInbox(replaySlackInboxClaim)).toMatchObject({ claimed: 0 });
+
+      await db.update(commands).set({
+        payload: JSON.stringify({
+          ...payload,
+          defer: {
+            ...payload.defer!,
+            count: 11,
+            firstDeferredAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
+            nextAttemptAt: new Date(Date.now() - 1_000).toISOString(),
+          },
+        }),
+      }).where(eq(commands.id, inboxKey));
+      expect(await processSlackInbox(replaySlackInboxClaim)).toMatchObject({
+        claimed: 1,
+        completed: 1,
+        requeued: 0,
+      });
+      const [completed] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+      expect(completed.state).toBe("completed");
+      expect(completed.error).toBe("permanent_noop:awaiting_root_commit_expired");
+      expect(await processSlackInbox(replaySlackInboxClaim)).toMatchObject({ claimed: 0 });
+      expect((await postSlack(envelope)).status).toBe(200);
+      const [retried] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+      expect(retried.state).toBe("completed");
+      expect(await processSlackInbox(replaySlackInboxClaim)).toMatchObject({ claimed: 0 });
+    } finally {
+      restartSlackInboxPumpForTest();
+    }
+  });
+
+  test("fails an exhausted stale dispatch left by a crashed process", async () => {
+    await stopSlackInboxPumpForTest();
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel: `C${uid("ch")}`,
+      user: "U-HUMAN",
+      text: `<@${BOT}> exhausted crash ${uid("crash")}`,
+      ts: `${uid("ts")}.1`,
+    }) as SlackEnvelope;
+    const inboxKey = slackInboxKey(envelope);
+    try {
+      await persistSlackInboxEvent(envelope);
+      await db
+        .update(commands)
+        .set({
+          state: "dispatched",
+          attemptCount: 8,
+          error: "dead-worker-token",
+          updatedAt: new Date(Date.now() - 31_000),
+        })
+        .where(eq(commands.id, inboxKey));
+      let invoked = false;
+      expect(await processSlackInbox(async () => {
+        invoked = true;
+        return { status: "completed" };
+      })).toMatchObject({ claimed: 0, failed: 1 });
+      expect(invoked).toBe(false);
+      const [row] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+      expect(row).toMatchObject({
+        state: "failed",
+        attemptCount: 8,
+        error: "retry_exhausted_after_restart",
+      });
+    } finally {
+      restartSlackInboxPumpForTest();
+    }
+  });
+
+  test("reply persists before the root INSERT commits, then attaches exactly once", async () => {
+    await stopSlackInboxPumpForTest();
+    const marker = uid("root-commit-race");
+    const channel = `C${uid("ch")}`;
+    const rootTs = `${uid("root")}.1`;
+    const replyTs = `${uid("reply")}.2`;
+    const root = eventCallback({
+      type: "app_mention",
+      channel,
+      channel_type: "channel",
+      user: "U-HUMAN",
+      text: `<@${BOT}> race root ${marker}`,
+      ts: rootTs,
+    }) as SlackEnvelope;
+    const reply = eventCallback({
+      type: "message",
+      channel,
+      channel_type: "channel",
+      user: "U-HUMAN",
+      text: `race reply ${marker}`,
+      ts: replyTs,
+      thread_ts: rootTs,
+    }) as SlackEnvelope;
+    let rootReachedInsert!: () => void;
+    const rootInsertBlocked = new Promise<void>((resolve) => { rootReachedInsert = resolve; });
+    let releaseRootInsert!: () => void;
+    const rootInsertRelease = new Promise<void>((resolve) => { releaseRootInsert = resolve; });
+    let rootReleased = false;
+    setSlackInboxBeforePersistInsertForTest(async (envelope) => {
+      if (slackInboxKey(envelope) !== slackInboxKey(root)) return;
+      rootReachedInsert();
+      await rootInsertRelease;
+    });
+    try {
+      const rootRequest = postSlack(root);
+      await rootInsertBlocked;
+
+      const replyResponse = await postSlack(reply);
+      expect(replyResponse.status).toBe(200);
+      const [persistedReply] = await db
+        .select()
+        .from(commands)
+        .where(eq(commands.id, slackInboxKey(reply)));
+      expect(persistedReply).toMatchObject({
+        state: "queued",
+        threadId: slackInboxThreadId(reply),
+      });
+      expect((JSON.parse(persistedReply.payload!) as SlackInboxPayload).defer).toMatchObject({
+        reason: "awaiting_root_commit",
+        count: 0,
+      });
+      const [notYetCommittedRoot] = await db
+        .select({ id: commands.id })
+        .from(commands)
+        .where(eq(commands.id, slackInboxKey(root)));
+      expect(notYetCommittedRoot).toBeUndefined();
+
+      rootReleased = true;
+      releaseRootInsert();
+      expect((await rootRequest).status).toBe(200);
+      const [persistedRoot] = await db
+        .select()
+        .from(commands)
+        .where(eq(commands.id, slackInboxKey(root)));
+      expect(persistedRoot.threadId).toBe(slackInboxThreadId(root));
+
+      restartSlackInboxPumpForTest();
+      const rootRun = await waitFor(async () => findRunByPrompt(`race root ${marker}`));
+      const replyRun = await waitFor(async () => findRunByPrompt(`race reply ${marker}`));
+      expect(replyRun.parent_run_id).toBe(rootRun.id);
+      const { body } = await json<{ runs: any[] }>("/api/runs?all=1");
+      expect(body.runs.filter((run) => run.prompt === `race reply ${marker}`)).toHaveLength(1);
+      const completedReply = await waitFor(async () => {
+        const [row] = await db
+          .select({ state: commands.state })
+          .from(commands)
+          .where(eq(commands.id, slackInboxKey(reply)));
+        return row?.state === "completed" ? row : null;
+      });
+      expect(completedReply.state).toBe("completed");
+    } finally {
+      setSlackInboxBeforePersistInsertForTest(null);
+      if (!rootReleased) releaseRootInsert();
+      restartSlackInboxPumpForTest();
+    }
+  });
+
+  test("Slack root-thread lookup uses the existing commands thread-state index", async () => {
+    await stopSlackInboxPumpForTest();
+    const prefix = `slack-plan-${crypto.randomUUID()}`;
+    const targetThread = `${prefix}-target`;
+    try {
+      await db.execute(sql`
+        insert into commands (id, kind, thread_id, state, attempt_count, created_at, updated_at)
+        select
+          ${prefix} || '-' || g::text,
+          ${SLACK_INBOX_EVENT},
+          case when g = 1 then ${targetThread} else ${prefix} || '-thread-' || g::text end,
+          'queued',
+          0,
+          now() - (g * interval '1 millisecond'),
+          now()
+        from generate_series(1, 4000) as g`);
+      await db.execute(sql`analyze commands`);
+      const plan = await db.execute(sql`
+        explain (format text)
+        select id from commands
+        where thread_id = ${targetThread}
+          and state in ('queued', 'dispatched')
+        order by created_at asc
+        limit 1`);
+      const rendered = plan
+        .map((row) => String((row as Record<string, unknown>)["QUERY PLAN"] ?? ""))
+        .join("\n");
+      expect(rendered).toContain("idx_commands_thread_state");
+    } finally {
+      await db.execute(sql`delete from commands where id like ${`${prefix}%`}`);
+      restartSlackInboxPumpForTest();
+    }
+  });
+
+  test("closed root then reply both drain after admission reopens", async () => {
+    await stopSlackInboxPumpForTest();
+    const operationId = `slack-root-reply:${crypto.randomUUID()}`;
+    const marker = uid("closed-thread");
+    const channel = `C${uid("ch")}`;
+    const rootTs = `${uid("root")}.1`;
+    const replyTs = `${uid("reply")}.2`;
+    const root = eventCallback({
+      type: "app_mention",
+      channel,
+      user: "U-HUMAN",
+      text: `<@${BOT}> root ${marker}`,
+      ts: rootTs,
+    }) as SlackEnvelope;
+    const reply = eventCallback({
+      type: "message",
+      channel,
+      channel_type: "channel",
+      user: "U-HUMAN",
+      text: `reply ${marker}`,
+      ts: replyTs,
+      thread_ts: rootTs,
+    }) as SlackEnvelope;
+    await setRunAdmission({
+      open: false,
+      operationId,
+      actor: "test",
+      reason: "closed root/reply ordering proof",
+    });
+    try {
+      expect((await postSlack(root)).status).toBe(200);
+      expect((await postSlack(reply)).status).toBe(200);
+      restartSlackInboxPumpForTest();
+      await waitFor(async () => {
+        const rows = await db.select().from(commands).where(sql`${commands.id} in (${slackInboxKey(root)}, ${slackInboxKey(reply)})`);
+        return rows.length === 2 && rows.every((row) => row.state === "queued") ? rows : null;
+      });
+      expect(await findRunByPrompt(`root ${marker}`)).toBeNull();
+      expect(await findRunByPrompt(`reply ${marker}`)).toBeNull();
+      await setRunAdmission({
+        open: true,
+        operationId,
+        actor: "test",
+        reason: "reopen root/reply ordering proof",
+      });
+      const rootRun = await waitFor(async () => findRunByPrompt(`root ${marker}`));
+      const replyRun = await waitFor(async () => findRunByPrompt(`reply ${marker}`));
+      expect(replyRun.parent_run_id).toBe(rootRun.id);
+      expect(replyRun.thread_id).toBe(rootRun.id);
+    } finally {
+      await setRunAdmission({
+        open: true,
+        operationId,
+        actor: "test",
+        reason: "test cleanup",
+      });
+      restartSlackInboxPumpForTest();
+    }
+  });
+
+  test("a reply processed before its pending root waits durably then attaches", async () => {
+    await stopSlackInboxPumpForTest();
+    const marker = uid("reverse-thread");
+    const channel = `C${uid("ch")}`;
+    const rootTs = `${uid("root")}.1`;
+    const reply = eventCallback({
+      type: "message",
+      channel,
+      channel_type: "channel",
+      user: "U-HUMAN",
+      text: `reply first ${marker}`,
+      ts: `${uid("reply")}.2`,
+      thread_ts: rootTs,
+    }) as SlackEnvelope;
+    const root = eventCallback({
+      type: "app_mention",
+      channel,
+      user: "U-HUMAN",
+      text: `<@${BOT}> root later ${marker}`,
+      ts: rootTs,
+    }) as SlackEnvelope;
+    try {
+      expect((await postSlack(root)).status).toBe(200);
+      expect((await postSlack(reply)).status).toBe(200);
+      // The root is durably pending, but force the reply to be claimed first.
+      await db
+        .update(commands)
+        .set({ createdAt: new Date(Date.now() - 1_000) })
+        .where(eq(commands.id, slackInboxKey(reply)));
+      restartSlackInboxPumpForTest();
+      const rootRun = await waitFor(async () => findRunByPrompt(`root later ${marker}`));
+      const replyRun = await waitFor(async () => findRunByPrompt(`reply first ${marker}`));
+      expect(replyRun.parent_run_id).toBe(rootRun.id);
+      const replyInbox = await waitFor(async () => {
+        const [row] = await db.select().from(commands).where(eq(commands.id, slackInboxKey(reply)));
+        return row?.state === "completed" ? row : null;
+      });
+      expect(replyInbox.attemptCount).toBe(1);
+    } finally {
+      restartSlackInboxPumpForTest();
+    }
+  });
+
+  test("a healthy claim heartbeat prevents reclaim after more than 30 seconds", async () => {
+    await stopSlackInboxPumpForTest();
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel: `C${uid("ch")}`,
+      user: "U-HUMAN",
+      text: `<@${BOT}> long healthy claim ${uid("lease")}`,
+      ts: `${uid("ts")}.1`,
+    }) as SlackEnvelope;
+    try {
+      await persistSlackInboxEvent(envelope);
+      let entered!: () => void;
+      const claimed = new Promise<void>((resolve) => { entered = resolve; });
+      let release!: () => void;
+      const blocked = new Promise<void>((resolve) => { release = resolve; });
+      const firstReplica = processSlackInbox(async (claim) => {
+        await claim.checkpointStagedAttachmentIds(["upload-long-running"]);
+        entered();
+        await blocked;
+        return { status: "completed" };
+      });
+      await claimed;
+      await new Promise((resolve) => setTimeout(resolve, 31_000));
+      expect(await processSlackInbox(async () => ({ status: "completed" }))).toMatchObject({
+        claimed: 0,
+      });
+      const [leased] = await db
+        .select({ payload: commands.payload, state: commands.state })
+        .from(commands)
+        .where(eq(commands.id, slackInboxKey(envelope)));
+      expect(leased.state).toBe("dispatched");
+      expect(leased.payload).toContain("upload-long-running");
+      release();
+      expect(await firstReplica).toMatchObject({ claimed: 1, completed: 1 });
+    } finally {
+      restartSlackInboxPumpForTest();
+    }
+  }, 45_000);
+
+  test("canonical storage drops unknown fields and terminal retention redacts then deletes", async () => {
+    await stopSlackInboxPumpForTest();
+    const secret = `provider-secret-${uid("secret")}`;
+    const envelope = {
+      ...eventCallback({
+        type: "app_mention",
+        channel: `C${uid("ch")}`,
+        user: "U-HUMAN",
+        text: `<@${BOT}> retain ${uid("retain")}`,
+        ts: `${uid("ts")}.1`,
+        hidden_provider_field: secret,
+        files: [{
+          id: `F${uid("f")}`,
+          name: "proof.txt",
+          size: 4,
+          mimetype: "text/plain",
+          url_private_download: `https://files.slack.com/${secret}`,
+          hidden_file_field: secret,
+        }],
+      }),
+      hidden_envelope_field: secret,
+    } as SlackEnvelope;
+    const inboxKey = slackInboxKey(envelope);
+    try {
+      await persistSlackInboxEvent(envelope);
+      let [row] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+      expect(row.payload).not.toContain("hidden_provider_field");
+      expect(row.payload).not.toContain("hidden_file_field");
+      expect(row.payload).not.toContain("hidden_envelope_field");
+      expect(row.payload).toContain(secret); // allowlisted file URL is needed until terminal.
+
+      await db
+        .update(commands)
+        .set({ state: "completed", createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) })
+        .where(eq(commands.id, inboxKey));
+      expect(await maintainSlackInboxRetention()).toMatchObject({ redacted: 1 });
+      [row] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+      expect(row.payload).toContain('"redacted"');
+      expect(row.payload).not.toContain(secret);
+
+      await db
+        .update(commands)
+        .set({ createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) })
+        .where(eq(commands.id, inboxKey));
+      expect(await maintainSlackInboxRetention()).toMatchObject({ deleted: 1 });
+      const [deleted] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+      expect(deleted).toBeUndefined();
+    } finally {
+      restartSlackInboxPumpForTest();
+    }
+  });
+});
+
 // Durable inbound dedupe: the command lane is keyed by the Slack event identity
 // (slack-event:<team>:<event_id>, channel:ts fallback), so a duplicate that
-// OUTLIVES the in-memory deduper (process restart, cross-lane double delivery)
-// still collapses to one run. resetSlackDeduperForTest simulates the restart.
+// OUTLIVES a process restart or cross-lane double delivery and still collapses
+// to one run through the inbox + run-command identities.
 describe("slack durable inbound dedupe (survives a restart)", () => {
   test("the same event_id re-delivered after a 'restart' does not create a second run", async () => {
     const marker = uid("durable");
@@ -1295,12 +2003,12 @@ describe("slack legacy team adoption", () => {
   });
 });
 
-// Ack-first ingress: the events route 200s immediately after signature
-// verification; processing (staging, acceptance) happens BEHIND the ack.
-describe("slack ack-first ingress", () => {
+// Durable-ack ingress: the events route commits the small inbox row before its
+// 200; slower staging and run acceptance still happen behind that ACK.
+describe("slack durable-ack ingress", () => {
   test("the 200 does not wait for event processing (slow attachment staging)", async () => {
     // A 600ms attachment download would blow a synchronous handler way past
-    // this assertion; ack-first returns while staging is still in flight.
+    // this assertion; durable-ack returns while staging is still in flight.
     setInboundFileDownloaderForTest(async () => {
       await new Promise((r) => setTimeout(r, 600));
       return new TextEncoder().encode("slow bytes");
@@ -1376,9 +2084,9 @@ describe("slack socket-mode ingest shares the HTTP handler", () => {
       eventCallback({ type: "app_mention", channel, user: "U-HUMAN", text: `<@${BOT}> socket ${marker}`, ts }),
     );
 
-    dispatchSocketFrame(raw, (id) => acked.push(id), () => {});
+    await dispatchSocketFrame(raw, (id) => acked.push(id), () => {});
 
-    expect(acked).toEqual([envelopeId]); // acked by envelope_id, before processing
+    expect(acked).toEqual([envelopeId]); // acked after inbox commit, before processing
 
     // Run created via the shared handler, scoped to the dev org.
     const run = await waitFor(async () => findRunByPrompt(`socket ${marker}`));
@@ -1394,11 +2102,29 @@ describe("slack socket-mode ingest shares the HTTP handler", () => {
     expect(answer!.length).toBeGreaterThan(0);
   });
 
-  test("hello is a no-op; disconnect asks us to close", () => {
+  test("a socket event is not ACKed when inbox persistence fails", async () => {
+    const acked: string[] = [];
+    const { raw } = socketFrame(eventCallback({
+      type: "app_mention",
+      channel: `C${uid("ch")}`,
+      user: "U-HUMAN",
+      text: `<@${BOT}> persist failure`,
+      ts: `${uid("ts")}.1`,
+    }));
+    setSlackInboxPersisterForTest(async () => { throw new Error("synthetic inbox outage"); });
+    try {
+      await dispatchSocketFrame(raw, (id) => acked.push(id), () => {});
+      expect(acked).toEqual([]);
+    } finally {
+      setSlackInboxPersisterForTest(null);
+    }
+  });
+
+  test("hello is a no-op; disconnect asks us to close", async () => {
     let closed = 0;
-    dispatchSocketFrame(JSON.stringify({ type: "hello" }), () => {}, () => closed++);
+    await dispatchSocketFrame(JSON.stringify({ type: "hello" }), () => {}, () => closed++);
     expect(closed).toBe(0);
-    dispatchSocketFrame(JSON.stringify({ type: "disconnect" }), () => {}, () => closed++);
+    await dispatchSocketFrame(JSON.stringify({ type: "disconnect" }), () => {}, () => closed++);
     expect(closed).toBe(1);
   });
 });
@@ -1484,21 +2210,25 @@ describe("slack workspace identity (fail closed)", () => {
 
   test("an event from an unmapped workspace is ignored", async () => {
     const marker = uid("noteam");
-    const res = await postSlack(
-      eventCallback(
-        {
-          type: "app_mention",
-          channel: `C${uid("ch")}`,
-          user: "U-HUMAN",
-          text: `<@${BOT}> hi ${marker}`,
-          ts: `${uid("ts")}.1`,
-        },
-        `T-UNMAPPED-${uid("t")}`,
-      ),
-    );
+    const envelope = eventCallback(
+      {
+        type: "app_mention",
+        channel: `C${uid("ch")}`,
+        user: "U-HUMAN",
+        text: `<@${BOT}> hi ${marker}`,
+        ts: `${uid("ts")}.1`,
+      },
+      `T-UNMAPPED-${uid("t")}`,
+    ) as SlackEnvelope;
+    const res = await postSlack(envelope);
     expect(res.status).toBe(200); // acknowledged to Slack...
     await new Promise((r) => setTimeout(r, 150));
     expect(await findRunByPrompt(`hi ${marker}`)).toBeNull(); // ...but no run
+    const inbox = await waitFor(async () => {
+      const [row] = await db.select().from(commands).where(eq(commands.id, slackInboxKey(envelope)));
+      return row?.state === "completed" ? row : null;
+    });
+    expect(inbox.state).toBe("completed");
   });
 
   test("an event carrying no team_id at all is ignored", async () => {
@@ -1608,6 +2338,80 @@ describe("slack inbound attachments", () => {
     expect(upload.sha256).toBe(
       new Bun.CryptoHasher("sha256").update(payload).digest("hex"),
     );
+  });
+
+  test("a close after file staging checkpoints IDs and replay does not redownload", async () => {
+    await stopSlackInboxPumpForTest();
+    const operationId = `slack-stage-reclose:${crypto.randomUUID()}`;
+    const marker = uid("reclose");
+    const fileName = `${marker}.txt`;
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel: `C${uid("ch")}`,
+      user: "U-HUMAN",
+      text: `<@${BOT}> summarize ${marker}`,
+      ts: `${uid("ts")}.1`,
+      files: [slackFile(fileName)],
+    }) as SlackEnvelope;
+    const inboxKey = slackInboxKey(envelope);
+    const downloadsBefore = downloaded.length;
+    let closeAfterCheckpoint = true;
+    try {
+      expect((await postSlack(envelope)).status).toBe(200);
+      await db
+        .update(commands)
+        .set({ createdAt: new Date(0) })
+        .where(eq(commands.id, inboxKey));
+      const first = await processSlackInbox(async (claim) => {
+        const identity = await verifySlackInboxIdentity(claim.payload);
+        if (identity.status !== "verified") return { status: "completed" };
+        const outcome = await handleSlackEvent(claim.payload.envelope, {
+          identity,
+          stagedAttachmentIds: claim.payload.stagedAttachmentIds,
+          checkpointStagedAttachmentIds: async (ids) => {
+            await claim.checkpointStagedAttachmentIds(ids);
+            if (closeAfterCheckpoint) {
+              closeAfterCheckpoint = false;
+              await setRunAdmission({
+                open: false,
+                operationId,
+                actor: "test",
+                reason: "close after Slack upload staging",
+              });
+            }
+          },
+        });
+        return outcome.status === "retryable_unavailable"
+          ? { status: "retryable_unavailable", error: outcome.reason }
+          : { status: "completed" };
+      });
+      expect(first.requeued).toBeGreaterThanOrEqual(1);
+      expect(downloaded.length - downloadsBefore).toBe(1);
+      const [queued] = await db.select().from(commands).where(eq(commands.id, inboxKey));
+      expect(queued.state).toBe("queued");
+      expect((JSON.parse(queued.payload!) as { stagedAttachmentIds: string[] }).stagedAttachmentIds).toHaveLength(1);
+
+      await setRunAdmission({
+        open: true,
+        operationId,
+        actor: "test",
+        reason: "reopen after checkpoint proof",
+      });
+      restartSlackInboxPumpForTest();
+      const run = await waitFor(async () => findRunByPrompt(`summarize ${marker}`));
+      expect(run.id).toBeTruthy();
+      expect(downloaded.length - downloadsBefore).toBe(1);
+      const [upload] = await uploadsByName(fileName);
+      expect(upload.runId).toBe(run.id);
+    } finally {
+      await setRunAdmission({
+        open: true,
+        operationId,
+        actor: "test",
+        reason: "test cleanup",
+      });
+      restartSlackInboxPumpForTest();
+    }
   });
 
   test("a files-only DM (file_share subtype, no text) still creates a run", async () => {
