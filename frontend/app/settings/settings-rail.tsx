@@ -14,7 +14,7 @@ export const SETTINGS_SECTIONS = [
   { id: "providers", label: "Providers" },
   { id: "integrations", label: "Integrations" },
   { id: "usage", label: "Usage" },
-  { id: "machine", label: "Machine" },
+  { id: "infrastructure", label: "Infrastructure" },
   { id: "secrets", label: "Secrets" },
   { id: "apikeys", label: "API keys" },
   { id: "team", label: "Team" },

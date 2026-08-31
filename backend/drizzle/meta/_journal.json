@@ -491,6 +491,13 @@
       "when": 1790900000000,
       "tag": "0071_slack_stream_progress",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1791100000000,
+      "tag": "0073_daytona_user_connections",
+      "breakpoints": true
     }
   ]
 }

@@ -54,5 +54,5 @@ USER node
 WORKDIR /app/frontend
 EXPOSE 3400
 HEALTHCHECK --interval=5s --timeout=3s --start-period=15s --retries=12 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:3400/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||'3400')+'/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
 CMD ["node", "server.js"]

@@ -17,9 +17,15 @@ import {
   type ProviderConnectionMeta,
 } from "./service";
 import {
+  DaytonaConnectionValidationError,
+  daytonaValidationHttpStatus,
+  validateDaytonaConnection,
+} from "./daytona";
+import {
   isProviderConnectionAuthMethod,
   isProviderConnectionProvider,
-  readSafeMetadata,
+  readDaytonaConnectionMetadata,
+  readModelProviderMetadata,
   type ProviderConnectionAuthMethod,
 } from "./types";
 
@@ -49,9 +55,11 @@ const defaultCodexChatGptOAuthLifecycle: CodexChatGptOAuthLifecycle = {
 
 export function createProviderConnectionsRoutes(input: {
   codexChatGptOAuth?: CodexChatGptOAuthLifecycle;
+  validateDaytona?: typeof validateDaytonaConnection;
 } = {}): Hono<AppEnv> {
   const providerConnectionsRoutes = new Hono<AppEnv>();
   const codexChatGptOAuth = input.codexChatGptOAuth ?? defaultCodexChatGptOAuthLifecycle;
+  const validateDaytona = input.validateDaytona ?? validateDaytonaConnection;
 
   providerConnectionsRoutes.use("*", orgScope);
 
@@ -144,16 +152,36 @@ export function createProviderConnectionsRoutes(input: {
       return c.json({ error: "invalid JSON body" }, 400);
     }
 
-    const apiKey = typeof body.apiKey === "string" ? body.apiKey : "";
+    const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
     if (!apiKey) return c.json({ error: "apiKey is required" }, 400);
+    if (apiKey.length > 8_192) return c.json({ error: "apiKey is too long" }, 400);
 
     const scope = requireUserScope(c);
     if (!scope) return c.json({ error: "user_required" }, 403);
+
+    const daytonaMetadata = provider === "daytona"
+      ? readDaytonaConnectionMetadata(body.metadata)
+      : null;
+    if (provider === "daytona" && !daytonaMetadata) {
+      return c.json({ error: "valid Daytona snapshotName is required" }, 400);
+    }
+    const metadata = daytonaMetadata ?? readModelProviderMetadata(body.metadata);
+    if (provider === "daytona") {
+      try {
+        await validateDaytona({ apiKey, snapshotName: daytonaMetadata!.snapshotName });
+      } catch (error) {
+        if (error instanceof DaytonaConnectionValidationError) {
+          return c.json({ error: error.code }, daytonaValidationHttpStatus(error.code));
+        }
+        throw error;
+      }
+    }
+
     const connection = await upsertApiKeyProviderConnection({
       ...scope,
       provider,
       apiKey,
-      metadata: readSafeMetadata(body.metadata),
+      metadata,
     });
     return c.json({ connection });
   });

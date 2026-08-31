@@ -5,6 +5,7 @@ import type {
   ProviderConnectionMetadata,
   ProviderConnectionProvider,
 } from "@useagent/agent-client/provider-connections";
+import { decodeProviderConnectionMetadata } from "@useagent/agent-client/provider-connections";
 
 export {
   decodeProviderConnectionMetadata as readSafeMetadata,
@@ -18,6 +19,33 @@ export type {
   ProviderConnectionMetadata,
   ProviderConnectionProvider,
 };
+
+export interface DaytonaConnectionMetadata {
+  readonly snapshotName: string;
+}
+
+export function readModelProviderMetadata(value: unknown): ProviderConnectionMetadata {
+  const metadata = decodeProviderConnectionMetadata(value);
+  return {
+    ...(metadata.email ? { email: metadata.email } : {}),
+    ...(metadata.planType ? { planType: metadata.planType } : {}),
+  };
+}
+
+export function readDaytonaConnectionMetadata(value: unknown): DaytonaConnectionMetadata | null {
+  const metadata = decodeProviderConnectionMetadata(value);
+  const snapshotName = metadata.snapshotName?.trim() ?? "";
+  if (
+    snapshotName.length < 1 ||
+    snapshotName.length > 200 ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(snapshotName)
+  ) {
+    return null;
+  }
+  return {
+    snapshotName,
+  };
+}
 
 export interface ProviderConnectionCredential {
   authMethod: ProviderConnectionAuthMethod;
