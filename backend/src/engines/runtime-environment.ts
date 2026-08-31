@@ -24,7 +24,7 @@ const RUNTIME_READINESS_DEADLINE_MS = 60_000;
 const RUNTIME_READINESS_DELAY_MS = 100;
 const RUNTIME_STOP_DEADLINE_MS = 15_000;
 const DEFAULT_FIRST_ACTIVITY_TIMEOUT_MS = 45_000;
-const DEFAULT_NO_PROGRESS_TIMEOUT_MS = 120_000;
+const DEFAULT_NO_PROGRESS_TIMEOUT_MS = 600_000;
 type TimingRecorder = Pick<RunStageTimer, "begin">;
 type RuntimeEnvironmentSandbox = Pick<SandboxHandle, "id"> & {
   readonly process: Pick<

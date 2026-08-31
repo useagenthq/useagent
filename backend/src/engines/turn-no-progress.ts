@@ -72,7 +72,7 @@ export function createNoProgressWatchdog(
     clearTimeout(timer);
     timer = setTimeout(() => {
       const error = noProgressError(
-        `${consecutiveRetryWarnings} retry warnings in ${timeoutMs}ms`,
+        `${timeoutMs}ms without provider activity; retry warnings=${consecutiveRetryWarnings}`,
       );
       settle();
       controller.abort(error);

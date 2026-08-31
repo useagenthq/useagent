@@ -121,7 +121,9 @@ describe("T3 no-progress watchdog", () => {
       );
       const reason = await abortReason(watchdog.signal);
       expect(reason).toBeInstanceOf(NoProgressError);
-      expect((reason as Error).message).toContain("retry warnings in 20ms");
+      expect((reason as Error).message).toContain(
+        "20ms without provider activity; retry warnings=1",
+      );
       expect((reason as Error).message).toContain(
         "retry attempt 3: Internal Server Error: Internal Server Error",
       );
