@@ -47,6 +47,7 @@ import {
 } from "./proposals";
 import { publishOrgChange } from "../runs/org-signals";
 import { UploadClaimError } from "../uploads/repo";
+import { getArtifactQualityForOrg } from "./quality";
 
 function disposition(name: string, inline: boolean): string {
   const fallback = name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
@@ -213,6 +214,28 @@ artifactRoutes.post("/", async (c) => {
 artifactRoutes.get("/:id", async (c) => {
   const row = await getArtifactForOrg(c.get("orgId"), c.req.param("id"));
   return row ? c.json({ artifact: toArtifactDescriptor(row) }) : c.json({ error: "not found" }, 404);
+});
+
+artifactRoutes.get("/:id/quality", async (c) => {
+  const quality = await getArtifactQualityForOrg(c.get("orgId"), c.req.param("id"));
+  if (quality.status === "not_found") return c.json({ error: "not found" }, 404);
+  if (quality.status === "unverified") return c.json(quality);
+  return c.json({
+    status: quality.status,
+    receipt: {
+      id: quality.id,
+      artifactId: quality.artifactId,
+      threadId: quality.threadId,
+      artifactRevision: quality.artifactRevision,
+      subjectDigest: quality.subjectDigest,
+      qualityProfile: quality.qualityProfile,
+      exportFormat: quality.exportFormat,
+      exportDigest: quality.exportDigest,
+      visualDigest: quality.visualDigest,
+      inspectorVersion: quality.inspectorVersion,
+      createdAt: quality.createdAt.toISOString(),
+    },
+  });
 });
 
 /** The stored workpiece state upgraded to its canonical shape for the wire. A v1

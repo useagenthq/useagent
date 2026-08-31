@@ -519,6 +519,13 @@
       "when": 1791400000000,
       "tag": "0075_slack_delivery_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1791500000000,
+      "tag": "0076_artifact_quality_receipts",
+      "breakpoints": true
     }
   ]
 }
