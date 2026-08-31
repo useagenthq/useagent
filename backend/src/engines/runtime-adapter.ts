@@ -629,13 +629,14 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
           capabilities: negotiatedCapabilities,
           executionCapabilities,
           generation: T3_SESSION_GENERATION,
+          authEpoch: providerBridgeLease.authEpoch,
           priorSessionId: threadExists ? threadId : undefined,
           startMetadata: { workspaceRoot: workdir, runtimeMode, createdAt },
-          persistSession: async (nativeSessionId) => {
-            if (!ctx.saveEngineSessionId) {
+          persistSession: async (providerSession) => {
+            if (!ctx.saveProviderSession) {
               throw new Error("Session persistence is unavailable");
             }
-            await ctx.saveEngineSessionId(nativeSessionId);
+            await ctx.saveProviderSession(providerSession, providerBridgeLease.authEpoch);
           },
         });
         const session = established.session;

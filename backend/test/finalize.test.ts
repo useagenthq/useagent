@@ -7,13 +7,14 @@ import {
   createRun,
   getRun,
   insertStep,
-  setRunEngineSession,
+  setRunProviderSession,
   setRunSandbox,
   setRunStatus,
 } from "../src/runs/repo";
 import { db } from "../src/db/client";
 import { artifacts } from "../src/db/schema";
 import { sql } from "drizzle-orm";
+import { providerSessionBinding } from "@useagent/agent-harness/canonical";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
 
 // Regression for GAP 2: a completed run could miss its memory capture. The
@@ -227,8 +228,15 @@ describe("finalizeRun — transactional memory capture (GAP 2)", () => {
         run: { id, prompt: "reconcile + capture", model: "claude-opus-5", engine: "opencode", parentRunId: null, threadId: id },
       });
       await setRunStatus(id, "running");
-      await setRunEngineSession(id, "ses_done");
       await setRunSandbox(id, "sb");
+      await setRunProviderSession(id, providerSessionBinding({
+        provider: "opencode",
+        nativeSessionId: "ses_done",
+        protocolVersion: "opencode-server/compat",
+        runtime: { kind: "sandbox", id: "sb" },
+        capabilities: {} as never,
+        generation: 1,
+      }));
       await db.execute(sql`update commands set state='dispatched' where run_id=${id} and kind='run.create'`);
 
       const reconcile: ReconcileProbe = async (h) =>

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { providerSessionBinding } from "@useagent/agent-harness/canonical";
 import { eq } from "drizzle-orm";
 import { acceptRunCommand } from "../commands";
 import { db } from "../db/client";
@@ -6,8 +7,10 @@ import { commands, runs } from "../db/schema";
 import type { SandboxHandle, SandboxProvider } from "../sandboxes/provider";
 import {
   createRun,
+  getRun,
   getThreadSandbox,
   setRunEngineSession,
+  setRunProviderSession,
   setRunSandbox,
   setRunStatus,
 } from "./repo";
@@ -83,6 +86,15 @@ function fakeProvider(liveIds: Set<string>, getFails = false): {
 describe("explicit sandbox release", () => {
   test("deletes only a settled org-scoped thread sandbox and clears its mapping", async () => {
     const fixture = await runFixture();
+    await db.update(runs).set({ engine: "opencode" }).where(eq(runs.id, fixture.runId));
+    await setRunProviderSession(fixture.runId, providerSessionBinding({
+      provider: "opencode",
+      nativeSessionId: "session-1",
+      protocolVersion: "opencode-server/compat",
+      runtime: { kind: "sandbox", id: fixture.sandboxId },
+      capabilities: {} as never,
+      generation: 1,
+    }));
     const live = new Set([fixture.sandboxId, "unrelated-sandbox"]);
     const { provider, deleted } = fakeProvider(live);
 
@@ -92,6 +104,11 @@ describe("explicit sandbox release", () => {
     expect(deleted).toEqual([fixture.sandboxId]);
     expect(live).toContain("unrelated-sandbox");
     expect(await getThreadSandbox(fixture.runId)).toBeNull();
+    expect(await getRun(fixture.runId)).toMatchObject({
+      sandboxId: null,
+      engineSessionId: null,
+      providerSession: null,
+    });
   });
 
   test("removes a retained Pi bridge after deleting its sandbox", async () => {

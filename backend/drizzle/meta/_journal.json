@@ -505,6 +505,20 @@
       "when": 1791200000000,
       "tag": "0072_finished_work",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1791300000000,
+      "tag": "0074_provider_session_binding",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1791400000000,
+      "tag": "0075_slack_delivery_receipts",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,10 @@ import { sql } from "drizzle-orm";
 import { db } from "../db/client";
 import type { EngineId, RunStatus } from "../db/schema";
 import { RUN_CANCEL, RUN_CREATE } from "./repo";
+import {
+  parseProviderSessionBinding,
+  type ProviderSessionBinding,
+} from "@useagent/agent-harness/canonical";
 
 // ---------------------------------------------------------------------------
 // Durable per-session command lane (north star "Durable Runtime", single-replica
@@ -35,7 +39,10 @@ export interface ActiveCommand {
   readonly threadId: string;
   readonly runStatus: RunStatus;
   readonly engine: EngineId;
+  readonly orgId: string | null;
+  readonly userId: string | null;
   readonly engineSessionId: string | null;
+  readonly providerSession: ProviderSessionBinding | null;
   readonly sandboxId: string | null;
   /** A durable user stop committed before the actor/recovery path settled. */
   readonly cancelRequested: boolean;
@@ -121,7 +128,8 @@ export async function requeueClaimedCommand(runId: string): Promise<void> {
 export async function listActiveCommands(): Promise<ActiveCommand[]> {
   const rows = await db.execute(sql`
     select c.id as command_id, c.state, c.run_id, c.thread_id,
-           r.status as run_status, r.engine, r.engine_session_id, r.sandbox_id,
+           r.status as run_status, r.engine, r.org_id, r.user_id,
+           r.engine_session_id, r.provider_session, r.sandbox_id,
            exists (
              select 1 from commands cancel_cmd
              where cancel_cmd.run_id = r.id and cancel_cmd.kind = ${RUN_CANCEL}
@@ -136,7 +144,10 @@ export async function listActiveCommands(): Promise<ActiveCommand[]> {
     threadId: r.thread_id as string,
     runStatus: r.run_status as RunStatus,
     engine: r.engine as EngineId,
+    orgId: (r.org_id as string | null) ?? null,
+    userId: (r.user_id as string | null) ?? null,
     engineSessionId: (r.engine_session_id as string | null) ?? null,
+    providerSession: parseProviderSessionBinding(r.provider_session),
     sandboxId: (r.sandbox_id as string | null) ?? null,
     cancelRequested: r.cancel_requested === true,
   }));

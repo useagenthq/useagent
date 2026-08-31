@@ -111,16 +111,33 @@ async function waitForCubeReadiness(
   );
 }
 
+class CubeRuntimeIdentityMismatchError extends Error {}
+
 async function assertCubeRuntimeIdentity(sandbox: SandboxHandle): Promise<void> {
-  const probe = await sandbox.process.executeCommand(
-    buildCubeRuntimeIdentityPreflightCommand(),
-    undefined,
-    undefined,
-    5,
-  );
-  if (probe.exitCode !== 0) {
-    throw new Error("Cube sandbox did not reach root identity/workspace");
+  const attempts = positiveInteger(process.env.CUBE_IDENTITY_PROBE_ATTEMPTS, 3);
+  const delayMs = positiveInteger(process.env.CUBE_IDENTITY_PROBE_DELAY_MS, 100);
+  let transientFailure: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const probe = await sandbox.process.executeCommand(
+        buildCubeRuntimeIdentityPreflightCommand(),
+        undefined,
+        undefined,
+        5,
+      );
+      if (probe.exitCode === 0) return;
+      throw new CubeRuntimeIdentityMismatchError(
+        "Cube sandbox did not reach root identity/workspace",
+      );
+    } catch (error) {
+      if (error instanceof CubeRuntimeIdentityMismatchError) throw error;
+      transientFailure = error;
+    }
+    if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
+  throw transientFailure instanceof Error
+    ? transientFailure
+    : new Error("Cube sandbox identity probe was unavailable");
 }
 
 function positiveInteger(value: string | undefined, fallback: number): number {
@@ -431,7 +448,9 @@ class CubeProvider implements SandboxProvider {
       await assertCubeRuntimeIdentity(handle);
       return handle;
     } catch (error) {
-      await handle.delete().catch(() => undefined);
+      if (error instanceof CubeRuntimeIdentityMismatchError) {
+        await handle.delete().catch(() => undefined);
+      }
       throw error;
     }
   }

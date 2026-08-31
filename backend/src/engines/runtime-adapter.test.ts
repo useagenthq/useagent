@@ -372,10 +372,12 @@ describe("T3 run adapter gate", () => {
 
   test("requires durable session persistence before T3 steering", () => {
     const source = readFileSync(new URL("./runtime-adapter.ts", import.meta.url), "utf8");
-    expect(source).toContain("persistSession: async (nativeSessionId) => {");
+    expect(source).toContain("persistSession: async (providerSession) => {");
     expect(source).toContain("Session persistence is unavailable");
-    expect(source).toContain("await ctx.saveEngineSessionId(nativeSessionId)");
-    expect(source).not.toContain("ctx.saveEngineSessionId?.(");
+    expect(source).toContain(
+      "await ctx.saveProviderSession(providerSession, providerBridgeLease.authEpoch)",
+    );
+    expect(source).not.toContain("ctx.saveProviderSession?.(");
   });
 
   test("drains late text and reads Cube and Daytona synchronous snapshot output", async () => {

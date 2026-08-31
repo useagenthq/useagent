@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { db, type Executor } from "../../db/client";
 import { slackOutbox, type SlackErrorClass } from "../../db/schema";
 import type { SlackOutboxEnqueue } from "./types";
@@ -19,7 +19,9 @@ export type SlackOutboxRow = typeof slackOutbox.$inferSelect;
  *  camelCase) — a straight cast would silently yield `undefined` numeric fields. */
 export interface ClaimedRow {
   readonly id: string;
+  readonly idempotencyKey: string;
   readonly kind: SlackOutboxRow["kind"];
+  readonly state: SlackOutboxRow["state"];
   readonly payload: string;
   readonly attemptCount: number;
   readonly maxAttempts: number;
@@ -37,6 +39,14 @@ export async function enqueue(
    *  atomically with the run reaching terminal). Defaults to the shared pool. */
   exec: Executor = db,
 ): Promise<boolean> {
+  const scope = entry.payload as { teamId?: unknown; orgId?: unknown };
+  if (
+    typeof scope.teamId === "string" &&
+    scope.teamId.length > 0 &&
+    !(typeof scope.orgId === "string" && scope.orgId.length > 0)
+  ) {
+    throw new Error("team-scoped Slack outbox rows require enqueue-time orgId");
+  }
   // Bound the payload at the FIELD level, never by slicing serialized JSON -
   // a byte-slice cut a production reply mid-string (8,978-char summary ->
   // exactly 8,192 stored, unparseable, permanently dead-lettered as
@@ -108,12 +118,14 @@ export async function claimDue(limit = 20): Promise<ClaimedRow[]> {
     )
     update slack_outbox o set state = 'delivering', updated_at = now()
     from due where o.id = due.id
-    returning o.id, o.kind, o.payload, o.attempt_count, o.max_attempts`)) as unknown as Array<
+    returning o.id, o.idempotency_key, o.kind, o.state, o.payload, o.attempt_count, o.max_attempts`)) as unknown as Array<
     Record<string, unknown>
   >;
   return rows.map((r) => ({
     id: r.id as string,
+    idempotencyKey: r.idempotency_key as string,
     kind: r.kind as ClaimedRow["kind"],
+    state: r.state as ClaimedRow["state"],
     payload: r.payload as string,
     attemptCount: Number(r.attempt_count),
     maxAttempts: Number(r.max_attempts),
@@ -167,6 +179,40 @@ export async function markDead(
     .where(eq(slackOutbox.id, id));
 }
 
+/** Terminal Slack rows that still owe a durable user-visible receipt. Upload
+ * success and every run-scoped dead letter are reconstructed from the row's
+ * immutable payload/error fields; event ids make replay idempotent. */
+export async function listPendingSlackReceipts(limit = 20): Promise<ClaimedRow[]> {
+  const rows = await db
+    .select()
+    .from(slackOutbox)
+    .where(and(
+      isNull(slackOutbox.receiptEmittedAt),
+      or(
+        eq(slackOutbox.state, "dead"),
+        and(eq(slackOutbox.state, "delivered"), eq(slackOutbox.kind, "upload_file")),
+      ),
+    ))
+    .orderBy(slackOutbox.updatedAt, slackOutbox.id)
+    .limit(limit);
+  return rows.map((row) => ({
+    id: row.id,
+    idempotencyKey: row.idempotencyKey,
+    kind: row.kind,
+    state: row.state,
+    payload: row.payload,
+    attemptCount: row.attemptCount,
+    maxAttempts: row.maxAttempts,
+  }));
+}
+
+export async function markSlackReceiptEmitted(id: string): Promise<void> {
+  await db
+    .update(slackOutbox)
+    .set({ receiptEmittedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(slackOutbox.id, id), isNull(slackOutbox.receiptEmittedAt)));
+}
+
 /**
  * Reset rows orphaned mid-delivery (claimed `delivering` then the process died)
  * back to `pending` so they redeliver on boot. This is at-least-once: a crash
@@ -181,6 +227,64 @@ export async function resetStuckDelivering(): Promise<number> {
     .where(eq(slackOutbox.state, "delivering"))
     .returning({ id: slackOutbox.id });
   return res.length;
+}
+
+/** Rolling-upgrade repair for rows enqueued before team-scoped payloads carried
+ * orgId. Recover authority only from durable product ownership (run, artifact,
+ * or linked Slack thread), never from the workspace's current mutable binding. */
+export async function backfillSlackOutboxOrgScope(): Promise<number> {
+  const candidates = await db
+    .select({ id: slackOutbox.id, payload: slackOutbox.payload })
+    .from(slackOutbox)
+    .where(sql`${slackOutbox.state} in ('pending', 'delivering')`);
+  for (const row of candidates) {
+    try {
+      JSON.parse(row.payload);
+    } catch {
+      await markDead(row.id, {
+        errorClass: "permanent",
+        lastError: "invalid_payload",
+      });
+    }
+  }
+  const fromRuns = await db.execute(sql`
+    update slack_outbox o
+    set payload = jsonb_set(o.payload::jsonb, '{orgId}', to_jsonb(r.org_id), true)::text,
+        updated_at = now()
+    from runs r
+    where o.state in ('pending', 'delivering')
+      and o.payload::jsonb ? 'teamId'
+      and not (o.payload::jsonb ? 'orgId')
+      and coalesce(
+        o.payload::jsonb->>'runId',
+        o.payload::jsonb->>'rootRunId',
+        o.payload::jsonb->>'deliveryRunId'
+      ) = r.id
+      and r.org_id is not null
+    returning o.id`);
+  const fromArtifacts = await db.execute(sql`
+    update slack_outbox o
+    set payload = jsonb_set(o.payload::jsonb, '{orgId}', to_jsonb(a.org_id), true)::text,
+        updated_at = now()
+    from artifacts a
+    where o.state in ('pending', 'delivering')
+      and o.payload::jsonb ? 'teamId'
+      and not (o.payload::jsonb ? 'orgId')
+      and o.payload::jsonb->>'artifactId' = a.id::text
+    returning o.id`);
+  const fromThreads = await db.execute(sql`
+    update slack_outbox o
+    set payload = jsonb_set(o.payload::jsonb, '{orgId}', to_jsonb(st.org_id), true)::text,
+        updated_at = now()
+    from slack_threads st
+    where o.state in ('pending', 'delivering')
+      and o.payload::jsonb ? 'teamId'
+      and not (o.payload::jsonb ? 'orgId')
+      and o.payload::jsonb->>'teamId' = st.team_id
+      and o.payload::jsonb->>'channel' = st.channel
+      and o.payload::jsonb->>'threadTs' = st.thread_ts
+    returning o.id`);
+  return fromRuns.length + fromArtifacts.length + fromThreads.length;
 }
 
 /** Test/ops read helpers. */

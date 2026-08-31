@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   normalizeNegotiatedCapabilities,
+  providerSessionBinding,
   type ExecutionCapabilitySnapshot,
   type HarnessSession,
 } from "@useagent/agent-harness/canonical";
@@ -9,6 +10,7 @@ import {
   establishProviderSession,
   providerSessionStartedEvent,
   recordProviderSessionStarted,
+  resumableProviderSessionId,
 } from "./provider-turn";
 
 const capabilities = normalizeNegotiatedCapabilities({
@@ -49,7 +51,12 @@ function driver(
     descriptor: {
       provider: "native-test",
       protocol: { name: "native-test-v1" },
+      sessionGeneration: 1,
       capabilities,
+      lifecycle: {
+        operations: ["start", "resume", "steer", "cancel"],
+        steerInputs: ["prompt"],
+      },
       model: { selection: "per_turn" },
       tools: { mode: "skynet_brokered", approval: "skynet" },
     },
@@ -135,8 +142,8 @@ describe("production provider turn lifecycle", () => {
       runtime: { kind: "sandbox", id: "sandbox-1" },
       capabilities,
       executionCapabilities,
-      persistSession: async (nativeSessionId) => {
-        calls.push(`persist:${nativeSessionId}`);
+      persistSession: async (persisted) => {
+        calls.push(`persist:${persisted.nativeSessionId}`);
       },
     });
     const event = providerSessionStartedEvent(ctx, established.session, {
@@ -188,8 +195,8 @@ describe("production provider turn lifecycle", () => {
       runtime: { kind: "sandbox", id: "sandbox-1" },
       capabilities,
       executionCapabilities,
-      persistSession: async (nativeSessionId) => {
-        calls.push(`persist:${nativeSessionId}`);
+      persistSession: async (persisted) => {
+        calls.push(`persist:${persisted.nativeSessionId}`);
       },
     });
 
@@ -245,6 +252,32 @@ describe("production provider turn lifecycle", () => {
     expect(calls).toEqual(["resume:session-retained"]);
   });
 
+  test("rejects each mismatched durable authority field independently", () => {
+    const current = providerSessionBinding(session("session-retained"), "auth-current");
+    const expected = {
+      provider: "native-test",
+      protocol: "native-test-v1",
+      generation: 1,
+      runtime: { kind: "sandbox" as const, id: "sandbox-1" },
+      authEpoch: "auth-current",
+    };
+    expect(resumableProviderSessionId({ binding: current, expected })).toBe("session-retained");
+
+    for (const binding of [
+      { ...current, provider: "other-provider" },
+      { ...current, protocol: "native-test-v0" },
+      { ...current, generation: 2 },
+      { ...current, runtime: { kind: "sandbox" as const, id: "sandbox-2" } },
+      { ...current, authEpoch: "auth-old" },
+    ]) {
+      expect(resumableProviderSessionId({
+        binding,
+        legacySessionId: "must-not-fallback",
+        expected,
+      })).toBeUndefined();
+    }
+  });
+
   test("does not steer a newly created session when durable persistence fails", async () => {
     const calls: string[] = [];
     const timings: string[] = [];
@@ -263,8 +296,8 @@ describe("production provider turn lifecycle", () => {
         runtime: { kind: "sandbox", id: "sandbox-1" },
         capabilities,
         executionCapabilities,
-        persistSession: async (nativeSessionId) => {
-          calls.push(`persist:${nativeSessionId}`);
+        persistSession: async (persisted) => {
+          calls.push(`persist:${persisted.nativeSessionId}`);
           throw new Error("database unavailable");
         },
       });

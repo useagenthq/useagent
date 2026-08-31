@@ -35,8 +35,16 @@ import {
   getLiveThreadSandbox,
   rememberLiveThreadSandbox,
 } from "./sandbox-runtime";
-import { createSecretRedactor, type SecretRedactor } from "../secrets/redact";
-import { errorMessage } from "../util/error-message";
+import { resumableProviderSessionId } from "./provider-turn";
+import { createSandboxSessionRevealPersister } from "./sandbox-session-persistence";
+import {
+  createSecretRedactor,
+  redactSandboxError,
+  sandboxExitError,
+  withSandboxOutputRedaction,
+} from "./sandbox-output-redaction";
+export { createSandboxSessionRevealPersister } from "./sandbox-session-persistence";
+export { sandboxExitError, withSandboxOutputRedaction } from "./sandbox-output-redaction";
 
 // ---------------------------------------------------------------------------
 // Sandbox engine substrate — ALL user-facing engines (opencode / claude / codex)
@@ -47,8 +55,8 @@ import { errorMessage } from "../util/error-message";
 // starves against real sandboxes, verified live), and exit policy. Each engine
 // contributes a small spec: how to build its command, how to translate its
 // JSONL, and how its native session id is captured/resumed — the a peer tool model
-// (explicit ids, persisted in the runs table via ctx.saveEngineSessionId,
-// resumed via ctx.engineSessionId).
+// (explicit ids, persisted through the typed provider-session binding and
+// resumed via ctx.engineSessionId for compatibility with old rows).
 // ---------------------------------------------------------------------------
 
 const DEFAULT_MODEL = "claude-opus-5";
@@ -142,44 +150,6 @@ interface SandboxEngineSpec {
   /** Extra sandbox preparation (e.g. codex auth seeding). Runs after create AND
    *  after reuse — must be idempotent and cheap. */
   prepare?(sandbox: SandboxHandle, ctx: EngineRunContext): Promise<void>;
-}
-
-/** Apply one per-run redactor at the engine/output boundary so every value the
- * CLI fallback can persist or stream follows the same contract as resident
- * transports. Native session ids and control-only inputs remain untouched. */
-export function withSandboxOutputRedaction(
-  ctx: EngineRunContext,
-  redact: SecretRedactor,
-): EngineRunContext {
-  return {
-    ...ctx,
-    emit: (step) => ctx.emit(redact.unknown(step)),
-    updateStep: ctx.updateStep
-      ? (stepId, code) => ctx.updateStep!(stepId, redact.unknown(code))
-      : undefined,
-    publishDelta: ctx.publishDelta
-      ? (delta, kind) => ctx.publishDelta!(redact.text(delta), kind)
-      : undefined,
-    setSummary: (summary, durationMs) => ctx.setSummary(redact.text(summary), durationMs),
-  };
-}
-
-/** Format a CLI exit failure without allowing its raw output tail to escape. */
-export function sandboxExitError(
-  engine: SandboxEngineSpec["id"],
-  exitCode: number,
-  rawTail: string,
-  redact: SecretRedactor,
-): Error {
-  return new Error(
-    redact.text(`${engine} (in sandbox) exited ${exitCode}: ${rawTail || "no output"}`),
-  );
-}
-
-function redactThrownError(error: unknown, redact: SecretRedactor): Error {
-  const safe = new Error(redact.text(errorMessage(error)));
-  if (error instanceof Error) safe.name = error.name;
-  return safe;
 }
 
 /** Track the last MEANINGFUL non-JSON line for error surfacing. npm's install
@@ -621,7 +591,16 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         // engine). Resuming ⇒ the engine holds the history — send ONLY the new
         // prompt; fresh ⇒ composed preamble (team memory + thread fallback).
         // Both interpolated values are validated before touching the shell.
-        const rawResume = ctx.engineSessionId;
+        const rawResume = resumableProviderSessionId({
+          binding: ctx.providerSession,
+          legacySessionId: ctx.engineSessionId,
+          expected: {
+            provider: spec.id,
+            protocol: `cli-jsonl/${spec.id}`,
+            generation: 1,
+            runtime: { kind: "sandbox", id: box.id },
+          },
+        });
         const resumeId = rawResume && SAFE_ARG.test(rawResume) ? rawResume : undefined;
         const rawModel = ctx.model?.trim() ?? "";
         const model = SAFE_ARG.test(rawModel) ? rawModel : DEFAULT_MODEL;
@@ -634,6 +613,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         await recordSecretsInjected(ctx, secretInjection);
 
         const budgetSec = Math.floor(Number(process.env.ENGINE_TIMEOUT_MS ?? 180_000) / 1000);
+        const executionCapabilities = unsupportedExecutionCapabilitySnapshot("sandbox", ctx.workdir);
 
         const stagePrompt = async (text: string): Promise<void> => {
           const b64 = Buffer.from(text, "utf8").toString("base64");
@@ -676,6 +656,12 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           let offset = 0;
           let partial = "";
           let exitCode: number | null = null;
+          const persistRevealedSession = createSandboxSessionRevealPersister({
+            provider: spec.id,
+            sandboxId: box.id,
+            executionCapabilities,
+            saveProviderSession: ctx.saveProviderSession,
+          });
 
           const apply = async (actions: SpecAction[]): Promise<void> => {
             for (const a of actions) {
@@ -697,7 +683,11 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
             partial += decoder.decode(bytes, { stream: true });
             const lines = partial.split("\n");
             partial = lines.pop() ?? "";
-            for (const l of lines) await apply(spec.handleLine(l, state));
+            for (const l of lines) {
+              const actions = spec.handleLine(l, state);
+              await persistRevealedSession(state.sessionId);
+              await apply(actions);
+            }
           };
 
           while (true) {
@@ -746,12 +736,15 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
               );
               await feedB64(rest.result ?? "");
               partial += decoder.decode(); // flush the streaming decoder
-              if (partial.trim()) await apply(spec.handleLine(partial, state));
+              if (partial.trim()) {
+                const actions = spec.handleLine(partial, state);
+                await persistRevealedSession(state.sessionId);
+                await apply(actions);
+              }
               break;
             }
           }
 
-          if (state.sessionId) ctx.saveEngineSessionId?.(state.sessionId);
           // 137 = SIGKILL at teardown AFTER work streamed; only fatal when the
           // turn produced nothing at all. `emittedSteps` counts EVERY emitted
           // action (tools included) so a tools-but-no-text turn is never
@@ -760,7 +753,6 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           return { exitCode: exitCode ?? 0, state, produced };
         };
 
-        const executionCapabilities = unsupportedExecutionCapabilitySnapshot("sandbox", ctx.workdir);
         await stagePrompt(composeTurnPrompt(ctx, Boolean(resumeId), executionCapabilities));
         await ctx.emit({ kind: "task", label: `Running ${spec.id} in sandbox…`, chip: spec.id });
         let turn = await execTurn(resumeId);
@@ -783,7 +775,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           Date.now() - startedAt,
         );
       } catch (error) {
-        throw redactThrownError(error, redact);
+        throw redactSandboxError(error, redact);
       } finally {
         // A thread's sandbox is the conversation's world — a failed TURN must
         // not destroy it (auto-stop/auto-delete contain cost). Only runs

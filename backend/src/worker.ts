@@ -2,12 +2,12 @@ import { join } from "node:path";
 import {
   buildThreadPreamble,
   getRun,
-  getThreadEngineSession,
+  getThreadProviderSessionState,
   insertStep,
-  setRunEngineSession,
   setRunStatus,
   updateStepCode,
 } from "./runs/repo";
+import type { ProviderSessionBinding } from "@useagent/agent-harness/canonical";
 import type { EngineId } from "./db/schema";
 import { resolveProviderRegistration, runProviderTurn } from "./engines";
 import { persistedEngineModelReadyForDispatch } from "./runs/engine-readiness";
@@ -60,6 +60,7 @@ import { bus, channel, RUN_SPAWNED, type BusEvent } from "./worker-events.js";
 import { strictOrgSecretRedactor } from "./secrets/store";
 import { errorMessage } from "./util/error-message";
 import { ensureRunWorkdir } from "./run-workdir";
+import { createProviderSessionSaver } from "./worker-provider-session";
 
 export { bus, channel, RUN_SPAWNED, type BusEvent } from "./worker-events.js";
 export { ensureRunWorkdir } from "./run-workdir";
@@ -287,11 +288,11 @@ async function runWorker(runId: string): Promise<void> {
     // Start the native-session lookup alongside every other independent context
     // source. The result both controls fresh-only catalog prefill and is reused
     // by the adapter, avoiding a second DB lookup before dispatch.
-    const engineSessionPromise = getThreadEngineSession(
+    const providerSessionStatePromise = getThreadProviderSessionState(
       run.threadId,
       run.engine,
       run.id,
-    ).then((sessionId) => sessionId ?? undefined);
+    );
     const endContext = stageLedger?.begin("worker.context");
     const timedContextOperation = async <T>(
       stage: string,
@@ -304,8 +305,8 @@ async function runWorker(runId: string): Promise<void> {
         end?.();
       }
     };
-    const [engineSessionId, recall, bootstrapContext, skillCatalogPage, resourceSnapshot] = await Promise.all([
-      engineSessionPromise,
+    const [providerSessionState, recall, bootstrapContext, skillCatalogPage, resourceSnapshot] = await Promise.all([
+      providerSessionStatePromise,
       // Layered recall (new_mem_prompt.md 6.2): Tencent L0 (immediate ground
       // evidence, incl. explicit "remember X") + L1 (distilled) searched in
       // parallel and merged, so a freshly-taught fact is injected into a NEW
@@ -317,7 +318,8 @@ async function runWorker(runId: string): Promise<void> {
         run.parentRunId ? buildThreadPreamble(run.threadId, run.id) : Promise.resolve(""),
       ),
       timedContextOperation("worker.skill_catalog", async () => {
-        const engineSessionId = await engineSessionPromise;
+        const state = await providerSessionStatePromise;
+        const engineSessionId = state.binding?.nativeSessionId ?? state.legacySessionId ?? undefined;
         if (
           !shouldPrefillSkillCatalog({
             hasPinnedSkill: skillContext.length > 0,
@@ -353,6 +355,9 @@ async function runWorker(runId: string): Promise<void> {
           : Promise.resolve(null),
       ),
     ]);
+    const providerSession = providerSessionState.binding ?? undefined;
+    const engineSessionId = providerSession?.nativeSessionId ??
+      providerSessionState.legacySessionId ?? undefined;
     const turnContext = recall?.rendered ?? "";
     const skillCatalogContext = skillCatalogPage
       ? frameSkillCatalogContext(skillCatalogPage)
@@ -429,6 +434,7 @@ async function runWorker(runId: string): Promise<void> {
         skillCatalogContext,
         run.threadId,
         engineSessionId,
+        providerSession,
         run.model,
         run.repos,
         run.resolvedResources,
@@ -631,6 +637,7 @@ async function runEngine(
   skillCatalogContext: string,
   threadId: string,
   engineSessionId: string | undefined,
+  providerSession: ProviderSessionBinding | undefined,
   model: string,
   repos: string[],
   resolvedResources: EngineRunContext["resolvedResources"],
@@ -736,20 +743,12 @@ async function runEngine(
     repos,
     resolvedResources,
     engineSessionId,
+    providerSession,
     commandName,
     commandSessionId,
     commandProvider,
     commandCatalogRevision,
-    // OpenCode awaits this durability boundary before dispatching. Keep the
-    // existing rejection handler for compatibility with adapters that still
-    // save best-effort, while returning the original promise to awaited callers.
-    saveEngineSessionId: (sid) => {
-      const persistence = setRunEngineSession(runId, sid);
-      void persistence.catch((err) =>
-        console.error(`[worker] failed to persist engine session id for ${runId}:`, err),
-      );
-      return persistence;
-    },
+    saveProviderSession: createProviderSessionSaver(runId),
     signal,
     emit,
     // In-place step enrichment (same idx → SSE clients upsert): a tool call

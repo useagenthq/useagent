@@ -50,6 +50,7 @@ export function createProgressThrottle(minGapMs: number): { allow(now: number): 
 
 export function watchSlackRun(opts: {
   runId: string;
+  orgId: string;
   /** The Slack thread's ROOT run id - owns the card the updates target. Equals
    *  runId for a root run; a reply passes its thread root. */
   rootRunId: string;
@@ -57,7 +58,7 @@ export function watchSlackRun(opts: {
   channel: string;
   threadTs: string;
 }): void {
-  const { runId, rootRunId, teamId, channel, threadTs } = opts;
+  const { runId, rootRunId, orgId, teamId, channel, threadTs } = opts;
   let settled = false;
   const throttle = createProgressThrottle(STATUS_THROTTLE_MS);
   const dm = directMessageChannel(channel);
@@ -92,6 +93,7 @@ export function watchSlackRun(opts: {
       const card = buildRunCard({ ...base, phase: "running", workingStep: input.workingStep });
       await enqueueAppendStream({
         idempotencyKey: input.idempotencyKey,
+        orgId,
         teamId,
         channel,
         threadTs,
@@ -132,17 +134,21 @@ export function watchSlackRun(opts: {
     clearInterval(narrationTimer);
     void enqueueSessionStatus({
       idempotencyKey: `slack-status:end:${teamId}:${runId}`,
+      orgId,
       teamId,
       channel,
       threadTs,
+      runId,
       status: "active",
     }).catch(() => {});
     if (dm) {
       void enqueueThreadStatus({
         idempotencyKey: `slack-thread-status:end:${teamId}:${runId}`,
+        orgId,
         teamId,
         channel,
         threadTs,
+        runId,
         status: "",
       }).catch(() => {});
     }
@@ -180,9 +186,11 @@ export function watchSlackRun(opts: {
     if (dm) {
       void enqueueThreadStatus({
         idempotencyKey: `slack-thread-status:step:${teamId}:${runId}:${ev.step.id}`,
+        orgId,
         teamId,
         channel,
         threadTs,
+        runId,
         status: statusTextForStep(ev.step.label),
       }).catch(() => {});
     }
