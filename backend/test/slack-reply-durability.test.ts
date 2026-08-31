@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { eq, like, sql } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { artifacts, providerEvents, slackOutbox, slackThreads } from "../src/db/schema";
 import { acceptRunCommand } from "../src/commands";
 import { finalizeRun } from "../src/runs/finalize";
 import { recoverStaleRuns, type ReconcileProbe } from "../src/runs/recovery";
-import { recordProviderEvent } from "../src/runs/provider-events";
+import { recordProviderEvent, recordProviderEventIfAbsent } from "../src/runs/provider-events";
 import {
   createSlackRunResponse,
   findSlackThreadByRoot,
@@ -193,12 +193,22 @@ describe("slack reply durability at finalization (GAP 3)", () => {
     await db.update(artifacts).set({
       sha256: "c".repeat(64), storageKey: `test/${revisionRunId}/report-v2.pdf`, workpieceRevision: 1,
     }).where(eq(artifacts.id, artifact.id));
-    await db.insert(providerEvents).values({
-      id: `artifact.revised:${artifact.id}:1`, runId: revisionRunId, threadId: root.runId,
-      seq: 1, provider: "skynet", eventType: "artifact.revised", payload: JSON.stringify({ id: artifact.id }),
-    });
+    const revisionEvent = {
+      id: `artifact.revised:${artifact.id}:1`,
+      runId: revisionRunId,
+      threadId: root.runId,
+      provider: "skynet",
+      eventType: "artifact.revised",
+      payload: { id: artifact.id, sha256: "c".repeat(64), workpiece: { state_revision: 1 } },
+    } as const;
+    expect(await recordProviderEventIfAbsent(revisionEvent)).toBe(true);
+    expect(await recordProviderEventIfAbsent({
+      ...revisionEvent,
+      payload: { id: artifact.id, sha256: "d".repeat(64), workpiece: { state_revision: 99 } },
+    })).toBe(false);
     await finalizeRun(revisionRunId, "completed", "revised web follow-up finished", 100);
-    expect(await getSlackOutbox(slackArtifactDeliveryIdempotencyKey({
+    await finalizeRun(revisionRunId, "completed", "revised web follow-up finished", 100);
+    const revisionUploadKey = slackArtifactDeliveryIdempotencyKey({
       teamId: TEAM,
       runId: revisionRunId,
       artifactId: artifact.id,
@@ -206,7 +216,31 @@ describe("slack reply durability at finalization (GAP 3)", () => {
       artifactSha256: "c".repeat(64),
       channel: root.channel,
       threadTs: root.ts,
-    }))).not.toBeNull();
+    });
+    const revisionUpload = await getSlackOutbox(revisionUploadKey);
+    expect(JSON.parse(revisionUpload?.payload ?? "{}")).toMatchObject({
+      artifactId: artifact.id,
+      artifactRevision: 1,
+      artifactSha256: "c".repeat(64),
+      artifactStorageKey: `test/${revisionRunId}/report-v2.pdf`,
+      deliveryRunId: revisionRunId,
+    });
+    const revisionEvents = await db.select({ payload: providerEvents.payload })
+      .from(providerEvents)
+      .where(and(
+        eq(providerEvents.runId, revisionRunId),
+        eq(providerEvents.eventType, "artifact.revised"),
+      ));
+    expect(revisionEvents).toHaveLength(1);
+    expect(JSON.parse(revisionEvents[0]?.payload ?? "{}")).toMatchObject({
+      id: artifact.id,
+      sha256: "c".repeat(64),
+      workpiece: { state_revision: 1 },
+    });
+    const revisionUploads = await db.select({ id: slackOutbox.id })
+      .from(slackOutbox)
+      .where(eq(slackOutbox.idempotencyKey, revisionUploadKey));
+    expect(revisionUploads).toHaveLength(1);
   });
 
   test("reply enqueue is idempotent across re-finalization (crash-retry safe)", async () => {
