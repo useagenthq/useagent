@@ -27,6 +27,7 @@ export * from "./schema/github-publication";
 export * from "./schema/free-models";
 export * from "./schema/executions";
 export * from "./schema/finished-work";
+export * from "./schema/artifact-quality";
 
 // Re-export the better-auth tables so drizzle-kit sees the whole schema and
 // the drizzle adapter can resolve every model.

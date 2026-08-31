@@ -272,6 +272,7 @@ describe("bearer allowlist - deny by default (pure)", () => {
     expect(isBearerAllowedPath("GET", "/api/runs/abc/thread-events")).toBe(true);
     expect(isBearerAllowedPath("GET", "/api/artifacts")).toBe(true);
     expect(isBearerAllowedPath("GET", "/api/artifacts/xyz/workpiece")).toBe(true);
+    expect(isBearerAllowedPath("GET", "/api/artifacts/xyz/quality")).toBe(true);
   });
 
   test("denies management, mutations, and everything unlisted", () => {
