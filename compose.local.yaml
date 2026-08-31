@@ -1,0 +1,125 @@
+name: useagent-local
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16-bookworm@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+    environment:
+      POSTGRES_DB: useagent
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d useagent"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - useagent-postgres:/var/lib/postgresql/data
+      - ./deploy/compose/postgres-init.sql:/docker-entrypoint-initdb.d/10-gateway-role.sql:ro
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      args:
+        RELEASE_COMMIT: ${RELEASE_COMMIT:?set RELEASE_COMMIT in .env.compose}
+    image: useagent-local/backend:${RELEASE_COMMIT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3201
+      USEAGENT_BIND_HOST: 0.0.0.0
+      USEAGENT_DEV_MODE: "false"
+      REQUIRE_SINGLE_BACKEND: "true"
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/useagent
+      FRONTEND_ORIGIN: http://localhost:3400
+      BETTER_AUTH_URL: http://localhost:3400
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env.compose}
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:?set SECRETS_ENCRYPTION_KEY in .env.compose}
+      USEAGENT_OPERATOR_SECRET: ${USEAGENT_OPERATOR_SECRET:?set USEAGENT_OPERATOR_SECRET in .env.compose}
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:?set a sandbox-reachable HTTPS gateway origin}
+      PROVIDER_GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL}
+      PROVIDER_GATEWAY_SECRET: ${PROVIDER_GATEWAY_SECRET:?set PROVIDER_GATEWAY_SECRET in .env.compose}
+      TOOL_GATEWAY_SECRET: ${TOOL_GATEWAY_SECRET:?set TOOL_GATEWAY_SECRET in .env.compose}
+      CODEX_APP_SERVER_HOME_ROOT: /var/lib/useagent/codex-app-server
+      SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-daytona}
+      DAYTONA_API_KEY: ${DAYTONA_API_KEY:-}
+      DAYTONA_TARGET: ${DAYTONA_TARGET:-us}
+      DAYTONA_SNAPSHOT: ${DAYTONA_SNAPSHOT:-skynet-agent-v17}
+      CUBE_API_URL: ${CUBE_API_URL:-}
+      CUBE_API_KEY: ${CUBE_API_KEY:-}
+      CUBE_TEMPLATE_ID: ${CUBE_TEMPLATE_ID:-}
+      CUBE_SANDBOX_DOMAIN: ${CUBE_SANDBOX_DOMAIN:-cube.app}
+    ports:
+      - "127.0.0.1:3201:3201"
+    volumes:
+      - useagent-artifacts:/app/backend/.artifacts
+      - useagent-runs:/app/backend/.runs
+      - useagent-slack-uploads:/app/backend/.slack-uploads
+      - useagent-pi-runtime:/opt/useagent/pi-runtime
+      - useagent-codex-app-server:/var/lib/useagent/codex-app-server
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+      args:
+        RELEASE_COMMIT: ${RELEASE_COMMIT:?set RELEASE_COMMIT in .env.compose}
+    image: useagent-local/gateway:${RELEASE_COMMIT}
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      GATEWAY_PORT: 3202
+      USEAGENT_BIND_HOST: 0.0.0.0
+      USEAGENT_DEV_MODE: "false"
+      GATEWAY_DATABASE_URL: postgres://useagent_gateway:gateway@postgres:5432/useagent
+      PROVIDER_GATEWAY_SECRET: ${PROVIDER_GATEWAY_SECRET:?set PROVIDER_GATEWAY_SECRET in .env.compose}
+      TOOL_GATEWAY_SECRET: ${TOOL_GATEWAY_SECRET:?set TOOL_GATEWAY_SECRET in .env.compose}
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:?set SECRETS_ENCRYPTION_KEY in .env.compose}
+      FRONTEND_ORIGIN: http://localhost:3400
+      USEAGENT_API_ORIGIN: http://backend:3201
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:?set a sandbox-reachable HTTPS gateway origin}
+      PROVIDER_GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL}
+      SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-daytona}
+      DAYTONA_API_KEY: ${DAYTONA_API_KEY:-}
+      DAYTONA_API_URL: ${DAYTONA_API_URL:-https://app.daytona.io/api}
+      DAYTONA_TARGET: ${DAYTONA_TARGET:-us}
+      CUBE_API_URL: ${CUBE_API_URL:-}
+      CUBE_API_KEY: ${CUBE_API_KEY:-}
+      CUBE_TEMPLATE_ID: ${CUBE_TEMPLATE_ID:-}
+      CUBE_SANDBOX_DOMAIN: ${CUBE_SANDBOX_DOMAIN:-cube.app}
+    ports:
+      - "127.0.0.1:3202:3202"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        RELEASE_COMMIT: ${RELEASE_COMMIT:?set RELEASE_COMMIT in .env.compose}
+    image: useagent-local/frontend:${RELEASE_COMMIT}
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3400
+      USEAGENT_API_ORIGIN: http://backend:3201
+      NEXT_PUBLIC_USEAGENT_RELEASE_COMMIT: ${RELEASE_COMMIT}
+    ports:
+      - "127.0.0.1:3400:3400"
+    restart: unless-stopped
+
+volumes:
+  useagent-artifacts:
+  useagent-codex-app-server:
+  useagent-pi-runtime:
+  useagent-postgres:
+  useagent-runs:
+  useagent-slack-uploads:

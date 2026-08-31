@@ -1,6 +1,10 @@
 /** Browser-safe provider-connection API and realtime wire contract. */
 
-export const PROVIDER_CONNECTION_PROVIDERS = ["openai", "anthropic", "openrouter"] as const;
+export const MODEL_PROVIDER_CONNECTION_PROVIDERS = ["openai", "anthropic", "openrouter"] as const;
+export const PROVIDER_CONNECTION_PROVIDERS = [
+  ...MODEL_PROVIDER_CONNECTION_PROVIDERS,
+  "daytona",
+] as const;
 export type ProviderConnectionProvider = (typeof PROVIDER_CONNECTION_PROVIDERS)[number];
 
 export const PROVIDER_CONNECTION_AUTH_METHODS = ["chatgpt_oauth", "api_key"] as const;
@@ -15,6 +19,7 @@ export type ProviderConnectionChangeAction = (typeof PROVIDER_CONNECTION_CHANGE_
 export interface ProviderConnectionMetadata {
   readonly email?: string;
   readonly planType?: string;
+  readonly snapshotName?: string;
 }
 
 export interface ProviderConnectionMeta {
@@ -70,12 +75,19 @@ function isProviderConnectionChangeAction(value: unknown): value is ProviderConn
 
 export function decodeProviderConnectionMetadata(value: unknown): ProviderConnectionMetadata {
   if (!isRecord(value)) return {};
-  const metadata: { email?: string; planType?: string } = {};
+  const metadata: {
+    email?: string;
+    planType?: string;
+    snapshotName?: string;
+  } = {};
   if (typeof value.email === "string" && value.email.trim()) {
     metadata.email = value.email.trim();
   }
   if (typeof value.planType === "string" && value.planType.trim()) {
     metadata.planType = value.planType.trim();
+  }
+  if (typeof value.snapshotName === "string" && value.snapshotName.trim()) {
+    metadata.snapshotName = value.snapshotName.trim();
   }
   return metadata;
 }

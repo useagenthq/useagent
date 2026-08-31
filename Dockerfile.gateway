@@ -46,5 +46,5 @@ USER bun
 WORKDIR /app/backend
 EXPOSE 3202
 HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=12 \
-  CMD ["bun", "-e", "fetch('http://127.0.0.1:3202/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+  CMD ["bun", "-e", "fetch('http://127.0.0.1:'+(process.env.GATEWAY_PORT||'3202')+'/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
 CMD ["bun", "run", "src/gateway.ts"]

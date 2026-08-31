@@ -1,0 +1,61 @@
+name: useagent-${USEAGENT_RELEASE_COLOR:?set USEAGENT_RELEASE_COLOR to blue or green}
+
+services:
+  backend:
+    image: ${USEAGENT_BACKEND_IMAGE:?set an immutable backend image digest}
+    network_mode: host
+    env_file:
+      - ${USEAGENT_BACKEND_ENV_FILE:-/etc/useagent/backend.env}
+    environment:
+      NODE_ENV: production
+      PORT: ${USEAGENT_BACKEND_PORT:?set the inactive-color backend port}
+      USEAGENT_BIND_HOST: 127.0.0.1
+      USEAGENT_RELEASE_COMMIT: ${USEAGENT_RELEASE_COMMIT:?set the exact release commit}
+      REQUIRE_SINGLE_BACKEND: "true"
+      CODEX_APP_SERVER_HOME_ROOT: /var/lib/useagent/codex-app-server
+      GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL:?set the sandbox-reachable HTTPS gateway origin}
+      PROVIDER_GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL}
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    volumes:
+      - /var/lib/useagent/artifacts:/app/backend/.artifacts
+      - /var/lib/useagent/runs:/app/backend/.runs
+      - /var/lib/useagent/slack-uploads:/app/backend/.slack-uploads
+      - /var/lib/useagent/codex-app-server:/var/lib/useagent/codex-app-server
+      - /opt/useagent/pi-runtime:/opt/useagent/pi-runtime
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+  gateway:
+    image: ${USEAGENT_GATEWAY_IMAGE:?set an immutable gateway image digest}
+    network_mode: host
+    env_file:
+      - ${USEAGENT_GATEWAY_ENV_FILE:-/etc/useagent/gateway.env}
+    environment:
+      NODE_ENV: production
+      GATEWAY_PORT: ${USEAGENT_GATEWAY_PORT:?set the inactive-color gateway port}
+      USEAGENT_BIND_HOST: 127.0.0.1
+      USEAGENT_RELEASE_COMMIT: ${USEAGENT_RELEASE_COMMIT:?set the exact release commit}
+      GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL:?set the sandbox-reachable HTTPS gateway origin}
+      PROVIDER_GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL}
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+  frontend:
+    image: ${USEAGENT_FRONTEND_IMAGE:?set an immutable frontend image digest}
+    network_mode: host
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 127.0.0.1
+      PORT: ${USEAGENT_FRONTEND_PORT:?set the inactive-color frontend port}
+      USEAGENT_API_ORIGIN: http://127.0.0.1:${USEAGENT_BACKEND_PORT}
+      NEXT_PUBLIC_USEAGENT_RELEASE_COMMIT: ${USEAGENT_RELEASE_COMMIT}
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    restart: unless-stopped
+    stop_grace_period: 30s
