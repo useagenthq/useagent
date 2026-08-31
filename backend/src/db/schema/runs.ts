@@ -17,6 +17,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { projects } from "./projects";
@@ -140,6 +141,8 @@ export const runs = pgTable(
     index("idx_runs_org_settled").on(t.orgId, t.settledAt, t.id),
     index("idx_runs_org_parent_created").on(t.orgId, t.parentRunId, t.createdAt, t.id),
     index("idx_runs_org_thread_created").on(t.orgId, t.threadId, t.createdAt, t.id),
+    uniqueIndex("uq_runs_org_id").on(t.orgId, t.id),
+    uniqueIndex("uq_runs_finished_work_scope").on(t.orgId, t.id, t.threadId),
   ],
 );
 

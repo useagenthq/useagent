@@ -8,11 +8,21 @@ import {
   migrateHtmlToDocument,
   migrateSlidesToDeck,
 } from "@useagent/artifact-workspace";
-import { createArtifactRecord, type ArtifactDescriptor } from "../src/artifacts/repo";
+import { createArtifactRecord, getArtifact, type ArtifactDescriptor } from "../src/artifacts/repo";
+import {
+  publishTrustedArtifact,
+  setTrustedArtifactEventRecorderForTest,
+} from "../src/artifacts/publish";
+import { readTrustedImageOutput } from "../src/artifacts/trusted-output";
 import { setArtifactStorageForTest } from "../src/artifacts/storage";
 import { setOfficePreviewConverterForTest } from "../src/artifacts/office-preview";
 import { executeArtifactTool } from "../src/knowledge/gateway/artifact-tools";
 import { createRun, setRunSandbox } from "../src/runs/repo";
+import {
+  providerEventExists,
+  recordProviderEventIfAbsent,
+} from "../src/runs/provider-events";
+import { subscribeNative } from "../src/runs/native-events";
 import { type OrgChange, subscribeOrg } from "../src/runs/org-signals";
 import {
   setSandboxDownloaderForTest,
@@ -25,6 +35,9 @@ import { InMemoryArtifactStorage } from "./in-memory-artifact-storage";
 let sandboxBytes = new TextEncoder().encode("sandbox-to-browser\nexact bytes\n");
 const SOURCE_BYTES = sandboxBytes;
 const SHA256 = createHash("sha256").update(SOURCE_BYTES).digest("hex");
+const TRUSTED_SOURCE_KEY = createHash("sha256")
+  .update("codex:provider-thread-1:turn-1:image-item-1")
+  .digest("hex");
 const storage = new InMemoryArtifactStorage();
 let owner: OrgSession;
 let outsider: OrgSession;
@@ -88,9 +101,267 @@ afterAll(() => {
   setSandboxPathResolverForTest(null);
   setOfficePreviewConverterForTest(null);
   setArtifactStorageForTest(null);
+  setTrustedArtifactEventRecorderForTest(null);
 });
 
 describe("durable artifacts", () => {
+  test("publishes trusted provider bytes without persisting a host path", async () => {
+    const runId = crypto.randomUUID();
+    await createRun({
+      id: runId,
+      prompt: "generate an image",
+      model: "test",
+      engine: "codex",
+      orgId: owner.orgId,
+      userId: owner.email,
+      parentRunId: null,
+      threadId: runId,
+    });
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
+    const output = await readTrustedImageOutput({
+      kind: "trusted_bytes",
+      bytes,
+      name: "generated.html",
+    }, 1024);
+    const first = await publishTrustedArtifact({
+      orgId: owner.orgId,
+      userId: owner.email,
+      runId,
+      provider: "codex",
+      sourceKey: TRUSTED_SOURCE_KEY,
+      output,
+    });
+    const duplicate = await publishTrustedArtifact({
+      orgId: owner.orgId,
+      userId: owner.email,
+      runId,
+      provider: "codex",
+      sourceKey: TRUSTED_SOURCE_KEY,
+      output,
+    });
+
+    expect(first.created).toBe(true);
+    expect(duplicate.created).toBe(false);
+    expect(duplicate.artifact.id).toBe(first.artifact.id);
+    expect(await storage.read(first.record.storageKey)).toEqual(bytes);
+    const record = await getArtifact(first.record.id);
+    expect(record?.sourcePath).toStartWith("/.skynet/provider-output/codex/");
+    expect(record?.name).toBe("generated.png");
+    expect(record?.sourcePath).not.toContain("/host/");
+    expect(record?.sourcePath).not.toContain("generated");
+  });
+
+  test("keeps one artifact per stable identity and repairs a failed created event on retry", async () => {
+    const runId = crypto.randomUUID();
+    await createRun({
+      id: runId,
+      prompt: "generate an image",
+      model: "test",
+      engine: "codex",
+      orgId: owner.orgId,
+      userId: owner.email,
+      parentRunId: null,
+      threadId: runId,
+    });
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
+    const output = await readTrustedImageOutput({
+      kind: "trusted_bytes",
+      bytes,
+      name: "first.png",
+    }, 1024);
+    let failEvent = true;
+    setTrustedArtifactEventRecorderForTest((input) => {
+      if (failEvent) {
+        failEvent = false;
+        return Promise.reject(new Error("injected artifact event failure"));
+      }
+      return recordProviderEventIfAbsent(input);
+    });
+    const created: OrgChange[] = [];
+    const unsubscribe = subscribeOrg(owner.orgId, (change) => {
+      if (change.type === "artifact" && change.action === "created") created.push(change);
+    });
+
+    try {
+      await expect(publishTrustedArtifact({
+        orgId: owner.orgId,
+        userId: owner.email,
+        runId,
+        provider: "codex",
+        sourceKey: TRUSTED_SOURCE_KEY,
+        output,
+      })).rejects.toThrow("injected artifact event failure");
+
+      const retried = await publishTrustedArtifact({
+        orgId: owner.orgId,
+        userId: owner.email,
+        runId,
+        provider: "codex",
+        sourceKey: TRUSTED_SOURCE_KEY,
+        output,
+      });
+      expect(retried.created).toBe(false);
+      expect(await providerEventExists(`artifact.created:${retried.record.id}`)).toBe(true);
+      expect(created).toEqual([{
+        type: "artifact",
+        action: "created",
+        artifactId: retried.record.id,
+        runId,
+        threadId: runId,
+      }]);
+
+      await publishTrustedArtifact({
+        orgId: owner.orgId,
+        userId: owner.email,
+        runId,
+        provider: "codex",
+        sourceKey: TRUSTED_SOURCE_KEY,
+        output,
+      });
+      expect(created).toHaveLength(1);
+
+      const renamed = await readTrustedImageOutput({
+        kind: "trusted_bytes",
+        bytes,
+        name: "different.png",
+      }, 1024);
+      await expect(publishTrustedArtifact({
+        orgId: owner.orgId,
+        userId: owner.email,
+        runId,
+        provider: "codex",
+        sourceKey: TRUSTED_SOURCE_KEY,
+        output: renamed,
+      })).rejects.toThrow("trusted output identity conflict");
+
+      const changed = await readTrustedImageOutput({
+        kind: "trusted_bytes",
+        bytes: new Uint8Array([...bytes, 0x02]),
+        name: "first.png",
+      }, 1024);
+      await expect(publishTrustedArtifact({
+        orgId: owner.orgId,
+        userId: owner.email,
+        runId,
+        provider: "codex",
+        sourceKey: TRUSTED_SOURCE_KEY,
+        output: changed,
+      })).rejects.toThrow("trusted output identity conflict");
+    } finally {
+      unsubscribe();
+      setTrustedArtifactEventRecorderForTest(null);
+    }
+  });
+
+  test("concurrent trusted retries emit one durable event and one live signal", async () => {
+    const runId = crypto.randomUUID();
+    await createRun({
+      id: runId,
+      prompt: "generate an image concurrently",
+      model: "test",
+      engine: "codex",
+      orgId: owner.orgId,
+      userId: owner.email,
+      parentRunId: null,
+      threadId: runId,
+    });
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x03]);
+    const output = await readTrustedImageOutput({
+      kind: "trusted_bytes",
+      bytes,
+      name: "concurrent.png",
+    }, 1024);
+    let waiting = 0;
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    setTrustedArtifactEventRecorderForTest(async (input) => {
+      waiting += 1;
+      if (waiting === 2) release();
+      await barrier;
+      return recordProviderEventIfAbsent(input);
+    });
+    const orgChanges: OrgChange[] = [];
+    const nativeEvents: string[] = [];
+    const unsubscribeOrg = subscribeOrg(owner.orgId, (change) => {
+      if (change.type === "artifact" && change.action === "created") orgChanges.push(change);
+    });
+    const unsubscribeNative = subscribeNative(runId, (frame) => nativeEvents.push(frame.eventId));
+
+    try {
+      const results = await Promise.all([
+        publishTrustedArtifact({
+          orgId: owner.orgId,
+          userId: owner.email,
+          runId,
+          provider: "codex",
+          sourceKey: TRUSTED_SOURCE_KEY,
+          output,
+        }),
+        publishTrustedArtifact({
+          orgId: owner.orgId,
+          userId: owner.email,
+          runId,
+          provider: "codex",
+          sourceKey: TRUSTED_SOURCE_KEY,
+          output,
+        }),
+      ]);
+      const eventId = `artifact.created:${results[0]!.record.id}`;
+      expect(results.map((result) => result.created).sort()).toEqual([false, true]);
+      expect(results[1]!.record.id).toBe(results[0]!.record.id);
+      expect(await providerEventExists(eventId)).toBe(true);
+      expect(nativeEvents).toEqual([eventId]);
+      expect(orgChanges).toEqual([{
+        type: "artifact",
+        action: "created",
+        artifactId: results[0]!.record.id,
+        runId,
+        threadId: runId,
+      }]);
+    } finally {
+      unsubscribeNative();
+      unsubscribeOrg();
+      setTrustedArtifactEventRecorderForTest(null);
+    }
+  });
+
+  test("rejects same-size corrupt bytes already stored under a trusted digest", async () => {
+    const runId = crypto.randomUUID();
+    await createRun({
+      id: runId,
+      prompt: "generate an image",
+      model: "test",
+      engine: "codex",
+      orgId: owner.orgId,
+      userId: owner.email,
+      parentRunId: null,
+      threadId: runId,
+    });
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x02]);
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    const output = await readTrustedImageOutput({
+      kind: "trusted_bytes",
+      bytes,
+      name: "corrupt.png",
+    }, 1024);
+    storage.values.set(digest, new Uint8Array(bytes.byteLength).fill(0xff));
+
+    try {
+      await expect(publishTrustedArtifact({
+        orgId: owner.orgId,
+        userId: owner.email,
+        runId,
+        provider: "codex",
+        sourceKey: createHash("sha256").update(`corrupt:${runId}`).digest("hex"),
+        output,
+      })).rejects.toThrow("artifact storage digest verification failed");
+    } finally {
+      storage.values.delete(digest);
+    }
+  });
+
   test("rejects protected injected-secret paths and dotenv files before download", async () => {
     const runId = await createSandboxRun(owner);
 

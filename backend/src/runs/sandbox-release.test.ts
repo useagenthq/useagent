@@ -4,7 +4,13 @@ import { acceptRunCommand } from "../commands";
 import { db } from "../db/client";
 import { commands, runs } from "../db/schema";
 import type { SandboxHandle, SandboxProvider } from "../sandboxes/provider";
-import { createRun, getThreadSandbox, setRunSandbox, setRunStatus } from "./repo";
+import {
+  createRun,
+  getThreadSandbox,
+  setRunEngineSession,
+  setRunSandbox,
+  setRunStatus,
+} from "./repo";
 import { releaseRunSandbox } from "./sandbox-release";
 
 const createdRuns = new Set<string>();
@@ -86,6 +92,21 @@ describe("explicit sandbox release", () => {
     expect(deleted).toEqual([fixture.sandboxId]);
     expect(live).toContain("unrelated-sandbox");
     expect(await getThreadSandbox(fixture.runId)).toBeNull();
+  });
+
+  test("removes a retained Pi bridge after deleting its sandbox", async () => {
+    const fixture = await runFixture();
+    const sessionFile = `/sessions/${crypto.randomUUID()}.jsonl`;
+    await db.update(runs).set({ engine: "pi" }).where(eq(runs.id, fixture.runId));
+    await setRunEngineSession(fixture.runId, sessionFile);
+    const { provider } = fakeProvider(new Set([fixture.sandboxId]));
+    const removed: string[] = [];
+
+    expect(await releaseRunSandbox(fixture.orgId, fixture.runId, {
+      provider,
+      removePiBridge: async (value) => { removed.push(value); },
+    })).toEqual({ ok: true, released: true, sandboxId: fixture.sandboxId });
+    expect(removed).toEqual([sessionFile]);
   });
 
   test("refuses to tear down a thread with a running turn", async () => {

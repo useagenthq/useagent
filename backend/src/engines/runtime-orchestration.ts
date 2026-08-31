@@ -18,7 +18,6 @@ import { toolServerDisplayName } from "@useagent/agent-harness/canonical";
 
 export type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
 export type RuntimeMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
-
 export interface RuntimeMessage {
   readonly id: string;
   readonly role: "user" | "assistant" | "system";
@@ -26,7 +25,6 @@ export interface RuntimeMessage {
   readonly turnId: string | null;
   readonly streaming: boolean;
 }
-
 export interface RuntimeActivity {
   readonly id: string;
   readonly tone: "info" | "tool" | "approval" | "error";

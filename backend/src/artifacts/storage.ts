@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { chmod, lstat, mkdir, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
@@ -11,6 +12,7 @@ export interface ArtifactStorage {
   put(storageKey: string, bytes: Uint8Array): Promise<void>;
   read(storageKey: string, range?: ArtifactByteRange): Promise<Uint8Array>;
   size(storageKey: string): Promise<number>;
+  sha256(storageKey: string): Promise<string>;
 }
 
 const STORAGE_KEY = /^[a-f0-9]{64}$/;
@@ -73,6 +75,12 @@ export class LocalArtifactStorage implements ArtifactStorage {
     const file = Bun.file(this.path(storageKey));
     if (!(await file.exists())) throw new Error("artifact bytes are missing");
     return file.size;
+  }
+
+  async sha256(storageKey: string): Promise<string> {
+    const hash = createHash("sha256");
+    for await (const chunk of createReadStream(this.path(storageKey))) hash.update(chunk);
+    return hash.digest("hex");
   }
 
   async reclaimUnreferenced(input: {

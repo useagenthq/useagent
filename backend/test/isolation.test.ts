@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { createOrgSession, json, type OrgSession } from "./helpers";
 
 /**
@@ -15,6 +15,16 @@ describe("two-org isolation", () => {
     A = await createOrgSession("iso-a");
     B = await createOrgSession("iso-b");
     expect(A.orgId).not.toBe(B.orgId);
+  });
+
+  beforeEach(() => {
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  afterEach(() => {
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENAI_API_KEY;
   });
 
   test("skills: B cannot read, run, patch, or delete A's skill", async () => {

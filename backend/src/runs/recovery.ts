@@ -6,7 +6,7 @@ import type {
   HarnessSessionHandle,
 } from "../engines/types";
 import { getLastStepAt, getRun, STALE_SUMMARY } from "./repo";
-import { finalizeRun } from "./finalize";
+import { finalizeRun, resolveDurableFinalizationOutcome } from "./finalize";
 import {
   providerEventExists,
   recordProviderEvent,
@@ -146,8 +146,9 @@ async function recoverRunningRun(
   reconcile: ReconcileProbe,
 ): Promise<"reconciled" | "failed" | "parked"> {
   if (cmd.cancelRequested) {
-    await finalizeRun(cmd.runId, "failed", CANCEL_SUMMARY, 0);
-    return "failed";
+    const finalized = await finalizeRun(cmd.runId, "failed", CANCEL_SUMMARY, 0);
+    const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
+    return durable?.status === "completed" ? "reconciled" : "failed";
   }
   const runtimeSession = cmd.engineSessionId?.startsWith(RUNTIME_SESSION_PREFIX) ?? false;
   const candidate =
@@ -155,8 +156,9 @@ async function recoverRunningRun(
     !!cmd.sandboxId &&
     (runtimeSession || OPENCODE_ENGINES.has(cmd.engine));
   if (!candidate) {
-    await finalizeRun(cmd.runId, "failed", STALE_SUMMARY, 0);
-    return "failed";
+    const finalized = await finalizeRun(cmd.runId, "failed", STALE_SUMMARY, 0);
+    const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
+    return durable?.status === "completed" ? "reconciled" : "failed";
   }
 
   const lastStepAt = await getLastStepAt(cmd.runId);
@@ -179,12 +181,14 @@ async function recoverRunningRun(
   }
 
   switch (result.status) {
-    case "completed":
+    case "completed": {
       // Finalize like a live completion: commits `completed` AND enqueues the
       // durable memory capture in one transaction, so a boot-reconciled run
       // captures to team memory exactly like a run that finished normally.
-      await finalizeRun(cmd.runId, "completed", result.summary, 0);
-      return "reconciled";
+      const finalized = await finalizeRun(cmd.runId, "completed", result.summary, 0);
+      const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
+      return durable?.status === "completed" ? "reconciled" : "failed";
+    }
     case "in_progress":
     case "no_change":
     case "unreachable":
@@ -319,10 +323,12 @@ export async function runDueReconciles(
       continue;
     }
     if (run.orgId && await hasRunCancelIntent(run.orgId, run.id)) {
-      await finalizeRun(entry.runId, "failed", CANCEL_SUMMARY, 0);
+      const finalized = await finalizeRun(entry.runId, "failed", CANCEL_SUMMARY, 0);
+      const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
       await settleAndPump(entry.runId, entry.threadId);
       await deleteReconcile(entry.runId);
-      failed++;
+      if (durable?.status === "completed") adopted++;
+      else failed++;
       continue;
     }
     const result = await probeParked(entry, run.engine, reconcile);
@@ -338,15 +344,24 @@ export async function runDueReconciles(
     eventsRecovered += recovered;
     const action = nextReconcileAction(result.status === "completed", Date.now(), entry.deadlineMs);
     if (action === "adopt") {
-      await finalizeRun(entry.runId, "completed", (result as { summary: string }).summary, 0);
+      const finalized = await finalizeRun(
+        entry.runId,
+        "completed",
+        (result as { summary: string }).summary,
+        0,
+      );
+      const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
       await settleAndPump(entry.runId, entry.threadId);
       await deleteReconcile(entry.runId);
-      adopted++;
+      if (durable?.status === "completed") adopted++;
+      else failed++;
     } else if (action === "fail") {
-      await finalizeRun(entry.runId, "failed", STALE_SUMMARY, 0);
+      const finalized = await finalizeRun(entry.runId, "failed", STALE_SUMMARY, 0);
+      const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
       await settleAndPump(entry.runId, entry.threadId);
       await deleteReconcile(entry.runId);
-      failed++;
+      if (durable?.status === "completed") adopted++;
+      else failed++;
     } else {
       // Retry: heartbeat the reconciling marker so the row shows liveness — but
       // ONLY when we actually reached the session (in_progress / no_change). An

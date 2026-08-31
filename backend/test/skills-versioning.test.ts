@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { providerEvents, runs, skillRevisions } from "../src/db/schema";
 import { acceptRunCommand, type RunCommandIntent } from "../src/commands";
+import { RUN_PROMPT_MAX_CHARS } from "../src/commands/prompt-policy";
 import { getRunWithSteps } from "../src/runs/repo";
 import { formatSkillMarkdown, hashSkillContent } from "../src/skills/format";
 import { pumpThread } from "../src/worker";
@@ -401,6 +402,14 @@ describe("skill revisions + versioning", () => {
       cookies: s.cookies,
     });
     expect(noPrompt.status).toBe(400);
+
+    const oversized = await json<{ error: string }>(`/api/skills/${skill.id}/run`, {
+      method: "POST",
+      cookies: s.cookies,
+      body: { prompt: "x".repeat(RUN_PROMPT_MAX_CHARS + 1), engine: "mock" },
+    });
+    expect(oversized.status).toBe(413);
+    expect(oversized.body.error).toBe("prompt_too_large");
 
     // With prompt → a genuine run, skill pinned.
     const ran = await json<{ id: string }>(`/api/skills/${skill.id}/run`, {

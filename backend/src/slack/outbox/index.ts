@@ -21,6 +21,7 @@ export async function enqueuePostMessageTx(
   exec: Executor,
   entry: {
     idempotencyKey: string;
+    orgId?: string;
     teamId?: string;
     channel: string;
     text: string;
@@ -32,6 +33,7 @@ export async function enqueuePostMessageTx(
       kind: "post_message",
       idempotencyKey: entry.idempotencyKey,
       payload: {
+        orgId: entry.orgId,
         teamId: entry.teamId,
         channel: entry.channel,
         chunks: chunkSlackText(entry.text),
@@ -261,6 +263,7 @@ export async function enqueueUploadFileTx(
  *  `idempotencyKey`. */
 export async function enqueuePostMessage(entry: {
   idempotencyKey: string;
+  orgId?: string;
   teamId?: string;
   channel: string;
   text: string;
@@ -270,6 +273,7 @@ export async function enqueuePostMessage(entry: {
     kind: "post_message",
     idempotencyKey: entry.idempotencyKey,
     payload: {
+      orgId: entry.orgId,
       teamId: entry.teamId,
       channel: entry.channel,
       chunks: chunkSlackText(entry.text),

@@ -11,7 +11,19 @@ export const RUNTIME_GENERATION_LABEL = "useagent.runtime";
 // Bump this identity whenever the embedded provider runtime changes. It is
 // stamped on retained/warm sandboxes and doubles as the pool name, so a new
 // release cannot accidentally resume a thread against an older runtime binary.
-export const RUNTIME_GENERATION = "useagent-runtime-v8";
+const DEFAULT_RUNTIME_GENERATION = "useagent-runtime-v8";
+
+export function runtimeGeneration(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  const generation = env.USEAGENT_RUNTIME_GENERATION?.trim() || DEFAULT_RUNTIME_GENERATION;
+  if (!/^useagent-runtime-v[0-9]+$/.test(generation)) {
+    throw new Error("USEAGENT_RUNTIME_GENERATION must be useagent-runtime-v<number>");
+  }
+  return generation;
+}
+
+export const RUNTIME_GENERATION = runtimeGeneration();
 export const RUNTIME_CUBE_WARM_POOL_NAME = RUNTIME_GENERATION;
 // Frozen VALUE: warm sandboxes already carry a process session under this name;
 // renaming the string would strand their resident server processes.
@@ -53,6 +65,47 @@ export function runtimeEnvironmentEnabled(
 
 export function buildRuntimeEnvironmentReadinessCommand(): string {
   return `curl -fsS -m 3 -o /dev/null http://127.0.0.1:${RUNTIME_ENVIRONMENT_PORT}/api/auth/session`;
+}
+
+export function buildRuntimeIdentityPreflightCommand(): string {
+  return [
+    "set -eu",
+    `mkdir -p "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
+    `cd "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
+    "test -w .",
+    "pwd -P",
+  ].join("\n");
+}
+
+/** Cube templates are operator-owned and intentionally root-pinned. Keep that
+ * stronger image contract at the Cube adapter boundary while the shared
+ * runtime workspace resolver remains compatible with Daytona/custom homes. */
+export function buildCubeRuntimeIdentityPreflightCommand(): string {
+  return [
+    "set -eu",
+    'test "$(id -u)" = "0"',
+    'test "$HOME" = "/root"',
+    'mkdir -p "/root/work"',
+    'test "$(cd "/root/work" && pwd -P)" = "/root/work"',
+    'test -w "/root/work"',
+    'printf \'%s\\n\' "/root/work"',
+  ].join("\n");
+}
+
+export async function resolveRuntimeWorkspaceRoot(
+  sandbox: Pick<RuntimeEnvironmentSandbox, "process">,
+): Promise<string> {
+  const result = await sandbox.process.executeCommand(
+    buildRuntimeIdentityPreflightCommand(),
+    undefined,
+    undefined,
+    10,
+  );
+  const workdir = result.result?.trim();
+  if ((result.exitCode ?? 1) !== 0 || !workdir?.startsWith("/")) {
+    throw new Error("Sandbox runtime workspace contract failed (requires a writable absolute $HOME/work)");
+  }
+  return workdir;
 }
 
 export function runtimeFirstActivityTimeoutMs(

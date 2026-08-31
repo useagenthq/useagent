@@ -9,6 +9,7 @@ import {
 } from "@useagent/artifact-workspace";
 import { db } from "../db/client";
 import { artifacts, artifactWorkpieceProposals } from "../db/schema";
+import { materializeFinishedWorkArtifactIfActive } from "../runs/finished-work-materialization-context";
 import { getArtifactForOrg, type ArtifactRecord } from "./repo";
 import { parseWorkpieceState } from "./workpiece";
 
@@ -170,6 +171,7 @@ export async function acceptWorkpieceProposal(input: {
       )
       .returning();
     if (!updated) return { outcome: "revision_conflict" as const };
+    await materializeFinishedWorkArtifactIfActive(updated, tx);
 
     const [resolved] = await tx
       .update(artifactWorkpieceProposals)

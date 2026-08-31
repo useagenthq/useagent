@@ -1,4 +1,13 @@
-import { index, integer, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  foreignKey,
+  index,
+  integer,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { runs } from "./runs";
 
 // ---------------------------------------------------------------------------
@@ -59,7 +68,15 @@ export const slackThreads = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.teamId, t.channel, t.threadTs] })],
+  (t) => [
+    primaryKey({ columns: [t.teamId, t.channel, t.threadTs] }),
+    foreignKey({
+      name: "fk_slack_threads_org_root",
+      columns: [t.orgId, t.rootRunId],
+      foreignColumns: [runs.orgId, runs.id],
+    }),
+    uniqueIndex("uq_slack_threads_org_root").on(t.orgId, t.rootRunId),
+  ],
 );
 
 export const slackRunResponses = pgTable(
@@ -89,6 +106,7 @@ export const slackRunResponses = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.runId, t.teamId, t.channel, t.threadTs] }),
+    uniqueIndex("uq_slack_run_responses_run").on(t.runId),
     index("idx_slack_run_responses_run").on(t.runId),
     index("idx_slack_run_responses_thread").on(t.teamId, t.channel, t.threadTs),
   ],

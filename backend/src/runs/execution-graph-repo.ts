@@ -246,7 +246,6 @@ async function insertEdge(
   if (!row) throw new Error("delegation_edge_insert_lost");
   const immutableKeys = [
     "parentExecutionId",
-    "childExecutionId",
     "kind",
     "provider",
     "nativeTargetSessionId",
@@ -256,6 +255,29 @@ async function insertEdge(
     if (row[key as keyof DelegationEdgeRow] !== expected) {
       throw new Error("delegation_source_key_identity_conflict");
     }
+  }
+  // A provider control may be observed before its target's explicit spawn. The
+  // edge remains valid and target-addressed while unresolved, then gains the
+  // exact child FK monotonically once that native session exists. Never replace
+  // one concrete child with another, and never downgrade a resolved edge.
+  if (row.childExecutionId === null && identity.childExecutionId !== null) {
+    const [linked] = await exec
+      .update(delegationEdges)
+      .set({ childExecutionId: identity.childExecutionId })
+      .where(and(
+        eq(delegationEdges.orgId, input.orgId),
+        eq(delegationEdges.runId, input.runId),
+        eq(delegationEdges.id, row.id),
+        sql`${delegationEdges.childExecutionId} IS NULL`,
+      ))
+      .returning();
+    row = linked ?? await edgeBySource(input.orgId, input.runId, sourceKey, exec) ?? row;
+  }
+  if (
+    identity.childExecutionId !== null &&
+    row.childExecutionId !== identity.childExecutionId
+  ) {
+    throw new Error("delegation_source_key_identity_conflict");
   }
   if (!inserted && row.observedDeliverySeq < identity.observedDeliverySeq) {
     const [corrected] = await exec

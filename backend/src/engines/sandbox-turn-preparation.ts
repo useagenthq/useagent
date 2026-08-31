@@ -10,6 +10,7 @@ import {
   recordSecretsInjected,
 } from "../secrets/inject";
 import { createSecretRedactor } from "../secrets/redact";
+import { resolveRuntimeWorkspaceRoot } from "./runtime-environment";
 
 export interface SandboxTurnPreparationOptions<T> {
   readonly snapshot: string;
@@ -30,20 +31,6 @@ export interface PreparedSandboxTurn<T> {
   readonly providerState: T;
   readonly redact: ReturnType<typeof createSecretRedactor>;
   close(): Promise<void>;
-}
-
-async function resolveWorkspaceRoot(sandbox: SandboxHandle): Promise<string> {
-  const result = await sandbox.process.executeCommand(
-    'mkdir -p "$HOME/work" && cd "$HOME/work" && pwd -P',
-    undefined,
-    undefined,
-    10,
-  );
-  const workdir = result.result?.trim();
-  if ((result.exitCode ?? 1) !== 0 || !workdir?.startsWith("/")) {
-    throw new Error("Could not resolve the sandbox workspace");
-  }
-  return workdir;
 }
 
 /** Shared sandbox preparation for native resident harnesses. Provider setup is
@@ -76,7 +63,7 @@ export async function prepareSandboxTurn<T>(
         end?.();
       }
     };
-    const workdir = await stage("workspace_root", () => resolveWorkspaceRoot(sandbox));
+    const workdir = await stage("workspace_root", () => resolveRuntimeWorkspaceRoot(sandbox));
     await stage("secrets", () =>
       materializeSecretInjection(
         (command) => sandbox.process.executeCommand(command, undefined, undefined, 30),

@@ -10,6 +10,11 @@ import {
   PI_CODING_AGENT_VERSION,
   PI_RUNTIME_LOCK_SHA256,
 } from "./pi-runtime-config";
+import {
+  providerGatewaySandboxIsCurrent,
+  SANDBOX_GENERATION,
+  SANDBOX_GENERATION_LABEL,
+} from "../provider-gateway/sandbox-config";
 
 const saved = { ...process.env };
 afterEach(() => {
@@ -38,14 +43,17 @@ describe("Pi runtime configuration", () => {
   });
 
   test("keeps signed credentials behind the root broker and installs from the immutable lock", async () => {
+    process.env.SANDBOX_SECRET_MODE = "gateway_only";
     process.env.PROVIDER_GATEWAY_PUBLIC_URL = "https://gateway.example.test";
     process.env.PROVIDER_GATEWAY_SECRET = "provider-secret-provider-secret-1234";
     process.env.GATEWAY_PUBLIC_URL = "https://tools.example.test";
     process.env.TOOL_GATEWAY_SECRET = "tools-secret-tools-secret-12345678";
     const uploads: Array<{ path: string; text: string }> = [];
     const commands: string[] = [];
+    let gatewayMarkerWritten = false;
     const sandbox = {
       id: "box",
+      labels: { [SANDBOX_GENERATION_LABEL]: SANDBOX_GENERATION },
       fs: {
         uploadFile: mock(async (bytes: Buffer, path: string) => {
           uploads.push({ path, text: bytes.toString("utf8") });
@@ -54,6 +62,12 @@ describe("Pi runtime configuration", () => {
       process: {
         executeCommand: mock(async (command: string) => {
           commands.push(command);
+          if (command.includes(".skynet/provider-gateway-generation") && command.includes("base64 -d")) {
+            gatewayMarkerWritten = true;
+          }
+          if (command.includes('test "$(cat $HOME/.skynet/provider-gateway-generation')) {
+            return { exitCode: gatewayMarkerWritten ? 0 : 1, result: "" };
+          }
           return { exitCode: 0, result: "" };
         }),
       },
@@ -87,6 +101,8 @@ describe("Pi runtime configuration", () => {
     expect(brokerConfig?.text).toContain("Bearer ");
     expect(commands.join("\n")).toContain("npm ci --omit=dev --silent");
     expect(commands.join("\n")).toContain(PI_RUNTIME_LOCK_SHA256);
+    expect(gatewayMarkerWritten).toBe(true);
+    expect(await providerGatewaySandboxIsCurrent(sandbox)).toBe(true);
     expect(commands.join("\n")).not.toContain("command -v bun");
     expect(commands.join("\n")).not.toContain("clean user prompt");
     expect(runtime).toMatchObject({

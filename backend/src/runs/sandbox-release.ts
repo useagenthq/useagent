@@ -2,6 +2,7 @@ import { sandboxProvider, type SandboxProvider } from "../sandboxes/provider";
 import { forgetAcpThreadRelays } from "../engines/acp-server";
 import { forgetOpenCodeThreadServer } from "../engines/opencode-runtime";
 import { forgetLiveThreadSandbox } from "../engines/sandbox-runtime";
+import { piBridgeManager } from "../engines/pi-rpc-bridge";
 import {
   clearThreadSandbox,
   getRunForOrg,
@@ -17,6 +18,7 @@ export type SandboxReleaseResult =
 
 interface SandboxReleaseDeps {
   readonly provider?: SandboxProvider;
+  readonly removePiBridge?: (sessionFile: string) => Promise<void>;
 }
 
 /**
@@ -65,6 +67,8 @@ export async function releaseRunSandbox(
       released: true as const,
       sandboxId,
       threadId: lockedRun.threadId,
+      engine: lockedRun.engine,
+      engineSessionId: lockedRun.engineSessionId,
     };
   });
 
@@ -72,6 +76,16 @@ export async function releaseRunSandbox(
     forgetLiveThreadSandbox(released.threadId, released.sandboxId);
     forgetOpenCodeThreadServer(released.threadId);
     forgetAcpThreadRelays(released.threadId);
+    if (released.engine === "pi" && released.engineSessionId) {
+      const removePiBridge = deps.removePiBridge ?? ((sessionFile: string) =>
+        piBridgeManager.remove(sessionFile));
+      await removePiBridge(released.engineSessionId).catch((error) => {
+        console.warn("[sandbox-release] failed to remove Pi bridge", {
+          runId,
+          error: error instanceof Error ? error.message : "unknown error",
+        });
+      });
+    }
     return { ok: true, released: true, sandboxId: released.sandboxId };
   }
   return released;

@@ -1,5 +1,9 @@
 import type { StepKind } from "./db/schema.js";
-import { finalizeRun } from "./runs/finalize.js";
+import {
+  finalizeRun,
+  resolveDurableFinalizationOutcome,
+  type FinalizeRunResult,
+} from "./runs/finalize.js";
 import { publishRunLifecycleChange } from "./runs/org-signals.js";
 import { isInternalRunOrigin } from "./runs/origin.js";
 import { getRun, insertStep, setRunStatus } from "./runs/repo.js";
@@ -33,6 +37,13 @@ const SCRIPT: ScriptedStep[] = [
 const STEP_DELAY_OVERRIDE_MS = process.env.WORKER_STEP_DELAY_MS
   ? Number(process.env.WORKER_STEP_DELAY_MS)
   : null;
+
+async function emitFinalizedEnd(runId: string, finalized: FinalizeRunResult): Promise<void> {
+  const durable = await resolveDurableFinalizationOutcome(runId, finalized);
+  if (finalized.applied && durable) {
+    bus.emit(channel(runId), { type: "end", status: durable.status } satisfies BusEvent);
+  }
+}
 
 function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve();
@@ -85,8 +96,8 @@ export async function runMock(
           code: null,
         }).catch(() => null);
         if (done) bus.emit(channel(runId), { type: "step", step: done } satisfies BusEvent);
-        await finalizeRun(runId, "failed", reason, Date.now() - startedAt);
-        bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
+        const finalized = await finalizeRun(runId, "failed", reason, Date.now() - startedAt);
+        await emitFinalizedEnd(runId, finalized);
         return;
       }
       if (!(await getRun(runId))) return;
@@ -102,11 +113,11 @@ export async function runMock(
       bus.emit(channel(runId), { type: "step", step } satisfies BusEvent);
     }
 
-    await finalizeRun(runId, "completed", summarize(SCRIPT), Date.now() - startedAt);
-    bus.emit(channel(runId), { type: "end", status: "completed" } satisfies BusEvent);
+    const finalized = await finalizeRun(runId, "completed", summarize(SCRIPT), Date.now() - startedAt);
+    await emitFinalizedEnd(runId, finalized);
   } catch (error) {
     console.error(`[worker] run ${runId} failed:`, error);
-    await finalizeRun(runId, "failed", "worker error", Date.now() - startedAt);
-    bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
+    const finalized = await finalizeRun(runId, "failed", "worker error", Date.now() - startedAt);
+    await emitFinalizedEnd(runId, finalized);
   }
 }

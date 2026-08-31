@@ -17,7 +17,7 @@ const CLAIMS: ToolTokenClaims = {
   scope: "run",
   exp: Date.now() + 60_000,
 };
-const req = (id: number, method: string, params?: Record<string, unknown>) =>
+const req = (id: string | number | null, method: string, params?: Record<string, unknown>) =>
   ({ jsonrpc: "2.0" as const, id, method, ...(params ? { params } : {}) });
 
 function resultRecord(response: Awaited<ReturnType<typeof handleMcpMessage>>): Record<string, unknown> {
@@ -45,6 +45,18 @@ describe("MCP wire is byte-identical after the SDK-schema adoption (#98)", () =>
     expect(JSON.stringify(r)).toBe(
       '{"jsonrpc":"2.0","id":9,"error":{"code":-32602,"message":"Unknown tool: nope"}}',
     );
+  });
+
+  test("rejects a null tools/call request id before execution", async () => {
+    const response = await handleMcpMessage(
+      CLAIMS,
+      req(null, "tools/call", { name: "workpiece_create", arguments: {} }),
+    );
+    expect(response).toEqual({
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32602, message: "tools/call requires a non-null request id" },
+    });
   });
 
   test("initialize echoes the requested protocolVersion + static capabilities/serverInfo", async () => {

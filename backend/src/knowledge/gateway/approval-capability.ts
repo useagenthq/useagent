@@ -8,6 +8,9 @@ import {
 import { mintToolToken, type ToolTokenClaims } from "./token";
 
 const APPROVAL_TTL_MS = 2 * 60_000;
+const OPAQUE_APPROVAL_VERSION = "apr1";
+const APPROVAL_MINT_MODES = ["signed", "opaque"] as const;
+type ApprovalMintMode = (typeof APPROVAL_MINT_MODES)[number];
 const TOKEN_OPTIONS = {
   deriveLabel: "skynet-gateway-operation-approval-v1",
   get explicitSecret(): string | undefined {
@@ -15,6 +18,7 @@ const TOKEN_OPTIONS = {
   },
 };
 
+/** Legacy self-contained token claims accepted only for rolling compatibility. */
 interface ApprovalWireClaims {
   readonly o: string;
   readonly u: string;
@@ -38,7 +42,7 @@ export interface ApprovalBinding {
 
 export interface ApprovalCapabilityStore {
   create(binding: ApprovalBinding): Promise<void>;
-  consume(binding: ApprovalBinding, now: Date): Promise<boolean>;
+  consume(binding: Omit<ApprovalBinding, "expiresAt">, now: Date): Promise<boolean>;
 }
 
 function canonicalJson(value: unknown): string {
@@ -76,6 +80,15 @@ export function approvalArgumentsHash(args: Readonly<Record<string, unknown>>): 
     .digest("hex");
 }
 
+export function approvalCapabilityMintMode(
+  env: Record<string, string | undefined> = process.env,
+): ApprovalMintMode {
+  const raw = env.GATEWAY_APPROVAL_CAPABILITY_MINT?.trim().toLowerCase();
+  if (!raw) return "signed";
+  if (raw === "signed" || raw === "opaque") return raw;
+  throw new Error("GATEWAY_APPROVAL_CAPABILITY_MINT must be signed or opaque");
+}
+
 export const databaseApprovalCapabilityStore: ApprovalCapabilityStore = {
   async create(binding) {
     await db.execute(sql`
@@ -105,7 +118,6 @@ export const databaseApprovalCapabilityStore: ApprovalCapabilityStore = {
         and run_id = ${binding.runId}
         and tool_name = ${binding.toolName}
         and arguments_hash = ${binding.argumentsHash}
-        and expires_at = ${binding.expiresAt.toISOString()}::timestamptz
         and expires_at > ${now.toISOString()}::timestamptz
         and consumed_at is null
       returning nonce
@@ -129,22 +141,31 @@ export async function mintApprovalCapability(
   const boundedTtlMs = Math.min(APPROVAL_TTL_MS, Math.max(1, ttlMs));
   const nonce = randomUUID();
   const argumentsHash = approvalArgumentsHash(input.arguments);
-  const capability = mintSignedCapability<ApprovalWireClaims>(
-    {
-      o: input.orgId,
-      u: input.userId,
-      t: input.threadId,
-      r: input.runId,
-      n: nonce,
-      w: input.toolName,
-      h: argumentsHash,
-    },
-    boundedTtlMs,
-    TOKEN_OPTIONS,
-  );
-  const verified = verifySignedCapability(capability, TOKEN_OPTIONS);
-  if (!verified) throw new Error("failed to mint gateway approval capability");
-  const expiresAt = new Date(verified.exp);
+  const mode = approvalCapabilityMintMode();
+  let expiresAt = new Date(Date.now() + boundedTtlMs);
+  const capability = mode === "opaque"
+    // Keep model-visible transport short. The UUID is a random bearer secret;
+    // every authority-bearing field remains in the server-side one-shot ledger
+    // and is matched again atomically during consumption.
+    ? `${OPAQUE_APPROVAL_VERSION}.${nonce}`
+    : mintSignedCapability<ApprovalWireClaims>(
+        {
+          o: input.orgId,
+          u: input.userId,
+          t: input.threadId,
+          r: input.runId,
+          n: nonce,
+          w: input.toolName,
+          h: argumentsHash,
+        },
+        boundedTtlMs,
+        TOKEN_OPTIONS,
+      );
+  if (mode === "signed") {
+    const verified = verifySignedCapability(capability, TOKEN_OPTIONS);
+    if (!verified) throw new Error("failed to mint gateway approval capability");
+    expiresAt = new Date(verified.exp);
+  }
   await store.create({
     orgId: input.orgId,
     userId: input.userId,
@@ -158,13 +179,30 @@ export async function mintApprovalCapability(
   return { capability, expiresAt, argumentsHash };
 }
 
-function verifiedBinding(
+function capabilityBinding(
   capability: string | null | undefined,
   claims: ToolTokenClaims,
   toolName: string,
   args: Readonly<Record<string, unknown>>,
   nowMs: number,
-): ApprovalBinding | null {
+): Omit<ApprovalBinding, "expiresAt"> | null {
+  const opaqueNonce = capability?.startsWith(`${OPAQUE_APPROVAL_VERSION}.`)
+    ? capability.slice(OPAQUE_APPROVAL_VERSION.length + 1)
+    : null;
+  if (opaqueNonce && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(opaqueNonce)) {
+    return {
+      orgId: claims.orgId,
+      userId: claims.userId,
+      threadId: claims.threadId,
+      runId: claims.runId,
+      toolName,
+      argumentsHash: approvalArgumentsHash(args),
+      nonce: opaqueNonce,
+    };
+  }
+
+  // Rolling compatibility: capabilities minted by the previous release remain
+  // usable until their normal two-minute expiry.
   const verified = verifySignedCapability(capability, TOKEN_OPTIONS, nowMs);
   if (!verified?.claims || typeof verified.claims !== "object") return null;
   const wire = verified.claims as Partial<ApprovalWireClaims>;
@@ -189,7 +227,6 @@ function verifiedBinding(
     toolName: wire.w,
     argumentsHash: wire.h,
     nonce: wire.n,
-    expiresAt: new Date(verified.exp),
   };
 }
 
@@ -203,7 +240,7 @@ export async function consumeApprovalCapability(
   store: ApprovalCapabilityStore = databaseApprovalCapabilityStore,
   nowMs = Date.now(),
 ): Promise<boolean> {
-  const binding = verifiedBinding(
+  const binding = capabilityBinding(
     input.capability,
     input.claims,
     input.toolName,

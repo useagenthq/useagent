@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,13 +19,15 @@ describe("LocalArtifactStorage", () => {
     const key = "a".repeat(64);
     const storage = new LocalArtifactStorage(root);
 
-    await storage.put(key, new TextEncoder().encode("durable"));
+    const bytes = new TextEncoder().encode("durable");
+    await storage.put(key, bytes);
 
     const directoryMode = (await stat(join(root, "aa"))).mode & 0o777;
     const fileMode = (await stat(join(root, "aa", key))).mode & 0o777;
     expect(directoryMode).toBe(0o770);
     expect(fileMode).toBe(0o660);
     expect(new TextDecoder().decode(await storage.read(key))).toBe("durable");
+    expect(await storage.sha256(key)).toBe(createHash("sha256").update(bytes).digest("hex"));
   });
 
   test("does not try to change ownership-sensitive mode on existing bytes", async () => {
