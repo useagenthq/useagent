@@ -102,6 +102,17 @@ describe("T3 run adapter gate", () => {
         T3_CUBE_TEMPLATE_ID: "candidate-legacy",
       }),
     ).toBe("candidate-new");
+    expect(() => runtimeRunSnapshot({
+      SANDBOX_PROVIDER: "cube",
+      CUBE_TEMPLATE_ID: "production-v7",
+      USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v9",
+    })).toThrow("requires a dedicated RUNTIME_CUBE_TEMPLATE_ID");
+    expect(runtimeRunSnapshot({
+      SANDBOX_PROVIDER: "cube",
+      CUBE_TEMPLATE_ID: "production-v7",
+      RUNTIME_CUBE_TEMPLATE_ID: "candidate-v9",
+      USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v9",
+    })).toBe("candidate-v9");
   });
 
   test("inherits the configured Daytona snapshot unless a T3 override is present", () => {

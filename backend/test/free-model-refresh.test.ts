@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { isPublicApiPath } from "../src/middleware/org";
 import {
   FREE_MODEL_LANE_SEED,
+  HOSTED_VERIFIED_FREE_MODELS,
   freeModelLaneCache,
   setFreeModelCatalogFetcherForTest,
 } from "../src/runs/free-model-lane";
@@ -25,6 +26,7 @@ describe("manual free-model refresh endpoint", () => {
 
   test("busts the catalog cache, then rate-limits an immediate repeat", async () => {
     const org = await createOrgSession("free-refresh");
+    const model = HOSTED_VERIFIED_FREE_MODELS[0];
     // Cold-start the shared cache so no earlier suite's background kick (or its
     // failure cool-down) races this test's forced refresh.
     freeModelLaneCache.reset();
@@ -33,7 +35,7 @@ describe("manual free-model refresh endpoint", () => {
         JSON.stringify({
           data: [
             {
-              id: "vendor/fresh-model:free",
+              id: model,
               context_length: 200_000,
               supported_parameters: ["tools", "temperature"],
             },
@@ -50,13 +52,13 @@ describe("manual free-model refresh endpoint", () => {
     }>("/api/config/models/refresh", { method: "POST", cookies: org.cookies });
     expect(first.status).toBe(200);
     expect(first.body.refreshed).toBe(true);
-    expect(first.body.free).toEqual(["vendor/fresh-model:free"]);
-    expect(first.body.models.opencode).toContain("vendor/fresh-model:free");
+    expect(first.body.free).toEqual([model]);
+    expect(first.body.models.opencode).toContain(model);
 
     // The public manifest now advertises the refreshed lane too.
     const manifest = await json<{ models: Record<string, string[]> }>("/api/config");
     expect(manifest.status).toBe(200);
-    expect(manifest.body.models.opencode).toContain("vendor/fresh-model:free");
+    expect(manifest.body.models.opencode).toContain(model);
 
     // An immediate second manual refresh is inside the cool-down.
     const second = await json<{ error: string; retry_after_ms: number }>(

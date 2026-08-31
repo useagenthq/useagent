@@ -33,9 +33,18 @@ class MemoryApprovalStore implements ApprovalCapabilityStore {
     this.rows.set(binding.nonce, binding);
   }
 
-  async consume(binding: ApprovalBinding, now: Date): Promise<boolean> {
+  async consume(binding: Omit<ApprovalBinding, "expiresAt">, now: Date): Promise<boolean> {
     const row = this.rows.get(binding.nonce);
-    if (!row || row.expiresAt <= now || JSON.stringify(row) !== JSON.stringify(binding)) {
+    if (
+      !row ||
+      row.expiresAt <= now ||
+      row.orgId !== binding.orgId ||
+      row.userId !== binding.userId ||
+      row.threadId !== binding.threadId ||
+      row.runId !== binding.runId ||
+      row.toolName !== binding.toolName ||
+      row.argumentsHash !== binding.argumentsHash
+    ) {
       return false;
     }
     this.rows.delete(binding.nonce);
@@ -173,6 +182,34 @@ describe("automation gateway control-plane delegation", () => {
     });
     expect((forwarded?.exp ?? 0) - Date.now()).toBeLessThanOrEqual(30_000);
     expect(await request.json()).toEqual({ name: "automation_list", arguments: {} });
+  });
+
+  test("preserves the opaque approval handle across the restricted gateway bridge", async () => {
+    process.env.GATEWAY_DATABASE_URL = "postgres://restricted";
+    process.env.USEAGENT_API_ORIGIN = "http://127.0.0.1:3201";
+    process.env.TOOL_GATEWAY_SECRET = "automation-test-secret-0123456789abcdef";
+    const requests: Request[] = [];
+    globalThis.fetch = (async (input, init) => {
+      requests.push(input instanceof Request ? input : new Request(input.toString(), init));
+      return Response.json({
+        result: {
+          content: [{ type: "text", text: "automation not found" }],
+          structuredContent: { status: 404 },
+          isError: true,
+        },
+      });
+    }) as typeof fetch;
+    const approvalCapability = `apr1.${crypto.randomUUID()}`;
+
+    await executeAutomationTool(claims, "automation_run_now", {
+      id: "automation-1",
+      approvalCapability,
+    });
+
+    expect(await requests[0]?.json()).toEqual({
+      name: "automation_run_now",
+      arguments: { id: "automation-1", approvalCapability },
+    });
   });
 
   test("fails closed when a restricted gateway has no primary API origin", async () => {

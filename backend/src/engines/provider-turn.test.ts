@@ -100,7 +100,7 @@ describe("production provider turn lifecycle", () => {
       await recordProviderSessionStarted(
         ctx,
         established.session,
-        { provider: "native-test", source: "native-test" },
+        { provider: "native-test", source: "native-test", resumed: established.resumed },
         async () => {
           throw new Error("database unavailable");
         },
@@ -142,6 +142,7 @@ describe("production provider turn lifecycle", () => {
     const event = providerSessionStartedEvent(ctx, established.session, {
       provider: "native-test",
       source: "native-test",
+      resumed: established.resumed,
     });
     const steered = await provider.steer({
       runId: ctx.runId,
@@ -169,7 +170,7 @@ describe("production provider turn lifecycle", () => {
       provider: "native-test",
       eventType: "session.started",
       nativeSessionId: "session-existing",
-      payload: { source: "native-test", capabilities, executionCapabilities },
+      payload: { source: "native-test", resumed: true, capabilities, executionCapabilities },
     });
   });
 

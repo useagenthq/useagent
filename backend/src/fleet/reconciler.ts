@@ -6,7 +6,7 @@ import {
 } from "../sandboxes/provider";
 import { clearThreadSandbox, getRun } from "../runs/repo";
 import { releaseRunSandbox } from "../runs/sandbox-release";
-import { finalizeRun } from "../runs/finalize";
+import { finalizeRun, resolveDurableFinalizationOutcome } from "../runs/finalize";
 import { settleCommandForRun } from "../commands/dispatch";
 import { liveActorRunIds, pumpThread } from "../worker";
 import { selectAdmittableThreads } from "./admission";
@@ -211,9 +211,10 @@ export async function reconcileExpiredLease(
     return;
   }
   const durationMs = Math.max(0, Date.now() - run.createdAt.getTime());
-  await finalizeRun(lease.runId, "failed", LEASE_LOST_SUMMARY, durationMs);
+  const finalized = await finalizeRun(lease.runId, "failed", LEASE_LOST_SUMMARY, durationMs);
+  const durable = await resolveDurableFinalizationOutcome(lease.runId, finalized);
   await settleCommandForRun(lease.runId).catch(() => {});
-  await setAdmissionState(lease.runId, "failed");
+  if (durable) await setAdmissionState(lease.runId, durable.status);
 }
 
 /** One reconciliation pass. Safe to call directly in tests. */

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { runs } from "../src/db/schema";
 import { buildThreadPreamble } from "../src/runs/repo";
+import { RUN_CREATE_MAX_BODY_BYTES, RUN_PROMPT_MAX_CHARS } from "../src/runs/run-create-policy";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import { createOrgSession, fetchApi, json, readSse, waitFor } from "./helpers";
 
@@ -31,6 +32,27 @@ describe("runs", () => {
     const { status, body } = await json("/api/runs", { method: "POST", body: {} });
     expect(status).toBe(400);
     expect(body.error).toBeDefined();
+  });
+
+  test("POST /api/runs rejects oversized prompts before dispatch", async () => {
+    const { status, body } = await json("/api/runs", {
+      method: "POST",
+      body: { prompt: "x".repeat(RUN_PROMPT_MAX_CHARS + 1) },
+    });
+    expect(status).toBe(413);
+    expect(body.error).toBe("prompt_too_large");
+  });
+
+  test("POST /api/runs rejects an oversized JSON body before parsing", async () => {
+    const { status, body } = await json("/api/runs", {
+      method: "POST",
+      body: {
+        prompt: "bounded",
+        ignoredPadding: "x".repeat(RUN_CREATE_MAX_BODY_BYTES),
+      },
+    });
+    expect(status).toBe(413);
+    expect(body.error).toBe("request_too_large");
   });
 
   test("POST /api/runs rejects caller-supplied origin", async () => {

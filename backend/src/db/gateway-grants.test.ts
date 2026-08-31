@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import type { Sql } from "postgres";
-import { applyGatewayGrants, GATEWAY_GRANTS } from "./gateway-grants";
+import {
+  applyGatewayGrants,
+  GATEWAY_GRANTS,
+  gatewayDatabaseRoleRequired,
+} from "./gateway-grants";
 
 /** Normalize a GRANT statement for comparison: collapse whitespace, drop the
  *  trailing semicolon, uppercase keywords are already literal in both sources. */
@@ -13,6 +18,23 @@ function normalize(grant: string): string {
  *  is provisioning-owned; boot grants it only when present). */
 
 describe("gateway grants single source of truth", () => {
+
+  test("requires the hosted role only when the backend enables its restricted gateway", () => {
+    expect(gatewayDatabaseRoleRequired({ NODE_ENV: "production" })).toBe(false);
+    expect(gatewayDatabaseRoleRequired({ GATEWAY_PUBLIC_URL: "  " })).toBe(false);
+    expect(gatewayDatabaseRoleRequired({
+      GATEWAY_PUBLIC_URL: "https://gateway.example.test",
+    })).toBe(true);
+  });
+
+  test("uses the gateway flag visible to backend in both Compose environments", () => {
+    for (const path of ["../../../compose.local.yaml", "../../../compose.prod.yaml"]) {
+      const compose = readFileSync(new URL(path, import.meta.url), "utf8");
+      const backend = compose.split("\n  gateway:\n", 1)[0] ?? "";
+      expect(backend).toContain("GATEWAY_PUBLIC_URL:");
+      expect(backend).not.toContain("GATEWAY_DATABASE_URL:");
+    }
+  });
 
   test("least privilege holds: no DELETE, no ALL, no provider_connections table grant", () => {
     for (const grant of GATEWAY_GRANTS) {
@@ -37,6 +59,14 @@ describe("gateway grants single source of truth", () => {
     );
   });
 
+  test("restricted gateway can persist its FinishedWork obligations and receipts", () => {
+    expect(GATEWAY_GRANTS).toEqual(expect.arrayContaining([
+      "GRANT SELECT, INSERT ON finished_work_obligations, finished_work_receipts TO useagent_gateway",
+      "GRANT UPDATE (state, materialized_artifact_id, materialized_artifact_revision, failure_code, resolved_at, updated_at) ON finished_work_obligations TO useagent_gateway",
+    ]));
+    expect(GATEWAY_GRANTS.some((grant) => /UPDATE ON finished_work_receipts/.test(grant))).toBe(false);
+  });
+
   test("strict hosted reconciliation rejects missing role and credentials view", async () => {
     const missingRole = Object.assign(async () => [], { unsafe: async () => [] }) as unknown as Sql;
     await expect(applyGatewayGrants(missingRole, { strict: true })).rejects.toThrow(
@@ -51,6 +81,16 @@ describe("gateway grants single source of truth", () => {
     await expect(applyGatewayGrants(missingView, { strict: true })).rejects.toThrow(
       "required hosted credentials view",
     );
+  });
+
+  test("a present restricted role makes every grant failure boot-fatal", async () => {
+    let query = 0;
+    const failingGrant = Object.assign(
+      async () => (query++ === 0 ? [{ present: 1 }] : []),
+      { unsafe: async () => { throw new Error("relation missing"); } },
+    ) as unknown as Sql;
+
+    await expect(applyGatewayGrants(failingGrant)).rejects.toThrow("relation missing");
   });
 
   test("keeps grants deployable before the one-time hosted role cutover", async () => {

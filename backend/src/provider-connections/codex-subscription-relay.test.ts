@@ -1,11 +1,36 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
+import { link, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { and, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import type { AppEnv } from "../http";
+import { db } from "../db/client";
+import { artifacts, providerEvents } from "../db/schema";
+import {
+  setTrustedArtifactEventRecorderForTest,
+} from "../artifacts/publish";
+import { setArtifactStorageForTest } from "../artifacts/storage";
+import {
+  listFinishedWorkForRun,
+  recordFinishedWorkReceipt,
+} from "../runs/finished-work-repo";
+import { finalizeRun } from "../runs/finalize";
+import { resetFinishedWorkSessionLockClientForTest } from "../runs/finished-work-lock";
+import { recordProviderEventIfAbsent } from "../runs/provider-events";
+import { createRun, getRun } from "../runs/repo";
+import { InMemoryArtifactStorage } from "../../test/in-memory-artifact-storage";
+import "../../test/helpers";
 import type { CodexSubscriptionRuntimeSelection } from "./service";
+import {
+  importCodexNativeOutput,
+  setCodexNativeOutputImportHookForTest,
+  setCodexNativeOutputReceiptRecorderForTest,
+} from "./codex-native-output-import";
 import {
   codexSubscriptionRelayPublicOrigin,
   codexSubscriptionRelayRoutes,
@@ -36,11 +61,21 @@ describe("Codex subscription relay public origin", () => {
 
 const servers: Array<{ stop(force?: boolean): void }> = [];
 const sockets: WebSocket[] = [];
+const tempRoots: string[] = [];
+const previousFinishedWorkRollout = process.env.FINISHED_WORK_ROLLOUT;
 
-afterEach(() => {
+afterEach(async () => {
   setCodexSubscriptionRelayDependenciesForTest(null);
+  setArtifactStorageForTest(null);
+  setTrustedArtifactEventRecorderForTest(null);
+  setCodexNativeOutputImportHookForTest(null);
+  setCodexNativeOutputReceiptRecorderForTest(null);
+  if (previousFinishedWorkRollout === undefined) delete process.env.FINISHED_WORK_ROLLOUT;
+  else process.env.FINISHED_WORK_ROLLOUT = previousFinishedWorkRollout;
   for (const socket of sockets.splice(0)) socket.close();
   for (const server of servers.splice(0)) server.stop(true);
+  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await resetFinishedWorkSessionLockClientForTest();
 });
 
 describe("Codex subscription run relay", () => {
@@ -169,6 +204,22 @@ describe("Codex subscription run relay", () => {
       },
     });
     await finishRelayInitialization(socket, child, 1);
+    child.received.splice(0);
+
+    const resume = JSON.stringify({
+      id: 20,
+      method: "thread/resume",
+      params: { threadId: "provider-thread-1", cwd: "/root/work", model: "gpt-5.5" },
+    });
+    socket.send(resume);
+    await eventually(() => expect(child.received).toEqual([resume]));
+    const resumeReply = JSON.stringify({
+      id: 20,
+      result: { thread: { id: "provider-thread-1" } },
+    });
+    const resumed = collectMessages(socket, 1);
+    child.stdout.write(`${resumeReply}\n`);
+    expect(await resumed).toEqual([resumeReply]);
     child.received.splice(0);
 
     const request = JSON.stringify({
@@ -466,7 +517,497 @@ describe("Codex subscription run relay", () => {
     expect(await closed).toMatchObject({ code: 1008 });
     expect(child.wasKilled()).toBe(true);
   });
+
+  test("imports one trusted native image before forwarding a path-free completion", async () => {
+    process.env.FINISHED_WORK_ROLLOUT = "shadow";
+    const storage = new InMemoryArtifactStorage();
+    setArtifactStorageForTest(storage);
+    const fixture = await nativeOutputFixture();
+    const imagePath = join(fixture.generatedImages, "image.png");
+    await writeFile(imagePath, PNG);
+    const relay = await initializedNativeOutputRelay(fixture.runId, fixture.codexHome);
+    const completion = nativeImageFrame(imagePath);
+    const messages = collectMessages(relay.socket, 2);
+
+    relay.child.stdout.write(`${completion}\n${completion}\n`);
+
+    const forwarded = await messages;
+    expect(forwarded).toHaveLength(2);
+    for (const frame of forwarded) {
+      expect(frame).not.toContain(imagePath);
+      expect(frame).not.toContain("savedPath");
+      expect(frame).not.toContain("result");
+      expect(frame).not.toContain("unknownPrivateField");
+    }
+    const finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    expect(finished.obligations).toHaveLength(1);
+    expect(finished.obligations[0]?.state).toBe("satisfied");
+    expect(finished.receipts).toHaveLength(1);
+    expect(finished.receipts[0]?.metadata).toMatchObject({
+      byteCount: PNG.length,
+      digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      mime: "image/png",
+    });
+    const rows = await db.select().from(artifacts).where(eq(artifacts.runId, fixture.runId));
+    expect(rows).toHaveLength(1);
+    expect(await storage.read(rows[0]!.storageKey)).toEqual(PNG);
+    const events = await db.select().from(providerEvents).where(and(
+      eq(providerEvents.runId, fixture.runId),
+      eq(providerEvents.eventType, "artifact.created"),
+    ));
+    expect(events).toHaveLength(1);
+    expect(JSON.stringify({ finished, rows, events })).not.toContain(fixture.root);
+  });
+
+  test("imports a buffered child image before its later turn completion is committed", async () => {
+    process.env.FINISHED_WORK_ROLLOUT = "shadow";
+    setArtifactStorageForTest(new InMemoryArtifactStorage());
+    const fixture = await nativeOutputFixture();
+    const imagePath = join(fixture.generatedImages, "child-buffered.png");
+    await writeFile(imagePath, PNG);
+    const server = startRelayServer();
+    const child = fakeAppServer();
+    const selected = { ...runtime(), codexHome: fixture.codexHome };
+    setCodexSubscriptionRelayDependenciesForTest({
+      selectRuntime: async () => selected,
+      loadThreadBinding: async () => "provider-thread-1",
+      spawnAppServer: () => child.process,
+    });
+    const capability = issueCodexSubscriptionRelayCapability({
+      binding: {
+        ...binding(),
+        orgId: "org-skynet-dev",
+        threadId: fixture.runId,
+        runId: fixture.runId,
+      },
+      runtime: selected,
+      execServerUrl: "ws://127.0.0.1:43111/opaque-exec-grant",
+      publicOrigin: `http://127.0.0.1:${server.port}`,
+    });
+    const socket = await opened(capability.url);
+    sockets.push(socket);
+    await initializeRelay(socket, child, 820);
+    const resume = JSON.stringify({
+      id: 821,
+      method: "thread/resume",
+      params: { threadId: "provider-thread-1", cwd: "/root/work", model: "gpt-5.5" },
+    });
+    socket.send(resume);
+    await eventually(() => expect(child.received).toContain(resume));
+
+    const childStarted = JSON.stringify({
+      method: "thread/started",
+      params: {
+        thread: {
+          id: "provider-child-1",
+          source: {
+            subAgent: { thread_spawn: { parent_thread_id: "provider-thread-1" } },
+          },
+        },
+      },
+    });
+    const turnStarted = JSON.stringify({
+      method: "turn/started",
+      params: { threadId: "provider-child-1", turn: { id: "child-turn-1" } },
+    });
+    const image = nativeImageFrame(imagePath, {
+      itemId: "child-image-1",
+      threadId: "provider-child-1",
+      turnId: "child-turn-1",
+    });
+    const turnCompleted = JSON.stringify({
+      method: "turn/completed",
+      params: { threadId: "provider-child-1", turn: { id: "child-turn-1" } },
+    });
+    child.stdout.write(`${childStarted}\n${turnStarted}\n${image}\n${turnCompleted}\n`);
+    await Bun.sleep(10);
+
+    const resumeResponse = JSON.stringify({
+      id: 821,
+      result: { thread: { id: "provider-thread-1" } },
+    });
+    const messages = collectMessages(socket, 5);
+    child.stdout.write(`${resumeResponse}\n`);
+    const forwarded = await messages;
+    expect(forwarded.slice(0, 3)).toEqual([resumeResponse, childStarted, turnStarted]);
+    expect(forwarded[3]).not.toContain(imagePath);
+    expect(forwarded[4]).toBe(turnCompleted);
+
+    const finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    expect(finished.obligations).toHaveLength(1);
+    expect(finished.obligations[0]?.state).toBe("satisfied");
+    expect(finished.receipts).toHaveLength(1);
+    expect(socket.readyState).toBe(WebSocket.OPEN);
+  });
+
+  test("bounds 12 image imports whose serialized callbacks open main-pool transactions", async () => {
+    process.env.FINISHED_WORK_ROLLOUT = "shadow";
+    setArtifactStorageForTest(new InMemoryArtifactStorage());
+    const fixture = await nativeOutputFixture();
+    const candidates = await Promise.all(Array.from({ length: 12 }, async (_, index) => {
+      const savedPath = join(fixture.generatedImages, `saturation-${index}.png`);
+      await writeFile(savedPath, PNG);
+      return {
+        sourceKey: (index + 1).toString(16).padStart(64, "0"),
+        threadId: "provider-thread-1",
+        turnId: "turn-1",
+        itemId: `saturation-item-${index}`,
+        savedPath,
+      };
+    }));
+    setCodexNativeOutputImportHookForTest(async (stage) => {
+      if (stage !== "after_obligation") return;
+      await db.transaction((tx) => tx.execute(sql`select 1`));
+    });
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.all(candidates.map((candidate) => importCodexNativeOutput({
+        orgId: "org-skynet-dev",
+        userId: "user-1",
+        productThreadId: fixture.runId,
+        runId: fixture.runId,
+        codexHome: fixture.codexHome,
+        candidate,
+        validateIdentity: async () => {},
+      }))),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Codex image imports exhausted the database pool")), 5_000);
+      }),
+    ]).finally(() => {
+      if (timeout) clearTimeout(timeout);
+    });
+
+    const finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    expect(finished.obligations).toHaveLength(12);
+    expect(finished.receipts).toHaveLength(12);
+    expect(finished.obligations.every((item) => item.state === "satisfied")).toBe(true);
+  });
+
+  test("holds finalization across the obligation and artifact receipt gaps", async () => {
+    process.env.FINISHED_WORK_ROLLOUT = "enforce";
+    setArtifactStorageForTest(new InMemoryArtifactStorage());
+
+    for (const stage of ["after_obligation", "before_receipt"] as const) {
+      const fixture = await nativeOutputFixture();
+      const imagePath = join(fixture.generatedImages, `${stage}.png`);
+      await writeFile(imagePath, PNG);
+      const relay = await initializedNativeOutputRelay(fixture.runId, fixture.codexHome);
+      const reached = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      setCodexNativeOutputImportHookForTest(async (current) => {
+        if (current !== stage) return;
+        reached.resolve();
+        await release.promise;
+      });
+
+      const forwarded = collectMessages(relay.socket, 1);
+      relay.child.stdout.write(`${nativeImageFrame(imagePath, { itemId: stage })}\n`);
+      await reached.promise;
+
+      const during = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+      expect(during.obligations).toHaveLength(1);
+      expect(during.obligations[0]?.state).toBe("open");
+      if (stage === "before_receipt") {
+        expect(await db.select().from(artifacts).where(eq(artifacts.runId, fixture.runId)))
+          .toHaveLength(1);
+      }
+
+      let finalized = false;
+      const finalization = finalizeRun(fixture.runId, "completed", "generated image", 10)
+        .then((result) => {
+          finalized = true;
+          return result;
+        });
+      await Bun.sleep(30);
+      expect(finalized).toBe(false);
+      expect((await getRun(fixture.runId))?.status).not.toBe("completed");
+
+      release.resolve();
+      await forwarded;
+      expect(await finalization).toMatchObject({ applied: true, status: "completed" });
+      expect((await getRun(fixture.runId))?.status).toBe("completed");
+      const finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+      expect(finished.obligations[0]?.state).toBe("satisfied");
+      expect(finished.receipts).toHaveLength(1);
+      setCodexNativeOutputImportHookForTest(null);
+    }
+  });
+
+  test("keeps event failures retryable and duplicate completion repairs event plus receipt", async () => {
+    process.env.FINISHED_WORK_ROLLOUT = "enforce";
+    setArtifactStorageForTest(new InMemoryArtifactStorage());
+    const fixture = await nativeOutputFixture();
+    const imagePath = join(fixture.generatedImages, "event-retry.png");
+    await writeFile(imagePath, PNG);
+    const relay = await initializedNativeOutputRelay(fixture.runId, fixture.codexHome);
+    let first = true;
+    setTrustedArtifactEventRecorderForTest(async (input) => {
+      if (first) {
+        first = false;
+        throw new Error("provider event store unavailable");
+      }
+      return recordProviderEventIfAbsent(input);
+    });
+
+    const firstForwarded = collectMessages(relay.socket, 1);
+    relay.child.stdout.write(`${nativeImageFrame(imagePath)}\n`);
+    expect((await firstForwarded)[0]).not.toContain(imagePath);
+    let finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    expect(finished.obligations[0]?.state).toBe("open");
+    expect(finished.obligations[0]?.failureCode).toBeNull();
+    expect(finished.receipts).toHaveLength(0);
+    expect(await db.select().from(artifacts).where(eq(artifacts.runId, fixture.runId)))
+      .toHaveLength(1);
+
+    const repaired = collectMessages(relay.socket, 1);
+    relay.child.stdout.write(`${nativeImageFrame(imagePath)}\n`);
+    expect((await repaired)[0]).not.toContain(imagePath);
+    finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    expect(finished.obligations[0]?.state).toBe("satisfied");
+    expect(finished.receipts).toHaveLength(1);
+    expect(await db.select().from(providerEvents).where(and(
+      eq(providerEvents.runId, fixture.runId),
+      eq(providerEvents.eventType, "artifact.created"),
+    ))).toHaveLength(1);
+    expect(relay.child.wasKilled()).toBe(false);
+  });
+
+  test("keeps storage failures retryable without disrupting sanitized frame order", async () => {
+    process.env.FINISHED_WORK_ROLLOUT = "enforce";
+    class FailOnceStorage extends InMemoryArtifactStorage {
+      #failed = false;
+
+      override async put(key: string, bytes: Uint8Array): Promise<void> {
+        if (!this.#failed) {
+          this.#failed = true;
+          throw new Error("artifact storage unavailable");
+        }
+        await super.put(key, bytes);
+      }
+    }
+    setArtifactStorageForTest(new FailOnceStorage());
+    const fixture = await nativeOutputFixture();
+    const imagePath = join(fixture.generatedImages, "storage-retry.png");
+    await writeFile(imagePath, PNG);
+    const relay = await initializedNativeOutputRelay(fixture.runId, fixture.codexHome);
+    const completion = nativeImageFrame(imagePath);
+
+    const firstForwarded = collectMessages(relay.socket, 1);
+    relay.child.stdout.write(`${completion}\n`);
+    const [first] = await firstForwarded;
+    expect(first).not.toContain(imagePath);
+    let finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    expect(finished.obligations[0]?.state).toBe("open");
+    expect(finished.receipts).toHaveLength(0);
+
+    const repaired = collectMessages(relay.socket, 1);
+    relay.child.stdout.write(`${completion}\n`);
+    const [second] = await repaired;
+    expect(second).toBe(first);
+    finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    expect(finished.obligations[0]?.state).toBe("satisfied");
+    expect(finished.receipts).toHaveLength(1);
+    expect(relay.child.wasKilled()).toBe(false);
+  });
+
+  test("keeps receipt integrity failures open and duplicate completion repairs them", async () => {
+    process.env.FINISHED_WORK_ROLLOUT = "enforce";
+    setArtifactStorageForTest(new InMemoryArtifactStorage());
+    const fixture = await nativeOutputFixture();
+    const imagePath = join(fixture.generatedImages, "receipt-retry.png");
+    await writeFile(imagePath, PNG);
+    const relay = await initializedNativeOutputRelay(fixture.runId, fixture.codexHome);
+    let first = true;
+    setCodexNativeOutputReceiptRecorderForTest(async (input, exec) => {
+      if (first) {
+        first = false;
+        const integrityError = new Error("receipt integrity failure") as Error & { code: string };
+        integrityError.code = "23514";
+        throw integrityError;
+      }
+      return recordFinishedWorkReceipt(input, exec);
+    });
+
+    const firstForwarded = collectMessages(relay.socket, 1);
+    relay.child.stdout.write(`${nativeImageFrame(imagePath)}\n`);
+    await firstForwarded;
+    let finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    expect(finished.obligations[0]?.state).toBe("open");
+    expect(finished.obligations[0]?.failureCode).toBeNull();
+    expect(finished.receipts).toHaveLength(0);
+
+    const repaired = collectMessages(relay.socket, 1);
+    relay.child.stdout.write(`${nativeImageFrame(imagePath)}\n`);
+    await repaired;
+    finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    expect(finished.obligations[0]?.state).toBe("satisfied");
+    expect(finished.receipts).toHaveLength(1);
+    expect(relay.child.wasKilled()).toBe(false);
+  });
+
+  test("forwards sanitized failures without closing and never trusts claimed ids", async () => {
+    process.env.FINISHED_WORK_ROLLOUT = "enforce";
+    setArtifactStorageForTest(new InMemoryArtifactStorage());
+    const fixture = await nativeOutputFixture();
+    const outside = join(fixture.root, "outside.png");
+    const symlinkPath = join(fixture.generatedImages, "link.png");
+    const hardlinkPath = join(fixture.generatedImages, "hardlink.png");
+    const invalidMime = join(fixture.generatedImages, "fake.png");
+    const missing = join(fixture.generatedImages, "missing.png");
+    const oversized = join(fixture.generatedImages, "oversized.png");
+    await writeFile(outside, PNG);
+    await symlink(outside, symlinkPath);
+    await link(outside, hardlinkPath);
+    await writeFile(invalidMime, "not an image");
+    await Bun.write(oversized, new Uint8Array(50 * 1024 * 1024 + 1));
+    const relay = await initializedNativeOutputRelay(fixture.runId, fixture.codexHome);
+    const cases = [outside, symlinkPath, hardlinkPath, invalidMime, oversized, missing];
+    const messages = collectMessages(relay.socket, cases.length + 1);
+    cases.forEach((path, index) => relay.child.stdout.write(`${nativeImageFrame(path, {
+      itemId: `image-${index}`,
+    })}\n`));
+    relay.child.stdout.write(`${nativeImageFrame(outside, {
+      itemId: "wrong-thread",
+      threadId: "provider-thread-forged",
+    })}\n`);
+    relay.child.stdout.write(`${nativeImageFrame(outside, {
+      itemId: "wrong-turn",
+      turnId: "turn-forged",
+    })}\n`);
+
+    const forwarded = await messages;
+    expect(forwarded).toHaveLength(cases.length + 1);
+    expect(forwarded.every((frame) => !frame.includes("wrong-thread"))).toBe(true);
+    expect(relay.child.wasKilled()).toBe(false);
+    expect(forwarded.every((frame) => !frame.includes(fixture.root) && !frame.includes("savedPath")))
+      .toBe(true);
+    const finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    expect(finished.obligations).toHaveLength(cases.length);
+    expect(finished.receipts).toHaveLength(0);
+    expect(finished.obligations.map((row) => row.failureCode).toSorted()).toEqual([
+      "output_content_type_not_allowed",
+      "output_hardlink_not_allowed",
+      "output_path_outside_root",
+      "output_path_unavailable",
+      "output_symlink_not_allowed",
+      "output_too_large",
+    ].toSorted());
+    expect(JSON.stringify(finished)).not.toContain(fixture.root);
+  });
+
+  test("off mode only sanitizes native output and performs no durable work", async () => {
+    process.env.FINISHED_WORK_ROLLOUT = "off";
+    setArtifactStorageForTest(new InMemoryArtifactStorage());
+    const fixture = await nativeOutputFixture();
+    const imagePath = join(fixture.generatedImages, "image.png");
+    await writeFile(imagePath, PNG);
+    const relay = await initializedNativeOutputRelay(fixture.runId, fixture.codexHome);
+    const message = collectMessages(relay.socket, 1);
+    relay.child.stdout.write(`${nativeImageFrame(imagePath)}\n`);
+
+    const [forwarded] = await message;
+    expect(forwarded).not.toContain(imagePath);
+    expect(forwarded).not.toContain("savedPath");
+    expect(await listFinishedWorkForRun("org-skynet-dev", fixture.runId)).toEqual({
+      obligations: [],
+      receipts: [],
+    });
+    expect(await db.select().from(artifacts).where(eq(artifacts.runId, fixture.runId)))
+      .toHaveLength(0);
+  });
 });
+
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
+
+async function nativeOutputFixture() {
+  const root = await mkdtemp(join(await realpath(tmpdir()), "codex-relay-output-"));
+  tempRoots.push(root);
+  const codexHome = join(root, "codex-home");
+  const generatedImages = join(codexHome, "generated_images");
+  await mkdir(generatedImages, { recursive: true });
+  const runId = crypto.randomUUID();
+  await createRun({
+    id: runId,
+    prompt: "generate a native image",
+    model: "gpt-5.5",
+    engine: "codex",
+    orgId: "org-skynet-dev",
+    userId: null,
+    parentRunId: null,
+    threadId: runId,
+    repos: [],
+    memoryScope: "org",
+  });
+  return { root, codexHome, generatedImages, runId };
+}
+
+async function initializedNativeOutputRelay(runId: string, codexHome: string) {
+  const server = startRelayServer();
+  const child = fakeAppServer();
+  const selected = { ...runtime(), codexHome };
+  setCodexSubscriptionRelayDependenciesForTest({
+    selectRuntime: async () => selected,
+    loadThreadBinding: async () => "provider-thread-1",
+    spawnAppServer: () => child.process,
+  });
+  const capability = issueCodexSubscriptionRelayCapability({
+    binding: {
+      ...binding(),
+      orgId: "org-skynet-dev",
+      threadId: runId,
+      runId,
+    },
+    runtime: selected,
+    execServerUrl: "ws://127.0.0.1:43111/opaque-exec-grant",
+    publicOrigin: `http://127.0.0.1:${server.port}`,
+  });
+  const socket = await opened(capability.url);
+  sockets.push(socket);
+  await initializeRelay(socket, child, 800);
+  const resume = JSON.stringify({
+    id: 801,
+    method: "thread/resume",
+    params: { threadId: "provider-thread-1", cwd: "/root/work", model: "gpt-5.5" },
+  });
+  socket.send(resume);
+  await eventually(() => expect(child.received).toContain(resume));
+  const resumeResponse = collectMessages(socket, 1);
+  child.stdout.write(`${JSON.stringify({
+    id: 801,
+    result: { thread: { id: "provider-thread-1" } },
+  })}\n`);
+  await resumeResponse;
+  const turnStarted = collectMessages(socket, 1);
+  child.stdout.write(`${JSON.stringify({
+    method: "turn/started",
+    params: { threadId: "provider-thread-1", turn: { id: "turn-1" } },
+  })}\n`);
+  await turnStarted;
+  return { socket, child };
+}
+
+function nativeImageFrame(
+  savedPath: string,
+  input: { readonly itemId?: string; readonly threadId?: string; readonly turnId?: string } = {},
+): string {
+  return JSON.stringify({
+    method: "item/completed",
+    unknownTopLevel: savedPath,
+    params: {
+      threadId: input.threadId ?? "provider-thread-1",
+      turnId: input.turnId ?? "turn-1",
+      item: {
+        type: "imageGeneration",
+        id: input.itemId ?? "image-item-1",
+        status: "completed",
+        savedPath,
+        result: JSON.stringify({ savedPath }),
+        unknownPrivateField: savedPath,
+      },
+    },
+  });
+}
 
 function startRelayServer() {
   const app = new Hono<AppEnv>();

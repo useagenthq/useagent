@@ -366,6 +366,39 @@ describe("CubeWarmPool", () => {
     expect(stale.deleted).toBe(true);
   });
 
+  test("discards a warm candidate whose provider rejects its runtime identity", async () => {
+    const stale = sandbox("cube-uid1000");
+    const replacement = sandbox("cube-root");
+    const base = provider([stale, replacement, sandbox("cube-next")]);
+    const fakeProvider: SandboxProvider = {
+      ...base,
+      get: async (id) => {
+        if (id === stale.id) throw new Error("Cube sandbox did not reach root identity/workspace");
+        return base.get(id);
+      },
+    };
+    const pool = new CubeWarmPool({
+      provider: fakeProvider,
+      size: 1,
+      createOptions: { snapshot: "tpl-1" },
+      warmDesktop: async () => ({
+        available: true,
+        browserTools: false,
+        home: "/root",
+        workdir: "/root/work",
+        browserExecutable: "/usr/bin/chromium",
+      }),
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => pool.status().ready, 1);
+
+    await expect(pool.claim()).resolves.toBe(replacement);
+    expect(stale.deleted).toBe(true);
+    expect(pool.status().failures).toBe(1);
+  });
+
   test("deletes failed warmups and keeps refilling without throwing through start", async () => {
     const bad = sandbox("cube-bad");
     const good = sandbox("cube-good");

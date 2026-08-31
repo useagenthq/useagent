@@ -49,6 +49,7 @@ export const artifacts = pgTable(
   },
   (t) => [
     uniqueIndex("uq_artifacts_run_path_sha").on(t.runId, t.sourcePath, t.sha256),
+    uniqueIndex("uq_artifacts_finished_work_scope").on(t.orgId, t.id, t.threadId),
     index("idx_artifacts_org_created").on(t.orgId, t.createdAt),
     index("idx_artifacts_thread_created").on(t.threadId, t.createdAt),
   ],

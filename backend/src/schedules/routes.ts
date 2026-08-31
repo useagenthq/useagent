@@ -13,6 +13,7 @@ import {
   ScheduleServiceError,
   updateScheduleForOrg,
 } from "./service";
+import { runCreateBodyLimit } from "../runs/run-create-policy";
 
 export const schedulesRoutes = new Hono<AppEnv>();
 
@@ -27,7 +28,7 @@ schedulesRoutes.get("/", async (c) => {
 
 // Create a schedule. `enabled` is always FALSE on create (a peer tool's safety
 // default) so a new schedule never auto-fires until explicitly enabled.
-schedulesRoutes.post("/", async (c) => {
+schedulesRoutes.post("/", runCreateBodyLimit, async (c) => {
   let body: Record<string, unknown>;
   try {
     body = (await c.req.json()) as Record<string, unknown>;
@@ -48,7 +49,7 @@ schedulesRoutes.post("/", async (c) => {
 });
 
 // Update a schedule (partial) — enable/disable or edit its fields.
-schedulesRoutes.patch("/:id", async (c) => {
+schedulesRoutes.patch("/:id", runCreateBodyLimit, async (c) => {
   const id = c.req.param("id");
   let body: Record<string, unknown>;
   try {

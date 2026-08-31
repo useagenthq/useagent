@@ -24,11 +24,34 @@ export interface ToolCallResult<Content extends ToolCallContent = ToolCallTextCo
   readonly isError?: boolean;
 }
 
+export type GatewayCompletionEffect =
+  | {
+      readonly kind: "artifact_create";
+      readonly authority: "artifact_store" | "workpiece_store";
+    }
+  | {
+      readonly kind: "artifact_update";
+      readonly authority: "artifact_store" | "workpiece_store";
+      readonly targetArtifactArgument: string;
+    }
+  | {
+      readonly kind: "artifact_publish";
+      readonly authority: "artifact_store";
+      readonly updateTargetArgument: string;
+    };
+
 export interface GatewayToolDescriptor {
   readonly name: string;
   readonly aliases?: readonly string[];
   readonly description: string;
   readonly inputSchema: Readonly<Record<string, unknown>>;
+  /** Trusted registry-only completion semantics. Never advertised on the MCP wire. */
+  readonly completionEffect?: GatewayCompletionEffect;
+}
+
+export interface GatewayToolExecutionContext {
+  /** Stable transport request identity. Production supplies the JSON-RPC request id. */
+  readonly requestId: string | number | null;
 }
 
 export type GatewayToolExecutor = (

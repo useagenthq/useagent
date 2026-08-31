@@ -67,6 +67,7 @@ export const piAdapter: EngineAdapter = {
       await recordProviderSessionStarted(ctx, established.session, {
         provider: "pi",
         source: "pi",
+        resumed: established.resumed,
       });
       ctx.timing?.mark("dispatch");
       const summary = await runNativeBridgeTurn({

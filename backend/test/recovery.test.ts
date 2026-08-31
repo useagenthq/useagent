@@ -4,6 +4,7 @@ import { db } from "../src/db/client";
 import { acceptRunCommand } from "../src/commands";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../src/commands/cancel";
 import { recoverStaleRuns, type ReconcileProbe } from "../src/runs/recovery";
+import { finalizeRun } from "../src/runs/finalize";
 import {
   createRun,
   getRun,
@@ -108,6 +109,37 @@ describe("command-lane restart recovery", () => {
 
     // B re-dispatched → executes (mock) → completes. (Order: only after A settled.)
     await waitFor(() => isDone(B));
+  });
+
+  test("a recovery finalizer loser reports the durable first-writer status", async () => {
+    const runId = crypto.randomUUID();
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "opencode",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "ses_race",
+      sandbox: "sb",
+      withStep: true,
+    });
+    let releaseProbe!: () => void;
+    let reportProbe!: () => void;
+    const release = new Promise<void>((resolve) => { releaseProbe = resolve; });
+    const probing = new Promise<void>((resolve) => { reportProbe = resolve; });
+    const recovery = recoverStaleRuns(async () => {
+      reportProbe();
+      await release;
+      return { status: "completed", summary: "late provider completion" };
+    });
+    await probing;
+    await finalizeRun(runId, "failed", "first writer failed", 1);
+    releaseProbe();
+    const summary = await recovery;
+    expect((await getRun(runId))?.status).toBe("failed");
+    expect((await getRun(runId))?.summary).toBe("first writer failed");
+    expect(summary.failed).toBeGreaterThanOrEqual(1);
   });
 
   test("frees a thread whose command was stuck 'dispatched' after the run already finished", async () => {

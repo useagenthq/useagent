@@ -7,6 +7,9 @@ import type { SlackSessionStatus, SlackStreamChunk, SlackStreamTaskDisplayMode }
 // ---------------------------------------------------------------------------
 
 export type PostMessagePayload = {
+  /** Expected tenant at enqueue time. Required for org-initiated automation
+   * delivery so a later workspace rebind cannot switch credentials. */
+  readonly orgId?: string;
   readonly teamId?: string;
   readonly channel: string;
   /** Ordered message texts, posted sequentially into the same thread (a long

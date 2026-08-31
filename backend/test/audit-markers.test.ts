@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { uid } from "./helpers";
 import { db } from "../src/db/client";
@@ -40,6 +40,16 @@ const call = (id: number, name: string, args: Record<string, unknown>) => ({
 });
 
 describe("audit markers are durable before the run settles", () => {
+  beforeEach(() => {
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  afterEach(() => {
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+  });
+
   test("knowledge.retrieved ledger frame exists the instant the tool returns (no polling), run still running", async () => {
     const org = `am-${uid()}`;
     const canary = `deploys${uid().replace(/-/g, "")}`;

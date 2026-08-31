@@ -1,4 +1,3 @@
-import { lstat, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   buildThreadPreamble,
@@ -27,7 +26,11 @@ import {
 } from "./skills/catalog";
 import { formatSkillMarkdown, frameSkillContext } from "./skills/format";
 import { recordSkillLoaded } from "./skills/skill-loaded";
-import { finalizeRun } from "./runs/finalize";
+import {
+  finalizeRun,
+  resolveDurableFinalizationOutcome,
+  type FinalizeRunResult,
+} from "./runs/finalize";
 import { turnStream } from "./runs/turn-stream";
 import { publishRunLifecycleChange } from "./runs/org-signals";
 import { settleCommandForRun } from "./commands/dispatch";
@@ -56,8 +59,17 @@ import { runMock } from "./worker-mock.js";
 import { bus, channel, RUN_SPAWNED, type BusEvent } from "./worker-events.js";
 import { strictOrgSecretRedactor } from "./secrets/store";
 import { errorMessage } from "./util/error-message";
+import { ensureRunWorkdir } from "./run-workdir";
 
 export { bus, channel, RUN_SPAWNED, type BusEvent } from "./worker-events.js";
+export { ensureRunWorkdir } from "./run-workdir";
+
+async function emitFinalizedEnd(runId: string, finalized: FinalizeRunResult): Promise<void> {
+  const durable = await resolveDurableFinalizationOutcome(runId, finalized);
+  if (finalized.applied && durable) {
+    bus.emit(channel(runId), { type: "end", status: durable.status } satisfies BusEvent);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Actor-lite registry: one logical worker per run id.
@@ -88,45 +100,6 @@ export function signalCancel(runId: string, reason: string): boolean {
   if (!cancel) return false;
   cancel(reason);
   return true;
-}
-
-type InitializeGitBoundary = (workdir: string) => Promise<boolean>;
-
-const initializeGitBoundary: InitializeGitBoundary = async (workdir) => {
-  const exitCode = await Bun.spawn(["git", "init", "-q"], {
-    cwd: workdir,
-    stdout: "ignore",
-    stderr: "ignore",
-  }).exited.catch(() => null);
-  return exitCode === 0;
-};
-
-async function hasGitBoundary(workdir: string): Promise<boolean> {
-  try {
-    const gitDirectory = await lstat(join(workdir, ".git"));
-    if (!gitDirectory.isDirectory()) return false;
-    return (await lstat(join(workdir, ".git", "HEAD"))).isFile();
-  } catch {
-    return false;
-  }
-}
-
-/** Ensure the thread jail has a project boundary. Resumed turns avoid spawning
- * `git init` once the boundary already exists; initialization remains best-effort. */
-export async function ensureRunWorkdir(
-  workdir: string,
-  initializeGit: InitializeGitBoundary = initializeGitBoundary,
-): Promise<"hit" | "ready" | "unavailable"> {
-  await mkdir(workdir, { recursive: true });
-  if (await hasGitBoundary(workdir)) return RUN_TIMING_OUTCOMES.hit;
-  try {
-    if (!(await initializeGit(workdir))) return RUN_TIMING_OUTCOMES.unavailable;
-    return (await hasGitBoundary(workdir))
-      ? RUN_TIMING_OUTCOMES.ready
-      : RUN_TIMING_OUTCOMES.unavailable;
-  } catch {
-    return RUN_TIMING_OUTCOMES.unavailable;
-  }
 }
 
 /** Resolve the terminal status/summary when an engine adapter RETURNS normally
@@ -483,10 +456,11 @@ async function runWorker(runId: string): Promise<void> {
       err instanceof Error && err.message
         ? `worker error: ${err.message.replace(/\s+/g, " ").slice(0, 180)}`
         : "worker error";
-    await finalizeRun(runId, "failed", reason, 0).catch((finalizeError) =>
-      console.error(`[worker] failed to finalize run ${runId}:`, finalizeError),
-    );
-    bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
+    const finalized = await finalizeRun(runId, "failed", reason, 0).catch((finalizeError) => {
+      console.error(`[worker] failed to finalize run ${runId}:`, finalizeError);
+      return { applied: false } as const;
+    });
+    await emitFinalizedEnd(runId, finalized);
   } finally {
     // Free the thread and dispatch its next turn — whatever the outcome.
     cancellers.delete(runId);
@@ -504,8 +478,8 @@ async function runChat(
 ): Promise<void> {
   const startedAt = Date.now();
   if (!run.orgId) {
-    await finalizeRun(run.id, "failed", "chat requires an organization scope", 0);
-    bus.emit(channel(run.id), { type: "end", status: "failed" } satisfies BusEvent);
+    const finalized = await finalizeRun(run.id, "failed", "chat requires an organization scope", 0);
+    await emitFinalizedEnd(run.id, finalized);
     return;
   }
 
@@ -596,8 +570,8 @@ async function runChat(
       code: context.citations.length > 0 ? { citations: context.citations } : null,
     });
     bus.emit(channel(run.id), { type: "step", step: done } satisfies BusEvent);
-    await finalizeRun(run.id, "completed", finalText, Date.now() - startedAt);
-    bus.emit(channel(run.id), { type: "end", status: "completed" } satisfies BusEvent);
+    const finalized = await finalizeRun(run.id, "completed", finalText, Date.now() - startedAt);
+    await emitFinalizedEnd(run.id, finalized);
   } catch {
     const cancelledReason = wasCancelled();
     const timedOut = signal.aborted && cancelledReason === null;
@@ -617,8 +591,8 @@ async function runChat(
       (timedOut
         ? `timed out after ${ADAPTER_TIMEOUT_MS / 1000}s`
         : "chat request failed");
-    await finalizeRun(run.id, "failed", reason, Date.now() - startedAt);
-    bus.emit(channel(run.id), { type: "end", status: "failed" } satisfies BusEvent);
+    const finalized = await finalizeRun(run.id, "failed", reason, Date.now() - startedAt);
+    await emitFinalizedEnd(run.id, finalized);
   } finally {
     turnStream.end(run.id);
   }
@@ -690,14 +664,14 @@ async function runEngine(
   // (ENABLED_ENGINES). Fail the run closed rather than activating it.
   const engine = engineId as EngineId;
   if (!persistedEngineModelReadyForDispatch(engine, model)) {
-    await finalizeRun(runId, "failed", `engine/model not ready: ${engineId}/${model}`, 0);
-    bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
+    const finalized = await finalizeRun(runId, "failed", `engine/model not ready: ${engineId}/${model}`, 0);
+    await emitFinalizedEnd(runId, finalized);
     return;
   }
 
   if (!resolveProviderRegistration(engineId)) {
-    await finalizeRun(runId, "failed", `unknown engine: ${engineId}`, 0);
-    bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
+    const finalized = await finalizeRun(runId, "failed", `unknown engine: ${engineId}`, 0);
+    await emitFinalizedEnd(runId, finalized);
     return;
   }
 
@@ -818,8 +792,13 @@ async function runEngine(
     // durable memory capture in one tx). Exactly ONE finalize + ONE terminal end event;
     // the provider turn already emitted its terminal step, so no duplicate `done`.
     const outcome = terminalOnReturn(wasCancelled(), summary);
-    await finalizeRun(runId, outcome.status, outcome.summary, summaryDuration ?? Date.now() - startedAt);
-    bus.emit(channel(runId), { type: "end", status: outcome.status } satisfies BusEvent);
+    const finalized = await finalizeRun(
+      runId,
+      outcome.status,
+      outcome.summary,
+      summaryDuration ?? Date.now() - startedAt,
+    );
+    await emitFinalizedEnd(runId, finalized);
   } catch (err) {
     // A user cancel wins over a coincident timeout: the abort was requested, so
     // report it honestly as "Stopped by user" rather than a timeout/error.
@@ -865,8 +844,8 @@ async function runEngine(
       : timedOut
         ? `timed out after ${ADAPTER_TIMEOUT_MS / 1000}s`
         : failure?.summary ?? "engine error";
-    await finalizeRun(runId, "failed", reason, Date.now() - startedAt);
-    bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
+    const finalized = await finalizeRun(runId, "failed", reason, Date.now() - startedAt);
+    await emitFinalizedEnd(runId, finalized);
   } finally {
     endTurnSpan();
     turnStream.end(runId);

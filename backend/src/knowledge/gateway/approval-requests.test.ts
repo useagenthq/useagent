@@ -21,6 +21,7 @@ const BASE = "http://localhost:3211";
 const ORIGIN = "http://localhost:3200";
 
 const createdRunIds = new Set<string>();
+const originalApprovalMintMode = process.env.GATEWAY_APPROVAL_CAPABILITY_MINT;
 
 afterEach(async () => {
   for (const id of createdRunIds) {
@@ -28,6 +29,8 @@ afterEach(async () => {
     await db.delete(runs).where(eq(runs.id, id));
   }
   createdRunIds.clear();
+  if (originalApprovalMintMode === undefined) delete process.env.GATEWAY_APPROVAL_CAPABILITY_MINT;
+  else process.env.GATEWAY_APPROVAL_CAPABILITY_MINT = originalApprovalMintMode;
 });
 
 async function insertRun(input: {
@@ -295,6 +298,56 @@ describe("gateway approval-request lane (#77)", () => {
         arguments: { id: "automation-4" },
       }),
     ).toBe(false);
+  });
+
+  test("short approval handles drive run-now and delete exactly once through the live registry", async () => {
+    process.env.GATEWAY_APPROVAL_CAPABILITY_MINT = "opaque";
+    const actor = await runningActor();
+
+    for (const toolName of ["automation_run_now", "automation_delete"] as const) {
+      const args = { id: crypto.randomUUID() };
+      const requested = await executeRegisteredGatewayTool(actor.claims, "approval_request", {
+        toolName,
+        arguments: args,
+      });
+      if (!requested.matched) throw new Error("approval_request is not registered");
+      const requestId = structured(
+        requested.result as { structuredContent?: Record<string, unknown> },
+      ).approval_request_id as string;
+
+      expect(
+        await approveApprovalRequest({
+          orgId: actor.orgId,
+          requestId,
+          approvedBy: actor.userId,
+        }),
+      ).toMatchObject({ ok: true });
+
+      const polled = await executeApprovalRequestToolLocal(actor.claims, "approval_poll", {
+        id: requestId,
+      });
+      const capability = structured(polled).approval_capability as string;
+      expect(capability).toMatch(/^apr1\.[0-9a-f-]{36}$/);
+      expect(capability.length).toBeLessThan(64);
+
+      const first = await executeRegisteredGatewayTool(actor.claims, toolName, {
+        ...args,
+        approvalCapability: capability,
+      });
+      if (!first.matched) throw new Error(`${toolName} is not registered`);
+      expect(structured(first.result as { structuredContent?: Record<string, unknown> })).toMatchObject({
+        status: 404,
+      });
+
+      const replay = await executeRegisteredGatewayTool(actor.claims, toolName, {
+        ...args,
+        approvalCapability: capability,
+      });
+      if (!replay.matched) throw new Error(`${toolName} is not registered`);
+      expect(
+        structured(replay.result as { structuredContent?: Record<string, unknown> }),
+      ).toMatchObject({ error: "approval_required" });
+    }
   });
 
   test("poll refuses to deliver another run's capability", async () => {

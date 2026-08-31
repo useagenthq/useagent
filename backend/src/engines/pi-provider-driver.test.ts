@@ -85,4 +85,32 @@ describe("Pi provider driver", () => {
     expect(await driver.cancel(harnessSession(), "user stopped")).toEqual({ status: "ok" });
     expect(commands).toEqual([{ kind: "cancel", reason: "user stopped" }]);
   });
+
+  test("removes the native bridge when Pi rejects cancellation", async () => {
+    const removed: string[] = [];
+    const bridge = {
+      sessionId: "pi-id",
+      sessionFile: "/sessions/pi.jsonl",
+      sandboxId: "box",
+      fingerprint: "fingerprint",
+      subscribe: () => () => {},
+      command: async () => { throw new Error("abort rejected"); },
+      dispose: async () => {},
+    };
+    const driver = makePiProviderDriver({
+      resolveRuntime: async () => null,
+      bridges: {
+        ensure: async () => bridge,
+        get: () => bridge,
+        remove: async (sessionFile) => { removed.push(sessionFile); },
+      },
+    });
+
+    expect(await driver.cancel(harnessSession(), "user stopped")).toEqual({
+      status: "error",
+      code: "cancel_failed",
+      message: "abort rejected",
+    });
+    expect(removed).toEqual(["/sessions/pi.jsonl"]);
+  });
 });

@@ -12,8 +12,9 @@ import { firstOrgForUser, getDevContext } from "../seed";
  * never trusted from a caller-supplied header or body.
  *
  *  - Valid session → its user + active organization, falling back to the user's
- *    first membership. A session with ZERO memberships is rejected 403
- *    (`no_organization`) — it never silently borrows the dev org.
+ *    first membership only when no active organization is set. A stale active
+ *    organization or a session with zero memberships is rejected 403
+ *    (`no_organization`) — it never silently switches tenants or borrows dev.
  *  - No (or invalid) session:
  *      · dev-org allowed → the seeded dev org + dev user, so every API stays
  *        usable unauthenticated in local dev;
@@ -67,6 +68,24 @@ export function isPublicApiPath(path: string): boolean {
   return PUBLIC_API_PREFIXES.some((p) => path.startsWith(p));
 }
 
+async function verifiedSessionOrganization(
+  userId: string,
+  activeOrganizationId: string | null | undefined,
+): Promise<string | null> {
+  if (activeOrganizationId) {
+    const [activeMembership] = await db
+      .select({ organizationId: member.organizationId })
+      .from(member)
+      .where(and(
+        eq(member.organizationId, activeOrganizationId),
+        eq(member.userId, userId),
+      ))
+      .limit(1);
+    return activeMembership?.organizationId ?? null;
+  }
+  return firstOrgForUser(userId);
+}
+
 export const orgScope = createMiddleware<AppEnv>(async (c, next) => {
   // Idempotent: if a request already resolved its org (the universal auth adapter
   // in index.ts runs orgScope first for every non-public /api/* path), a second
@@ -85,8 +104,10 @@ export const orgScope = createMiddleware<AppEnv>(async (c, next) => {
 
   if (session) {
     const userId = session.user.id;
-    const orgId =
-      session.session.activeOrganizationId ?? (await firstOrgForUser(userId));
+    const orgId = await verifiedSessionOrganization(
+      userId,
+      session.session.activeOrganizationId,
+    );
     if (!orgId) {
       // Authenticated but belongs to no organization — never fall back to the
       // dev org (that would cross tenancy). Fail closed.

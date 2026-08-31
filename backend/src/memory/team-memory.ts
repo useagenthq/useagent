@@ -23,6 +23,13 @@ import { memoryConfig, type MemoryConfig } from "../env";
 import type { MemoryScope } from "../db/schema";
 import { parseEnvelope } from "./explicit-memory";
 import { readCaptureOverlay } from "./capture-overlay";
+import {
+  boundedL3,
+  coreContent,
+  rankScenarioEntries,
+  scenarioContent,
+  scenarioPath,
+} from "./team-memory-scenarios";
 
 /** Hard cap on a single memory HTTP call. Memory is best-effort; better to skip
  *  recall than to add latency to a run. */
@@ -775,62 +782,6 @@ export async function deleteExplicitL0(
 // partition.
 
 const DEFAULT_SCENARIO_LIMIT = 2;
-const MAX_L3_CHARS = 700;
-
-function stringField(value: unknown, keys: readonly string[]): string | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const record = value as Record<string, unknown>;
-  for (const key of keys) {
-    const v = record[key];
-    if (typeof v === "string" && v.trim()) return v.trim();
-  }
-  return undefined;
-}
-
-function boundedL3(content: string): string {
-  const normalized = content.trim().replace(/\s+/g, " ");
-  return normalized.length > MAX_L3_CHARS ? `${normalized.slice(0, MAX_L3_CHARS)}...` : normalized;
-}
-
-function scenarioPath(value: unknown): string | undefined {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  return stringField(value, ["path"]);
-}
-
-function scenarioContent(value: unknown): string | undefined {
-  return stringField(value, ["content", "summary", "text"]);
-}
-
-function coreContent(value: unknown): string | undefined {
-  return stringField(value, ["persona", "profile", "summary", "content", "text", "description"]);
-}
-
-function queryTokens(query: string): string[] {
-  return query
-    .toLowerCase()
-    .split(/[^a-z0-9_:-]+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length > 1);
-}
-
-function rankScenarioEntries(query: string, entries: readonly unknown[], limit: number): unknown[] {
-  const tokens = queryTokens(query);
-  return entries
-    .map((entry, index) => {
-      const haystack = [
-        scenarioPath(entry),
-        stringField(entry, ["summary", "content", "text"]),
-      ]
-        .filter((value): value is string => value !== undefined)
-        .join(" ")
-        .toLowerCase();
-      const score = tokens.reduce((sum, token) => sum + (haystack.includes(token) ? 1 : 0), 0);
-      return { entry, index, score };
-    })
-    .toSorted((a, b) => b.score - a.score || a.index - b.index)
-    .slice(0, limit)
-    .map(({ entry }) => entry);
-}
 
 async function listOrgScenarios(
   identity: MemoryIdentity,

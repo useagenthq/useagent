@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   ArtifactByteRange,
   ArtifactStorage,
@@ -20,5 +21,11 @@ export class InMemoryArtifactStorage implements ArtifactStorage {
     const bytes = this.values.get(key);
     if (!bytes) throw new Error("missing artifact");
     return bytes.byteLength;
+  }
+
+  async sha256(key: string): Promise<string> {
+    const bytes = this.values.get(key);
+    if (!bytes) throw new Error("missing artifact");
+    return createHash("sha256").update(bytes).digest("hex");
   }
 }
