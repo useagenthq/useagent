@@ -15,7 +15,7 @@ import {
 } from "@useagent/agent-harness/canonical";
 import { sessionCapabilities } from "./capabilities";
 import { parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
-import { checkoutPullRequestResources, prepareRepos, shq } from "./repo-prep";
+import { checkoutPullRequestResources, prepareRepos } from "./repo-prep";
 import { serialStartup, stagesTogether } from "../util/startup";
 import { parseRepoRef } from "../github/repo-ref";
 import { cacheAcpCommands } from "../runs/command-catalog";
@@ -65,6 +65,17 @@ import {
   sandboxMeetsResourceTarget,
 } from "./daytona-resources";
 import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
+import { resumableProviderSessionId } from "./provider-turn";
+import {
+  buildAcpInstallClause,
+  buildAcpRuntimeEnvExports,
+  codexModelSelectionRequest,
+} from "./acp-provisioning";
+export {
+  buildAcpInstallClause,
+  buildAcpRuntimeEnvExports,
+  codexModelSelectionRequest,
+} from "./acp-provisioning";
 
 // ---------------------------------------------------------------------------
 // Resident claude/codex via ACP — the opencode-server equivalent for the other
@@ -214,67 +225,6 @@ export function resolveAcpTurnTimeoutMs(env: Record<string, string | undefined> 
     return Number.isFinite(n) && n > 0 && n <= MAX_TURN_TIMEOUT_MS ? n : null;
   };
   return valid(env.ACP_TURN_TIMEOUT_MS) ?? valid(env.ENGINE_TIMEOUT_MS) ?? DEFAULT_MS;
-}
-
-const PRESEEDED_PROVIDER_BIN_DIR = "/usr/local/share/skynet-provider-bin";
-
-/** Build the per-sandbox package install clause. Idempotency MUST key on the ACTUAL
- *  install path (~/.local/bin/<bin>), NOT `command -v <bin>` - a <bin> that resolves
- *  elsewhere on PATH (the base image ships `claude`) would skip the install, and the
- *  exact path CLAUDE_CODE_EXECUTABLE points at (~/.local/bin/claude) would never get
- *  created (#127). Cube images expose version-pinned binaries through a useAgent-owned
- *  seed directory because secure sandboxes run with a fresh uid/home; other providers
- *  retain the network-install fallback. */
-export function buildAcpInstallClause(packages: { pkg: string; bin: string }[]): string {
-  return packages
-    .map(
-      ({ pkg, bin }) => {
-        const seeded = `${PRESEEDED_PROVIDER_BIN_DIR}/${bin}`;
-        return (
-          `[ -x "$HOME/.local/bin/${bin}" ] || { mkdir -p "$HOME/.local/bin"; ` +
-          `if [ -x "${seeded}" ]; then ln -sfn "${seeded}" "$HOME/.local/bin/${bin}"; ` +
-          `else npm install -g --prefix $HOME/.local --silent "${pkg}" >/dev/null 2>&1; fi; }; `
-        );
-      },
-    )
-    .join("");
-}
-
-const RUNTIME_ENV_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
-const HOME_RUNTIME_PATH_RE = /^\$HOME(?:\/[A-Za-z0-9._-]+)+$/;
-
-/** Explicit exports for the resident ACP relay. Daytona snapshots launch zsh,
- * so container-level BASH_ENV is not a reliable delivery mechanism. Gateway
- * endpoints are regenerated on every control-plane boot/tunnel and must also
- * override immutable envVars on a durable sandbox reconnect. */
-export function buildAcpRuntimeEnvExports(env: Readonly<Record<string, string>>): string {
-  return Object.entries(env)
-    .map(([name, value]) => {
-      if (!RUNTIME_ENV_NAME_RE.test(name)) {
-        throw new Error(`invalid ACP runtime environment name: ${name}`);
-      }
-      const rendered = HOME_RUNTIME_PATH_RE.test(value) ? `"${value}"` : shq(value);
-      return `export ${name}=${rendered}; `;
-    })
-    .join("");
-}
-
-/** Codex ACP keeps its process and native session warm across turns. Apply the
- * per-turn model through ACP so changing the picker affects that resident
- * session immediately instead of only rewriting config for the next process. */
-export function codexModelSelectionRequest(
-  engine: string,
-  sessionId: string,
-  model: string,
-): {
-  method: "session/set_config_option";
-  params: { configId: "model"; sessionId: string; value: string };
-} | null {
-  if (engine !== "codex" || !model.trim()) return null;
-  return {
-    method: "session/set_config_option",
-    params: { configId: "model", sessionId, value: model },
-  };
 }
 
 export interface AcpGatewayDescriptorState {
@@ -1374,8 +1324,29 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             resumed,
             configuredGatewayDescriptor,
           } = await establishAcpSession({
-            liveSessionId: live.sessionId,
-            persistedSessionId: ctx.engineSessionId,
+            liveSessionId: ctx.providerSession
+              ? resumableProviderSessionId({
+                  binding: ctx.providerSession,
+                  expected: {
+                    provider: cfg.id,
+                    protocol: "acp/1",
+                    generation: live.generation ?? 1,
+                    runtime: { kind: "sandbox", id: box.id },
+                  },
+                }) === live.sessionId
+                ? live.sessionId
+                : null
+              : live.sessionId,
+            persistedSessionId: resumableProviderSessionId({
+              binding: ctx.providerSession,
+              legacySessionId: ctx.engineSessionId,
+              expected: {
+                provider: cfg.id,
+                protocol: "acp/1",
+                generation: live.generation ?? 1,
+                runtime: { kind: "sandbox", id: box.id },
+              },
+            }),
             cwd: effectiveCwd,
             mcpServers,
             request,
@@ -1389,8 +1360,6 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               : null;
           }
           if (live.commandCatalog?.sessionId !== sessionId) live.commandCatalog = null;
-          ctx.saveEngineSessionId?.(sessionId);
-
           if (cfg.id === "codex" && configuredGatewayDescriptor && knowledgeMcpServers.length > 0) {
             await awaitAcpMcpServerTools({
               serverName: "skynet-knowledge",
@@ -1448,6 +1417,18 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               : knowledgeMcpServers.length > 0
                 ? "on_demand"
                 : "unsupported",
+          });
+          if (!ctx.saveProviderSession) {
+            throw new Error("ACP provider session persistence is unavailable");
+          }
+          await ctx.saveProviderSession({
+            provider: cfg.id,
+            nativeSessionId: sessionId,
+            runtime: { kind: "sandbox", id: box.id },
+            protocolVersion: "acp/1",
+            capabilities: negotiatedCapabilities,
+            executionCapabilities,
+            generation: live.generation ?? 1,
           });
 
           // Emit session.started with the ONE negotiated capability map the UI gates on (never a

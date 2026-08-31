@@ -7,6 +7,7 @@ import {
   type StepKind,
 } from "@useagent/agent-client/wire";
 import type { RunResource } from "../../resources/types";
+import type { ProviderSessionBinding } from "@useagent/agent-harness/canonical";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -64,6 +65,11 @@ export const runs = pgTable(
     // model — instead of relying on "most recent" heuristics. Null for engines
     // without native sessions (mock) or pre-feature runs.
     engineSessionId: text("engine_session_id"),
+    // Versioned provider/runtime authority for recovery and control routing.
+    // `engine_session_id` remains the compatibility mirror for old readers;
+    // current writes persist both atomically and the migration constrains them
+    // to the same native id.
+    providerSession: jsonb("provider_session").$type<ProviderSessionBinding>(),
     // The Daytona sandbox this run executed in. Persisted so the thread→sandbox
     // mapping SURVIVES backend restarts — the next turn resumes the same box
     // (workspace + resident engine server) instead of provisioning a new one.

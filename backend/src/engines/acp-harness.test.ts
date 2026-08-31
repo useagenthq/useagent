@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { claudeHarness, codexHarness } from "./acp-harness";
 import { resolveHarness } from "./index";
-import { opencodeHarness } from "./opencode-server";
+import { opencodeHarness } from "./opencode-harness";
 import type { HarnessSessionHandle } from "./types";
 
 const HANDLE: HarnessSessionHandle = { provider: "x", sessionId: "ses_1", sandboxId: "sbx_1" };

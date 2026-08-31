@@ -12,6 +12,8 @@ const capabilities = normalizeNegotiatedCapabilities({
   streamingText: true,
   stop: true,
   resume: true,
+  load: true,
+  modelSelection: true,
   usage: true,
 });
 
@@ -30,7 +32,12 @@ function makeDriver(): ProviderDriver {
     descriptor: {
       provider: "test-provider",
       protocol: { name: "test-protocol", version: "1.0.0" },
+      sessionGeneration: 1,
       capabilities,
+      lifecycle: {
+        operations: ["start", "resume", "steer", "cancel"],
+        steerInputs: ["prompt"],
+      },
       model: {
         selection: "per_turn",
         defaultModel: "gpt-test",
@@ -144,5 +151,42 @@ describe("ProviderDriver lifecycle contract", () => {
       code: "invalid_provider_method",
       message: "provider driver 'test-provider' must implement reconcile as a function",
     });
+  });
+
+  test("validateProviderDriver rejects descriptor and method capability drift", () => {
+    const missingLifecycle = {
+      ...makeDriver(),
+      descriptor: { ...makeDriver().descriptor, lifecycle: undefined },
+    };
+    expect(validateProviderDriver(missingLifecycle)).toMatchObject({
+      status: "error",
+      code: "invalid_provider_lifecycle",
+    });
+
+    const falseResume = {
+      ...makeDriver(),
+      descriptor: {
+        ...makeDriver().descriptor,
+        lifecycle: {
+          operations: ["start", "steer", "cancel"],
+          steerInputs: ["prompt"],
+        },
+      },
+    };
+    expect(validateProviderDriver(falseResume)).toMatchObject({
+      status: "error",
+      code: "provider_capability_mismatch",
+    });
+
+    for (const lifecycle of [
+      { operations: ["start", "resume", "steer", "cancel"], steerInputs: [] },
+      { operations: ["start", "resume", "cancel"], steerInputs: ["prompt"] },
+      { operations: ["start", "resume", "steer", "cancel"], steerInputs: ["unknown"] },
+    ]) {
+      expect(validateProviderDriver({
+        ...makeDriver(),
+        descriptor: { ...makeDriver().descriptor, lifecycle },
+      })).toMatchObject({ status: "error" });
+    }
   });
 });

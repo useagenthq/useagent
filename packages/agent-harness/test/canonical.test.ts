@@ -7,6 +7,8 @@ import { describe, expect, test } from "bun:test";
 import {
   assertNeverEvent,
   CANONICAL_SCHEMA_VERSION,
+  parseProviderSessionBinding,
+  providerSessionBinding,
   type CanonicalAgentEvent,
   type CanonicalEventBody,
   type CanonicalEventKind,
@@ -99,6 +101,21 @@ describe("canonical event vocabulary", () => {
 
   test("schema version is pinned", () => {
     expect(CANONICAL_SCHEMA_VERSION).toBe(1);
+  });
+
+  test("provider session bindings round-trip complete durable authority", () => {
+    const binding = providerSessionBinding({
+      provider: "codex",
+      nativeSessionId: "session-1",
+      protocolVersion: "t3-orchestration/useagent-runtime-v9",
+      generation: 4,
+      runtime: { kind: "sandbox", id: "sandbox-1" },
+      capabilities: {} as never,
+    }, "auth-epoch-1");
+    expect(parseProviderSessionBinding(binding)).toEqual(binding);
+    expect(parseProviderSessionBinding({ ...binding, runtime: { kind: "unknown", id: "x" } }))
+      .toBeNull();
+    expect(parseProviderSessionBinding({ ...binding, nativeSessionId: "" })).toBeNull();
   });
 
   test("assertNeverEvent throws if an unknown kind slips through at runtime", () => {

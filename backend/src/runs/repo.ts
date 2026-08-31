@@ -34,6 +34,13 @@ import { listUploadsForRuns, type RunUploadDescriptor } from "../uploads/repo";
 import { publicRunCondition } from "./visibility";
 import { MODEL_QUALIFICATION_RUN_ORIGIN } from "./origin";
 export { completeRun, pinSkillToActiveRun, setRunStatus } from "./run-state";
+export {
+  getThreadEngineSession,
+  getThreadProviderSessionState,
+  setRunEngineSession,
+  setRunProviderSession,
+  type ThreadProviderSessionState,
+} from "./provider-session-repo";
 
 // The run/step API shapes are the agent-client WIRE CONTRACT (single source of
 // truth; packages never import apps). Re-exported so the many backend modules that
@@ -250,24 +257,6 @@ export async function getRun(id: string): Promise<RunRecord | null> {
   return row ?? null;
 }
 
-/** Persist the engine's own session id for a run (a peer tool's
- * set_resume_session_id model, durably) so the thread's next turn can resume the
- * engine's native conversation explicitly by id. */
-export async function setRunEngineSession(
-  id: string,
-  sessionId: string,
-  exec: Executor = db,
-): Promise<void> {
-  const updated = await exec
-    .update(runs)
-    .set({ engineSessionId: sessionId })
-    .where(eq(runs.id, id))
-    .returning({ id: runs.id });
-  if (updated.length === 0) {
-    throw new Error(`setRunEngineSession: run ${id} not found (no row updated)`);
-  }
-}
-
 /** Persist the sandbox a run executed in (thread→sandbox mapping, durable). Returns
  * the updated row id; THROWS if no run row matched (a zero-row UPDATE must not read as
  * success - the control plane would then believe the association was recorded when it
@@ -347,7 +336,12 @@ export async function clearThreadSandbox(
 ): Promise<number> {
   const rows = await exec
     .update(runs)
-    .set({ sandboxId: null, updatedAt: new Date() })
+    .set({
+      sandboxId: null,
+      engineSessionId: null,
+      providerSession: null,
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(runs.orgId, orgId),
@@ -357,30 +351,6 @@ export async function clearThreadSandbox(
     )
     .returning({ id: runs.id });
   return rows.length;
-}
-
-/** The most recent engine session id recorded in this thread FOR THE SAME
- * engine (a thread can mix engines; sessions don't transfer across them).
- * Null → the adapter starts a fresh native session with the composed preamble. */
-export async function getThreadEngineSession(
-  threadId: string,
-  engine: string,
-  excludeRunId: string,
-): Promise<string | null> {
-  const [row] = await db
-    .select({ sid: runs.engineSessionId })
-    .from(runs)
-    .where(
-      and(
-        eq(runs.threadId, threadId),
-        eq(runs.engine, engine as RunRecord["engine"]),
-        ne(runs.id, excludeRunId),
-        isNotNull(runs.engineSessionId),
-      ),
-    )
-    .orderBy(desc(runs.createdAt), desc(runs.id))
-    .limit(1);
-  return row?.sid ?? null;
 }
 
 /** Org-scoped fetch — used by request handlers so one org can't read another's

@@ -4,8 +4,12 @@ import {
   readIntegrationCredential,
   upsertIntegrationCredential,
 } from "../src/integrations/credential-repo";
-import { findVisibleIntegrationConnectionRecord } from "../src/integrations/connection-repo";
+import {
+  findVisibleIntegrationConnectionRecord,
+  listVisibleIntegrationConnectionRecords,
+} from "../src/integrations/connection-repo";
 import { createIntegrationService } from "../src/integrations/service";
+import { createIntegrationRoutes } from "../src/integrations/routes";
 import {
   SLACK_NATIVE_RUNTIME_BINDING_ID,
   SLACK_OAUTH_CREDENTIAL_FORMAT,
@@ -144,5 +148,88 @@ describe("Slack integration credential persistence", () => {
     await expect(readIntegrationCredential(identity)).resolves.toBeNull();
     await expect(findSlackWorkspace(teamId)).resolves.toBeNull();
     await expect(findSlackUser(teamId, "U0INSTALLER")).resolves.toBeNull();
+  });
+
+  test("public OAuth callback consumes state, binds the workspace, and redirects once", async () => {
+    const orgId = uid("slack-route-org");
+    const userId = uid("slack-route-user");
+    const teamId = uid("slack-route-team");
+    let callbackCode: string | undefined;
+    const backend: DelegatedConnectionBackend = {
+      kind: "delegated",
+      runtimeBindingId: SLACK_NATIVE_RUNTIME_BINDING_ID,
+      disconnectSupported: true,
+      supports: (provider) => provider === "slack",
+      async listConnectableProviders() { return ["slack"]; },
+      async startConnect(input) {
+        return {
+          backendSessionRef: input.state,
+          runtimeBindingId: SLACK_NATIVE_RUNTIME_BINDING_ID,
+          redirectUrl: `https://slack.example/oauth?state=${input.state}`,
+          expiresAt: new Date(Date.now() + 60_000),
+        };
+      },
+      async completeConnect(input) {
+        callbackCode = input.callback?.code;
+        return {
+          runtimeBindingId: SLACK_NATIVE_RUNTIME_BINDING_ID,
+          externalConnectionId: teamId,
+          externalConnectionName: "Route Workspace",
+          authMethod: "oauth2",
+          account: { externalAccountId: teamId, displayName: "Route Workspace" },
+          scopes: ["bot:chat:write"],
+          credential: {
+            format: SLACK_OAUTH_CREDENTIAL_FORMAT,
+            serialized: JSON.stringify({
+              version: 1,
+              provider: "slack",
+              externalConnectionId: teamId,
+              credential: {
+                version: 1,
+                bot: { accessToken: "xoxb-route-secret", tokenType: "bot" },
+              },
+            }),
+          },
+          workspaceBinding: {
+            externalWorkspaceId: teamId,
+            externalActorId: "U0ROUTE",
+          },
+        };
+      },
+      async disconnect() {},
+      async listActions() { return []; },
+      async executeAction() { throw new Error("not used"); },
+    };
+    const deps = { managedBackends: [], delegatedBackends: [backend] };
+    const service = createIntegrationService(deps);
+    const started = await service.startConnect({
+      orgId,
+      userId,
+      provider: "slack",
+      returnTo: "/settings?section=providers#integrations",
+      owner: { type: "user", userId },
+    });
+    const routes = createIntegrationRoutes(deps);
+    const response = await routes.request(
+      `https://app.useagent.org/slack/callback?state=${encodeURIComponent(started.state)}&code=route-code`,
+    );
+
+    expect(response.status).toBe(303);
+    const destination = new URL(response.headers.get("location") ?? "https://invalid");
+    expect(destination.pathname).toBe("/settings");
+    expect(destination.searchParams.get("section")).toBe("providers");
+    expect(destination.searchParams.get("integration")).toBe("connected");
+    expect(destination.searchParams.get("integration_provider")).toBe("slack");
+    expect(destination.hash).toBe("#integrations");
+    expect(callbackCode).toBe("route-code");
+    expect(await listVisibleIntegrationConnectionRecords({ orgId, userId })).toHaveLength(1);
+    expect(await findSlackWorkspace(teamId)).toEqual({ orgId, userId });
+    expect(await findSlackUser(teamId, "U0ROUTE")).toEqual({ orgId, userId });
+
+    const replay = await routes.request(
+      `https://app.useagent.org/slack/callback?state=${encodeURIComponent(started.state)}&code=route-code`,
+    );
+    expect(replay.status).toBe(303);
+    expect(replay.headers.get("location")).toContain("integration=error");
   });
 });

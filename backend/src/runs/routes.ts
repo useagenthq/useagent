@@ -72,18 +72,12 @@ import {
   modelProviderReadyForEngine,
   resolveAcceptedEngine,
 } from "./engine-readiness";
-import {
-  OpenCodeQuestionError,
-  replyToOpenCodeQuestion,
-} from "../engines/opencode-question";
 import { releaseRunSandbox } from "./sandbox-release";
-import { isRuntimeThreadSessionId } from "../engines/runtime-orchestration";
-import { replyToRuntimeQuestion } from "../engines/runtime-question";
-import { strictOrgSecretRedactor } from "../secrets/store";
-import { replyToRuntimeApproval, RuntimeApprovalError } from "../engines/runtime-approval";
+import { parseProviderSessionBinding } from "@useagent/agent-harness/canonical";
 import { UploadClaimError } from "../uploads/repo";
 import { registerRunReadRoutes } from "./read-routes.js";
 import { registerExecutionGraphRoutes } from "./execution-graph-routes.js";
+import { registerProviderSessionRoutes } from "./provider-session-routes.js";
 import { boundedRunPrompt, runCreateBodyLimit, type RunCreateBody } from "./run-create-policy";
 export type { RunCreateBody } from "./run-create-policy";
 
@@ -247,7 +241,8 @@ export async function handleRunCreate(
     parentScope = parent.memoryScope;
     parentModel = parent.model;
     parentEngine = parent.engine;
-    activeSessionId = parent.engineSessionId ?? null;
+    activeSessionId = parseProviderSessionBinding(parent.providerSession)?.nativeSessionId ??
+      parent.engineSessionId ?? null;
   }
   // Repo scope: a ROOT run may pick REPOSITORIES (each validated against the set
   // GET /api/repos actually offers — an unknown/malformed value is a client
@@ -598,88 +593,6 @@ runsRoutes.post("/:id/cancel", async (c) => {
   }
 });
 
-// Resolve a native provider Question request IN the currently-running turn.
-// This is control traffic, not a new user turn: answering must unblock the
-// resident session rather than enqueue another run behind the blocked one.
-runsRoutes.post("/:id/questions/:questionId/reply", async (c) => {
-  const run = await getRunForOrg(c.get("orgId"), c.req.param("id"));
-  if (!run) return c.json({ error: "run not found" }, 404);
-  const runtimeSession = isRuntimeThreadSessionId(run.engineSessionId ?? "");
-  if (!runtimeSession && run.engine !== "opencode") {
-    return c.json({ error: "questions_not_supported", engine: run.engine }, 409);
-  }
-  if (run.status !== "running" || !run.engineSessionId) {
-    return c.json({ error: "question_session_not_active" }, 409);
-  }
-  let body: { answers?: unknown; resources?: unknown; attachments?: unknown };
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "invalid JSON body" }, 400);
-  }
-  if (body.resources !== undefined || body.attachments !== undefined) {
-    return c.json({ error: "question replies cannot add run resources" }, 400);
-  }
-  try {
-    const reply = runtimeSession ? replyToRuntimeQuestion : replyToOpenCodeQuestion;
-    const redact = await strictOrgSecretRedactor(run.orgId);
-    const result = await reply({
-      runId: run.id,
-      threadId: run.threadId,
-      sessionId: run.engineSessionId,
-      questionId: c.req.param("questionId"),
-      answers: body.answers,
-      signal: c.req.raw.signal,
-      redact,
-    });
-    return c.json({ ok: true, already_answered: result.alreadyAnswered });
-  } catch (error) {
-    if (error instanceof OpenCodeQuestionError) {
-      return c.json({ error: error.code, message: error.message }, error.status);
-    }
-    console.error(`[question] reply failed for run ${run.id}:`, error);
-    return c.json({ error: "question_reply_failed" }, 502);
-  }
-});
-
-// Resolve a native provider approval inside the active turn. The response is
-// dispatched to the runtime resident provider session and durably recorded before the
-// UI considers the approval closed.
-runsRoutes.post("/:id/approvals/:requestId/reply", async (c) => {
-  const run = await getRunForOrg(c.get("orgId"), c.req.param("id"));
-  if (!run) return c.json({ error: "run not found" }, 404);
-  if (
-    run.status !== "running" ||
-    !run.engineSessionId ||
-    !isRuntimeThreadSessionId(run.engineSessionId)
-  ) {
-    return c.json({ error: "approval_session_not_active" }, 409);
-  }
-  let body: { decision?: unknown };
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "invalid JSON body" }, 400);
-  }
-  try {
-    const result = await replyToRuntimeApproval({
-      runId: run.id,
-      threadId: run.threadId,
-      sessionId: run.engineSessionId,
-      requestId: c.req.param("requestId"),
-      decision: body.decision,
-      signal: c.req.raw.signal,
-    });
-    return c.json({ ok: true, already_answered: result.alreadyAnswered });
-  } catch (error) {
-    if (error instanceof RuntimeApprovalError) {
-      return c.json({ error: error.code, message: error.message }, error.status);
-    }
-    console.error(`[approval] reply failed for run ${run.id}:`, error);
-    return c.json({ error: "approval_reply_failed" }, 502);
-  }
-});
-
 // Explicit eval/test cleanup. Product threads remain warm by default; callers
 // release only when they no longer need resume state. Org scope + active-run
 // checks prevent cross-tenant deletion or tearing down a live turn.
@@ -695,6 +608,7 @@ runsRoutes.delete("/:id/sandbox", async (c) => {
 
 registerRunReadRoutes(runsRoutes);
 registerExecutionGraphRoutes(runsRoutes);
+registerProviderSessionRoutes(runsRoutes);
 
 // SSE trace stream: replay existing steps, then live-push new ones.
 //

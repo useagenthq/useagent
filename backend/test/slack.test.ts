@@ -17,7 +17,7 @@ import {
   setDefaultTimeout,
   test,
 } from "bun:test";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { artifacts, commands, runs, slackOutbox, slackRunResponses, slackThreads, userUploads } from "../src/db/schema";
@@ -525,8 +525,9 @@ describe("slack event → run", () => {
     await createRun({ id: runId, prompt: "share build", model: "claude-opus-5", engine: "mock", orgId: DEV_ORG_ID, userId: null, parentRunId: null, threadId: runId });
     await linkSlackThread({ teamId: TEAM, channel, threadTs: ts, rootRunId: runId, orgId: DEV_ORG_ID });
     await createSlackRunResponse({ runId, teamId: TEAM, channel, threadTs: ts });
-    const storageKey = "c".repeat(64); // content-addressed: keys are sha256 hex
-    await artifactStorage().put(storageKey, Buffer.from("png-bytes"));
+    const artifactBytes = Buffer.from("png-bytes");
+    const storageKey = createHash("sha256").update(artifactBytes).digest("hex");
+    await artifactStorage().put(storageKey, artifactBytes);
     await db.insert(artifacts).values({
       orgId: DEV_ORG_ID,
       runId,
@@ -535,7 +536,7 @@ describe("slack event → run", () => {
       name: "shot.png",
       contentType: "image/png",
       sizeBytes: 9,
-      sha256: "b".repeat(64),
+      sha256: storageKey,
       storageKey,
     });
     await finalizeRun(runId, "completed", "All done, screenshot attached.", 1);
@@ -880,6 +881,7 @@ describe("slack native stream and Block Kit fallback", () => {
     });
     await enqueuePostCard({
       idempotencyKey: `slack-card:${TEAM}:${runId}`,
+      orgId: DEV_ORG_ID,
       teamId: TEAM,
       channel,
       threadTs: ts,
@@ -904,7 +906,7 @@ describe("slack native stream and Block Kit fallback", () => {
   test("finalize updates the fallback card when only a fallback message ts exists", async () => {
     const { runId, channel, ts } = await rootThread("stream stop");
     const queued = buildRunCard({ title: "stream stop", phase: "queued", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
-    await enqueuePostCard({ idempotencyKey: `slack-card:${TEAM}:${runId}`, teamId: TEAM, channel, threadTs: ts, runId, blocks: queued.blocks, text: queued.text });
+    await enqueuePostCard({ idempotencyKey: `slack-card:${TEAM}:${runId}`, orgId: DEV_ORG_ID, teamId: TEAM, channel, threadTs: ts, runId, blocks: queued.blocks, text: queued.text });
     const cardTs = (await waitFor(async () => {
       const l = await findSlackRunResponse(runId);
       return l?.fallbackMessageTs ? l : null;
@@ -942,7 +944,7 @@ describe("slack native stream and Block Kit fallback", () => {
   test("permanent stream and card update failures fall back to a fresh reply", async () => {
     const { runId, channel, ts } = await rootThread("stream update fails");
     const queued = buildRunCard({ title: "stream update fails", phase: "queued", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
-    await enqueuePostCard({ idempotencyKey: `slack-card:${TEAM}:${runId}`, teamId: TEAM, channel, threadTs: ts, runId, blocks: queued.blocks, text: queued.text });
+    await enqueuePostCard({ idempotencyKey: `slack-card:${TEAM}:${runId}`, orgId: DEV_ORG_ID, teamId: TEAM, channel, threadTs: ts, runId, blocks: queued.blocks, text: queued.text });
     await waitFor(async () => {
       const l = await findSlackRunResponse(runId);
       return l?.fallbackMessageTs ? true : null;
@@ -974,6 +976,7 @@ describe("slack native stream and Block Kit fallback", () => {
     const card = buildRunCard({ title, phase: "queued", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
     await enqueueStartStream({
       idempotencyKey: `slack-stream:start:${TEAM}:${t.runId}`,
+      orgId: DEV_ORG_ID,
       teamId: TEAM,
       channel: t.channel,
       threadTs: t.ts,
@@ -1034,6 +1037,7 @@ describe("slack native stream and Block Kit fallback", () => {
     const append = (seq: number, text: string, offset: number) =>
       enqueueAppendStream({
         idempotencyKey: `slack-stream:text:${TEAM}:${t.runId}:${seq}`,
+        orgId: DEV_ORG_ID,
         teamId: TEAM,
         channel: t.channel,
         threadTs: t.ts,
@@ -1079,6 +1083,7 @@ describe("slack native stream and Block Kit fallback", () => {
       const card = buildRunCard({ title: "append dies", phase: "running", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
       await enqueueAppendStream({
         idempotencyKey: `slack-stream:step:${TEAM}:${t.runId}:s1`,
+        orgId: DEV_ORG_ID,
         teamId: TEAM,
         channel: t.channel,
         threadTs: t.ts,
@@ -1101,13 +1106,17 @@ describe("slack native stream and Block Kit fallback", () => {
 
   test("set_thread_status delivers once per idempotency key (replay-safe)", async () => {
     const marker = uid("shimmer");
+    const runId = crypto.randomUUID();
+    await createRun({ id: runId, prompt: marker, model: "m", engine: "mock", orgId: DEV_ORG_ID, userId: null, parentRunId: null, threadId: runId });
     const channel = `D${uid("dm")}`;
     const ts = `${uid("ts")}.1`;
     const entry = {
       idempotencyKey: `slack-thread-status:step:${TEAM}:${marker}`,
+      orgId: DEV_ORG_ID,
       teamId: TEAM,
       channel,
       threadTs: ts,
+      runId,
       status: `is working: ${marker}`,
     };
     await enqueueThreadStatus(entry);

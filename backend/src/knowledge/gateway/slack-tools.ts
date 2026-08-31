@@ -1,11 +1,15 @@
 import { findSlackThreadByRoot } from "../../slack/repo";
-import { enqueueUploadFile } from "../../slack/outbox";
+import {
+  enqueueUploadFile,
+  slackArtifactDeliveryIdempotencyKey,
+} from "../../slack/outbox";
 import {
   ARTIFACT_WORKSPACE_ROOT,
   publishSandboxArtifact,
   resolveArtifactForThread,
 } from "../../artifacts/publish";
 import type { ToolTokenClaims } from "./token";
+import { db } from "../../db/client";
 
 // ---------------------------------------------------------------------------
 // Agent-callable Slack tool. A Slack-originated run can deliver an existing
@@ -88,7 +92,7 @@ export async function executeSlackTool(
   const title = typeof args.title === "string" && args.title.trim() ? args.title.trim() : undefined;
 
   // Gate: only Slack-originated runs (their thread maps to a Slack thread).
-  const thread = await findSlackThreadByRoot(claims.threadId);
+  const thread = await findSlackThreadByRoot(claims.threadId, db, claims.orgId);
   if (!thread) {
     return toolError(
       "This run is not linked to a Slack thread, so files cannot be delivered to Slack. Publish the file as an artifact instead (artifact_publish) so the user can download it.",
@@ -123,13 +127,29 @@ export async function executeSlackTool(
 
   // Durable delivery reads the SAME immutable bytes as the browser endpoint.
   await enqueueUploadFile({
-    idempotencyKey: `slack-upload:${claims.threadId}:${artifact.id}:${thread.channel}:${thread.threadTs}`,
+    idempotencyKey: slackArtifactDeliveryIdempotencyKey({
+      teamId: thread.teamId,
+      runId: claims.runId,
+      artifactId: artifact.id,
+      artifactRevision: artifact.workpieceRevision,
+      artifactSha256: artifact.sha256,
+      channel: thread.channel,
+      threadTs: thread.threadTs,
+    }),
+    orgId: claims.orgId,
     teamId: thread.teamId,
     channel: thread.channel,
     threadTs: thread.threadTs,
     filename: artifact.name,
     title,
     artifactId: artifact.id,
+    artifactRunId: artifact.runId,
+    artifactThreadId: artifact.threadId,
+    deliveryRunId: claims.runId,
+    artifactSha256: artifact.sha256,
+    artifactRevision: artifact.workpieceRevision,
+    artifactStorageKey: artifact.storageKey,
+    artifactContentType: artifact.contentType,
     size: artifact.sizeBytes,
   });
 

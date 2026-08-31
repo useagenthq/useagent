@@ -183,6 +183,7 @@ export type CanonicalEventBody =
       /** Optional for backward compatibility with persisted pre-v1 frames. */
       executionCapabilities?: ExecutionCapabilitySnapshot;
       source?: string;
+      resumed?: boolean;
     }
   | { kind: "session.metadata"; metadata: Record<string, unknown> }
   | { kind: "turn.started" }
@@ -374,6 +375,64 @@ export interface HarnessSession {
    * pre-v1 sessions remain readable; current adapters must supply it. */
   executionCapabilities?: ExecutionCapabilitySnapshot;
   generation: number;
+}
+
+export const PROVIDER_SESSION_BINDING_VERSION = 1 as const;
+
+/** Versioned durable authority for recovery and control routing. This is the
+ * complete provider/runtime identity of one native session; product code must
+ * never reconstruct it from a session-id prefix or engine-name guess. */
+export interface ProviderSessionBinding {
+  version: typeof PROVIDER_SESSION_BINDING_VERSION;
+  provider: ProviderId;
+  nativeSessionId: string;
+  protocol: string;
+  generation: number;
+  runtime: HarnessRuntime;
+  authEpoch: string | null;
+}
+
+function boundedBindingString(value: unknown, max: number): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= max && !/[\u0000-\u001f\u007f]/u.test(value);
+}
+
+export function providerSessionBinding(
+  session: HarnessSession,
+  authEpoch: string | null = null,
+): ProviderSessionBinding {
+  const binding: ProviderSessionBinding = {
+    version: PROVIDER_SESSION_BINDING_VERSION,
+    provider: session.provider,
+    nativeSessionId: session.nativeSessionId,
+    protocol: session.protocolVersion,
+    generation: session.generation,
+    runtime: session.runtime,
+    authEpoch,
+  };
+  const parsed = parseProviderSessionBinding(binding);
+  if (!parsed) throw new Error("provider session binding is invalid");
+  return parsed;
+}
+
+export function parseProviderSessionBinding(value: unknown): ProviderSessionBinding | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const binding = value as Partial<ProviderSessionBinding>;
+  const runtime = binding.runtime as Partial<HarnessRuntime> | undefined;
+  if (
+    binding.version !== PROVIDER_SESSION_BINDING_VERSION ||
+    !boundedBindingString(binding.provider, 64) ||
+    !boundedBindingString(binding.nativeSessionId, 1024) ||
+    !boundedBindingString(binding.protocol, 256) ||
+    !Number.isSafeInteger(binding.generation) ||
+    (binding.generation ?? 0) < 1 ||
+    !runtime ||
+    (runtime.kind !== "sandbox" && runtime.kind !== "managed") ||
+    !boundedBindingString(runtime.id, 256) ||
+    !(binding.authEpoch === null || boundedBindingString(binding.authEpoch, 256))
+  ) {
+    return null;
+  }
+  return binding as ProviderSessionBinding;
 }
 
 /** Where a translator emits canonical events; the backend persists them before
@@ -615,11 +674,13 @@ export function parseSessionStartedFrame(payload: unknown): {
   capabilities: NegotiatedCapabilities;
   executionCapabilities?: ExecutionCapabilitySnapshot;
   source?: string;
+  resumed?: boolean;
 } | null {
   const rec = payload as {
     capabilities?: unknown;
     executionCapabilities?: unknown;
     source?: unknown;
+    resumed?: unknown;
   } | null;
   if (!rec || typeof rec !== "object" || rec.capabilities == null) return null;
   const executionCapabilities = normalizeExecutionCapabilitySnapshot(rec.executionCapabilities);
@@ -627,6 +688,7 @@ export function parseSessionStartedFrame(payload: unknown): {
     capabilities: normalizeNegotiatedCapabilities(rec.capabilities),
     ...(executionCapabilities ? { executionCapabilities } : {}),
     ...(typeof rec.source === "string" && rec.source ? { source: rec.source } : {}),
+    ...(typeof rec.resumed === "boolean" ? { resumed: rec.resumed } : {}),
   };
 }
 
