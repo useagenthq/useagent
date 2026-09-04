@@ -29,14 +29,13 @@ The list refreshes on create, update, and delete so the surface stays current.
   <Card title="Starts disabled" icon="toggle-left">
     A new automation is created disabled. It fires nothing until you enable it.
   </Card>
-  <Card title="Same lane, same guarantees" icon="shield-check">
-    A triggered run gets durable commands, threading, restart survival, and the
-    approval lane, exactly like a manual run.
+  <Card title="Shared run lifecycle" icon="shield-check">
+    A triggered run uses the same durable command, queue, thread, and approval
+    machinery as a manual run.
   </Card>
 </CardGroup>
 
 :::note
-Because an automation submits through the command lane with an idempotency key, a
-misfire or a retry cannot double-run the same scheduled work. Fire-now is a
-convenience for testing a trigger without waiting for its schedule.
+Automation firings use stable command identities so retries can be deduplicated.
+Fire-now is useful for testing a trigger without waiting for its schedule.
 :::

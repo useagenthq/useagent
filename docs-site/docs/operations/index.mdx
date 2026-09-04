@@ -1,49 +1,36 @@
 ---
 title: Operations
-description: How UseAgent ships, how it proves a release, and the invariants production runs on.
+description: Deploy, verify, and back up a UseAgent installation.
 sidebar:
   label: Overview
   order: 1
 ---
 
-Operations in UseAgent are built around one principle: a release must prove itself
-before it ships, and roll back cleanly if it cannot.
+A self-hosted installation needs a running control plane, persistent storage,
+configured provider access, and a tested recovery procedure.
 
 <CardGroup cols={2}>
-  <Card title="Deployment lanes" href="/operations/deployment" icon="rocket">
-    The guarded release and the provider-connection bootstrap, both ending in
-    the atomic frontend swap.
+  <Card title="Self-hosting" href="/operations/deployment" icon="server">
+    What the host setup script installs and what you need to configure afterward.
   </Card>
   <Card title="Verification" href="/operations/verification" icon="check-check">
-    The test and parity arsenal, from isolated-database unit suites to real
-    engine journeys.
+    Available checks for code, contracts, docs, and live runtime behavior.
   </Card>
-  <Card title="Invariants" href="/operations/invariants" icon="lock">
-    Single backend per database, write-only secrets, a restricted gateway role,
-    and immutable-source releases.
+  <Card title="Operational invariants" href="/operations/invariants" icon="lock">
+    The single-backend requirement, boot order, and credential boundaries.
   </Card>
   <Card title="Backups and restore" href="/operations/backups" icon="archive">
-    A daily encrypted snapshot with verify and restore lanes, and the off-host
-    requirement.
+    What to preserve and how to verify a recovery on a separate host.
   </Card>
 </CardGroup>
 
-## The shape of a safe change
+## Before running real work
 
-<Steps>
-  <Step title="Type-check everything">
-    `bun run typecheck` covers the frontend, backend, and shared packages, and
-    must pass before a change is done.
-  </Step>
-  <Step title="Verify in isolation">
-    Suites run against a throwaway database so they never disturb a live one.
-  </Step>
-  <Step title="Certify a candidate">
-    The guarded release runs fail-closed gates and per-engine parity canaries
-    against a candidate before it can ship.
-  </Step>
-  <Step title="Roll back on any failure">
-    Source, environment, Caddy configuration, and services all restore to the
-    prior state if any preflight or parity journey fails.
-  </Step>
-</Steps>
+1. Verify the frontend and backend health.
+2. Confirm the selected provider account and sandbox can execute a small task.
+3. Check that the gateway and storage paths are configured for your deployment.
+4. Verify a published artifact can be opened and downloaded.
+5. Take a backup and test restoration to an isolated environment.
+
+These docs describe the checked-in setup and runtime contracts. They do not
+certify the configuration or health of an existing hosted deployment.

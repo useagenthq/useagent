@@ -1,6 +1,6 @@
 ---
 title: Realtime and canonicalization
-description: The two SSE streams, the canonicalization outbox, and why exactly one backend runs per database today.
+description: The two SSE streams, the canonicalization outbox, and why the current design supports one backend per database.
 sidebar:
   order: 3
 ---
@@ -54,12 +54,12 @@ canonical events for fidelity and debugging. Four invariants govern the lane:
   source watermark (max native frame seq plus a step content signature) is
   stable across the translate; until then it retries, never freezing a partial
   snapshot.
-- **Persist before publish.** Canonical rows are written with an immutable
-  thread-wide delivery cursor and append-only revisions, and only then emitted
-  to live subscribers, so a reconnect replays exactly what live showed.
-- **Never trust provisional.** The client trusts the canonical lane for a run
-  only after the durable canonical-complete signal, never on the mere presence
-  of provisional rows.
+- **Persist before publish.** Final canonical rows are written with a
+  thread-wide delivery cursor and only then emitted to live subscribers. During
+  finalization, the worker replaces that run's prior canonical rows in one
+  transaction instead of exposing provisional output.
+- **Trust completion.** The client switches to the canonical lane for a run only
+  after the durable canonical-complete signal.
 
 ## One backend per database
 
@@ -74,8 +74,9 @@ supported.
 :::
 
 Boot acquires a per-database Postgres advisory lock. A duplicate backend warns by
-default and refuses to boot when `REQUIRE_SINGLE_BACKEND=1`, which production
-sets. Multi-replica realtime would require a durable, database-backed seal and
+default and refuses to boot when `REQUIRE_SINGLE_BACKEND=1`. Deployment
+configuration must enable that check where single-backend enforcement is
+required. Multi-replica realtime would require a durable, database-backed seal and
 org-event fan-out first; until that exists, adding replicas is not safe and is
 not claimed. See [Operational invariants](/operations/invariants).
 

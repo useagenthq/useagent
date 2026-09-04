@@ -6,10 +6,9 @@ sidebar:
   order: 1
 ---
 
-UseAgent's pitch fits in one sentence: **a prompt becomes a durable, replayable
-run**, executed by the coding engine of your choice inside an isolated Linux
-workstation, rendered live from one canonical event log, and finished with
-everything worth keeping captured for review.
+UseAgent turns a prompt into a durable run. A coding engine can execute it in an
+isolated Linux workstation, or the `chat` engine can answer without a sandbox.
+The backend records the run and the UI follows it through one session model.
 
 This section unpacks that sentence one commitment at a time. Each page is a deep
 dive into a property the platform actually enforces, written from the shipped
@@ -29,13 +28,12 @@ code rather than from aspiration.
     write-only encrypted secrets.
   </Card>
   <Card title="Reliability" href="/features/reliability" icon="rotate-ccw">
-    Runs survive backend restarts, reconnects replay exactly what live viewers
-    saw, retries are idempotent, and releases must pass real engine journeys
-    before they ship.
+    Durable commands, reconnect snapshots, per-thread dispatch, recovery where
+    the engine supports it, and guarded release checks.
   </Card>
   <Card title="Engines" href="/features/engines" icon="plug">
-    Codex, Claude, and OpenCode behind a neutral adapter. The inner loop is
-    rented; orchestration, history, approvals, and rendering stay yours.
+    OpenCode, Pi, Codex, and Claude behind provider drivers, plus direct chat.
+    Each path advertises the capabilities it actually supports.
   </Card>
   <Card title="The workspace" href="/features/workspace" icon="monitor">
     A real Linux workstation per thread: repositories, terminal, a visible
@@ -56,12 +54,9 @@ code rather than from aspiration.
 ## How these pages are written
 
 :::note
-**Grounding discipline.** Every claim in this section is verified against the
-code it describes, and file paths are cited where the mechanism lives. There
-are no invented benchmarks and no aspirational numbers: where a count appears
-(30 canonical event kinds, 20 capability flags, a 22-case release parity
-matrix), it is counted from the source. Where a capability is narrower than
-the ambition, the page says so.
+**Grounding discipline.** These pages describe the current repository. They
+separate code-backed behavior from deployment-dependent checks and avoid
+performance or production claims that need live evidence.
 :::
 
 If you want the neutral reference instead of the argument, the same ground is

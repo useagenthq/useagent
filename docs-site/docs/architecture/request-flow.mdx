@@ -1,6 +1,6 @@
 ---
 title: Request flow
-description: One turn, end to end. From an accepted command to a rendered timeline, and the promote-to-agent path from lightweight chat.
+description: One turn, end to end, from an accepted command to a rendered timeline.
 sidebar:
   order: 2
 ---
@@ -12,24 +12,25 @@ This is the life of a single agent turn, following the units from
 
 <Steps>
   <Step title="A command is accepted">
-    A prompt from the web app, Slack, or an automation becomes a durable command
-    with an idempotency key. It enters the one command lane every channel shares.
+    A prompt from the web app, Slack, or an automation becomes a durable command.
+    Callers may add an idempotency key for safe retries. It enters the command
+    lane every channel shares.
     A thread admits one in-flight turn at a time; additional prompts, including
     gateway child-session requests, queue durably in the commands mailbox and
     dispatch serially per thread under a per-thread advisory lock.
   </Step>
   <Step title="A run is created">
-    The backend creates a run inside a thread. A reply reuses the thread's sandbox
-    and working directory; a root run claims a fresh sandbox, preferably from the
-    warm pool.
+    The backend creates a run inside a thread. A sandbox-backed reply reuses the
+    thread's workstation when it is still valid. A new sandbox-backed thread
+    claims or creates a sandbox. The `chat` engine skips this step.
   </Step>
-  <Step title="The turn reaches a resident engine session">
+  <Step title="The turn reaches the selected engine">
     The engine registry resolves a `ProviderDriver` for the engine, and the turn
-    is dispatched to the thread's resident engine session inside the sandbox:
-    OpenCode behind its own server, Claude and Codex as persistent ACP agents
-    behind the in-sandbox relay. A per-turn one-shot CLI runner exists only as
-    the `ENGINE_TRANSPORT=cli` fallback. The engine works in its own directory
-    and starts emitting native events.
+    is dispatched to its registered execution path. Current paths include native
+    OpenCode, Pi over its RPC bridge, selected Codex/OpenCode/Claude sessions over
+    the orchestration runtime, and ACP compatibility for Codex or Claude. The
+    `chat` engine calls the model directly without a sandbox. Engine capability
+    maps describe which controls and timeline surfaces are available.
   </Step>
   <Step title="Privileged work goes through the gateway">
     When the engine needs to read a repository, search knowledge, use the desktop,
@@ -38,12 +39,13 @@ This is the life of a single agent turn, following the units from
     request with a 15-minute TTL (pending, then approved, denied, or expired). A
     human resolves it through `/api/gateway/approvals`, and the agent polls out
     a one-shot capability bound to the exact run, tool, and normalized
-    arguments. See [Gateway tools and
+    arguments. That capability expires after at most two minutes. See [Gateway tools and
     approvals](/concepts/gateway-tools-and-approvals).
   </Step>
-  <Step title="Output is canonicalized into steps">
-    Native events are translated into canonical steps and appended to the event
-    log, with native frames retained for fidelity.
+  <Step title="Output is recorded and projected">
+    The worker records steps and native provider frames during the turn. After
+    finalization, the canonicalization outbox builds the provider-neutral event
+    projection used by the session UI.
   </Step>
   <Step title="The timeline renders live">
     The session view subscribes to the thread stream, reduces steps into state,
@@ -57,24 +59,25 @@ This is the life of a single agent turn, following the units from
   </Step>
 </Steps>
 
-## Promote a chat into a run
+## Direct chat uses the same entry point
 
-The lightweight chat surface at the app root is a **no-sandbox** surface: it
-streams answers over SSE with read-only knowledge, wiki, and memory retrieval
-cited inline. When a conversation needs real work, it can be **promoted into a
-full agent run**, which then follows the flow above with a sandbox and engine.
+The product composer exposes `chat` as a no-sandbox engine. It still creates a
+durable command and run, so direct conversation and sandbox-backed work share a
+thread entry point and session UI. The older stateless `/api/chat` SSE route is
+still mounted as a rollback surface, but the app root redirects to `/agent/new`.
 
 :::tip
-The chat surface and the agent run share retrieval and rendering primitives, so a
-promotion continues the same conversation rather than starting over.
+Choose `chat` for a model answer and a sandbox-backed engine when the task needs
+files, a terminal, repositories, or a desktop.
 :::
 
 ## Reconnection and recovery
 
-Two independent mechanisms keep a turn durable:
+Two mechanisms cover different failure modes:
 
 - **Thread stream reconnect** hands back a fresh durable snapshot, so a dropped
   browser connection resyncs cleanly.
-- **Restart reconciliation** re-probes an in-flight sandbox session after a
-  backend bounce and adopts the real result. See
+- **Restart reconciliation** re-probes an in-flight sandbox session when the
+  selected driver supports it. Pi currently resumes settled session history but
+  does not reconstruct an in-flight reconciliation stream. See
   [Sandboxes](/concepts/sandboxes-and-desktop#restart-reconciliation).

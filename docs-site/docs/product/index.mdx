@@ -11,8 +11,8 @@ power a product with real screens. Those screens fall into three tiers.
 
 <CardGroup cols={3}>
   <Card title="Start a task" icon="square-pen">
-    The composer at `/agent/new`. Pick an engine, model, memory scope, and
-    repositories, attach files, and start a run or a direct conversation.
+    The composer at `/agent/new`. Pick an engine, model, repositories, branches,
+    and a skill or playbook, then attach files and start a thread.
   </Card>
   <Card title="Watch it run" icon="activity">
     The session view at `/session/:id`. A live timeline plus a side rail of
@@ -37,12 +37,13 @@ power a product with real screens. Those screens fall into three tiers.
 | `/knowledge`, `/wiki` | Reference material and published documents. |
 | `/memory` | The team memory hub: browse, capture log, recall ledger. |
 | `/learnings` | The review queue for proposed knowledge and skill revisions. |
-| `/artifacts` | Files and outputs produced by runs, with workpiece editors. |
+| `/artifacts`, `/agent/artifacts` | Files and outputs produced by runs, with filters and workpiece editors. |
+| `/tasks` | The organization task board. |
 | `/secrets` | The encrypted organization secrets manager. |
 | `/settings` | Workspace configuration, provider connections, and usage. |
 | `/review` | A GitHub pull-request review workspace. |
 | `/apps`, `/agent/plugins` | Integrations and the connections available to agents. |
-| `/foundation`, `/lab` | The foundation smoke page and the component lab. |
+| `/foundation`, `/lab` | Internal design-system and component preview pages. |
 
 `/` redirects to `/agent/new`, and the old `/agent/schedules` route redirects to
 `/agent/automations`.

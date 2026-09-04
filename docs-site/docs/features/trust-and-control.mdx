@@ -6,28 +6,21 @@ sidebar:
 ---
 
 An autonomous agent is only as trustworthy as the worst thing its sandbox can
-do. UseAgent's answer is structural: the sandbox is **untrusted by design**,
-holds no platform credentials, and everything privileged happens on the
-trusted side of a boundary it cannot cross.
+do. UseAgent treats the sandbox as **untrusted by design**. Platform database,
+provider, and integration authority stays behind capability-authenticated
+services. Organization tooling secrets are handled separately: production
+defaults to gateway-only delivery, while development can enable compatibility
+injection for approved non-provider values.
 
-<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "10px" }}>
-  <img
-    src="/diagrams/gateway-trust-boundary.svg"
-    alt="Trust boundary diagram: the untrusted sandbox calls the gateway process with MCP tools/call and a Bearer tool token; the gateway reaches Postgres through a restricted role, provider APIs with server-side keys, GitHub, GCS, and Slack; an approval loop turns a pending request into a one-shot argument-bound capability."
-    style={{ width: "100%", display: "block", borderRadius: "8px" }}
-  />
-</div>
+The gateway handles platform-owned privileged work. Short-lived capabilities
+cross the boundary; long-lived platform credentials remain on the trusted side.
 
-*The only surface a sandbox can reach is the gateway. Credentials never cross
-the boundary; human approval mints one-shot capabilities.*
+## Product control stays outside the sandbox
 
-## The harness lives outside the sandbox
-
-This is the founding decision. The event log, the workers, org scoping,
-knowledge, and secrets all live in the backend; the sandbox runs the engine
-and the work. The UI renders the durable log, never a live process. Everything
-below follows from it. See [Architecture](/architecture) for why the
-alternatives were rejected.
+Identity, admission, durable records, workers, org scoping, knowledge, and
+platform credentials live on the trusted side. Engine processes and some
+engine-specific session machinery live inside the workstation. The UI consumes
+backend snapshots and streams rather than embedding an engine UI.
 
 ## A gateway, not an open backend
 
@@ -61,7 +54,8 @@ scopes fail closed**.
 
 ## Humans mint the dangerous capabilities
 
-Destructive or outward-facing gated operations pause for a person:
+Destructive or outward-facing gated operations pause for a person. The request
+expires after 15 minutes, and an approved capability lasts for at most two:
 
 <Steps>
   <Step title="The agent asks">
@@ -82,9 +76,9 @@ Destructive or outward-facing gated operations pause for a person:
   </Step>
 </Steps>
 
-The lane is live and exercised by the guarded release: a destructive gateway
-tool pauses for the card and resumes with the capability. The full tool
-surface and its per-run filtering are covered in [Gateway, tools, and
+The lane stores approval requests and guarded state transitions. Whether a
+particular engine and deployment exercise it is checked by runtime and release
+tests. The full tool surface and its per-run filtering are covered in [Gateway, tools, and
 approvals](/concepts/gateway-tools-and-approvals).
 
 ## Secrets are write-only, and injection is visible
@@ -98,11 +92,11 @@ Organization secrets follow three rules (`backend/src/secrets/`):
 2. **Write-only through the API.** Metadata is visible; the value is never
    returned to any client, and provider API keys are resolved inside the
    signed provider gateway, never handed to a sandbox.
-3. **Injection is intentional and announced.** Secrets an organization
-   configures for the engine's own tooling are injected into the sandbox
-   environment, and the timeline shows a names-only `secrets.injected`
-   marker, so a reviewer can see what was available without ever seeing a
-   value.
+3. **Production defaults to gateway-only.** In production, decrypted values stay
+   in backend memory for redaction and trusted consumers; the sandbox receives no
+   secret files, names, or environment values. Development compatibility mode can
+   inject approved non-provider tooling secrets and emits a names-only
+   `secrets.injected` marker.
 
 ## The tenant boundary is not client-side
 

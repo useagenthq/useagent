@@ -17,6 +17,7 @@ immutable bytes and authorization. All routes are org-session scoped. See
 | GET | `/api/artifacts` | List artifacts for the org, optionally filtered. | Query `run_id`, `thread_id`. Returns `{artifacts}`. |
 | POST | `/api/artifacts` | Create an authored artifact. | Body: `run_id` (required), `thread_id`, `kind` (`document`/`spreadsheet`/`presentation`/`pdf`), `name`, `upload_id`, `state`. `201` created or `200` existing; `409` on upload-claim conflict. |
 | GET | `/api/artifacts/:id` | Fetch an artifact descriptor. | `{artifact}`. `404 not found`. |
+| GET | `/api/artifacts/:id/quality` | Read the inspection status for the current artifact revision. | Returns `unverified` with the current revision and subject digest, or `verified` with the matching receipt. `404` when the artifact does not exist. |
 | GET | `/api/artifacts/:id/content` | Stream artifact bytes (range-capable). | Query `download=1` forces attachment. Honors `Range`; `200` or `206`, `416` on a bad range, `410` when bytes are unavailable. `HEAD` is also served (headers only). |
 | GET | `/api/artifacts/:id/preview` | Rendered-PDF preview of an Office binary, inline. | `application/pdf`, `cache-control: private, max-age=300`. `404` no preview, `410` unavailable. |
 | GET | `/api/artifacts/:id/workpiece` | The workpiece descriptor plus canonical (upgraded) state. | `{workpiece, state}`. `404` when the artifact is not a workpiece. |

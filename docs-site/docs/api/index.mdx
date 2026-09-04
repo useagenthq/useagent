@@ -53,6 +53,8 @@ These prefixes carry their own auth boundary and are not org-scoped:
 - `GET /api/health`, `GET /api/config` - secret-free liveness and client config.
 - `/api/auth/*` - better-auth's own login and session endpoints.
 - `/api/slack/*` - Slack request-signature verified (see [Slack](/api/platform#slack)).
+- `GET /api/integrations/slack/callback` and
+  `GET /api/integrations/callback/slack` - one-use OAuth-state authenticated.
 
 Internal loopback bridges under `/api/internal/*` (the sandbox gateway, operator
 dispatch, and canonicalization lanes) authenticate themselves with short-lived
@@ -96,7 +98,8 @@ streaming](/concepts/events-and-streaming).
 | Method | Path | Description | Notes |
 | --- | --- | --- | --- |
 | GET | `/api/health` | Liveness. | `{ status: "ok" }`. Public. |
-| GET | `/api/config` | Client capability contract. | `auth` (`google`, `emailPassword`), `allowDevOrg`, `release`, readiness-filtered `engines` and `models`, `sandbox.provider`, `capabilities` (`github`, `slack`, `memory`, `toolGateway`), `artifacts.fidelity`. Public. |
+| GET | `/api/config` | Client capability contract. | Includes `auth`, `release`, dispatch-ready `engines`/`models`, discoverable `configuredEngines`/`configuredModels`, `engineReadiness`, sandbox and integration capabilities, and artifact fidelity. Public. |
+| POST | `/api/config/models/refresh` | Refresh the OpenCode OpenRouter `:free` model lane. | Org-session. `429` during the refresh cooldown, `409` when the lane is managed by the qualifier, and `502` when refresh fails while the stale lane remains available. |
 
 ## The rest of the surface
 

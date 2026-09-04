@@ -1,64 +1,72 @@
 ---
 title: Verification
-description: The test and parity arsenal, from fast isolated-database suites to real engine journeys run against a release candidate.
+description: Choose the smallest check that proves the behavior you changed.
 sidebar:
   order: 3
 ---
 
-Verification runs at two altitudes: deterministic suites that never touch a live
-system, and real journeys that exercise sandboxes and engines end to end.
+Use local checks for code and contract changes. Use configured, isolated
+runtime environments for provider and sandbox behavior.
 
-## Deterministic suites
+## Local checks
 
-- **Backend suite** against an isolated throwaway database, so it never disturbs a
-  live one.
-- **Frontend suite** and the **shared package suites**.
-- **Root typecheck** across every package with `bun run typecheck`.
+Run these commands from the repository root:
 
-These are fast, stable, and safe to run anywhere.
-
-## Full-stack and real journeys
-
-| Command | What it exercises |
+| Command | Coverage |
 | --- | --- |
-| `cd backend && bun run e2e` | A mock full-stack pass including Slack and memory outbox delivery, and crash-survival stages. |
-| `cd backend && bun run e2e:real` | Real sandboxes end to end. |
-| `cd backend && bun run soak` | Storm coverage over the durable lanes. |
-| `bun backend/test/e2e/ui-sweep/sweep.ts` | Browser coverage of the rendered surfaces. |
+| `bun run typecheck` | Frontend, backend, and shared packages |
+| `cd frontend && bun run lint` | Frontend lint rules |
+| `cd frontend && bun run test` | Component tests under `components/` |
+| `cd packages/conformance && bun run test` | Client and harness contract tests |
+| `cd docs-site && bun run doctor` | Docs configuration and content checks |
+| `cd docs-site && bun run build` | Static docs generation and search assets |
 
-:::warning
-Real journeys create sandboxes. Delete and API-verify them after a run. The
-shared sandbox capacity is a finite, cross-session resource, so leftover
-sandboxes degrade everyone's runs.
-:::
+Run a relevant individual test file when making a focused change. Typecheck or
+build success does not establish runtime parity or visual correctness.
 
-## Release parity canaries
+## Backend tests use a disposable database
 
-Before a candidate can ship, the guarded release runs **real engine journeys**
-against it, not mocks, and it runs them twice:
+```bash
+cd backend
+bun run test
+```
 
-1. **Candidate matrix.** The full parity matrix runs on the host against the
-   candidate, before it is publicly advertised.
-2. **Public re-run.** After the candidate is atomically activated, the hard
-   journeys rerun through the authenticated public APIs.
+This script runs `test/prepare-db.ts`, which **drops and recreates
+`useagent_test`** on the server selected by `TEST_ADMIN_URL`. The default admin
+connection is local Postgres. It then runs the main suite and runs Slack tests
+separately after another database reset.
 
-The case matrix covers: `repo-clone`, `github-pr-detail`, `gcs-list`,
-`computer-browser`, `full-desktop`, `desktop-recording`, `artifact-publish`,
-`thread-resume`, `model-switch`, `subagent-fanout`, `web-search`,
-`automation-lifecycle`, `workpiece-deck`,
-`workpiece-sheet`, `workpiece-document`, `workpiece-pdf`,
-`cross-thread-memory`, `knowledge-search`, `skill-playbook`, and
-`inbound-attachment`.
+Use a test-only database server and check the configured connection first.
+Do not point this test command at a shared server containing data you need.
+The preload in `backend/bunfig.toml` configures the test environment.
 
-`PARITY_CASES` and `PARITY_ENGINES` can narrow one certification run to a
-targeted probe, but scoping never skips the gate itself, and the public re-run
-always executes the full case matrix.
+## Runtime journeys
 
-A candidate that fails a parity journey does not ship, and the lane rolls the
-environment back. See [Deployment lanes](/operations/deployment).
+| Command | Purpose |
+| --- | --- |
+| `cd backend && bun run e2e` | Full-stack test harness |
+| `cd backend && bun run e2e:real` | Real provider and sandbox journeys |
+| `cd backend && bun run soak` | Repeated workload and recovery scenarios |
+| `bun backend/test/e2e/ui-sweep/sweep.ts` | Browser checks of product surfaces |
 
-:::note
-Parity is proved per engine and per credential mode. A subscription-only Codex
-release proves the connected account and native turn path; an API-key engine
-proves its mapped gateway provider.
-:::
+Read each harness's configuration and required credentials before running it.
+Live journeys can create sandboxes, runs, and external resources. Keep their
+database and provider resources isolated and clean them up afterward.
+
+## Verify the behavior you depend on
+
+For an engine or provider change, a useful live check includes:
+
+1. A new task through the intended credential mode.
+2. A follow-up in the same thread.
+3. Reconnection to the session's recorded history.
+4. The specific tool or artifact workflow affected by the change.
+
+Record the engine, model, credential mode, runtime version, and outcome with
+the evidence. A successful task on one engine does not certify every engine.
+
+For a docs change, check internal links, search, desktop and narrow layouts,
+and light and dark themes after the build.
+
+Source: the root, frontend, backend, conformance, and docs-site
+`package.json` files; `backend/test/prepare-db.ts`; and `backend/bunfig.toml`.

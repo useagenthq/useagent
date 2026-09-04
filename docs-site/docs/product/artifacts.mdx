@@ -1,36 +1,44 @@
 ---
 title: Artifacts
-description: The files runs produce and the editors that open them. The /artifacts hub, workpiece editing, and revision proposals.
+description: The files runs produce and the editors that open them. Artifact hubs, workpiece editing, quality receipts, and revision proposals.
 sidebar:
   order: 9
 ---
 
 Artifacts are the outputs a run leaves behind. Some are static media; some are
-editable documents with revisions. `/artifacts` is the hub; a run's own artifacts
-also stream into the [session view](/product/session-view).
+editable documents with revisions. `/artifacts` and `/agent/artifacts` open the
+organization artifact hub; a run's artifacts also stream into the [session
+view](/product/session-view).
 
 ## The hub
 
-`/artifacts` lists files and outputs from every run, and `/agent/artifacts`
-streams them live filtered to a run. Opening one at `/agent/artifacts/:id` shows
-its detail and, for a workpiece, an inline editor.
+The hub lists files and outputs across the organization. You can filter by run or
+by file type. Opening `/agent/artifacts/:id` shows the artifact and, for a
+workpiece, its editor.
 
 | Operation | Endpoint |
 | --- | --- |
 | List, create | `GET`, `POST /api/artifacts` |
 | Fetch, content | `GET /api/artifacts/:id`, `/:id/content` |
+| Quality status | `GET /api/artifacts/:id/quality` |
 | Preview | `GET /api/artifacts/:id/preview` |
 | Workpiece, export | `/:id/workpiece`, `/:id/workpiece/export` |
-| Archive a run's artifacts | `POST /api/artifacts/runs/:runId/archive` |
+| Archive a run's artifacts | `GET /api/artifacts/runs/:runId/archive` |
 
 ## Workpieces
 
-A workpiece is a revisioned editing surface with one of four canonical kinds:
+A workpiece is a revisioned editing surface for these kinds:
 document, spreadsheet, presentation, or PDF. The editors are bounded, and native
 renderers back each format (see [Artifacts and
 workpieces](/concepts/artifacts-and-workpieces) and [Shared
 packages](/architecture/shared-packages)). Images and videos stay previewable
 media, not workpieces.
+
+## Quality receipts
+
+`GET /api/artifacts/:id/quality` reports whether the current artifact revision
+has a matching inspection receipt. A later edit changes the revision or subject
+digest, so the current version returns `unverified` until it is inspected again.
 
 ## Revision proposals
 
@@ -43,7 +51,7 @@ waits for a human decision:
   </Step>
   <Step title="A human accepts or dismisses">
     Accept it with `POST /api/artifacts/:id/proposals/:proposalId/accept`, or
-    dismiss it.
+    dismiss it with `POST /api/artifacts/:id/proposals/:proposalId/dismiss`.
   </Step>
 </Steps>
 

@@ -1,7 +1,6 @@
 ---
-// Sidebar slot override: a rounded Quick Search pill above the built-in nav
-// tree (BoardUI layout). The pill opens the same search dialog as the header
-// trigger; it stays hidden until the trigger is confirmed present, so a site
+// Search above the built-in navigation tree. Opens the header's search dialog.
+// It stays hidden until the header trigger is confirmed present, so a site
 // with search disabled renders the plain tree.
 import NavTree from "blume/components/layout/NavTree.astro";
 
@@ -33,7 +32,7 @@ const { items, currentRoute, strings } = Astro.props;
     <circle cx="11" cy="11" r="8"></circle>
     <path d="m21 21-4.3-4.3"></path>
   </svg>
-  <span class="flex-1 truncate text-start">Quick Search</span>
+  <span class="flex-1 truncate text-start">Search docs</span>
   <kbd
     class="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[0.7rem]"
     data-docs-quick-search-kbd>⌘K</kbd

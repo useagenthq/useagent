@@ -14,16 +14,16 @@ native state; the packages are the contract layer on top.
 | Package | What it owns |
 | --- | --- |
 | `@useagent/agent-client` | The browser-side client: reconnect to SSE, reduce events into thread state, and expose selectors to the UI, plus typed API helpers. |
-| `@useagent/agent-harness` | Provider-neutral canonical event, capability, session, and `ProviderDriver` lifecycle types (the engine control contract), plus the protocol-boundary OpenCode frame parsers exported under `./opencode` and `./t3-tool`, the one place vendor names are permitted. |
+| `@useagent/agent-harness` | Provider-neutral canonical event, capability, session, and `ProviderDriver` lifecycle types, plus protocol parsers at explicit adapter boundaries. |
 | `@useagent/artifact-formats` | Native DOCX, XLSX, PPTX, and PDF renderers, plus bounded Office text extraction. |
 | `@useagent/artifact-workspace` | Provider-neutral workpiece kinds, actions, and the native export capability matrix shared by backend and frontend. |
+| `@useagent/sandbox-contract` | The process, filesystem, PTY, preview, recording, computer-use, and inventory contract implemented by Cube and Daytona adapters. |
 | `@useagent/conformance` | Deterministic, framework-free contract tests for the client and harness packages. It does not run live providers. |
+| `@useagent/cli` | A Bun CLI and MCP server for dispatching hosted tasks, watching results, and running bounded fan-out from a local machine. |
 
-Both apps consume the packages as plain `file:../packages/...` dependencies in
-`backend/package.json` and `frontend/package.json`. There is no workspace or
-turbo root: each app installs with bun on its own, and the package exports point
-straight at TypeScript source, so both sides type-check the contract at build
-time.
+The backend and frontend consume local packages directly. Each app installs with
+Bun, and package exports point at TypeScript source, so contract changes are
+checked by the consuming app builds.
 
 ## Why the contract lives in packages
 

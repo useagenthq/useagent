@@ -5,9 +5,8 @@ sidebar:
   order: 4
 ---
 
-The usage figures on the [dashboard](/product/dashboard) are not estimates. They
-come from `GET /api/fleet`, which combines real run accounting with a live view of
-the sandbox fleet.
+The usage section reads `GET /api/fleet`, which combines recorded run accounting
+with a cached view of the sandbox fleet.
 
 ## What the endpoint returns
 
@@ -36,8 +35,8 @@ the sandbox provider is unconfigured or the inventory cache is still cold.
 
 <CardGroup cols={2}>
   <Card title="Model burn" icon="coins">
-    Tokens and cost are read from the recorded provider events of each run, taken
-    from the step-finish event, then aggregated by model for the current day.
+    Tokens and cost are read from recorded `part.step-finish` events and
+    aggregated by model for the current day.
   </Card>
   <Card title="Sandbox fleet" icon="server">
     The machine view is the live sandbox inventory, filtered to UseAgent-owned
@@ -45,13 +44,10 @@ the sandbox provider is unconfigured or the inventory cache is still cold.
   </Card>
 </CardGroup>
 
-Because burn is derived from what runs actually emitted rather than a meter, the
-figure reflects real consumption. One caveat: only OpenCode's `part.step-finish`
-provider events carry token and cost usage. A model whose runs came from an
-engine that emits no usage shows real run counts, status, and duration with zero
-tokens and zero cost. That zero is honest, never invented, so do not read it as
-no spend. Aggregation is per model and scoped to today, so the limits card reads
-as "today's burn."
+An engine that does not emit a compatible usage event still contributes run
+count, status, and duration, but its token and cost fields are zero. Treat those
+zeros as "not recorded here," not proof that the provider charged nothing.
+Aggregation is per model and scoped to runs created today.
 
 ## Freshness
 

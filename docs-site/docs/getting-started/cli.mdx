@@ -1,0 +1,81 @@
+---
+title: CLI and MCP
+description: Send tasks to a running UseAgent deployment from your terminal or a local agent.
+sidebar:
+  order: 4
+---
+
+The `packages/cli` package dispatches work to a UseAgent organization. Each task
+becomes a normal run that you can inspect in the web app.
+
+## Configure access
+
+Use an organization API key for your deployment:
+
+```dotenv
+USEAGENT_API_KEY=your-org-api-key
+USEAGENT_BASE_URL=https://your-useagent-host
+```
+
+The client sends the key as an `Authorization: Bearer` header. Keep it in your
+local environment. Omitting the base URL selects the client's hosted default;
+set it explicitly when self-hosting.
+
+From a checkout with dependencies installed:
+
+```bash
+bun packages/cli/src/bin.ts --help
+```
+
+## Run a task
+
+```bash
+bun packages/cli/src/bin.ts run "Summarize this repository" --repo acme/web --watch
+```
+
+Use `--engine` and `--model` to select an available engine and model. Repeat
+`--repo owner/name` to include multiple repositories. `--watch` waits and prints
+status updates followed by the answer.
+
+Read a run again with:
+
+```bash
+bun packages/cli/src/bin.ts status RUN_ID
+```
+
+## Dispatch a batch
+
+Create `tasks.jsonl` with one task per line:
+
+```jsonl
+{"prompt":"Summarize the test strategy","repos":["acme/web"]}
+{"prompt":"Find the main API entry points","repos":["acme/api"]}
+```
+
+Then run:
+
+```bash
+bun packages/cli/src/bin.ts fan tasks.jsonl --parallel 2 --out results.jsonl
+```
+
+Results include the run ID, status, answer, and web URL. An optional `--qc`
+prompt asks a follow-up verifier to judge the work in the same thread. Its
+verdict is a model judgment, so review the underlying output for important tasks.
+
+## Connect a local agent with MCP
+
+Start the stdio server with:
+
+```bash
+bun packages/cli/src/bin.ts mcp
+```
+
+Configure your MCP client to launch that command with the API key and base URL
+in its environment. The server exposes `dispatch_task`, `dispatch_parallel`,
+`get_run_result`, and `list_recent_runs`.
+
+Dispatch tools return run IDs. Use `get_run_result` to collect results after
+execution; a successful dispatch does not mean the task has finished.
+
+Source: `packages/cli/src/`, `packages/cli/README.md`, and
+`packages/agent-client/src/fleet.ts`.

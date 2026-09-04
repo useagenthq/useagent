@@ -5,15 +5,15 @@ sidebar:
   order: 2
 ---
 
-Slack is a first-class channel, not a notifier. A run can begin, continue, and
-finish entirely from Slack, and it enters the same durable command lane as the
-web UI.
+Slack can start and continue runs through the same command lane as the web app.
+It supports Events API ingress and optional Socket Mode ingress.
 
 ## Starting and continuing a run
 
 <Steps>
   <Step title="Mention or DM to start">
-    An `@mention` or a direct message starts a run.
+    An `@mention` or a direct message starts a run after the Slack workspace and
+    sender have been mapped to a product organization and user.
   </Step>
   <Step title="Reply to continue">
     Replies thread under the run, with multi-turn continuity, reusing the thread's
@@ -31,22 +31,28 @@ GitHub links in a Slack message bind the run's repositories, validated against
 the **same allowlist the web composer enforces**. The channel does not get a
 weaker security posture than the web app; it shares the allowlist.
 
+## Choosing an engine or model
+
+Start a message with `engine:name` or `model:name` to select from the Slack
+catalog. An engine can change only when a new Slack thread starts; replies keep
+the thread's original engine. A model can change within the same engine.
+
 ## Results back in the thread
 
 Answers and artifacts flow back to the Slack thread:
 
-- A Slack-started run posts a **Block Kit run card** with title and status, model,
-  and owner or repository, plus an "Open in UseAgent" button.
+- A Slack-started run posts a **Block Kit run card** with title, status, model,
+  repository context, and an "Open in useAgent" button.
 - The card **updates in place** as the run moves from queued to running to
-  completed, throttled, with a plain-text chunked fallback so the answer is never
-  lost.
+  completed. A plain-text fallback is available when Block Kit delivery fails.
 - Approvals are resolved in the web app today; in-thread Block Kit approvals
   are deliberately deferred.
 
 ## Scoped bring-up
 
-A per-channel ingress allowlist scopes where Slack can start runs, so a workspace
-can enable UseAgent in one channel before opening it more widely.
+A per-channel ingress allowlist can restrict where Slack starts runs. Workspace
+and sender mappings fail closed: an unmapped workspace is ignored, and an
+unmapped sender receives linking guidance instead of starting a run.
 
 :::tip
 Everything Slack does here rides shared machinery: the command lane, the thread

@@ -1,116 +1,121 @@
 ---
-title: Deployment lanes
-description: Two lanes with different jobs. A full certification and a source-convergence bootstrap, both ending in the same atomic frontend swap.
+title: Self-hosting
+description: Bring up the core application and configure it for your environment.
 sidebar:
   order: 2
 ---
 
-UseAgent ships through explicit lanes, each with a different guarantee. Releases
-run from an **immutable checkout of the committed HEAD**: the lane refuses to
-deploy uncommitted tracked changes, materializes the commit's tree into a
-temporary directory, and verifies the checkout's tree hash against the commit
-before anything is synchronized.
+The checked-in bring-up path is `infra/self-host/deploy-app.sh`, with a Hetzner
+reference host under `infra/self-host/hetzner/`. The script connects over SSH,
+copies source, installs dependencies, builds the frontend, and writes systemd
+and Caddy configuration.
 
-## Before any host mutation
+## Prepare a host
 
-Every lane runs the same protective preamble before it touches the host:
+The reference setup targets Ubuntu 24.04 with Bun, Node, Docker, PostgreSQL 16,
+pgvector, and Caddy. The reference cloud-init pins Bun to 1.3.14. The deploy
+script expects root SSH access and the provisioning marker `/opt/useagent-provision/READY`; use the reference cloud-init setup or
+provide equivalent provisioning.
 
-<Steps>
-  <Step title="Take the host deploy lock">
-    Deploys serialize behind a host-side mutex, so exactly one lane mutates the
-    host at a time. A second concurrent lane fails fast with a clear message
-    instead of racing a live deploy.
-  </Step>
-  <Step title="Close run admission and drain">
-    Durable run admission closes, then the lane waits a bounded time (180
-    seconds by default) for in-flight runs to settle. A timeout fails closed;
-    proceeding anyway requires an explicit audited force triple naming the
-    actor and the reason.
-  </Step>
-  <Step title="Users see an honest pause">
-    While admission is closed, a Slack message that would start a run is
-    answered with "New runs are temporarily paused for a deployment. Retry
-    this message shortly." instead of failing silently.
-  </Step>
-  <Step title="Reopen when healthy">
-    Admission reopens only after the restarted services answer their health
-    checks.
-  </Step>
-</Steps>
+The control plane and sandbox fleet are separate. This core script does not
+provision the optional memory service or a complete sandbox runtime.
 
-## Guarded release
+## Bring up the core stack
 
-The full certification, run with `bun run release:hosted`. Eight fail-closed
-gates cover the candidate end to end:
+From the repository root, set the host and database credentials in your shell,
+then invoke the script:
 
-1. Preserve the exact live environment and build a rollback-bound candidate
-   environment.
-2. Activate the candidate source and Caddyfile, then run the preflight canary:
-   upload rejection, wiki generation and retrieval.
-3. Prove readiness for each selected credential path, failing fast when one is
-   unavailable.
-4. Prove the complete candidate parity matrix without public advertisement.
-5. Derive readiness into the offline candidate environment.
-6. Atomically activate the fully evidenced candidate.
-7. Rerun all hard journeys through the authenticated public APIs.
-8. Run the hosted canaries: editable workpieces, live timing, noVNC, focus
-   isolation, and the cutover canary.
+```bash
+SERVER_IP=<host-ip> \
+PUBLIC_ORIGIN=https://useagent.example.com \
+PG_PASSWORD=<app-database-password> \
+PG_GATEWAY_PASSWORD=<gateway-database-password> \
+BETTER_AUTH_SECRET=<stable-auth-secret> \
+SECRETS_ENCRYPTION_KEY=<stable-encryption-key> \
+USEAGENT_OPERATOR_SECRET=<stable-operator-secret> \
+OPENROUTER_API_KEY=<provider-key> \
+BOOTSTRAP_ADMIN_EMAIL=owner@example.com \
+BOOTSTRAP_ADMIN_PASSWORD=<initial-admin-password> \
+infra/self-host/deploy-app.sh /path/to/useagent
+```
 
-Any failure triggers automatic rollback of source, environment, Caddy
-configuration, and services. The Caddyfile is installed only after the live
-configuration is backed up; the candidate is validated and reloaded, and the
-prior file is restored on failure.
+`SSH_KEY` optionally selects the SSH private key. Both database passwords are
+required by the script. The three application secrets must be independent and
+at least 32 characters long; generate them separately and reuse them on redeploy.
+Use URL-safe database passwords. `PUBLIC_ORIGIN` must be a public HTTPS DNS
+origin without a path or port. Point DNS at the host and allow ports 80 and 443
+before deploying.
 
-When promoting a newly built Cube runtime, the gate validates the template id,
-activates it only inside the rollback-bound candidate environment, and restores
-the exact previous environment if any preflight or parity journey fails.
+On a fresh database, supply both bootstrap admin fields; the password must be
+at least 12 characters. The script creates the first user through a temporary
+auth process after backend health succeeds, then removes its transient
+credential file. Omit these fields on later deploys. Public signup stays off.
 
-## Provider-connection bootstrap
+### What the script writes
 
-Run with `bun run release:provider-connection-bootstrap`. It converges
-production onto a verified commit between certifications and proves the
-account-lifecycle surface **without** claiming runtime parity:
+| Location | Purpose |
+| --- | --- |
+| `/opt/useagent/` | Backend, frontend, and shared package source |
+| `/etc/useagent/backend.env` | Database, stable secrets, public origins, production mode, and provider settings |
+| `/etc/useagent/gateway.env` | Restricted gateway database connection |
+| `useagent-backend.service` | Starts the Bun backend |
+| `useagent-frontend.service` | Starts the built Next.js app on port 3400 |
+| `/etc/caddy/Caddyfile` | HTTPS reverse proxy to the frontend |
 
-- Validates the authenticated release identity before changing the host.
-- Closes admission and drains, then snapshots the live source tree before
-  synchronizing the immutable checkout.
-- Restarts every application service (which includes the frontend swap below),
-  then proves the provider-connection account surface with a dedicated canary.
-- On failure, restores the source snapshot and restarts services.
-- Finishes by stating explicitly: "Provider execution readiness was not
-  promoted by this bootstrap."
+Caddy obtains and renews TLS for the configured domain. The backend runs with
+`NODE_ENV=production` and `USEAGENT_DEV_MODE=false` by default. A disposable
+development host can explicitly opt in with `USEAGENT_DEV_MODE=true`. The
+script installs the supplied secrets instead of regenerating them.
 
-## The frontend swap inside every restart
+Environment files are written with mode `0600`. Re-running the script replaces
+its generated environment and service files, so preserve any additional host
+configuration and use the same stable keys.
 
-There is no separate frontend lane. Both lanes above end in the same service
-restart script, and every restart finishes by swapping the UI atomically:
+## Configure the deployment
 
-- The candidate UI builds **beside** the live tree, into an isolated
-  `.next-release-<id>` directory, so a failed compilation never corrupts the
-  served build.
-- The build must carry a `BUILD_ID` equal to the release commit, or it never
-  activates.
-- The frontend stops, the prior build is parked as
-  `.next-build.previous-<id>`, and the candidate moves into place.
-- The new build must start and answer its local health check. On failure, the
-  bad build is kept as `.next-build.failed-<id>` for diagnosis and the previous
-  build is restored automatically.
+Before exposing the app to real users:
 
-<CardGroup cols={3}>
-  <Card title="Guarded release" icon="shield-check">
-    Full certification with rollback. Ship path for engine-affecting changes.
-  </Card>
-  <Card title="Bootstrap" icon="git-pull-request">
-    Converge source onto a verified commit. No parity claim.
-  </Card>
-  <Card title="Frontend swap" icon="repeat">
-    Not a lane. Runs inside every restart, build-id checked, with a parked
-    rollback.
-  </Card>
-</CardGroup>
+- Verify the public domain, HTTPS proxy, `FRONTEND_ORIGIN`, and `BETTER_AUTH_URL`
+  generated from `PUBLIC_ORIGIN`.
+- Keep production mode enabled and set `ALLOW_DEV_ORG=0` explicitly if managing
+  environment settings outside the bootstrap.
+- Set `REQUIRE_SINGLE_BACKEND=true` and run one backend against each database.
+- Configure the sandbox provider and the engines/accounts you want to make available.
+- Configure and start the dedicated gateway when sandbox tools need it. Writing
+  `gateway.env` does not start that service.
+- Put artifacts and other durable local data on persistent storage, and define
+  a backup schedule.
 
-:::warning
-A release is never run from a live working tree. The lane materializes the
-committed HEAD into an immutable checkout, refuses uncommitted tracked changes,
-and verifies the checkout's tree hash against the commit.
-:::
+The gateway validates independent `PROVIDER_GATEWAY_SECRET`,
+`TOOL_GATEWAY_SECRET`, and `SECRETS_ENCRYPTION_KEY` values. Its production process
+requires `GATEWAY_DATABASE_URL`; its public origin must be reachable by the
+sandboxes. See [trust and control](/features/trust-and-control).
+
+## Check the result
+
+```bash
+curl https://your-useagent-host/api/health
+```
+
+The script checks backend health, service activity, and public HTTPS health.
+Then sign in as a provisioned user, check account readiness, run a small task,
+and open its output.
+A passing health check proves the HTTP service is up, not that model access,
+sandbox tools, or artifact delivery work.
+
+## Releases after bootstrap
+
+The root `package.json` currently exposes development and typecheck scripts.
+It does not expose the older `release:hosted`,
+`release:provider-connection-bootstrap`, or `stage:t3-dist` commands.
+
+The bootstrap script does not provide an immutable-image promotion pipeline,
+automated parity certification, or automatic rollback. Use your deployment's
+release procedure and preserve the previous build, configuration, and data
+before a change. Next.js development and production builds use separate output
+directories (`.next` and `.next-build`), but that alone is not a release pipeline.
+
+Source: `infra/self-host/deploy-app.sh`,
+`infra/self-host/hetzner/cloud-init.yaml`,
+`backend/src/security/gateway-boundary.ts`, `frontend/next.config.ts`,
+and the root `package.json`.

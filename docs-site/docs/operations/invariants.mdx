@@ -1,81 +1,73 @@
 ---
 title: Operational invariants
-description: The properties production depends on. Break one and the guarantees above it stop holding.
+description: Runtime constraints to preserve when deploying or changing UseAgent.
 sidebar:
   order: 4
 ---
 
-These are not preferences; they are load-bearing. Each one backs a guarantee made
-elsewhere in the platform.
-
 ## One backend per database
 
-Exactly one backend runs against a given database. A boot-time Postgres advisory
-lock enforces it, and the host configuration sets `REQUIRE_SINGLE_BACKEND=true`
-so a duplicate refuses to boot rather than warning. The flag parser accepts
-`1`/`true` and `0`/`false` and rejects anything else.
+Run one backend against a given database. Provider-event draining and the
+realtime event fan-out include process-local state.
 
-The reason is architectural: the canonical lane's provider-source seal and the
-realtime SSE fan-out are process-local. A second backend on the same database
-would interfere with in-flight runs, because boot recovery reconciles them. See
-[Realtime and canonicalization](/architecture/realtime).
+`REQUIRE_SINGLE_BACKEND=true` makes the boot-time Postgres advisory lock
+mandatory: contention or an unavailable guard fails startup. The parser also
+accepts `1`. When the flag is absent, false, or zero, the guard warns and can
+continue; production mode does not automatically enable it.
 
-## Boot order is the invariant
+An outbox row lock protects a worker's claim. It does not make all event
+publication and recovery safe across multiple backend replicas.
 
-The backend boots in a fixed order: **advisory lock, migrations, gateway
-grants, seed, stale-run recovery**. Each position is load-bearing:
+## Preserve the startup order
 
-- The singleton lock is taken **before** migrations and recovery, so a
-  duplicate process can never migrate or recover another backend's database
-  first.
-- Migrations apply at every boot, and the migrator only applies journal entries
-  stamped **strictly above** the last applied one. The operator rule: a new
-  migration is always stamped above the journal tail. A hand-set stamp at or
-  below the tail makes later migrations skip silently.
-- The restricted gateway role's grants are reconciled on every boot from a
-  manifest in code, so a migration that adds a gateway-written table ships its
-  grant in the same commit. This kills the incident class where a new table's
-  inserts die in production with permission errors (42501) because grants lived
-  only in one-time host provisioning.
+The current backend starts its durable state in this order:
 
-Only after all of that does the backend seed and recover stale runs left by an
-unclean shutdown.
+1. Enforce the single-backend guard.
+2. Apply committed Drizzle migrations.
+3. Reconcile the restricted gateway role's grants.
+4. Seed development identity records.
+5. Reconcile fleet leases and admissions.
+6. Recover stale runs.
+7. Reset stuck canonicalization and learning work for retry.
 
-## Secrets are write-only
+Changing this order can let recovery use an outdated schema or count an old
+sandbox lease against new work. Add gateway table permissions with the
+migration that makes those tables necessary.
 
-Reusable secrets are write-only through the API. Metadata about a provider
-connection is visible to the UI, but the secret value is never returned. API keys
-are resolved inside the signed provider gateway and never handed to a sandbox.
+## Keep credential boundaries explicit
 
-## The gateway uses a restricted database role
+Provider connection APIs expose status and metadata, not reusable credential
+values. The provider gateway resolves credentials for supported model calls.
 
-The sandbox gateway connects with a restricted database role that has explicit
-grants and no DDL. The trust boundary is enforced at the database, not only in
-application code.
+That is separate from user-configured task secrets and subscription auth.
+Production task-secret policy uses `gateway_only`; development compatibility
+can support sandbox injection. Some engine authentication flows also place
+scoped or synchronized auth material in a runtime. Do not describe every
+credential as permanently absent from sandboxes.
 
-## Releases run from an immutable checkout
+See [secrets](/product/secrets) and
+[provider connections](/platform/provider-connections-and-models).
 
-A release is built from an immutable checkout of the committed HEAD, never from
-a live working tree. Uncommitted tracked changes refuse to deploy, and the
-checkout's tree hash is verified against the commit before anything ships.
+## Give the gateway a restricted role
 
-<CardGroup cols={2}>
-  <Card title="Single backend" icon="lock">
-    `REQUIRE_SINGLE_BACKEND=true` in production; one replica per database.
-  </Card>
-  <Card title="Write-only secrets" icon="key-round">
-    Values never leave the trusted backend, and never enter a sandbox.
-  </Card>
-  <Card title="Restricted gateway role" icon="database">
-    Explicit grants, no DDL, enforced at the database.
-  </Card>
-  <Card title="Immutable-source releases" icon="git-commit-horizontal">
-    Ship the committed HEAD, verified by tree hash, never the working tree.
-  </Card>
-</CardGroup>
+The dedicated gateway uses `GATEWAY_DATABASE_URL` and a restricted database
+role. The backend reconciles its grants from `backend/src/db/gateway-grants.ts`.
 
-:::warning
-Multi-replica realtime is **not** supported today. It requires a durable,
-database-backed seal and org-event fan-out first. Do not add backend replicas
-against one database until that lands.
-:::
+The gateway checks that signing and encryption secrets are independent of
+each other and of the auth secret. Configure the deployment to preserve this
+separation instead of reusing one value for every service.
+
+## Preserve files as well as database records
+
+Artifact metadata is stored separately from artifact bytes. The local storage
+adapter uses `ARTIFACT_STORAGE_DIR`, defaulting to `backend/.artifacts`.
+A database restore without those files can leave visible artifact records
+whose downloads fail.
+
+Keep required environment and encryption material available for recovery.
+See [backups and restore](/operations/backups).
+
+Source: `backend/src/index.ts`, `backend/src/db/single-backend.ts`,
+`backend/src/db/gateway-grants.ts`,
+`backend/src/security/gateway-boundary.ts`, and
+`backend/src/artifacts/storage.ts`.

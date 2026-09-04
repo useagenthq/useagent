@@ -6,8 +6,8 @@ sidebar:
 ---
 
 UseAgent renders agents with its **own native React surface**, not an embedded
-vendor UI. That decision is what lets the product feel like one product: three
-different engines, one timeline grammar, one design system, and extension
+vendor UI. That decision is what lets the product feel like one product: several
+engine paths, one timeline grammar, one design system, and extension
 surfaces (viewers, editors, panes) that belong to the platform rather than to
 whichever engine happens to be running.
 
@@ -22,9 +22,8 @@ polish lands once and every engine inherits it. Alongside the timeline, a side
 rail hosts the run's environment: browser, terminal, files, diff, agents,
 editor, and workspace panes. See [Session view](/product/session-view).
 
-Live means durable here: the view is fed by a thread-scoped stream that hands
-back a durable snapshot on reconnect, so what you see after a network blip is
-a replay of the truth, not a best-effort patch.
+The view is fed by a thread-scoped stream that hands back a durable snapshot on
+reconnect, then applies live frames through the client reducer.
 
 ## Starting work is one screen
 
@@ -88,7 +87,7 @@ separate Slack-shaped bot logic to drift out of sync. Scheduled
 [Slack](/channels/slack).
 
 :::tip
-The deeper reason the experience holds together: every surface renders backend
-truth. The frontend invents nothing, so what you see in the timeline is what
-the log can replay, on any device, after any reconnect.
+The session UI gets its durable structure from backend run, step, native-frame,
+and canonical-event records. Local view state controls presentation, while the
+backend owns the work and its status.
 :::

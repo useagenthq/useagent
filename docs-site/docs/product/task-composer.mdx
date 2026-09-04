@@ -16,8 +16,8 @@ At `/agent/new` a new task carries more than a prompt:
 | Control | What it sets |
 | --- | --- |
 | Prompt | The instruction, with file uploads attached inline. |
-| Engine | Which coding engine runs the turn (subject to the enabled set). |
-| Model | The model, when the engine exposes a choice. |
+| Engine | Which coding engine runs the turn. Configured engines stay visible when they need provider attention. |
+| Model | The model, when the engine exposes a choice. OpenCode also groups the current OpenRouter `:free` lane separately. |
 | Repositories | The repositories bound to the run, plus a branch override. |
 | Pinned skill or playbook | A procedure pinned for this turn, so it is always in context. |
 
@@ -26,6 +26,11 @@ organization memory scope.
 
 Starting a task submits to the run service, which creates a run inside a new
 thread. See [Request flow](/architecture/request-flow) for what happens next.
+
+An unavailable engine is marked in the picker and cannot be submitted until its
+readiness issue is fixed in Settings. The Free model group has a refresh action;
+it asks the backend to update the live catalog while keeping the current
+selection stable when possible.
 
 ## Slash commands
 

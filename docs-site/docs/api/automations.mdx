@@ -28,9 +28,10 @@ explicitly enabled.
 
 ## Secrets
 
-Encrypted named secrets injected as env vars into the per-thread sandbox at boot.
-Values are **write-only**: they can be set and removed but are never returned.
-Writes require an org admin.
+Encrypted named secrets for run-time tools. Values are **write-only**: they can
+be set and removed but are never returned. Writes require an org admin. In
+production's `gateway_only` mode, their values stay out of the sandbox;
+development compatibility mode may materialize a protected dotenv or file.
 
 | Method | Path | Description | Notes |
 | --- | --- | --- | --- |

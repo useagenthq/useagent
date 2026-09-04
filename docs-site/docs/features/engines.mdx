@@ -1,27 +1,27 @@
 ---
 title: Engines
-description: The inner loop is rented, not built. Codex, Claude, and OpenCode behind one neutral adapter boundary, capability-gated surfaces, and a subscription relay that keeps OAuth out of the sandbox.
+description: OpenCode, Pi, Codex, Claude, and direct chat behind one product run model.
 sidebar:
   order: 5
 ---
 
 The fastest-moving part of the agent stack is the inner loop: the model-driven
 process that decides what to do next. UseAgent deliberately does not compete
-with it. **Engines are rented**: Codex, Claude, and OpenCode each run behind a
-neutral adapter, while UseAgent owns what compounds: orchestration, history,
-approvals, knowledge, and rendering.
+with it. **Engines are rented**: OpenCode, Pi, Codex, and Claude run behind
+provider drivers or compatibility adapters, while UseAgent owns commands,
+policy, durable records, knowledge, and rendering. Direct chat uses the same run
+model without a workstation.
 
-## One boundary, three engines
+## One boundary, several execution paths
 
 An adapter (`backend/src/engines/`) translates between an engine's native
-protocol and UseAgent's thread, command, and event contracts. Above the
-adapter, nothing branches on a vendor:
+protocol and UseAgent's thread, command, and event contracts. Above the adapter,
+common behavior uses shared contracts:
 
 - The timeline renders [canonical events](/features/agent-contract), never a
   provider's private schema.
-- Surfaces are gated on the session's **negotiated capability map**, never on
-  `engine === "..."` checks. An engine without plans or reasoning simply
-  never lights those surfaces up.
+- Most surfaces are gated on the session's **negotiated capability map**. A few
+  provider-aware interaction paths remain where native ownership matters.
 - Provenance stays honest: every event retains the engine's native ids in its
   identity, and the raw native frames are kept as a bounded sidecar for
   debugging.
@@ -31,28 +31,43 @@ can only **add** engines on top of it, never disable the base
 (`backend/src/env.ts`). The composer's engine picker reflects exactly the
 enabled set.
 
-## Two adapter routes
+## Current execution paths
 
 <CardGroup cols={2}>
   <Card title="Runtime path" icon="git-branch">
-    The primary orchestration route (`backend/src/engines/runtime-*`),
-    carrying authoritative history, approvals, questions, child agents,
-    patches, todos, reasoning, and usage. Operator-gated by
+    The orchestration route for selected Codex, OpenCode, and Claude sessions.
+    It projects approvals, questions, child agents, patches, plans, reasoning,
+    and usage. Operator-gated by
     `RUNTIME_RUN_ADAPTER_ENABLED` with a canary or all mode.
+  </Card>
+  <Card title="Native drivers" icon="terminal">
+    OpenCode talks to a resident server. Pi talks to its RPC bridge and resumes
+    from a persistent JSONL session. Both implement the provider-driver
+    lifecycle directly.
   </Card>
   <Card title="ACP compatibility" icon="cable">
     The Agent Client Protocol route for the resident Claude and Codex lane
     when the runtime path is not selected, with fewer authoritative lifecycle
     surfaces.
   </Card>
+  <Card title="Direct chat" icon="message-circle">
+    The `chat` engine calls the configured model without a sandbox while still
+    using the durable command, run, thread, and session-view model.
+  </Card>
 </CardGroup>
 
-Engine processes are resident per thread sandbox and reused across turns: a
-persistent `opencode serve` for OpenCode, and a resident ACP relay whose
-session is reloaded turn to turn, with a **generation counter** that stops a
-stale pre-restart session from being replayed against a newer process. The
-settled invariants are narrow and firm: no engine UI servers or iframes, and
-no engine process outliving its thread's sandbox.
+Sandbox-backed engine processes are resident per thread and reused across
+turns. OpenCode uses `opencode serve`, Pi uses its RPC bridge, the runtime path
+uses its orchestration service, and ACP keeps a resident relay. Persisted session
+metadata includes protocol identity and a generation counter so stale session
+ids are not replayed against a newer process generation. Subscription-backed
+sessions also bind a credential epoch, which must still match before out-of-turn
+resume, cancel, or recovery.
+
+Each driver declares supported lifecycle operations and steer inputs beside its
+model policy. The validator requires the `resume`, `stop`, `reconcile`, and
+`modelSelection` capability flags to match those declarations. Compatibility
+adapters can return typed unsupported results without advertising the operation.
 
 ## The subscription relay
 
@@ -73,9 +88,8 @@ where the code runs. UseAgent refuses:
   run while OAuth never crosses the boundary.
 </p>
 
-The relay is proven end to end in production: first turns, multi-turn replies
-that continue a bound thread across driver restarts, and the run-bound tool
-surface.
+The relay is covered by focused tests and the release readiness path. A live
+deployment still needs an active connected account and an end-to-end check.
 
 ## Readiness is credential-mode aware
 
@@ -89,9 +103,9 @@ map advertises `modelSelection`.
 ## Why renting wins
 
 Engine quality improves monthly, and adapter code is small compared to a
-harness. Because every engine lands in the same contract with the same
-delivery guarantees, adopting a better engine is an adapter task, not a
-product rewrite. A thread stays on the engine it started with (a reply with a
+harness. Because every engine lands in the same product contracts, adopting
+another engine is mainly a driver, translation, capability, and readiness task.
+A thread stays on the engine it started with (a reply with a
 different engine is rejected explicitly rather than silently rebound), while
 the model can change turn to turn where the engine allows it. The full
 mechanics live in [Engines and adapters](/concepts/engines-and-adapters).

@@ -5,21 +5,8 @@ sidebar:
   order: 2
 ---
 
-These four terms describe how work is scoped and made durable. They are backend
-truth: the frontend renders them but never invents them.
-
-<figure style={{ margin: "1.5rem 0" }}>
-  <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "16px" }}>
-    <img
-      src="/diagrams/run-lifecycle.svg"
-      alt="Run lifecycle: acceptRunCommand accepts a durable command, the worker claims it, a sandbox is acquired, the engine runs one turn, steps and provider events land in Postgres, finalizeRun commits the terminal state, and a reply re-enters the same door with parent_run_id"
-      style={{ display: "block", width: "100%", height: "auto" }}
-    />
-  </div>
-  <figcaption style={{ marginTop: "0.5rem", fontSize: "0.8125rem", color: "#737373", textAlign: "center" }}>
-    The run lifecycle: every channel enters through one durable command door, the Postgres event log is the source of truth, and a reply re-enters with parent_run_id.
-  </figcaption>
-</figure>
+These four terms describe how work is scoped and made durable. The backend owns
+their records; the frontend turns them into the product view.
 
 ## Organization
 
@@ -32,8 +19,8 @@ client.
 
 ## Thread
 
-One continuing conversation. Replies reuse the thread's history, its sandbox, and
-its working directory. Threading is server-side: a reply stores the raw user
+One continuing conversation. Sandbox-backed replies reuse the thread's history,
+workstation, and working directory when the lease remains valid. Threading is server-side: a reply stores the raw user
 prompt only, and the backend composes the engine's context preamble from recent
 turns. Prior turns are never stuffed into a stored prompt.
 
@@ -45,14 +32,13 @@ open it.
 
 ### Child sessions
 
-An agent can spawn child work in-run through the `child_session_create`,
+An agent can enqueue child work through the `child_session_create`,
 `child_session_list`, `child_session_events`, and `child_session_gather`
 gateway tools (`backend/src/knowledge/gateway/child-session-tools.ts`). Each
-child is a queued serial turn on the same thread: at most one command per
-thread is in flight at a time (`backend/src/commands/dispatch.ts`), so children
-run one after another, never as a parallel process tree. The timeline renders
-their progress through the `child.started`, `child.updated`, and
-`child.completed` canonical events.
+child is a queued turn on the same product thread: at most one command per
+thread is dispatched at a time (`backend/src/commands/dispatch.ts`). Engines may
+also expose native child-agent activity; that is a separate capability projected
+into the same `child.started`, `child.updated`, and `child.completed` event kinds.
 
 ## Command
 
@@ -96,14 +82,13 @@ include:
 | Child sessions | `child.started/updated/completed` |
 | Usage | `usage.updated` |
 
-Because the event log is the source of truth, the two lanes together fully
-describe a run and can be replayed. The UI reduces them into the session
-timeline.
+Together these lanes describe the durable session view. Native provider frames
+can be revised and the finalized canonical rows for a run can be rebuilt, so the
+storage model should not be read as strict event sourcing.
 
 :::note
-A run **survives a backend restart**. The sandbox keeps executing; on restart a
-recovery loop re-probes the session, streams the interim events into the timeline
-with a visible heartbeat, and adopts the real result rather than failing work
-that actually completed. See [Restart
+A supported sandbox-backed run can be **reconciled after a backend restart**.
+The sandbox keeps executing; on restart the recovery loop re-probes engines that
+support reconciliation and adopts the observed result. See [Restart
 reconciliation](/concepts/sandboxes-and-desktop#restart-reconciliation).
 :::

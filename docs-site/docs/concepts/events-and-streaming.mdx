@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-The event log is the product. This page covers what an event is, why there are
+Events drive the session view. This page covers what an event is, why there are
 two shapes of it, and how events reach the UI.
 
 <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "12px" }}>
@@ -25,16 +25,17 @@ two shapes of it, and how events reach the UI.
 ## Canonical event
 
 UseAgent's provider-neutral representation of engine output. Canonicalization is
-what lets Codex, Claude, and OpenCode render through one UI contract: each
-engine's native stream is translated into the same canonical shape, so the
-timeline components never need to know which engine produced a run.
+what lets OpenCode, Pi, Codex, and Claude render through one UI contract: each
+engine's native stream is translated into the same canonical shape. Most common
+timeline rendering uses that shape; a few interaction and compatibility paths
+still inspect provider provenance where native behavior differs.
 
 ## Native frame
 
 The original engine event, retained alongside the canonical one for fidelity and
-debugging when the canonical shape cannot yet express every provider detail. The
-backend event log and each live provider remain authoritative for persisted and
-native runtime state; the shared packages define the public schema on top.
+debugging when the canonical shape cannot yet express every provider detail.
+Provider events may be updated to their latest revision before final projection;
+the shared packages define the public schema on top.
 
 ## The two streams
 
@@ -68,7 +69,6 @@ receipts, live todo and plan cards, per-file diffs, and artifact cards after the
 answer text.
 
 :::tip
-A reconnect is not a re-fetch of everything from scratch. The thread stream hands
-back a durable snapshot, so a flaky network produces a clean resync rather than a
-flash of empty or duplicated content.
+A reconnect starts with a durable thread snapshot and then continues with live
+frames. The client reducer deduplicates and applies revisions as it catches up.
 :::
