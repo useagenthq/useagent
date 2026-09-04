@@ -190,9 +190,9 @@ credentials and sandbox configuration before running a real agent task.
 
 ## Self-hosting
 
-useAgent runs on **any Linux host** - AWS, Google Cloud, Azure, Hetzner, or
+useAgent runs on **any Linux host** - AWS, Google Cloud, Azure, or
 bare metal. See [`infra/self-host/`](infra/self-host/README.md) for the full
-guide, including the one-command Hetzner reference host (Terraform) and the
+guide, including the one-command reference host (Terraform) and the
 provider-agnostic [`deploy-app.sh`](infra/self-host/deploy-app.sh):
 
 ```bash
@@ -229,7 +229,7 @@ Three properties do the heavy lifting:
 | [`backend/`](backend/README.md) | Control plane: auth, runs, sandboxes, engines, knowledge, memory, artifacts, connectors |
 | [`packages/`](packages/) | Shared contracts: thread events, canonical engine events, workpieces, renderers |
 | [`docs-site/`](docs-site/README.md) | Documentation site: concepts, architecture, API, operations |
-| [`infra/self-host/`](infra/self-host/README.md) | Self-hosting on any provider + Hetzner reference Terraform |
+| [`infra/self-host/`](infra/self-host/README.md) | Self-hosting on any provider, with a reference Terraform host |
 | [`memory/`](memory/README.md) | Optional team-memory service |
 
 Deeper reading: the [documentation site](https://useagent.org/docs/) and the interactive
