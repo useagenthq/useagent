@@ -10,14 +10,14 @@ Everything in UseAgent reduces to a small set of ideas. Hold these four and the
 rest of the system reads cleanly.
 
 <Steps>
-  <Step title="The harness lives outside the sandbox">
-    The backend is the harness. Runs and steps in Postgres are the source of
-    truth. The sandbox runs the engine and the work; the UI renders the log.
+  <Step title="The backend owns product control">
+    Commands, identity, policy, durable records, and delivery live in the
+    backend. Sandbox-backed engines and their resident session processes run in
+    the workstation. The UI consumes backend snapshots and streams.
   </Step>
   <Step title="The inner loop is rented">
-    Engine adapters drive each turn one-shot against a resident engine process
-    inside the thread's sandbox and translate each engine's stream into steps.
-    No engine web UI, and no engine process outside the sandbox.
+    Provider drivers connect OpenCode, Pi, Codex, and Claude to the same product
+    contracts. The direct `chat` engine uses the command lane without a sandbox.
   </Step>
   <Step title="Output is canonicalized">
     Every engine's native output is mapped to provider-neutral canonical events,
@@ -25,7 +25,7 @@ rest of the system reads cleanly.
     for fidelity.
   </Step>
   <Step title="Privileged work goes through the gateway">
-    A run never holds long-lived provider or database credentials. It calls
+    A run does not receive platform database or reusable provider credentials. It calls
     typed gateway tools that perform privileged work behind short-lived,
     scope-bound capability tokens.
   </Step>
@@ -43,8 +43,8 @@ rest of the system reads cleanly.
     them to the UI.
   </Card>
   <Card title="Engines and adapters" href="/concepts/engines-and-adapters" icon="plug">
-    How Codex, Claude, and OpenCode are driven, the runtime path versus ACP, and
-    the Codex subscription relay.
+    How OpenCode, Pi, Codex, and Claude are driven through native, runtime, and
+    compatibility paths.
   </Card>
   <Card title="Sandboxes and desktop" href="/concepts/sandboxes-and-desktop" icon="box">
     Isolated Linux workstations, warm pools, the noVNC desktop, and restart

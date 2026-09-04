@@ -5,24 +5,19 @@ sidebar:
   order: 6
 ---
 
-A sandbox is untrusted. Anything privileged, such as reading a repository,
-publishing an artifact, or using a provider account, happens on the trusted side
-through the gateway.
+A sandbox is treated as untrusted. Platform-owned privileged actions, such as
+repository access, artifact publication, and provider-key resolution, go through
+the trusted gateway.
 
-<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "10px" }}>
-  <img
-    src="/diagrams/gateway-trust-boundary.svg"
-    alt="Trust boundary diagram: the untrusted sandbox calls the gateway process on port 3202 with MCP tools/call and a Bearer tool token; the gateway reaches Postgres through a restricted role, provider APIs with server-side keys, GitHub, GCS, and Slack; an approval loop turns a pending request into a one-shot argument-bound capability."
-    style={{ width: "100%", display: "block", borderRadius: "8px" }}
-  />
-</div>
-
-*The gateway process (:3202) is the only surface a sandbox can reach; credentials never cross the boundary, and human approval mints one-shot capabilities.*
+The gateway accepts capability-authenticated tool and provider requests.
+Long-lived platform credentials stay behind it. Production defaults to
+`gateway_only`; development compatibility mode can inject approved non-provider
+tooling secrets into a sandbox.
 
 ## Gateway
 
 A backend trust boundary that performs privileged work for a sandbox without
-placing long-lived provider or database credentials inside it. The sandbox asks;
+placing long-lived platform provider or database credentials inside it. The sandbox asks;
 the gateway decides and acts.
 
 ### Gateway process
@@ -94,14 +89,17 @@ so an agent can self-correct instead of fabricating a result.
 ## Provider connection
 
 A user-owned API key or managed account identity, stored by the trusted backend.
-Metadata is visible to the UI; reusable secrets are write-only and never returned.
-API keys are resolved inside the signed provider gateway, never handed to a
-sandbox.
+Metadata is visible to the UI; reusable provider-connection secrets are
+write-only and resolved inside the signed provider gateway. Organization tooling
+secrets are separate: production with `gateway_only` sends no secret files,
+names, or environment values to the sandbox, while development compatibility
+mode can inject approved non-provider values and emit a names-only marker.
 
 ## Approval lane
 
 Human-in-the-loop authorization for destructive or outward-facing gated
-operations:
+operations. A request waits for up to 15 minutes; an approved one-shot
+capability is valid for at most two minutes:
 
 <Steps>
   <Step title="The agent requests">
@@ -123,7 +121,6 @@ operations:
   </Step>
 </Steps>
 
-The approval lane is live and certified by the guarded release: a destructive
-gated tool pauses for the card, then resumes with the one-shot capability.
-Slack delivery of approval cards is deliberately deferred; the session timeline
-is the only approval surface today.
+The approval lane persists requests and guarded state transitions, and the
+session timeline renders the current approval surface. Live behavior depends on
+the selected engine path and enabled gateway tools.

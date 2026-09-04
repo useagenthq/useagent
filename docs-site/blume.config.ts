@@ -3,7 +3,7 @@ import { defineConfig } from "blume";
 export default defineConfig({
   title: "UseAgent",
   description:
-    "A multi-harness agent platform. An event-sourced control plane drives replaceable coding engines in isolated sandboxes and renders every run from one canonical event log.",
+    "Run coding agents, manage their work, and keep the results in one workspace. Guides to UseAgent, its API, and self-hosting.",
 
   logo: {
     image: { light: "/useagent-mark.svg", alt: "UseAgent star-knot mark" },
@@ -22,14 +22,12 @@ export default defineConfig({
   },
 
   theme: {
-    // BoardUI-style palette: blue-500 accent on clean, light-first neutrals.
-    // The rest of the look (surfaces, shadows, sidebar, rails) lives in theme.css.
-    accent: "#3392ff",
+    accent: { light: "#245dc1", dark: "#8db8ff" },
     radius: "md",
     mode: "light",
     background: {
       light: "#ffffff",
-      dark: "#121212",
+      dark: "#101720",
     },
   },
 

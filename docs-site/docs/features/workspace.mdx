@@ -1,15 +1,14 @@
 ---
 title: The workspace
-description: A real Linux workstation per thread. Repositories, terminal, a visible desktop with browser automation and recording, injected secrets, artifacts, and editable workpieces.
+description: A Linux workstation for sandbox-backed threads, with repositories, terminal, desktop automation, recordings, artifacts, and editable workpieces.
 sidebar:
   order: 6
 ---
 
-Agents do real work only when they have a real computer. Every UseAgent thread
-gets an **isolated Linux workstation**: a filesystem that persists across
-turns, a terminal, a desktop you can watch, and the repositories and secrets
-the task needs. The backend drives it from outside and records everything it
-observes.
+Sandbox-backed work runs in an **isolated Linux workstation**: a filesystem that
+persists across turns, a terminal, a desktop you can watch, and the repositories
+and task inputs it needs. The backend provisions it and records the activity it
+receives. Direct chat does not claim a workstation.
 
 ## One workstation per thread
 
@@ -45,25 +44,26 @@ credentials stay on the trusted side; the sandbox receives what a clone needs,
 when it needs it. Details in [GitHub
 integration](/platform/github-integration).
 
-## Secrets, injected and announced
+## Secrets follow the deployment mode
 
-Organization secrets configured for the engine's own tooling are injected into
-the sandbox environment at run start, and the timeline records a names-only
-`secrets.injected` marker. The values are write-only upstream and encrypted at
-rest; see [Trust and control](/features/trust-and-control).
+Production defaults to `gateway_only`, so org secret files, names, and values do
+not enter the workstation. Development compatibility mode can inject approved
+non-provider tooling secrets and records a names-only `secrets.injected` marker.
+Values remain write-only through the API and encrypted at rest; see [Trust and
+control](/features/trust-and-control).
 
-## Everything the run produces is kept
+## Published outputs stay attached to the run
 
 <CardGroup cols={2}>
   <Card title="Artifacts" icon="package">
-    Files and outputs published from a run with absolute links, browsable
+    Files and outputs explicitly published from a run with absolute links, browsable
     later at /artifacts. Large tool output and diffs travel as artifact
     references with bounded previews, fetched lazily.
   </Card>
   <Card title="Workpieces" icon="file-pen">
     Editable documents (deck, sheet, document, PDF) that a run creates and
     proposes edits to through `workpiece_*` tools, opened in real editors in
-    the product. Release parity exercises all four kinds.
+    the product. The artifact workspace tests cover all four kinds.
   </Card>
 </CardGroup>
 
@@ -74,7 +74,7 @@ view](/product/session-view).
 
 :::note
 **Honest scope.** The sandbox contract does not expose pause, checkpoint, or
-snapshot operations. Continuity comes from the durable thread lease and the
-event log, and [recovery](/features/reliability) re-probes and adopts rather
-than resuming from a saved image.
+snapshot operations. Continuity comes from the thread lease, persisted records,
+and native session state. [Recovery](/features/reliability) re-probes supported
+engines rather than resuming from a saved image.
 :::

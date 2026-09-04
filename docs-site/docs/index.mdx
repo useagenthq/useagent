@@ -1,89 +1,57 @@
 ---
-title: Overview
-description: A multi-harness agent platform. An event-sourced control plane drives replaceable coding engines in isolated sandboxes and renders every run from one canonical event log.
+title: UseAgent docs
+description: Run coding agents, manage their work, and keep the results in one workspace.
 ---
 
-UseAgent is a control plane for coding agents. It turns a prompt into a
-durable, replayable **run**: a coding engine works inside an isolated Linux
-sandbox, streams what it does as an ordered event log, and the product UI renders
-that log live and on reload. The same run can arrive from the web app, from Slack,
-or from a scheduled automation, and it flows through one durable command lane.
+UseAgent is a self-hostable workspace for coding agents. Give an agent a task,
+follow its progress, review changes, and collect the files it produces. Start
+from the web app, Slack, the CLI, or an automation.
 
-New here and wondering why any of that matters? **[Explore the
-features](/features)**: seven deep dives into the agent contract, the trust
-lane, the reliability story, the engines, the workspace, self-improvement, and
-the product experience, every claim grounded in the shipped code.
-
-## The core idea
-
-UseAgent is built on three architectural commitments: verification is an
-evidence discipline, all state is event-sourced in Postgres, and engines are
-replaceable adapters behind one canonical contract.
-
-<CardGroup cols={3}>
-  <Card title="Harness outside the sandbox" icon="shield">
-    The backend is the harness. The run and step event log in Postgres is the
-    source of truth. The UI renders the log, never a live process.
-  </Card>
-  <Card title="Engines are rented, not built" icon="plug">
-    The inner agent loop is Codex, Claude, or OpenCode behind a
-    [neutral adapter](/concepts/engines-and-adapters). UseAgent owns
-    orchestration, history, approvals, and rendering.
-  </Card>
-  <Card title="One canonical event contract" icon="git-branch">
-    Every engine's output is translated into provider-neutral canonical events,
-    so three different engines render through a single UI grammar.
-  </Card>
-</CardGroup>
-
-Because history lives in the event log rather than in a running process, a run
-survives a backend restart, reconnects with a fresh durable snapshot, and never
-loses work that actually completed.
+The backend keeps threads, runs, commands, and event history in Postgres.
+Adapters connect that control plane to coding engines and sandbox providers.
+Which engines and tools you can use depends on your deployment and connected accounts.
 
 ## Start here
 
 <CardGroup cols={2}>
-  <Card title="Features" href="/features" icon="sparkles">
-    Why UseAgent: the contract, trust lane, reliability story, engines,
-    workspace, and self-improvement, each as a deep dive.
+  <Card title="Run it locally" href="/getting-started/quickstart" icon="terminal">
+    Install the packages, configure Postgres, and start the app.
   </Card>
-  <Card title="Getting started" href="/getting-started" icon="rocket">
-    Install the apps, run the two dev servers, and learn the repository layout.
+  <Card title="Use the workspace" href="/product" icon="layout-grid">
+    Create a session, follow the timeline, and work with files and artifacts.
   </Card>
-  <Card title="Concepts" href="/concepts" icon="boxes">
-    Runs and threads, engines and adapters, sandboxes, the gateway, and the
-    self-improvement lane, each in one page.
+  <Card title="Understand the system" href="/architecture" icon="network">
+    Trace a request through the backend, engine, sandbox, and event stream.
   </Card>
-  <Card title="Architecture" href="/architecture" icon="network">
-    The architecture end to end: how a turn flows, how realtime works, and what the shared
-    packages contract.
-  </Card>
-  <Card title="Operations" href="/operations" icon="server">
-    Deployment lanes, the verification arsenal, and the operational invariants
-    production depends on.
-  </Card>
-  <Card title="Product" href="/product" icon="layout-grid">
-    Every product surface: the session view, task composer, skills and
-    playbooks, knowledge and wiki, memory hub, dashboard, and settings.
-  </Card>
-  <Card title="Platform" href="/platform" icon="building">
-    Auth and orgs, provider connections and models, the GitHub integration, and
-    fleet usage.
-  </Card>
-  <Card title="Channels" href="/channels" icon="message-square">
-    Slack as a first-class entry point into the same durable command lane.
-  </Card>
-  <Card title="API" href="/api" icon="code">
-    The HTTP surface: runs and realtime, artifacts, knowledge, memory, skills,
-    automations, and platform.
+  <Card title="Self-host and operate" href="/operations" icon="server">
+    Learn the deployment requirements, checks, and backup responsibilities.
   </Card>
 </CardGroup>
 
-## What UseAgent is not
+## What you can do
 
-:::note
-UseAgent does not run its harness inside the sandbox, does not embed an engine's
-own web UI, and does not build its own inner agent loop. Each of those was
-evaluated and set aside for reasons recorded in the architecture notes. The
-sandbox runs the engine and the work; everything authoritative lives outside it.
-:::
+| Task | Where to read |
+| --- | --- |
+| Choose an engine and connect a provider account | [Engines](/concepts/engines-and-adapters) and [provider connections](/platform/provider-connections-and-models) |
+| Use the terminal, browser, and desktop | [Sandboxes and desktop](/concepts/sandboxes-and-desktop) |
+| Create and revise documents, spreadsheets, decks, and PDFs | [Artifacts](/product/artifacts) |
+| Give agents team context and reusable instructions | [Knowledge](/product/knowledge-and-wiki), [memory](/product/memory-hub), and [skills](/product/skills-and-playbooks) |
+| Run repeatable work | [Automations](/product/automations) and [CLI and MCP](/getting-started/cli) |
+| Start work from a Slack thread | [Slack](/channels/slack) |
+| Build an integration | [API reference](/api) |
+
+## A few terms
+
+- A **thread** holds an ongoing conversation and its runs.
+- A **run** is one execution attempt, with a status and recorded events.
+- An **engine** performs the agent's work; an adapter translates its output.
+- A **sandbox** provides the remote computer for sandboxed runs. Direct chat
+  also exists and does not require one.
+- An **artifact** is a published result you can open or download.
+
+Recorded history supports reconnects and recovery, but does not guarantee that
+every interrupted task can resume. Recovery depends on the engine session and
+sandbox still being available. See [reliability](/features/reliability).
+
+For implementation details, use the source references on each page and the
+[repository map](/getting-started/repository-map).

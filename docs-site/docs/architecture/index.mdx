@@ -1,15 +1,15 @@
 ---
 title: Architecture
-description: The settled architecture and why each property is load-bearing.
+description: How commands, sandboxes, engines, durable records, and the UI fit together.
 sidebar:
   label: Overview
   order: 1
 ---
 
-UseAgent's architecture rests on a short set of settled decisions. Each one is
-a commitment the rest of the system leans on: verification is evidence-based,
-state is an event log, engines are replaceable adapters, and every run is an
-isolated actor.
+UseAgent separates product control from agent execution. The backend owns
+identity, commands, records, policy, and delivery. A sandbox provides the
+workstation. An engine runs inside that workstation. The frontend renders the
+state exposed by the backend.
 
 ## The four properties
 
@@ -21,59 +21,50 @@ isolated actor.
     with one-shot capabilities. A runtime verify stage on run completion is a
     design goal, not current behavior.
   </Card>
-  <Card title="Event-sourced" icon="git-commit-horizontal">
-    The run and step log in Postgres is the source of truth. State is the reduction
-    of an ordered, durable event sequence, so runs replay and survive restarts.
+  <Card title="Durable records" icon="database">
+    Commands, runs, steps, native frames, canonical events, approvals, and
+    follow-up work are stored in Postgres. Some records are append-only; others
+    are updated or rebuilt as a run settles.
   </Card>
   <Card title="Replaceable-engine" icon="plug">
-    The inner loop is rented behind a neutral adapter. Codex, Claude, and OpenCode
-    are interchangeable at the contract boundary.
+    The inner loop sits behind a provider driver. OpenCode, Pi, Codex, and Claude
+    share run and event contracts even though their native capabilities differ.
   </Card>
   <Card title="Actors" icon="box">
-    Each thread is an isolated actor with its own sandbox and working directory,
-    held on a per-thread lease. Each run is one turn inside it, driven from
-    outside by the harness.
+    Each sandbox-backed thread keeps a workstation and working directory on a
+    per-thread lease. Each run is one turn. The direct `chat` engine uses the
+    durable command lane without claiming a sandbox.
   </Card>
 </CardGroup>
 
-## The harness lives outside the sandbox
+## Control outside, execution inside
 
-This is the decision everything else follows from. The backend is the harness:
-the event log, the workers, the SSE fan-out, org scoping, and knowledge all live
-on the trusted side. The sandbox runs the engine and the work. The UI renders the
-log, never a live process.
-
-<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "12px" }}>
-  <img
-    src="/diagrams/system-architecture.svg"
-    alt="System architecture: the Next 16 browser UI reaches the Bun + Hono backend through the /api rewrite; runs/routes.ts accepts the run, worker.ts appends runs and steps to Postgres (the source of truth) and dispatches the turn to the thread's engine session in a Daytona sandbox; engine output flows back as provider events and SSE streams the event log to the browser."
-    style={{ width: "100%", display: "block" }}
-  />
-</div>
-
-*One turn end to end: the harness (routes, worker, SSE fan-out, Postgres) stays on
-the trusted side of the dashed line; only the engine and its work run inside the
-Daytona sandbox.*
+The trusted backend owns admission, org scoping, capability tokens, storage,
+workers, and SSE delivery. Engine processes and some engine-specific session
+machinery are resident inside the sandbox, including `opencode serve`, the ACP
+relay, the Pi bridge, or the selected orchestration runtime. The browser talks to
+the product APIs and renders persisted snapshots plus live updates.
 
 The consequences are concrete:
 
-- A run **survives a backend restart**, because its truth is the log, not a
-  process' memory.
-- Three different engines render through **one UI contract**, because their
+- An interrupted run can be **reconciled after a backend restart** when its
+  engine exposes a supported recovery path. The backend re-probes the resident
+  session and records the adopted result.
+- Different engines render through **one UI contract**, because their
   native output is durably stored first, then translated into one
   provider-neutral canonical schema by a post-finalize outbox worker, and
   canonical events are persisted before they are published to subscribers.
-- A sandbox holds no **platform credentials**: privileged work goes through the
+- Long-lived platform credentials stay behind the **gateway**. Privileged work goes through the
   [gateway](/concepts/gateway-tools-and-approvals), reached only with a
-  short-lived signed run token. Org-configured secrets are intentionally
-  injected for the engine's own tooling and surfaced in the timeline as a
-  names-only `secrets.injected` marker.
+  short-lived signed run token. Production defaults to `gateway_only` secret
+  delivery. Development can use a compatibility mode that injects approved
+  non-provider tooling secrets and records a names-only marker.
 
 :::note
-Several tempting alternatives were evaluated and set aside: running the harness
-inside the sandbox, building a bespoke inner agent loop, and embedding an
-engine's own web UI. Each was rejected for recorded reasons. The architecture is
-deliberately thin.
+This is not strict event sourcing. Provider frames may be revised, steps may be
+updated, and a finalized canonical projection may replace earlier rows. The
+durability claim is narrower: accepted commands and settled product records are
+stored, and the UI can resync from them.
 :::
 
 ## Where to go next

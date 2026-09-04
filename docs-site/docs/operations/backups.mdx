@@ -1,54 +1,57 @@
 ---
 title: Backups and restore
-description: A daily encrypted snapshot of the database and durable state, with verify and restore lanes and an explicit off-host requirement.
+description: Preserve the database, artifact bytes, configuration, and keys needed for recovery.
 sidebar:
   order: 5
 ---
 
-Production takes a full local backup every day and can verify or restore any
-archive. The lane is deliberately explicit about what it does not cover: a
-local archive is **not disaster recovery** until it leaves the host.
+Backups are an operator responsibility in this checkout. The repository does
+not include the previously documented `useagent-backup.sh` script or its daily
+systemd timer. Configure a backup job for your actual storage and deployment.
 
-## What a backup captures
+## What to preserve
 
-Each archive bundles:
-
-- A PostgreSQL dump of the `useagent` database (`pg_dump --format=custom`).
-- The host configuration and durable state: `/etc/useagent`,
-  `/var/lib/useagent/artifacts`, `/var/lib/useagent/runs`, and
-  `/var/lib/useagent/secrets`.
-- A manifest and SHA-256 checksums for both payloads.
-
-The bundle is encrypted with AES-256-CBC (PBKDF2 key derivation) using the
-passphrase file at `/etc/useagent/backup-passphrase`, and written to
-`/var/lib/useagent/backups/useagent-backup-<timestamp>.tar.gz.enc`. Every new
-archive is verified immediately after it is written.
-
-## Commands
-
-| Command | What it does |
+| Data | Why it matters |
 | --- | --- |
-| `useagent-backup.sh backup` | Create, verify, and retain a new encrypted archive. |
-| `useagent-backup.sh verify --archive PATH` | Decrypt, check the checksums, and validate both payloads without touching live state. |
-| `useagent-backup.sh restore --archive PATH --yes` | Stop the runtime services, restore the database and durable files, and restart. |
+| Postgres database | Threads, runs, events, account records, knowledge, and artifact metadata |
+| Artifact storage | Published file bytes; `ARTIFACT_STORAGE_DIR` defaults to `backend/.artifacts` |
+| Required local run data | `RUNS_ROOT` defaults to `backend/.runs`; inspect your runtime's use of these files |
+| Service configuration | Database connections, public origins, provider settings, and enabled runtime features |
+| Encryption and signing material | Existing encrypted records must remain readable after a restore |
+| Separately hosted services | Optional memory storage and any durable sandbox/provider data have their own lifecycle |
 
-Restore refuses to run without `--yes`. Set `DRY_RUN=1` with `backup` or
-`restore` to print the work without mutating state.
+The reference bootstrap writes configuration under `/etc/useagent`. Your
+deployment may use different paths or a secret manager; inventory the actual
+locations rather than assuming the reference layout.
 
-Database **roles** are host resources and are deliberately not part of the
-dump: a restore keeps the replacement host's current role passwords and
-rewrites only the two connection URLs after restoring the archived application
-configuration.
+## Establish a backup routine
 
-## Schedule and retention
+1. Capture a consistent Postgres backup and the artifact files it references.
+2. Preserve the configuration and key material required to read that data.
+3. Encrypt archives, restrict access, and copy them off the application host.
+4. Define retention and alert on failed or missing backups.
+5. Record the application revision and backup timestamp.
 
-A systemd timer runs the backup daily at 03:17 UTC, with a randomized delay of
-up to 20 minutes, and catches up after downtime. Local archives are kept for
-14 days by default (`USEAGENT_BACKUP_RETENTION_DAYS`).
+If you need a consistent database-and-files checkpoint, quiesce writes while
+taking it or use a coordinated storage snapshot. A database dump alone does
+not contain published file bytes.
 
-:::warning
-Archives are encrypted **local** snapshots. They are not disaster recovery
-until `USEAGENT_BACKUP_REMOTE_SYNC_COMMAND` ships them off-host. Set
-`USEAGENT_BACKUP_REQUIRE_REMOTE=1` to fail the backup closed when remote sync is
-unavailable.
-:::
+## Prove that restore works
+
+Restore into a separate database and storage location first:
+
+- Make pgvector available and restore the schema and records.
+- Restore artifact files with permissions suitable for the backend and gateway.
+- Recreate database roles and provide the required configuration and keys.
+- Start one backend against the restored database.
+- Sign in, open an existing thread, and download a known artifact.
+- Check any separately hosted memory or sandbox resources.
+
+Do not equate a successful restore with resuming every previously active run.
+A remote sandbox or native engine session may no longer exist.
+
+Record the result and measured recovery time. Rehearse again when storage,
+encryption, authentication, or runtime deployment changes.
+
+Source: `backend/src/artifacts/storage.ts`, `backend/src/worker.ts`,
+`backend/src/secrets/crypto.ts`, and `infra/self-host/deploy-app.sh`.

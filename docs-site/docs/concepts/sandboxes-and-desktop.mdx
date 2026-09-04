@@ -1,12 +1,13 @@
 ---
 title: Sandboxes and desktop
-description: The isolated Linux workstation a run executes in, the provider behind it, warm pools, the visible desktop, and how a run survives a backend restart.
+description: The isolated Linux workstation used by sandbox-backed runs, including providers, warm pools, desktop access, and recovery limits.
 sidebar:
   order: 5
 ---
 
-Work runs inside an isolated sandbox, not in the backend process. The backend
-drives the sandbox from outside and records everything it observes.
+Sandbox-backed engines work inside an isolated workstation. The backend
+provisions it, sends turns, and records the activity it receives. The direct
+`chat` engine does not use a sandbox.
 
 ## Sandbox
 
@@ -25,6 +26,25 @@ PTY, preview, and lifecycle boundary, then keep provider-specific behavior and
 tests for native capabilities. Code above the contract does not branch on the
 provider.
 
+### Provider configuration
+
+| Variable | Required | Default / purpose |
+| --- | --- | --- |
+| `SANDBOX_PROVIDER` | No | `daytona`; accepts `daytona` or `cube`. |
+| `DAYTONA_API_KEY` | For Daytona | API credential for the Daytona control plane. |
+| `DAYTONA_API_URL` | No | `https://app.daytona.io/api`. |
+| `DAYTONA_TARGET` | No | `us`. |
+| `CUBE_API_URL` | No | `http://127.0.0.1:3000`. |
+| `CUBE_API_KEY` | Deployment-specific | Passed to Cube when configured. |
+| `CUBE_TEMPLATE_ID` | For Cube | Template used to create the workstation. |
+| `CUBE_SANDBOX_DOMAIN` | No | `cube.app`; must be a DNS hostname. |
+| `CUBE_PROXY_TRUSTED_INGRESS` | No | Enables public sandbox traffic only for a trusted ingress proxy. |
+
+Cube's E2B-compatible public proxy must use the normal port for its scheme:
+port 80 for HTTP or 443 for HTTPS. Set `CUBE_PROXY_SCHEME` and
+`CUBE_PROXY_PORT_HTTP` only when the deployment differs from the defaults. The
+adapter rejects mismatched scheme and port pairs at startup.
+
 ## Warm pool
 
 Prepared sandboxes kept ready so a new run avoids most cold-start work. Warm-pool
@@ -42,38 +62,29 @@ publishes a real MP4 artifact.
 ## Restart reconciliation
 
 Because the sandbox runs independently of the backend, a backend restart does not
-kill a live run:
+necessarily kill its resident process. Recovery depends on the selected engine:
 
 <Steps>
   <Step title="The sandbox keeps executing">
-    The engine process inside the sandbox is unaffected by a backend bounce.
+    The workstation process may continue through a backend bounce.
   </Step>
   <Step title="A recovery loop re-probes">
-    On restart, a background loop finds the in-flight session and streams the
-    interim provider events into the timeline with a visible heartbeat.
+    On restart, a background loop finds in-flight sessions and asks the selected
+    driver for its observed state. Drivers without reconciliation support cannot
+    provide the same adoption path.
   </Step>
   <Step title="The real result is adopted">
-    The recovered run adopts the finished result, or fails honestly at a bounded
-    deadline, rather than discarding work that actually completed.
+    A supported driver can report completion or interim activity. The backend
+    records the adopted result or settles the run with an explicit failure.
   </Step>
 </Steps>
 
-<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "16px", margin: "1.5rem 0" }}>
-  <img
-    src="/diagrams/run-survives-backend-restart.svg"
-    alt="Two lanes over time: the sandbox keeps executing through a backend crash while boot recovery and the adaptive reconcile loop adopt the finished result"
-    style={{ width: "100%", height: "auto", display: "block" }}
-  />
-  <p style={{ margin: "12px 4px 0", fontSize: "13px", color: "#737373" }}>
-    The sandbox lane never stops: the one-shot boot pass (runs/recovery.ts:41-58)
-    settles the commands mailbox, then the adaptive loop (recovery.ts:288,
-    index.ts:348) re-probes every 15s with run.reconciling heartbeats until it
-    adopts the real result or fails honestly at the bounded deadline.
-  </p>
-</div>
+The boot pass settles the commands mailbox, then the recovery loop re-probes
+supported sessions with visible reconciling heartbeats until it can adopt a
+result or reaches its deadline.
 
 :::warning
-The sandbox provider interface does not expose explicit pause, checkpoint, or
-snapshot operations yet. Recovery re-probes and adopts; it does not resume from a
-saved snapshot.
+The sandbox contract does not expose explicit pause, checkpoint, or snapshot
+operations. Recovery re-probes supported live engines; it does not restore a
+saved machine image.
 :::

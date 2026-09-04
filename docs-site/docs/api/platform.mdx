@@ -33,7 +33,7 @@ Values are encrypted at rest and write-only over HTTP.
 | --- | --- | --- | --- |
 | GET | `/api/provider-connections` | List the current user's connections. | `{connections}`. |
 | GET | `/api/provider-connections/:provider` | Get one provider connection. | Query `authMethod` (optional). `400 unknown provider`/`unknown auth method`, `404 provider connection not found`. |
-| PUT | `/api/provider-connections/:provider/api-key` | Upsert an API-key connection (write-only). | Body: `apiKey` (required), `metadata`. `{connection}`. |
+| PUT | `/api/provider-connections/:provider/api-key` | Upsert an API-key connection (write-only). | Providers: `openai`, `anthropic`, `openrouter`, `daytona`. Daytona also requires `metadata.snapshotName`; the backend validates the key and active snapshot before saving. |
 | POST | `/api/provider-connections/:provider/revoke` | Revoke a provider connection. | Query `authMethod` (required for `openai`). `404 provider connection not found`. |
 | POST | `/api/provider-connections/openai/chatgpt-oauth/start` | Start the managed Codex ChatGPT OAuth (device-code). | `{login}`. |
 | GET | `/api/provider-connections/openai/chatgpt-oauth/status` | Poll the managed Codex login. | `{status}`. |
@@ -42,13 +42,16 @@ Values are encrypted at rest and write-only over HTTP.
 
 ## Integrations
 
-Tenant-owned SaaS connections behind a provider-neutral lifecycle. The OAuth
-callback landing is public (authenticated by the OAuth `state`); every other route
-is user-scoped, and the `/org` variants require an org admin.
+Tenant-owned SaaS connections behind a provider-neutral lifecycle. Slack OAuth
+callbacks authenticate with a one-use state token and are public. Other callback
+paths remain behind the normal organization session adapter. The `/org` connect
+and disconnect variants also require an organization admin.
 
 | Method | Path | Description | Notes |
 | --- | --- | --- | --- |
-| GET | `/api/integrations/callback/:provider` | Public OAuth callback landing; completes the connect and redirects into the frontend. | Public (state-authenticated). `303` to the frontend on success or `/settings?integration=error` on failure. |
+| GET | `/api/integrations/slack/callback` | Current Slack OAuth callback landing. | Public, one-use `state`. `303` to the frontend on success or `/settings?integration=error` on failure. |
+| GET | `/api/integrations/callback/slack` | Compatibility alias for in-flight Slack OAuth sessions. | Same behavior as the current callback path. |
+| GET | `/api/integrations/callback/:provider` | Generic callback-first route for other providers. | Org-session plus callback `state`. |
 | GET | `/api/integrations` | List integrations for the current org and user. | `{integrations}`. |
 | POST | `/api/integrations/:provider/connect` | Start a user-owned connect flow. | Body: `returnTo` (default `/settings#integrations`). |
 | POST | `/api/integrations/:provider/connect/org` | Start an org-owned connect flow. | Org-admin. Body: `returnTo`. |

@@ -1,105 +1,129 @@
 ---
 title: Quickstart
-description: Install the two apps and bring up the backend and frontend dev servers.
+description: Install the repository and start a local UseAgent workspace.
 sidebar:
   order: 2
 ---
 
-UseAgent runs as two standalone apps that share a Postgres database. This page gets
-both dev servers up locally.
+Run these commands from the repository root unless a step says otherwise.
 
-## Prerequisites
+## 1. Prepare the database
 
-- **Bun** as the runtime and package manager. UseAgent uses Bun everywhere, never npm.
-- **Postgres** with the **pgvector** extension available. The backend is the source
-  of truth and applies its Drizzle migrations on boot; one migration runs
-  `CREATE EXTENSION IF NOT EXISTS vector`, so the server must have pgvector
-  installed and the connecting role must be able to create the extension (or it
-  must already exist in the database).
+Install Bun and run Postgres with the `vector` extension available. Create a
+development database named `useagent`, or use another name in `DATABASE_URL`.
 
-:::warning
-Exactly one backend is supported per database: sealing and the realtime SSE
-fan-out are process-local. A boot-time advisory lock detects a duplicate, but by
-default it only warns and continues; it refuses to boot only when
-`REQUIRE_SINGLE_BACKEND=1` is set (the production setting). So in dev nothing
-stops a second backend from reconciling another session's in-flight runs - point
-new work at a throwaway database. See
-[Operational invariants](/operations/invariants).
+The backend applies committed Drizzle migrations on startup. Its database role
+must be able to apply those migrations; pgvector must be installed on the
+server before a migration can enable the extension.
+
+:::note
+Use a database dedicated to this local stack. Only one backend per database is
+supported. `REQUIRE_SINGLE_BACKEND=true` makes the startup guard refuse a second
+backend; without that flag it only warns. See [operational invariants](/operations/invariants).
 :::
 
-## Install
+## 2. Install dependencies
 
-The two apps and the five shared packages each carry their own lockfile, so
-install inside each one:
+The apps and shared packages have separate package manifests and lockfiles.
+Install the shared packages first, then the apps:
 
 ```bash
-(cd frontend && bun install)
+for package in packages/*/; do
+  (cd "$package" && bun install)
+done
 (cd backend && bun install)
-for p in packages/*/; do (cd "$p" && bun install); done
+(cd frontend && bun install)
 ```
 
-The package installs matter on a fresh clone: the root `bun run typecheck` runs
-`tsc` inside every `packages/*` directory, which needs each package's own
-devDependencies.
-
-## Environment
-
-Local dev is designed to boot with almost no configuration:
-
-- `DATABASE_URL` defaults to `postgres://postgres@localhost:5432/useagent`.
-- `BETTER_AUTH_SECRET` falls back to an insecure dev default while dev mode is
-  on; the backend warns at boot. Production requires a real secret.
-- The loopback-only operator bridge stays disabled unless
-  `USEAGENT_OPERATOR_SECRET` is set to an independent random value of at least
-  32 characters. Never reuse `BETTER_AUTH_SECRET`.
-- Requests without a session fall back to a seeded dev org and user, so every
-  API works unauthenticated in local dev.
-
-Live model and sandbox work needs real keys in `backend/.env`:
-
-- A live chat turn needs `OPENROUTER_API_KEY`.
-- A sandboxed agent run needs a sandbox provider key: `DAYTONA_API_KEY` with the
-  default `SANDBOX_PROVIDER=daytona`.
-
-## Run the dev servers
-
-From the repository root:
+The docs site is optional for running the product:
 
 ```bash
-bun run dev:backend    # Hono control plane on :3201
-bun run dev:frontend   # Next.js UI on :3400
+(cd docs-site && bun install)
 ```
 
-The frontend proxies browser `/api/*` requests to the backend, so you interact
-with the product entirely through `http://localhost:3400`.
+## 3. Set the local environment
 
-<Steps>
-  <Step title="Backend is listening">
-    `:3201` answers and the boot migrator has applied the schema. Needs only
-    Postgres with pgvector.
-  </Step>
-  <Step title="Frontend is up">
-    `http://localhost:3400` loads the chat surface. A live chat turn needs
-    `OPENROUTER_API_KEY`.
-  </Step>
-  <Step title="A run streams">
-    Start an agent run and watch steps arrive live in the session timeline.
-    Needs a sandbox provider key (`DAYTONA_API_KEY` by default).
-  </Step>
-</Steps>
+Add the following to `backend/.env`, adapting the database connection for your
+machine. Preserve any existing settings you still need.
 
-## Root scripts
+```dotenv
+DATABASE_URL=postgres://postgres@localhost:5432/useagent
+PORT=3201
+FRONTEND_ORIGIN=http://localhost:3400
+BETTER_AUTH_URL=http://localhost:3400
+REQUIRE_SINGLE_BACKEND=true
+```
 
-The root scripts you will actually use day to day are:
+Set the frontend origin explicitly: the backend's default is port `3200`, while
+the frontend's current dev script uses `3400`. Using the frontend origin for
+`BETTER_AUTH_URL` keeps browser authentication on the proxied app origin.
+
+In development, the backend can use a seeded user and organization for requests
+without a session. `ALLOW_DEV_ORG=0` disables that fallback. The development
+auth-secret fallback is for local use; configure a real `BETTER_AUTH_SECRET`
+and disable development mode before exposing a deployment.
+
+The loopback operator bridge stays disabled unless `USEAGENT_OPERATOR_SECRET`
+is set to an independent random value of at least 32 characters. Do not reuse
+`BETTER_AUTH_SECRET`.
+
+### Model and sandbox access
+
+| Capability | Additional configuration |
+| --- | --- |
+| Direct chat | A model provider credential; the environment-backed path uses `OPENROUTER_API_KEY` |
+| Daytona sandboxes | `SANDBOX_PROVIDER=daytona` and `DAYTONA_API_KEY` |
+| Cube sandboxes | `SANDBOX_PROVIDER=cube` plus the endpoint, template, and provider configuration described in [Sandboxes](/concepts/sandboxes-and-desktop) |
+| Additional coding engines | An enabled engine and a supported connected account or provider credential |
+| Optional team-memory service | `MEMORY_API_URL` and the service's access configuration |
+
+A sandbox key alone does not make every engine ready. Check
+[provider connections and models](/platform/provider-connections-and-models)
+for account setup and readiness.
+
+## 4. Start both apps
+
+In one terminal:
 
 ```bash
-bun run dev:backend      # Hono control plane on :3201
-bun run dev:frontend     # Next.js UI on :3400
-bun run typecheck        # frontend, backend, and all five shared packages
+bun run dev:backend
 ```
 
-`bun run typecheck` must pass before any change is considered done. The remaining
-root scripts (`release:hosted`, `canary:hosted-release`,
-`release:provider-connection-bootstrap`, `stage:t3-dist`) are deploy-lane tooling
-covered in [Operations](/operations/deployment). For the full test and operations
-toolset, see [Verification](/operations/verification).
+In another:
+
+```bash
+bun run dev:frontend
+```
+
+Open `http://localhost:3400`. Check the backend separately with:
+
+```bash
+curl http://localhost:3201/api/health
+```
+
+The health response is `{"status":"ok"}`. It confirms the API is listening,
+not that a provider account or sandbox is ready. Try a small task through the
+workspace after configuring the relevant connection.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| Backend fails during migration | Database connectivity, role permissions, and the installed pgvector extension |
+| A second backend refuses to boot | Stop the other local backend or use a different database |
+| Authentication rejects the browser origin | Match `FRONTEND_ORIGIN` and `BETTER_AUTH_URL` to `http://localhost:3400` |
+| The UI loads but API requests fail | Backend port; `USEAGENT_API_ORIGIN` in the frontend environment if you changed it |
+| Chat or agent work fails | The selected model, enabled engine, provider connection, and sandbox readiness |
+
+## Check your changes
+
+```bash
+bun run typecheck
+```
+
+This checks the frontend, backend, and shared packages. See
+[verification](/operations/verification) for targeted tests and docs checks.
+
+Source: `backend/src/env.ts`, `backend/src/index.ts`,
+`backend/src/db/single-backend.ts`, `frontend/next.config.ts`, and the root
+`package.json`.

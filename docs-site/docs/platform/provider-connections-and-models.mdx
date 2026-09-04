@@ -1,76 +1,109 @@
 ---
 title: Provider connections and models
-description: Two ways to authenticate an engine, the gateway providers behind them, and the model families served, with the credential never entering a sandbox.
+description: How model credentials, managed Codex subscriptions, and optional Daytona infrastructure connections are stored and selected.
 sidebar:
   order: 2
 ---
 
-An engine needs credentials to run. UseAgent stores them on the trusted backend and
-resolves them at turn time, so a sandbox never holds a reusable secret.
+An engine needs an approved credential path before it can run. The platform
+supports provider API keys and a managed ChatGPT subscription path for Codex.
+The backend chooses the path for each turn from the engine's configured auth
+mode and current readiness.
 
-## Two authentication methods
+## Connections you can manage
 
 <CardGroup cols={2}>
   <Card title="Managed account" icon="user-check">
-    A ChatGPT or Codex account connected with an OAuth device flow. The token
-    bundle is stored encrypted and used from the trusted backend.
+    Connect a ChatGPT account for Codex through a device-code flow. The managed
+    session is stored and used by the trusted backend.
   </Card>
   <Card title="API key" icon="key-round">
-    A provider key stored write-only, encrypted with AES-256-GCM, resolved inside
-    the signed provider gateway.
+    Store a write-only OpenAI, Anthropic, or OpenRouter key for the current user.
+    The provider gateway resolves it on the trusted backend.
   </Card>
 </CardGroup>
 
-Connections belong to the signed-in user within the organization, not to the
-organization as a whole. Every provider-connections route requires an
-authenticated user and returns `403 user_required` otherwise; the org-level dev
-fallback alone is not enough. Reads return metadata for the current user's
+Connections belong to the signed-in user within the organization. Every
+provider-connections route requires an authenticated user and returns `403
+user_required` otherwise. Reads return metadata for the current user's
 connections only.
 
-The connection lifecycle is driven from [Settings](/product/settings):
+Daytona also uses the provider-connections store, but it is an infrastructure
+connection rather than a model provider. Settings accepts a Daytona API key and
+snapshot name, verifies that the snapshot exists and is active, and stores the
+key write-only.
+
+The lifecycle is managed from [Settings](/product/settings):
 
 | Operation | Endpoint |
 | --- | --- |
-| List the current user's connections | `GET /api/provider-connections` |
-| Managed account OAuth | `POST .../openai/chatgpt-oauth/start`, `GET .../status`, `POST .../cancel`, `POST .../revoke` |
-| Store or update a provider key | `PUT .../:provider/api-key` |
-| Revoke a provider credential | `POST .../:provider/revoke` |
+| List connections | `GET /api/provider-connections` |
+| Managed ChatGPT login | `POST .../openai/chatgpt-oauth/start`, `GET .../status`, `POST .../cancel`, `POST .../revoke` |
+| Store or update an API key | `PUT .../:provider/api-key` (`openai`, `anthropic`, `openrouter`, or `daytona`) |
+| Revoke a provider connection | `POST .../:provider/revoke` |
 
-There is no `POST` or `PUT` on the collection root: creation and update happen
-only through the per-provider key route and the OAuth subroutes.
+## Engine auth modes
 
-## Gateway providers and models
+Each engine has an auth mode configured by the deployment:
 
-API-key engines are served through the provider gateway, which fronts three
-upstreams:
+| Mode | Behavior |
+| --- | --- |
+| `provider_gateway` | The engine calls the signed provider gateway. The gateway resolves an upstream API key on the backend. |
+| `subscription` | Codex requires the signed-in user's managed ChatGPT connection. It does not fall back to an API key. |
+| `hybrid` | Codex prefers a managed ChatGPT connection and falls back to the provider gateway when no subscription connection is available. |
+
+`subscription` and `hybrid` are Codex-only. Other engines use
+`provider_gateway`. An invalid auth-mode setting makes the engine unavailable.
+
+## Provider gateway credentials
+
+The provider gateway fronts three upstreams:
 
 | Provider | Endpoint | Models |
 | --- | --- | --- |
 | Anthropic | `api.anthropic.com` | `claude-*` |
 | OpenAI | `api.openai.com` | `gpt-*` |
-| OpenRouter | `openrouter.ai/api` | Aggregated across providers |
+| OpenRouter | `openrouter.ai/api` | Models routed through OpenRouter |
 
-OpenCode runs against its own native models. Which engines and models are
-selectable in the UI is deployment configuration plus proven readiness, not a
-per-organization setting: the `ENABLED_ENGINES` env only adds optional engines
-on top of the base set, and `GET /api/config` filters further to engines whose
-readiness is proven (auth mode established, provider health ready).
+For a sandboxed run, credential resolution follows this order:
+
+1. The signed-in user's connected API key.
+2. The organization's matching secret, such as `OPENAI_API_KEY`.
+3. A backend environment key in verified development only.
+
+The chosen upstream key stays on the backend. The sandbox receives gateway
+configuration and a narrow run capability, rather than the reusable provider
+key itself.
 
 ## The Codex subscription relay
 
-A managed Codex subscription does not put OAuth state in a sandbox. The Codex
-app-server and the ChatGPT OAuth stay on the trusted backend, and only the Codex
-exec-server runs inside the sandbox, reached over a one-use, run-bound relay. See
+A managed Codex turn keeps the user's Codex home and ChatGPT OAuth material on
+the trusted backend. The sandbox runs the Codex exec server and connects to the
+backend app server through a one-use, run-bound relay capability. See
 [Engines](/concepts/engines-and-adapters#codex-subscription-relay).
 
-## Connection reconcile
+## Runtime authentication inside the sandbox
 
-A provider-connection row heals from broker truth. A revoked row may only be
-reclaimed when the live account email differs from the revoked one, which proves a
-genuinely new login rather than a stale pre-logout snapshot.
+The provider runtime has its own local authentication boundary. It creates a
+one-time T3 pairing credential inside the sandbox, exchanges it with the
+loopback runtime, deletes the pairing file, and keeps the resulting protected
+session cookie. This authenticates the local runtime UI and WebSocket; it is not
+an OpenAI, Anthropic, or OpenRouter credential.
+
+The sandbox can therefore contain short-lived run capabilities and local
+runtime session material. It does not receive the reusable upstream provider
+key or the host's managed ChatGPT token bundle.
+
+## Which engines and models appear
+
+The UI reads `GET /api/config`. Configured engines remain visible when a provider
+needs attention; `engineReadiness` explains whether each engine can dispatch.
+The response keeps dispatch-ready `engines` and `models` separate from
+`configuredEngines` and `configuredModels`. Models are also filtered by their
+concrete provider's readiness, so the list can vary by deployment and release.
 
 :::warning
-Only connection metadata is ever visible to the UI. The reusable secret, whether
-an API key or an OAuth token, is write-only and is resolved inside the gateway. It
-does not travel to the browser and it does not travel to a sandbox.
+Provider-connection reads return metadata only. API keys and managed account
+credentials are not returned to the browser. Revoking a connection removes it
+from future credential resolution.
 :::

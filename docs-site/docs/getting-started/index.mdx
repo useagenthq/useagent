@@ -1,68 +1,50 @@
 ---
 title: Getting started
-description: What the platform is made of, and the shortest path from a clone to a running stack.
+description: The parts of the app and the shortest path to your first session.
 sidebar:
   label: Overview
   order: 1
 ---
 
-UseAgent is a multi-package repository with one product UI, one backend control
-plane, and shared TypeScript packages that define the cross-package contracts.
-Everything a user sees is a rendering of the backend's durable event log.
+UseAgent has a Next.js frontend, a Bun backend, and a Postgres database.
+Sandboxed agent work also needs a configured sandbox provider and an available
+engine connection.
 
-## The three moving parts
+| Part | Local address | Responsibility |
+| --- | --- | --- |
+| Frontend | `http://localhost:3400` | The workspace, sessions, files, and settings |
+| Backend | `http://localhost:3201` | Authentication, API, run orchestration, and event streams |
+| Postgres | Configured with `DATABASE_URL` | Durable application records |
+| Sandbox provider | Configured separately | Remote computers for agent work |
 
-<CardGroup cols={3}>
-  <Card title="Frontend" icon="monitor">
-    A Next.js UI at port `3400`. Chat, agent sessions, skills, playbooks, wiki,
-    knowledge, memory hub, artifacts, secrets, learnings review, automations,
-    dashboard, review, apps, and settings. Browser `/api/*` calls are proxied to
-    the backend.
+The browser sends `/api/*` requests through the frontend to the backend. It does
+not connect to Postgres directly.
+
+## Pick your next step
+
+<CardGroup cols={2}>
+  <Card title="Local quickstart" href="/getting-started/quickstart" icon="rocket">
+    Start the frontend and backend with a local development database.
   </Card>
-  <Card title="Backend" icon="server">
-    A Hono and Postgres control plane at port `3201`. Auth, org scoping, runs,
-    sandboxes, engines, knowledge, memory, skills, automations, artifacts,
-    uploads, and connectors.
+  <Card title="Repository map" href="/getting-started/repository-map" icon="folder">
+    Find the source for the app, contracts, sandboxes, and docs.
   </Card>
-  <Card title="Shared packages" icon="package">
-    Runtime-neutral client and harness contracts, artifact renderers, and the
-    deterministic conformance suite that guards them.
+  <Card title="CLI and MCP" href="/getting-started/cli" icon="terminal">
+    Send tasks to a running deployment from a terminal or local agent.
+  </Card>
+  <Card title="Self-hosting" href="/operations/deployment" icon="server">
+    Understand what the reference host setup provides and what remains to configure.
   </Card>
 </CardGroup>
 
-## How a request travels
+## How a task works
 
-<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "12px", margin: "16px 0 8px" }}>
-  <img
-    src="/diagrams/command-lane-round-trip.svg"
-    alt="The command-lane round trip: Web UI, Slack, or an automation becomes a durable command, a run worker spawns a one-shot engine in a sandbox, native frames are canonicalized into the Postgres event log, and a thread-scoped SSE stream renders the session timeline."
-    style={{ display: "block", width: "100%", height: "auto" }}
-  />
-</div>
+1. A request creates or continues a thread through the command API.
+2. The backend resolves the engine, account, and execution environment.
+3. The engine's output is recorded and translated into a common event format.
+4. The session view reads a snapshot and receives live updates over SSE.
+5. Follow-up messages continue the thread; published artifacts remain accessible
+   through the app.
 
-*The command-lane round trip: every entry point lands in the same durable command lane, and the UI only ever renders the canonical event log.*
-
-<Steps>
-  <Step title="A command enters the lane">
-    A prompt from the web app, Slack, or a scheduled automation becomes a durable
-    command with an idempotency key, so retries never duplicate work.
-  </Step>
-  <Step title="A run executes in a sandbox">
-    The backend claims a sandbox, spawns the engine one-shot, and streams its
-    output into the event log as canonical steps.
-  </Step>
-  <Step title="The UI renders the log">
-    The session view subscribes to a thread-scoped stream and reduces events into
-    a timeline. Reconnects receive a fresh durable snapshot.
-  </Step>
-</Steps>
-
-Read [Quickstart](/getting-started/quickstart) to run it locally, then
-[Repository map](/getting-started/repository-map) for where each piece lives. The
-[Concepts](/concepts) section defines every term used above.
-
-:::tip
-The runtime is **Bun** everywhere. The two apps and the five `packages/*` each
-carry their own lockfile: install inside `frontend/` and `backend/` to run the
-dev servers, and inside each package before `bun run typecheck`.
-:::
+See [request flow](/architecture/request-flow) for the runtime details, including
+direct chat, resident runtimes, and recovery.

@@ -1,76 +1,58 @@
 ---
 title: Repository map
-description: Where each part of the platform lives, from the two apps to the shared contract packages.
+description: Where to find the UI, backend, shared contracts, CLI, and deployment setup.
 sidebar:
   order: 3
 ---
 
-The repository is deliberately thin: two apps plus shared packages that define
-the contracts between them.
+## Apps and supporting directories
 
-<Tree>
-  <Tree.Folder name="frontend" defaultOpen>
-    <Tree.File name="Next.js UI, port 3400" />
-  </Tree.Folder>
-  <Tree.Folder name="backend" defaultOpen>
-    <Tree.File name="Hono + Postgres control plane, port 3201" />
-  </Tree.Folder>
-  <Tree.Folder name="packages" defaultOpen>
-    <Tree.File name="agent-client" />
-    <Tree.File name="agent-harness" />
-    <Tree.File name="artifact-formats" />
-    <Tree.File name="artifact-workspace" />
-    <Tree.File name="conformance" />
-  </Tree.Folder>
-  <Tree.Folder name="infra">
-    <Tree.File name="terraform/hetzner: self-host IaC" />
-    <Tree.File name="terraform/prod: Cloudflare DNS" />
-  </Tree.Folder>
-  <Tree.Folder name="deploy">
-    <Tree.File name="hetzner: hosted release gates" />
-  </Tree.Folder>
-  <Tree.Folder name="memory">
-    <Tree.File name="optional team-memory service docs" />
-  </Tree.Folder>
-</Tree>
-
-## How the pieces depend on each other
-
-<div style="background:#ffffff;border:1px solid #ebebeb;border-radius:12px;padding:12px;margin:24px 0;">
-  <img src="/diagrams/package-dependency-graph.svg" alt="Package dependency graph: frontend depends on agent-client, agent-harness, and artifact-workspace; backend depends on agent-client, agent-harness, artifact-formats, and artifact-workspace; agent-client depends on agent-harness and artifact-workspace; artifact-formats depends on artifact-workspace; conformance guards agent-client and agent-harness with contract tests." style="width:100%;height:auto;display:block;" />
-</div>
-
-Every arrow is a real `file:` dependency in a `package.json`; the dashed arrows are the conformance package's contract tests over the client and harness.
-
-## What each path owns
-
-| Path | What it owns |
+| Path | Responsibility |
 | --- | --- |
-| `frontend/` | The Next.js UI: chat, agent sessions, skills, playbooks, wiki, artifacts, secrets, learnings review, automations, and settings. |
-| `backend/` | The Hono and Postgres control plane: auth, org scoping, runs, sandboxes, engines, knowledge, memory, skills, automations, artifacts, uploads, and connectors. |
-| `packages/agent-client/` | Runtime-neutral client for thread events, SSE reconnect, reducers, selectors, and typed API helpers. |
-| `packages/agent-harness/` | Provider-neutral canonical event and control contract for engine adapters. |
-| `packages/artifact-formats/` | Native DOCX, XLSX, PPTX, and PDF renderers plus bounded Office text extraction. |
-| `packages/artifact-workspace/` | Provider-neutral workpiece kinds, actions, and the native export capability matrix shared by backend and frontend. |
-| `packages/conformance/` | Deterministic, framework-free contract tests for the shared client and harness packages. It does not run live providers. |
-| `infra/self-host/hetzner/` | Self-host IaC: provisions a Hetzner host (Postgres 16 + pgvector, bun, Caddy) with one apply, and `deploy-app.sh` brings up the core stack. |
-| `infra/prod/` | Terraform for Cloudflare DNS only. |
-| `deploy/` | Hosted release gates and canaries invoked by the root `release:*` scripts. |
-| `memory/` | Optional team-memory service docs and bring-up notes. |
+| `frontend/` | Next.js workspace, session timeline, artifacts, knowledge, and settings |
+| `backend/` | Bun and Hono API, database, orchestration, adapters, and gateway |
+| `docs-site/` | This Blume documentation site |
+| `docs/architecture/` | Detailed architecture notes and the request-flow diagram |
+| `infra/self-host/` | Host bring-up script and Hetzner reference provisioning |
+| `memory/` | Optional shared memory service setup and operating notes |
 
-## Notable product surfaces
+## Shared packages
 
-- `frontend/app/page.tsx` is the lightweight chat surface. It streams answers over
-  SSE with read-only knowledge, wiki, and memory retrieval cited inline, and can
-  promote a chat into a full agent run.
-- `frontend/app/agent/new/page.tsx` is the task composer that starts agent runs.
-- `frontend/app/session/(thread)/[id]/page.tsx` is the thread view for a live or
-  settled run, rendering the canonical event log through one vendored session
-  grammar.
-- `frontend/app/lab/session/` renders one synthetic session through the real
-  timeline components, so every event type can be reviewed on a single page.
-- `frontend/app/learnings/page.tsx` is the human review queue for the
-  self-improvement lane.
+| Package | Responsibility |
+| --- | --- |
+| `agent-client` | Typed HTTP helpers, event streams, reducers, selectors, and fleet client |
+| `agent-harness` | Canonical engine events and adapter contracts |
+| `sandbox-contract` | Common sandbox interface and provider capability model |
+| `artifact-workspace` | Workpiece types, actions, and export capability definitions |
+| `artifact-formats` | Native document, spreadsheet, presentation, and PDF handling |
+| `conformance` | Deterministic client and harness contract tests |
+| `cli` | Terminal commands and a stdio MCP server for dispatching fleet work |
 
-The [Concepts](/concepts) section explains what runs, engines, sandboxes, and the
-gateway actually do.
+Each package has its own `package.json`. The root typecheck lists its checks
+explicitly; adding a package does not automatically add a root check.
+
+## Follow a task through the source
+
+1. **Page and composer:** `frontend/app/page.tsx`,
+   `frontend/app/session/new/page.tsx`, and `frontend/components/chat/`.
+2. **HTTP routing and boot:** `backend/src/index.ts`.
+3. **Commands, runs, and recovery:** `backend/src/runs/` and
+   `backend/src/worker.ts`.
+4. **Engine adapters:** `backend/src/engines/`.
+5. **Shared event contract:** `packages/agent-harness/src/` and
+   `packages/agent-client/src/`.
+6. **Session rendering:** `frontend/app/session/(thread)/[id]/page.tsx` and
+   the chat timeline components.
+
+## Useful entry points
+
+- `frontend/app/lab/session/page.tsx` hosts a synthetic session for inspecting
+  the real timeline components.
+- `backend/src/knowledge/gateway/` implements trusted tools and approvals.
+- `backend/src/provider-connections/` handles provider accounts and credentials.
+- `backend/src/artifacts/` owns artifact storage, routes, and publishing.
+- `backend/drizzle/` contains committed database migrations.
+- `packages/cli/src/bin.ts` is the CLI entry point.
+
+Read [shared packages](/architecture/shared-packages) for the dependency
+boundaries and [request flow](/architecture/request-flow) for the end-to-end path.

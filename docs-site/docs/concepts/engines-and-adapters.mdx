@@ -1,6 +1,6 @@
 ---
 title: Engines and adapters
-description: How Codex, Claude, and OpenCode are driven behind a neutral adapter, the runtime path versus ACP, and the Codex subscription relay.
+description: How OpenCode, Pi, Codex, and Claude connect through provider drivers and compatibility adapters.
 sidebar:
   order: 4
 ---
@@ -10,38 +10,44 @@ what to do; it drives an existing one and owns everything around it.
 
 ## Engine
 
-The coding agent runtime, such as Codex, Claude, or OpenCode. It decides what to
-do and emits native events. The harness drives each turn one-shot from outside
-the sandbox, but the engine process itself is resident inside the thread's
-sandbox and reused across turns: OpenCode runs a persistent `opencode serve`
-(`backend/src/engines/opencode-server.ts`), and the ACP Claude and Codex route
-keeps a resident relay whose session is reloaded turn to turn
-(`backend/src/engines/acp-server.ts`). The settled invariants are narrower than
-"exits per run": no engine UI servers or iframes, and no engine process
-outliving its thread's sandbox.
+The coding-agent runtime that decides what to do and emits native activity.
+OpenCode runs a resident `opencode serve`; Pi uses a persistent JSONL session
+through an RPC bridge; selected Codex, OpenCode, and Claude traffic can use the
+orchestration runtime; and Codex or Claude can fall back to the resident ACP
+compatibility path. The direct `chat` engine calls the model without a sandbox.
 
-## Engine adapter
+## Provider driver
 
-The translator between an engine's protocol and UseAgent's thread, command, and
-event contracts. Adapters live in `backend/src/engines/`. The adapter's job is to
-turn an engine's native stream into canonical steps and to accept control (start,
-cancel, and reply turns) from the command lane.
+The typed lifecycle boundary in `@useagent/agent-harness`. A driver declares its
+protocol and session generation, supported lifecycle operations and steer input
+kinds, model policy, tool mode, and capability map. The validator checks that
+those declarations agree. For example, a driver cannot advertise resume or
+per-turn model selection without the matching lifecycle operation. Unsupported
+operations return a classified result. Backend adapters connect supported
+operations to sandboxes and native protocols.
 
-## Runtime path versus ACP
+## Current execution paths
 
-There are two adapter routes, with different levels of authoritative lifecycle
-support:
+There are several execution paths because engines expose different native
+interfaces:
 
 <CardGroup cols={2}>
   <Card title="Runtime path" icon="git-branch">
-    The primary orchestration route (`backend/src/engines/runtime-*`). It carries
-    authoritative history, approvals, questions, child agents, patches, todos,
-    reasoning, and usage. It is an adapter path, not a second product UI.
+    An operator-gated orchestration route for Codex, OpenCode, and optionally
+    Claude. It projects native activities such as questions, approvals, tools,
+    child agents, reasoning, and usage.
   </Card>
-  <Card title="ACP" icon="cable">
-    Agent Client Protocol, used by the legacy resident Codex and Claude route
-    when the runtime path is not selected. It has fewer authoritative lifecycle
-    surfaces than the runtime path.
+  <Card title="Native drivers" icon="terminal">
+    OpenCode speaks to its resident server. Pi speaks to its RPC bridge and
+    resumes from the persisted session file.
+  </Card>
+  <Card title="ACP compatibility" icon="cable">
+    Codex and Claude use resident ACP agents when the runtime path is not
+    selected. This route exposes fewer native lifecycle surfaces.
+  </Card>
+  <Card title="Direct chat" icon="message-circle">
+    The `chat` engine uses the durable command and run model without creating a
+    workstation.
   </Card>
 </CardGroup>
 
@@ -50,12 +56,13 @@ turns it on (off unless `1` or `true`), and `RUNTIME_RUN_ADAPTER_MODE` chooses
 `canary`, which uses a thread and run allowlist, or `all`
 (`backend/src/engines/runtime-adapter.ts`). With no
 `RUNTIME_RUN_ADAPTER_ENGINES` list configured, the runtime lane covers codex and
-opencode while claude stays on the ACP compatibility path. The shipped
-deployment enables the lane in `mode=all` (the provisioning scripts).
+opencode while claude stays on the ACP compatibility path. Deployment
+configuration decides whether the gate is enabled; source code alone does not
+establish the current production mode.
 
 The production worker resolves an engine registry before each turn. Native
 OpenCode and selected runtime-path routes receive a concrete `ProviderDriver`;
-legacy ACP Claude and Codex execution is declared as an `EngineAdapter`
+ACP Claude and Codex execution is declared as an `EngineAdapter`
 compatibility path.
 
 :::note
@@ -85,10 +92,9 @@ the Codex exec-server runs inside Cube or Daytona.
   </figcaption>
 </figure>
 
-It is proven end to end in production: first turns, multi-turn replies (the relay
-continues a bound thread when the driver restarts), and the run-bound tool
-surface all run live. This is also the one direct backend WebSocket ingress;
-other product traffic stays behind the frontend.
+The relay has focused tests for grant consumption and runtime behavior. A live
+deployment still needs its own readiness check; source code alone does not prove
+an active subscription connection.
 
 ## Engine readiness is credential-mode aware
 
@@ -96,3 +102,12 @@ A release proves the path that matches how an engine authenticates. A
 subscription-only Codex release proves the connected account and the native turn
 path; an API-key engine proves its mapped gateway provider. Readiness checks do
 not assume a single credential shape across engines.
+
+## Session authority
+
+The backend persists more than a native session id. A provider-session binding
+also records the provider, runtime, protocol identity, session generation, and a
+credential epoch when the session depends on a connected account. Resume,
+cancel, and recovery resolve a driver only when that complete binding still
+matches. Stale generations, changed subscription credentials, and ambiguous
+legacy sessions fail closed.
