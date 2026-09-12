@@ -166,7 +166,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [agent-harness, agent-client, conformance, sandbox-contract, sandbox-daytona, sandbox-cube, sandbox-box, cli]
+        package: [agent-harness, agent-client, conformance, sandbox-contract, sandbox-daytona, sandbox-cube, sandbox-box, cli, artifact-formats, artifact-workspace]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -253,8 +253,9 @@ jobs:
           for p in packages/*/; do
             if [ -f "$p/package.json" ]; then (cd "$p" && bun install --frozen-lockfile); fi
           done
-      # Chat is the surface we own end-to-end; its store/timeline/part-renderer
-      # logic is pure and deterministic.
+      # `bun run test` = `bun test components app lib`: the chat store/timeline/
+      # part-renderer logic, the route-level app tests and the lib helpers. All
+      # three trees are pure and deterministic.
       - name: bun run test
         working-directory: frontend
         run: bun run test
@@ -263,3 +264,26 @@ jobs:
       - name: bun run build
         working-directory: frontend
         run: bun run build
+
+  # ── Frontend lint (biome) ────────────────────────────────────────────────────
+  # biome.jsonc is the guardrail for real defects (a11y, unused code, floating
+  # promises). Errors fail this job; warnings are reported but do not gate.
+  frontend-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Cache bun install store
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-store-${{ runner.os }}-${{ hashFiles('frontend/bun.lock', 'packages/*/bun.lock') }}
+          restore-keys: bun-store-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+        working-directory: frontend
+      - name: bun run lint
+        working-directory: frontend
+        run: bun run lint
