@@ -1,119 +1,71 @@
 import { describe, expect, test } from "bun:test";
-import {
-  acpCatalogKey,
-  cacheAcpCommands,
-  cacheCommandCatalog,
-  defaultSnapshot,
-  readCommandCatalog,
-} from "../src/runs/command-catalog";
+import { eq } from "drizzle-orm";
+import { db } from "../src/db/client";
+import { canonicalEvents, runs } from "../src/db/schema";
+import { readLatestEngineCommandCatalog } from "../src/runs/command-catalog";
+import { DEV_ORG_ID } from "../src/seed";
 import { json, uid } from "./helpers";
 
-describe("command catalog cache", () => {
-  test("readCommandCatalog: unknown snapshot → null; upsert; empty/garbage ignored", async () => {
-    const snap = uid("snap"); // unique — never the default snapshot below
-
-    // Never cached.
-    expect(await readCommandCatalog(snap)).toBeNull();
-
-    // Empty and garbage bodies never clobber (stay uncached).
-    await cacheCommandCatalog(snap, "[]");
-    await cacheCommandCatalog(snap, "not json");
-    expect(await readCommandCatalog(snap)).toBeNull();
-
-    // A valid body caches, normalized: nameless entries dropped, missing
-    // description → null.
-    await cacheCommandCatalog(
-      snap,
-      JSON.stringify([
-        { name: "init", description: "seed the repo" },
-        { name: "review" },
-        { description: "no name — dropped" },
-      ]),
-    );
-    const first = await readCommandCatalog(snap);
-    expect(first).not.toBeNull();
-    expect(first!.commands).toEqual([
-      { name: "init", description: "seed the repo" },
-      { name: "review", description: null },
-    ]);
-    expect(first!.fetchedAt).toBeInstanceOf(Date);
-
-    // Re-caching upserts (single row per snapshot).
-    await cacheCommandCatalog(snap, JSON.stringify([{ name: "plan" }]));
-    const second = await readCommandCatalog(snap);
-    expect(second!.commands).toEqual([{ name: "plan", description: null }]);
+/** A settled run in `orgId` whose native session advertised `commands` for `provider`,
+ *  written as the durable canonical `commands.updated` the picker reads. */
+async function advertise(
+  orgId: string,
+  provider: string,
+  commands: { name: string; description?: string }[],
+): Promise<string> {
+  const runId = uid("run");
+  await db.insert(runs).values({
+    id: runId, prompt: "root", model: "claude-haiku-4-5", engine: provider === "mock" ? "mock" : "codex",
+    status: "completed", threadId: runId, engineSessionId: `ses-${runId}`, orgId,
+  }).onConflictDoNothing();
+  await db.insert(canonicalEvents).values({
+    eventId: `${runId}:commands`, revision: 0, runId, threadId: runId, seq: 0,
+    kind: "commands.updated", ts: Date.now(),
+    identity: { provider, nativeSessionId: `ses-${runId}` },
+    body: { catalog: commands, commands: commands.map((c) => c.name) },
   });
+  return runId;
+}
 
-  test("GET /api/commands serves the current default snapshot cache", async () => {
-    // The test database is intentionally durable across invocations, so the
-    // default snapshot may already be primed by an earlier run. Upsert a unique
-    // command and assert the route reads that current value rather than making
-    // test order or database freshness part of the product contract.
-    const commandName = uid("review");
-    await cacheCommandCatalog(
-      defaultSnapshot(),
-      JSON.stringify([{ name: commandName, description: "review the diff" }]),
-    );
-    const populated = await json<{
-      commands: { name: string; description: string | null }[];
-      fetched_at: string | null;
-    }>("/api/commands");
-    expect(populated.status).toBe(200);
-    expect(populated.body.commands).toContainEqual({
-      name: commandName,
-      description: "review the diff",
-    });
-    expect(typeof populated.body.fetched_at).toBe("string");
-  });
-});
-
-// Slice 2 (+ review hardening): ACP native command catalogs, cached keyed by ORG and ENGINE
-// (never cross-provider, never cross-tenant), carrying the argument hint, replacement +
-// no-clobber-on-empty. The dev org (uid-free) is used by the route; unit calls use explicit orgs.
-describe("ACP command catalog (Slice 2)", () => {
-  const ORG = "org-A";
-
-  test("caches an engine's commands (name + description + input) and reads them back", async () => {
-    await cacheAcpCommands(ORG, "claude", [
-      { name: "review", description: "Review the diff", input: "[files]" },
-      { name: "status" },
-    ]);
-    expect((await readCommandCatalog(acpCatalogKey(ORG, "claude")))?.commands).toEqual([
-      { name: "review", description: "Review the diff", input: "[files]" },
+describe("pre-session command catalog from the canonical stream", () => {
+  test("returns the latest delivered catalog even when its wall-clock timestamp is older", async () => {
+    const provider = uid("engine");
+    await advertise(DEV_ORG_ID, provider, [{ name: "old-review" }]);
+    const latestRun = await advertise(DEV_ORG_ID, provider, [{ name: "review", description: "Review the diff" }, { name: "status" }]);
+    await db.update(canonicalEvents).set({ createdAt: new Date("2000-01-01T00:00:00Z") }).where(eq(canonicalEvents.runId, latestRun));
+    const latest = await readLatestEngineCommandCatalog(DEV_ORG_ID, provider);
+    expect(latest?.commands).toEqual([
+      { name: "review", description: "Review the diff", input: null },
       { name: "status", description: null, input: null },
     ]);
+    expect(latest?.fetchedAt).toBeInstanceOf(Date);
   });
 
-  test("engines are isolated: codex's catalog never returns claude's commands", async () => {
-    await cacheAcpCommands(ORG, "codex", [{ name: "codex-only" }]);
-    const codex = (await readCommandCatalog(acpCatalogKey(ORG, "codex")))?.commands.map((c) => c.name) ?? [];
-    expect(codex).toContain("codex-only");
-    expect(codex).not.toContain("claude-only");
+  test("engines and orgs are isolated; an engine nobody ran yet has no catalog", async () => {
+    const provider = uid("engine");
+    await advertise(DEV_ORG_ID, provider, [{ name: "mine" }]);
+    await advertise(uid("org"), provider, [{ name: "theirs" }]);
+    expect((await readLatestEngineCommandCatalog(DEV_ORG_ID, provider))?.commands.map((c) => c.name)).toEqual(["mine"]);
+    expect(await readLatestEngineCommandCatalog(DEV_ORG_ID, uid("other-engine"))).toBeNull();
   });
 
-  test("ORGS are isolated: org B never sees org A's session-derived commands", async () => {
-    await cacheAcpCommands("org-A", "claude", [{ name: "a-secret-skill" }]);
-    await cacheAcpCommands("org-B", "claude", [{ name: "b-skill" }]);
-    const b = (await readCommandCatalog(acpCatalogKey("org-B", "claude")))?.commands.map((c) => c.name) ?? [];
-    expect(b).toEqual(["b-skill"]);
-    expect(b).not.toContain("a-secret-skill");
-  });
+  test("GET /api/commands?engine= serves the current org's latest catalog for that engine", async () => {
+    const provider = uid("engine");
+    const commandName = uid("review");
+    await advertise(DEV_ORG_ID, provider, [{ name: commandName, description: "review the diff" }]);
+    const res = await json<{
+      engine: string;
+      commands: { name: string; description: string | null; input: string | null }[];
+      fetched_at: string | null;
+    }>(`/api/commands?engine=${encodeURIComponent(provider)}`);
+    expect(res.status).toBe(200);
+    expect(res.body.engine).toBe(provider);
+    expect(res.body.commands).toContainEqual({ name: commandName, description: "review the diff", input: null });
+    expect(typeof res.body.fetched_at).toBe("string");
 
-  test("an EMPTY snapshot never clobbers a good cache; a later non-empty REPLACES", async () => {
-    await cacheAcpCommands(ORG, "claude", [{ name: "keep-a" }, { name: "keep-b" }]);
-    await cacheAcpCommands(ORG, "claude", []); // transient empty frame - ignored by the priming cache
-    expect((await readCommandCatalog(acpCatalogKey(ORG, "claude")))?.commands.map((c) => c.name)).toEqual(["keep-a", "keep-b"]);
-    await cacheAcpCommands(ORG, "claude", [{ name: "fresh" }]); // replacement
-    expect((await readCommandCatalog(acpCatalogKey(ORG, "claude")))?.commands.map((c) => c.name)).toEqual(["fresh"]);
-  });
-
-  test("GET /api/commands?engine=claude serves THIS org's ACP catalog (opencode stays separate)", async () => {
-    // The route resolves the current org (dev org in tests) - seed under that same org via a run.
-    const res0 = await json<{ engine: string; commands: { name: string }[] }>("/api/commands?engine=claude");
-    expect(res0.status).toBe(200);
-    expect(res0.body.engine).toBe("claude");
-    // opencode default catalog is a different (org-neutral) key, never the ACP one.
-    const oc = await json<{ engine: string }>("/api/commands");
-    expect(oc.body.engine).toBe("opencode");
+    const empty = await json<{ commands: unknown[]; fetched_at: string | null }>(`/api/commands?engine=${encodeURIComponent(uid("unused"))}`);
+    expect(empty.status).toBe(200);
+    expect(empty.body.commands).toEqual([]);
+    expect(empty.body.fetched_at).toBeNull();
   });
 });

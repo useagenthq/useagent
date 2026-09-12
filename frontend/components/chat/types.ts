@@ -83,7 +83,7 @@ export function runTitle(prompt: string | null | undefined): string {
 // SERVER reports configured (GET /api/capabilities, gated by ENABLED_ENGINES).
 // Runtime capability kinds come from that endpoint, while primary subtitles
 // remain product-facing harness descriptions and never expose transport names.
-// The legacy ids ("mock","claude-sdk","daytona","acp") stay in
+// The legacy ids ("mock","claude-sdk","daytona") stay in
 // the EngineId union so old rows still type but never render as a choice.
 export const ENGINES: { id: EngineId; label: string }[] = [
   { id: "opencode", label: "OpenCode" },

@@ -22,8 +22,8 @@ empty/error — with zero fabricated strings. `cleanup.ts` deletes every fixture
    preserved.
 2. **Reply composer** — per-submission `Idempotency-Key`, key **reused** on retry
    of the same text, draft restore + failed alert, recovery on real send.
-3. **Slash autocomplete** — `/` popover from a live thread (commands come from the
-   sandbox's `GET /api/live-proxy/{id}/command`), prefix filter, Enter **completes**
+3. **Slash autocomplete** — `/` popover from a thread (commands come from the
+   org-scoped native catalog at `GET /api/commands`), prefix filter, Enter **completes**
    `/<cmd> ` and does **not** submit.
 4. **Live streaming** — progressive markdown narration, LoadingState pixel-grid
    visible while live then replaced by the settled answer, no prompt echo

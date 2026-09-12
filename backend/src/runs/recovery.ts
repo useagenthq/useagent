@@ -1,7 +1,6 @@
 import {
   resolveHarness,
   resolveProviderDriverForSession,
-  resolveProviderRegistration,
 } from "../engines";
 import type {
   HarnessCheckpoint,
@@ -9,7 +8,7 @@ import type {
   HarnessReconciliation,
   HarnessSessionHandle,
 } from "../engines/types";
-import { getLastStepAt, getRun, setRunProviderSession, STALE_SUMMARY } from "./repo";
+import { getLastStepAt, getRun, STALE_SUMMARY } from "./repo";
 import { finalizeRun, resolveDurableFinalizationOutcome } from "./finalize";
 import {
   providerEventExists,
@@ -38,16 +37,13 @@ import { assertNever } from "../util/exhaustive";
 import { CANCEL_SUMMARY, hasRunCancelIntent } from "../commands/cancel";
 import {
   parseProviderSessionBinding,
-  providerSessionBinding,
   type ProviderSessionBinding,
 } from "@useagent/agent-harness/canonical";
 import {
-  providerDriverSupports,
   providerProtocolIdentity,
 } from "@useagent/agent-harness/control";
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/client";
-import { providerEvents } from "../db/schema";
 import { providerSessionAuthIsCurrent } from "../engines/provider-session-authority";
 import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 import { piBridgeManager } from "../engines/pi-rpc-bridge";
@@ -181,10 +177,7 @@ async function recoverRunningRun(
     const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
     return durable?.status === "completed" ? "reconciled" : "failed";
   }
-  const legacyBinding = !cmd.providerSession
-    ? await legacyRecoveryBinding(cmd)
-    : null;
-  const binding = cmd.providerSession ?? legacyBinding;
+  const binding = cmd.providerSession;
   const authCurrent = binding
     ? await providerSessionAuthIsCurrent({
         binding,
@@ -216,9 +209,6 @@ async function recoverRunningRun(
     const finalized = await finalizeRun(cmd.runId, "failed", STALE_SUMMARY, 0);
     const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
     return durable?.status === "completed" ? "reconciled" : "failed";
-  }
-  if (legacyBinding) {
-    await setRunProviderSession(cmd.runId, legacyBinding);
   }
 
   const lastStepAt = await getLastStepAt(cmd.runId);
@@ -313,46 +303,6 @@ async function parkRunningRun(
       deadlineMs: now + RECONCILE_PARK_BUDGET_MS,
     });
   }
-}
-
-/** Transitional resolver for rows created before provider_session existed.
- * It derives authority only from trusted engine/runtime columns plus the
- * currently selected driver contract. Session-id prefixes never participate;
- * dynamic-generation and non-reconciling drivers remain fail-closed. */
-async function legacyRecoveryBinding(cmd: ActiveCommand): Promise<ProviderSessionBinding | null> {
-  if (
-    !cmd.engineSessionId ||
-    !cmd.sandboxId ||
-    (cmd.engine !== "opencode" && cmd.engine !== "daytona")
-  ) return null;
-  const [evidence] = await db
-    .select({ id: providerEvents.id })
-    .from(providerEvents)
-    .where(and(
-      eq(providerEvents.runId, cmd.runId),
-      eq(providerEvents.provider, "opencode"),
-      eq(providerEvents.eventType, "session.started"),
-      eq(providerEvents.nativeSessionId, cmd.engineSessionId),
-    ))
-    .limit(1);
-  if (!evidence) return null;
-  const driver = resolveProviderRegistration("opencode")?.driver;
-  if (
-    !driver ||
-    !providerDriverSupports(driver, "reconcile") ||
-    typeof driver.descriptor.sessionGeneration !== "number" ||
-    providerProtocolIdentity(driver.descriptor.protocol) !== "opencode-server/compat"
-  ) {
-    return null;
-  }
-  return providerSessionBinding({
-    provider: "opencode",
-    nativeSessionId: cmd.engineSessionId,
-    runtime: { kind: "sandbox", id: cmd.sandboxId },
-    protocolVersion: providerProtocolIdentity(driver.descriptor.protocol),
-    capabilities: driver.descriptor.capabilities,
-    generation: driver.descriptor.sessionGeneration,
-  });
 }
 
 /** Payload of the durable "reconciling after restart" marker. `reason` is

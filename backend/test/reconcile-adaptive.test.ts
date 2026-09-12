@@ -19,7 +19,7 @@ import { getRun, insertStep, setRunProviderSession, setRunSandbox, setRunStatus,
 import { uid } from "./helpers";
 import { providerSessionBinding } from "@useagent/agent-harness/canonical";
 import { providerProtocolIdentity } from "@useagent/agent-harness/control";
-import { opencodeProviderDriver } from "../src/engines/opencode-server";
+import { t3ProviderDrivers } from "../src/engines/t3-provider-driver";
 import { t3ProviderDrivers } from "../src/engines/t3-provider-driver";
 
 // The ADAPTIVE reconciler (#63): boot PARKS a transient run instead of honest-
@@ -52,7 +52,7 @@ async function seedRunning(
   await setRunStatus(id, "running");
   await setRunSandbox(id, "sb_x");
   const driver = engine === "opencode"
-    ? opencodeProviderDriver
+    ? t3ProviderDrivers.opencode
     : t3ProviderDrivers[engine as "codex" | "claude"];
   await setRunProviderSession(id, providerSessionBinding({
     provider: engine === "daytona" ? "opencode" : engine,

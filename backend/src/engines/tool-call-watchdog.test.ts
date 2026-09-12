@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import {
   createToolCallWatchdog,
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
@@ -52,16 +51,5 @@ describe("tool call watchdog", () => {
     await sleep(50);
     expect(expiries).toHaveLength(0);
     expect(watchdog.expired).toBeNull();
-  });
-
-  test("the OpenCode turn registers every tool step and ends the turn with the expiry", () => {
-    const source = readFileSync(new URL("./opencode-server.ts", import.meta.url), "utf8");
-    expect(source).toContain("timeoutMs: toolCallTimeoutMs()");
-    expect(source).toContain("toolWatchdog.start(partId, {");
-    expect(source).toContain("toolWatchdog.finish(partId);");
-    expect(source).toContain("if (expiry) throw new Error(expiry.message);");
-    expect(source).toContain("output: expiry.message, error: true");
-    expect(source).toContain("while (!ctx.signal.aborted && !turnAbort.signal.aborted)");
-    expect(source).toContain("toolWatchdog.stop();");
   });
 });

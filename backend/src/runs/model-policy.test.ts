@@ -145,11 +145,9 @@ describe("paid model policy", () => {
         ...OPENCODE_ALLOWED_MODELS.openrouter,
       ],
     );
-    expect(allowedModelsForEngine("acp", {})).toEqual([]);
   });
 
-  test("generic ACP is never a paid execution target and mock stays test-friendly", () => {
-    expect(isModelAllowedForEngine("acp", "anything")).toBe(false);
+  test("mock stays test-friendly", () => {
     expect(isModelAllowedForEngine("mock", "fixture-model")).toBe(true);
   });
 });

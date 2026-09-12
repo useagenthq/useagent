@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { HarnessSession } from "@useagent/agent-harness/canonical";
 import { unsupportedExecutionCapabilitySnapshot } from "./execution-capabilities";
-import { createSandboxSessionRevealPersister } from "./sandbox";
+import { createSandboxSessionRevealPersister } from "./sandbox-session-persistence";
 
 describe("CLI session reveal persistence", () => {
   test("commits the first revealed session without waiting for terminal output", async () => {

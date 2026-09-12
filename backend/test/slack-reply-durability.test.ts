@@ -5,7 +5,7 @@ import { artifacts, providerEvents, slackOutbox, slackThreads } from "../src/db/
 import { acceptRunCommand } from "../src/commands";
 import { finalizeRun } from "../src/runs/finalize";
 import { recoverStaleRuns, type ReconcileProbe } from "../src/runs/recovery";
-import { recordProviderEvent, recordProviderEventIfAbsent } from "../src/runs/provider-events";
+import { recordProviderEventIfAbsent } from "../src/runs/provider-events";
 import {
   createSlackRunResponse,
   findSlackThreadByRoot,
@@ -15,7 +15,10 @@ import {
   getSlackOutbox,
   slackArtifactDeliveryIdempotencyKey,
 } from "../src/slack/outbox";
-import { createRun, setRunEngineSession, setRunSandbox, setRunStatus } from "../src/runs/repo";
+import { createRun, setRunProviderSession, setRunSandbox, setRunStatus } from "../src/runs/repo";
+import { providerSessionBinding } from "@useagent/agent-harness/canonical";
+import { providerProtocolIdentity } from "@useagent/agent-harness/control";
+import { t3ProviderDrivers } from "../src/engines/t3-provider-driver";
 import { insertThreadRelationship } from "../src/runs/thread-relationship-repo";
 import { insertCommandWithRun } from "../src/commands/repo";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
@@ -346,17 +349,15 @@ describe("slack reply durability at finalization (GAP 3)", () => {
     await linkSlackThread({ teamId: TEAM, channel, threadTs: ts, rootRunId: runId, orgId: ORG });
     await createSlackRunResponse({ runId, teamId: TEAM, channel, threadTs: ts });
     await setRunStatus(runId, "running");
-    await setRunEngineSession(runId, "ses_done");
     await setRunSandbox(runId, "sb");
-    await recordProviderEvent({
-      id: `legacy-opencode-session:${runId}`,
-      runId,
-      threadId: runId,
+    await setRunProviderSession(runId, providerSessionBinding({
       provider: "opencode",
-      eventType: "session.started",
       nativeSessionId: "ses_done",
-      payload: { source: "opencode" },
-    }, { critical: true });
+      protocolVersion: providerProtocolIdentity(t3ProviderDrivers.opencode.descriptor.protocol),
+      runtime: { kind: "sandbox", id: "sb" },
+      capabilities: {} as never,
+      generation: t3ProviderDrivers.opencode.descriptor.sessionGeneration as number,
+    }));
     await db.execute(sql`update commands set state='dispatched' where run_id=${runId} and kind='run.create'`);
 
     const reconcile: ReconcileProbe = async (h) =>

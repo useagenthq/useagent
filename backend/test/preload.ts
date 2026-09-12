@@ -25,8 +25,8 @@ delete process.env.OPENAI_API_KEY;
 delete process.env.WIKI_GEN_STRUCTURE_RETRIES;
 
 // Strip GitHub creds so the unit suite is hermetic — no live GitHub calls (repo
-// listing / installation-token mint) leak in from backend/.env. The e2e:real
-// suite runs as a standalone script (no [test] preload), so it keeps them.
+// listing / installation-token mint) leak in from backend/.env. Standalone live
+// verification scripts have no [test] preload and manage their own credentials.
 for (const k of [
   "GITHUB_TOKEN",
   "GH_TOKEN",

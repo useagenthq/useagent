@@ -3,7 +3,6 @@ import {
   CubeWarmPool,
   claimCubeWarmSandbox,
   cubeRuntimeWarmPoolSize,
-  cubeWarmPoolSize,
   resetCubeWarmPoolForTest,
   startCubeWarmPool,
 } from "./cube-warm-pool";
@@ -111,21 +110,7 @@ afterEach(() => {
   resetCubeWarmPoolForTest();
 });
 
-describe("cubeWarmPoolSize gating", () => {
-  test("unset / empty / invalid / non-positive all disable the feature", () => {
-    expect(cubeWarmPoolSize({})).toBeNull();
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "" })).toBeNull();
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "no" })).toBeNull();
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "0" })).toBeNull();
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "-1" })).toBeNull();
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "1.5" })).toBeNull();
-  });
-
-  test("a positive integer enables the pool", () => {
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "1" })).toBe(1);
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: " 3 " })).toBe(3);
-  });
-
+describe("runtime warm-pool size gating", () => {
   test("the T3 pool uses an independent default-off size gate", () => {
     expect(cubeRuntimeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "3" })).toBeNull();
     expect(cubeRuntimeWarmPoolSize({ CUBE_T3_WARM_POOL_SIZE: "2" })).toBe(2);

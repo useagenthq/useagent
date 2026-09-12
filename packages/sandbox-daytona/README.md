@@ -16,9 +16,7 @@ Exports: `daytonaPlugin`, `daytonaApiConfig`, `DaytonaApiConfig`,
 
 `DAYTONA_SNAPSHOT_DEFAULTS` in `src/plugin.ts` is the one place the product
 snapshot pins live: `DAYTONA_SNAPSHOT` (the native Codex, Claude, OpenCode, Pi,
-and CLI lanes; a root image) and `DAYTONA_ACP_SNAPSHOT` (the explicitly
-registered ACP compatibility lane). A native Codex, Claude, OpenCode, or Pi
-engine never selects ACP because of its sandbox provider. Set either variable
+and CLI lanes; a root image). Set that variable
 in the deployment env to move off the pin; `template(env, templateEnv)` resolves
 the variable first and the pin second.
 `skynet-agent-v23` exists in the product org too but lacks the desktop binaries

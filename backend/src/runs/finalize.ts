@@ -56,7 +56,8 @@ import { getThreadRelationship } from "./thread-relationship-repo";
 import { enqueueSlackUserMirrorForRun } from "../slack/user-mirror";
 
 /** Providers whose runs project native events and/or `steps` into the canonical lane.
- *  OpenCode, Pi, and the ACP engines (acp/claude/codex). Legacy aliases (daytona -> opencode,
+ *  Native engines plus historical ACP rows, which can still finish canonicalization
+ *  without registering a new ACP execution lane. Legacy aliases (daytona -> opencode,
  *  claude-sdk -> claude) run the same adapter, so they normalize into this set via
  *  {@link canonicalEngine} and are NOT left silently outside the lane. Only `mock`
  *  (scripted) has no provider source to translate. */

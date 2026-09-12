@@ -17,14 +17,13 @@ session identity, lifecycle, and event grammar. Choosing Box, Cube, or Daytona
 changes only the computer that hosts the runtime.
 
 The common UI protocol is useAgent's canonical event and client contract. It is
-**not ACP**. ACP remains an explicitly registered compatibility engine for a
-future adapter and is not a fallback for any of the four native engines.
+**not ACP**, and there is no registered generic ACP execution engine.
 
 | Engine | Native execution path | Session shape |
 | --- | --- | --- |
 | Codex | Native Codex driver through the resident T3 orchestration runtime | A provider session with exact protocol, generation, and auth-epoch authority |
 | Claude Code | Native Claude Agent SDK driver through the resident T3 orchestration runtime | A provider session whose readiness is verified before each turn |
-| OpenCode | Native `opencode serve`; optionally the native OpenCode T3 driver when the explicit runtime gate selects it | A retained native OpenCode session inside the thread sandbox |
+| OpenCode | Native OpenCode driver through the resident T3 orchestration runtime | A retained native OpenCode session inside the thread sandbox |
 | Pi | Native Pi RPC bridge | A versioned RPC session with provider frames mapped into the canonical lane |
 
 ## What the adapter boundary does
@@ -42,10 +41,9 @@ canonical event.
 
 ## Engine readiness is credential-mode aware
 
-Codex and Claude Code use their T3 drivers. OpenCode uses its own server unless
-`RUNTIME_RUN_ADAPTER_ENABLED` and the engine/mode selection choose the T3 path.
-Pi keeps its RPC driver. The generic `acp` engine id is separate and cannot be
-selected as a substitute when a native path is unavailable.
+Codex, Claude Code, and OpenCode use their native drivers through the runtime
+adapter. Pi keeps its RPC driver. There is no alternate direct-server or generic
+ACP execution lane, and an unavailable native path is not silently replaced.
 
 Before dispatch, the backend checks all of these conditions:
 

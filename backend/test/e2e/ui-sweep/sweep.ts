@@ -28,9 +28,11 @@ const FANOUT_PROMPT =
 async function ensureWarmFanout(): Promise<string> {
   const pre = process.env.WF_RID?.trim();
   if (pre) {
-    // Confirm it still serves commands (sandbox warm) before trusting it.
-    const r = await fetch(`${BE}/api/live-proxy/${pre}/command`, { headers: { Origin: "http://localhost:3200" } }).catch(() => null);
+    // Probe the retained desktop transport; command catalogs are durable and
+    // no longer imply that a sandbox is alive.
+    const r = await fetch(`${BE}/api/desktop-proxy/${pre}/ready`, { headers: { Origin: "http://localhost:3200" } }).catch(() => null);
     if (r?.ok) return pre;
+    throw new Error("WF_RID is not a ready retained fixture; refusing a paid replacement run");
   }
   const { id } = await createRun(FANOUT_PROMPT, { engine: "opencode", model: "claude-haiku-4-5" });
   if (!id) throw new Error("failed to create warm fanout");
@@ -179,7 +181,7 @@ async function s3_slash(wf: string): Promise<Result> {
   const { page } = await newPage(browser);
   try {
     await page.goto(`${FE}/session/${wf}`, { waitUntil: "domcontentloaded" });
-    // Commands load from the live sandbox via /api/live-proxy/{id}/command.
+    // Commands load from the org-scoped native canonical catalog via /api/commands.
     await page.waitForTimeout(2500);
     const ta = page.locator("textarea").first();
     await ta.click();

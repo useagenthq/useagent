@@ -5,8 +5,8 @@ import { cx as cn } from "@/utils/cx";
 
 /**
  * Slash-command autocomplete for the reply composer — the engine's real
- * command list (GET /command on the thread's resident opencode server, via the
- * live-proxy), surfaced opencode-TUI-style while the first token is typed.
+ * command list (GET /command on the thread's resident opencode server),
+ * surfaced opencode-TUI-style while the first token is typed.
  * Selection just completes the text; the prompt is sent unchanged.
  */
 

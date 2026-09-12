@@ -60,7 +60,7 @@ resolves. Inert without an OpenRouter credential (`503`).
 
 | Method | Path | Description | Notes |
 | --- | --- | --- | --- |
-| GET | `/api/commands` | The cached slash-command catalog for "/" autocomplete before a sandbox exists. | Query `engine` to read that native engine's org-scoped catalog; default/`opencode` reads the default snapshot catalog. Returns `{engine, commands, fetched_at}`; `commands` is `[]` when uncached. |
+| GET | `/api/commands` | The native slash-command catalog for "/" autocomplete before a sandbox exists. | Query `engine` to read the latest catalog that engine advertised in the current org's canonical stream; defaults to `opencode`. Returns `{engine, commands, fetched_at}`; `commands` is `[]` until a session advertises a catalog. This picker does not authorize command execution. |
 
 ## Gateway approvals
 
@@ -78,15 +78,14 @@ the member. See [Gateway tools and approvals](/concepts/gateway-tools-and-approv
 ## Sandbox transports
 
 Same-origin, browser-session bridges into the live sandbox. These are transports, not enumerable
-REST APIs: the WebSocket bridges carry their own message protocol, and the two
-`.all()` proxies forward arbitrary opencode/noVNC paths verbatim (injecting the
+REST APIs: the WebSocket bridges carry their own message protocol, and the
+desktop HTTP proxy forwards noVNC paths (injecting the
 provider preview credential the browser cannot set). Org API keys cannot open
 these interactive transports.
 
 | Method | Path | Description | Notes |
 | --- | --- | --- | --- |
 | WS | `/api/runs/:id/terminal` | Browser xterm to the sandbox PTY. | Open query `cols`/`rows`. Messages `{type:"input", data}` and `{type:"resize", cols, rows}`. One PTY per connection, killed on disconnect. Does not touch the event log. |
-| ANY | `/api/live-proxy/:threadId/*` | Same-origin bridge to the thread's opencode server (`:4096`). | `404 thread not found` (cross-org/unknown), `409` no live sandbox yet, `502` on upstream failure (retries once after re-resolving). `/api/model` and `/api/provider` catalog responses are trimmed to the allowlist. |
 | WS | `/api/desktop-proxy/:threadId/websockify` | Browser noVNC canvas to sandbox `websockify` (`:6080`). | Binary RFB frames both ways; provisions the desktop and injects the preview token. |
 | GET | `/api/desktop-proxy/:threadId/ready` | Desktop readiness probe. | `204` ready, `409` no live sandbox, `502` on failure. |
 | ANY | `/api/desktop-proxy/:threadId/*` | HTTP proxy for the noVNC static app. | `/vnc.html` triggers a one-shot desktop provision; other assets pass through. |

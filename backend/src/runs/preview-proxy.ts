@@ -15,7 +15,7 @@ import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 // PREVIEW PROXY — shared machinery for the same-origin bridges that expose a
 // service running INSIDE a thread's Daytona sandbox to the browser without CORS
 // or a leaked preview token: the opencode server on :4096 (the "Live" tab, see
-// live-proxy.ts) and the noVNC desktop on :6080 (the "Desktop" tab, see
+// the thread stream) and the noVNC desktop on :6080 (the "Desktop" tab, see
 // desktop-proxy.ts). It resolves the thread's sandbox, wakes it if stopped, and
 // caches the per-port preview endpoint (url + token); the caller forwards
 // requests with the token injected server-side.

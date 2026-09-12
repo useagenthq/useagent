@@ -1,33 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import type { EngineRunContext } from "./types";
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
   buildOpencodeConfigWriteCommand,
-  closeOpenCodeTurnSandbox,
   prepareOpencodeSandboxConfig,
-} from "./opencode-server";
-import { openCodeModelBody } from "./opencode-model";
+} from "./opencode-sandbox-config";
 import { verifyToolToken } from "../knowledge/gateway/token";
 import { LEGACY_TOOL_GATEWAY_SERVER_NAME, TOOL_GATEWAY_SERVER_NAME } from "../knowledge/gateway/descriptor";
 
 const original = { ...process.env };
-
-test("OpenCode teardown preserves retained workspaces even before the new turn persists", async () => {
-  for (const [retained, persisted, threadId, expectedDeletes] of [
-    [true, false, "retained-thread", 0],
-    [true, true, "retained-thread", 0],
-    [false, false, "new-thread", 1],
-    [false, true, "new-thread", 0],
-    [false, false, undefined, 1],
-  ] as const) {
-    let deletes = 0;
-    await closeOpenCodeTurnSandbox({
-      sandbox: { delete: async () => { deletes++; } }, retained, persisted, threadId,
-    });
-    expect(deletes).toBe(expectedDeletes);
-  }
-});
 
 afterEach(() => {
   for (const name of [
@@ -60,13 +41,6 @@ function runContext(): EngineRunContext {
 }
 
 describe("OpenCode generated config placement", () => {
-  test("routes Cerebras models through OpenCode's native provider", () => {
-    expect(openCodeModelBody("cerebras/qwen-3.8-27b")).toEqual({
-      providerID: "cerebras",
-      modelID: "qwen-3.8-27b",
-    });
-  });
-
   test("writes capabilities to the global config and removes the project copy", () => {
     const command = buildOpencodeConfigWriteCommand("e30=");
 
@@ -154,29 +128,5 @@ describe("OpenCode generated config placement", () => {
     expect(inputHeadroom).toBe(49_152);
     expect(42_320).toBeLessThan(inputHeadroom);
     expect(37_691).toBeLessThan(inputHeadroom);
-  });
-
-  test("activates warm config in-process with a verified restart fallback", () => {
-    const source = readFileSync(new URL("./opencode-server.ts", import.meta.url), "utf8");
-
-    expect(source).toContain("activateOpenCodeRuntimeConfig({");
-    expect(source).toContain("reuseHealthyResidentServer(rememberedServer, box.id, ctx.signal)");
-    // Perf Phase 1: the same concurrent stages now flow through stagesTogether,
-    // which honors the USEAGENT_SERIAL_STARTUP rollback flag (same DAG, concurrency 1).
-    expect(source).toContain(
-      "const [cachedRuntimeServer, secretState, baseOpenCodeConfig] = await stagesTogether([",
-    );
-    expect(source).not.toContain('prepareStage("desktop"');
-    expect(source).toContain('desktopAvailability: gatewayState.knowledge ? "on_demand" : "unsupported"');
-    expect(source).toContain(
-      'prepareStage("base_config", () => readOpencodeSandboxConfig(box))',
-    );
-    expect(source).toContain("await stagesTogether([activateRuntime, prepareRepositories])");
-    expect(source).toContain("await stopServerForConfigReload(box, runtimeServer, ctx.signal)");
-    expect(source).toContain("await verifyOpenCodeRuntimeConfig({");
-    expect(source).toContain("fresh runtime config was not active; restarting resident server");
-    expect(source).not.toContain(
-      "await sandbox.process.deleteSession(SERVER_PROCESS_SESSION).catch(() => {});\n      }",
-    );
   });
 });

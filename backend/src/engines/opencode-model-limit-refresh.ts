@@ -6,7 +6,7 @@ import {
   prepareOpencodeSandboxConfig,
   readOpencodeSandboxConfig,
   writeOpencodeSandboxConfig,
-} from "./opencode-server";
+} from "./opencode-sandbox-config";
 import { RUNTIME_ENVIRONMENT_HOME } from "./runtime-environment";
 import type { EngineRunContext } from "./types";
 

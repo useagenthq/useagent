@@ -1,26 +1,19 @@
 // C3/C4 (route integration): POST /api/runs authorizes a typed native-command intent FAIL-CLOSED
 // against the LIVE session's authoritative catalog only. A command REQUIRES an active session +
-// matching provider + native session id + catalog snapshot revision; the org priming cache is
+// matching provider + native session id + catalog snapshot revision; the pre-session picker is
 // UI-only and NEVER authorizes execution. An unknown/malformed/stale intent is 400; a plain prompt
 // that merely starts with "/" (no intent) stays a normal prompt with commandName null. DB-backed
 // (useAgent_test), dev-org scoped.
 import { describe, expect, test, beforeAll } from "bun:test";
 import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";
-import { canonicalEvents, commandsCatalog, runs } from "../src/db/schema";
-import { acpCatalogKey, readSessionCommandCatalog } from "../src/runs/command-catalog";
+import { canonicalEvents, runs } from "../src/db/schema";
+import { readSessionCommandCatalog } from "../src/runs/command-catalog";
 import { DEV_ORG_ID } from "../src/seed";
 import { fetchApi, waitFor } from "./helpers";
 
 beforeAll(async () => {
   await waitFor(() => true, 1);
-  // Seed the ORG PRIMING cache (what the pre-session New Task picker shows). engine "mock" is
-  // non-opencode, so the picker reads acp:<org>:mock. C3: this must NEVER authorize execution.
-  const cache = [{ name: "review", description: null, input: null }, { name: "status", description: null, input: null }];
-  await db
-    .insert(commandsCatalog)
-    .values({ snapshot: acpCatalogKey(DEV_ORG_ID, "mock"), commands: cache, fetchedAt: new Date() })
-    .onConflictDoUpdate({ target: commandsCatalog.snapshot, set: { commands: cache } });
 });
 
 async function post(
@@ -60,7 +53,7 @@ async function seedParentWithSession(sessionId: string, sessionCommands: string[
 
 describe("POST /api/runs - fail-closed: a command REQUIRES a live session (C3)", () => {
   test("a command with NO active session is rejected 400 (priming cache never authorizes)", async () => {
-    // `review` IS in the org priming cache seeded above - it must STILL be rejected with no session.
+    // A command name alone never authorizes anything: without a live session it is rejected.
     const r = await post({ prompt: "/review", engine: "mock", command: { name: "review", provider: "mock" } });
     expect(r.status).toBe(400);
   });

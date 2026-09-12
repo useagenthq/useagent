@@ -86,14 +86,19 @@ async function seed(opts: {
   });
   if (opts.runStatus !== "queued") await setRunStatus(id, opts.runStatus);
   if (opts.session && opts.sandbox) {
-    const driver = opts.engine === "pi" ? piProviderDriver : null;
+    const canonical = opts.engine === "daytona" ? "opencode" : opts.engine;
+    const driver = canonical === "pi"
+      ? piProviderDriver
+      : canonical === "codex" || canonical === "claude" || canonical === "opencode"
+        ? t3ProviderDrivers[canonical]
+        : null;
     await setRunSandbox(id, opts.sandbox);
     await setRunProviderSession(id, providerSessionBinding({
-      provider: opts.engine === "daytona" ? "opencode" : opts.engine,
+      provider: canonical,
       nativeSessionId: opts.session,
       protocolVersion: driver
         ? providerProtocolIdentity(driver.descriptor.protocol)
-        : opts.engine === "opencode" ? "opencode-server/compat" : "t3-orchestration",
+        : "t3-orchestration",
       runtime: { kind: "sandbox", id: opts.sandbox },
       capabilities: driver?.descriptor.capabilities ?? ({} as never),
       generation: (driver?.descriptor.sessionGeneration as number | undefined) ?? 1,

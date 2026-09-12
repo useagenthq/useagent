@@ -166,57 +166,6 @@ interface RuntimeShellSnapshot {
   readonly threads: readonly { readonly id: string }[];
 }
 
-export function runtimeAdapterEnabled(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): boolean {
-  const value = operatorEnv(env, "RUNTIME_RUN_ADAPTER_ENABLED", "T3_RUN_ADAPTER_ENABLED")
-    ?.trim()
-    .toLowerCase();
-  return value === "1" || value === "true";
-}
-
-export function runtimeAdapterEngineSelected(
-  engine: string,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): boolean {
-  const configured = operatorEnv(env, "RUNTIME_RUN_ADAPTER_ENGINES", "T3_RUN_ADAPTER_ENGINES")?.trim();
-  if (!configured) return engine === "codex" || engine === "opencode";
-  return configured
-    .split(",")
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean)
-    .includes(engine.toLowerCase());
-}
-
-export type RuntimeAdapterMode = "canary" | "all";
-
-export function runtimeAdapterMode(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): RuntimeAdapterMode {
-  const mode = operatorEnv(env, "RUNTIME_RUN_ADAPTER_MODE", "T3_RUN_ADAPTER_MODE")
-    ?.trim()
-    .toLowerCase() || "canary";
-  if (mode !== "canary" && mode !== "all") {
-    throw new Error("RUNTIME_RUN_ADAPTER_MODE (legacy T3_RUN_ADAPTER_MODE) must be canary or all");
-  }
-  return mode;
-}
-
-export function runtimeAdapterSelected(
-  ctx: Pick<EngineRunContext, "runId" | "threadId">,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): boolean {
-  if (!runtimeAdapterEnabled(env)) return false;
-  if (runtimeAdapterMode(env) === "all") return true;
-  const allowlist = new Set(
-    (operatorEnv(env, "RUNTIME_CANARY_THREAD_IDS", "T3_CANARY_THREAD_IDS") ?? "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
-  );
-  return allowlist.has(ctx.threadId ?? "") || allowlist.has(ctx.runId);
-}
-
 export function runtimeRunSnapshot(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): string {

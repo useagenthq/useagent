@@ -42,8 +42,8 @@ import {
 import { errorMessage } from "../util/error-message";
 
 // The run's provider command catalog is captured durably in the ORDERED provider-events lane
-// (acp-server records each `available_commands_update` as an `acp.commands` provider event) and
-// the translator emits the canonical `commands.updated` from those frames - so it is sealed by
+// and native session advertisements become canonical `commands.updated` events. Retained
+// historical provider frames are also translated during replay, so the catalog is sealed by
 // the same drain barrier and counted by the same watermark as every other native frame. There
 // is deliberately no separate mutable per-session cache read here: routing through provider
 // events is what makes "canonicalization cannot complete before the command snapshot is durable"

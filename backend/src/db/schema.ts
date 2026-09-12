@@ -18,7 +18,6 @@ export * from "./schema/uploads";
 export * from "./schema/memory";
 export * from "./schema/reconcile";
 export * from "./schema/schedules";
-export * from "./schema/commands-catalog";
 export * from "./schema/fleet";
 export * from "./schema/fleet-batches";
 export * from "./schema/projects";
