@@ -26,12 +26,21 @@ interface FakeBox {
 }
 
 /** An in-memory Box API: boxes, files, canned command results, hosted ports, cursor pages. */
-function fakeBoxApi(initial: FakeBox[] = [], options: { pageSize?: number; archivingPolls?: number; createState?: string } = {}) {
+function fakeBoxApi(
+  initial: FakeBox[] = [],
+  options: {
+    pageSize?: number;
+    archivingPolls?: number;
+    createState?: string;
+    desktopProvisioningPolls?: number;
+  } = {},
+) {
   const boxes = new Map(initial.map((box) => [box.id, { ...box }]));
   const files = new Map<string, Buffer>();
   const requests: { method: string; path: string; body: unknown; headers: Record<string, string> }[] = [];
   let created = 0;
   let archivingPolls = options.archivingPolls ?? 0;
+  let desktopProvisioningPolls = options.desktopProvisioningPolls ?? 0;
   const commandResults = new Map<string, { stdout?: string; stderr?: string; exitCode?: number | null; timedOut?: boolean }>();
   const commands: string[] = [];
 
@@ -94,6 +103,25 @@ function fakeBoxApi(initial: FakeBox[] = [], options: { pageSize?: number; archi
       const canned = commandResults.get(command) ?? { stdout: `ran: ${command}`, stderr: "", exitCode: 0 };
       if ((body as { detached?: boolean }).detached) return json(200, { ok: true, type: "command.started", processId: 1 });
       return json(200, { ok: true, type: "command.finished", ...canned });
+    }
+    if (method === "POST" && sub === "desktop") {
+      if (desktopProvisioningPolls-- > 0) {
+        return json(200, {
+          ok: true,
+          type: "desktop.url",
+          provisioning: true,
+          desktopUrl: null,
+        });
+      }
+      return json(200, {
+        ok: true,
+        type: "desktop.url",
+        provisioning: false,
+        desktopUrl:
+          `https://${box.subdomain}-6080.on.ascii.dev/vnc.html?` +
+          "autoconnect=true&reconnect=true&resize=scale&path=websockify&" +
+          "password=box-vnc-password&_token=tok-6080",
+      });
     }
     if (method === "PUT" && sub === "files") {
       const { path: filePath, content, encoding } = body as { path: string; content: string; encoding: string };
@@ -218,7 +246,10 @@ describe("Box sandbox provider", () => {
   });
 
   test("files round-trip as base64, and hosted ports become origin links carrying the port-auth cookie", async () => {
-    const api = fakeBoxApi([{ id: "bx_f", state: "ready", vcpu: 4, memoryGB: 8, subdomain: "slug" }]);
+    const api = fakeBoxApi(
+      [{ id: "bx_f", state: "ready", vcpu: 4, memoryGB: 8, subdomain: "slug" }],
+      { desktopProvisioningPolls: 1 },
+    );
     const sandbox = await provider(api).provider.get("bx_f");
     await sandbox.fs.uploadFile(Buffer.from("héllo\n"), "/home/user/work/a.txt");
     expect((await sandbox.fs.downloadFile("/home/user/work/a.txt")).toString("utf8")).toBe("héllo\n");
@@ -233,6 +264,33 @@ describe("Box sandbox provider", () => {
     expect(parsePortAuthCookie("other=1, _port_auth=def; Path=/")).toBe("def");
     expect(parsePortAuthCookie(null)).toBeNull();
     expect(boxPreviewLink("https://slug-80.on.ascii.dev", null)).toEqual({ url: "https://slug-80.on.ascii.dev" });
+
+    expect(sandbox.desktop).toMatchObject({
+      display: ":0",
+      home: "/home/user",
+      workdir: "/home/user/work",
+    });
+    await sandbox.desktop?.start();
+    expect(await sandbox.getPreviewLink(6080)).toEqual({
+      url: "https://slug-6080.on.ascii.dev",
+      token: "cookie-6080",
+      headers: { cookie: "_port_auth=cookie-6080" },
+      clientQuery: { password: "box-vnc-password" },
+    });
+    expect(
+      api.requests.filter(
+        (request) =>
+          request.method === "POST" &&
+          request.path === "/boxes/bx_f/desktop?vnc=1",
+      ),
+    ).toHaveLength(3);
+    expect(
+      api.requests.some(
+        (request) =>
+          request.path === "/boxes/bx_f/host" &&
+          (request.body as { port?: number }).port === 6080,
+      ),
+    ).toBe(false);
   });
 
   test("session commands run detached in their own process group and deleteSession kills by pid; PTYs are unsupported", async () => {

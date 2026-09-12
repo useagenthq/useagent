@@ -1,6 +1,7 @@
 import type {
   SandboxCreateOptions,
   SandboxExecuteResult,
+  SandboxDesktopAccess,
   SandboxFileSystem,
   SandboxHandle,
   SandboxInventory,
@@ -68,11 +69,14 @@ interface BoxRecord {
   readonly subdomain?: string | null;
 }
 
-const WORK_DIR = "/home/user";
-const STATE_DIR = `${WORK_DIR}/.useagent`;
+const HOME_DIR = "/home/user";
+const WORK_DIR = `${HOME_DIR}/work`;
+const STATE_DIR = `${HOME_DIR}/.useagent`;
+const NATIVE_DESKTOP_PORT = 6080;
 const SYNC_COMMAND_CAP_SECONDS = 600;
 const READY_POLL_MS = 2_000;
 const READY_TIMEOUT_MS = 240_000;
+const DESKTOP_READY_TIMEOUT_MS = 120_000;
 const ARCHIVE_SETTLE_TIMEOUT_MS = 120_000;
 const LONG_POLL_MS = 1_000;
 
@@ -238,6 +242,39 @@ class BoxApi {
     return boxPreviewLink(origin, cookie);
   }
 
+  /** Box owns its workstation and VNC lifecycle. Request the native noVNC
+   *  stream, poll its documented provisioning state, exchange the upstream
+   *  bearer token for a server-side cookie, and retain only the VNC password
+   *  as browser-visible proxy state. */
+  async desktop(id: string): Promise<SandboxPreviewLink> {
+    const deadline = Date.now() + DESKTOP_READY_TIMEOUT_MS;
+    for (;;) {
+      const payload = await this.request<{
+        desktopUrl?: string | null;
+        provisioning?: boolean;
+      }>("POST", `/boxes/${encodeURIComponent(id)}/desktop?vnc=1`, {
+        publicAccess: false,
+      });
+      if (payload.desktopUrl) {
+        const url = new URL(payload.desktopUrl);
+        const password = url.searchParams.get("password")?.trim() ?? "";
+        const authenticated = await this.portAuth(payload.desktopUrl);
+        return {
+          ...authenticated,
+          ...(password ? { clientQuery: { password } } : {}),
+        };
+      }
+      if (!payload.provisioning || Date.now() >= deadline) {
+        throw new BoxApiError(
+          504,
+          "desktop_not_ready",
+          `Box ${id} desktop was not ready after ${DESKTOP_READY_TIMEOUT_MS / 1000}s`,
+        );
+      }
+      await this.sleep(READY_POLL_MS);
+    }
+  }
+
   async writeFile(id: string, path: string, content: Buffer): Promise<void> {
     await this.request("PUT", `/boxes/${encodeURIComponent(id)}/files`, {
       path,
@@ -401,6 +438,7 @@ class BoxSandboxHandle implements SandboxHandle {
   labels: Record<string, string>;
   readonly process: SandboxProcess;
   readonly fs: SandboxFileSystem;
+  readonly desktop: SandboxDesktopAccess;
 
   constructor(
     private readonly api: BoxApi,
@@ -415,6 +453,15 @@ class BoxSandboxHandle implements SandboxHandle {
     this.labels = labels;
     this.process = new BoxProcess(api, record.id);
     this.fs = new BoxFileSystem(api, record.id);
+    this.desktop = {
+      display: ":0",
+      home: HOME_DIR,
+      workdir: WORK_DIR,
+      browserExecutable: null,
+      start: async () => {
+        await this.api.desktop(this.id);
+      },
+    };
   }
 
   async start(): Promise<void> {
@@ -434,6 +481,7 @@ class BoxSandboxHandle implements SandboxHandle {
   }
 
   async getPreviewLink(port: number): Promise<SandboxPreviewLink> {
+    if (port === NATIVE_DESKTOP_PORT) return this.api.desktop(this.id);
     const payload = await this.api.request<{ url?: string }>("POST", `/boxes/${encodeURIComponent(this.id)}/host`, { port });
     if (!payload.url) throw new BoxApiError(502, "host_url_missing", `Box did not return a hosted URL for port ${port}`);
     return this.api.portAuth(payload.url);

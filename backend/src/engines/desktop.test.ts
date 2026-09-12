@@ -138,6 +138,37 @@ describe("shared sandbox desktop", () => {
     });
   });
 
+  test("uses a provider-owned desktop instead of provisioning a competing workstation", async () => {
+    let starts = 0;
+    const sandbox: SandboxHandle = {
+      ...sandboxFixture("sandbox-native-desktop", {
+        executeCommand: async () => {
+          throw new Error("the generic desktop path must not run");
+        },
+      }),
+      desktop: {
+        display: ":0",
+        home: "/home/user",
+        workdir: "/home/user/work",
+        browserExecutable: null,
+        start: async () => {
+          starts += 1;
+        },
+      },
+    };
+
+    await expect(
+      ensureSandboxDesktopView(sandbox, new AbortController().signal),
+    ).resolves.toEqual({
+      available: true,
+      browserTools: false,
+      home: "/home/user",
+      workdir: "/home/user/work",
+      browserExecutable: null,
+    });
+    expect(starts).toBe(1);
+  });
+
   test("readies the user-visible desktop without installing agent browser tools", async () => {
     const commands: string[] = [];
     const spans: { stage: string; outcome?: RunTimingOutcome }[] = [];

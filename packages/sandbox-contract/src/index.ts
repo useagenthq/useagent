@@ -115,6 +115,21 @@ export interface SandboxPreviewLink {
    *  token header (Daytona, Cube) or Box's port-auth cookie. Providers fill
    *  this; consumers send it as-is. */
   headers?: Readonly<Record<string, string>>;
+  /** Provider-issued values that the browser-side preview client must see in
+   *  its own same-origin URL (for example a VNC password). The control plane
+   *  injects these at the authenticated proxy boundary; providers never expose
+   *  their upstream bearer token here. */
+  clientQuery?: Readonly<Record<string, string>>;
+}
+
+/** A provider-owned desktop lifecycle. Providers with a native workstation
+ *  implement this so shared consumers do not install a competing X/VNC stack. */
+export interface SandboxDesktopAccess {
+  readonly display: string;
+  readonly home: string;
+  readonly workdir: string;
+  readonly browserExecutable?: string | null;
+  start(): Promise<void>;
 }
 
 export interface SandboxHandle {
@@ -130,6 +145,8 @@ export interface SandboxHandle {
   /** Native computer-use access when the provider exposes it. Cube intentionally
    * omits it and the trusted gateway drives the workstation through X11. */
   readonly computerUse?: SandboxComputerUse;
+  /** Native desktop lifecycle when the provider already owns the workstation. */
+  readonly desktop?: SandboxDesktopAccess;
   start(): Promise<void>;
   delete(): Promise<void>;
   getPreviewLink(port: number): Promise<SandboxPreviewLink>;

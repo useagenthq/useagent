@@ -4,6 +4,7 @@ import { db } from "../db/client";
 import { runs } from "../db/schema";
 import { listProviderConnections } from "../provider-connections/repo";
 import { getTrustedProviderCredential } from "../provider-connections/service";
+import { resolveGatewayComputerApiKeyConnection } from "../provider-gateway/api-key-credentials";
 import {
   sandboxProvider,
   sandboxProviderFor,
@@ -37,6 +38,8 @@ export interface SandboxBindingDeps {
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly connections?: typeof listProviderConnections;
   readonly credential?: typeof getTrustedProviderCredential;
+  /** Restricted gateway resolver backed by the filtered API-key view. */
+  readonly gatewayConnection?: typeof resolveGatewayComputerApiKeyConnection;
   /** Test seam: provider factories per kind (default: the plugin registry). */
   readonly providers?: Partial<Record<SandboxProviderKind, (apiKey: string) => SandboxProvider>>;
   readonly envProvider?: () => SandboxBinding | null;
@@ -69,6 +72,31 @@ async function userSandboxBinding(
   onlyKind: ComputerProviderKind | null,
   deps: SandboxBindingDeps,
 ): Promise<SandboxBinding | null> {
+  const env = deps.env ?? process.env;
+  if (
+    env.GATEWAY_DATABASE_URL?.trim() &&
+    !deps.connections &&
+    !deps.credential
+  ) {
+    const row = await (
+      deps.gatewayConnection ?? resolveGatewayComputerApiKeyConnection
+    )({
+      ...scope,
+      providers: onlyKind ? [onlyKind] : [...COMPUTER_PROVIDER_KINDS],
+    });
+    if (!row || !isComputerKind(row.provider)) return null;
+    const kind = row.provider;
+    const build =
+      deps.providers?.[kind] ??
+      ((key: string) => sandboxProviderFor(kind, key, env));
+    return {
+      kind,
+      provider: build(row.value),
+      snapshot: row.metadata.snapshotName?.trim() || null,
+      credential: "user",
+      userId: scope.userId,
+    };
+  }
   const connections = deps.connections ?? listProviderConnections;
   const credential = deps.credential ?? getTrustedProviderCredential;
   const candidates = (await connections(scope))
@@ -80,7 +108,7 @@ async function userSandboxBinding(
   const opened = await credential({ ...scope, provider: row.provider, authMethod: "api_key" });
   if (!opened || opened.authMethod !== "api_key" || typeof opened.value !== "string") return null;
   const kind = row.provider;
-  const build = deps.providers?.[kind] ?? ((key: string) => sandboxProviderFor(kind, key, deps.env));
+  const build = deps.providers?.[kind] ?? ((key: string) => sandboxProviderFor(kind, key, env));
   return {
     kind: row.provider,
     provider: build(opened.value),
