@@ -14,6 +14,9 @@ import type {
   SandboxSession,
 } from "@useagent/sandbox-contract";
 import { memorySandboxLabelStore } from "@useagent/sandbox-contract";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /**
  * Box (box.ascii.dev) behind the sandbox provider contract, over its public
@@ -26,7 +29,6 @@ import { memorySandboxLabelStore } from "@useagent/sandbox-contract";
  * - labels: kept in the control plane (sandbox_labels), never inside the box
  * - idle auto-stop: Box's ttlSeconds is absolute (from create/resume), so the
  *   auto-delete interval bounds a box's life and cleanup deletes explicitly
- * - PTY: interactive terminals report themselves unsupported
  * - computer use: not offered (no screenshot/mouse API)
  */
 
@@ -79,6 +81,8 @@ const READY_TIMEOUT_MS = 240_000;
 const DESKTOP_READY_TIMEOUT_MS = 120_000;
 const ARCHIVE_SETTLE_TIMEOUT_MS = 120_000;
 const LONG_POLL_MS = 1_000;
+const BOX_CLI_HOME_PREFIX = "useagent-box-pty-";
+const BOX_CLI_CONFIG = '{\n  "api_url": "https://ascii.dev",\n  "channel": "ascii-prod"\n}\n';
 
 const READY_STATES: ReadonlySet<string> = new Set(["ready", "idle", "running"]);
 const ARCHIVED_STATES: ReadonlySet<string> = new Set(["archiving", "archived"]);
@@ -132,12 +136,97 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export function boxPtyLoginArgv(apiKey: string): string[] {
+  return ["box", "login", apiKey, "--json"];
+}
+
+export function boxPtySshArgv(boxId: string): string[] {
+  return ["box", "ssh", boxId, "--", "bash", "-l"];
+}
+
+export function boxPtyEnv(
+  home: string,
+  base: Readonly<Record<string, string | undefined>> = process.env,
+): Record<string, string | undefined> {
+  return {
+    ...base,
+    HOME: home,
+    XDG_CONFIG_HOME: join(home, ".config"),
+    TERM: base.TERM ?? "xterm-256color",
+  };
+}
+
+export async function createBoxPtyHome(): Promise<string> {
+  const home = await mkdtemp(join(tmpdir(), BOX_CLI_HOME_PREFIX));
+  const configDir = join(home, ".config", "ascii", "box");
+  await mkdir(configDir, { recursive: true, mode: 0o700 });
+  await writeFile(join(configDir, "config.json"), BOX_CLI_CONFIG, { mode: 0o600 });
+  return home;
+}
+
+export function removeBoxPtyHome(home: string): Promise<void> {
+  return rm(home, { recursive: true, force: true });
+}
+
+interface BoxPtyTerminal {
+  write(data: string | Uint8Array): number;
+  resize(cols: number, rows: number): void;
+  close(): void;
+}
+
+interface BoxPtySubprocess {
+  readonly exited: Promise<number>;
+  readonly exitCode: number | null;
+  readonly killed: boolean;
+  kill(): void;
+}
+
+export function boxPtyHandle(
+  terminal: BoxPtyTerminal,
+  subprocess: BoxPtySubprocess,
+  cleanup: () => Promise<void>,
+): SandboxPtyHandle {
+  let cleanupPromise: Promise<void> | undefined;
+  let terminalClosed = false;
+  const cleanOnce = (): Promise<void> => (cleanupPromise ??= cleanup());
+  const closeTerminal = (): void => {
+    if (terminalClosed) return;
+    terminalClosed = true;
+    terminal.close();
+  };
+  const stop = async (): Promise<void> => {
+    if (subprocess.exitCode === null && !subprocess.killed) subprocess.kill();
+    closeTerminal();
+    await subprocess.exited;
+    await cleanOnce();
+  };
+  void subprocess.exited.finally(() => {
+    closeTerminal();
+    return cleanOnce();
+  }).catch(() => {});
+  return {
+    waitForConnection: async () => {},
+    sendInput: async (data) => {
+      terminal.write(data);
+    },
+    resize: async (cols, rows) => {
+      terminal.resize(cols, rows);
+    },
+    disconnect: stop,
+    kill: stop,
+  };
+}
+
 class BoxApi {
   constructor(
     private readonly config: BoxApiConfig,
     private readonly fetchImpl: BoxFetch,
     readonly sleep: (ms: number) => Promise<void>,
   ) {}
+
+  get apiKey(): string {
+    return this.config.apiKey;
+  }
 
   async request<T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
     const response = await this.fetchImpl(`${this.config.apiUrl}${path}`, {
@@ -402,8 +491,42 @@ class BoxProcess implements SandboxProcess {
     return { output, stdout: output, stderr: "" };
   }
 
-  async createPty(): Promise<SandboxPtyHandle> {
-    throw new Error("Box sandboxes do not support interactive terminals yet; commands and files work, the terminal panel does not");
+  async createPty(options: {
+    cols: number;
+    rows: number;
+    onData: (data: Uint8Array) => void | Promise<void>;
+  }): Promise<SandboxPtyHandle> {
+    const home = await createBoxPtyHome();
+    const env = boxPtyEnv(home);
+    try {
+      const login = Bun.spawn(boxPtyLoginArgv(this.api.apiKey), {
+        env,
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      if ((await login.exited) !== 0) {
+        throw new Error("Box CLI login failed");
+      }
+
+      const terminal = new Bun.Terminal({
+        cols: options.cols,
+        rows: options.rows,
+        data: (_terminal, data) => {
+          void Promise.resolve(options.onData(data)).catch(() => {});
+        },
+      });
+      try {
+        const subprocess = Bun.spawn(boxPtySshArgv(this.boxId), { env, terminal });
+        return boxPtyHandle(terminal, subprocess, () => removeBoxPtyHome(home));
+      } catch (error) {
+        terminal.close();
+        throw error;
+      }
+    } catch (error) {
+      await removeBoxPtyHome(home);
+      throw error;
+    }
   }
 }
 

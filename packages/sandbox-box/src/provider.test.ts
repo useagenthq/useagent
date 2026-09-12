@@ -1,9 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { access, readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
 import {
   type BoxApiConfig,
   boxPreviewLink,
+  boxPtyEnv,
+  boxPtyHandle,
+  boxPtyLoginArgv,
+  boxPtySshArgv,
   boxSandboxProvider,
+  createBoxPtyHome,
   parsePortAuthCookie,
+  removeBoxPtyHome,
   boxSandboxState,
   boxTtlSeconds,
   composeBoxCommand,
@@ -293,7 +301,7 @@ describe("Box sandbox provider", () => {
     ).toBe(false);
   });
 
-  test("session commands run detached in their own process group and deleteSession kills by pid; PTYs are unsupported", async () => {
+  test("session commands run detached in their own process group and deleteSession kills by pid", async () => {
     const api = fakeBoxApi([{ id: "bx_s", state: "ready", vcpu: 4, memoryGB: 8, subdomain: "s" }]);
     const sandbox = await provider(api).provider.get("bx_s");
     const started = await sandbox.process.executeSessionCommand("sess-1", { command: "echo hi", runAsync: true });
@@ -311,7 +319,80 @@ describe("Box sandbox provider", () => {
     const kill = api.commands.at(-1)!;
     expect(kill).toContain(`kill -TERM -- "-$p"`);
     expect(kill).toContain("rm -rf '/home/user/.useagent/sessions/sess-1'");
-    await expect(sandbox.process.createPty({ id: "t", cols: 80, rows: 24, onData: () => {} })).rejects.toThrow(/interactive terminals/);
+  });
+
+  test("PTY helpers isolate Box login state and keep the API key out of SSH argv and env", async () => {
+    const home = await createBoxPtyHome();
+    try {
+      expect(boxPtyLoginArgv("box_secret")).toEqual(["box", "login", "box_secret", "--json"]);
+      expect(boxPtySshArgv("bx_123")).toEqual(["box", "ssh", "bx_123", "--", "bash", "-l"]);
+      expect(boxPtyEnv(home, { PATH: "/usr/bin", HOME: "/shared" })).toEqual({
+        PATH: "/usr/bin",
+        HOME: home,
+        XDG_CONFIG_HOME: join(home, ".config"),
+        TERM: "xterm-256color",
+      });
+      expect(await readFile(join(home, ".config", "ascii", "box", "config.json"), "utf8")).toBe(
+        '{\n  "api_url": "https://ascii.dev",\n  "channel": "ascii-prod"\n}\n',
+      );
+      expect((await stat(home)).mode & 0o777).toBe(0o700);
+      expect((await stat(join(home, ".config", "ascii", "box", "config.json"))).mode & 0o777).toBe(0o600);
+      expect(JSON.stringify(boxPtySshArgv("bx_123"))).not.toContain("box_secret");
+      expect(JSON.stringify(boxPtyEnv(home, {}))).not.toContain("box_secret");
+    } finally {
+      await removeBoxPtyHome(home);
+    }
+    await expect(access(home)).rejects.toBeDefined();
+  });
+
+  test("PTY lifecycle forwards I/O and cleans temporary state exactly once", async () => {
+    const writes: Array<string | Uint8Array> = [];
+    const sizes: Array<[number, number]> = [];
+    let closes = 0;
+    let kills = 0;
+    let cleanups = 0;
+    let resolveExit!: (code: number) => void;
+    const exited = new Promise<number>((resolve) => {
+      resolveExit = resolve;
+    });
+    const subprocess = {
+      exited,
+      exitCode: null,
+      killed: false,
+      kill() {
+        kills += 1;
+        this.killed = true;
+        resolveExit(143);
+      },
+    };
+    const handle = boxPtyHandle(
+      {
+        write(data) {
+          writes.push(data);
+          return typeof data === "string" ? data.length : data.byteLength;
+        },
+        resize(cols, rows) {
+          sizes.push([cols, rows]);
+        },
+        close() {
+          closes += 1;
+        },
+      },
+      subprocess,
+      async () => {
+        cleanups += 1;
+      },
+    );
+    await handle.waitForConnection();
+    await handle.sendInput("pwd\r");
+    await handle.resize(120, 40);
+    await handle.disconnect();
+    await handle.kill();
+    expect(writes).toEqual(["pwd\r"]);
+    expect(sizes).toEqual([[120, 40]]);
+    expect(kills).toBe(1);
+    expect(closes).toBe(1);
+    expect(cleanups).toBe(1);
   });
 
   test("a box that never becomes ready is deleted with its label row, and the error surfaces", async () => {

@@ -47,10 +47,21 @@ RUN echo "${RELEASE_COMMIT}" | grep -Eq '^[0-9a-f]{40}$'
 
 USER root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git \
+    && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client \
     && rm -rf /var/lib/apt/lists/* \
     && test -s /etc/ssl/certs/ca-certificates.crt \
     && git --version
+
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+      x86_64|amd64) box_arch="x64" ;; \
+      arm64|aarch64) box_arch="arm64" ;; \
+      *) echo "Unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://ascii.dev/api/box/cli/download?platform=linux-${box_arch}&channel=ascii-prod" \
+      -o /usr/local/bin/box; \
+    chmod +x /usr/local/bin/box
 
 LABEL org.opencontainers.image.source="https://github.com/useagenthq/useagent" \
       org.opencontainers.image.revision="${RELEASE_COMMIT}" \
