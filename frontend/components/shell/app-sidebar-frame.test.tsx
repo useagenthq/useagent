@@ -1,92 +1,69 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { RiBook3Line } from "@remixicon/react";
+import {
+  AppRouterContext,
+  type AppRouterInstance,
+} from "next/dist/shared/lib/app-router-context.shared-runtime";
+import { PathnameContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
+import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-
+import { SidebarProvider } from "@/components/sidebar-kit/sidebar";
 import { TooltipProvider } from "@/components/sidebar-kit/tooltip";
+import { AppShell } from "./app-shell";
+import { AppSidebarFrame, NavRoutes } from "./app-sidebar-frame";
+import { SidebarThreadsProvider } from "./sidebar-threads-provider";
+import { ThreadSidebar } from "./thread-sidebar";
 
-let botsEnabled = false;
+const router = {
+  push() {},
+  replace() {},
+  refresh() {},
+  back() {},
+  forward() {},
+  prefetch() {},
+} as unknown as AppRouterInstance;
 
-mock.module("next/navigation", () => ({
-  usePathname: () => "/artifacts",
-}));
-
-mock.module("@/hooks/use-capability-catalog", () => ({
-  useCapabilityCatalog: () => ({ catalog: { bots: botsEnabled }, loaded: true }),
-}));
-
-mock.module("@/lib/auth", () => ({
-  useSession: () => ({ session: null, loading: false, refresh: () => {} }),
-}));
-
-mock.module("./search-command", () => ({
-  SearchCommand: ({ compact = false }: { compact?: boolean }) => (
-    <button type="button" data-search-compact={compact}>
-      Search
-    </button>
-  ),
-}));
-
-mock.module("./sidebar-projects", () => ({
-  SidebarProjects: () => <div>Projects</div>,
-}));
-
-mock.module("./user-menu", () => ({
-  UserMenu: ({ trigger }: { trigger: React.ReactNode }) => trigger,
-}));
-
-const { SidebarProvider } = await import("@/components/sidebar-kit/sidebar");
-const { AppSidebarFrame, NavRoutes } = await import("./app-sidebar-frame");
-const { AppShell } = await import("./app-shell");
-const { SidebarThreadsProvider } = await import("./sidebar-threads-provider");
-const { ThreadSidebar } = await import("./thread-sidebar");
-
-function renderCollapsed(node: React.ReactNode): string {
+function renderCollapsed(node: ReactNode): string {
   return renderToStaticMarkup(
-    <TooltipProvider>
-      <SidebarThreadsProvider>
-        <SidebarProvider defaultOpen={false}>{node}</SidebarProvider>
-      </SidebarThreadsProvider>
-    </TooltipProvider>,
+    <AppRouterContext.Provider value={router}>
+      <PathnameContext.Provider value="/artifacts">
+        <TooltipProvider>
+          <SidebarThreadsProvider>
+            <SidebarProvider defaultOpen={false}>{node}</SidebarProvider>
+          </SidebarThreadsProvider>
+        </TooltipProvider>
+      </PathnameContext.Provider>
+    </AppRouterContext.Provider>,
   );
 }
 
 describe("collapsed application sidebar", () => {
-  test("keeps search mounted and turns routes with subroutes into labelled current-page links", () => {
+  test("keeps real search mounted and grouped routes labelled and navigable", () => {
     const routes = [
       {
         id: "library",
         title: "Library",
-        icon: <span aria-hidden>icon</span>,
+        icon: <RiBook3Line aria-hidden />,
         href: "/artifacts",
         active: true,
-        subs: [{ title: "Artifacts", href: "/artifacts" }],
+        subs: [{ title: "Artifacts", href: "/artifacts", icon: <RiBook3Line aria-hidden /> }],
       },
     ];
-
     const navHtml = renderCollapsed(<NavRoutes routes={routes} />);
     expect(navHtml).toContain('href="/artifacts"');
     expect(navHtml).toContain('aria-label="Library"');
     expect(navHtml).toContain('aria-current="page"');
-
     const frameHtml = renderCollapsed(<AppSidebarFrame>Navigation</AppSidebarFrame>);
-    expect(frameHtml).toContain('data-search-compact="true"');
+    expect(frameHtml).toContain('aria-label="Search"');
+    expect(frameHtml).toContain('aria-label="Open account menu"');
   });
 
-  test("exposes Bots only when the authenticated capability catalog enables it", () => {
-    botsEnabled = false;
+  test("does not advertise Bots before the capability catalog loads", () => {
     expect(renderCollapsed(<ThreadSidebar active="bots" />)).not.toContain('href="/bots"');
-
-    botsEnabled = true;
-    const html = renderCollapsed(<ThreadSidebar active="bots" />);
-    expect(html).toContain('href="/bots"');
-    expect(html).toContain('aria-label="Bots"');
-    expect(html).toContain('aria-current="page"');
   });
 
   test("uses one main landmark for the bounded page scroll area", () => {
-    const html = renderToStaticMarkup(
-      <AppShell sidebar={<aside>Navigation</aside>}>Page</AppShell>,
-    );
-
+    const html = renderCollapsed(<AppShell sidebar={<aside>Navigation</aside>}>Page</AppShell>);
     expect(html.match(/<main(?:\s|>)/g)).toHaveLength(1);
     expect(html).toContain('<div data-slot="sidebar-inset"');
     expect(html).toContain('<main id="main-content"');

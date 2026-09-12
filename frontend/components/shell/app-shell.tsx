@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
 
@@ -73,7 +74,13 @@ export function AppShell({
 /** Keeps the old shell behavior: fold the rail when work starts, and on the
  * tablet band for session workspaces. */
 function AutoCollapse({ collapseSidebarAtTablet }: { collapseSidebarAtTablet: boolean }) {
-  const { setOpen } = useSidebar();
+  const { setOpen, setOpenMobile } = useSidebar();
+  const pathname = usePathname();
+  const previousPathname = useRef(pathname);
+  useEffect(() => {
+    if (pathname !== previousPathname.current) setOpenMobile(false);
+    previousPathname.current = pathname;
+  }, [pathname, setOpenMobile]);
   const working = useWorkingSignal();
   const previousWorking = useRef(working);
   useEffect(() => {
