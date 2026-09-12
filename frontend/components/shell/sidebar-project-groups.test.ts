@@ -243,6 +243,8 @@ describe("projectSidebarThreadFamilies", () => {
     latestSummary: null,
     latestDurationMs: null,
     latestActivityAt: "2026-09-01T00:00:00.000Z",
+    bot: null,
+    followUpRunIds: [],
     ...over,
   });
 
@@ -256,6 +258,21 @@ describe("projectSidebarThreadFamilies", () => {
       ],
     );
     expect(projected.roots.map((item) => item.id)).toEqual(["root"]);
+  });
+
+  test("nests delegated children under their parent, newest first, so the tree can show them", () => {
+    const projected = projectSidebarThreadFamilies(
+      [run({ id: "root" })],
+      [
+        relationship("root", null),
+        relationship("older", "root", { latestActivityAt: "2026-09-01T00:01:00.000Z" }),
+        relationship("newer", "root", { latestActivityAt: "2026-09-01T00:02:00.000Z" }),
+        relationship("grandchild", "newer"),
+      ],
+    );
+    expect(projected.childrenByParent.get("root")?.map((item) => item.threadId)).toEqual(["newer", "older"]);
+    expect(projected.childrenByParent.get("newer")?.map((item) => item.threadId)).toEqual(["grandchild"]);
+    expect(projected.childrenByParent.has("older")).toBe(false);
   });
 
   test("does not promote active product children into the left thread list", () => {

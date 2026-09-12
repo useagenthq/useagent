@@ -218,12 +218,15 @@ describe("unified shell contract", () => {
 
   test("shares the same add-context grammar in the reply composer", () => {
     const replyComposer = readFromFrontend("components/chat/composer.tsx");
+    const addMenu = readFromFrontend("components/chat/composer-add-menu.tsx");
     // The reply "+" opens the SHARED add-menu rows (real upload + Create seeds)
     // in a popover above the input, instead of jumping straight to the file
     // dialog. Repos/GitHub are omitted - a reply reuses the thread's sandbox.
     expect(replyComposer).toContain('from "@/components/chat/composer-add-menu"');
-    expect(replyComposer).toContain("<AddFilesRow");
-    expect(replyComposer).toContain("<CreateRows");
+    expect(replyComposer).toContain("<AddContextMenu");
+    expect(addMenu).toContain("<AddFilesRow");
+    expect(addMenu).toContain("<CreateRows");
+    expect(addMenu).toContain('aria-label="Add context"');
     expect(replyComposer).toContain('aria-label="Add context"');
     expect(replyComposer).toContain("setAddMenuOpen");
     expect(replyComposer).not.toContain('aria-label="Add files"');

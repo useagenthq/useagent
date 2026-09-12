@@ -25,6 +25,8 @@ const relationship = (threadId: string, parentThreadId: string | null): ThreadRe
   latestSummary: null,
   latestDurationMs: null,
   latestActivityAt: "2026-09-01T00:00:00.000Z",
+  bot: null,
+  followUpRunIds: [],
 });
 
 test("selects only the current product thread's descendants", () => {

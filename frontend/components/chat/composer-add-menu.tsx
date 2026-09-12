@@ -1,6 +1,7 @@
 "use client";
 
-import { RiAttachment2, RiGithubLine } from "@remixicon/react";
+import { RiAttachment2, RiGithubLine, RiRobot2Line } from "@remixicon/react";
+import { AnimatePresence, motion } from "motion/react";
 import type { ReactNode } from "react";
 import { cx } from "@/utils/cx";
 
@@ -87,6 +88,17 @@ export function CreateRows({ onSeed, inline = false }: { onSeed: (seed: string) 
   );
 }
 
+/** "Hand to a bot" - opens the "@" picker straight on the Bots list. Reply
+ *  composer only, and only when bots exist in this org. */
+export function HandToBotRow({ onPick, inline = false }: { onPick: () => void; inline?: boolean }) {
+  return (
+    <button type="button" onClick={onPick} className={ADD_MENU_ROW}>
+      <RiRobot2Line className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
+      <RowText inline={inline} title="Hand to a bot" description="A bot takes part of this in its own thread" />
+    </button>
+  );
+}
+
 /** GitHub is connected server-side via the GitHub App - a status row, not an
  *  action. New-run shelf only (a reply reuses the thread's sandbox). */
 export function GithubConnectedRow({ inline = false }: { inline?: boolean }) {
@@ -104,4 +116,62 @@ export function GithubConnectedRow({ inline = false }: { inline?: boolean }) {
 /** Full-bleed section divider inside the add-context menu. */
 export function AddMenuDivider() {
   return <div className="my-1 border-t border-border-button-default" />;
+}
+
+/**
+ * The reply composer's "+" add-context menu: a BoardUI-style popover ABOVE the
+ * input (the reply composer sits at the viewport bottom). Same rows as the
+ * new-thread shelf - a real upload, "Hand to a bot" when bots exist, and the
+ * Create prompt-seeds. Repos and GitHub are omitted: a reply reuses the thread's
+ * provisioned sandbox, so they are not real reply capabilities. Every pick
+ * closes the menu before running its action.
+ */
+export function AddContextMenu({
+  open,
+  onClose,
+  onPickFiles,
+  onHandToBot,
+  onSeed,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onPickFiles: () => void;
+  onHandToBot: (() => void) | null;
+  onSeed: (seed: string) => void;
+}) {
+  const pick = (action: () => void) => () => {
+    onClose();
+    action();
+  };
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-hidden
+            tabIndex={-1}
+            className="fixed inset-0 z-20 cursor-default"
+            onClick={onClose}
+          />
+          <div className="absolute bottom-full left-0 z-30 mb-2 w-full">
+            <motion.div
+              role="menu"
+              aria-label="Add context"
+              initial={{ opacity: 0, scale: 0.96, y: 4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 4 }}
+              transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+              className="w-[340px] max-w-full origin-bottom-left rounded-2xl border border-border-button-default bg-background-primary-default p-1.5 shadow-dropdown"
+            >
+              <AddFilesRow inline onPick={pick(onPickFiles)} />
+              {onHandToBot ? <HandToBotRow inline onPick={pick(onHandToBot)} /> : null}
+              <AddMenuDivider />
+              <CreateRows inline onSeed={(seed) => pick(() => onSeed(seed))()} />
+            </motion.div>
+          </div>
+        </>
+      )}
+    </AnimatePresence>
+  );
 }

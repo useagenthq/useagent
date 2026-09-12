@@ -78,6 +78,8 @@ const product = (
   latestSummary: null,
   latestDurationMs: null,
   latestActivityAt: "2026-09-01T09:00:01.000Z",
+  bot: null,
+  followUpRunIds: [],
   ...over,
 });
 

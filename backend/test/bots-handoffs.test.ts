@@ -18,16 +18,20 @@ import { createOrgSession, fetchApi, json } from "./helpers";
 
 const previousFlag = process.env.BOTS;
 const previousChildThreads = process.env.PRODUCT_CHILD_THREADS;
+const previousRelationshipRead = process.env.THREAD_RELATIONSHIPS_READ;
 beforeAll(() => {
   process.env.BOTS = "1";
   // Handoffs are product child threads; without the v0.0.4 flag they are refused.
   process.env.PRODUCT_CHILD_THREADS = "on";
+  process.env.THREAD_RELATIONSHIPS_READ = "read";
 });
 afterAll(() => {
   if (previousFlag === undefined) delete process.env.BOTS;
   else process.env.BOTS = previousFlag;
   if (previousChildThreads === undefined) delete process.env.PRODUCT_CHILD_THREADS;
   else process.env.PRODUCT_CHILD_THREADS = previousChildThreads;
+  if (previousRelationshipRead === undefined) delete process.env.THREAD_RELATIONSHIPS_READ;
+  else process.env.THREAD_RELATIONSHIPS_READ = previousRelationshipRead;
 });
 
 interface BotBody {
@@ -143,6 +147,25 @@ describe("bot handoffs (@mentions)", () => {
     expect(childRuns.map((r) => r.prompt)).toContain("@bot/Nova also check the UK tier.");
     const again = await json<{ bot: BotBody }>(`/api/bots/${nova.id}`, { cookies });
     expect(again.body.bot.handoffs).toBe(1);
+
+    // The family view names the bot and the parent runs that followed up into
+    // its thread, so a reloaded parent page can still show both receipts.
+    const children = await json<{
+      children: { thread_id: string; bot: { id: string; name: string } | null; follow_up_run_ids: string[] }[];
+    }>(`/api/threads/${parent.body.id}/children`, { cookies });
+    expect(children.status).toBe(200);
+    const delegated = children.body.children.find((child) => child.thread_id === childThreadId);
+    expect(delegated?.bot).toEqual({ id: nova.id, name: "Nova" });
+    expect(delegated?.follow_up_run_ids).toEqual([followup.body.id]);
+
+    // The org-wide index (sidebar, palette) lists the child too: its family anchor is
+    // the user's own root thread, so the bot-handoff origin on its run does not hide it.
+    const index = await json<{ relationships: { thread_id: string; parent_thread_id: string | null }[] }>(
+      "/api/threads/relationships?limit=50",
+      { cookies },
+    );
+    expect(index.status).toBe(200);
+    expect(index.body.relationships.find((item) => item.thread_id === childThreadId)?.parent_thread_id).toBe(parent.body.id);
   });
 
   test("mentions are validated, unknown bots are reported, and the flag gates the field", async () => {

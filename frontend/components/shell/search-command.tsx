@@ -37,6 +37,7 @@ import { useSidebarThreadRelationships, useSidebarThreads } from "./sidebar-thre
 import {
   effectiveThreadStatus,
   filterCommandEntries,
+  findChildThreadMatches,
   findThreadMatches,
   threadActivityTimestamp,
   threadStatusPresentation,
@@ -130,7 +131,16 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
     [relationships],
   );
   const rootMatches = matchingThreads.filter((run) => !childIds.has(run.id));
-  const matchCount = matchingCommands.length + rootMatches.length;
+  // Delegated children match on their own words and say which thread they sit in.
+  const childMatches = React.useMemo(
+    () => findChildThreadMatches(relationships, query),
+    [relationships, query],
+  );
+  const parentTitle = (parentThreadId: string | null): string =>
+    relationships.find((item) => item.threadId === parentThreadId)?.title ??
+    runs.find((run) => run.id === parentThreadId)?.prompt ??
+    "its parent thread";
+  const matchCount = matchingCommands.length + rootMatches.length + childMatches.length;
 
   return (
     <>
@@ -209,6 +219,42 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
                               {repo}
                             </span>
                           ) : null}
+                        </span>
+                        <span className="shrink-0 text-caption-1-regular text-text-tertiary tabular-nums">
+                          {meta}
+                        </span>
+                      </CommandMenu.Item>
+                    );
+                  })
+                : null}
+              {group === "Threads"
+                ? childMatches.map((child) => {
+                    const status = threadStatusPresentation(child.status);
+                    const inParent = `in ${parentTitle(child.parentThreadId)}`;
+                    const meta = [status.label, relativeTimeShort(child.latestActivityAt)].join(" · ");
+                    return (
+                      <CommandMenu.Item
+                        key={`child:${child.threadId}`}
+                        value={`${child.title} ${child.threadId}`}
+                        onSelect={() => go(`/session/${child.threadId}`)}
+                        aria-label={`${child.title}, ${inParent}, ${meta}`}
+                        className="bg-transparent text-text-primary data-[selected=true]:bg-background-primary-hover"
+                      >
+                        <span className="flex size-5 shrink-0 items-center justify-center">
+                          {status.dot ? (
+                            <StatusDot {...status.dot} />
+                          ) : (
+                            <RiFileTextLine
+                              className="size-4 text-foreground-icon-secondary"
+                              aria-hidden
+                            />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{child.title}</span>
+                          <span className="block truncate text-caption-1-regular text-text-tertiary">
+                            {inParent}
+                          </span>
                         </span>
                         <span className="shrink-0 text-caption-1-regular text-text-tertiary tabular-nums">
                           {meta}

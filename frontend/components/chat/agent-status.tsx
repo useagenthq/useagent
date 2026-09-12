@@ -73,14 +73,14 @@ export function ChildStateDot({ status }: { status: ChildStatus }) {
   if (isChildActive(status)) {
     return (
       <span
-        className="ai-loading-pixel bg-blue-500 size-1.5 shrink-0 rounded-full"
+        className="ai-loading-pixel bg-information-base size-1.5 shrink-0 rounded-full"
         role="status"
         aria-label="running"
       />
     );
   }
   if (status === "failed" || status === "cancelled" || status === "interrupted") {
-    return <RiErrorWarningLine className="text-red-500 size-4 shrink-0" aria-label="failed" />;
+    return <RiErrorWarningLine className="text-text-error-primary size-4 shrink-0" aria-label="failed" />;
   }
-  return <RiCheckLine className="text-lime-600 size-4 shrink-0" aria-label="completed" />;
+  return <RiCheckLine className="text-success-base size-4 shrink-0" aria-label="completed" />;
 }

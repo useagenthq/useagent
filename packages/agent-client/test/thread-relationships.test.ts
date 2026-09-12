@@ -48,6 +48,8 @@ describe("thread relationship wire contract", () => {
       latestSummary: "Calendar grid complete.",
       latestDurationMs: 1_250,
       latestActivityAt: "2026-09-01T00:01:00.000Z",
+      bot: null,
+      followUpRunIds: [],
     });
   });
 

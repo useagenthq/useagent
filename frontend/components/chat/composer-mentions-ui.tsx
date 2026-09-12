@@ -24,6 +24,8 @@ import {
   useReducer,
   useState,
 } from "react";
+import type { BotState } from "@useagent/agent-client";
+import { StatusDot } from "@/components/shared/status-dot";
 import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { cx as cn } from "@/utils/cx";
 import {
@@ -35,6 +37,7 @@ import {
   type MentionKind,
   mentionKey,
   mentionsReducer,
+  parseDraftMentions,
   prMention,
   removeMentionToken,
   skillMention,
@@ -109,17 +112,33 @@ type MentionRow =
   | { type: "repo"; full_name: string; private: boolean }
   | { type: "dir"; path: string; name: string }
   | { type: "file"; path: string; name: string }
-  | { type: "bot"; id: string; name: string; title: string };
+  | { type: "bot"; id: string; name: string; title: string; state: BotState };
 
 export type UseComposerMentions = {
   mentions: Mention[];
   open: boolean;
+  /** Bots exist in this org, so "@ ... a bot" is an honest hint. */
+  botsAvailable: boolean;
+  /** ARIA wiring for the textarea combobox while the popover is open. */
+  listboxId: string;
+  activeOptionId: string | undefined;
   onTextareaKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onTextareaSelect: (e: React.SyntheticEvent<HTMLTextAreaElement>) => void;
+  /** Append an "@" and open straight on the Bots list (the "+" menu row). */
+  openBots: () => void;
   clear: () => void;
   chips: ReactNode;
   popover: ReactNode;
 };
+
+const LISTBOX_ID = "mention-listbox";
+export const mentionOptionId = (index: number): string => `mention-option-${index}`;
+const DRAFT_KEY_PREFIX = "useagent.draft-mentions.";
+
+function readDraftMentions(draftKey: string | null | undefined): Mention[] {
+  if (!draftKey || typeof window === "undefined") return [];
+  return parseDraftMentions(window.localStorage.getItem(`${DRAFT_KEY_PREFIX}${draftKey}`));
+}
 
 /**
  * The composer "@" mention controller. Owns the popover view/highlight state, the
@@ -127,11 +146,9 @@ export type UseComposerMentions = {
  * nav; returns ready-to-drop `chips` and `popover` nodes plus the textarea
  * handlers so each composer's wiring stays tiny.
  *
- * v1 note: the structured records (the chips) are EPHEMERAL - they are not
- * persisted with the composer draft. The inserted text tokens DO persist with the
- * draft (they live in the textarea value), so a reload still carries the reference
- * text into the prompt; only the removable-chip affordance and typed binding are
- * lost until the mention is re-picked.
+ * The structured records (the chips) persist alongside the textarea draft under
+ * `draftKey`, so a reload keeps the typed binding (a bot handoff, a pinned file
+ * revision) and not just the visible token text.
  */
 export function useComposerMentions(opts: {
   value: string;
@@ -143,11 +160,19 @@ export function useComposerMentions(opts: {
   repoRevisions?: Readonly<Record<string, string | null>>;
   /** Popover opens above the composer ("top", reply) or below it ("bottom", new task). */
   placement?: "top" | "bottom";
+  /** Same key the composer persists its text draft under; chips ride along. */
+  draftKey?: string | null;
 }): UseComposerMentions {
-  const { value, onValueChange, containerRef, enabled = true, skills, selectedRepos, repoRevisions } = opts;
+  const { value, onValueChange, containerRef, enabled = true, skills, selectedRepos, repoRevisions, draftKey } = opts;
   const placement = opts.placement ?? "top";
 
-  const [mentions, dispatch] = useReducer(mentionsReducer, []);
+  const [mentions, dispatch] = useReducer(mentionsReducer, draftKey, readDraftMentions);
+  useEffect(() => {
+    if (!draftKey || typeof window === "undefined") return;
+    const key = `${DRAFT_KEY_PREFIX}${draftKey}`;
+    if (mentions.length > 0) window.localStorage.setItem(key, JSON.stringify(mentions));
+    else window.localStorage.removeItem(key);
+  }, [draftKey, mentions]);
   const [caret, setCaret] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const [view, setView] = useState<MentionView>({ level: "root" });
@@ -337,6 +362,16 @@ export function useComposerMentions(opts: {
 
   const clear = useCallback(() => dispatch({ type: "clear" }), []);
 
+  const openBots = useCallback(() => {
+    const next = value === "" || /\s$/.test(value) ? `${value}@` : `${value} @`;
+    onValueChange(next);
+    setDismissed(false);
+    setView({ level: "list", kind: "bot" });
+    setHighlight(0);
+    setCaret(next.length);
+    setPendingCaret(next.length);
+  }, [value, onValueChange]);
+
   const chips = <MentionChips mentions={mentions} onRemove={removeMention} />;
   const popover = open ? (
     <MentionPopover
@@ -352,7 +387,19 @@ export function useComposerMentions(opts: {
     />
   ) : null;
 
-  return { mentions, open, onTextareaKeyDown, onTextareaSelect, clear, chips, popover };
+  return {
+    mentions,
+    open,
+    botsAvailable: showBots,
+    listboxId: LISTBOX_ID,
+    activeOptionId: open && rows.length > 0 ? mentionOptionId(Math.min(highlight, rows.length - 1)) : undefined,
+    onTextareaKeyDown,
+    onTextareaSelect,
+    openBots,
+    clear,
+    chips,
+    popover,
+  };
 }
 
 function includesQuery(haystack: string, q: string): boolean {
@@ -396,7 +443,7 @@ function computeRows(input: {
     const rows = input.bots.items
       .filter((b) => includesQuery(b.name, query) || includesQuery(b.title, query))
       .slice(0, ROW_CAP)
-      .map((b) => ({ type: "bot" as const, id: b.id, name: b.name, title: b.title }));
+      .map((b) => ({ type: "bot" as const, id: b.id, name: b.name, title: b.title, state: b.state }));
     return { rows, status: input.bots.status };
   }
   if (view.level === "list" && view.kind === "thread") {
@@ -490,7 +537,7 @@ function MentionChips({
               type="button"
               aria-label={`Remove ${chipLabel(m)}`}
               onClick={() => onRemove(m)}
-              className="hover:text-text-primary rounded"
+              className="hover:text-text-primary -my-1 -mr-1 flex size-6 shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
             >
               <RiCloseLine className="size-3.5" aria-hidden />
             </button>
@@ -551,7 +598,7 @@ function rowSecondary(row: MentionRow): string | undefined {
     case "skill":
       return row.tag;
     case "bot":
-      return row.title || "Bot";
+      return row.title || undefined;
     case "thread":
       return row.meta;
     case "pr":
@@ -561,6 +608,23 @@ function rowSecondary(row: MentionRow): string | undefined {
     default:
       return undefined;
   }
+}
+
+const BOT_STATE: Record<BotState, { label: string; tone: "neutral" | "info" | "away"; pulse: boolean }> = {
+  idle: { label: "Idle", tone: "neutral", pulse: false },
+  working: { label: "Working", tone: "info", pulse: true },
+  attention: { label: "Needs attention", tone: "away", pulse: false },
+};
+
+/** A bot row's second line: its live state from /api/bots, then its title. */
+function BotStateCaption({ row }: { row: Extract<MentionRow, { type: "bot" }> }) {
+  const state = BOT_STATE[row.state];
+  return (
+    <span className="flex items-center gap-1 text-caption-1-regular text-text-tertiary">
+      <StatusDot tone={state.tone} pulse={state.pulse} />
+      <span className="truncate">{[state.label, row.title || null].filter(Boolean).join(" · ")}</span>
+    </span>
+  );
 }
 
 const EMPTY_TEXT: Record<string, string> = {
@@ -628,7 +692,7 @@ function MentionPopover({
                 e.preventDefault();
                 onBack();
               }}
-              className="text-text-secondary hover:bg-background-primary-hover -ml-0.5 flex size-5 items-center justify-center rounded"
+              className="text-text-secondary hover:bg-background-primary-hover -my-0.5 -ml-1 flex size-6 items-center justify-center rounded"
             >
               <RiArrowLeftLine className="size-4" aria-hidden />
             </button>
@@ -640,12 +704,12 @@ function MentionPopover({
             <span className="text-caption-1-regular text-text-tertiary shrink-0 font-mono">@{query}</span>
           )}
         </div>
-        <div className="max-h-72 overflow-y-auto" role="listbox" aria-labelledby="mention-label">
+        <div className="max-h-72 overflow-y-auto" role="listbox" id={LISTBOX_ID} aria-labelledby="mention-label">
           {showStatusRow ? (
             <p
               className={cn(
                 "px-2 py-2 text-caption-1-regular",
-                status === "error" ? "text-red-500" : "text-text-tertiary",
+                status === "error" ? "text-text-error-primary" : "text-text-tertiary",
               )}
               role={status === "error" ? "alert" : "status"}
             >
@@ -671,6 +735,7 @@ function MentionPopover({
               return (
                 <button
                   key={rowKey(row, i)}
+                  id={mentionOptionId(i)}
                   type="button"
                   role="option"
                   aria-selected={i === highlight}
@@ -681,15 +746,19 @@ function MentionPopover({
                   onMouseEnter={() => onHover(i)}
                   className={cn(
                     "flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors",
-                    i === highlight ? "bg-background-secondary-default" : "hover:bg-background-primary-hover",
+                    i === highlight
+                      ? "bg-dropdown-item-hover-background ring-2 ring-inset ring-border-focus-ring"
+                      : "hover:bg-background-primary-hover",
                   )}
                 >
                   <Icon className="text-text-secondary size-4 shrink-0" aria-hidden />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="text-body-2-medium text-text-primary truncate">{rowPrimary(row)}</span>
-                    {secondary && (
+                    {row.type === "bot" ? (
+                      <BotStateCaption row={row} />
+                    ) : secondary ? (
                       <span className="text-caption-1-regular text-text-tertiary truncate">{secondary}</span>
-                    )}
+                    ) : null}
                   </span>
                   {drills && (
                     <RiArrowRightSLine className="text-foreground-icon-tertiary size-4 shrink-0" aria-hidden />

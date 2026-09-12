@@ -35,6 +35,10 @@ export interface ThreadRelationship {
   readonly latestSummary: string | null;
   readonly latestDurationMs: number | null;
   readonly latestActivityAt: string;
+  /** The bot this thread was handed to through an @mention; null otherwise. */
+  readonly bot: { readonly id: string; readonly name: string } | null;
+  /** Parent-thread runs whose later @mention became a turn of this thread. */
+  readonly followUpRunIds: readonly string[];
 }
 
 export interface ThreadFamilyPage {
@@ -55,6 +59,21 @@ function string(value: unknown): string | null {
 
 function nullableString(value: unknown): string | null | undefined {
   return value === null ? null : string(value) ?? undefined;
+}
+
+/** Additive fields: an older backend omits them, which decodes as "no bot". */
+function handoffBot(value: unknown): { id: string; name: string } | null | undefined {
+  if (value === undefined || value === null) return null;
+  const raw = record(value);
+  const id = raw ? string(raw.id) : null;
+  const name = raw ? string(raw.name) : null;
+  return id && name ? { id, name } : undefined;
+}
+
+function runIdList(value: unknown): string[] | undefined {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) return undefined;
+  return value as string[];
 }
 
 function nullableNonNegativeInteger(value: unknown): number | null | undefined {
@@ -81,6 +100,8 @@ export function decodeThreadRelationship(value: unknown): ThreadRelationship | n
   const latestSummary = nullableString(raw.latest_summary);
   const latestDurationMs = nullableNonNegativeInteger(raw.latest_duration_ms);
   const latestActivityAt = string(raw.latest_activity_at);
+  const bot = handoffBot(raw.bot);
+  const followUpRunIds = runIdList(raw.follow_up_run_ids);
   if (
     !threadId ||
     parentThreadId === undefined ||
@@ -97,7 +118,9 @@ export function decodeThreadRelationship(value: unknown): ThreadRelationship | n
     !latestRunId ||
     latestSummary === undefined ||
     latestDurationMs === undefined ||
-    !latestActivityAt
+    !latestActivityAt ||
+    bot === undefined ||
+    followUpRunIds === undefined
   ) return null;
   return {
     threadId,
@@ -116,6 +139,8 @@ export function decodeThreadRelationship(value: unknown): ThreadRelationship | n
     latestSummary,
     latestDurationMs,
     latestActivityAt,
+    bot,
+    followUpRunIds,
   };
 }
 

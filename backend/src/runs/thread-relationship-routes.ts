@@ -52,6 +52,8 @@ function wire(view: ThreadRelationshipView) {
     latest_activity_at: view.latestActivityAt.toISOString(),
     created_at: view.createdAt.toISOString(),
     updated_at: view.updatedAt.toISOString(),
+    bot: view.bot,
+    follow_up_run_ids: view.followUpRunIds,
   };
 }
 

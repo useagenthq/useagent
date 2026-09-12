@@ -26,6 +26,8 @@ export function ReplyComposer({
   runStartedAt,
   threadError,
   onDismissThreadError,
+  notice,
+  onDismissNotice,
   engineUnavailable,
   engineUnavailableMessage,
   draftKey,
@@ -53,6 +55,9 @@ export function ReplyComposer({
   runStartedAt?: string | null;
   threadError?: string | null;
   onDismissThreadError?: () => void;
+  /** A notice about the last accepted reply (a bot that did not get it). */
+  notice?: string | null;
+  onDismissNotice?: () => void;
   engineUnavailable?: boolean;
   engineUnavailableMessage?: string;
   /** Thread key for per-thread draft persistence (the root run id). */
@@ -68,7 +73,8 @@ export function ReplyComposer({
       <div className="mx-auto w-full max-w-5xl">
         <Composer
           variant="compact"
-          placeholder={placeholder ?? "Reply to Agent…"}
+          placeholder={placeholder}
+          placeholderLead="Reply to Agent"
           defaultEngine={engine}
           defaultModel={model}
           defaultMemoryScope={memoryScope}
@@ -87,6 +93,8 @@ export function ReplyComposer({
           runStartedAt={runStartedAt}
           threadError={threadError}
           onDismissThreadError={onDismissThreadError}
+          notice={notice}
+          onDismissNotice={onDismissNotice}
           engineUnavailable={engineUnavailable}
           engineUnavailableMessage={engineUnavailableMessage}
           draftKey={draftKey}

@@ -16,6 +16,11 @@ import { type ComposerSubmit } from "@/components/chat/composer";
 import { useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { GatewayApprovalCard } from "@/components/chat/gateway-approval-card";
 import { toGatewayChildSession } from "@/components/chat/gateway-children";
+import {
+  deriveHandoffReceipts,
+  type HandoffReceipt,
+  HandoffReceipts,
+} from "@/components/chat/handoff-receipts";
 import { InboundAttachments } from "@/components/chat/inbound-attachments";
 import { NativeApprovalCard } from "@/components/chat/native-approval-card";
 import type { NativeSnapshot } from "@/components/chat/native-store";
@@ -109,7 +114,7 @@ export type Turn = {
 /** Terminal note for a run that failed before writing a summary. */
 function FailedNote() {
   return (
-    <p className="text-body-2-regular text-red-500">This run failed before producing a summary.</p>
+    <p className="text-body-2-regular text-text-error-primary">This run failed before producing a summary.</p>
   );
 }
 
@@ -123,25 +128,15 @@ export function UserBubble({ children }: { children: string }) {
   );
 }
 
-/** Who answers in this thread when it is not the generic agent: a bot's own mark
- *  and name on its home thread. Also names the reply composer ("Message Nova"). */
-export interface AssistantIdentity {
-  readonly name: string;
-  readonly avatar: React.ReactNode;
-}
-
-/** The assistant turn's identity row: brand glyph + "Agent" + the engine label,
- *  or the thread's own identity when one is given.
+/** The assistant turn's identity row: brand glyph + "Agent" + the engine label.
  *  Shared by TurnBlock and the /lab/session sample so both read identically. */
-export function AssistantTurnHeader({ engine, identity }: { engine: EngineId; identity?: AssistantIdentity }) {
+export function AssistantTurnHeader({ engine }: { engine: EngineId }) {
   return (
     <div className="flex items-center gap-2">
-      {identity?.avatar ?? (
-        <span className="ring-border-button-default bg-background-secondary-default flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
-          <OrbitKnotMark className="size-3.5" stroke={2.2} />
-        </span>
-      )}
-      <span className="text-body-2-medium text-text-primary">{identity?.name ?? "Agent"}</span>
+      <span className="ring-border-button-default bg-background-secondary-default flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
+        <OrbitKnotMark className="size-3.5" stroke={2.2} />
+      </span>
+      <span className="text-body-2-medium text-text-primary">Agent</span>
       <span className="text-mono-label text-text-tertiary">{engineLabel(engine)}</span>
     </div>
   );
@@ -217,9 +212,9 @@ const TurnBlock = memo(function TurnBlock({
   childSessions,
   productChildren,
   onOpenProductChild,
+  handoffs,
   isLatestTurn = false,
   windowOwnsRunMarker = false,
-  assistantIdentity,
 }: {
   turn: Turn;
   /** 1-based place among this thread's queued turns (queued rendering only). */
@@ -232,12 +227,13 @@ const TurnBlock = memo(function TurnBlock({
   /** Durable product children spawned by this exact parent turn. */
   productChildren?: readonly ThreadRelationship[];
   onOpenProductChild?: (threadId: string) => void;
+  /** What this turn's @mentioned bots did - one receipt row per bot. */
+  handoffs?: readonly HandoffReceipt[];
   /** True for the thread's final turn - the only one whose follow-up
    *  suggestions render (stale suggestions under history are noise). */
   isLatestTurn?: boolean;
   /** The turn-window wrapper owns the rail marker for virtualized rows. */
   windowOwnsRunMarker?: boolean;
-  assistantIdentity?: AssistantIdentity;
 }) {
   const { run, steps, status, summary, live, liveText, liveReasoning } = turn;
   // Capture whether this turn was streaming when it first mounted, so its
@@ -310,6 +306,7 @@ const TurnBlock = memo(function TurnBlock({
       >
         <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
         <InboundAttachments uploads={run.uploads} />
+        <HandoffReceipts receipts={handoffs} />
         <QueuedMessagePill
           position={queuePosition ?? 1}
           waitingOnCurrentRun={run.parent_run_id !== null}
@@ -328,13 +325,14 @@ const TurnBlock = memo(function TurnBlock({
       <div className="space-y-2">
         <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
         <InboundAttachments uploads={run.uploads} />
+        <HandoffReceipts receipts={handoffs} />
       </div>
 
       {/* Assistant block: avatar + name on a header row, with the answer and the
           worklog capsule aligned to the same left content edge as every other
           assistant turn — one column, symmetric with the user bubble's bounds. */}
       <div className="group/turn space-y-3">
-        <AssistantTurnHeader engine={run.engine} identity={assistantIdentity} />
+        <AssistantTurnHeader engine={run.engine} />
 
         {/* Thinking surfaced ahead of the answer: real streamed reasoning tokens
             (not a spinner), yielding the instant answer text starts. */}
@@ -392,7 +390,7 @@ const TurnBlock = memo(function TurnBlock({
                 turns never reach here - they early-return as a bare user
                 bubble above, per the opencode steering-queue standard). */}
             {!summary && !narrating && !failed && activity.length === 0 && status === "running" && (
-              <span className="text-body-2-medium text-text-tertiary">Working...</span>
+              <span className="text-body-2-medium text-text-tertiary">Working…</span>
             )}
           </div>
         )}
@@ -465,11 +463,9 @@ export const Conversation = memo(function Conversation({
   prefill,
   repoRevisions, resourceMentions = true, onTurnsNeeded, composerLocked = false, composerLockedMessage,
   productChildren = [], onOpenProductChild,
-  assistantIdentity,
+  handoffReceipts, handoffNotice, onDismissHandoffNotice,
 }: {
   turns: Turn[];
-  /** The thread's own identity (a bot on its home thread): heads every assistant turn and names the composer. */
-  assistantIdentity?: AssistantIdentity;
   defaultEngine: EngineId;
   defaultModel: string;
   /** The thread's current memory scope — the reply composer starts here. */
@@ -524,6 +520,13 @@ export const Conversation = memo(function Conversation({
   onTurnsNeeded?: (runIds: readonly string[]) => void;
   productChildren?: readonly ThreadRelationship[];
   onOpenProductChild?: (threadId: string) => void;
+  /** Live handoff outcomes from this page's own replies, keyed by run id. They
+   *  win over the durable ones derived from `productChildren` (which survive a
+   *  reload but only know created / followed_up). */
+  handoffReceipts?: ReadonlyMap<string, readonly HandoffReceipt[]>;
+  /** Composer notice for a reply whose bots did not all get the message. */
+  handoffNotice?: string | null;
+  onDismissHandoffNotice?: () => void;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
   // stream, but ONLY while the user is already near the bottom — scrolling up
@@ -608,6 +611,7 @@ export const Conversation = memo(function Conversation({
     }
     return grouped;
   }, [productChildren]);
+  const durableHandoffs = useMemo(() => deriveHandoffReceipts(productChildren), [productChildren]);
 
   // 1-based FIFO position per queued turn: the queued pill states the honest
   // place in line (position 1 waits only on the running turn). Counted over the
@@ -683,9 +687,9 @@ export const Conversation = memo(function Conversation({
                 childSessions={childSessionsByParent.get(turn.run.id)}
                 productChildren={productChildrenByParent.get(turn.run.id)}
                 onOpenProductChild={onOpenProductChild}
+                handoffs={handoffReceipts?.get(turn.run.id) ?? durableHandoffs.get(turn.run.id)}
                 isLatestTurn={index === renderedTurns.length - 1}
                 windowOwnsRunMarker={windowOwnsRunMarker}
-                assistantIdentity={assistantIdentity}
               />
             )}
           />
@@ -735,8 +739,7 @@ export const Conversation = memo(function Conversation({
               ? composerCanAnswerQuestion
                 ? "Answer Agent’s question…"
                 : "Answer the question above to continue…"
-              : composerLocked ? composerLockedMessage ?? "Loading thread controls…"
-                : assistantIdentity ? `Message ${assistantIdentity.name}` : undefined
+              : composerLocked ? composerLockedMessage ?? "Loading thread controls…" : undefined
         }
         onReply={onReply}
         running={running}
@@ -746,6 +749,8 @@ export const Conversation = memo(function Conversation({
         runStartedAt={runStartedAt}
         threadError={threadError}
         onDismissThreadError={handleDismissThreadError}
+        notice={handoffNotice}
+        onDismissNotice={onDismissHandoffNotice}
         engineUnavailable={engineUnavailable}
         engineUnavailableMessage={engineUnavailableMessage}
         draftKey={turns[0]?.run.id ?? null}

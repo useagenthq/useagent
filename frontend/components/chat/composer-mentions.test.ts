@@ -1,4 +1,11 @@
-import { botMention, mentionedBotIds, mentionsToRunResources as toRunResources, skillMention } from "./composer-mentions";
+import {
+  botMention,
+  mentionedBotIds,
+  mentionsToRunResources as toRunResources,
+  parseDraftMentions,
+  skillMention,
+  unlinkedBotTokens,
+} from "./composer-mentions";
 import { describe, expect, test } from "bun:test";
 import {
   detectMentionTrigger,
@@ -162,5 +169,44 @@ describe("bot mentions", () => {
     expect(toRunResources([nova, skillMention("s1", "review-pr")])).toEqual([]);
     expect(mentionedBotIds([nova, nova, skillMention("s1", "review-pr")])).toEqual(["11111111-1111-4111-8111-111111111111"]);
     expect(mentionedBotIds([])).toEqual([]);
+  });
+});
+
+describe("unlinkedBotTokens - a typed @bot/ token with no chip behind it", () => {
+  test("flags tokens no bot chip backs and ignores linked ones", () => {
+    const nova = botMention("bot-nova", "Nova");
+    expect(unlinkedBotTokens("@bot/Nova compare the tiers", [nova])).toEqual([]);
+    expect(unlinkedBotTokens("@bot/nova compare the tiers", [nova])).toEqual([]);
+    expect(unlinkedBotTokens("@bot/Atlas compare the tiers", [nova])).toEqual(["@bot/Atlas"]);
+    expect(unlinkedBotTokens("ask @bot/Atlas and @bot/Atlas again", [])).toEqual(["@bot/Atlas"]);
+  });
+
+  test("an email-like or mid-word @bot/ is not a token", () => {
+    expect(unlinkedBotTokens("mail x@bot/ops now", [])).toEqual([]);
+    expect(unlinkedBotTokens("nothing here", [])).toEqual([]);
+  });
+});
+
+describe("parseDraftMentions - chips restored with the draft", () => {
+  test("round-trips every mention kind and drops malformed entries", () => {
+    const saved = [
+      botMention("bot-nova", "Nova"),
+      skillMention("s1", "review"),
+      { kind: "thread", id: "t1", shortId: "t1short", title: "Old thread", token: "@thread/t1short" },
+      { kind: "pr", repo: "acme/api", number: 7, title: "Fix auth", token: "@acme/api#7" },
+      { kind: "file", repo: "acme/api", path: "src/a.ts", revision: null, token: "@acme/api:src/a.ts" },
+      { kind: "bot", id: 12 },
+      { kind: "nope", token: "x" },
+      "junk",
+    ];
+    const parsed = parseDraftMentions(JSON.stringify(saved));
+    expect(parsed).toHaveLength(5);
+    expect(mentionedBotIds(parsed)).toEqual(["bot-nova"]);
+  });
+
+  test("nothing saved, or unreadable storage, means no chips", () => {
+    expect(parseDraftMentions(null)).toEqual([]);
+    expect(parseDraftMentions("{not json")).toEqual([]);
+    expect(parseDraftMentions('{"kind":"bot"}')).toEqual([]);
   });
 });

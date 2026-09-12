@@ -55,6 +55,25 @@ describe("composer placeholder honesty", () => {
   test("no slash affordance means no hint - @ files and $ skills are never advertised", () => {
     expect(composerPlaceholder({ agentSlash: false, commandCount: 0 })).toBe("Ask anything...");
   });
+
+  test("the reply composer advertises @ once mentions are on, and bots only when they exist", () => {
+    const reply = { lead: "Reply to Agent", agentSlash: false, mentions: true };
+    expect(composerPlaceholder({ ...reply, commandCount: 0, bots: true })).toBe(
+      "Reply to Agent, @ for context or a bot",
+    );
+    expect(composerPlaceholder({ ...reply, commandCount: 0, bots: false })).toBe(
+      "Reply to Agent, @ for context",
+    );
+    expect(composerPlaceholder({ ...reply, commandCount: 3, bots: true })).toBe(
+      "Reply to Agent, / for commands, @ for context or a bot",
+    );
+  });
+
+  test("a narrow screen keeps the lead and drops the hints so the line never wraps", () => {
+    expect(
+      composerPlaceholder({ lead: "Reply to Agent", agentSlash: false, commandCount: 3, mentions: true, bots: true, compact: true }),
+    ).toBe("Reply to Agent...");
+  });
 });
 
 describe("composer banner stack contract", () => {

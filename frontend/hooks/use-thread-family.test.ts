@@ -1,8 +1,17 @@
 import { expect, test } from "bun:test";
 import {
+  threadFamilyHasActiveChild,
   threadFamilyShouldRefresh,
   threadSubmissionLane,
 } from "./use-thread-family";
+
+test("the family keeps polling only while a child is still working", () => {
+  expect(threadFamilyHasActiveChild([{ status: "completed" }, { status: "failed" }])).toBe(false);
+  expect(threadFamilyHasActiveChild([{ status: "completed" }, { status: "running" }])).toBe(true);
+  expect(threadFamilyHasActiveChild([{ status: "queued" }])).toBe(true);
+  expect(threadFamilyHasActiveChild([{ status: "waiting" }])).toBe(true);
+  expect(threadFamilyHasActiveChild([])).toBe(false);
+});
 
 test("family invalidation ignores unrelated run changes", () => {
   const child = {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ProviderStatusBanner, unavailableEngineLabel } from "./provider-status-banner";
+import { engineDisplayLabel, ProviderStatusBanner, unavailableEngineLabel } from "./provider-status-banner";
 
 test("a listed engine is never flagged", () => {
   expect(unavailableEngineLabel("opencode", ["opencode", "claude"], true)).toBeNull();
@@ -17,6 +17,12 @@ test("an engine missing from the manifest resolves to its display label", () => 
   expect(unavailableEngineLabel("codex", ["opencode", "claude"], true)).toBe("Codex");
 });
 
+test("an engine outside the display catalog is never named by its raw id", () => {
+  expect(engineDisplayLabel("mock")).toBe("This engine");
+  expect(unavailableEngineLabel("mock", ["opencode"], true)).toBe("This engine");
+  expect(engineDisplayLabel("opencode")).toBe("OpenCode");
+});
+
 test("the loading fallback never produces a false unavailable warning", () => {
   expect(unavailableEngineLabel("codex", ["opencode"], false)).toBeNull();
 });
@@ -25,6 +31,8 @@ test("renders a slim honest unavailable notice", () => {
   const html = renderToStaticMarkup(<ProviderStatusBanner engineLabel="Claude Code" />);
   expect(html).toContain('data-session-ui="provider-status-banner"');
   expect(html).toContain('role="alert"');
+  // A degraded engine is a warning, not an information notice.
+  expect(html).toContain("text-warning-base");
   expect(html).toContain("Claude Code is currently unavailable on this server.");
   expect(html).toContain("may fail until it returns");
   // Honest wording only: no certainty the manifest cannot back.

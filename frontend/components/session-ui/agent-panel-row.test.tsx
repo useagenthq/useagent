@@ -22,6 +22,7 @@ const base: AgentPanelRowModel = {
   result: null,
   usage: null,
   elapsed: null,
+  kind: "subagent",
 };
 
 describe("agentPanelActivityText", () => {
@@ -125,7 +126,7 @@ describe("AgentPanelRow", () => {
     expect(html).toContain("41.2k tok");
     expect(html).toContain("sonnet-5");
     expect(html).toContain("reviewer");
-    expect(html).toContain("text-lime-600");
+    expect(html).toContain("text-success-base");
     expect(html).toContain("1m 5s");
     // A completed row leads with its result, never a redundant visible "Completed"
     // line - the word survives only once, in the sr-only status span.
@@ -181,5 +182,44 @@ describe("AgentPanelRow", () => {
       />,
     );
     expect(html).toContain("Idle · resumable");
+  });
+});
+
+describe("AgentPanelRow kind caption", () => {
+  test("a bot's thread reads by its bot, with one chip at most and no lane id", () => {
+    const html = renderToStaticMarkup(
+      <AgentPanelRow
+        agent={{
+          ...base,
+          title: "Nova: compare the EU tiers",
+          status: "completed",
+          statusLabel: "Completed",
+          engine: "opencode",
+          model: "claude-opus-5",
+          lane: "product",
+          kind: "bot_thread",
+          botName: "Nova",
+        }}
+        onOpen={() => {}}
+      />,
+    );
+    expect(html).toContain("Nova · bot thread");
+    expect(html).toContain('aria-label="Open bot thread: Nova: compare the EU tiers"');
+    expect(html).toContain('data-child-lane="product"');
+    expect(html).toContain("OpenCode · opus-5");
+    expect(html).not.toContain(">product<");
+    expect(html).not.toContain("Product child");
+    expect(html).not.toContain("text-[.65rem]");
+  });
+
+  test("gateway rows read as spawned sessions", () => {
+    const html = renderToStaticMarkup(
+      <AgentPanelRow
+        agent={{ ...base, lane: "gateway", kind: "spawned_session", engine: "claude" }}
+        href="/session/child-1"
+      />,
+    );
+    expect(html).toContain("spawned session · Running");
+    expect(html).toContain('aria-label="Open spawned session: Research checkout"');
   });
 });

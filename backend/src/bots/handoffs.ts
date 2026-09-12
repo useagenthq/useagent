@@ -26,6 +26,9 @@ import {
   HandoffLockTimeout,
   withBotHandoffLocks,
 } from "./handoff-admission";
+import { followupHandoffKey, mentionHandoffKey } from "./handoff-keys";
+
+export { mentionHandoffKey } from "./handoff-keys";
 
 /** Bots one message (or one turn through the gateway tool) may hand work to. */
 export const MENTIONS_MAX = 5;
@@ -656,20 +659,6 @@ export async function dispatchBotHandoffs(input: {
     );
   }
   return results;
-}
-
-/** The key the @mention path hands a run's message off under: one per (run, bot). */
-export function mentionHandoffKey(parentRunId: string, botId: string): string {
-  return `bot-handoff:${parentRunId}:${botId}`;
-}
-
-/** The command key of a follow-up into the bot's existing delegated thread. */
-function followupHandoffKey(
-  parentThreadId: string,
-  botId: string,
-  callerKey: string,
-): string {
-  return `bot-handoff-followup:${parentThreadId}:${botId}:${callerKey}`;
 }
 
 /** Bots a run has already handed work to (through mentions or the gateway tool). */

@@ -166,7 +166,7 @@ export function AgentDetail({
             className={cn(
               "rounded-xl border p-3",
               status === "failed"
-                ? "border-border-error-default/30 bg-red-50"
+                ? "border-border-error-default/30 bg-error-lighter"
                 : "border-border-button-default bg-background-secondary-default",
             )}
           >
@@ -176,7 +176,7 @@ export function AgentDetail({
             <p
               className={cn(
                 "text-body-2-regular whitespace-pre-wrap break-words",
-                status === "failed" ? "text-red-500" : "text-text-primary",
+                status === "failed" ? "text-text-error-primary" : "text-text-primary",
               )}
             >
               {fidelity.resultText}
