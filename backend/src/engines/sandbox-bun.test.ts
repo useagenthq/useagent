@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -21,17 +21,27 @@ async function linuxCommandEnvironment(home: string): Promise<Record<string, str
     `test "$1" = -s && printf '%s\\n' Linux || printf '%s\\n' ${hostArch() === "arm64" ? "aarch64" : "x86_64"}`,
     "",
   ].join("\n"));
-  await chmod(join(tools, "uname"), 0o700);
+  await Bun.write(join(tools, "stat"), [
+    "#!/bin/sh",
+    "for path do :; done",
+    "if /usr/bin/stat -c %a -- \"$path\" >/dev/null 2>&1; then exec /usr/bin/stat -c %a -- \"$path\"; fi",
+    "exec /usr/bin/stat -f %Lp \"$path\"",
+    "",
+  ].join("\n"));
+  await Promise.all([
+    chmod(join(tools, "uname"), 0o700),
+    chmod(join(tools, "stat"), 0o700),
+  ]);
   return { ...process.env, PATH: `${tools}:${process.env.PATH ?? ""}` };
 }
 
 describe("sandbox Bun prerequisite", () => {
-  test("installs the pinned executable without changing a retained workspace", async () => {
+  test("publishes root-prepared Bun for non-root runtime users without changing a retained workspace", async () => {
     const home = await mkdtemp(join(tmpdir(), "useagent-sandbox-bun-"));
     const workdir = join(home, "work");
     const uploaded = join(home, "uploaded-bun");
     const executable = join(home, ".local/bin/bun");
-    const layout = { home, workdir, runsAsRoot: false, bunExecutable: executable };
+    const layout = { home, workdir, runsAsRoot: true, bunExecutable: executable };
     try {
       await mkdir(workdir);
       await Bun.write(join(workdir, "retained.txt"), "keep me\n");
@@ -48,7 +58,12 @@ describe("sandbox Bun prerequisite", () => {
       ], { env });
 
       expect(installed.exitCode).toBe(0);
-      expect(Bun.spawnSync(["sh", "-c", buildSandboxBunProbeCommand(layout)]).exitCode).toBe(0);
+      expect(Bun.spawnSync(
+        ["sh", "-c", buildSandboxBunProbeCommand(layout)],
+        { env },
+      ).exitCode).toBe(0);
+      expect((await stat(executable)).mode & 0o777).toBe(0o755);
+      expect((await stat(uploaded)).mode & 0o777).toBe(0o700);
       expect(await readFile(join(workdir, "retained.txt"), "utf8")).toBe("keep me\n");
     } finally {
       await rm(home, { recursive: true, force: true });
@@ -64,12 +79,13 @@ describe("sandbox Bun prerequisite", () => {
       await mkdir(join(home, "bin"));
       await Bun.write(executable, "existing executable\n");
       await Bun.write(uploaded, "corrupt upload\n");
-      await chmod(executable, 0o700);
+      await chmod(executable, 0o755);
       await chmod(uploaded, 0o700);
       const command = buildSandboxBunInstallCommand(layout, uploaded, hostArch(), "0".repeat(64));
 
       expect(Bun.spawnSync(["sh", "-c", command]).exitCode).not.toBe(0);
       expect(await readFile(executable, "utf8")).toBe("existing executable\n");
+      expect((await stat(executable)).mode & 0o777).toBe(0o755);
     } finally {
       await rm(home, { recursive: true, force: true });
     }

@@ -31,7 +31,11 @@ export function sandboxBunExecutable(layout: SandboxRuntimeLayout): string {
 
 export function buildSandboxBunProbeCommand(layout: SandboxRuntimeLayout): string {
   const executable = sandboxBunExecutable(layout);
-  return `test -x ${q(executable)} && test "$(${q(executable)} --version)" = ${q(SANDBOX_BUN_VERSION)}`;
+  return (
+    `test -x ${q(executable)} && ` +
+    `test "$(stat -c %a -- ${q(executable)})" = '755' && ` +
+    `test "$(${q(executable)} --version)" = ${q(SANDBOX_BUN_VERSION)}`
+  );
 }
 
 export function buildSandboxBunInstallCommand(
@@ -56,6 +60,7 @@ export function buildSandboxBunInstallCommand(
     "trap cleanup_sandbox_bun EXIT HUP INT TERM",
     `install -m 700 ${q(uploadedPath)} ${q(temporaryExecutable)}`,
     `test "$(${q(temporaryExecutable)} --version)" = ${q(SANDBOX_BUN_VERSION)}`,
+    `chmod 755 ${q(temporaryExecutable)}`,
     `mv -f ${q(temporaryExecutable)} ${q(executable)}`,
     "trap - EXIT HUP INT TERM",
     buildSandboxBunProbeCommand(layout),
