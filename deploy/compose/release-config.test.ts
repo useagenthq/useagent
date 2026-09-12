@@ -218,10 +218,6 @@ describe("release configuration", () => {
 			"\thandle @relay {",
 			"\t\treverse_proxy 127.0.0.1:3201",
 			"\t}",
-			"\t@api path /api/*",
-			"\thandle @api {",
-			"\t\treverse_proxy 127.0.0.1:3201",
-			"\t}",
 			"\t@oauth path /oauth/callback",
 			"\thandle @oauth { reverse_proxy 127.0.0.1:3300 }",
 			"\thandle {",
@@ -256,6 +252,10 @@ describe("release configuration", () => {
 
 		expect(rewritten.match(/# useagent-release: backend/g)).toHaveLength(2);
 		expect(rewritten).toContain(
+			"\t@useagent_api path /api/*\r\n\thandle @useagent_api {\r\n" +
+				"\t\t# useagent-release: backend\r\n\t\treverse_proxy 127.0.0.1:3211",
+		);
+		expect(rewritten).toContain(
 			"\t\t# useagent-release: frontend\r\n\t\treverse_proxy 127.0.0.1:3410",
 		);
 		expect(rewritten).toContain(
@@ -287,6 +287,43 @@ describe("release configuration", () => {
 				},
 			),
 		).toBe(rewritten);
+	});
+
+	test("legacy Caddy adoption preserves an existing direct API route", () => {
+		const source = [
+			"app.example.test {",
+			"\t@relay path /api/internal/codex-relay/*",
+			"\thandle @relay {",
+			"\t\treverse_proxy 127.0.0.1:3201",
+			"\t}",
+			"\t@api path /api/*",
+			"\thandle @api {",
+			"\t\treverse_proxy 127.0.0.1:3201",
+			"\t}",
+			"\thandle {",
+			"\t\treverse_proxy 127.0.0.1:3400",
+			"\t}",
+			"}",
+			"gateway.example.test {",
+			"\treverse_proxy 127.0.0.1:3202",
+			"}",
+		].join("\n");
+		const rewritten = adoptLegacyCaddyUpstreams(
+			source,
+			{
+				backend: "127.0.0.1:3201",
+				frontend: "127.0.0.1:3400",
+				gateway: "127.0.0.1:3202",
+			},
+			{
+				backend: "127.0.0.1:3211",
+				frontend: "127.0.0.1:3410",
+				gateway: "127.0.0.1:3212",
+			},
+		);
+		expect(rewritten.match(/# useagent-release: backend/g)).toHaveLength(2);
+		expect(rewritten).toContain("@api path /api/*");
+		expect(rewritten).not.toContain("@useagent_api");
 	});
 
 	test("legacy Caddy adoption fails closed on ambiguous or inconsistent topology", () => {

@@ -609,10 +609,78 @@ export function adoptLegacyCaddyUpstreams(
 		}
 	}
 
+	const apiMatchers = lines
+		.map((line, index) => ({
+			index,
+			name: line.contents.match(
+				/^\s*@([A-Za-z0-9_-]+)\s+path\s+\/api\/\*\s*$/,
+			)?.[1],
+		}))
+		.filter(
+			(entry): entry is { index: number; name: string } =>
+				typeof entry.name === "string",
+		);
+	if (apiMatchers.length > 1) {
+		throw new Error("legacy Caddy API route is ambiguous");
+	}
+	if (apiMatchers[0]) {
+		const handle = lines[apiMatchers[0].index + 1]?.contents.trim();
+		if (handle !== `handle @${apiMatchers[0].name} {`) {
+			throw new Error("legacy Caddy API matcher has no direct handle");
+		}
+		const backendIndexes = new Set(matches.get("backend") ?? []);
+		let directBackend = false;
+		for (
+			let index = apiMatchers[0].index + 2;
+			index < lines.length;
+			index += 1
+		) {
+			if (lines[index]?.contents.trim() === "}") break;
+			if (backendIndexes.has(index)) directBackend = true;
+		}
+		if (!directBackend) {
+			throw new Error("legacy Caddy API route does not target the backend");
+		}
+	}
+
+	let apiInsertionIndex: number | null = null;
+	if (apiMatchers.length === 0) {
+		const frontendIndex = matches.get("frontend")?.[0];
+		if (
+			frontendIndex === undefined ||
+			lines[frontendIndex - 1]?.contents.trim() !== "handle {"
+		) {
+			throw new Error("legacy Caddy frontend route has no fallback handle");
+		}
+		apiInsertionIndex = frontendIndex - 1;
+	}
+
 	const output: string[] = [];
 	for (let index = 0; index < lines.length; index += 1) {
 		const line = lines[index];
 		if (!line) continue;
+		if (index === apiInsertionIndex) {
+			const frontendIndex = matches.get("frontend")?.[0];
+			if (frontendIndex === undefined) {
+				throw new Error("legacy Caddy frontend route is unavailable");
+			}
+			const blockIndent = line.contents.match(/^\s*/)?.[0] ?? "";
+			const proxyIndent =
+				lines[frontendIndex]?.contents.match(/^\s*/)?.[0] ?? `${blockIndent}\t`;
+			const ending = line.ending || lines[frontendIndex]?.ending || "\n";
+			output.push(
+				`${blockIndent}@useagent_api path /api/*`,
+				ending,
+				`${blockIndent}handle @useagent_api {`,
+				ending,
+				`${proxyIndent}# useagent-release: backend`,
+				ending,
+				`${proxyIndent}reverse_proxy ${target.backend}`,
+				ending,
+				`${blockIndent}}`,
+				ending,
+			);
+		}
 		const service = intended.get(index);
 		if (!service) {
 			output.push(line.contents, line.ending);
