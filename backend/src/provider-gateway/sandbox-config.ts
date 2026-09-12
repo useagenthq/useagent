@@ -73,7 +73,11 @@ export function mergeOpenCodeProviderConfig(
 // from surviving a compatibility -> gateway-only transition.
 export const SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-gateway-only-secrets";
 const COMPATIBILITY_SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-compatibility-secrets";
-export const SANDBOX_GENERATION_LABEL = "skynet-provider-generation";
+export const CANONICAL_SANDBOX_RUN_LABEL = "useagent-run";
+export const LEGACY_SANDBOX_RUN_LABEL = "skynet-run";
+export const CANONICAL_SANDBOX_GENERATION_LABEL = "useagent-provider-generation";
+export const LEGACY_SANDBOX_GENERATION_LABEL = "skynet-provider-generation";
+export const SANDBOX_GENERATION_LABEL = LEGACY_SANDBOX_GENERATION_LABEL;
 const SANDBOX_MARKER = "$HOME/.skynet/provider-gateway-generation";
 const OPENAI_TOKEN_FILE = "$HOME/.skynet/provider-openai.token";
 export const CLAUDE_CONFIG_DIR = "/tmp/skynet-claude-config";
@@ -87,6 +91,24 @@ const CLAUDE_ONE_MILLION_CONTEXT_MODELS = new Set([
   "claude-opus-5",
   "claude-sonnet-5",
 ]);
+
+export interface CompatibleSandboxLabel {
+  readonly value: string | null;
+  readonly conflict: boolean;
+}
+
+export function readCompatibleSandboxLabel(
+  labels: Readonly<Record<string, string>>,
+  canonicalKey: string,
+  legacyKey: string,
+): CompatibleSandboxLabel {
+  const canonical = labels[canonicalKey];
+  const legacy = labels[legacyKey];
+  if (canonical !== undefined && legacy !== undefined && canonical !== legacy) {
+    return { value: null, conflict: true };
+  }
+  return { value: canonical ?? legacy ?? null, conflict: false };
+}
 
 function sandboxGeneration(mode: SandboxSecretMode = sandboxSecretMode()): string {
   return mode === "gateway_only" ? SANDBOX_GENERATION : COMPATIBILITY_SANDBOX_GENERATION;
@@ -323,7 +345,7 @@ export function providerGatewayWired(): boolean {
  * trust anchor used for warm reuse. */
 export function providerGatewaySandboxLabels(runId: string): Record<string, string> {
   return {
-    "skynet-run": runId,
+    [LEGACY_SANDBOX_RUN_LABEL]: runId,
     ...(providerGatewayWired()
       ? { [SANDBOX_GENERATION_LABEL]: sandboxGeneration() }
       : {}),
@@ -511,8 +533,13 @@ export async function prepareProviderGatewaySandbox(
 export async function providerGatewaySandboxIsCurrent(sandbox: SandboxHandle): Promise<boolean> {
   if (!providerGatewayWired()) return true;
   const generation = sandboxGeneration();
-  const labels = (sandbox as { labels?: Record<string, string> }).labels;
-  if (labels?.[SANDBOX_GENERATION_LABEL] !== generation) return false;
+  const labels = (sandbox as { labels?: Record<string, string> }).labels ?? {};
+  const labeledGeneration = readCompatibleSandboxLabel(
+    labels,
+    CANONICAL_SANDBOX_GENERATION_LABEL,
+    LEGACY_SANDBOX_GENERATION_LABEL,
+  );
+  if (labeledGeneration.conflict || labeledGeneration.value !== generation) return false;
   const result = await sandbox.process
     .executeCommand(`test \"$(cat ${SANDBOX_MARKER} 2>/dev/null)\" = \"${generation}\"`, undefined, undefined, 10)
     .catch(() => null);
