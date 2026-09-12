@@ -2,12 +2,12 @@
 
 import {
   RiAddLine,
-  RiArchiveLine,
-  RiBookOpenLine,
+  RiBook3Line,
   RiBookShelfLine,
-  RiBrainLine,
+  RiBroadcastLine,
   RiChat3Line,
   RiDashboardLine,
+  RiDatabase2Line,
   RiKey2Line,
   RiListCheck2,
   RiRobot2Line,
@@ -36,14 +36,14 @@ function CollapsedThreads() {
   const pathname = usePathname();
   const runs = useSidebarThreads();
   return (
-    <SidebarGroup>
-      <SidebarMenu>
+    <SidebarGroup className="items-center p-0 pt-2">
+      <SidebarMenu className="items-center gap-1">
         {runs.slice(0, 6).map((run) => {
           const href = `/session/${run.id}`;
           return (
-            <SidebarMenuItem key={run.id}>
+            <SidebarMenuItem key={run.id} className="w-8">
               <SidebarMenuButton
-                className="justify-center text-muted-foreground hover:bg-sidebar-muted hover:text-foreground"
+                className="justify-center rounded-2lg text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary"
                 isActive={pathname === href}
                 render={
                   <Link
@@ -65,28 +65,31 @@ function CollapsedThreads() {
 }
 
 /**
- * The thread rail: the app sidebar frame around the product's own project
- * thread tree. The tree keeps everything the previous rail had - folders,
- * nested delegated children, status dots, per-project actions and the
+ * The thread rail: the app sidebar frame around the product's own nav rows and
+ * project thread tree. The tree keeps everything the previous rail had -
+ * folders, nested delegated children, status dots, per-project actions and the
  * "Show N more" disclosures - because it is the same component.
  */
 export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
   const { state } = useSidebar();
   const { catalog } = useCapabilityCatalog();
   const isCollapsed = state === "collapsed";
+  const pathname = usePathname();
 
   const routes: Route[] = [
     {
       id: "new",
       title: "New thread",
-      icon: <RiAddLine className="size-4" aria-hidden />,
+      icon: RiAddLine,
+      tone: "primary",
       href: "/agent/new",
       active: active === "new",
     },
     {
       id: "dashboard",
       title: "Dashboard",
-      icon: <RiDashboardLine className="size-4" aria-hidden />,
+      icon: RiDashboardLine,
+      tone: "purple",
       href: "/dashboard",
       active: active === "dashboard",
       trailing: <WorkingProjectStatus />,
@@ -96,7 +99,8 @@ export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
           {
             id: "bots",
             title: "Bots",
-            icon: <RiRobot2Line className="size-4" aria-hidden />,
+            icon: RiRobot2Line,
+            tone: "blue" as const,
             href: "/bots",
             active: active === "bots",
           },
@@ -105,24 +109,27 @@ export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
     {
       id: "customize",
       title: "Customize",
-      icon: <RiBookOpenLine className="size-4" aria-hidden />,
+      icon: RiBookShelfLine,
+      tone: "green",
       href: "/skills",
       active: active === "library",
     },
     {
       id: "library",
       title: "Library",
-      icon: <RiBookShelfLine className="size-4" aria-hidden />,
+      icon: RiBook3Line,
+      tone: "orange",
       href: "/artifacts",
       subs: [
         {
           title: "Artifacts",
           href: "/artifacts",
-          icon: <RiArchiveLine className="size-4" aria-hidden />,
+          icon: RiBroadcastLine,
+          active: pathname === "/artifacts",
         },
-        { title: "Tasks", href: "/tasks", icon: <RiListCheck2 className="size-4" aria-hidden /> },
-        { title: "Memory", href: "/memory", icon: <RiBrainLine className="size-4" aria-hidden /> },
-        { title: "Secrets", href: "/secrets", icon: <RiKey2Line className="size-4" aria-hidden /> },
+        { title: "Tasks", href: "/tasks", icon: RiListCheck2, active: pathname === "/tasks" },
+        { title: "Memory", href: "/memory", icon: RiDatabase2Line, active: pathname === "/memory" },
+        { title: "Secrets", href: "/secrets", icon: RiKey2Line, active: pathname === "/secrets" },
       ],
     },
   ];

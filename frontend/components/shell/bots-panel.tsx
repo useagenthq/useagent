@@ -83,15 +83,15 @@ export function BotsPanel({
 
   return (
     <Sidebar
-      className="hidden w-80 border-r border-sidebar-border md:flex"
+      className="hidden w-80 border-r border-border-button-white md:flex"
       collapsible="none"
       side="left"
       variant="sidebar"
     >
-      <SidebarHeader className="flex flex-row items-center justify-between border-b border-sidebar-border px-4 py-3">
+      <SidebarHeader className="flex flex-row items-center justify-between border-b border-border-button-white px-4 py-3">
         <div className="flex items-baseline gap-2">
-          <h3 className="font-medium text-foreground">Bots</h3>
-          <span className="text-muted-foreground text-xs">
+          <h3 className="text-body-2-medium text-text-primary">Bots</h3>
+          <span className="text-caption-1-regular text-text-tertiary">
             {bots?.length ?? 0}
             {attention > 0 ? ` · ${attention} need you` : ""}
           </span>
@@ -111,7 +111,7 @@ export function BotsPanel({
             <SidebarMenu>
               {error && (
                 <li className="flex flex-col items-start gap-2 px-3 py-3" role="alert">
-                  <span className="text-muted-foreground text-xs">
+                  <span className="text-caption-1-regular text-text-tertiary">
                     {bots ? "Couldn't refresh bots." : "Couldn't load bots."}
                   </span>
                   <Button
@@ -131,10 +131,10 @@ export function BotsPanel({
                   <SidebarMenuItem key={bot.id}>
                     <SidebarMenuButton
                       className={cn(
-                        "h-auto w-full justify-start gap-3 px-3 py-2",
+                        "h-auto w-full justify-start gap-3 rounded-2lg px-2.5 py-2",
                         selected
-                          ? "bg-sidebar-accent text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
+                          ? "bg-background-secondary-default text-text-primary"
+                          : "text-text-secondary hover:bg-background-primary-hover hover:text-text-primary",
                       )}
                       isActive={selected}
                       render={<Link href={href} />}
@@ -148,13 +148,15 @@ export function BotsPanel({
                       />
                       <div className="min-w-0 flex-1 text-left">
                         <div className="flex items-center gap-2">
-                          <span className="truncate font-medium text-foreground">{bot.name}</span>
+                          <span className="truncate text-body-2-medium text-text-primary">
+                            {bot.name}
+                          </span>
                           <StateBadge state={bot.state} />
                         </div>
-                        <div className="mt-0.5 truncate text-muted-foreground text-xs">
+                        <div className="mt-0.5 truncate text-caption-1-regular text-text-secondary">
                           {outcomeLine(bot, now)}
                         </div>
-                        <div className="mt-0.5 truncate text-muted-foreground text-[11px]">
+                        <div className="mt-0.5 truncate text-caption-1-regular text-text-tertiary">
                           {engineLabel(bot.engine)}
                           {bot.routines > 0
                             ? ` · ${bot.routines} routine${bot.routines === 1 ? "" : "s"}`
@@ -166,12 +168,14 @@ export function BotsPanel({
                 );
               })}
               {bots === null && !error && (
-                <li className="px-3 py-6 text-center text-muted-foreground text-sm">
+                <li className="px-3 py-6 text-center text-body-2-regular text-text-tertiary">
                   Loading bots
                 </li>
               )}
               {bots?.length === 0 && !error && (
-                <li className="px-3 py-6 text-center text-muted-foreground text-sm">No bots yet</li>
+                <li className="px-3 py-6 text-center text-body-2-regular text-text-tertiary">
+                  No bots yet
+                </li>
               )}
             </SidebarMenu>
           </SidebarGroupContent>

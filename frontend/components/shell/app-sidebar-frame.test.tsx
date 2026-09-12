@@ -43,10 +43,10 @@ describe("collapsed application sidebar", () => {
       {
         id: "library",
         title: "Library",
-        icon: <RiBook3Line aria-hidden />,
+        icon: RiBook3Line,
         href: "/artifacts",
         active: true,
-        subs: [{ title: "Artifacts", href: "/artifacts", icon: <RiBook3Line aria-hidden /> }],
+        subs: [{ title: "Artifacts", href: "/artifacts", icon: RiBook3Line }],
       },
     ];
     const navHtml = renderCollapsed(<NavRoutes routes={routes} />);
