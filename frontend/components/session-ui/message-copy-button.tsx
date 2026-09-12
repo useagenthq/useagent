@@ -25,12 +25,16 @@ import { Tooltip, TooltipTrigger } from "@/components/base/tooltip/tooltip";
 
 const COPIED_RESET_MS = 1000;
 
-/** Copies the settled answer markdown to the clipboard with a brief check state. */
+/** Copies the settled answer markdown (or any text handed to it, such as a
+ *  failed run's reason) to the clipboard with a brief check state. */
 export const MessageCopyButton = memo(function MessageCopyButton({
   text,
+  label = "Copy message",
 }: {
-  /** The answer markdown, copied verbatim. */
+  /** The text, copied verbatim. */
   text: string;
+  /** The accessible name; "Copy message" for the settled answer. */
+  label?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -58,7 +62,7 @@ export const MessageCopyButton = memo(function MessageCopyButton({
         <button
           type="button"
           data-session-ui="message-copy-button"
-          aria-label="Copy message"
+          aria-label={label}
           disabled={copied}
           onClick={() => void copy()}
           className="flex size-6 items-center justify-center rounded-md border border-border-button-default text-text-secondary outline-none transition-colors hover:bg-background-primary-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"

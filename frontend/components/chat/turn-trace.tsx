@@ -7,12 +7,14 @@
 // while it runs), the step's family glyph, a verb-first label, the object it
 // acted on in a chip (mono for a command, a path or a slug), and a muted
 // detail. A step opens in place to its payload (reasoning prose, a tool's
-// command + output), which mounts only then. When the turn edited files, a
-// strip of file chips with +added / -removed counts closes the list. Rows are
-// memoized and a long trace keeps only its newest rows in the DOM until asked.
-// The containing turn owns the open state, so virtualized remounts preserve
-// it; bot threads start folded. Row grammar from the beautiful-ui Tool Chips
-// demo, header grammar from its Thinking demo, on our semantic tokens.
+// command + output), which mounts only then. What the agent said mid-work is
+// a muted prose line between the steps, with no verb and no chip. When the
+// turn edited files, a strip of file chips with +added / -removed counts
+// closes the list. Rows are memoized and a long trace keeps only its newest
+// rows in the DOM until asked. The containing turn owns the open state, so
+// virtualized remounts preserve it; bot threads start folded. Row grammar from
+// the beautiful-ui Tool Chips demo, header grammar from its Thinking demo, on
+// our semantic tokens.
 
 import { RiArrowDownSLine, RiCheckLine, RiCloseLine } from "@remixicon/react";
 import { memo, useState } from "react";
@@ -23,9 +25,17 @@ import { useTurnUiState } from "@/components/chat/turn-ui-state";
 import { basename } from "@/components/chat/types";
 import { Markdown } from "@/components/prompt-kit/markdown";
 import type { ChangedFile } from "@/components/session-ui/changed-files";
+import { MessageCopyButton } from "@/components/session-ui/message-copy-button";
 import { buildToolCallExpandedBody } from "@/components/session-ui/work-entry";
 import { cx as cn } from "@/utils/cx";
-import type { TraceHeader, TraceRow, TraceRowBody, TraceRowStatus } from "./turn-trace-model";
+import type {
+  TraceHeader,
+  TraceNarrationRow,
+  TraceRow,
+  TraceRowBody,
+  TraceRowStatus,
+  TraceStepRow,
+} from "./turn-trace-model";
 
 /** Rows an open trace shows before folding the earlier ones behind one line. */
 export const MAX_VISIBLE_TRACE_ROWS = 24;
@@ -54,11 +64,26 @@ function StatusGlyph({ status }: { status: TraceRowStatus }) {
 }
 
 /** The opened row's payload. Built here, on open, never up front. */
-function TraceRowPayload({ body }: { body: TraceRowBody }) {
+export function TraceRowPayload({ body }: { body: TraceRowBody }) {
   if (body.kind === "prose") {
     return (
       <div className="mb-1 ml-12 mt-0.5 pr-2" data-testid="trace-row-prose">
         <Markdown className="text-body-2-regular text-text-secondary">{body.text}</Markdown>
+      </div>
+    );
+  }
+  if (body.kind === "failure") {
+    // The failed run's reason, every character of it, verbatim (never markdown)
+    // and copyable: the header and the row only fit its first line.
+    return (
+      <div
+        className="mb-1 ml-12 mt-0.5 flex items-start gap-2 border-s border-border-button-default ps-3"
+        data-testid="trace-row-failure"
+      >
+        <pre className="min-w-0 flex-1 cursor-text select-text whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-text-secondary">
+          {body.reason}
+        </pre>
+        <MessageCopyButton text={body.reason} label="Copy error" />
       </div>
     );
   }
@@ -76,7 +101,17 @@ function TraceRowPayload({ body }: { body: TraceRowBody }) {
   );
 }
 
-const TraceRowView = memo(function TraceRowView({ row }: { row: TraceRow }) {
+/** A mid-work narration burst: the prose itself, muted, in the payload column.
+ *  No verb, no chip, nothing to open; it folds with the trace. */
+const TraceNarrationLine = memo(function TraceNarrationLine({ row }: { row: TraceNarrationRow }) {
+  return (
+    <div data-testid="trace-narration" className="ml-12 py-1 pr-2">
+      <Markdown className="text-[12.5px] leading-5 text-text-tertiary">{row.text}</Markdown>
+    </div>
+  );
+});
+
+const TraceRowView = memo(function TraceRowView({ row }: { row: TraceStepRow }) {
   const [expanded, setExpanded] = useState(false);
   const Icon = STEP_ICON[row.family];
   const expandable = row.body !== null;
@@ -226,9 +261,13 @@ export function TurnTrace({
             Show {hidden} earlier {hidden === 1 ? "step" : "steps"}
           </button>
         )}
-        {visible.map((row) => (
-          <TraceRowView key={row.key} row={row} />
-        ))}
+        {visible.map((row) =>
+          row.kind === "narration" ? (
+            <TraceNarrationLine key={row.key} row={row} />
+          ) : (
+            <TraceRowView key={row.key} row={row} />
+          ),
+        )}
         {files.length > 0 && <ChangedFilesStrip files={files} />}
       </Thinking>
     </section>

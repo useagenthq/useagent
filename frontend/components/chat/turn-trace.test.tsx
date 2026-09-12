@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { TimelineNode } from "./timeline";
 import { Timeline } from "./timeline-view";
+import { TraceRowPayload } from "./turn-trace";
 import type { ApiStep } from "./types";
 
 const RAW_MCP_RESULT = JSON.stringify({
@@ -17,21 +18,31 @@ function toolNode(id: string, code: Record<string, unknown>): TimelineNode {
     label: "Execute",
     chip: null,
     code_json: JSON.stringify(code),
-    created_at: "2026-09-03T09:00:00Z",
+    created_at: "2030-01-01T00:00:00Z",
   };
   return { kind: "tool", key: id, step };
 }
 
+const ANSWER: TimelineNode = { kind: "text", key: "t1", text: "Here is today's digest." };
+
 const NODES: TimelineNode[] = [
-  { kind: "marker", key: "m1", marker: { kind: "context", source: "memory", itemCount: 4, query: null } },
+  {
+    kind: "marker",
+    key: "m1",
+    marker: { kind: "context", source: "memory", itemCount: 4, query: null },
+  },
   { kind: "reasoning", key: "r1", text: "Check the log first." },
   toolNode("s1", {
     tool: "execute",
     input: { name: "memory_search", arguments: { query: "digest" } },
     output: RAW_MCP_RESULT,
   }),
-  toolNode("s2", { tool: "execute", input: { command: "git log --since=yesterday" }, output: "b233c469 Merge" }),
-  { kind: "text", key: "t1", text: "Here is today's digest." },
+  toolNode("s2", {
+    tool: "execute",
+    input: { command: "git log --since=yesterday" },
+    output: "abc1234 Merge",
+  }),
+  ANSWER,
 ];
 
 const BOT = { durationMs: 192_000, defaultOpen: false };
@@ -88,8 +99,8 @@ describe("turn trace", () => {
     // Payloads stay behind the row until it is opened: no reasoning prose
     // block, no output, never the raw payload, never the engine's tool title.
     expect(html).not.toContain('data-testid="trace-row-prose"');
-    expect(html).not.toContain("b233c469 Merge");
-    expect(html).not.toContain('{&quot;result&quot;');
+    expect(html).not.toContain("abc1234 Merge");
+    expect(html).not.toContain("{&quot;result&quot;");
     expect(html).not.toContain("Execute");
     // The old grammar is gone: no work groups, no marker rows, no "Thought" folds.
     expect(html).not.toContain('data-session-ui="work-group"');
@@ -99,9 +110,35 @@ describe("turn trace", () => {
     expect(html).toContain("Here is today&#x27;s digest.");
   });
 
+  test("mid-work narration is a muted prose line inside the trace: no verb, no chip", () => {
+    const narrated: TimelineNode[] = [
+      { kind: "reasoning", key: "r1", text: "Check the log first." },
+      { kind: "text", key: "n1", text: "Looking at today's commits." },
+      toolNode("s2", {
+        tool: "execute",
+        input: { command: "git log --since=yesterday" },
+        output: "abc1234 Merge",
+      }),
+      { kind: "text", key: "t1", text: "Here is today's digest." },
+    ];
+    const html = renderToStaticMarkup(<Timeline nodes={narrated} live={false} trace={PLAIN} />);
+    expect(html).toContain('data-testid="trace-narration"');
+    expect(html).toContain("Looking at today&#x27;s commits.");
+    expect(html).not.toContain(">Said<");
+    // Two step rows (Thought, Run) with their chips and checks; the narration
+    // between them carries none of that chrome.
+    expect(rows(html)).toHaveLength(2);
+    expect(html.match(/data-testid="trace-row-chip"/g)).toHaveLength(2);
+    expect(html.match(/aria-label="Completed"/g)).toHaveLength(2);
+    // It still counts as a message in the settled header and folds with the rest.
+    expect(html).toContain(">1 tool call, 1 message<");
+    const folded = renderToStaticMarkup(<Timeline nodes={narrated} live={false} trace={BOT} />);
+    expect(folded).not.toContain('data-testid="trace-narration"');
+  });
+
   test("while live the header reads Thinking with the loader and the running step", () => {
     const html = renderToStaticMarkup(
-      <Timeline nodes={NODES.slice(0, 3)} live trace={PLAIN} workingSince="2026-09-03T09:00:00Z" />,
+      <Timeline nodes={NODES.slice(0, 3)} live trace={PLAIN} workingSince="2030-01-01T00:00:00Z" />,
     );
     expect(html).toContain('data-live="true"');
     expect(html).toContain("agent-progress-loading-text");
@@ -168,7 +205,7 @@ describe("turn trace", () => {
       output: "Report loaded",
     });
     const html = renderToStaticMarkup(
-      <Timeline nodes={[fetched, NODES.at(-1)!]} live={false} trace={BOT} />,
+      <Timeline nodes={[fetched, ANSWER]} live={false} trace={BOT} />,
     );
     expect(html).toContain('data-testid="turn-sources"');
     expect(html).toContain('href="https://example.com/report"');
@@ -198,7 +235,7 @@ describe("turn trace", () => {
       edit("s2", "frontend/app/page.tsx", "x\ny\nz", "x"),
       edit("s3", "README.md", "1", "1\n2"),
       edit("s4", "docs/notes.md", "1", "1\n2\n3"),
-      NODES.at(-1)!,
+      ANSWER,
     ];
     const html = renderToStaticMarkup(<Timeline nodes={nodes} live={false} trace={PLAIN} />);
     const strip = html.split('data-testid="trace-changed-files"')[1] ?? "";
@@ -222,7 +259,7 @@ describe("turn trace", () => {
       file: { path: "src/generated-report.ts", changeType: "create" },
     };
     const html = renderToStaticMarkup(
-      <Timeline nodes={[receipt, NODES.at(-1)!]} live={false} trace={PLAIN} />,
+      <Timeline nodes={[receipt, ANSWER]} live={false} trace={PLAIN} />,
     );
     expect(html).toContain('data-testid="trace-changed-files"');
     expect(html).toContain("Changed 1 file");
@@ -230,8 +267,57 @@ describe("turn trace", () => {
   });
 
   test("a turn without work or reasoning renders no header at all", () => {
-    const html = renderToStaticMarkup(<Timeline nodes={[NODES.at(-1)!]} live={false} trace={PLAIN} />);
+    const html = renderToStaticMarkup(<Timeline nodes={[ANSWER]} live={false} trace={PLAIN} />);
     expect(html).not.toContain('data-testid="turn-trace"');
     expect(html).toContain('data-testid="agent-answer"');
+  });
+
+  test("a run that failed before any work still traces: the category heads it, the reason is the detail", () => {
+    // Synthetic steps-only failure: sandbox plumbing is dropped once settled,
+    // the done step says only "Engine error", and run.summary holds the why.
+    const reason =
+      "error: synthetic engine relay stopped during startup after the child process exited before signaling readiness. Diagnostic output remains visible in full so operators can copy the complete failure context.";
+    const failure = { label: "Engine error", reason };
+    const html = renderToStaticMarkup(
+      <Timeline nodes={[]} live={false} trace={{ ...PLAIN, failure }} />,
+    );
+    expect(html).toContain('data-testid="turn-trace"');
+    const header = html.split('data-testid="thinking-header"')[1]?.split("</button>")[0] ?? "";
+    expect(header).toContain(">Engine error<");
+    expect(header).toContain(reason.replaceAll("'", "&#x27;"));
+    expect(header).toContain("text-text-error-primary");
+    // The terminal row: an x, the category, the reason, and it opens to the full text.
+    expect(rows(html)).toHaveLength(1);
+    expect(html).toContain('data-status="failed"');
+    expect(html).toContain('aria-label="Failed"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('data-testid="agent-answer"');
+  });
+
+  test("a failed run with work keeps its rows and closes them with the failure", () => {
+    const failure = {
+      label: "Engine error",
+      reason:
+        "error: refusing to prepare example/widgets: workspace repository parent is not writable",
+    };
+    const html = renderToStaticMarkup(
+      <Timeline nodes={NODES.slice(0, 4)} live={false} trace={{ ...PLAIN, failure }} />,
+    );
+    expect(rows(html)).toHaveLength(5);
+    expect(html).toContain(">Recalled memory<");
+    expect(html).toContain(">git log --since=yesterday<");
+    expect(html.lastIndexOf('data-testid="trace-row"')).toBeLessThan(
+      html.lastIndexOf(">Engine error<"),
+    );
+    expect(html).toContain("workspace repository parent is not writable");
+  });
+
+  test("the opened failure row shows the verbatim reason with a copy affordance", () => {
+    const reason = "error: clone failed\nfatal: repository not found";
+    const html = renderToStaticMarkup(<TraceRowPayload body={{ kind: "failure", reason }} />);
+    expect(html).toContain('data-testid="trace-row-failure"');
+    expect(html).toContain("error: clone failed\nfatal: repository not found");
+    expect(html).toContain('data-session-ui="message-copy-button"');
+    expect(html).toContain('aria-label="Copy error"');
   });
 });

@@ -15,13 +15,13 @@
 //   rows; output rides in `detail` (expanded body), never `command`, so the icon
 //   resolves to the generic tool glyph, not the terminal.
 
-import { type ChildUsage } from "@/components/chat/child-usage";
-import { type TimelineNode } from "@/components/chat/timeline";
+import type { ChildUsage } from "@/components/chat/child-usage";
+import type { TimelineNode } from "@/components/chat/timeline";
 import { summarizeToolStep } from "@/components/chat/tool-summary";
 import { deriveTrace, parseFileEntries } from "@/components/chat/types";
-import { type ChangedFile } from "./changed-files";
-import { type ContextWindowUsage } from "./context-window-meter";
-import { type WorkEntry } from "./work-entry";
+import type { ChangedFile } from "./changed-files";
+import type { ContextWindowUsage } from "./context-window-meter";
+import type { WorkEntry } from "./work-entry";
 
 export type RowState = "running" | "done";
 
@@ -29,10 +29,7 @@ export type RowState = "running" | "done";
  *  slice does not render as work rows (text bursts, markers, files, artifacts).
  *  The heading and the collapsed preview come from the tool summarizer (never a
  *  raw payload); `command`/`detail` keep the full payload for the expanded body. */
-export function workEntryFromTimelineNode(
-  node: TimelineNode,
-  state: RowState,
-): WorkEntry | null {
+export function workEntryFromTimelineNode(node: TimelineNode, state: RowState): WorkEntry | null {
   if (node.kind === "reasoning") {
     return {
       id: node.key,
@@ -47,16 +44,15 @@ export function workEntryFromTimelineNode(
   const summary = summarizeToolStep(node.step);
   const target = trace.target || undefined;
   const output = trace.detail ?? undefined;
+  // A step fails on its own evidence (a native error, a non-zero exit) or with
+  // the run that cut it short before it could record any.
+  const failed = trace.isError || node.failedWithRun === true;
   const entry: WorkEntry = {
     id: node.key,
     label: summary.label,
     preview: summary.detail ?? undefined,
-    tone: trace.isError ? "error" : "tool",
-    toolLifecycleStatus: trace.isError
-      ? "failed"
-      : state === "running"
-        ? "inProgress"
-        : "completed",
+    tone: failed ? "error" : "tool",
+    toolLifecycleStatus: failed ? "failed" : state === "running" ? "inProgress" : "completed",
   };
 
   // A shell step is a command row whatever the engine called its tool.
@@ -79,14 +75,14 @@ export function workEntryFromTimelineNode(
     case "subagent":
       return { ...entry, taskId: node.step.id, detail: output ?? target };
     case "boot":
-      return { ...entry, tone: trace.isError ? "error" : "info", detail: target };
+      return { ...entry, tone: failed ? "error" : "info", detail: target };
     case "reasoning":
-      return { ...entry, tone: trace.isError ? "error" : "thinking", detail: output ?? target };
+      return { ...entry, tone: failed ? "error" : "thinking", detail: output ?? target };
     case "task":
       // deriveTrace's fallback verb is "Thinking" (narration); everything else on
       // the task glyph is a real uncatalogued/MCP tool call.
       return trace.verb === "Thinking"
-        ? { ...entry, tone: trace.isError ? "error" : "thinking", detail: output ?? target }
+        ? { ...entry, tone: failed ? "error" : "thinking", detail: output ?? target }
         : { ...entry, itemType: "dynamic_tool_call", detail: output ?? target };
   }
 }
@@ -173,9 +169,7 @@ export function changedFilesFromTimeline(nodes: readonly TimelineNode[]): Change
   return Array.from(byPath.values(), ({ path, kind, additions, deletions }) => ({
     path,
     kind,
-    ...(additions !== null && deletions !== null
-      ? { additions, deletions }
-      : {}),
+    ...(additions !== null && deletions !== null ? { additions, deletions } : {}),
   }));
 }
 

@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { cx } from "@/utils/cx";
+import { activeSectionIndex } from "./settings-rail-active";
 
 /**
  * Sticky left section rail for the settings page. Anchor links jump to each
- * section; a scroll-spy (IntersectionObserver against the top band of the
- * scroll region) keeps the matching link marked active as the page scrolls.
+ * section; a scroll-spy measures the section top edges against the scroll
+ * container on every scroll and layout change and keeps the matching link
+ * marked active. The selection rule lives in settings-rail-active.ts.
  */
 
 export const SETTINGS_SECTIONS = [
@@ -20,33 +22,60 @@ export const SETTINGS_SECTIONS = [
   { id: "team", label: "Team" },
 ] as const;
 
+/** Nearest scrolling ancestor, or null when the window itself scrolls. */
+function scrollerOf(el: HTMLElement): HTMLElement | null {
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if (overflowY === "auto" || overflowY === "scroll") return node;
+  }
+  return null;
+}
+
 export function SettingsRail({ className }: { className?: string }) {
   const [active, setActive] = useState<string>(SETTINGS_SECTIONS[0].id);
-  const visible = useRef(new Map<string, boolean>());
 
   useEffect(() => {
     const els = SETTINGS_SECTIONS.map(({ id }) => document.getElementById(id)).filter(
       (el): el is HTMLElement => el !== null,
     );
-    if (els.length === 0) return;
+    const first = els[0];
+    if (!first) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          visible.current.set(entry.target.id, entry.isIntersecting);
-        }
-        const firstVisible = SETTINGS_SECTIONS.find(({ id }) => visible.current.get(id));
-        if (firstVisible) setActive(firstVisible.id);
-      },
-      // Active zone is the top ~30% of the viewport so a section lights up as
-      // its heading nears the top rather than only when fully in view.
-      { rootMargin: "0px 0px -70% 0px", threshold: 0 },
-    );
+    const scroller = scrollerOf(first);
+    const box = scroller ?? document.documentElement;
+    const measure = () => {
+      const origin = scroller ? scroller.getBoundingClientRect().top : 0;
+      const index = activeSectionIndex({
+        sectionTops: els.map((el) => el.getBoundingClientRect().top - origin),
+        viewportHeight: box.clientHeight,
+        scrollTop: box.scrollTop,
+        scrollHeight: box.scrollHeight,
+      });
+      setActive(els[index].id);
+    };
 
-    els.forEach((el) => {
-      observer.observe(el);
-    });
-    return () => observer.disconnect();
+    let frame = 0;
+    const schedule = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    };
+
+    measure();
+    const scrollTarget = scroller ?? window;
+    scrollTarget.addEventListener("scroll", schedule, { passive: true });
+    // Cards load asynchronously and push the sections around without a scroll
+    // event, and a viewport resize moves the activation line.
+    const resizeObserver = new ResizeObserver(schedule);
+    resizeObserver.observe(box);
+    for (const el of els) resizeObserver.observe(el);
+    return () => {
+      cancelAnimationFrame(frame);
+      scrollTarget.removeEventListener("scroll", schedule);
+      resizeObserver.disconnect();
+    };
   }, []);
 
   return (
@@ -57,6 +86,7 @@ export function SettingsRail({ className }: { className?: string }) {
           <a
             key={id}
             href={`#${id}`}
+            onClick={() => setActive(id)}
             aria-current={selected ? "true" : undefined}
             className={cx(
               "whitespace-nowrap rounded-2lg px-3 py-1.5 text-body-2-medium transition-colors duration-150",

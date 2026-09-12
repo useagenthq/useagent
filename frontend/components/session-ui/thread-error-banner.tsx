@@ -13,14 +13,16 @@
 // - Their shadcn Alert/Button/Tooltip -> hand-rolled with our error tokens
 //   (bg-red-50 / border-red-200 / text-text-error-primary), matching the
 //   other session-ui ports; lucide CircleAlertIcon/XIcon -> Remixicon.
-// - Their line-clamp + Tooltip full-text affordance -> line-clamp + `title`
-//   (this banner sits in the composer's banner stack, not a portal).
+// - Their line-clamp + Tooltip full-text affordance -> the whole reason, wrapped,
+//   plus a copy affordance (the backend already slices the reason; the banner
+//   must not hide any more of it).
 // - `onRetry` renders a Retry action ONLY when a real handler is passed. Today
 //   NO thread-level retry/resend action exists in session-view/composer
 //   (handleReply starts a NEW turn; the composer's internal retry covers failed
 //   SUBMITS only), so no call site passes it and the button never renders.
 
 import { RiCloseLine, RiErrorWarningLine } from "@remixicon/react";
+import { MessageCopyButton } from "@/components/session-ui/message-copy-button";
 
 export function getThreadErrorBannerKey(threadKey: string, error: string | null): string | null {
   return error === null ? null : `${threadKey}\u0000${error}`;
@@ -92,12 +94,13 @@ export function ThreadErrorBanner({
     >
       <RiErrorWarningLine className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="text-caption-1-regular text-text-secondary line-clamp-2 break-words" title={error}>
+        <p className="text-caption-1-regular text-text-secondary whitespace-pre-wrap break-words">
           <span className="text-text-error-primary">Run failed</span>
           <span className="text-text-tertiary"> - </span>
           {error}
         </p>
       </div>
+      <MessageCopyButton text={error} label="Copy error" />
       {onRetry && (
         <button
           type="button"

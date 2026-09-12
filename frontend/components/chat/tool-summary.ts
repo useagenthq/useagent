@@ -242,6 +242,14 @@ function structuralLabel(
   );
 }
 
+/** The directory a read was aimed at, or null when it read a file: codex titles
+ *  a listing "List files in '.'", and a target of "." or one ending in "/"
+ *  names a directory on its own. */
+function directoryTarget(sentence: string, target: string | null): string | null {
+  if (!target) return null;
+  return /^List files\b/.test(sentence) || target === "." || /[/\\]$/.test(target) ? target : null;
+}
+
 /** What an uncatalogued tool acted on, from the fields tools commonly name it
  *  by; null when nothing readable is there (the row then carries no chip). */
 function namedObject(args: Record<string, unknown> | null): string | null {
@@ -334,6 +342,19 @@ export function summarizeToolStep(step: ApiStep): ToolSummary {
   // quote the cut swallowed is tolerated.
   const sentence = str(code?.title) ?? target;
   const quoted = /'([^'…]+)'?/.exec(sentence)?.[1] ?? null;
+  // A read aimed at a directory is a listing: "Listed" with the directory in
+  // the chip, never "Read .".
+  const directory = trace.glyph === "read" ? directoryTarget(sentence, quoted ?? trace.base) : null;
+  if (directory) {
+    return {
+      label: clip(`Listed ${directory}`, LABEL_MAX),
+      detail,
+      command: null,
+      verb: "Listed",
+      object: directory,
+      objectMono: true,
+    };
+  }
   const titled = quoted !== null && /^(?:Read|Search|List)\b/.test(sentence);
   // A file-shaped target is the object; an uncatalogued tool names its object
   // from its own arguments (a server attribution is never a chip).
