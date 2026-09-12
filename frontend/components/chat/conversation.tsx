@@ -653,10 +653,9 @@ export const Conversation = memo(function Conversation({
   );
 
   // Thread-error banner: the LATEST turn's failure summary, dismissible for the
-  // session (a NEW error re-appears because the key includes the message). A
-  // later turn that succeeded retires it: the failure is that turn's history,
-  // not the thread's state. No banner while a turn is running - the live pill
-  // owns that state.
+  // session (a NEW error re-appears because the key includes the message). A later
+  // turn that succeeded retires it (that failure is history, not thread state). No
+  // banner while a turn is running - the live pill owns that state.
   const newestFailed = latestTurnFailure(turns, running);
   const threadErrorKey = getThreadErrorBannerKey(
     newestFailed?.run.id ?? "",
