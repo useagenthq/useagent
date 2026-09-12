@@ -17,7 +17,6 @@ import {
 import type { EngineRunContext } from "./types";
 import { RUNTIME_ENVIRONMENT_HOME, RUNTIME_GENERATION } from "./runtime-environment";
 import { BOX_HOSTING_DOMAIN } from "../sandboxes/box-provider";
-import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 
 const CODEX_EXEC_SERVER_PORT = 37_734;
 const CODEX_EXEC_SERVER_SESSION = "skynet-codex-exec-server";
@@ -87,7 +86,7 @@ export async function prepareCodexSubscription(input: {
     }
 
     const preview = await sandbox.getPreviewLink(CODEX_EXEC_SERVER_PORT);
-    const sandboxKind = (await resolveSandboxBindingForSandbox(sandbox.id)).kind;
+    const sandboxKind = sandbox.providerKind ?? sandboxProviderKind();
     const upstreamUrl = previewWebSocketUrl(preview.url, sandboxKind);
     execBridge = dependencies.openExecBridge({
       upstreamUrl,

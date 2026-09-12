@@ -1,6 +1,9 @@
 import {
   sandboxPreviewHeaders,
   type SandboxHandle,
+  type PreviewLinkBase,
+  previewLinkBase,
+  previewRequestUrl,
 } from "../sandboxes/provider";
 import { bindingRecord, bindingSnapshot, resolveSandboxBindingForRun } from "../sandboxes/binding";
 import type { EngineAdapter, EngineRunContext } from "./types";
@@ -236,10 +239,8 @@ export interface AcpGatewayDescriptorState {
   mcpTokenExpiresAt: number | null;
 }
 
-interface ThreadRelay extends AcpGatewayDescriptorState {
+interface ThreadRelay extends AcpGatewayDescriptorState, PreviewLinkBase {
   sandboxId: string;
-  baseUrl: string;
-  token: string;
   workdir: string;
   /** ACP session id LIVE in the current agent process (also persisted to the
    *  DB; a dead process/sandbox invalidates it and we session/new again). */
@@ -287,7 +288,7 @@ function authHeaders(token: string): Record<string, string> {
 export async function cancelAcpSession(sandboxId: string, sessionId: string): Promise<boolean> {
   for (const relay of threadRelays.values()) {
     if (relay.sandboxId === sandboxId && relay.sessionId === sessionId) {
-      return sendSessionCancel(relay.baseUrl, relay.token, sessionId);
+      return sendSessionCancel(relay, sessionId);
     }
   }
   return false;
@@ -852,8 +853,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           const link = await box.getPreviewLink(cfg.port);
           relay = {
             sandboxId: box.id,
-            baseUrl: link.url.replace(/\/+$/, ""),
-            token: link.token ?? "",
+            ...previewLinkBase(link),
             workdir: `${home}/work`,
             sessionId: null,
             initialized: false,
@@ -891,7 +891,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         const sseAbort = new AbortController();
 
         const post = async (msg: Record<string, unknown>): Promise<void> => {
-          const res = await fetch(`${live.baseUrl}/send`, {
+          const res = await fetch(previewRequestUrl(live, `${live.baseUrl}/send`), {
             method: "POST",
             headers: { ...authHeaders(live.token), "content-type": "application/json" },
             body: JSON.stringify(msg),
@@ -913,7 +913,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // is wired + request-level tested; a live in-flight proof keeps the engines gated.
         const onParentAbort = () => {
           const sid = live.sessionId;
-          if (sid) void sendSessionCancel(live.baseUrl, live.token, sid);
+          if (sid) void sendSessionCancel(live, sid);
           rpc.failAll("cancelled", "run cancelled");
           sseAbort.abort();
         };
@@ -1189,7 +1189,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         for (let i = 0; i < 10; i++) {
           let warm = false;
           try {
-            const response = await fetch(`${live.baseUrl}/health`, {
+            const response = await fetch(previewRequestUrl(live, `${live.baseUrl}/health`), {
               headers: authHeaders(live.token),
               signal: sseAbort.signal,
             });
@@ -1203,7 +1203,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         }
 
         const pump = (async () => {
-          const res = await fetch(`${live.baseUrl}/events`, {
+          const res = await fetch(previewRequestUrl(live, `${live.baseUrl}/events`), {
             headers: authHeaders(live.token),
             signal: sseAbort.signal,
           });

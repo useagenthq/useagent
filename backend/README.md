@@ -190,7 +190,7 @@ The important variables are:
 - `FRONTEND_ORIGIN=http://localhost:3400` for local browser auth and CORS.
 - `BETTER_AUTH_URL=http://localhost:3201` for auth redirects.
 - `ENABLED_ENGINES` to opt extra engines into the backend picker.
-- `SANDBOX_PROVIDER=daytona|cube` to choose the sandbox provider.
+- `SANDBOX_PROVIDER=daytona|cube|box` to choose the sandbox provider (Box: `BOX_API_KEY`, optional `BOX_SNAPSHOT`, `BOX_MACHINE_TYPE`; or per-user keys via Settings with `USER_COMPUTERS=on`).
 - `MEMORY_API_URL` and related memory variables to enable the optional team-memory layer.
 - `GITHUB_TOKEN` or `GITHUB_APP_*` for repository access.
 - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to enable Google sign-in.

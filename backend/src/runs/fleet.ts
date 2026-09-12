@@ -161,7 +161,9 @@ const STOPPED_STATES = new Set(["stopped", "archived", "paused"]);
  * isn't ours is invisible here.
  */
 export async function getMachineStats(orgId: string): Promise<MachineStats> {
-  const snapshot = sandboxProviderKind() === "cube"
+  const snapshot = sandboxProviderKind() === "box"
+    ? (process.env.BOX_SNAPSHOT?.trim() || "box base image")
+    : sandboxProviderKind() === "cube"
     ? process.env.CUBE_TEMPLATE_ID ?? "unconfigured"
     : process.env.DAYTONA_SNAPSHOT ?? "skynet-agent-v17";
   if (sandboxProviderApiKey() === undefined) return { snapshot, sandboxes: null };

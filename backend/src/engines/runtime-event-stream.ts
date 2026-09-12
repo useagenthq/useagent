@@ -112,6 +112,7 @@ export async function subscribeRuntimeThread(
   const url = new URL(preview.url.replace(/^http/, "ws"));
   url.pathname = "/ws";
   url.searchParams.set("wsTicket", ticket);
+  for (const [name, value] of Object.entries(preview.query ?? {})) url.searchParams.set(name, value);
 
   await new Promise<void>((resolve, reject) => {
     let settled = false;

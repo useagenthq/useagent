@@ -439,7 +439,7 @@ function buttonNumber(button: Button): number {
 }
 
 async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<ComputerToolResult> {
-  const path = `${sandbox.computerUse ? "/home/daytona" : "/root"}/work/screenshots/screenshot-${Date.now()}.png`;
+  const path = `${sandbox.providerKind === "box" ? "/home/user" : sandbox.computerUse ? "/home/daytona" : "/root"}/work/screenshots/screenshot-${Date.now()}.png`;
   let data: string;
   if (sandbox.computerUse) {
     const captured = await sandbox.computerUse.screenshot.takeFullScreen(true);

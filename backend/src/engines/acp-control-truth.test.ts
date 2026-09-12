@@ -10,15 +10,13 @@ function fetcher(
 describe("ACP control truthfulness", () => {
   test("cancel reports transport failure instead of fabricating success", async () => {
     await expect(sendSessionCancel(
-      "https://relay.test",
-      "token",
+      { baseUrl: "https://relay.test", token: "token" },
       "session-1",
       fetcher(async () => new Response("failed", { status: 503 })),
     )).resolves.toBe(false);
 
     await expect(sendSessionCancel(
-      "https://relay.test",
-      "token",
+      { baseUrl: "https://relay.test", token: "token" },
       "session-1",
       fetcher(async () => new Response(null, { status: 204 })),
     )).resolves.toBe(true);

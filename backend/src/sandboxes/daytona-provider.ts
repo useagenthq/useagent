@@ -182,6 +182,7 @@ class DaytonaComputerUse implements SandboxComputerUse {
 }
 
 export class DaytonaSandboxHandle implements SandboxHandle {
+  readonly providerKind = "daytona" as const;
   readonly id: string;
   readonly cpu: number;
   readonly memory: number;

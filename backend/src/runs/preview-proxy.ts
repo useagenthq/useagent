@@ -1,6 +1,7 @@
 import {
   sandboxPreviewHeaders,
   type SandboxHandle,
+  previewLinkBase,
 } from "../sandboxes/provider";
 import {
   forgetLiveThreadSandbox,
@@ -24,6 +25,8 @@ export interface PreviewEndpoint {
   sandboxId: string;
   baseUrl: string;
   token: string;
+  /** Query every upstream request must carry (Box `_token`); see previewRequestUrl. */
+  query?: Readonly<Record<string, string>>;
 }
 
 /** Per (thread, port) preview endpoint cache. A thread now exposes several ports
@@ -75,8 +78,7 @@ export async function resolvePreviewEndpoint(
   }
   const ep: PreviewEndpoint = {
     sandboxId: sandbox.id,
-    baseUrl: link.url.replace(/\/+$/, ""),
-    token: link.token ?? "",
+    ...previewLinkBase(link),
   };
   endpoints.set(key, ep);
   return ep;

@@ -341,6 +341,7 @@ class CubeFileSystem implements SandboxFileSystem {
 }
 
 class CubeSandboxHandle implements SandboxHandle {
+  readonly providerKind = "cube" as const;
   readonly id: string;
   readonly cpu: number;
   readonly memory: number;

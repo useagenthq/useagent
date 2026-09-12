@@ -1,7 +1,7 @@
 import { getOpenCodeThreadServer } from "./opencode-runtime";
 import { resolvePreviewSandbox } from "../runs/preview-proxy";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
-import { sandboxPreviewHeaders } from "../sandboxes/provider";
+import { previewLinkBase, previewRequestUrl, sandboxPreviewHeaders } from "../sandboxes/provider";
 import type { SecretRedactor } from "../secrets/redact";
 import {
   ProviderQuestionError,
@@ -80,6 +80,7 @@ export function parseOpenCodeQuestionRequest(value: unknown): ProviderQuestionRe
 async function resolveControl(threadId: string): Promise<{
   baseUrl: string;
   token: string;
+  query?: Readonly<Record<string, string>>;
   workdir: string;
 }> {
   const cached = getOpenCodeThreadServer(threadId);
@@ -97,8 +98,7 @@ async function resolveControl(threadId: string): Promise<{
     throw new ProviderQuestionError("control_unavailable", 503, "sandbox workspace is unavailable");
   }
   return {
-    baseUrl: link.url.replace(/\/+$/, ""),
-    token: link.token ?? "",
+    ...previewLinkBase(link),
     workdir: `${home.result?.trim() || "/home/daytona"}/work`,
   };
 }
@@ -118,7 +118,7 @@ export async function replyToOpenCodeQuestion(input: {
   const control = await resolveControl(input.threadId);
   const headers = sandboxPreviewHeaders(control.token);
   const directory = `?directory=${encodeURIComponent(control.workdir)}`;
-  const list = await fetch(`${control.baseUrl}/question${directory}`, {
+  const list = await fetch(previewRequestUrl(control, `${control.baseUrl}/question${directory}`), {
     headers,
     signal: AbortSignal.any([input.signal, AbortSignal.timeout(15_000)]),
   }).catch(() => null);
@@ -148,7 +148,7 @@ export async function replyToOpenCodeQuestion(input: {
   }
   const answers = validateProviderQuestionAnswers(request, input.answers);
   const response = await fetch(
-    `${control.baseUrl}/question/${encodeURIComponent(request.id)}/reply${directory}`,
+    previewRequestUrl(control, `${control.baseUrl}/question/${encodeURIComponent(request.id)}/reply${directory}`),
     {
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },

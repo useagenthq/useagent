@@ -1,8 +1,7 @@
+import type { PreviewLinkBase } from "../sandboxes/provider";
 import { sandboxPreviewHeaders } from "../sandboxes/provider";
 
-export interface OpenCodeRuntimeServer {
-  readonly baseUrl: string;
-  readonly token: string;
+export interface OpenCodeRuntimeServer extends PreviewLinkBase {
   readonly workdir: string;
 }
 

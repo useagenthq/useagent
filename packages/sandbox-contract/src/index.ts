@@ -108,12 +108,18 @@ export interface SandboxComputerUse {
 }
 
 export interface SandboxPreviewLink {
+  /** Origin (no path, no query); callers append paths to it. */
   url: string;
   token?: string;
+  /** Query parameters every request to this link must carry (Box hosted ports
+   *  authenticate through `_token`). Apply with `previewRequestUrl`. */
+  query?: Readonly<Record<string, string>>;
 }
 
 export interface SandboxHandle {
   readonly id: string;
+  /** Which provider this handle talks to; lets callers pick preview auth without a lookup. */
+  readonly providerKind?: SandboxProviderKind;
   readonly cpu: number;
   readonly memory: number;
   state?: string;
