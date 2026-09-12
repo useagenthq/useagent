@@ -34,7 +34,7 @@ afterEach(() => {
   for (const home of tempHomes.splice(0)) rmSync(home, { force: true, recursive: true });
 });
 
-function fakeNpmHome(mode: "recover" | "fail"): { home: string; path: string } {
+function fakeNpmHome(mode: "recover" | "fail" | "concurrent"): { home: string; path: string } {
   const home = mkdtempSync(join(tmpdir(), "useagent-acp-provisioning-"));
   tempHomes.push(home);
   const binDir = join(home, "fake-bin");
@@ -43,14 +43,24 @@ function fakeNpmHome(mode: "recover" | "fail"): { home: string; path: string } {
   writeFileSync(
     npm,
     `#!/bin/sh
-count_file="$HOME/npm-count"
+count_file="$HOME/npm-count-$EXPECTED_BIN"
 count=0
 [ ! -f "$count_file" ] || count=$(cat "$count_file")
 count=$((count + 1))
 printf '%s' "$count" > "$count_file"
 printf '%s\\n' "$*" >> "$HOME/npm-calls"
 echo "registry output with secret-token-that-must-not-leak" >&2
-if [ "${mode}" = "recover" ] && [ "$count" -eq 2 ] && [ ! -e "$HOME/.npm/_cacache" ]; then
+if [ "${mode}" = "concurrent" ] && [ "$count" -eq 1 ]; then
+  touch "$HOME/first-$EXPECTED_BIN"
+  i=0
+  while { [ ! -e "$HOME/first-useagent-acp-a" ] || [ ! -e "$HOME/first-useagent-acp-b" ]; } && [ "$i" -lt 500 ]; do
+    i=$((i + 1))
+    sleep 0.01
+  done
+  exit 42
+fi
+if { [ "${mode}" = "recover" ] || [ "${mode}" = "concurrent" ]; } && [ "$count" -eq 2 ] &&
+   [ -n "$npm_config_cache" ] && [ -d "$npm_config_cache" ]; then
   mkdir -p "$HOME/.local/bin"
   printf '#!/bin/sh\\nexit 0\\n' > "$HOME/.local/bin/$EXPECTED_BIN"
   chmod +x "$HOME/.local/bin/$EXPECTED_BIN"
@@ -116,7 +126,7 @@ describe("ACP executable provisioning (#127)", () => {
     expect((clause.match(/npm install -g --prefix \$HOME\/\.local/g) ?? []).length).toBe(4);
   });
 
-  test("a corrupt npm cache is cleared once and the exact executable is verified", () => {
+  test("a corrupt npm cache retries privately and verifies the exact executable", () => {
     const bin = "useagent-acp-recovery-test";
     const { home, path } = fakeNpmHome("recover");
     mkdirSync(join(home, ".npm", "_cacache"), { recursive: true });
@@ -137,10 +147,27 @@ describe("ACP executable provisioning (#127)", () => {
     });
 
     expect(recovered.exitCode).toBe(0);
-    expect(readFileSync(join(home, "npm-count"), "utf8")).toBe("2");
-    expect(existsSync(join(home, ".npm", "_cacache"))).toBe(false);
+    expect(readFileSync(join(home, `npm-count-${bin}`), "utf8")).toBe("2");
+    expect(existsSync(join(home, ".npm", "_cacache"))).toBe(true);
     expect(existsSync(join(home, ".local", "bin", bin))).toBe(true);
     expect(existsSync(join(home, "relay-staged"))).toBe(true);
+  });
+
+  test("concurrent recovery uses isolated retry caches", async () => {
+    const { home, path } = fakeNpmHome("concurrent");
+    mkdirSync(join(home, ".npm", "_cacache"), { recursive: true });
+    const run = (bin: string) => Bun.spawn({
+      cmd: ["sh", "-c", buildAcpInstallClause([{ pkg: `${bin}@1`, bin }])],
+      env: { ...process.env, EXPECTED_BIN: bin, HOME: home, PATH: path },
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+    const first = run("useagent-acp-a");
+    const second = run("useagent-acp-b");
+
+    expect(await Promise.all([first.exited, second.exited])).toEqual([0, 0]);
+    expect(existsSync(join(home, ".local", "bin", "useagent-acp-a"))).toBe(true);
+    expect(existsSync(join(home, ".local", "bin", "useagent-acp-b"))).toBe(true);
   });
 
   test("a permanent install failure stops later packages and relay staging", () => {
