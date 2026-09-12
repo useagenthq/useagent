@@ -143,6 +143,27 @@ describe("OpenCode provider driver", () => {
     expect(resolverCalls).toBe(0);
   });
 
+  test("prompt steering retries one transient server response", async () => {
+    let calls = 0;
+    const driver = makeOpenCodeProviderDriver({
+      resolveResidentServer: async () => residentServer,
+      fetcher: mockFetch(async () => {
+        calls += 1;
+        return calls === 1
+          ? Response.json({ name: "UnknownError" }, { status: 500 })
+          : new Response(null, { status: 200 });
+      }),
+    });
+
+    await expect(driver.steer({
+      runId: "run-1",
+      threadId: "thread-1",
+      session: sessionFor(driver),
+      input: { kind: "prompt", text: "hello", model: "cerebras/gemma-4-31b" },
+    })).resolves.toEqual({ status: "ok" });
+    expect(calls).toBe(2);
+  });
+
   test("cancel uses the driver factory dependencies and encodes the native session", async () => {
     const requests: Array<{ url: string; method: string }> = [];
     const driver = makeOpenCodeProviderDriver({

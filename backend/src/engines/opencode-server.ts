@@ -774,22 +774,30 @@ export function makeOpenCodeProviderDriver(
       }
       try {
         const model = request.input.model?.trim() || DEFAULT_MODEL;
-        const res = await fetcher(
-          `${server.baseUrl}/session/${encodeURIComponent(request.session.nativeSessionId)}/message${server.dirQ}`,
-          {
-            method: "POST",
-            headers: { ...authHeaders(server), "content-type": "application/json" },
-            body: JSON.stringify({
-          model: openCodeModelBody(model),
-              parts: [{ type: "text", text: request.input.text }],
-            }),
-            signal: operationSignal(request.signal, 600_000),
-            timeout: 0,
-          } as FetchInit,
-        );
-        if (res.ok) return { status: "ok" };
-        const code = res.status === 404 ? "session_invalid" : "prompt_failed";
-        return openCodeDriverError(code, `HTTP ${res.status} ${truncate(await res.text(), 200)}`);
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const res = await fetcher(
+            `${server.baseUrl}/session/${encodeURIComponent(request.session.nativeSessionId)}/message${server.dirQ}`,
+            {
+              method: "POST",
+              headers: { ...authHeaders(server), "content-type": "application/json" },
+              body: JSON.stringify({
+                model: openCodeModelBody(model),
+                parts: [{ type: "text", text: request.input.text }],
+              }),
+              signal: operationSignal(request.signal, 600_000),
+              timeout: 0,
+            } as FetchInit,
+          );
+          if (res.ok) return { status: "ok" };
+          const message = `HTTP ${res.status} ${truncate(await res.text(), 200)}`;
+          if (attempt === 0 && res.status >= 500 && !request.signal?.aborted) {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            continue;
+          }
+          const code = res.status === 404 ? "session_invalid" : "prompt_failed";
+          return openCodeDriverError(code, message);
+        }
+        return openCodeDriverError("prompt_failed", "OpenCode prompt retry exhausted");
       } catch (error) {
         return openCodeDriverError(
           request.signal?.aborted ? "prompt_failed" : "prompt_transport_interrupted",
