@@ -359,7 +359,7 @@ async function runWorker(runId: string): Promise<void> {
     const engineSessionId = providerSession?.nativeSessionId ??
       providerSessionState.legacySessionId ?? undefined;
     const { turnContext, skillCatalogContext, resourceContext } = frameTurnContexts({ recall, skillCatalogPage, resourceSnapshot });
-    const botContext = await botContextForOrg(run.orgId);
+    const botContext = await botContextForOrg(run.orgId, run.threadId);
 
     if (turnContext || bootstrapContext || skillContext || skillCatalogContext || resourceContext) {
       console.log(

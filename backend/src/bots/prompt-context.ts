@@ -1,5 +1,5 @@
 import type { BotRow } from "../db/schema";
-import { handoffsAvailable } from "./handoffs";
+import { MAX_HANDOFF_DEPTH, botOwningThread, handoffsAvailable, threadAncestors } from "./handoffs";
 import { listBotRows } from "./repo";
 
 const BOTS_MAX = 25;
@@ -10,15 +10,21 @@ const BOTS_MAX = 25;
  * the model cannot know a bot exists, so "ask Night Triage" gets answered by
  * the agent itself, in the bot's voice. Empty when there are no bots.
  */
-export function composeBotContext(bots: readonly Pick<BotRow, "name" | "title" | "engine">[]): string {
-  if (bots.length === 0) return "";
-  const lines = bots.slice(0, BOTS_MAX).map((bot) => {
+export function composeBotContext(
+  bots: readonly Pick<BotRow, "name" | "title" | "engine">[],
+  options: { readonly self?: string | null } = {},
+): string {
+  const others = bots.filter((bot) => bot.name !== options.self);
+  if (others.length === 0) return "";
+  const selfLine = options.self ? [`You are ${options.self} in this thread. You cannot hand work to yourself; do your own part here.`] : [];
+  const lines = others.slice(0, BOTS_MAX).map((bot) => {
     const title = bot.title.trim() ? `: ${bot.title.trim()}` : "";
     return `- ${bot.name} (@bot/${bot.name}) on ${bot.engine}${title}`;
   });
   return [
     "<bots>",
     "Bots in this workspace. Each is a durable named agent with its own engine, model, rules and thread; a handoff to it opens or continues that bot's delegated thread and runs there, not here.",
+    ...selfLine,
     ...lines,
     "",
     "Rules for bots:",
@@ -31,7 +37,14 @@ export function composeBotContext(bots: readonly Pick<BotRow, "name" | "title" |
 }
 
 /** The block for a run's org: empty when bots or handoffs are unavailable, or the list cannot be read. */
-export async function botContextForOrg(orgId: string | null): Promise<string> {
+export async function botContextForOrg(orgId: string | null, threadId: string | null): Promise<string> {
   if (!orgId || !handoffsAvailable(orgId)) return "";
-  return composeBotContext(await listBotRows(orgId).catch(() => []));
+  const [rows, owner, chain] = await Promise.all([
+    listBotRows(orgId).catch(() => []),
+    threadId ? botOwningThread(orgId, threadId).catch(() => null) : null,
+    threadId ? threadAncestors(orgId, threadId).catch(() => ({ threadIds: [] as string[], familyThreadId: threadId })) : { threadIds: [] as string[], familyThreadId: "" },
+  ]);
+  // Below the depth cap no handoff is possible, so the block would only mislead.
+  if (chain.threadIds.length >= MAX_HANDOFF_DEPTH) return "";
+  return composeBotContext(rows, { self: owner?.name ?? null });
 }

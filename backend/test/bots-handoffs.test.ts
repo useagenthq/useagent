@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
-import { resolveBotMention } from "../src/bots/handoffs";
+import { handoffToBot, resolveBotMention } from "../src/bots/handoffs";
+import { BOT_REQUEST_TTL_MS, createApprovalRequest } from "../src/knowledge/gateway/approval-requests";
 import { db } from "../src/db/client";
 import { botHandoffs, runs, threadRelationships } from "../src/db/schema";
 import { createOrgSession, fetchApi, json } from "./helpers";
@@ -29,7 +30,7 @@ interface BotBody {
 interface RunCreated {
   id: string;
   status: string;
-  handoffs?: { botId: string; name: string; threadId: string | null; status: string }[];
+  handoffs?: { botId: string; name: string; threadId: string | null; status: string; reason?: string }[];
 }
 
 async function createBot(cookies: string, name: string, engine: string): Promise<BotBody> {
@@ -142,5 +143,77 @@ describe("bot handoffs (@mentions)", () => {
     } finally {
       process.env.PRODUCT_CHILD_THREADS = "on";
     }
+  });
+});
+
+describe("bot handoff guards", () => {
+  const mention = (cookies: string, parentRunId: string, botId: string, text: string) =>
+    json<RunCreated>("/api/runs", { method: "POST", cookies, body: { prompt: text, engine: "mock", parent_run_id: parentRunId, bot_mentions: [botId] } });
+
+  test("a bot cannot hand work to itself, above its own chain, or below the depth cap", async () => {
+    const { cookies } = await createOrgSession("bot-handoff-guards");
+    const nova = await createBot(cookies, "Nova", "mock");
+    const atlas = await createBot(cookies, "Atlas", "mock");
+    const zed = await createBot(cookies, "Zed", "mock");
+
+    // self: from Nova's own home thread
+    const home = await json<{ id: string }>(`/api/bots/${nova.id}/messages`, { method: "POST", cookies, body: { text: "Start." } });
+    expect(home.status).toBe(201);
+    const selfHome = await mention(cookies, home.body.id, nova.id, "@bot/Nova do it yourself");
+    expect(selfHome.body.handoffs?.[0]).toMatchObject({ status: "refused", reason: "self" });
+
+    // depth 0 -> 1: a person's thread hands to Nova
+    const root = await json<RunCreated>("/api/runs", { method: "POST", cookies, body: { prompt: "@bot/Nova compare the tiers.", engine: "mock", bot_mentions: [nova.id] } });
+    const novaThread = root.body.handoffs?.[0]?.threadId;
+    expect(root.body.handoffs?.[0]?.status).toBe("created");
+    if (!novaThread) throw new Error("no nova thread");
+
+    // self again: from inside Nova's delegated thread
+    const selfChild = await mention(cookies, novaThread, nova.id, "@bot/Nova and again");
+    expect(selfChild.body.handoffs?.[0]).toMatchObject({ status: "refused", reason: "self" });
+
+    // depth 1 -> 2: Nova's thread hands to Atlas (allowed)
+    const toAtlas = await mention(cookies, novaThread, atlas.id, "@bot/Atlas check the UK tier");
+    expect(toAtlas.body.handoffs?.[0]?.status).toBe("created");
+    const atlasThread = toAtlas.body.handoffs?.[0]?.threadId;
+    if (!atlasThread) throw new Error("no atlas thread");
+
+    // cycle: Atlas's thread (under Nova) hands back to Nova
+    const backToNova = await mention(cookies, atlasThread, nova.id, "@bot/Nova your turn");
+    expect(backToNova.body.handoffs?.[0]).toMatchObject({ status: "refused", reason: "cycle" });
+
+    // depth: Atlas's thread is at depth 2, no further handoffs
+    const tooDeep = await mention(cookies, atlasThread, zed.id, "@bot/Zed go deeper");
+    expect(tooDeep.body.handoffs?.[0]).toMatchObject({ status: "refused", reason: "depth" });
+  });
+
+  test("retrying a handoff with the same key replays the child instead of appending a turn", async () => {
+    const { cookies, orgId } = await createOrgSession("bot-handoff-replay");
+    await createBot(cookies, "Nova", "mock");
+    const bot = await resolveBotMention(orgId, "Nova");
+    if (!bot) throw new Error("no bot");
+    const parent = await json<RunCreated>("/api/runs", { method: "POST", cookies, body: { prompt: "Parent.", engine: "mock" } });
+    const input = { orgId, actorId: null, parentRunId: parent.body.id, threadId: parent.body.id, bot, text: "Compare the tiers.", idempotencyKey: "tool-key-1" };
+    const first = await handoffToBot(input);
+    expect(first.status).toBe("created");
+    const retry = await handoffToBot(input);
+    expect(retry).toMatchObject({ status: "replayed", threadId: first.threadId });
+    const childRuns = await db.select({ id: runs.id }).from(runs).where(and(eq(runs.orgId, orgId), eq(runs.threadId, first.threadId!)));
+    expect(childRuns).toHaveLength(1);
+    // a NEW key from the same thread is a follow-up into the same child, not a second child
+    const next = await handoffToBot({ ...input, idempotencyKey: "tool-key-2", text: "Also the UK tier." });
+    expect(next).toMatchObject({ status: "followed_up", threadId: first.threadId });
+  });
+
+  test("approvals raised inside a handoff thread wait for a person and show on the bot's roster", async () => {
+    const { cookies, orgId } = await createOrgSession("bot-handoff-approvals");
+    const nova = await createBot(cookies, "Nova", "mock");
+    const root = await json<RunCreated>("/api/runs", { method: "POST", cookies, body: { prompt: "@bot/Nova send the recap.", engine: "mock", bot_mentions: [nova.id] } });
+    const childThread = root.body.handoffs?.[0]?.threadId;
+    if (!childThread) throw new Error("no child thread");
+    const request = await createApprovalRequest({ orgId, runId: childThread, threadId: childThread, toolName: "send_email", arguments: { to: "someone@example.com" } });
+    expect(request.request.expiresAt.getTime() - Date.now()).toBeGreaterThan(BOT_REQUEST_TTL_MS - 60_000);
+    const view = await json<{ bot: BotBody & { pendingApprovals: number; state: string } }>(`/api/bots/${nova.id}`, { cookies });
+    expect(view.body.bot.pendingApprovals).toBe(1);
   });
 });

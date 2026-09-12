@@ -1,14 +1,25 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { botHandoffs, bots, type BotRow } from "../db/schema";
+import { findCommandByKey } from "../commands/repo";
+import { threadRelationships } from "../db/schema";
 import { pumpProductChildThread } from "../runs/child-session-pump";
-import { createChildSession } from "../runs/child-sessions";
+import { createChildSession, productChildCommandKey } from "../runs/child-sessions";
 import { acceptThreadFollowup } from "../runs/thread-followups";
+import { getThreadRelationship } from "../runs/thread-relationship-repo";
 import { defaultModelForEngine } from "../runs/model-policy";
 import { productChildThreadsEnabled } from "../runs/thread-relationship-rollout";
 import { botsEnabled } from "./rollout";
 
 const MENTIONS_MAX = 5;
+/** A thread may hand work to a bot only while its own delegation depth is below this. */
+export const MAX_HANDOFF_DEPTH = 2;
+/** Delegated threads one parent thread may open, and one thread family may hold, in total. */
+export const MAX_HANDOFFS_PER_PARENT = 5;
+export const MAX_HANDOFFS_PER_FAMILY = 20;
+/** Retries when another writer wins the child thread's head between read and accept. */
+const HEAD_RACE_RETRIES = 3;
+const ANCESTOR_WALK_LIMIT = 16;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** `bot_mentions` on a run body: up to five bot ids, deduplicated. */
@@ -83,9 +94,77 @@ export interface HandoffResult {
   readonly threadId: string | null;
   /** `followed_up`: the bot already has a delegated thread under this parent
    *  thread, so the message became its next turn instead of a second thread.
+   *  `refused`: a structural guard said no (see `reason`); `busy`: the child's
+   *  head kept moving under the follow-up, try again later.
    *  `unavailable`: product child threads are off for this org, so a handoff
    *  would degrade to a deferred turn on the parent's engine - refused instead. */
-  readonly status: "created" | "replayed" | "followed_up" | "conflict" | "not_found" | "unavailable";
+  readonly status: "created" | "replayed" | "followed_up" | "refused" | "busy" | "conflict" | "not_found" | "unavailable";
+  readonly reason?: HandoffRefusal;
+}
+
+export type HandoffRefusal = "self" | "cycle" | "depth" | "cap";
+
+/** The bot that owns a thread: its home thread, or a delegated thread handed to it. */
+export async function botOwningThread(orgId: string, threadId: string): Promise<BotRow | null> {
+  const [home] = await db.select().from(bots).where(and(eq(bots.orgId, orgId), eq(bots.homeThreadId, threadId))).limit(1);
+  if (home) return home;
+  const [handed] = await db
+    .select({ bot: bots })
+    .from(botHandoffs)
+    .innerJoin(bots, and(eq(bots.orgId, botHandoffs.orgId), eq(bots.id, botHandoffs.botId)))
+    .where(and(eq(botHandoffs.orgId, orgId), eq(botHandoffs.threadId, threadId)))
+    .limit(1);
+  return handed?.bot ?? null;
+}
+
+/** The delegation chain above a thread, nearest parent first, bounded. */
+export async function threadAncestors(orgId: string, threadId: string): Promise<{ readonly threadIds: string[]; readonly familyThreadId: string }> {
+  const threadIds: string[] = [];
+  let current = threadId;
+  let family = threadId;
+  for (let hop = 0; hop < ANCESTOR_WALK_LIMIT; hop += 1) {
+    const rel = await getThreadRelationship(orgId, current);
+    if (!rel) break;
+    family = rel.familyThreadId;
+    if (!rel.parentThreadId) break;
+    threadIds.push(rel.parentThreadId);
+    current = rel.parentThreadId;
+  }
+  return { threadIds, familyThreadId: family };
+}
+
+/**
+ * Why a thread may not hand work to a bot: it is the bot's own thread (self),
+ * the bot already sits above this thread in the chain (A -> B -> A), or the
+ * chain is already as deep as delegation goes. Structural, not prompt-level:
+ * a bot that is told to delegate to itself must be refused here.
+ */
+export async function handoffRefusal(orgId: string, bot: Pick<BotRow, "id" | "homeThreadId">, threadId: string): Promise<HandoffRefusal | null> {
+  const owner = await botOwningThread(orgId, threadId);
+  if (owner?.id === bot.id) return "self";
+  const { threadIds } = await threadAncestors(orgId, threadId);
+  for (const ancestor of threadIds) {
+    const above = await botOwningThread(orgId, ancestor);
+    if (above?.id === bot.id) return "cycle";
+  }
+  if (threadIds.length >= MAX_HANDOFF_DEPTH) return "depth";
+  return null;
+}
+
+/** Whether opening one more delegated thread under `threadId` would exceed the caps. */
+async function handoffCapReached(orgId: string, threadId: string): Promise<boolean> {
+  const [perParent] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(botHandoffs)
+    .where(and(eq(botHandoffs.orgId, orgId), eq(botHandoffs.parentThreadId, threadId)));
+  if ((perParent?.count ?? 0) >= MAX_HANDOFFS_PER_PARENT) return true;
+  const { familyThreadId } = await threadAncestors(orgId, threadId);
+  const [perFamily] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(botHandoffs)
+    .innerJoin(threadRelationships, and(eq(threadRelationships.orgId, botHandoffs.orgId), eq(threadRelationships.threadId, botHandoffs.threadId)))
+    .where(and(eq(botHandoffs.orgId, orgId), eq(threadRelationships.familyThreadId, familyThreadId)));
+  return (perFamily?.count ?? 0) >= MAX_HANDOFFS_PER_FAMILY;
 }
 
 /** The bot's most recent delegated thread under this parent thread, if any. */
@@ -121,26 +200,40 @@ export async function handoffToBot(input: {
   readonly idempotencyKey: string;
 }): Promise<HandoffResult> {
   const { bot } = input;
+  const refusal = await handoffRefusal(input.orgId, bot, input.threadId);
+  if (refusal) return { botId: bot.id, name: bot.name, threadId: null, status: "refused", reason: refusal };
+  // A retry with the same key after the child was created must replay, never append a turn.
+  const created = await findCommandByKey(input.orgId, productChildCommandKey(input.threadId, input.parentRunId, input.idempotencyKey));
+  if (created?.threadId) return { botId: bot.id, name: bot.name, threadId: created.threadId, status: "replayed" };
   const existing = await findOpenHandoffThread(input.orgId, bot.id, input.threadId);
   if (existing) {
-    const followup = await acceptThreadFollowup({
-      orgId: input.orgId,
-      actorId: input.actorId,
-      threadId: existing,
-      text: composeHandoffFollowup(bot, input.text),
-      attachmentIds: [],
-      idempotencyKey: input.idempotencyKey,
-    });
-    if (followup.status === "created" || followup.status === "replayed") {
-      if (followup.status === "created") {
-        await pumpProductChildThread(existing).catch((error) => {
-          console.error(`[bots] handoff follow-up pump failed for ${existing}:`, error);
-        });
+    for (let attempt = 0; attempt < HEAD_RACE_RETRIES; attempt += 1) {
+      const followup = await acceptThreadFollowup({
+        orgId: input.orgId,
+        actorId: input.actorId,
+        threadId: existing,
+        text: composeHandoffFollowup(bot, input.text),
+        attachmentIds: [],
+        idempotencyKey: input.idempotencyKey,
+      });
+      if (followup.status === "created" || followup.status === "replayed") {
+        if (followup.status === "created") {
+          await pumpProductChildThread(existing).catch((error) => {
+            console.error(`[bots] handoff follow-up pump failed for ${existing}:`, error);
+          });
+        }
+        return { botId: bot.id, name: bot.name, threadId: existing, status: "followed_up" };
       }
-      return { botId: bot.id, name: bot.name, threadId: existing, status: "followed_up" };
+      if (followup.status === "conflict") return { botId: bot.id, name: bot.name, threadId: null, status: "conflict" };
+      if (followup.status === "not_found") break; // the delegated thread is gone: open a fresh one below
+      // stale_parent: another writer moved the child's head; re-read and try again, never fork
     }
-    if (followup.status === "conflict") return { botId: bot.id, name: bot.name, threadId: null, status: "conflict" };
-    // not_found / stale_parent: the old thread is gone; open a fresh one below.
+    if (await findOpenHandoffThread(input.orgId, bot.id, input.threadId)) {
+      return { botId: bot.id, name: bot.name, threadId: existing, status: "busy" };
+    }
+  }
+  if (await handoffCapReached(input.orgId, input.threadId)) {
+    return { botId: bot.id, name: bot.name, threadId: null, status: "refused", reason: "cap" };
   }
   const outcome = await createChildSession({
     orgId: input.orgId,

@@ -369,7 +369,7 @@ export async function describeBots(orgId: string, rows: readonly BotRow[]): Prom
   const allThreadIds = [...homeThreadIds, ...[...handoffs.values()].flat()];
   const [heads, pending, routines] = await Promise.all([
     threadHeads(orgId, allThreadIds),
-    pendingApprovalCounts(orgId, homeThreadIds),
+    pendingApprovalCounts(orgId, allThreadIds),
     routineCounts(orgId, botIds),
   ]);
   return rows.map((row) => {
@@ -378,10 +378,13 @@ export async function describeBots(orgId: string, rows: readonly BotRow[]): Prom
       const status = heads.get(threadId)?.status;
       return status !== undefined && LIVE_STATUSES.has(status);
     }).length;
+    // Approvals wait for a person wherever the bot works: its home thread or a delegated one.
+    const pendingForBot = [...(row.homeThreadId ? [row.homeThreadId] : []), ...delegated]
+      .reduce((sum, threadId) => sum + (pending.get(threadId) ?? 0), 0);
     return toView(
       row,
       row.homeThreadId ? (heads.get(row.homeThreadId) ?? null) : null,
-      row.homeThreadId ? (pending.get(row.homeThreadId) ?? 0) : 0,
+      pendingForBot,
       routines.get(row.id) ?? 0,
       { total: delegated.length, live },
     );
@@ -417,6 +420,17 @@ export async function isBotHomeThread(orgId: string, threadId: string): Promise<
     .select({ id: bots.id })
     .from(bots)
     .where(and(eq(bots.orgId, orgId), eq(bots.homeThreadId, threadId)))
+    .limit(1);
+  return Boolean(row);
+}
+
+/** A thread a bot works in: its home thread or a thread handed to it. */
+export async function isBotThread(orgId: string, threadId: string): Promise<boolean> {
+  if (await isBotHomeThread(orgId, threadId)) return true;
+  const [row] = await db
+    .select({ threadId: botHandoffs.threadId })
+    .from(botHandoffs)
+    .where(and(eq(botHandoffs.orgId, orgId), eq(botHandoffs.threadId, threadId)))
     .limit(1);
   return Boolean(row);
 }
