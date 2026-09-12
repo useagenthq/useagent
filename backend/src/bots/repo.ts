@@ -1,5 +1,5 @@
 import { ENGINE_IDS, type EngineId } from "@useagent/agent-client";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { bots, runs, type BotRow } from "../db/schema";
 import { listPendingApprovalRequests } from "../knowledge/gateway/approval-requests";
@@ -224,11 +224,14 @@ export async function updateBotRow(orgId: string, id: string, input: BotInput): 
   return row ?? null;
 }
 
-export async function setBotHomeThread(orgId: string, id: string, threadId: string): Promise<void> {
-  await db
+/** First writer wins: two concurrent first messages cannot re-point the home thread. */
+export async function setBotHomeThread(orgId: string, id: string, threadId: string): Promise<boolean> {
+  const rows = await db
     .update(bots)
     .set({ homeThreadId: threadId, updatedAt: new Date() })
-    .where(and(eq(bots.orgId, orgId), eq(bots.id, id)));
+    .where(and(eq(bots.orgId, orgId), eq(bots.id, id), isNull(bots.homeThreadId)))
+    .returning({ id: bots.id });
+  return rows.length > 0;
 }
 
 /** Head of the home thread: the run a follow-up must chain under. */

@@ -19,6 +19,12 @@ import {
 import { botsEnabled } from "./rollout";
 
 const MESSAGE_MAX = 20_000;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Postgres rejects a malformed uuid with a 500-shaped error; make it a plain 404. */
+function botId(raw: string): string | null {
+  return UUID.test(raw) ? raw.toLowerCase() : null;
+}
 
 /**
  * /api/bots - a bot is a preset over a durable home thread. Messages go
@@ -67,13 +73,17 @@ botsRoutes.post("/", async (c) => {
 });
 
 botsRoutes.get("/:id", async (c) => {
-  const row = await getBotRow(c.get("orgId"), c.req.param("id"));
+  const id = botId(c.req.param("id"));
+  if (!id) return c.json({ error: "not_found" }, 404);
+  const row = await getBotRow(c.get("orgId"), id);
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json({ bot: await describeBot(c.get("orgId"), row) });
 });
 
 botsRoutes.patch("/:id", async (c) => {
-  const row = await getBotRow(c.get("orgId"), c.req.param("id"));
+  const id = botId(c.req.param("id"));
+  if (!id) return c.json({ error: "not_found" }, 404);
+  const row = await getBotRow(c.get("orgId"), id);
   if (!row) return c.json({ error: "not_found" }, 404);
   const body = await readBody(c);
   if (!body) return c.json({ error: "invalid_body" }, 400);
@@ -99,7 +109,9 @@ botsRoutes.patch("/:id", async (c) => {
  */
 botsRoutes.post("/:id/messages", async (c) => {
   const orgId = c.get("orgId");
-  const row = await getBotRow(orgId, c.req.param("id"));
+  const id = botId(c.req.param("id"));
+  if (!id) return c.json({ error: "not_found" }, 404);
+  const row = await getBotRow(orgId, id);
   if (!row) return c.json({ error: "not_found" }, 404);
   const body = await readBody(c);
   const text = typeof body?.text === "string" ? body.text.trim() : "";

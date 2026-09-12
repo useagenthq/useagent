@@ -96,6 +96,8 @@ describe("bots", () => {
     expect(badEngine.status).toBe(400);
     const longName = await fetchApi("/api/bots", { method: "POST", cookies, body: { name: "x".repeat(61), engine: "mock" } });
     expect(longName.status).toBe(400);
+    const notUuid = await fetchApi("/api/bots/not-a-uuid", { cookies });
+    expect(notUuid.status).toBe(404);
   });
 
   test("the surface is dark unless BOTS is on for the org", async () => {
