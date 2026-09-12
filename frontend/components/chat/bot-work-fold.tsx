@@ -8,48 +8,21 @@
 // server and first client paint agree; every access is guarded).
 
 import { RiArrowDownSLine, RiArrowRightSLine } from "@remixicon/react";
-import { type ReactNode, useEffect, useState } from "react";
-
-const STORAGE_PREFIX = "useagent.bot-work-fold:";
-
-function readFoldPreference(threadId: string): boolean | null {
-  try {
-    const stored = localStorage.getItem(STORAGE_PREFIX + threadId);
-    return stored === null ? null : stored === "1";
-  } catch {
-    return null;
-  }
-}
-
-function writeFoldPreference(threadId: string, open: boolean): void {
-  try {
-    localStorage.setItem(STORAGE_PREFIX + threadId, open ? "1" : "0");
-  } catch {
-    /* storage unavailable (private mode, quota, SSR) - the choice just does not persist */
-  }
-}
+import type { ReactNode } from "react";
+import { useTurnUiState } from "@/components/chat/turn-ui-state";
 
 export function BotWorkFold({
-  threadId,
   label,
   live,
+  failed,
   children,
 }: {
-  threadId: string;
   label: string;
   live: boolean;
+  failed: boolean;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    const stored = readFoldPreference(threadId);
-    if (stored !== null) setOpen(stored);
-  }, [threadId]);
-  const toggle = () => {
-    const next = !open;
-    writeFoldPreference(threadId, next);
-    setOpen(next);
-  };
+  const [open, setOpen] = useTurnUiState("bot-work", false);
   const Chevron = open ? RiArrowDownSLine : RiArrowRightSLine;
 
   return (
@@ -57,8 +30,8 @@ export function BotWorkFold({
       <button
         type="button"
         aria-expanded={open}
-        onClick={toggle}
-        className="flex max-w-full cursor-pointer select-none items-center gap-1.5 rounded-md px-1 text-[12px] leading-5 text-text-secondary tabular-nums transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring"
+        onClick={() => setOpen((current) => !current)}
+        className={`flex max-w-full cursor-pointer select-none items-center gap-1.5 rounded-md px-1 text-[12px] leading-5 tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring ${failed ? "text-text-error-primary hover:text-text-error-primary" : "text-text-secondary hover:text-text-primary"}`}
       >
         {live && (
           <span className="ai-loading-pixel size-1.5 shrink-0 rounded-full bg-blue-500" aria-hidden />

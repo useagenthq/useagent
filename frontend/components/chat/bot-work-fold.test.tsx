@@ -86,4 +86,16 @@ describe("bot thread turn", () => {
     expect(shell).toContain("b233c469 Merge");
     expect(shell).not.toContain("Execute");
   });
+
+  test("a bot reply keeps fetched sources visible outside the closed work fold", () => {
+    const fetched = toolNode("s3", {
+      tool: "webfetch",
+      input: { url: "https://example.com/report" },
+      output: "Report loaded",
+    });
+    const html = renderToStaticMarkup(<Timeline nodes={[fetched, NODES.at(-1)!]} live={false} bot={BOT} />);
+    expect(html).toContain('data-testid="turn-sources"');
+    expect(html).toContain('href="https://example.com/report"');
+    expect(html.match(/data-testid="turn-sources"/g)).toHaveLength(1);
+  });
 });

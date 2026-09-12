@@ -8,6 +8,7 @@ import { formatWorkingTimer } from "@/components/session-ui/work-entry";
 import { workedForDuration } from "@/components/session-ui/worked-for-fold";
 import type { TimelineNode } from "./timeline";
 import { summarizeToolStep } from "./tool-summary";
+import { deriveTrace } from "./types";
 
 export interface BotTurnSplit {
   /** Everything the bot did between the message and its reply, in true order. */
@@ -32,12 +33,20 @@ export function splitBotTurn(nodes: readonly TimelineNode[], live: boolean): Bot
       ? flow.length - 1
       : -1
     : flow.findLastIndex((node) => node.kind === "text");
-  const replyNode = replyIndex >= 0 ? flow[replyIndex] : undefined;
+  let replyStart = replyIndex;
+  while (replyStart > 0 && flow[replyStart - 1]?.kind === "text") replyStart -= 1;
+  const replyNodes = replyIndex >= 0 ? flow.slice(replyStart, replyIndex + 1) : [];
   return {
-    work: flow.filter((_, index) => index !== replyIndex),
-    reply: replyNode?.kind === "text" ? replyNode.text : null,
+    work: flow.filter((_, index) => index < replyStart || index > replyIndex),
+    reply: replyNodes.length > 0
+      ? replyNodes.map((node) => node.kind === "text" ? node.text : "").join("\n\n")
+      : null,
     tail,
   };
+}
+
+export function botWorkFailureCount(work: readonly TimelineNode[]): number {
+  return work.filter((node) => node.kind === "tool" && deriveTrace(node.step).isError).length;
 }
 
 /** The latest thing the bot is doing, from the summarizer; null with no steps yet. */
@@ -73,5 +82,9 @@ export function botWorkLabel({
   const steps = work.filter((node) => node.kind !== "text").length;
   const stepsText = `${steps} ${steps === 1 ? "step" : "steps"}`;
   const duration = formatDurationMs(durationMs) ?? workedForDuration(work);
-  return duration ? `Worked for ${duration}, ${stepsText}` : `Worked, ${stepsText}`;
+  const failures = botWorkFailureCount(work);
+  const failureText = failures > 0 ? `, ${failures} failed` : "";
+  return duration
+    ? `Worked for ${duration}, ${stepsText}${failureText}`
+    : `Worked, ${stepsText}${failureText}`;
 }

@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { botWorkLabel, latestStepLabel, splitBotTurn } from "./bot-turn-model";
+import {
+  botWorkFailureCount,
+  botWorkLabel,
+  latestStepLabel,
+  splitBotTurn,
+} from "./bot-turn-model";
 import type { TimelineNode } from "./timeline";
 import type { ApiStep } from "./types";
 
@@ -48,6 +53,16 @@ describe("splitBotTurn", () => {
     expect(tail.map((n) => n.key)).toEqual(["a1", "f1"]);
   });
 
+  test("a multipart final reply keeps its complete contiguous text run visible", () => {
+    const second = { kind: "text", key: "t3", text: "Second paragraph." } as const;
+    const settled = splitBotTurn([GIT_LOG, REPLY, second, ARTIFACT], false);
+    expect(settled.reply).toBe("Here is today's digest.\n\nSecond paragraph.");
+    expect(settled.work.map((node) => node.key)).toEqual(["s1"]);
+
+    const live = splitBotTurn([GIT_LOG, REPLY, second], true);
+    expect(live.reply).toBe("Here is today's digest.\n\nSecond paragraph.");
+  });
+
   test("settled work after the last burst still folds; the reply stays the last burst", () => {
     const { work, reply } = splitBotTurn([NARRATION, GIT_LOG, REPLY, TYPECHECK], false);
     expect(reply).toBe("Here is today's digest.");
@@ -72,12 +87,17 @@ describe("splitBotTurn", () => {
 describe("botWorkLabel", () => {
   test("settled: duration from the run plus the step count (prose is not a step)", () => {
     const { work } = splitBotTurn(SETTLED, false);
-    expect(botWorkLabel({ live: false, work, durationMs: 192_000 })).toBe("Worked for 3m 12s, 4 steps");
+    expect(botWorkLabel({ live: false, work, durationMs: 192_000 })).toBe(
+      "Worked for 3m 12s, 4 steps, 1 failed",
+    );
+    expect(botWorkFailureCount(work)).toBe(1);
   });
 
   test("settled without a run duration falls back to the steps' own timestamps", () => {
     const { work } = splitBotTurn(SETTLED, false);
-    expect(botWorkLabel({ live: false, work, durationMs: null })).toBe("Worked for 3m 12s, 4 steps");
+    expect(botWorkLabel({ live: false, work, durationMs: null })).toBe(
+      "Worked for 3m 12s, 4 steps, 1 failed",
+    );
     expect(botWorkLabel({ live: false, work: [RECALL], durationMs: null })).toBe("Worked, 1 step");
   });
 

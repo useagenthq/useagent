@@ -22,7 +22,11 @@ import { memo, useMemo, useState } from "react";
 import { PlanChecklist } from "@/components/agent-ui/plan-checklist";
 import { Thinking } from "@/components/ai/thinking";
 import { formatArtifactSize } from "@/components/artifacts/model";
-import { botWorkLabel, splitBotTurn } from "@/components/chat/bot-turn-model";
+import {
+  botWorkFailureCount,
+  botWorkLabel,
+  splitBotTurn,
+} from "@/components/chat/bot-turn-model";
 import { BotWorkFold } from "@/components/chat/bot-work-fold";
 import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { FollowUpRows } from "@/components/chat/follow-up-rows";
@@ -369,6 +373,7 @@ interface TimelineProps {
   /** Render this turn's follow-up suggestions (the LATEST turn only - stale
    *  suggestions under scrolled-back history are noise). */
   showFollowups?: boolean;
+  showSources?: boolean;
 }
 
 /** A bot thread's turn context: the thread (its fold preference is remembered
@@ -395,6 +400,8 @@ function BotTurn({
   bot,
 }: TimelineProps & { bot: BotTurnContext }) {
   const { work, reply, tail } = useMemo(() => splitBotTurn(nodes, live), [nodes, live]);
+  const failures = useMemo(() => botWorkFailureCount(work), [work]);
+  const sources = useMemo(() => (live ? [] : deriveTurnSources(nodes)), [nodes, live]);
   const label = useMemo(
     () => botWorkLabel({ live, work, durationMs: bot.durationMs }),
     [live, work, bot.durationMs],
@@ -402,8 +409,8 @@ function BotTurn({
   return (
     <div className="space-y-3" data-testid="bot-turn">
       {work.length > 0 && (
-        <BotWorkFold threadId={bot.threadId} label={label} live={live}>
-          <TimelineFlow nodes={work} live={live} workingSince={workingSince} />
+        <BotWorkFold label={label} live={live} failed={failures > 0}>
+          <TimelineFlow nodes={work} live={live} workingSince={workingSince} showSources={false} />
         </BotWorkFold>
       )}
       {reply && (
@@ -414,12 +421,19 @@ function BotTurn({
       {live && work.length === 0 && !reply && (
         <WorkingIndicator createdAt={workingSince ?? null} />
       )}
+      {sources.length > 0 && <TurnSourcesRow sources={sources} />}
       {tail.length > 0 && <TimelineFlow nodes={tail} live={false} showFollowups={showFollowups} />}
     </div>
   );
 }
 
-function TimelineFlow({ nodes, live, workingSince, showFollowups = false }: TimelineProps) {
+function TimelineFlow({
+  nodes,
+  live,
+  workingSince,
+  showFollowups = false,
+  showSources = true,
+}: TimelineProps) {
   const { segments, workingLabel } = useMemo(() => segmentTimeline(nodes, live), [nodes, live]);
   // Artifacts are deliverables, not narration: they render AFTER the prose and
   // tool activity so an answer never appears below its own attachment.
@@ -431,7 +445,10 @@ function TimelineFlow({ nodes, live, workingSince, showFollowups = false }: Time
   );
   const flowUnits = groupContextRecall(flowSegs);
   // Cited web sources settle with the turn (the live list would churn row by row).
-  const sources = useMemo(() => (live ? [] : deriveTurnSources(nodes)), [nodes, live]);
+  const sources = useMemo(
+    () => (showSources && !live ? deriveTurnSources(nodes) : []),
+    [nodes, live, showSources],
+  );
   return (
     <div className="space-y-3" data-testid="session-timeline">
       {flowUnits.map((unit) =>
