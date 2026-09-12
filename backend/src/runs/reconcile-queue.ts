@@ -87,10 +87,11 @@ export async function enqueueReconcile(input: {
  *  the lease expire, so a crash never strands a parked run; the lease is not an attempt. */
 export const RECONCILE_CLAIM_LEASE_MS = 60_000;
 
-/** The last lease minted by this process, so two claims never share a token even when
- *  they land in the same millisecond. In production a row is re-claimable only after its
- *  lease expired, 60 s later, so only tests reach that case; single-replica scope. */
-let lastLeaseMintedMs = 0;
+/** The last lease minted by this process per lease length, so two claims of the same
+ *  length never share a token even when they land in the same millisecond. In production
+ *  a row is re-claimable only after its lease expired, 60 s later, so only tests reach that
+ *  case; keyed by length so a short test lease is never floored by a long one. */
+const lastLeaseMintedMs = new Map<number, number>();
 
 /** Claim due parked rows (next_attempt_at <= now), oldest first, up to `limit`, and LEASE
  *  them: the same statement pushes next_attempt_at to the lease, so an overlapping tick
@@ -103,8 +104,8 @@ export async function claimDueReconciles(
   limit = 20,
   leaseMs = RECONCILE_CLAIM_LEASE_MS,
 ): Promise<ReconcileEntry[]> {
-  const leaseUntil = new Date(Math.max(Date.now() + leaseMs, lastLeaseMintedMs + 1));
-  lastLeaseMintedMs = leaseUntil.getTime();
+  const leaseUntil = new Date(Math.max(Date.now() + leaseMs, (lastLeaseMintedMs.get(leaseMs) ?? 0) + 1));
+  lastLeaseMintedMs.set(leaseMs, leaseUntil.getTime());
   const rows = (await db.execute(sql`
     with due as (
       select run_id, next_attempt_at as due_at from reconcile_queue

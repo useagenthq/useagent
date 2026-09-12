@@ -384,7 +384,7 @@ async function ingestReconciliationEvents(
       if (await providerEventExists(eventId)) recovered++;
       else if (strict) throw new Error(`Recovered event ${eventId} was not durable`);
     } catch (error) {
-      if (error instanceof CaptureFenceError) throw new LostClaimError(entry.runId);
+      if (error instanceof CaptureFenceError) throw new LostClaimError(entry.runId, recovered);
       if (strict) throw error;
       /* a single malformed event must never abort the probe */
     }
@@ -429,9 +429,10 @@ async function rescheduleEntry(entry: ReconcileEntry): Promise<boolean> {
 const claimFence = (entry: ReconcileEntry): WriteFence =>
   (tx) => reconcileClaimHeldForUpdate(entry.runId, entry.leaseUntil, tx);
 
-/** Thrown when a tick finds, before writing recovered events, that its claim is gone. */
+/** Thrown when a tick finds, while writing recovered events, that its claim is gone.
+ *  Carries how many events of the batch were durable before that, so the count survives. */
 class LostClaimError extends Error {
-  constructor(runId: string) {
+  constructor(runId: string, readonly recovered = 0) {
     super(`reconcile claim lost for run ${runId}`);
   }
 }
@@ -530,6 +531,7 @@ export async function runDueReconciles(
         : 0;
     } catch (error) {
       if (error instanceof LostClaimError) {
+        eventsRecovered += error.recovered; // what landed before the claim was lost stays counted
         lostClaim(entry);
         lost++;
         continue;
@@ -587,7 +589,8 @@ export async function runDueReconciles(
      // Bump this entry's next attempt so a persistently failing one backs off
      // instead of hot-looping, and move on to the rest of the batch.
      console.error(`[reconcile] entry ${entry.runId} failed, skipping:`, err);
-     await rescheduleEntry(entry).catch(() => {});
+     if (await rescheduleEntry(entry).catch(() => false)) retried++;
+     else lost++;
    }
   }
   return { adopted, failed, retried, dropped, lost, eventsRecovered };

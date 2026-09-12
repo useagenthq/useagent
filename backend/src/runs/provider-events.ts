@@ -291,8 +291,19 @@ export class CaptureFenceError extends Error {
 export type WriteFence = (tx: Executor) => Promise<boolean>;
 
 async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): Promise<void> {
-  const frame = await persistFrame(input, seq, db);
+  const { frame, assignedSeq } = await persistFrame(input, seq, db);
+  await writeGraphAfterDurable(input, assignedSeq);
   publishNativeFrame(input.runId, frame);
+}
+
+/** Graph writes are additive and fail-open, and they publish their own org signal, so
+ *  they run only after the native event is durable and always outside the write's own
+ *  transaction: a graph error can neither roll the native upsert back nor notify a
+ *  subscriber before the commit it describes. */
+async function writeGraphAfterDurable(input: ProviderEventInput, assignedSeq: number): Promise<void> {
+  if (executionGraphWriteEnabled()) {
+    await shadowWriteExecutionGraph(input, assignedSeq);
+  }
 }
 
 /** A write whose durability is conditional on `fence` holding at the moment of the write:
@@ -304,22 +315,23 @@ async function persistFencedAndPublish(
   seq: RunSequencer,
   fence: WriteFence,
 ): Promise<void> {
-  const frame = await db.transaction(async (tx) => {
+  const { frame, assignedSeq } = await db.transaction(async (tx) => {
     if (!(await fence(tx))) throw new CaptureFenceError(input.runId);
     return persistFrame(input, seq, tx);
   });
+  await writeGraphAfterDurable(input, assignedSeq);
   publishNativeFrame(input.runId, frame);
 }
 
-/** Persist one frame (idempotent upsert by native identity, then the additive graph write)
- *  on `exec` and return the frame to publish. Live-push happens in the caller AFTER the
- *  persist has committed, so a subscriber never sees a frame that isn't durable; inside the
- *  serial chain, so frames go out in ascending seq order (the reconnect cursor's guarantee). */
+/** Persist one frame (idempotent upsert by native identity) on `exec` and return the frame
+ *  to publish with its seq. Graph write and live-push happen in the caller AFTER the persist
+ *  has committed, so a subscriber never sees a frame that isn't durable; inside the serial
+ *  chain, so frames go out in ascending seq order (the reconnect cursor's guarantee). */
 async function persistFrame(
   input: ProviderEventInput,
   seq: RunSequencer,
   exec: Executor,
-): Promise<ReturnType<typeof makeNativeFrame>> {
+): Promise<{ frame: ReturnType<typeof makeNativeFrame>; assignedSeq: number }> {
   if (seq.nextSeq === null) seq.nextSeq = (await highestSeq(input.runId)) + 1;
   const assignedSeq = seq.nextSeq++;
 
@@ -363,13 +375,7 @@ async function persistFrame(
       setWhere: sql`${providerEvents.seq} < ${assignedSeq}`,
     });
 
-  // Graph writes are additive and fail-open. They happen only after the native
-  // event is durable and before live publication, preserving one observed order.
-  if (executionGraphWriteEnabled()) {
-    await shadowWriteExecutionGraph(input, assignedSeq, exec);
-  }
-
-  return makeNativeFrame({
+  const frame = makeNativeFrame({
     eventId: input.id,
     seq: assignedSeq,
     provider: input.provider,
@@ -381,4 +387,5 @@ async function persistFrame(
     callId: input.nativeCallId ?? null,
     payloadText: payload,
   });
+  return { frame, assignedSeq };
 }

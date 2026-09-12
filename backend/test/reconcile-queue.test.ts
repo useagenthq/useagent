@@ -112,7 +112,7 @@ describe("claims are leased and never shared", () => {
     const [c] = await claimDueReconciles(1);
     const ms = c!.leaseUntil.getTime() - Date.now();
     expect(ms).toBeGreaterThan(55_000);
-    expect(ms).toBeLessThanOrEqual(RECONCILE_CLAIM_LEASE_MS);
+    expect(ms).toBeLessThanOrEqual(RECONCILE_CLAIM_LEASE_MS + 1_000); // the monotonic floor adds at most a few ms
     expect((await getReconcile(runId))!.nextAttemptAt.getTime()).toBe(c!.leaseUntil.getTime());
   });
 

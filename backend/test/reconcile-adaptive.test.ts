@@ -13,7 +13,7 @@ import {
   RUN_RECONCILING,
   type ReconcileProbe,
 } from "../src/runs/recovery";
-import { claimDueReconciles, enqueueReconcile, getReconcile, reconcileClaimHeldForUpdate } from "../src/runs/reconcile-queue";
+import { bumpReconcile, claimDueReconciles, enqueueReconcile, getReconcile, reconcileClaimHeldForUpdate } from "../src/runs/reconcile-queue";
 import { finalizeRun } from "../src/runs/finalize";
 import { CaptureFenceError, recordProviderEvent } from "../src/runs/provider-events";
 import { getRun, insertStep, setRunProviderSession, setRunSandbox, setRunStatus, STALE_SUMMARY } from "../src/runs/repo";
@@ -619,6 +619,45 @@ describe("overlapping ticks", () => {
     await write(claim!.leaseUntil, "live");
     const [row] = await db.select().from(providerEvents).where(eq(providerEvents.id, `pe_${runId}_t3_fenced`));
     expect(JSON.parse(row!.payload as string)).toEqual({ text: "live" });
+    await finalizeRun(runId, "failed", "test teardown", 0);
+  });
+
+  test("the fence holds the claim row locked across the write: a competing transition waits until the write commits", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId);
+    const [claim] = await claimDueReconciles(1);
+    let releaseWrite!: () => void;
+    let fenceChecked!: () => void;
+    const writeReleased = new Promise<void>((r) => { releaseWrite = r; });
+    const checked = new Promise<void>((r) => { fenceChecked = r; });
+    const write = recordProviderEvent({
+      id: `pe_${runId}_t3_locked`, runId, threadId, provider: "t3", eventType: "t3.activity.message.delta",
+      nativePartId: "locked", payload: { text: "held" },
+    }, {
+      required: true,
+      fence: async (tx) => {
+        const held = await reconcileClaimHeldForUpdate(runId, claim!.leaseUntil, tx);
+        fenceChecked();
+        await writeReleased; // the ownership check passed; the row stays locked until the write commits
+        return held;
+      },
+    });
+    await checked;
+    // A competing ownership transition on the same row cannot get past the lock.
+    let bumped: boolean | null = null;
+    const competing = bumpReconcile(runId, new Date(Date.now() + 15_000), claim!.leaseUntil).then((ok) => { bumped = ok; return ok; });
+    await new Promise((r) => setTimeout(r, 150));
+    expect(bumped).toBeNull(); // still waiting behind the fenced write
+    releaseWrite();
+    await write;
+    expect(await competing).toBe(true); // it ran only after the write committed
+    const [row] = await db.select().from(providerEvents).where(eq(providerEvents.id, `pe_${runId}_t3_locked`));
+    expect(JSON.parse(row!.payload as string)).toEqual({ text: "held" });
+    // And with the lease now moved on, the same fence lets nothing through.
+    await expect(recordProviderEvent({
+      id: `pe_${runId}_t3_locked`, runId, threadId, provider: "t3", eventType: "t3.activity.message.delta",
+      nativePartId: "locked", payload: { text: "stale" },
+    }, { required: true, fence: (tx) => reconcileClaimHeldForUpdate(runId, claim!.leaseUntil, tx) })).rejects.toBeInstanceOf(CaptureFenceError);
     await finalizeRun(runId, "failed", "test teardown", 0);
   });
 
