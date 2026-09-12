@@ -35,10 +35,19 @@ function ctx(over: Partial<EngineRunContext> = {}): EngineRunContext {
   };
 }
 
+// Restore what the suite booted with: engine readiness now includes the gateway
+// wiring, so a bare delete here would leave every later test file unwired.
+const priorGatewayEnv = {
+  GATEWAY_PUBLIC_URL: process.env.GATEWAY_PUBLIC_URL,
+  TOOL_GATEWAY_PUBLIC_URL: process.env.TOOL_GATEWAY_PUBLIC_URL,
+  TOOL_GATEWAY_SECRET: process.env.TOOL_GATEWAY_SECRET,
+};
+
 afterEach(() => {
-  delete process.env.GATEWAY_PUBLIC_URL;
-  delete process.env.TOOL_GATEWAY_PUBLIC_URL;
-  delete process.env.TOOL_GATEWAY_SECRET;
+  for (const [name, value] of Object.entries(priorGatewayEnv)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
 });
 
 describe("ACP knowledge MCP parity", () => {
@@ -96,6 +105,7 @@ describe("ACP knowledge MCP parity", () => {
   });
 
   test("legacy full-backend tunnel variable is ignored", () => {
+    delete process.env.GATEWAY_PUBLIC_URL;
     process.env.TOOL_GATEWAY_PUBLIC_URL = "https://full-backend.example.test";
     expect(acpKnowledgeMcpServers(ctx())).toEqual([]);
   });

@@ -18,7 +18,7 @@ import { cx as cn } from "@/utils/cx";
 export type EngineModelCatalog = Partial<Record<EngineId, readonly string[]>>;
 export interface EngineReadinessStatus {
   readonly ready: boolean;
-  readonly reason: "enabled" | "disabled" | "provider_unhealthy" | "not_proven";
+  readonly reason: "enabled" | "disabled" | "provider_unhealthy" | "gateway_unconfigured" | "not_proven";
   readonly provider?: "anthropic" | "openai" | "openrouter";
   readonly providerHealth?: string;
   readonly message?: string;

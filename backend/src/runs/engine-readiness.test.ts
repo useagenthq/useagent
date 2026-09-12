@@ -18,9 +18,44 @@ import {
 const PROD = {
   NODE_ENV: "production",
   USEAGENT_DEV_MODE: "false",
+  GATEWAY_PUBLIC_URL: "https://gateway.example.test",
+  PROVIDER_GATEWAY_SECRET: "readiness-test-provider-gateway-secret-0123456789",
 } as const;
 
 describe("engine readiness advertisement", () => {
+  test("a sandbox engine is not ready without a wired provider gateway", () => {
+    const proven = {
+      ...PROD,
+      ENABLED_ENGINES: "opencode,codex",
+      ENGINE_READINESS_OPENCODE: "verified",
+      ENGINE_READINESS_CODEX: "verified",
+      PROVIDER_HEALTH_OPENAI: "verified",
+      PROVIDER_HEALTH_OPENROUTER: "verified",
+    };
+    expect(engineReadiness("opencode", proven)).toMatchObject({ ready: true, reason: "enabled" });
+
+    const unwired = { ...proven, GATEWAY_PUBLIC_URL: "", PROVIDER_GATEWAY_PUBLIC_URL: "" };
+    const readiness = engineReadiness("opencode", unwired);
+    expect(readiness).toMatchObject({ ready: false, reason: "gateway_unconfigured" });
+    expect(readiness.message).toContain("GATEWAY_PUBLIC_URL");
+    expect(readyUserFacingEngines(unwired)).toEqual([]);
+    expect(resolveAcceptedEngine("codex", unwired)).toMatchObject({
+      ok: false,
+      status: 403,
+      error: "engine_not_ready",
+      reason: "gateway_unconfigured",
+    });
+    expect(engineReadyForDispatch("codex", unwired)).toBe(false);
+
+    // A URL without the signing secret is just as unusable as no URL.
+    expect(engineReadiness("codex", { ...proven, PROVIDER_GATEWAY_SECRET: "" })).toMatchObject({
+      ready: false,
+      reason: "gateway_unconfigured",
+    });
+    // Chat never touches a sandbox, so it does not need the gateway.
+    expect(engineReadiness("chat", { ...unwired, OPENROUTER_API_KEY: "k" })).toMatchObject({ ready: true });
+  });
+
   test("advertises no-sandbox chat only when its direct provider is configured", () => {
     expect(readyUserFacingEngines(PROD)).not.toContain("chat");
 

@@ -55,6 +55,12 @@ const { setFreeModelCatalogFetcherForTest } = await import(
   "../src/runs/free-model-lane"
 );
 setFreeModelCatalogFetcherForTest(async () => new Response(null, { status: 503 }));
+// Same for the gateway's read of the primary's product flags: a fixture origin
+// such as 127.0.0.1:3201 may be a live server on a developer machine.
+const { setPrimaryProductFlagsFetcherForTest } = await import(
+  "../src/knowledge/gateway/product-flags"
+);
+setPrimaryProductFlagsFetcherForTest(async () => new Response(null, { status: 503 }));
 
 // Fleet capacity defaults are conservative for the single prod host; the general
 // unit suite predates capacity gating and submits freely, so open the limits wide
@@ -82,6 +88,17 @@ for (const engine of ["OPENCODE", "CLAUDE", "CODEX"] as const) {
 for (const provider of ["ANTHROPIC", "OPENAI", "OPENROUTER"] as const) {
   process.env[`PROVIDER_HEALTH_${provider}`] = "verified";
 }
+// Sandbox engines are ready only with a wired provider gateway. The unit suite
+// never spawns a sandbox, so a loopback origin and a fixture secret stand in
+// for the deployment's real wiring (tests that exercise the gateway itself set
+// their own values).
+process.env.GATEWAY_PUBLIC_URL = process.env.GATEWAY_PUBLIC_URL ?? "http://127.0.0.1:3299";
+process.env.PROVIDER_GATEWAY_SECRET =
+  process.env.PROVIDER_GATEWAY_SECRET ?? "unit-suite-provider-gateway-secret-0123456789";
+// A wired GATEWAY_PUBLIC_URL makes the tool gateway config demand its own
+// secret as well (a deployment always carries both).
+process.env.TOOL_GATEWAY_SECRET =
+  process.env.TOOL_GATEWAY_SECRET ?? "unit-suite-tool-gateway-secret-9876543210abcdef";
 
 process.env.SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN ?? "xoxb-test-token";
 process.env.SLACK_LEGACY_TEAM_ID = process.env.SLACK_LEGACY_TEAM_ID ?? "T0TESTTEAM";
