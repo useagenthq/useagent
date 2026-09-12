@@ -181,6 +181,18 @@ describe("bots", () => {
     expect(notUuid.status).toBe(404);
   });
 
+  test("a workspace tops out at 50 active bots", async () => {
+    const { cookies } = await createOrgSession("bots-cap");
+    for (let i = 0; i < 50; i += 1) await createBot(cookies, `Bot ${i}`);
+    const over = await json<{ error: string; limit: number }>("/api/bots", {
+      method: "POST",
+      cookies,
+      body: { name: "One more", title: "Code reviewer", rules: "Never merge without approval.", engine: "mock" },
+    });
+    expect(over.status).toBe(409);
+    expect(over.body).toMatchObject({ error: "bot_limit", limit: 50 });
+  });
+
   test("BOTS=off is the kill switch for the whole surface", async () => {
     const session = await createOrgSession("bots-off");
     process.env.BOTS = "off";

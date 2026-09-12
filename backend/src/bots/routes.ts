@@ -37,6 +37,9 @@ import {
 } from "../schedules/service";
 
 const MESSAGE_MAX = 20_000;
+// Every gateway-capable turn lists the org's bots for its prompt and the roster
+// fans out per bot, so a workspace has a ceiling instead of growing without end.
+const MAX_BOTS_PER_ORG = 50;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Postgres rejects a malformed uuid with a 500-shaped error; make it a plain 404. */
@@ -98,6 +101,12 @@ botsRoutes.post("/", async (c) => {
   if (!body) return c.json({ error: "invalid_body" }, 400);
   const parsed = parseBotInput(body, null);
   if ("error" in parsed) return c.json({ error: "invalid_bot", ...parsed.error }, 400);
+  if ((await listBotRows(c.get("orgId"))).length >= MAX_BOTS_PER_ORG) {
+    return c.json(
+      { error: "bot_limit", limit: MAX_BOTS_PER_ORG, reason: `This workspace already has ${MAX_BOTS_PER_ORG} bots. Archive one before creating another.` },
+      409,
+    );
+  }
   const problem = await checkPreset(c.get("orgId"), parsed.input);
   if (problem) return c.json(problem.body, problem.status);
   try {
