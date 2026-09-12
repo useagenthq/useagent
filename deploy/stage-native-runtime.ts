@@ -49,7 +49,7 @@ async function readManifest(): Promise<NativeRuntimeManifest> {
     sourceCommit: requireMatch(record.sourceCommit, /^[0-9a-f]{40}$/, "sourceCommit"),
     dependencyVersion: requireMatch(
       record.dependencyVersion,
-      /^[0-9]+\.[0-9]+\.[0-9]+$/,
+      /^[0-9]+\.[0-9]+\.[0-9]+(?:-nightly\.[0-9]{8}\.[0-9]+)?$/,
       "dependencyVersion",
     ),
     dependencyLockSha256: requireMatch(
@@ -69,14 +69,14 @@ async function sha256(path: string): Promise<string> {
 async function capture(command: string[], cwd = repoRoot): Promise<Uint8Array> {
   const process = Bun.spawn(command, { cwd, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(process.stdout).bytes(),
+    new Response(process.stdout).arrayBuffer(),
     new Response(process.stderr).text(),
     process.exited,
   ]);
   if (exitCode !== 0) {
     throw new Error(`${command[0]} failed (${exitCode}): ${stderr.trim() || "no error output"}`);
   }
-  return stdout;
+  return new Uint8Array(stdout);
 }
 
 async function verifyArchive(path: string, manifest: NativeRuntimeManifest): Promise<void> {

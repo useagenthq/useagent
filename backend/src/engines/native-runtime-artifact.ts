@@ -83,7 +83,10 @@ export function buildNativeRuntimeInstallCommand(
     // only. Its public dist is never executed; the verified fork replaces it.
     `cd ${q(`${staging}/dependencies`)}`,
     `printf '%s  %s\\n' ${q(manifest.dependencyLockSha256)} bun.lock | sha256sum -c - >/dev/null`,
-    `BUN_INSTALL_CACHE_DIR=${q(`${staging}/cache`)} ${q(sandboxBunExecutable(layout))} install --frozen-lockfile --no-progress`,
+    `BUN_INSTALL_CACHE_DIR=${q(`${staging}/cache`)} ${q(sandboxBunExecutable(layout))} install --frozen-lockfile --ignore-scripts --no-progress`,
+    // Bun owns installation; use the existing Node toolchain only for its native addon.
+    `node_gyp=$(node -e ${q('const fs=require("node:fs"),p=require("node:path");console.log(require.resolve("node-gyp/bin/node-gyp.js",{paths:[p.dirname(fs.realpathSync(process.argv[1]))]}))')} "$(command -v npm)")`,
+    `(cd node_modules/node-pty && { node scripts/prebuild.js || node "$node_gyp" rebuild; } && node scripts/post-install.js)`,
     `test -d ${q(`${packageRoot}/dist`)}`,
     `mv ${q(`${packageRoot}/dist`)} ${q(`${staging}/public-dist`)}`,
     `mkdir ${q(`${packageRoot}/dist`)}`,
