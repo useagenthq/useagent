@@ -47,13 +47,18 @@ export interface PreviewEndpoint {
  *  start() wakes it). */
 const endpoints = new Map<string, PreviewEndpoint>();
 
-/** Hop-by-hop / connection headers that must not be forwarded either way. */
+/** Product credentials and caller identity must not reach sandbox services. */
 const STRIP_REQUEST = new Set([
   "host",
   "connection",
   "content-length",
   "accept-encoding",
   "cookie",
+  "authorization",
+  "proxy-authorization",
+  "forwarded",
+  "x-forwarded",
+  "x-real-ip",
   "cube-traffic-access-token",
   "e2b-traffic-access-token",
   "x-daytona-preview-token",
@@ -63,6 +68,10 @@ const STRIP_RESPONSE = new Set([
   "transfer-encoding",
   "content-encoding",
   "content-length",
+  "set-cookie",
+  "set-cookie2",
+  "clear-site-data",
+  "service-worker-allowed",
 ]);
 
 export async function resolvePreviewEndpoint(
@@ -138,7 +147,10 @@ export function invalidatePreviewEndpoint(threadId: string, port: number): void 
 export function buildForwardHeaders(src: Headers, auth: Readonly<Record<string, string>>): Headers {
   const headers = new Headers();
   src.forEach((value, key) => {
-    if (!STRIP_REQUEST.has(key.toLowerCase())) headers.set(key, value);
+    const normalized = key.toLowerCase();
+    if (!STRIP_REQUEST.has(normalized) && !normalized.startsWith("x-forwarded-")) {
+      headers.set(key, value);
+    }
   });
   for (const [name, value] of Object.entries(auth)) {
     headers.set(name, value);
