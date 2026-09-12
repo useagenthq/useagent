@@ -11,13 +11,12 @@ import { and, eq, sql } from "drizzle-orm";
 
 const rolloutEnv = new Map<string, string | undefined>();
 beforeAll(() => {
-  for (const key of ["THREAD_RELATIONSHIPS_WRITE", "THREAD_RELATIONSHIPS_READ", "PRODUCT_CHILD_THREADS", "PRODUCT_CHILD_COMPOSER", "PRODUCT_CHILD_CANARY_ORG_IDS"]) {
+  for (const key of ["THREAD_RELATIONSHIPS_WRITE", "THREAD_RELATIONSHIPS_READ", "PRODUCT_CHILD_THREADS", "PRODUCT_CHILD_CANARY_ORG_IDS"]) {
     rolloutEnv.set(key, process.env[key]);
   }
   process.env.THREAD_RELATIONSHIPS_WRITE = "on";
   process.env.THREAD_RELATIONSHIPS_READ = "read";
   process.env.PRODUCT_CHILD_THREADS = "on";
-  process.env.PRODUCT_CHILD_COMPOSER = "on";
 });
 
 afterAll(() => {
@@ -347,7 +346,6 @@ describe("thread relationship routes", () => {
     process.env.THREAD_RELATIONSHIPS_WRITE = "shadow";
     process.env.THREAD_RELATIONSHIPS_READ = "off";
     process.env.PRODUCT_CHILD_THREADS = "off";
-    process.env.PRODUCT_CHILD_COMPOSER = "off";
     process.env.PRODUCT_CHILD_CANARY_ORG_IDS = allowed.orgId;
     try {
       const makeRoot = (cookies: string) => json<{ id: string }>("/api/runs", {
@@ -408,7 +406,6 @@ describe("thread relationship routes", () => {
       process.env.THREAD_RELATIONSHIPS_WRITE = "on";
       process.env.THREAD_RELATIONSHIPS_READ = "read";
       process.env.PRODUCT_CHILD_THREADS = "on";
-      process.env.PRODUCT_CHILD_COMPOSER = "on";
       delete process.env.PRODUCT_CHILD_CANARY_ORG_IDS;
     }
   });

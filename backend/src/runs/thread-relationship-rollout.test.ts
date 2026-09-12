@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   assertThreadRelationshipRolloutConfig,
-  productChildComposerEnabled,
   productChildThreadsEnabled,
   threadRelationshipReadEnabled,
 } from "./thread-relationship-rollout";
@@ -10,7 +9,6 @@ const original = {
   write: process.env.THREAD_RELATIONSHIPS_WRITE,
   read: process.env.THREAD_RELATIONSHIPS_READ,
   children: process.env.PRODUCT_CHILD_THREADS,
-  composer: process.env.PRODUCT_CHILD_COMPOSER,
   canary: process.env.PRODUCT_CHILD_CANARY_ORG_IDS,
 };
 
@@ -19,7 +17,6 @@ afterEach(() => {
     THREAD_RELATIONSHIPS_WRITE: original.write,
     THREAD_RELATIONSHIPS_READ: original.read,
     PRODUCT_CHILD_THREADS: original.children,
-    PRODUCT_CHILD_COMPOSER: original.composer,
     PRODUCT_CHILD_CANARY_ORG_IDS: original.canary,
   })) {
     if (value === undefined) delete process.env[key];
@@ -35,27 +32,27 @@ describe("thread relationship rollout", () => {
     expect(() => assertThreadRelationshipRolloutConfig()).toThrow();
   });
 
-  test("accepts the staged and fully-on configurations", () => {
+  test("accepts the staged and fully-on configurations without a composer switch", () => {
     process.env.THREAD_RELATIONSHIPS_WRITE = "shadow";
     process.env.THREAD_RELATIONSHIPS_READ = "read";
     process.env.PRODUCT_CHILD_THREADS = "on";
-    process.env.PRODUCT_CHILD_COMPOSER = "on";
+    // A stale PRODUCT_CHILD_COMPOSER line in an env file is inert, never a gate.
+    process.env.PRODUCT_CHILD_COMPOSER = "off";
     expect(() => assertThreadRelationshipRolloutConfig()).not.toThrow();
+    expect(productChildThreadsEnabled("org-any")).toBe(true);
+    delete process.env.PRODUCT_CHILD_COMPOSER;
   });
 
-  test("enables read, child threads, and composer only for bounded allowlisted orgs", () => {
+  test("enables read and child threads only for bounded allowlisted orgs", () => {
     process.env.THREAD_RELATIONSHIPS_WRITE = "shadow";
     process.env.THREAD_RELATIONSHIPS_READ = "off";
     process.env.PRODUCT_CHILD_THREADS = "off";
-    process.env.PRODUCT_CHILD_COMPOSER = "off";
     process.env.PRODUCT_CHILD_CANARY_ORG_IDS = "org-canary,org-canary";
     expect(() => assertThreadRelationshipRolloutConfig()).not.toThrow();
     expect(threadRelationshipReadEnabled("org-canary")).toBe(true);
     expect(productChildThreadsEnabled("org-canary")).toBe(true);
-    expect(productChildComposerEnabled("org-canary")).toBe(true);
     expect(threadRelationshipReadEnabled("org-other")).toBe(false);
     expect(productChildThreadsEnabled("org-other")).toBe(false);
-    expect(productChildComposerEnabled("org-other")).toBe(false);
   });
 
   test("fails closed for invalid or write-disabled canary configuration", () => {

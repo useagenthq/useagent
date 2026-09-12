@@ -39,6 +39,8 @@ export function threadRelationshipReadEnabled(
   return value === "read" || canaryEnabled(orgId, env);
 }
 
+/** Product child threads, and with them the child composer: messaging a child
+ *  thread is part of the feature, never a separate switch. */
 export function productChildThreadsEnabled(
   orgId?: string | null,
   env: Readonly<Record<string, string | undefined>> = process.env,
@@ -47,25 +49,13 @@ export function productChildThreadsEnabled(
   return value === "on" || canaryEnabled(orgId, env);
 }
 
-export function productChildComposerEnabled(
-  orgId?: string | null,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): boolean {
-  const value = env.PRODUCT_CHILD_COMPOSER?.trim().toLowerCase();
-  return value === "on" || canaryEnabled(orgId, env);
-}
-
 export function assertThreadRelationshipRolloutConfig(): void {
   const write = threadRelationshipWriteMode();
   const read = threadRelationshipReadEnabled();
   const children = productChildThreadsEnabled();
-  const composer = productChildComposerEnabled();
   const canaryOrgs = productChildCanaryOrgIds();
   if (children && (write === "off" || !read)) {
     throw new Error("PRODUCT_CHILD_THREADS=on requires THREAD_RELATIONSHIPS_WRITE=shadow|on and THREAD_RELATIONSHIPS_READ=read");
-  }
-  if (composer && (!children || !read)) {
-    throw new Error("PRODUCT_CHILD_COMPOSER=on requires PRODUCT_CHILD_THREADS=on and THREAD_RELATIONSHIPS_READ=read");
   }
   if (canaryOrgs.size > 0 && write === "off") {
     throw new Error("PRODUCT_CHILD_CANARY_ORG_IDS requires THREAD_RELATIONSHIPS_WRITE=shadow|on");

@@ -8,7 +8,7 @@ import {
   type ThreadRelationshipView,
 } from "./thread-relationship-repo";
 import { acceptThreadFollowup } from "./thread-followups";
-import { productChildComposerEnabled, threadRelationshipReadEnabled } from "./thread-relationship-rollout";
+import { productChildThreadsEnabled, threadRelationshipReadEnabled } from "./thread-relationship-rollout";
 import { pumpThread } from "../worker";
 import { runQueueView } from "../fleet/view";
 import { RunPromptTooLargeError } from "../commands/prompt-policy";
@@ -125,7 +125,7 @@ routes.get("/:familyThreadId/children", async (c) => {
 });
 
 routes.post("/:parentThreadId/continue-native-child", async (c) => {
-  if (!productChildComposerEnabled(c.get("orgId"))) return c.json({ error: "not_found" }, 404);
+  if (!productChildThreadsEnabled(c.get("orgId"))) return c.json({ error: "not_found" }, 404);
   const raw = await c.req.text();
   if (Buffer.byteLength(raw, "utf8") > 128 * 1024) return c.json({ error: "request_too_large" }, 413);
   let body: unknown;
@@ -243,7 +243,7 @@ routes.post("/:parentThreadId/continue-native-child", async (c) => {
 });
 
 routes.post("/:threadId/messages", async (c) => {
-  if (!productChildComposerEnabled(c.get("orgId"))) return c.json({ error: "not_found" }, 404);
+  if (!productChildThreadsEnabled(c.get("orgId"))) return c.json({ error: "not_found" }, 404);
   const idempotencyKey = c.req.header("idempotency-key")?.trim();
   if (!idempotencyKey || idempotencyKey.length > 240) return c.json({ error: "invalid_idempotency_key" }, 400);
   const raw = await c.req.text();
