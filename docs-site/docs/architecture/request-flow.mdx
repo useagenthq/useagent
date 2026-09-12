@@ -24,18 +24,20 @@ This is the life of a single agent turn, following the units from
     a fresh sandbox, preferably from the warm pool.
   </Step>
   <Step title="The sandbox is prepared for this turn">
-    On a fresh sandbox, the backend first installs and verifies only the selected
-    native provider and its stable settings. It then prepares authorized
+    On a fresh sandbox using the T3-backed runtime path, the backend first
+    installs and verifies the selected native provider and its stable settings.
+    It then prepares authorized
     repositories, pull-request resources, and uploaded inputs. Only after those
     resources finish does it activate run-bound gateway capabilities, relays, or
     process leases. Short-lived run credentials are therefore not minted before
     a long clone, and a failed resource preparation creates no activation lease.
 
-    Retained sandboxes keep provider preparation and resource validation in
-    parallel where the runtime ownership contract allows it. Providers that
-    establish a lower-privilege runtime user remain resources-first. This is an
-    ordering change only: Codex, Claude Code, OpenCode, and Pi still use their
-    native drivers, and ACP is not a fallback.
+    Pi has a separate resources-first preparation path. Direct OpenCode prepares
+    its runtime configuration and repositories concurrently; it does not use
+    the T3-backed split described above. Retained sandboxes keep provider
+    preparation and resource validation in parallel where the runtime ownership
+    contract allows it. These preparation differences do not change the native
+    drivers of Codex, Claude Code, OpenCode, or Pi. ACP is not a fallback.
   </Step>
   <Step title="The turn reaches its native engine session">
     The engine registry resolves a `ProviderDriver` for the engine, and the turn

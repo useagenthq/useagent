@@ -22,7 +22,7 @@ This is a dated release-validation snapshot, not a live health dashboard and not
 a statement about which commit is deployed now. Each result covers only the
 journey named in its row.
 
-| Release fingerprint | Journey | Observed result | Boundary |
+| Evidence source | Journey | Observed result | Boundary |
 | --- | --- | --- | --- |
 | `e1649e5ed` | Claude Code on Box | Cold turn passed in 162.817 s; resume passed in 20.995 s with the same native session identity. | This does not certify repositories, children, artifacts, or other sandbox providers. |
 | `e1649e5ed` | Pi on Box | Basic native turn passed in 47.641 s. | No resume or broader engine/provider matrix was exercised. |
@@ -33,11 +33,16 @@ journey named in its row.
 | 2026-09-05 route check | Direct Cerebras routing | 38 direct requests returned HTTP 200. | This proves the direct route, not a complete native engine turn for every Cerebras model. |
 | 2026-09-05 route check | Qwen native completion | The completion looped and was cancelled. | This is not a passing turn. |
 
-The current Pro mainline at `cd0a6e9d1` changes fresh-sandbox preparation so the
-selected stable native installation completes before repositories and inputs,
-and run-bound activation happens only after those resources finish. This
-mitigates the cold-start overlap observed at `30cc90499`; it does not establish a
-single root cause for every repository-erasure symptom.
+The deployed release recorded here, `cd0a6e9d1`, changes fresh-sandbox preparation
+for the T3-backed runtime path: the selected stable native installation completes
+before repositories and inputs, and run-bound activation happens only after
+those resources finish. This mitigates the cold-start overlap observed at
+`30cc90499`; fresh-Box repository verification still failed after this change,
+so it does not resolve the repository-loss incident.
+
+The later merged commit `a0f14e830` includes a Qwen output-budget correction to
+leave sufficient input space in native OpenCode. It had not been deployed or
+verified in production when this evidence snapshot was recorded.
 
 Retained workspaces keep their existing parallel preparation where the runtime
 ownership contract allows it. Native drivers and lifecycle semantics are
