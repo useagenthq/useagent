@@ -19,6 +19,11 @@ import { createChildSession } from "../src/runs/child-sessions";
 import { subscribeOrg, type OrgChange } from "../src/runs/org-signals";
 import { beginEngineRun } from "../src/worker";
 import { finalizeRun } from "../src/runs/finalize";
+import { acceptExistingThreadFollowup } from "../src/runs/thread-followups";
+import {
+  CEREBRAS_GEMMA_MODEL,
+  CEREBRAS_QWEN_MODEL,
+} from "../src/runs/model-policy";
 
 // Mailbox primitives for the durable per-session command lane. These drive the
 // claim/settle CAS directly (no worker execution) so ordering, one-in-flight,
@@ -45,6 +50,62 @@ async function retire(threadId: string): Promise<void> {
 }
 
 describe("durable command lane", () => {
+  test("legacy model inheritance is authorized only from the durable parent", async () => {
+    const previousHealth = process.env.PROVIDER_HEALTH_CEREBRAS;
+    process.env.PROVIDER_HEALTH_CEREBRAS = "verified";
+    const parent = async (model: string) => {
+      const id = crypto.randomUUID();
+      await db.insert(runs).values({
+        id,
+        orgId: ORG,
+        userId: null,
+        prompt: "durable parent",
+        model,
+        engine: "opencode",
+        status: "completed",
+        threadId: id,
+      });
+      return id;
+    };
+    const reply = (parentId: string, model: string) => {
+      const runId = crypto.randomUUID();
+      const intent: RunCommandIntent = {
+        ...runIntentForTest("durable reply"),
+        model,
+        engine: "opencode",
+        parentRunId: parentId,
+      };
+      const command = commandForTest(runId, `legacy-reply:${crypto.randomUUID()}`, intent);
+      return { runId, command: { ...command, run: { ...command.run, threadId: parentId } } };
+    };
+    try {
+      const gemmaParent = await parent(CEREBRAS_GEMMA_MODEL);
+      const inherited = reply(gemmaParent, CEREBRAS_GEMMA_MODEL);
+      expect(
+        await acceptExistingThreadFollowup(ORG, gemmaParent, inherited.command),
+      ).toMatchObject({ status: "created", runId: inherited.runId });
+
+      const qwenParent = await parent(CEREBRAS_QWEN_MODEL);
+      const switched = reply(qwenParent, CEREBRAS_GEMMA_MODEL);
+      await expect(
+        acceptExistingThreadFollowup(ORG, qwenParent, switched.command),
+      ).rejects.toThrow(`model ${CEREBRAS_GEMMA_MODEL} is not allowed`);
+
+      const root = reply(crypto.randomUUID(), CEREBRAS_GEMMA_MODEL);
+      await expect(
+        acceptRunCommand({
+          ...root.command,
+          run: { ...root.command.run, parentRunId: null, threadId: root.runId },
+        }),
+      ).rejects.toThrow(`model ${CEREBRAS_GEMMA_MODEL} is not allowed`);
+      await retire(gemmaParent);
+      await retire(qwenParent);
+    } finally {
+      if (previousHealth === undefined) delete process.env.PROVIDER_HEALTH_CEREBRAS;
+      else process.env.PROVIDER_HEALTH_CEREBRAS = previousHealth;
+    }
+  });
+
   test("internal qualification acceptance emits no customer org run signal", async () => {
     const changes: OrgChange[] = [];
     const unsubscribe = subscribeOrg(ORG, (change) => changes.push(change));

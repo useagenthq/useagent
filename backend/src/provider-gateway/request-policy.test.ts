@@ -65,20 +65,27 @@ describe("provider request body policy", () => {
     )).toEqual({ ok: false, error: "model_not_allowed" });
   });
 
-  test("accepts only Gemma's bare model id for a Cerebras OpenCode run", () => {
-    const cerebrasRun = {
+  test("accepts the exact current or legacy bare model id for a Cerebras run", () => {
+    for (const model of ["qwen-3.8-27b", "gemma-4-31b"]) {
+      const cerebrasRun = {
+        ...run,
+        engine: "opencode",
+        model: `cerebras/${model}`,
+      } satisfies GatewayRun;
+      expect(applyProviderBodyPolicy(
+        cerebrasRun,
+        JSON.stringify({ model }),
+        "max_tokens",
+        100,
+      ).ok).toBe(true);
+    }
+    const currentRun = {
       ...run,
       engine: "opencode",
-      model: "cerebras/gemma-4-31b",
+      model: "cerebras/qwen-3.8-27b",
     } satisfies GatewayRun;
     expect(applyProviderBodyPolicy(
-      cerebrasRun,
-      '{"model":"gemma-4-31b"}',
-      "max_tokens",
-      100,
-    ).ok).toBe(true);
-    expect(applyProviderBodyPolicy(
-      cerebrasRun,
+      currentRun,
       '{"model":"gpt-oss-120b"}',
       "max_tokens",
       100,

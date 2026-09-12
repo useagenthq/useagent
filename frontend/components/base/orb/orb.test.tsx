@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Orb, ORB_DARK_INK, ORB_TONES } from "./orb";
+import { Orb, ORB_TONES } from "./orb";
 
 type Rgb = readonly [number, number, number];
 
@@ -45,40 +45,41 @@ describe("Orb", () => {
     }
   });
 
-  test("defaults to the blue tone, the solid variant and a 40px ball", () => {
+  test("defaults to the blue tone, the solid variant, a 40px ball and no face", () => {
     const html = renderToStaticMarkup(<Orb />);
     expect(html).toContain('data-tone="blue"');
     expect(html).toContain('data-variant="solid"');
     expect(html).toContain("size-10");
+    expect(html).not.toContain("orb-face");
   });
 
   test("the ball is clipped and carries the four sheen layers; children stay outside the clip", () => {
     const html = renderToStaticMarkup(
       <Orb tone="rose" size="size-8" className="mt-1" aria-hidden>
-        <svg data-glyph />
         <span data-dot className="absolute -right-0.5 -bottom-0.5" />
       </Orb>,
     );
-    const ball = html.indexOf('class="orb-ball absolute inset-0 overflow-hidden rounded-full"');
-    expect(ball).toBeGreaterThan(-1);
+    expect(html).toContain('class="orb-ball absolute inset-0 overflow-hidden rounded-full"');
     for (const layer of ["glaze", "cap", "glint", "bounce"]) {
       expect(html).toContain(`data-layer="${layer}"`);
     }
-    expect(html.indexOf("<svg data-glyph")).toBeGreaterThan(html.lastIndexOf('data-layer="bounce"'));
-    expect(html).toContain("<span data-dot");
+    expect(html.indexOf("<span data-dot")).toBeGreaterThan(html.lastIndexOf('data-layer="bounce"'));
     expect(html).toContain("mt-1");
     expect(html).toContain('aria-hidden="true"');
   });
 
-  test("ink follows the tone: black on the bright centers, white elsewhere, black on prism", () => {
-    for (const tone of ORB_TONES) {
-      const html = renderToStaticMarkup(<Orb tone={tone} />);
-      expect(html).toContain(`data-ink="${ORB_DARK_INK.has(tone) ? "dark" : "light"}"`);
+  test("the face variant draws two eyes above the ball at every supported size", () => {
+    for (const size of ["size-5", "size-6", "size-8", "size-10", "size-14", "size-16"]) {
+      const html = renderToStaticMarkup(<Orb tone="emerald" size={size} face />);
+      const face = html.indexOf('class="orb-face"');
+      expect(face).toBeGreaterThan(html.lastIndexOf('data-layer="bounce"'));
+      expect(html.slice(face).match(/<span><\/span>/g)).toHaveLength(2);
     }
-    expect(ORB_DARK_INK).toEqual(new Set(["emerald", "amber", "cyan"]));
+  });
+
+  test("the prism variant carries no tone", () => {
     const prism = renderToStaticMarkup(<Orb variant="prism" />);
     expect(prism).toContain('data-variant="prism"');
-    expect(prism).toContain('data-ink="dark"');
     expect(prism).not.toContain("data-tone=");
   });
 });
@@ -107,12 +108,13 @@ describe("the orb recipe in globals.css", () => {
     expect(ball).not.toContain("box-shadow");
   });
 
-  test("the four sheen layers match the reference geometry", () => {
-    expect(block('.orb-sheen[data-layer="glaze"]')).toContain("rgb(255 255 255 / 0.3) 100%");
+  test("the sheen keeps the reference geometry at about half its strength", () => {
+    expect(block('.orb-sheen[data-layer="glaze"]')).toContain("rgb(255 255 255 / 0.16) 100%");
     const cap = block('.orb-sheen[data-layer="cap"]');
     expect(cap).toContain("left: 7.7%");
     expect(cap).toContain("width: 84.6%");
     expect(cap).toContain("height: 38.5%");
+    expect(cap).toContain("rgb(255 255 255 / 0.3) 0%");
     expect(cap).toContain("blur(0.5px)");
     const glint = block('.orb-sheen[data-layer="glint"]');
     expect(glint).toContain("left: 34.6%");
@@ -120,33 +122,33 @@ describe("the orb recipe in globals.css", () => {
     const bounce = block('.orb-sheen[data-layer="bounce"]');
     expect(bounce).toContain("top: 73.1%");
     expect(bounce).toContain("width: 138.5%");
+    expect(bounce).toContain("rgb(255 255 255 / 0.22) 100%");
   });
 
-  test("ink is white by default, black when the component says so, with a shadow only under white", () => {
-    expect(block(".orb")).toContain("color: rgb(255 255 255)");
-    expect(block('.orb[data-ink="dark"]')).toContain("color: rgb(0 0 0)");
-    expect(block('.orb[data-ink="light"] > svg')).toContain("drop-shadow(");
+  test("the eyes are two white dots with a soft shadow", () => {
+    const eye = block(".orb-face > span");
+    expect(eye).toContain("width: 16%");
+    expect(eye).toContain("height: 16%");
+    expect(eye).toContain("background: rgb(255 255 255)");
+    expect(eye).toContain("box-shadow: 0 1px 1.5px");
   });
 
-  test("the palette keeps glyph contrast above 3:1 after the center sheen", () => {
+  test("no tone's lit center gets pale enough to swallow the white eyes", () => {
+    // The eyes are graphic marks with their own drop shadow, not text; amber and
+    // cyan are the palest centers today at about 1.9:1 and set the floor.
     const white: Rgb = [255, 255, 255];
-    const black: Rgb = [0, 0, 0];
     for (const tone of ORB_TONES) {
       const pair = block(`.orb[data-tone="${tone}"]`);
       const light = rgbVariable(pair, "orb-light");
-      const deep = rgbVariable(pair, "orb-deep");
-      const foreground = ORB_DARK_INK.has(tone) ? black : white;
-      const centerWithSheen = whiteSheen(light, 0.15);
-      const worstBackground = ORB_DARK_INK.has(tone) ? deep : centerWithSheen;
-      expect(contrast(foreground, worstBackground)).toBeGreaterThanOrEqual(3);
-      if (tone === "fuchsia" || tone === "slate") {
-        expect(contrast(foreground, whiteSheen(light, 0.2))).toBeGreaterThanOrEqual(3.2);
-      }
+      expect(contrast(white, whiteSheen(light, 0.15))).toBeGreaterThanOrEqual(1.8);
     }
   });
 
   test("the prism variant is a pastel conic sweep with a dark ring on the wrapper", () => {
     expect(block('.orb[data-variant="prism"] > .orb-ball')).toContain("conic-gradient(");
     expect(block('.orb[data-variant="prism"]')).toContain("0 0 0 2px rgb(0 0 0 / 0.35)");
+    const eye = block('.orb[data-variant="prism"] > .orb-face > span');
+    expect(eye).toContain("background: rgb(0 0 0)");
+    expect(eye).toContain("rgb(255 255 255 / 0.45)");
   });
 });

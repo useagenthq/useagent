@@ -44,9 +44,9 @@ function runContext(): EngineRunContext {
 
 describe("OpenCode generated config placement", () => {
   test("routes Cerebras models through OpenCode's native provider", () => {
-    expect(openCodeModelBody("cerebras/gemma-4-31b")).toEqual({
+    expect(openCodeModelBody("cerebras/qwen-3.8-27b")).toEqual({
       providerID: "cerebras",
-      modelID: "gemma-4-31b",
+      modelID: "qwen-3.8-27b",
     });
   });
 
@@ -92,6 +92,10 @@ describe("OpenCode generated config placement", () => {
         name: "Cerebras",
         options: { baseURL: "https://gateway.example.test/api/provider/cerebras/v1" },
         models: {
+          "qwen-3.8-27b": {
+            name: "Qwen 3.8 27B",
+            limit: { context: 65_536, output: 32_768 },
+          },
           "gemma-4-31b": {
             name: "Gemma 4 31B",
             limit: { context: 131_072, output: 40_960 },

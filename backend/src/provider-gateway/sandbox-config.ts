@@ -4,7 +4,11 @@ import type { SandboxHandle } from "../sandboxes/provider";
 import { providerGatewayConfig, PROVIDER_GATEWAY_PATH } from "./config";
 import { type ProviderId } from "./provider";
 import { mintProviderToken } from "./token";
-import { CEREBRAS_GEMMA_MODEL, DEFAULT_CODEX_MODEL } from "../runs/model-policy";
+import {
+  CEREBRAS_GEMMA_MODEL,
+  CEREBRAS_QWEN_MODEL,
+  DEFAULT_CODEX_MODEL,
+} from "../runs/model-policy";
 import {
   THREAD_TOKEN_REUSE_WINDOW_MS,
   ThreadTokenMemo,
@@ -48,6 +52,11 @@ export function mergeOpenCodeProviderConfig(
     name: "Cerebras",
     models: {
       ...existingModels,
+      [CEREBRAS_QWEN_MODEL.slice("cerebras/".length)]: {
+        name: "Qwen 3.8 27B",
+        limit: { context: 65_536, output: 32_768 },
+      },
+      // Existing durable Gemma threads may still resume or receive replies.
       [CEREBRAS_GEMMA_MODEL.slice("cerebras/".length)]: {
         name: "Gemma 4 31B",
         limit: { context: 131_072, output: 40_960 },

@@ -11,12 +11,11 @@ import { Select, SelectItem } from "@/components/base/select/select";
 import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cx } from "@/utils/cx";
-import { AvatarMark, botOrb, iconFor } from "./avatar-mark";
+import { AvatarMark, botOrb } from "./avatar-mark";
 import { BOT_SUGGESTIONS, type BotSuggestion } from "./suggestions";
 import {
   type ApiBot,
   apiErrorText,
-  BOT_AVATAR_ICONS,
   BOT_AVATAR_TONES,
   engineHasComputer,
   engineLabel,
@@ -33,9 +32,9 @@ function engineNote(engine: string): string {
 }
 
 /**
- * The reference's creation screen: one big avatar, a row of colors, a row of
- * shapes, a name, one button. Each swatch row is one radio group (one tab
- * stop, arrows move), and focus opens on the name. The job, rules and model
+ * The reference's creation screen: one big avatar, a row of colors, a name,
+ * one button. The color row is one radio group (one tab stop, arrows move),
+ * and focus opens on the name. The job, rules and model
  * live in the bot's details after creation; the engine is the one thing a bot
  * cannot change later, so it always shows here (a read-only line when only
  * one is ready).
@@ -145,29 +144,6 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                   <Orb {...botOrb(option)} size="size-6" />
                 </AriaRadio>
               ))}
-            </AriaRadioGroup>
-            <AriaRadioGroup aria-label="Icon" value={icon} onChange={setIcon} className="flex items-center gap-1.5">
-              {BOT_AVATAR_ICONS.map((option) => {
-                const Icon = iconFor(option);
-                return (
-                  <AriaRadio
-                    key={option}
-                    value={option}
-                    aria-label={`Icon ${option}`}
-                    className={({ isSelected, isFocusVisible }) =>
-                      cx(
-                        "flex size-8 cursor-pointer items-center justify-center rounded-lg transition-colors",
-                        isSelected
-                          ? "bg-background-secondary-default text-text-primary ring-1 ring-border-button-hover ring-inset"
-                          : "text-text-tertiary hover:bg-background-primary-hover",
-                        isFocusVisible && FOCUS_RING,
-                      )
-                    }
-                  >
-                    <Icon className="size-4" />
-                  </AriaRadio>
-                );
-              })}
             </AriaRadioGroup>
           </div>
 

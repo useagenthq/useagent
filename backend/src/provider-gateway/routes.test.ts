@@ -169,9 +169,9 @@ describe("provider gateway routes", () => {
     expect(JSON.parse(forwardedBody).model).toBe("gpt-5.6-luna");
   });
 
-  test("Cerebras Gemma uses native chat completions with the server-side key", async () => {
+  test("Cerebras Qwen uses native chat completions with the server-side key", async () => {
     const cerebrasClaims = { ...claims, provider: "cerebras" as const };
-    const cerebrasRun = { ...run, model: "cerebras/gemma-4-31b" };
+    const cerebrasRun = { ...run, model: "cerebras/qwen-3.8-27b" };
     let forwardedUrl = "";
     let forwardedBody = "";
     let forwardedAuthorization = "";
@@ -187,11 +187,11 @@ describe("provider gateway routes", () => {
     }).request("/api/provider/cerebras/v1/chat/completions", {
       method: "POST",
       headers: { authorization: "Bearer sandbox-capability" },
-      body: JSON.stringify({ model: "gemma-4-31b", max_tokens: 16 }),
+      body: JSON.stringify({ model: "qwen-3.8-27b", max_tokens: 16 }),
     });
     expect(response.status).toBe(200);
     expect(forwardedUrl).toBe("https://api.cerebras.ai/v1/chat/completions");
-    expect(JSON.parse(forwardedBody).model).toBe("gemma-4-31b");
+    expect(JSON.parse(forwardedBody).model).toBe("qwen-3.8-27b");
     expect(forwardedAuthorization).toBe("Bearer real-upstream-key");
   });
 
