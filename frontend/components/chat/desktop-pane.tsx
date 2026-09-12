@@ -178,7 +178,7 @@ export function DesktopPane({
   const [status, setStatus] = useState("No active sandbox. Send a message to start one.");
   // The Agent Screen stage: the frame plus, while expanded, the viewer chrome.
   // Pointer and focus activity inside it never releases captured input.
-  const surfaceRef = useRef<HTMLDialogElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   // Mirrors inputCaptured synchronously so the focus-steal guard cannot race
   // the explicit transition from watch-only to interactive desktop input.
@@ -357,7 +357,7 @@ export function DesktopPane({
   return (
     <div className="size-full overflow-y-auto p-3">
       <AgentScreen
-        ref={surfaceRef}
+        surfaceRef={surfaceRef}
         status={desktopScreenStatus({ connected, live })}
         loading={!connected}
         loadingCaption={ready ? undefined : status}

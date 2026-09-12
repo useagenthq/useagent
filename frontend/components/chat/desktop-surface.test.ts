@@ -182,6 +182,9 @@ describe("Desktop product surface", () => {
     // The one toggle lives in the card's status row while collapsed and in the
     // viewer's title bar while open; no click-to-control overlay anywhere.
     expect(agentScreen).toContain("{!open && controls}");
+    expect(agentScreen).toContain("ref={surfaceRef}");
+    expect(agentScreen).toContain("ref={openButtonRef}");
+    expect(desktopPane).toContain("surfaceRef={surfaceRef}");
     expect(desktopPane).not.toContain("Click to control desktop");
   });
 

@@ -50,14 +50,14 @@ describe("agent screen card", () => {
     expect(html).toContain('data-testid="live"');
     expect(html).not.toContain('role="dialog"');
     expect(html).toContain("Take control");
-    expect(html).toContain('aria-label="Expand"');
+    expect(html).toContain('aria-label="Expand Nova&#x27;s screen"');
     expect(html).not.toContain('aria-label="Collapse"');
   });
 
   test("collapsed and interactive: the frame takes the pointer, so the Open overlay steps aside", () => {
     const html = render(false, { interactive: true });
     expect(html).not.toContain('aria-label="Open Nova&#x27;s screen"');
-    expect(html).toContain('aria-label="Expand"');
+    expect(html).toContain('aria-label="Expand Nova&#x27;s screen"');
     expect(html).toContain('data-testid="live"');
   });
 

@@ -93,6 +93,8 @@ export interface AgentScreenProps {
   interactive?: boolean;
   /** The stage that holds the screen and the viewer chrome in both states. */
   ref?: Ref<HTMLDialogElement>;
+  /** The complete interactive surface: stage plus collapsed controls. */
+  surfaceRef?: Ref<HTMLDivElement>;
   className?: string;
 }
 
@@ -113,6 +115,7 @@ export function AgentScreen({
   controls,
   interactive = false,
   ref,
+  surfaceRef,
   className,
 }: AgentScreenProps) {
   const stageRef = useRef<HTMLDialogElement | null>(null);
@@ -158,7 +161,11 @@ export function AgentScreen({
     : { role: "presentation" as const };
 
   return (
-    <div data-agent-screen={open ? "open" : "collapsed"} className={cx("flex w-full flex-col gap-2.5", className)}>
+    <div
+      ref={surfaceRef}
+      data-agent-screen={open ? "open" : "collapsed"}
+      className={cx("flex w-full flex-col gap-2.5", className)}
+    >
       {/* The slot keeps the card's footprint while the stage is in the top layer. */}
       <div className={cx("relative w-full", AGENT_SCREEN_ASPECT, open && "rounded-2xl bg-background-secondary-default")}>
         <dialog
@@ -267,12 +274,13 @@ export function AgentScreen({
           {!open && controls}
           {!open && !loading && (
             <Button
+              ref={openButtonRef}
               variant="ghost"
               size="small"
               iconOnly
               leadingIcon={RiExpandDiagonal2Line}
-              aria-label="Expand"
-              title="Expand"
+              aria-label={`Expand ${label}`}
+              title={`Expand ${label}`}
               onClick={(event) => {
                 openerRef.current = event.currentTarget;
                 onOpenChange(true);
