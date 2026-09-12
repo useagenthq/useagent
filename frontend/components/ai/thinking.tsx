@@ -29,9 +29,9 @@ export interface ThinkingProps {
 /**
  * Collapsible "Thinking" disclosure: one rounded pill reading the label, a
  * muted detail and, at its end, the chevron, over the steps region behind a
- * hairline connector. A fixed leading status slot holds the pixel loader while
- * the agent is working and stays reserved once settled, so the label never
- * shifts when the loader disappears. The settled chevron remains at the end.
+ * hairline connector. The leading status slot holds the pixel loader only
+ * while the agent is working. Settled labels have no empty loader slot;
+ * the chevron remains at the end.
  * No star or sparkle in any state. The
  * region mounts only while expanded, so a long trace never hits the DOM behind
  * a closed header. Ported from the beautiful-ui Thinking demo onto our
