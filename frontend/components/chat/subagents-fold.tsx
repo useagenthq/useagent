@@ -17,7 +17,7 @@ import type {
 } from "@useagent/agent-client";
 import Link from "next/link";
 import { useMemo } from "react";
-import { childStatusLabel, isChildActive } from "@/components/chat/agents-rail";
+import { childStatusLabel, isChildActive } from "@/components/chat/agent-status";
 import type { MergedChildFidelity } from "@/components/chat/canonical-children";
 import type { CanonicalEventLike } from "@/components/chat/canonical-timeline";
 import { deriveChildrenViewFromExecutionSummary } from "@/components/chat/execution-summary-rollout";

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import { composerPlaceholder, getComposerAction } from "./composer";
+import { composerPlaceholder, getComposerAction } from "./composer-model";
 
 describe("composer action contract", () => {
   test("keeps idle drafts on the compact send action", () => {
