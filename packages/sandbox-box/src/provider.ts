@@ -50,7 +50,9 @@ export interface BoxApiConfig {
 
 export type BoxFetch = (input: string, init: RequestInit) => Promise<Response>;
 
-export type BoxProviderOptions = Pick<SandboxProviderPorts, "fetchImpl" | "labels" | "sleep">;
+export type BoxProviderOptions = Pick<SandboxProviderPorts, "fetchImpl" | "labels" | "sleep"> & {
+  readonly now?: () => number;
+};
 
 export class BoxApiError extends Error {
   constructor(
@@ -83,6 +85,9 @@ const WORK_DIR = `${HOME_DIR}/work`;
 const STATE_DIR = `${HOME_DIR}/.useagent`;
 const NATIVE_DESKTOP_PORT = 6080;
 const SYNC_COMMAND_CAP_SECONDS = 600;
+// The hosted request path can close at roughly 30 seconds even though the API
+// accepts a larger command timeout. Longer work must use the detached poller.
+const RELIABLE_SYNC_COMMAND_SECONDS = 30;
 const READY_POLL_MS = 2_000;
 const READY_TIMEOUT_MS = 240_000;
 const DESKTOP_READY_TIMEOUT_MS = 120_000;
@@ -304,6 +309,7 @@ class BoxApi {
     private readonly config: BoxApiConfig,
     private readonly fetchImpl: BoxFetch,
     readonly sleep: (ms: number) => Promise<void>,
+    readonly now: () => number,
   ) {}
 
   get apiKey(): string {
@@ -482,38 +488,87 @@ class BoxProcess implements SandboxProcess {
     command: string,
     cwd?: string,
     env?: Record<string, string>,
-    timeoutSeconds = SYNC_COMMAND_CAP_SECONDS,
+    timeoutSeconds = RELIABLE_SYNC_COMMAND_SECONDS,
   ): Promise<SandboxExecuteResult> {
     const composed = composeBoxCommand(command, cwd, env);
-    if (timeoutSeconds <= SYNC_COMMAND_CAP_SECONDS) {
+    if (timeoutSeconds <= RELIABLE_SYNC_COMMAND_SECONDS) {
       const result = await this.api.command(this.boxId, composed, timeoutSeconds);
       return {
         exitCode: result.timedOut ? 124 : (result.exitCode ?? undefined),
         result: `${result.stdout}${result.stderr}`,
       };
     }
-    // Past the sync cap: run detached, poll the exit marker, read the log.
+    // Past the reliable sync window: run detached, poll the exit marker, read the log.
     const id = crypto.randomUUID();
     const dir = `${STATE_DIR}/cmd/${id}`;
+    const runPath = `${dir}/run.sh`;
+    const launchPath = `${dir}/launch.sh`;
+    const pidPath = `${dir}/pid`;
+    const exitPath = `${dir}/exit`;
+    const logPath = `${dir}/log`;
     await this.api.command(this.boxId, `mkdir -p ${q(dir)}`, 30);
-    await this.api.writeFile(this.boxId, `${dir}/run.sh`, Buffer.from(composed));
-    await this.api.detach(
-      this.boxId,
-      `cd ${q(HOME_DIR)} && nohup sh -c 'sh ${q(`${dir}/run.sh`)} >${q(`${dir}/log`)} 2>&1; echo $? >${q(`${dir}/exit`)}' </dev/null >/dev/null 2>&1 &`,
-    );
-    const deadline = Date.now() + timeoutSeconds * 1000;
-    let exitCode: number | undefined;
-    while (Date.now() < deadline) {
-      const marker = await this.api.readFile(this.boxId, `${dir}/exit`).catch(() => null);
-      if (marker) {
-        exitCode = Number.parseInt(marker.toString("utf8").trim(), 10);
-        if (Number.isNaN(exitCode)) exitCode = undefined;
-        break;
+    let launchAttempted = false;
+    let completed = false;
+    try {
+      const remoteTimeoutSeconds = Math.min(
+        Math.max(1, Math.round(timeoutSeconds)),
+        SYNC_COMMAND_CAP_SECONDS,
+      );
+      const launchScript = [
+        "#!/bin/sh",
+        "set +e",
+        `cleanup() { rm -f ${q(runPath)} ${q(launchPath)}; }`,
+        "trap cleanup EXIT HUP INT TERM",
+        `printf '%s\\n' "$$" > ${q(pidPath)}`,
+        `command=$(cat ${q(runPath)})`,
+        `rm -f ${q(runPath)}`,
+        `timeout --foreground --signal=TERM --kill-after=5s ${remoteTimeoutSeconds}s ` +
+          `sh -c "$command" >${q(logPath)} 2>&1`,
+        "code=$?",
+        `printf '%s\\n' "$code" > ${q(exitPath)}`,
+        "exit 0",
+        "",
+      ].join("\n");
+      await this.api.writeFile(this.boxId, runPath, Buffer.from(composed));
+      await this.api.writeFile(this.boxId, launchPath, Buffer.from(launchScript));
+      launchAttempted = true;
+      await this.api.detach(
+        this.boxId,
+        `cd ${q(HOME_DIR)} && nohup setsid sh ${q(launchPath)} </dev/null >/dev/null 2>&1 &`,
+      );
+      const deadline = this.api.now() + timeoutSeconds * 1000;
+      let exitCode: number | undefined;
+      while (this.api.now() < deadline) {
+        const marker = await this.api.readFile(this.boxId, exitPath).catch(() => null);
+        if (marker) {
+          exitCode = Number.parseInt(marker.toString("utf8").trim(), 10);
+          if (Number.isNaN(exitCode)) exitCode = undefined;
+          completed = exitCode !== undefined && exitCode !== 124 && exitCode !== 137;
+          break;
+        }
+        await this.api.sleep(LONG_POLL_MS);
       }
-      await this.api.sleep(LONG_POLL_MS);
+      const log = await this.api.readFile(this.boxId, logPath).catch(() => Buffer.alloc(0));
+      return { exitCode: exitCode ?? 124, result: log.toString("utf8") };
+    } finally {
+      if (launchAttempted && !completed) {
+        await this.api.command(
+          this.boxId,
+          `i=0; while ! test -s ${q(pidPath)} && ! test -s ${q(exitPath)} && ` +
+            `test "$i" -lt 50; do i=$((i + 1)); sleep 0.1; done; ` +
+            `if test -s ${q(exitPath)}; then ` +
+            `code=$(cat ${q(exitPath)}); case "$code" in 124|137) :;; *[!0-9]*|'') :;; *) exit 0;; esac; fi; ` +
+            `if test -s ${q(pidPath)}; then ` +
+            `p=$(cat ${q(pidPath)}); case "$p" in *[!0-9]*|'') exit 1;; esac; ` +
+            `kill -TERM -- "-$p" 2>/dev/null || true; ` +
+            `i=0; while kill -0 -- "-$p" 2>/dev/null && test "$i" -lt 10; do ` +
+            `i=$((i + 1)); sleep 0.1; done; ` +
+            `kill -KILL -- "-$p" 2>/dev/null || true; fi`,
+          30,
+        ).catch(() => {});
+      }
+      await this.api.command(this.boxId, `rm -rf ${q(dir)}`, 30).catch(() => {});
     }
-    const log = await this.api.readFile(this.boxId, `${dir}/log`).catch(() => Buffer.alloc(0));
-    return { exitCode: exitCode ?? 124, result: log.toString("utf8") };
   }
 
   private sessionDir(sessionId: string): string {
@@ -745,7 +800,12 @@ class BoxProvider implements SandboxProvider {
     private readonly config: BoxApiConfig,
     options: BoxProviderOptions,
   ) {
-    this.api = new BoxApi(config, options.fetchImpl ?? ((input, init) => fetch(input, init)), options.sleep ?? defaultSleep);
+    this.api = new BoxApi(
+      config,
+      options.fetchImpl ?? ((input, init) => fetch(input, init)),
+      options.sleep ?? defaultSleep,
+      options.now ?? Date.now,
+    );
     // Labels are the trust anchor; the control plane passes its durable store. Without one (tests,
     // dry runs) they live in this process only.
     this.labels = options.labels ?? memorySandboxLabelStore();

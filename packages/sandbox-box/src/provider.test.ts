@@ -3,6 +3,7 @@ import { access, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type BoxApiConfig,
+  type BoxProviderOptions,
   boxCliProblem,
   boxPreviewLink,
   boxPtyEnv,
@@ -44,6 +45,8 @@ function fakeBoxApi(
     archivingPolls?: number;
     createState?: string;
     desktopProvisioningPolls?: number;
+    failDetached?: boolean;
+    failWriteSuffix?: string;
   } = {},
 ) {
   const boxes = new Map(initial.map((box) => [box.id, { ...box }]));
@@ -130,7 +133,12 @@ function fakeBoxApi(
       const command = String((body as { command: string }).command);
       commands.push(command);
       const canned = commandResults.get(command) ?? { stdout: `ran: ${command}`, stderr: "", exitCode: 0 };
-      if ((body as { detached?: boolean }).detached) return json(200, { ok: true, type: "command.started", processId: 1 });
+      if ((body as { detached?: boolean }).detached) {
+        if (options.failDetached) {
+          return json(503, { ok: false, code: "detach_failed", message: "detach failed" });
+        }
+        return json(200, { ok: true, type: "command.started", processId: 1 });
+      }
       return json(200, { ok: true, type: "command.finished", ...canned });
     }
     if (method === "POST" && sub === "desktop") {
@@ -154,6 +162,9 @@ function fakeBoxApi(
     }
     if (method === "PUT" && sub === "files") {
       const { path: filePath, content, encoding } = body as { path: string; content: string; encoding: string };
+      if (options.failWriteSuffix && filePath.endsWith(options.failWriteSuffix)) {
+        return json(503, { ok: false, code: "write_failed", message: "write failed" });
+      }
       files.set(`${box.id}:${filePath}`, Buffer.from(content, encoding === "base64" ? "base64" : "utf8"));
       return json(200, { ok: true, type: "file.written", path: filePath, size: content.length });
     }
@@ -176,8 +187,24 @@ function fakeBoxApi(
 // Yields to the event loop (so test timers fire) without waiting for real poll intervals.
 const noSleep = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-function provider(api: ReturnType<typeof fakeBoxApi>, overrides: Partial<BoxApiConfig> = {}, labels = memorySandboxLabelStore()) {
-  return { provider: boxSandboxProvider({ ...config, ...overrides }, { fetchImpl: api.fetchImpl, labels, sleep: noSleep }), labels };
+function provider(
+  api: ReturnType<typeof fakeBoxApi>,
+  overrides: Partial<BoxApiConfig> = {},
+  labels = memorySandboxLabelStore(),
+  options: Pick<BoxProviderOptions, "now" | "sleep"> = {},
+) {
+  return {
+    provider: boxSandboxProvider(
+      { ...config, ...overrides },
+      {
+        fetchImpl: api.fetchImpl,
+        labels,
+        sleep: options.sleep ?? noSleep,
+        now: options.now,
+      },
+    ),
+    labels,
+  };
 }
 
 describe("Box sandbox provider", () => {
@@ -278,14 +305,88 @@ describe("Box sandbox provider", () => {
     const sandbox = await provider(api).provider.get("bx_c");
     expect(await sandbox.process.executeCommand("false")).toEqual({ exitCode: 1, result: "nope" });
     expect(await sandbox.process.executeCommand("sleep 999", undefined, undefined, 5)).toEqual({ exitCode: 124, result: "" });
-    // > 600 s: mkdir, script written, detached launcher, exit marker polled
-    const long = sandbox.process.executeCommand("make world", "/home/user/work", undefined, 900);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    const dir = [...api.files.keys()].find((k) => k.endsWith("/run.sh"))!.replace("bx_c:", "").replace("/run.sh", "");
+    // A production-sized 300 s install must not depend on the hosted sync request.
+    const long = sandbox.process.executeCommand("make world", "/home/user/work", undefined, 300);
+    let runScript = [...api.files.keys()].find((key) => key.endsWith("/run.sh"));
+    for (let attempt = 0; !runScript && attempt < 100; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      runScript = [...api.files.keys()].find((key) => key.endsWith("/run.sh"));
+    }
+    expect(runScript).toBeDefined();
+    const dir = runScript!.replace("bx_c:", "").replace(/\/run\.sh$/, "");
     expect(api.commands.some((c) => c === `mkdir -p '${dir}'`)).toBe(true);
+    const launchScript = api.files.get(`bx_c:${dir}/launch.sh`)?.toString("utf8") ?? "";
+    expect(Bun.spawnSync(["sh", "-n"], { stdin: Buffer.from(launchScript) }).exitCode).toBe(0);
+    expect(launchScript).toContain("timeout --foreground --signal=TERM --kill-after=5s 300s");
+    expect(launchScript).not.toContain("make world");
     api.files.set(`bx_c:${dir}/log`, Buffer.from("built\n"));
     api.files.set(`bx_c:${dir}/exit`, Buffer.from("0\n"));
     expect(await long).toEqual({ exitCode: 0, result: "built\n" });
+    expect(api.commands).toContain(`rm -rf '${dir}'`);
+    expect(api.commands.some((command) => command.includes("kill -TERM"))).toBe(false);
+  });
+
+  test("long command timeout stops its process group before cleanup", async () => {
+    let now = 0;
+    const api = fakeBoxApi([
+      { id: "bx_timeout", state: "ready", vcpu: 4, memoryGB: 8, subdomain: "timeout" },
+    ]);
+    const sandbox = await provider(api, {}, memorySandboxLabelStore(), {
+      now: () => now,
+      sleep: async () => { now += 31_000; },
+    }).provider.get("bx_timeout");
+
+    expect(await sandbox.process.executeCommand("sleep forever", undefined, undefined, 31))
+      .toEqual({ exitCode: 124, result: "" });
+    const stop = api.commands.findIndex((command) => command.includes("kill -TERM"));
+    const cleanup = api.commands.findIndex((command) => command.startsWith("rm -rf "));
+    expect(stop).toBeGreaterThan(-1);
+    expect(cleanup).toBeGreaterThan(stop);
+  });
+
+  test("a remote timeout marker still terminates surviving descendants", async () => {
+    const api = fakeBoxApi([
+      { id: "bx_remote_timeout", state: "ready", vcpu: 4, memoryGB: 8, subdomain: "remote-timeout" },
+    ]);
+    const sandbox = await provider(api).provider.get("bx_remote_timeout");
+    const pending = sandbox.process.executeCommand("spawn grandchild", undefined, undefined, 300);
+    let runScript = [...api.files.keys()].find((key) => key.endsWith("/run.sh"));
+    for (let attempt = 0; !runScript && attempt < 100; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      runScript = [...api.files.keys()].find((key) => key.endsWith("/run.sh"));
+    }
+    expect(runScript).toBeDefined();
+    const dir = runScript!.replace("bx_remote_timeout:", "").replace(/\/run\.sh$/, "");
+    api.files.set(`bx_remote_timeout:${dir}/pid`, Buffer.from("4321\n"));
+    api.files.set(`bx_remote_timeout:${dir}/exit`, Buffer.from("124\n"));
+
+    expect(await pending).toEqual({ exitCode: 124, result: "" });
+    const stop = api.commands.findIndex((command) => command.includes("kill -TERM"));
+    const cleanup = api.commands.findIndex((command) => command.startsWith("rm -rf "));
+    expect(stop).toBeGreaterThan(-1);
+    expect(cleanup).toBeGreaterThan(stop);
+  });
+
+  test("long command setup failures still remove their private command directory", async () => {
+    for (const failure of ["write", "detach"] as const) {
+      const api = fakeBoxApi(
+        [{ id: `bx_${failure}`, state: "ready", vcpu: 4, memoryGB: 8, subdomain: failure }],
+        failure === "write" ? { failWriteSuffix: "/run.sh" } : { failDetached: true },
+      );
+      const sandbox = await provider(api).provider.get(`bx_${failure}`);
+
+      await expect(sandbox.process.executeCommand("private command", undefined, undefined, 300))
+        .rejects.toThrow(`${failure} failed`);
+      expect(api.commands.some((command) => command.startsWith("rm -rf "))).toBe(true);
+      expect(api.commands.some((command) => command.includes("kill -TERM")))
+        .toBe(failure === "detach");
+      if (failure === "detach") {
+        const stop = api.commands.find((command) => command.includes("kill -TERM")) ?? "";
+        expect(stop).toContain("while ! test -s");
+        expect(stop).toContain("/pid");
+        expect(stop).toContain("/exit");
+      }
+    }
   });
 
   test("files round-trip as base64, and hosted ports become origin links carrying the port-auth cookie", async () => {
