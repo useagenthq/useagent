@@ -7,10 +7,9 @@ const readFromFrontend = (path: string) =>
 
 const shellSources = () => ({
   appShell: read("./app-shell.tsx"),
-  compactSidebarRail: read("./compact-sidebar-rail.tsx"),
+  sidebarFrame: read("./app-sidebar-frame.tsx"),
   librarySidebar: read("./library-sidebar.tsx"),
   searchCommand: read("./search-command.tsx"),
-  sidebarBrand: read("./sidebar-brand.tsx"),
   threadSidebar: read("./thread-sidebar.tsx"),
 });
 
@@ -23,32 +22,33 @@ describe("unified shell contract", () => {
     expect(appShell).not.toContain("label: 'Agent'");
   });
 
-  test("renders the application shell full-bleed without an outer rounded card", () => {
+  test("renders the application as an inset page beside the rail, flush with the top edge", () => {
     const { appShell } = shellSources();
 
-    expect(appShell).toContain("h-dvh w-full overflow-hidden bg-background-full");
-    expect(appShell).not.toContain("p-2");
-    expect(appShell).not.toContain("sm:p-3");
+    expect(appShell).toContain("<SidebarProvider");
+    expect(appShell).toContain("h-dvh overflow-hidden bg-sidebar");
+    expect(appShell).toContain("<SidebarInset");
+    expect(appShell).toContain("md:peer-data-[variant=inset]:mt-0");
+    expect(appShell).toContain("md:peer-data-[variant=inset]:rounded-t-none");
     expect(appShell).not.toContain("rounded-2xl");
     expect(appShell).not.toContain("shadow-regular");
   });
 
-  test("shares one AppShell thread snapshot across expanded, compact, and mobile navigation", () => {
+  test("shares one AppShell thread snapshot across the rail, the panel, and the page", () => {
     const { appShell } = shellSources();
 
     expect(appShell).toContain("<SidebarThreadsProvider>");
     expect(appShell.indexOf("<SidebarThreadsProvider>")).toBeLessThan(
       appShell.indexOf("{sidebar}"),
     );
-    expect(appShell.indexOf("<SidebarThreadsProvider>")).toBeLessThan(
-      appShell.indexOf("<CompactSidebarRail"),
-    );
+    expect(appShell.indexOf("<SidebarThreadsProvider>")).toBeLessThan(appShell.indexOf("{panel}"));
   });
 
-  test("limits primary sidebar navigation to projects, threads, customize, and settings", () => {
-    const { threadSidebar } = shellSources();
+  test("limits primary sidebar navigation to projects, threads, customize, and the account menu", () => {
+    const { threadSidebar, sidebarFrame } = shellSources();
     const projectTree = read("../session-ui/project-thread-tree.tsx");
-    const primaryDestinations = ["Dashboard", "Threads", "Customize", "Settings"];
+    const userMenu = read("./user-menu.tsx");
+    const primaryDestinations = ["Dashboard", "Threads", "Customize"];
     const displacedDestinations = [
       "New chat",
       "New task",
@@ -58,11 +58,9 @@ describe("unified shell contract", () => {
       "Automations",
       "Plugins",
       "Knowledge",
-      "Memory",
       "Wiki",
       "Skills",
       "Playbooks",
-      "Artifacts",
       "Apps",
     ];
 
@@ -70,12 +68,15 @@ describe("unified shell contract", () => {
       expect(`${threadSidebar}\n${projectTree}`).toContain(label);
     }
     for (const label of displacedDestinations) {
-      expect(threadSidebar).not.toContain(`label='${label}'`);
+      expect(threadSidebar).not.toContain(`title: "${label}"`);
     }
-    expect(threadSidebar).not.toContain('label="All projects"');
-    expect(threadSidebar).not.toContain('label="Usage"');
-    expect(threadSidebar).not.toContain('href="/settings#usage"');
-    expect(threadSidebar.match(/href="\/dashboard"/g)).toHaveLength(1);
+    // Settings moved into the account menu behind the footer card.
+    expect(userMenu).toContain("Settings");
+    expect(sidebarFrame).toContain("<UserMenu");
+    expect(threadSidebar).not.toContain('title: "All projects"');
+    expect(threadSidebar).not.toContain('title: "Usage"');
+    expect(threadSidebar).not.toContain('href: "/settings#usage"');
+    expect(threadSidebar.match(/href: "\/dashboard"/g)).toHaveLength(1);
   });
 
   test("groups all library surfaces under Customize", () => {
@@ -91,7 +92,7 @@ describe("unified shell contract", () => {
       "Secrets",
     ];
 
-    expect(threadSidebar).toContain('label="Customize"');
+    expect(threadSidebar).toContain('title: "Customize"');
     for (const label of librarySurfaces) {
       expect(librarySidebar).toContain(`label: "${label}"`);
     }
@@ -161,15 +162,26 @@ describe("unified shell contract", () => {
     expect(projects).not.toContain("Content Engine");
   });
 
-  test("owns brand and search inside the sidebar instead of a global header", () => {
-    const { appShell, librarySidebar, searchCommand, threadSidebar } = shellSources();
+  test("owns brand and search inside the sidebar frame instead of a global header", () => {
+    const { appShell, librarySidebar, searchCommand, sidebarFrame, threadSidebar } = shellSources();
 
     expect(appShell).not.toContain("<TopNav");
-    expect(threadSidebar).toContain("<SidebarBrand");
-    expect(threadSidebar).toContain("<SearchCommand");
-    expect(librarySidebar).toContain("<SidebarBrand");
-    expect(librarySidebar).toContain("<SearchCommand");
+    expect(sidebarFrame).toContain("<OrbitKnotMark");
+    expect(sidebarFrame).toContain("<SearchCommand");
+    expect(threadSidebar).toContain("<AppSidebarFrame");
+    expect(librarySidebar).toContain("<AppSidebarFrame");
     expect(searchCommand).not.toContain('variant === "top"');
+  });
+
+  test("keeps the thread tree with its nested children and project actions", () => {
+    const { threadSidebar } = shellSources();
+    const projects = read("./sidebar-projects.tsx");
+
+    expect(threadSidebar).toContain("<SidebarProjects");
+    expect(projects).toContain("<ProjectThreadTree");
+    expect(projects).toContain("children: childRows(run.id)");
+    expect(projects).toContain("<SidebarProjectMenu");
+    expect(projects).toContain("Show ${");
   });
 
   test("keeps legacy code and design showcases out of product navigation", () => {
@@ -235,8 +247,8 @@ describe("unified shell contract", () => {
     expect(replyComposer).not.toContain('aria-label="Add files"');
   });
 
-  test("folds the project rail to a useful compact rail on a real working transition", () => {
-    const { appShell, compactSidebarRail } = shellSources();
+  test("folds the rail to icons on a real working transition and on the tablet band", () => {
+    const { appShell, sidebarFrame, threadSidebar } = shellSources();
     const threadLayout = readFromFrontend("app/session/(thread)/layout.tsx");
 
     expect(appShell).toContain("useWorkingSignal()");
@@ -247,30 +259,24 @@ describe("unified shell contract", () => {
     expect(appShell).toContain("previousBand.current");
     expect(appShell).toContain("collapseSidebarAtTablet && tabletBand");
     expect(threadLayout).toContain("collapseSidebarAtTablet");
-    expect(appShell).toContain("setSidebarCollapsed(true)");
-    expect(appShell).toContain("inert={sidebarCollapsed}");
-    expect(appShell).toContain("aria-hidden={sidebarCollapsed}");
-    expect(appShell).toContain("<CompactSidebarRail");
-    expect(appShell).toContain('sidebarCollapsed ? "w-0" : "w-64"');
-    expect(appShell).toContain("sidebarRestoreRef.current?.focus()");
-    expect(compactSidebarRail).toContain('aria-label="Expand navigation"');
-    expect(compactSidebarRail).toContain("<SearchCommand compact");
-    expect(compactSidebarRail).toContain('href="/dashboard"');
-    expect(compactSidebarRail).toContain('label="Dashboard"');
-    expect(compactSidebarRail).not.toContain('label="All projects"');
-    expect(compactSidebarRail).toContain('href="/skills"');
-    expect(compactSidebarRail).toContain("<UserMenu");
+    expect(appShell).toContain("setOpen(false)");
+    // The folded rail keeps every destination reachable through icon rows with tooltips.
+    expect(sidebarFrame).toContain('collapsible="icon"');
+    expect(sidebarFrame).toContain("<SidebarTrigger");
+    expect(sidebarFrame).toContain("tooltip={route.title}");
+    expect(threadSidebar).toContain("<CollapsedThreads");
+    expect(sidebarFrame).toContain("<UserMenu");
   });
 
   test("keeps navigation, search, theme, and account reachable on mobile", () => {
-    const { appShell, threadSidebar } = shellSources();
+    const { appShell, sidebarFrame } = shellSources();
 
+    // Below md the rail is an off-canvas sheet opened from the page header.
     expect(appShell).toContain('aria-label="Open navigation"');
-    expect(appShell).toContain('aria-label="Close navigation"');
-    expect(appShell).toContain("mobileOpen ? (");
-    expect(threadSidebar).toContain("<SearchCommand");
-    expect(threadSidebar).toContain("<ThemeToggle");
-    expect(threadSidebar).toContain("<UserMenu");
+    expect(appShell).toContain("md:hidden");
+    expect(sidebarFrame).toContain("<SearchCommand");
+    expect(sidebarFrame).toContain("<ThemeToggle");
+    expect(sidebarFrame).toContain("<UserMenu");
   });
 
   test("provides a direct Open a surface chooser for the right inspector", () => {
@@ -286,7 +292,7 @@ describe("unified shell contract", () => {
 
   test("uses the orbit-knot brand mark and animates it only while working", () => {
     const mark = readFromFrontend("components/foundations/brand/orbit-knot-mark.tsx");
-    const { sidebarBrand } = shellSources();
+    const { sidebarFrame } = shellSources();
 
     expect(mark).toContain('viewBox="0 0 300 300"');
     expect(mark).toContain("M 150.00 51.00 C 176.40 51.00");
@@ -298,8 +304,9 @@ describe("unified shell contract", () => {
     expect(mark).toContain('strokeLinecap="round"');
     expect(mark).toContain("motion-safe:animate-");
     expect(mark).toContain("active &&");
-    expect(sidebarBrand).toContain("OrbitKnotMark");
-    expect(sidebarBrand).not.toContain("border-b");
+    expect(sidebarFrame).toContain("<OrbitKnotMark");
+    expect(sidebarFrame).toContain("active={working}");
+    expect(sidebarFrame).not.toContain("border-b");
   });
 
   test("gives the reply composer drafting room without a second boxed wrapper", () => {
