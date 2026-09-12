@@ -15,6 +15,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import { cx } from "@/utils/cx";
 import { CloseButton } from "@/components/base/buttons/close-button";
+import { OverlayPortalContainerContext, escapeBelongsToNestedOverlay } from "@/components/base/overlay-portal-container";
 import { useFocusReturn } from "@/components/base/modal/focus-return";
 
 const DrawerRoot = DialogPrimitive.Root;
@@ -45,13 +46,25 @@ DrawerOverlay.displayName = "DrawerOverlay";
 const DrawerContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, onOpenAutoFocus, onCloseAutoFocus, ...rest }, forwardedRef) => {
+>(({ className, children, onOpenAutoFocus, onCloseAutoFocus, onEscapeKeyDown, ...rest }, forwardedRef) => {
   const focusReturn = useFocusReturn();
+  // Popovers opened from inside the drawer portal into its content, so the
+  // focus trap and pointer-events lock do not shut them out.
+  const [container, setContainer] = React.useState<HTMLElement | null>(null);
+  const handleEscape = (event: KeyboardEvent) => {
+    onEscapeKeyDown?.(event);
+    if (escapeBelongsToNestedOverlay(event.target, container)) event.preventDefault();
+  };
+  const setRefs = (node: HTMLDivElement | null) => {
+    setContainer(node);
+    if (typeof forwardedRef === "function") forwardedRef(node);
+    else if (forwardedRef) forwardedRef.current = node;
+  };
   return (
     <DrawerPortal>
       <DrawerOverlay>
         <DialogPrimitive.Content
-          ref={forwardedRef}
+          ref={setRefs}
           onOpenAutoFocus={(event) => {
             onOpenAutoFocus?.(event);
             focusReturn.onOpenAutoFocus();
@@ -71,9 +84,12 @@ const DrawerContent = React.forwardRef<
             "data-[state=closed]:slide-out-to-right-full",
             className,
           )}
+          onEscapeKeyDown={handleEscape}
           {...rest}
         >
-          <div className="relative flex size-full flex-col">{children}</div>
+          <OverlayPortalContainerContext.Provider value={container}>
+            <div className="relative flex size-full flex-col">{children}</div>
+          </OverlayPortalContainerContext.Provider>
         </DialogPrimitive.Content>
       </DrawerOverlay>
     </DrawerPortal>

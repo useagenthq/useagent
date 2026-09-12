@@ -21,6 +21,7 @@ import {
 } from "@/components/base/dropdown/menu-styles";
 import { cx } from "@/utils/cx";
 import { useDismissOnOutsidePress, useTriggerToggle } from "@/utils/use-dismiss-on-outside-press";
+import { useOverlayPortalContainer } from "@/components/base/overlay-portal-container";
 
 /**
  * Dropdown — the BoardUI popover-menu recipe as composable primitives, built
@@ -143,10 +144,13 @@ export function DropdownPopover({
   children,
 }: DropdownPopoverProps) {
   const context = useContext(DropdownContext);
+  // Inside a Modal or Drawer the panel must live in the dialog's content.
+  const portalContainer = useOverlayPortalContainer();
   return (
     <AriaPopover
       ref={context?.popoverRef}
       isNonModal
+      UNSTABLE_portalContainer={portalContainer}
       placement={placement}
       offset={offset}
       crossOffset={crossOffset}

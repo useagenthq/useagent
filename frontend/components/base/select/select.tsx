@@ -25,6 +25,7 @@ import {
 import { ChevronDownSmall } from "@/components/foundations/icons/chevrons";
 import { cx } from "@/utils/cx";
 import { useDismissOnOutsidePress, useTriggerToggle } from "@/utils/use-dismiss-on-outside-press";
+import { useOverlayPortalContainer } from "@/components/base/overlay-portal-container";
 
 /**
  * Figma source: Board UI → dashboard 1 dropdown triggers ("All prices" filter
@@ -89,6 +90,8 @@ export function Select<T extends object>({
   useDismissOnOutsidePress(isOpen, () => setIsOpen(false), [triggerRef, popoverRef]);
   // Pressing the trigger while open closes the popover instead of reopening
   const allowOpenChange = useTriggerToggle(isOpen, triggerRef);
+  // Inside a Modal or Drawer the listbox must live in the dialog's content.
+  const portalContainer = useOverlayPortalContainer();
 
   return (
     <AriaSelect
@@ -135,6 +138,7 @@ export function Select<T extends object>({
           <AriaPopover
             ref={popoverRef}
             isNonModal
+            UNSTABLE_portalContainer={portalContainer}
             offset={4}
             className={cx(
               MENU_POPOVER_WIDTH,

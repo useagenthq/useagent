@@ -18,6 +18,7 @@ import { type RemixiconComponentType } from "@remixicon/react";
 
 import { cx } from "@/utils/cx";
 import { CloseButton } from "@/components/base/buttons/close-button";
+import { OverlayPortalContainerContext, escapeBelongsToNestedOverlay } from "@/components/base/overlay-portal-container";
 import { useFocusReturn } from "./focus-return";
 
 const ModalRoot = DialogPrimitive.Root;
@@ -51,13 +52,25 @@ const ModalContent = React.forwardRef<
     overlayClassName?: string;
     showClose?: boolean;
   }
->(({ className, overlayClassName, children, showClose = true, onOpenAutoFocus, onCloseAutoFocus, ...rest }, forwardedRef) => {
+>(({ className, overlayClassName, children, showClose = true, onOpenAutoFocus, onCloseAutoFocus, onEscapeKeyDown, ...rest }, forwardedRef) => {
   const focusReturn = useFocusReturn();
+  // Popovers opened from inside the dialog portal into its content, so the
+  // focus trap and pointer-events lock do not shut them out.
+  const [container, setContainer] = React.useState<HTMLElement | null>(null);
+  const handleEscape = (event: KeyboardEvent) => {
+    onEscapeKeyDown?.(event);
+    if (escapeBelongsToNestedOverlay(event.target, container)) event.preventDefault();
+  };
+  const setRefs = (node: HTMLDivElement | null) => {
+    setContainer(node);
+    if (typeof forwardedRef === "function") forwardedRef(node);
+    else if (forwardedRef) forwardedRef.current = node;
+  };
   return (
     <ModalPortal>
       <ModalOverlay className={overlayClassName}>
         <DialogPrimitive.Content
-          ref={forwardedRef}
+          ref={setRefs}
           onOpenAutoFocus={(event) => {
             onOpenAutoFocus?.(event);
             focusReturn.onOpenAutoFocus();
@@ -78,9 +91,12 @@ const ModalContent = React.forwardRef<
             "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
             className,
           )}
+          onEscapeKeyDown={handleEscape}
           {...rest}
         >
-          {children}
+          <OverlayPortalContainerContext.Provider value={container}>
+            {children}
+          </OverlayPortalContainerContext.Provider>
           {showClose && (
             <ModalClose asChild>
               <CloseButton aria-label="Close" size="md" className="absolute right-4 top-4" />
