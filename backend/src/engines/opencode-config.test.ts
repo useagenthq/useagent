@@ -6,6 +6,7 @@ import {
   buildOpencodeConfigWriteCommand,
   prepareOpencodeSandboxConfig,
 } from "./opencode-server";
+import { openCodeModelBody } from "./opencode-model";
 import { verifyToolToken } from "../knowledge/gateway/token";
 import { LEGACY_TOOL_GATEWAY_SERVER_NAME, TOOL_GATEWAY_SERVER_NAME } from "../knowledge/gateway/descriptor";
 
@@ -42,6 +43,13 @@ function runContext(): EngineRunContext {
 }
 
 describe("OpenCode generated config placement", () => {
+  test("routes Cerebras models through OpenCode's native provider", () => {
+    expect(openCodeModelBody("cerebras/gemma-4-31b")).toEqual({
+      providerID: "cerebras",
+      modelID: "gemma-4-31b",
+    });
+  });
+
   test("writes capabilities to the global config and removes the project copy", () => {
     const command = buildOpencodeConfigWriteCommand("e30=");
 

@@ -82,6 +82,7 @@ import {
   providerGatewayWired,
 } from "../provider-gateway/sandbox-config";
 import { opencodeAssistantError } from "./opencode-message";
+import { openCodeModelBody } from "./opencode-model";
 import { desktopUnavailableStep, ensureSandboxDesktopView } from "./desktop";
 import { createSecretRedactor } from "../secrets/redact";
 import { DEFAULT_OPENCODE_MODEL } from "../runs/model-policy";
@@ -165,15 +166,6 @@ export function buildOpencodeConfigWriteCommand(encodedConfig: string): string {
 
 function authHeaders(server: PreviewLinkBase): Record<string, string> {
   return { ...server.headers };
-}
-
-function modelBody(model: string): { providerID: string; modelID: string } {
-  if (model.startsWith("openai/")) {
-    return { providerID: "openai", modelID: model.slice("openai/".length) };
-  }
-  return model.includes("/")
-    ? { providerID: "openrouter", modelID: model }
-    : { providerID: "anthropic", modelID: model };
 }
 
 /** Bun's fetch accepts a per-request `timeout` (ms; 0 = disable) that neither the
@@ -785,7 +777,7 @@ export function makeOpenCodeProviderDriver(
             method: "POST",
             headers: { ...authHeaders(server), "content-type": "application/json" },
             body: JSON.stringify({
-              model: modelBody(model),
+          model: openCodeModelBody(model),
               parts: [{ type: "text", text: request.input.text }],
             }),
             signal: operationSignal(request.signal, 600_000),
