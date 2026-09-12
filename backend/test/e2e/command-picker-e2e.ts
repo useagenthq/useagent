@@ -10,10 +10,10 @@
  *
  * Deterministic seam: it boots its OWN backend on a throwaway DB + its OWN frontend (isolated
  * dist dir), settles a `mock` run (no sandbox), relabels the thread's engine to claude/codex,
- * and seeds that engine's command catalog directly (the exact row the ACP relay's
- * available_commands_update writes via cacheAcpCommands). So the browser exercises the real
- * frontend picker + real /api/commands route + real DB, with zero cloud cost and zero flake
- * from whether a specific ACP build advertises commands on a given day.
+ * and seeds that engine's command catalog directly (the durable canonical `commands.updated`
+ * a native session advertises). So the browser exercises the real frontend picker + real
+ * /api/commands route + real DB, with zero cloud cost and zero flake from whether a specific
+ * engine build advertises commands on a given day.
  *
  * Run (from backend/):  bun test/e2e/command-picker-e2e.ts
  * Self-cleaning: kills both procs, drops the DB, restores the isolated dist dir + tsconfig.
@@ -161,12 +161,13 @@ async function main() {
         await sleep(500);
       }
       await sql`UPDATE runs SET engine = ${engine} WHERE thread_id = ${runId}`;
-      // seed the catalog the ACP relay would have written (cacheAcpCommands -> acp:<org>:<engine>)
-      const key = `acp:${DEV_ORG_ID}:${engine}`;
+      // seed the catalog a native session would have advertised: the durable canonical
+      // `commands.updated` for this run, which /api/commands reads for the org and engine.
       await sql`
-        INSERT INTO commands_catalog (snapshot, commands, fetched_at)
-        VALUES (${key}, ${sql.json(cmds)}, now())
-        ON CONFLICT (snapshot) DO UPDATE SET commands = EXCLUDED.commands, fetched_at = now()`;
+        INSERT INTO canonical_events (event_id, revision, run_id, thread_id, seq, kind, ts, identity, body)
+        VALUES (${`${runId}:commands`}, 0, ${runId}, ${runId}, 0, 'commands.updated', ${Date.now()},
+          ${sql.json({ provider: engine, nativeSessionId: `ses-${runId}` })},
+          ${sql.json({ catalog: cmds, commands: cmds.map((c: { name: string }) => c.name) })})`;
 
       const page: Page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
       const consoleErrors: string[] = [];
