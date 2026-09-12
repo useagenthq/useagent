@@ -22,7 +22,9 @@ import type {
   HarnessSessionHandle,
 } from "./types";
 import { composeTurnPrompt } from "./types";
-import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
+import { parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
+import { toolStep } from "./tool-step";
+import { createToolCallWatchdog, toolCallTimeoutMs } from "./tool-call-watchdog";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { checkoutPullRequestResources, prepareRepos, shq } from "./repo-prep";
 import { assertNever } from "../util/exhaustive";
@@ -173,41 +175,6 @@ function modelBody(model: string): { providerID: string; modelID: string } {
  *  runtime honours (Bun PR #33647). Typed honestly here so the long-stream fetches
  *  can disable Bun's 5-min idle cap without an `as any`/`as RequestInit` bypass. */
 type FetchInit = RequestInit & { timeout?: number };
-
-const FILE_TOOLS = new Set(["write", "edit", "patch", "multiedit"]);
-
-/** Render an opencode Part's tool call as a step (same grammar as the CLI
- *  JSONL path — the server streams the identical Part model). */
-function toolStep(
-  tool: string,
-  input: Record<string, unknown>,
-  title: string | undefined,
-  output: string | undefined,
-): EmitStep {
-  const code = { tool, input, ...(output !== undefined ? { output } : {}) };
-  if (tool === "task") {
-    const desc = String(input.description ?? title ?? "subagent");
-    return {
-      kind: "task",
-      label: `Subagent — ${truncate(desc, 50)}`,
-      chip: "subagent",
-      code_json: code,
-    };
-  }
-  const isFile = FILE_TOOLS.has(tool.toLowerCase());
-  const filePath = (input.filePath as string) ?? (input.file_path as string) ?? "";
-  const label = isFile
-    ? filePath
-      ? basename(filePath)
-      : title ?? tool
-    : (input.command as string) ?? title ?? tool;
-  return {
-    kind: isFile ? "file" : "command",
-    label: truncate(String(label)),
-    chip: isFile ? "file" : tool === "bash" ? "bash" : tool,
-    code_json: code,
-  };
-}
 
 export async function emitOpenCodeFinalReply(
   ctx: Pick<EngineRunContext, "emit" | "setSummary">,
@@ -1547,6 +1514,18 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const textParts = new Map<string, string>(); // ordered final text parts
       const toolSteps = new Map<string, string>(); // part id → persisted step id
       const toolDone = new Set<string>();
+      const turnAbort = new AbortController();
+      // One wedged tool call must not spin for the whole turn budget: past the
+      // per-call ceiling the step is failed with the tool and command named and
+      // the turn is ended with that message (see the catch below).
+      const toolWatchdog = createToolCallWatchdog({
+        timeoutMs: toolCallTimeoutMs(),
+        onExpired: (expiry) => {
+          const stepId = toolSteps.get(expiry.id);
+          if (stepId) void ctx.updateStep?.(stepId, { ...expiry.code, output: expiry.message, error: true });
+          turnAbort.abort();
+        },
+      });
 
       // Translate one opencode Part (the v1 contract: message.part.updated
       // carries `properties.part`, token deltas ride inline on `properties.delta`)
@@ -1654,10 +1633,16 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
             const id = await ctx.emit(step);
             if (id) {
               toolSteps.set(partId, id);
+              toolWatchdog.start(partId, {
+                tool: part.tool,
+                label: step.label,
+                code: step.code_json as Record<string, unknown>,
+              });
             }
           }
           if ((status === "completed" || status === "error") && toolSteps.has(partId)) {
             toolDone.add(partId);
+            toolWatchdog.finish(partId);
             const output = status === "error" ? String(st.error ?? "") : String(st.output ?? "");
             // The REAL child session this task launched (metadata.sessionId or
             // the <task id> output marker) — the subagent pane attributes the
@@ -1866,7 +1851,6 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
 
       await ctx.emit({ kind: "task", label: "Thinking…", chip: "opencode" });
       const model = ctx.model?.trim() || DEFAULT_MODEL;
-      const turnAbort = new AbortController();
       const timer = setTimeout(() => turnAbort.abort(), Math.max(10_000, budgetMs - (Date.now() - startedAt)));
       const onAbort2 = () => turnAbort.abort();
       ctx.signal.addEventListener("abort", onAbort2, { once: true });
@@ -1925,7 +1909,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       // live tool events the mid-turn poller keeps feeding).
       const turnStartMs = Date.now();
       const waitForCompletion = async (): Promise<typeof reply> => {
-        while (!ctx.signal.aborted) {
+        while (!ctx.signal.aborted && !turnAbort.signal.aborted) {
           const r = await fetch(`${baseUrl}/session/${sessionId}/message${dirQ}`, {
             headers,
             signal: ctx.signal,
@@ -1993,10 +1977,13 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       } catch (err) {
         // Best-effort: tell the engine to stop the turn we abandoned.
         void fetch(`${baseUrl}/session/${sessionId}/abort${dirQ}`, { method: "POST", headers }).catch(() => {});
+        const expiry = toolWatchdog.expired;
+        if (expiry) throw new Error(expiry.message);
         throw err instanceof Error && err.name === "AbortError"
           ? new Error("opencode run aborted (timeout)")
           : err;
       } finally {
+        toolWatchdog.stop();
         clearTimeout(timer);
         ctx.signal.removeEventListener("abort", onAbort2);
         // Give trailing SSE frames a beat to land, then close the stream.

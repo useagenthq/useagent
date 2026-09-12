@@ -4,6 +4,7 @@ import {
   dismissThreadErrorBannerForSession,
   getThreadErrorBannerKey,
   isThreadErrorBannerDismissedForSession,
+  latestTurnFailure,
   shouldShowThreadErrorBanner,
   ThreadErrorBanner,
 } from "./thread-error-banner";
@@ -87,4 +88,15 @@ test("renders Retry only for a real supplied handler", () => {
 
 test("renders nothing for a null error", () => {
   expect(renderToStaticMarkup(<ThreadErrorBanner error={null} />)).toBe("");
+});
+
+test("the banner belongs to the latest turn only", () => {
+  const failed = { status: "failed", summary: "error: opencode prompt failed (error): The operation was aborted." };
+  const completed = { status: "completed", summary: "Denied the change and explained why." };
+  expect(latestTurnFailure([completed, failed])).toBe(failed);
+  // A newer successful turn buries the earlier failure: no banner under it.
+  expect(latestTurnFailure([failed, completed])).toBeUndefined();
+  expect(latestTurnFailure([failed, { status: "queued", summary: null }])).toBeUndefined();
+  expect(latestTurnFailure([{ status: "failed", summary: null }])).toBeUndefined();
+  expect(latestTurnFailure([])).toBeUndefined();
 });
