@@ -3727,36 +3727,36 @@ html {
 }
 
 .orb[data-tone="blue"] {
-  --orb-light: rgb(67 126 247);
-  --orb-deep: rgb(0 77 233);
+  --orb-light: rgb(96 165 250);
+  --orb-deep: rgb(59 130 246);
 }
 .orb[data-tone="violet"] {
-  --orb-light: rgb(133 84 246);
-  --orb-deep: rgb(62 0 205);
+  --orb-light: rgb(167 139 250);
+  --orb-deep: rgb(139 92 246);
 }
 .orb[data-tone="rose"] {
-  --orb-light: rgb(227 71 152);
-  --orb-deep: rgb(211 0 109);
+  --orb-light: rgb(248 113 113);
+  --orb-deep: rgb(239 68 68);
 }
 .orb[data-tone="emerald"] {
-  --orb-light: rgb(85 186 130);
-  --orb-deep: rgb(0 144 64);
+  --orb-light: rgb(34 197 94);
+  --orb-deep: rgb(22 163 74);
 }
 .orb[data-tone="amber"] {
-  --orb-light: rgb(240 158 56);
-  --orb-deep: rgb(229 127 0);
+  --orb-light: rgb(251 146 60);
+  --orb-deep: rgb(249 115 22);
 }
 .orb[data-tone="cyan"] {
-  --orb-light: rgb(56 189 248);
-  --orb-deep: rgb(0 119 182);
+  --orb-light: rgb(6 182 212);
+  --orb-deep: rgb(8 145 178);
 }
 .orb[data-tone="fuchsia"] {
-  --orb-light: rgb(198 52 218);
-  --orb-deep: rgb(162 0 190);
+  --orb-light: rgb(232 121 249);
+  --orb-deep: rgb(217 70 239);
 }
 .orb[data-tone="slate"] {
-  --orb-light: rgb(96 112 142);
-  --orb-deep: rgb(52 64 88);
+  --orb-light: rgb(148 163 184);
+  --orb-deep: rgb(100 116 139);
 }
 
 .orb > .orb-ball {
@@ -4816,4 +4816,68 @@ skynet-oc-session > * {
   height: 100% !important;
   max-height: 100% !important;
   min-height: 0 !important;
+}
+
+/* The vendored sidebar primitives (components/sidebar-kit) read the shadcn color names.
+   Map those names onto this product's tokens so the sidebar follows every
+   theme without a palette of its own. See components/sidebar-kit/README.md. */
+:root,
+.dark {
+  --background: var(--color-background-full);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-background-secondary-default);
+  --card-foreground: var(--color-text-primary);
+  --popover: var(--color-background-secondary-default);
+  --popover-foreground: var(--color-text-primary);
+  --primary: var(--color-accent-500);
+  --primary-foreground: #ffffff;
+  --secondary: var(--color-background-secondary-hover);
+  --secondary-foreground: var(--color-text-primary);
+  --muted: var(--color-background-secondary-hover);
+  --muted-foreground: var(--color-text-tertiary);
+  --accent: var(--color-background-secondary-hover);
+  --accent-foreground: var(--color-text-primary);
+  --destructive: #ef4444;
+  --border: var(--color-border-button-white);
+  --input: var(--color-border-button-default);
+  --ring: var(--color-accent-500);
+  --sidebar: var(--color-background-secondary-default);
+  --sidebar-foreground: var(--color-text-secondary);
+  --sidebar-primary: var(--color-accent-500);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--color-background-secondary-hover);
+  --sidebar-accent-foreground: var(--color-text-primary);
+  --sidebar-muted: var(--color-background-secondary-hover);
+  --sidebar-border: var(--color-border-button-white);
+  --sidebar-ring: var(--color-accent-500);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 }
