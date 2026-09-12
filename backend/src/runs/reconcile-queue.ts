@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { db } from "../db/client";
+import { db, type Executor } from "../db/client";
 import { reconcileQueue } from "../db/schema";
 
 // ---------------------------------------------------------------------------
@@ -146,13 +146,25 @@ export async function bumpReconcile(runId: string, nextAttemptAt: Date, lease?: 
 }
 
 /** Remove a parked row once its run has settled (adopted / failed / stolen), fenced on the
- *  claim's lease when given. Returns whether the row was removed. */
-export async function deleteReconcile(runId: string, lease?: Date): Promise<boolean> {
-  const rows = await db
+ *  claim's lease when given. Runs on `exec` so the reconciler can make it the ownership
+ *  guard INSIDE its finalization transaction. Returns whether the row was removed. */
+export async function deleteReconcile(runId: string, lease?: Date, exec: Executor = db): Promise<boolean> {
+  const rows = await exec
     .delete(reconcileQueue)
     .where(claimedRow(runId, lease))
     .returning({ runId: reconcileQueue.runId });
   return rows.length > 0;
+}
+
+/** Whether the row still carries exactly this claim's lease: the cheap ownership check a
+ *  tick makes before writing anything that is not itself fenced (recovered events). */
+export async function reconcileClaimHeld(runId: string, lease: Date): Promise<boolean> {
+  const [row] = await db
+    .select({ runId: reconcileQueue.runId })
+    .from(reconcileQueue)
+    .where(claimedRow(runId, lease))
+    .limit(1);
+  return !!row;
 }
 
 /** Ops/test read helper. */

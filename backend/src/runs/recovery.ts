@@ -19,6 +19,7 @@ import { orgSecretRedactor } from "../secrets/store";
 import {
   bumpReconcile,
   claimDueReconciles,
+  reconcileClaimHeld,
   deleteReconcile,
   enqueueReconcile,
   nextReconcileAction,
@@ -347,6 +348,7 @@ async function ingestReconciliationEvents(
   redact: Awaited<ReturnType<typeof orgSecretRedactor>>,
   events: readonly HarnessInterimEvent[],
   strict = false,
+  owned?: () => Promise<boolean>,
 ): Promise<number> {
   let recovered = 0;
   for (const ev of events) {
@@ -354,6 +356,9 @@ async function ingestReconciliationEvents(
       if (ev.runScopedId && !ev.id.startsWith(`pe_${entry.runId}_`)) {
         throw new Error(`Recovered event id does not match run ${entry.runId}`);
       }
+      // Ownership is re-checked right before each write: the window in which a tick
+      // that just lost its claim can still land one stale upsert is one round trip.
+      if (owned && !(await owned())) throw new LostClaimError(entry.runId);
       const eventId = ev.runScopedId ? ev.id : scopedProviderEventId(entry.runId, ev.id);
       await recordProviderEvent({
           id: eventId,
@@ -373,7 +378,7 @@ async function ingestReconciliationEvents(
       if (await providerEventExists(eventId)) recovered++;
       else if (strict) throw new Error(`Recovered event ${eventId} was not durable`);
     } catch (error) {
-      if (strict) throw error;
+      if (strict || error instanceof LostClaimError) throw error;
       /* a single malformed event must never abort the probe */
     }
   }
@@ -410,16 +415,50 @@ async function rescheduleEntry(entry: ReconcileEntry): Promise<void> {
   if (!(await bumpReconcile(entry.runId, next, entry.leaseUntil))) lostClaim(entry);
 }
 
+/** Thrown when a tick finds, before writing recovered events, that its claim is gone. */
+class LostClaimError extends Error {
+  constructor(runId: string) {
+    super(`reconcile claim lost for run ${runId}`);
+  }
+}
+
+/** Finalize a parked run only while this tick still owns its row. The fenced delete of
+ *  the parked row IS the ownership guard and runs inside the finalization transaction
+ *  (finalizeRun `claim`), so both commit together: a tick whose row was re-claimed by its
+ *  replacement writes nothing, and a crash can never leave a settled run parked. Returns
+ *  the durable outcome, or null when the claim was lost. */
+async function finalizeOwned(
+  entry: ReconcileEntry,
+  status: "completed" | "failed",
+  summary: string,
+): Promise<Awaited<ReturnType<typeof resolveDurableFinalizationOutcome>> | null> {
+  let held = false;
+  const finalized = await finalizeRun(entry.runId, status, summary, 0, {
+    claim: async (tx) => {
+      held = await deleteReconcile(entry.runId, entry.leaseUntil, tx);
+      return held;
+    },
+  });
+  if (!held) {
+    lostClaim(entry);
+    return null;
+  }
+  const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
+  await settleAndPump(entry.runId, entry.threadId);
+  return durable;
+}
+
 /** One reconcile tick: process every DUE parked run. Returns counts for
  *  tests/telemetry. The probe is injectable (tests). Never throws. */
 export async function runDueReconciles(
   reconcile: ReconcileProbe = defaultReconcile,
   cleanup: RestartTransportCleanup = defaultRestartTransportCleanup,
-): Promise<{ adopted: number; failed: number; retried: number; dropped: number; eventsRecovered: number }> {
+): Promise<{ adopted: number; failed: number; retried: number; dropped: number; lost: number; eventsRecovered: number }> {
   let adopted = 0;
   let failed = 0;
   let retried = 0;
   let dropped = 0;
+  let lost = 0;
   let eventsRecovered = 0;
   // Claim ONE leased row at a time: the lease then covers exactly the entry being probed,
   // so a batch that outlives one lease never re-exposes a row it has yet to reach, and a
@@ -446,11 +485,9 @@ export async function runDueReconciles(
       await cleanup({ engine: run.engine, sandboxId: run.sandboxId });
     }
     if (run.orgId && await hasRunCancelIntent(run.orgId, run.id)) {
-      const finalized = await finalizeRun(entry.runId, "failed", CANCEL_SUMMARY, 0);
-      const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
-      await settleAndPump(entry.runId, entry.threadId);
-      await settleEntry(entry);
-      if (durable?.status === "completed") adopted++;
+      const durable = await finalizeOwned(entry, "failed", CANCEL_SUMMARY);
+      if (!durable) lost++;
+      else if (durable.status === "completed") adopted++;
       else failed++;
       continue;
     }
@@ -471,17 +508,25 @@ export async function runDueReconciles(
       : undefined;
     let recovered = 0;
     try {
+      // Recovered events are upserts on stable ids, so a tick that stalled and lost its
+      // claim must not write them over its replacement's newer payloads: the ownership
+      // check runs before the batch and again before every write.
+      const owned = () => reconcileClaimHeld(entry.runId, entry.leaseUntil);
+      if (recoveredEvents?.length && !(await owned())) throw new LostClaimError(entry.runId);
       recovered = recoveredEvents?.length
-        ? await ingestReconciliationEvents(entry, redact, recoveredEvents, result.status !== "in_progress")
+        ? await ingestReconciliationEvents(entry, redact, recoveredEvents, result.status !== "in_progress", owned)
         : 0;
     } catch (error) {
+      if (error instanceof LostClaimError) {
+        lostClaim(entry);
+        lost++;
+        continue;
+      }
       console.error(`[reconcile] terminal event backfill for run ${entry.runId} failed; retained for retry:`, error);
       if (nextReconcileAction(false, Date.now(), entry.deadlineMs) === "fail") {
-        const finalized = await finalizeRun(entry.runId, "failed", STALE_SUMMARY, 0);
-        const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
-        await settleAndPump(entry.runId, entry.threadId);
-        await settleEntry(entry);
-        if (durable?.status === "completed") adopted++;
+        const durable = await finalizeOwned(entry, "failed", STALE_SUMMARY);
+        if (!durable) lost++;
+        else if (durable.status === "completed") adopted++;
         else failed++;
         continue;
       }
@@ -491,33 +536,22 @@ export async function runDueReconciles(
     }
     eventsRecovered += recovered;
     if (result.status === "failed") {
-      const finalized = await finalizeRun(entry.runId, "failed", result.summary, 0);
-      const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
-      await settleAndPump(entry.runId, entry.threadId);
-      await settleEntry(entry);
-      if (durable?.status === "completed") adopted++;
+      const durable = await finalizeOwned(entry, "failed", result.summary);
+      if (!durable) lost++;
+      else if (durable.status === "completed") adopted++;
       else failed++;
       continue;
     }
     const action = nextReconcileAction(result.status === "completed", Date.now(), entry.deadlineMs);
     if (action === "adopt") {
-      const finalized = await finalizeRun(
-        entry.runId,
-        "completed",
-        (result as { summary: string }).summary,
-        0,
-      );
-      const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
-      await settleAndPump(entry.runId, entry.threadId);
-      await settleEntry(entry);
-      if (durable?.status === "completed") adopted++;
+      const durable = await finalizeOwned(entry, "completed", (result as { summary: string }).summary);
+      if (!durable) lost++;
+      else if (durable.status === "completed") adopted++;
       else failed++;
     } else if (action === "fail") {
-      const finalized = await finalizeRun(entry.runId, "failed", STALE_SUMMARY, 0);
-      const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
-      await settleAndPump(entry.runId, entry.threadId);
-      await settleEntry(entry);
-      if (durable?.status === "completed") adopted++;
+      const durable = await finalizeOwned(entry, "failed", STALE_SUMMARY);
+      if (!durable) lost++;
+      else if (durable.status === "completed") adopted++;
       else failed++;
     } else {
       // Retry: heartbeat the reconciling marker so the row shows liveness — but
@@ -542,7 +576,7 @@ export async function runDueReconciles(
      await rescheduleEntry(entry).catch(() => {});
    }
   }
-  return { adopted, failed, retried, dropped, eventsRecovered };
+  return { adopted, failed, retried, dropped, lost, eventsRecovered };
 }
 
 /** Bounded native-session re-probe for one parked entry. Never throws. */

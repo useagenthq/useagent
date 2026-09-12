@@ -501,6 +501,66 @@ describe("overlapping ticks", () => {
     await finalizeRun(runId, "failed", "test teardown", 0);
   });
 
+  test("a stale tick cannot finalize the run its replacement adopted", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId, { deadline: new Date(Date.now() - 1) }); // A would honest-fail it
+    let releaseA!: () => void;
+    let aProbing!: () => void;
+    const aReleased = new Promise<void>((r) => { releaseA = r; });
+    const aStarted = new Promise<void>((r) => { aProbing = r; });
+    const tickA = runDueReconciles(async () => {
+      aProbing();
+      await aReleased;
+      return { status: "unreachable" };
+    });
+    await aStarted;
+    // A's lease expires while it is stalled; B re-claims and adopts the finished session.
+    await db.update(reconcileQueue).set({ nextAttemptAt: new Date(Date.now() - 1_000) }).where(eq(reconcileQueue.runId, runId));
+    const b = await runDueReconciles(completedProbe);
+    expect(b.adopted).toBe(1);
+    expect((await getRun(runId))?.summary).toBe("adopted answer");
+
+    releaseA();
+    const a = await tickA;
+    expect(a.lost).toBe(1);
+    expect(a.failed).toBe(0);
+    const run = await getRun(runId);
+    expect(run?.status).toBe("completed"); // B's adoption stands; A's stale failure never committed
+    expect(run?.summary).toBe("adopted answer");
+  });
+
+  test("a stale tick cannot write recovered events over its replacement's newer payloads", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId);
+    const eventId = `pe_${runId}_t3_shared`;
+    const event = (text: string): HarnessInterimEvent => ({
+      id: eventId, runScopedId: true, provider: "t3", eventType: "t3.activity.message.delta",
+      sessionId: "ses_x", partId: "shared", payload: { text },
+    });
+    let releaseA!: () => void;
+    let aProbing!: () => void;
+    const aReleased = new Promise<void>((r) => { releaseA = r; });
+    const aStarted = new Promise<void>((r) => { aProbing = r; });
+    const tickA = runDueReconciles(async () => {
+      aProbing();
+      await aReleased;
+      return { status: "in_progress", events: [event("older")] };
+    });
+    await aStarted;
+    await db.update(reconcileQueue).set({ nextAttemptAt: new Date(Date.now() - 1_000) }).where(eq(reconcileQueue.runId, runId));
+    const b = await runDueReconciles(async () => ({ status: "in_progress", events: [event("newer")] }));
+    expect(b.eventsRecovered).toBe(1);
+
+    releaseA();
+    const a = await tickA;
+    expect(a.lost).toBe(1);
+    expect(a.eventsRecovered).toBe(0);
+    const [row] = await db.select().from(providerEvents).where(eq(providerEvents.id, eventId));
+    expect(JSON.parse(row!.payload as string)).toEqual({ text: "newer" });
+    expect((await getReconcile(runId))?.attempts).toBe(1);
+    await finalizeRun(runId, "failed", "test teardown", 0);
+  });
+
   test("tick guard: a lost tick that settles late cannot free the guard from under its replacement", () => {
     const guard = createTickGuard(1_000);
     const a = guard.start(0);
