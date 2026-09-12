@@ -74,13 +74,17 @@ export function Thinking({
           hasSteps ? "cursor-pointer hover:bg-background-secondary-hover" : "cursor-default",
         )}
       >
-        <span
-          aria-hidden
-          data-testid="thinking-status-slot"
-          className="flex size-4 shrink-0 items-center justify-center"
-        >
-          {active && <PixelLoader className="text-text-secondary" />}
-        </span>
+        {/* The loader slot exists only while live; folded, an empty slot plus the
+            gap read as a lopsided left margin on the chip. */}
+        {active && (
+          <span
+            aria-hidden
+            data-testid="thinking-status-slot"
+            className="flex size-4 shrink-0 items-center justify-center"
+          >
+            <PixelLoader className="text-text-secondary" />
+          </span>
+        )}
         {active ? (
           <span className="agent-progress-loading-text shrink-0 text-body-2-medium">{label}</span>
         ) : (

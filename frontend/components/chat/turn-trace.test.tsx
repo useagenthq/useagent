@@ -57,15 +57,13 @@ describe("turn trace", () => {
     expect(html).toContain("Thought for 3m 12s");
     expect(html).toContain(">2 tool calls<");
     expect(html).toContain('aria-expanded="false"');
-    // The header is one pill: reserved status slot, label, muted count,
-    // chevron. No star and no loader once settled.
+    // The header is one pill: label, muted count, chevron. No star, and once
+    // settled no loader and no empty loader slot padding the left edge.
     const header = html.split('data-testid="thinking-header"')[1]?.split("</button>")[0] ?? "";
     expect(header).toContain("rounded-full");
     expect(header).not.toContain("M12 2l2.4");
     expect(header).not.toContain("data-pattern");
-    expect(header.indexOf('data-testid="thinking-status-slot"')).toBeLessThan(
-      header.indexOf("Thought for"),
-    );
+    expect(header).not.toContain('data-testid="thinking-status-slot"');
     expect(header.indexOf("Thought for")).toBeLessThan(header.indexOf("<svg"));
     // The reply is the primary block, outside the trace.
     expect(html).toContain('data-testid="agent-answer"');
