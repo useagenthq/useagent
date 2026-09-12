@@ -142,13 +142,22 @@ describe("computer-use gateway tools", () => {
       id: `screenshot-${kind}`, providerKind: kind, cpu: 2, memory: 4,
       process: { executeCommand: async (command: string) => { commands.push(command); return { exitCode: 0, result: "" }; } },
       fs: { downloadFile: async () => png },
-      ...(kind === "daytona" ? { computerUse: { screenshot: { takeFullScreen: async () => ({ screenshot: png.toString("base64") }) } } } : {}),
+      ...(kind === "daytona" ? {
+        computerUse: {
+          screenshot: {
+            takeFullScreen: async () => {
+              throw new Error("native screenshot must not capture a different desktop");
+            },
+          },
+        },
+      } : {}),
     } as unknown as SandboxHandle;
     const response = await captureSandboxScreenshot(sandbox);
     const path = String(response.structuredContent?.path);
     expect(path.startsWith(`${root}/screenshots/screenshot-`)).toBe(true);
     expect(path.endsWith(".png")).toBe(true);
     expect(commands.join("\n")).toContain(path);
+    if (kind !== "box") expect(commands.join("\n")).toContain("export DISPLAY=:1");
     expect(response.isError).toBeUndefined();
   });
 
