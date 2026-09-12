@@ -22,6 +22,11 @@ function missing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === "ENOENT";
 }
 
+function permissionDenied(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === "EACCES" || code === "EPERM";
+}
+
 function checkedKey(storageKey: string): string {
   if (!STORAGE_KEY.test(storageKey)) throw new Error("invalid artifact storage key");
   return storageKey;
@@ -111,6 +116,7 @@ export class LocalArtifactStorage implements ArtifactStorage {
         directoryInfo = await lstat(directory);
       } catch (error) {
         if (missing(error)) continue;
+        if (permissionDenied(error)) continue;
         throw error;
       }
       if (!directoryInfo.isDirectory()) continue;
@@ -119,6 +125,7 @@ export class LocalArtifactStorage implements ArtifactStorage {
         keys = await readdir(directory);
       } catch (error) {
         if (missing(error)) continue;
+        if (permissionDenied(error)) continue;
         throw error;
       }
       for (const key of keys.toSorted()) {
@@ -134,6 +141,10 @@ export class LocalArtifactStorage implements ArtifactStorage {
           info = await stat(path);
         } catch (error) {
           if (missing(error)) continue;
+          if (permissionDenied(error)) {
+            retained.push(key);
+            continue;
+          }
           throw error;
         }
         if (info.mtimeMs > cutoffMs) {
@@ -156,6 +167,10 @@ export class LocalArtifactStorage implements ArtifactStorage {
           await rename(path, quarantined);
         } catch (error) {
           if (missing(error)) continue;
+          if (permissionDenied(error)) {
+            retained.push(key);
+            continue;
+          }
           throw error;
         }
         if (await input.isReferenced?.(key)) {

@@ -103,6 +103,37 @@ describe("LocalArtifactStorage", () => {
     ).resolves.toEqual({ scanned: 0, removed: [], retained: [] });
   });
 
+  test("continues reclaiming after an inaccessible digest-prefix directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    roots.add(root);
+    const inaccessible = "a".repeat(64);
+    const reclaimable = "b".repeat(64);
+    const storage = new LocalArtifactStorage(root);
+    await storage.put(inaccessible, new TextEncoder().encode("blocked"));
+    await storage.put(reclaimable, new TextEncoder().encode("remove"));
+    const inaccessibleDirectory = join(root, "aa");
+    await chmod(inaccessibleDirectory, 0);
+
+    try {
+      const result = await storage.reclaimUnreferenced({
+        referencedKeys: new Set(),
+        minAgeMs: 0,
+        now: new Date(Date.now() + 1_000),
+      });
+
+      expect(result).toEqual({
+        scanned: 1,
+        removed: [reclaimable],
+        retained: [],
+      });
+      await expect(storage.read(reclaimable)).rejects.toThrow(
+        "artifact bytes are missing",
+      );
+    } finally {
+      await chmod(inaccessibleDirectory, 0o770);
+    }
+  });
+
   test("restores quarantined bytes when a reference appears during reclaim", async () => {
     const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
     roots.add(root);
