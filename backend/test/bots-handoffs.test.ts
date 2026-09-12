@@ -70,6 +70,24 @@ async function ensureRootRelationship(orgId: string, threadId: string, title: st
 }
 
 describe("bot handoffs (@mentions)", () => {
+  test("a bot whose name has a space is mentioned by its handle and titled by its name once", async () => {
+    const { cookies, orgId } = await createOrgSession("bot-handoff-handle");
+    const triage = await createBot(cookies, "Night triage", "mock");
+    const parent = await json<RunCreated>("/api/runs", {
+      method: "POST",
+      cookies,
+      body: { prompt: "@bot/night-triage look at the overnight alerts.", engine: "mock", bot_mentions: [triage.id] },
+    });
+    expect(parent.status).toBe(201);
+    expect(parent.body.handoffs?.[0]?.status).toBe("created");
+    const childThreadId = parent.body.handoffs![0]!.threadId!;
+    const [relationship] = await db
+      .select({ title: threadRelationships.title })
+      .from(threadRelationships)
+      .where(and(eq(threadRelationships.orgId, orgId), eq(threadRelationships.threadId, childThreadId)));
+    expect(relationship?.title).toBe("Night triage: look at the overnight alerts.");
+  });
+
   test("retries four moving thread heads with bounded backoff before accepting", async () => {
     let attempts = 0;
     const delays: number[] = [];
@@ -185,6 +203,11 @@ describe("bot handoffs (@mentions)", () => {
     expect(await resolveBotMention(orgId, "@bot/ATLAS")).toMatchObject({ id: atlas.id });
     expect(await resolveBotMention(orgId, atlas.id)).toMatchObject({ id: atlas.id });
     expect(await resolveBotMention(orgId, "nobody")).toBeNull();
+    // A name with spaces is one token through its handle, and still resolves by name.
+    const triage = await createBot(cookies, "Night triage", "mock");
+    expect(await resolveBotMention(orgId, "@bot/night-triage")).toMatchObject({ id: triage.id });
+    expect(await resolveBotMention(orgId, "Night Triage")).toMatchObject({ id: triage.id });
+    expect(await resolveBotMention(orgId, "night")).toBeNull();
 
     process.env.BOTS = "off";
     try {

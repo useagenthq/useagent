@@ -772,3 +772,18 @@ export type BotAvatarIcon = (typeof BOT_AVATAR_ICONS)[number];
 /** Derived from the home thread's runs + pending approvals; never stored. */
 export const BOT_STATES = ["attention", "working", "idle"] as const;
 export type BotState = (typeof BOT_STATES)[number];
+
+/**
+ * The whitespace-free handle a bot is mentioned by: `@bot/<handle>`. A name with
+ * spaces ("Night triage") cannot be one token, so the handle is its slug
+ * (night-triage): lower case, letters and digits kept, every other run of
+ * characters folded to one hyphen. Both the composer and the backend derive it
+ * from the name, so a token typed anywhere resolves to the same bot.
+ */
+export function botHandle(name: string): string {
+  return name
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+}

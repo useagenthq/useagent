@@ -53,7 +53,7 @@ export interface ApiFiring {
   run_id: string;
   fired_at: string;
   trigger: ScheduleTrigger;
-  /** Firing-time snapshot ("queued"). */
+  /** "queued" until the run settles, then the run's terminal status. */
   status: string;
   /** Live run status/summary, joined from the runs log. Null if the run is gone. */
   run_status: string | null;
@@ -258,8 +258,9 @@ export async function markFired(id: string, firedAt: Date): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Firings — append-only. A firing row is never mutated; the live run outcome
-// comes from joining the runs log at read time.
+// Firings — one row per occurrence, recorded as "queued" and stamped with the
+// run's terminal status when it settles; the reader still joins the runs log
+// for the live status and summary in between.
 // ---------------------------------------------------------------------------
 
 export async function recordFiring(input: {
@@ -283,6 +284,19 @@ export async function recordFiring(input: {
     .onConflictDoNothing({ target: scheduleFirings.idempotencyKey })
     .returning({ id: scheduleFirings.id });
   return inserted.length === 1;
+}
+
+/** The fired run settled: stamp the firing row with its terminal status. Takes an
+ *  Executor so run finalization records it in the same transaction as the run. */
+export async function settleFiring(
+  runId: string,
+  status: "completed" | "failed",
+  exec: Executor = db,
+): Promise<void> {
+  await exec
+    .update(scheduleFirings)
+    .set({ status })
+    .where(eq(scheduleFirings.runId, runId));
 }
 
 /** A schedule's firing history, newest first, enriched with the run's live status. */

@@ -1,8 +1,12 @@
 import {
   botMention,
+  botToken,
+  insertMentionToken,
   mentionedBotIds,
   mentionsToRunResources as toRunResources,
   parseDraftMentions,
+  removeMentionToken,
+  skillMention,
   unlinkedBotTokens,
 } from "./composer-mentions";
 import { describe, expect, test } from "bun:test";
@@ -164,20 +168,41 @@ describe("identity + short id helpers", () => {
 describe("bot mentions", () => {
   test("a bot chip is a handoff, not a resource: token names it, the id rides separately", () => {
     const nova = botMention("11111111-1111-4111-8111-111111111111", "Nova");
-    expect(nova.token).toBe("@bot/Nova");
+    expect(nova.token).toBe("@bot/nova");
+    expect(nova.name).toBe("Nova");
     expect(toRunResources([nova, skillMention("s1", "review-pr")])).toEqual([]);
     expect(mentionedBotIds([nova, nova, skillMention("s1", "review-pr")])).toEqual(["11111111-1111-4111-8111-111111111111"]);
     expect(mentionedBotIds([])).toEqual([]);
+  });
+
+  test("a name with spaces becomes one whitespace-free token; the chip keeps the name", () => {
+    expect(botToken("Night triage")).toBe("@bot/night-triage");
+    expect(botToken("Chief of staff")).toBe("@bot/chief-of-staff");
+    expect(botToken("  Q&A  bot ")).toBe("@bot/q-a-bot");
+    const triage = botMention("bot-triage", "Night triage");
+    expect(triage.name).toBe("Night triage");
+    // Inserted from the picker, the token stays intact and the caret lands after it.
+    const inserted = insertMentionToken("ask @nig", 4, 8, triage.token);
+    expect(inserted.text).toBe("ask @bot/night-triage ");
+    expect(inserted.caret).toBe(inserted.text.length);
+    expect(removeMentionToken(inserted.text, triage.token)).toBe("ask ");
   });
 });
 
 describe("unlinkedBotTokens - a typed @bot/ token with no chip behind it", () => {
   test("flags tokens no bot chip backs and ignores linked ones", () => {
     const nova = botMention("bot-nova", "Nova");
-    expect(unlinkedBotTokens("@bot/Nova compare the tiers", [nova])).toEqual([]);
     expect(unlinkedBotTokens("@bot/nova compare the tiers", [nova])).toEqual([]);
+    expect(unlinkedBotTokens("@bot/Nova compare the tiers", [nova])).toEqual([]);
     expect(unlinkedBotTokens("@bot/Atlas compare the tiers", [nova])).toEqual(["@bot/Atlas"]);
     expect(unlinkedBotTokens("ask @bot/Atlas and @bot/Atlas again", [])).toEqual(["@bot/Atlas"]);
+  });
+
+  test("a multi-word bot's handle scans as one linked token", () => {
+    const triage = botMention("bot-triage", "Night triage");
+    expect(unlinkedBotTokens("@bot/night-triage name a second color", [triage])).toEqual([]);
+    expect(unlinkedBotTokens("@bot/Night-Triage name a second color", [triage])).toEqual([]);
+    expect(unlinkedBotTokens("@bot/night-triage and @bot/chief-of-staff", [triage])).toEqual(["@bot/chief-of-staff"]);
   });
 
   test("an email-like or mid-word @bot/ is not a token", () => {

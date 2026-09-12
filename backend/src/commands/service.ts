@@ -217,6 +217,7 @@ async function acceptRunCommandWithOrigin(
             origin,
             priority,
             threadRelationship: input.threadRelationship,
+            botHome: input.botHome,
           },
           tx,
         );

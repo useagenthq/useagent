@@ -15,9 +15,10 @@
  *   thread -> @thread/<short-id>
  *   pr     -> @<owner>/<repo>#<number>
  *   file   -> @<owner>/<repo>:<path>
+ *   bot    -> @bot/<handle>  (the name's slug: "Night triage" -> night-triage)
  */
 
-import type { RunResourceSelection } from "@useagent/agent-client/wire";
+import { botHandle, type RunResourceSelection } from "@useagent/agent-client/wire";
 
 export type MentionKind = "skill" | "thread" | "pr" | "file" | "bot";
 
@@ -48,9 +49,11 @@ export function fileToken(repo: string, path: string): string {
   return `@${repo}:${path}`;
 }
 
-/** A bot handoff. The token names the bot; the id rides in `bot_mentions`. */
+/** A bot handoff. The token carries the bot's handle (its name's slug, so a
+ *  name with spaces is still one token); the chip shows the name and the id
+ *  rides in `bot_mentions`. */
 export function botToken(name: string): string {
-  return `@bot/${name}`;
+  return `@bot/${botHandle(name)}`;
 }
 
 /** Short, human-facing thread handle - the run id's leading segment. */

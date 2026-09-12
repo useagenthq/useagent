@@ -8,6 +8,7 @@ import { RUN_CANCEL, RUN_CREATE } from "./repo";
 import { releaseLeaseForRun } from "../fleet/lease-repo";
 import { setAdmissionState } from "../fleet/admission-repo";
 import { isInternalRunOrigin } from "../runs/origin";
+import { settleFiring } from "../schedules/repo";
 
 // ---------------------------------------------------------------------------
 // Durable run cancellation (north star "Durable Commands"). A user Stop enters
@@ -100,6 +101,7 @@ export async function acceptRunCancel(input: {
       // a cancel-while-queued never leaks a reservation.
       if (run.status === "queued") {
         await completeRun(input.runId, "failed", CANCEL_SUMMARY, 0, tx);
+        await settleFiring(input.runId, "failed", tx);
         await tx.execute(sql`
           update commands set state = 'completed', updated_at = now()
           where run_id = ${input.runId} and kind = ${RUN_CREATE} and state <> 'completed'`);

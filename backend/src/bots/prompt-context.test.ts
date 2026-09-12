@@ -17,7 +17,8 @@ describe("bot prompt context", () => {
       { id: "11111111-1111-4111-8111-111111111111", name: "Night Triage", title: "overnight incident triage", engine: "chat" },
       { id: "22222222-2222-4222-8222-222222222222", name: "Nova", title: "", engine: "opencode" },
     ]);
-    expect(out).toContain('"handle": "@bot/Night Triage"');
+    // The handle is the name's slug: one token even for a name with a space.
+    expect(out).toContain('"handle": "@bot/night-triage"');
     expect(out).toContain('"name": "Night Triage"');
     expect(out).toContain('"engine": "opencode"');
     expect(out).toContain("bot_handoff");
@@ -107,8 +108,8 @@ describe("bot prompt context resilience and identity", () => {
       { list: async () => bots, owner: async () => nova, ancestorDepth: async () => 1 },
     );
     expect(out.delegation).toContain("The bot \"Nova\" is you");
-    expect(out.delegation).toContain("@bot/Night Triage");
-    expect(out.delegation).not.toContain("@bot/Nova");
+    expect(out.delegation).toContain("@bot/night-triage");
+    expect(out.delegation).not.toContain("@bot/nova");
     expect(out.identity).toContain("<bot_assignment>");
   });
 

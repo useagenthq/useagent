@@ -67,6 +67,11 @@ export interface RunCommandInput {
    * the thread lifecycle lock so concurrent submissions cannot branch from a
    * stale head after passing an earlier route read. */
   readonly expectedThreadHeadRunId?: string;
+  /** The bot whose home thread this ROOT run opens. The bot row is stamped in
+   * the same transaction as the run insert (first writer wins, the transaction
+   * rolls back for a loser), so the worker's first turn always finds the bot
+   * and a lost race never leaves a stray root behind. */
+  readonly botHome?: { readonly botId: string };
   readonly run: {
     readonly id: string;
     readonly prompt: string;

@@ -8,6 +8,7 @@ export {
   preflightUnattendedRunCommandReplay,
 } from "./service";
 export { RunPromptTooLargeError } from "./prompt-policy";
+export { BotHomeThreadTakenError } from "./repo";
 export {
   assertRunAdmissionOpen,
   getRunAdmission,

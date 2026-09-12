@@ -38,7 +38,7 @@ async function insertRun(input: {
   readonly orgId: string;
   readonly userId: string | null;
   readonly threadId: string;
-  readonly status: "running" | "completed";
+  readonly status: "queued" | "running" | "completed";
 }): Promise<void> {
   createdRunIds.add(input.id);
   await db.insert(runs).values({
@@ -61,7 +61,7 @@ interface Actor {
 async function runningActor(overrides: {
   readonly orgId?: string;
   readonly userId?: string;
-  readonly status?: "running" | "completed";
+  readonly status?: "queued" | "running" | "completed";
 } = {}): Promise<Actor> {
   const orgId = overrides.orgId ?? `org-${crypto.randomUUID()}`;
   const userId = overrides.userId ?? `user-${crypto.randomUUID()}`;
@@ -501,11 +501,12 @@ describe("gateway approval-request lane (#77)", () => {
     expect(forbidden.status).toBe(403);
     expect(await forbidden.json()).toEqual({ error: "run_user_mismatch" });
 
-    // A settled run cannot be approved into.
+    // A run that never started cannot be approved into (a SETTLED run is decided
+    // through a follow-up turn; see test/approvals-settled.test.ts).
     const settled = await runningActor({
       orgId: devOrgId,
       userId: devUserId,
-      status: "completed",
+      status: "queued",
     });
     const { request: settledRequest } = await createApprovalRequest({
       orgId: settled.orgId,

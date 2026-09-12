@@ -1,16 +1,21 @@
 import { Hono, type Context } from "hono";
+import { latestRunInThread } from "../../bots/repo";
 import type { AppEnv } from "../../http";
 import { orgScope } from "../../middleware/org";
 import { getRunForOrg } from "../../runs/repo";
+import { handleRunCreate } from "../../runs/routes";
 import {
   consumeApprovalCapability,
   mintApprovalCapability,
 } from "./approval-capability";
 import {
+  approvalDecisionPrompt,
   approvalRequestSummary,
   approveApprovalRequest,
   denyApprovalRequest,
-  listApprovalRequests,
+  listPendingApprovalRequests,
+  type ApprovalFollowUpInput,
+  type ApprovalFollowUpOutcome,
   type ApprovalResolutionError,
 } from "./approval-requests";
 import { gatewayToolRequiresApproval } from "./operation-registry";
@@ -110,10 +115,42 @@ export async function issueGatewayOperationApproval(
   };
 }
 
-function resolutionErrorStatus(error: ApprovalResolutionError): 403 | 404 | 409 {
+function resolutionErrorStatus(error: ApprovalResolutionError): 403 | 404 | 409 | 502 {
   if (error === "request_not_found" || error === "run_not_found") return 404;
   if (error === "run_user_mismatch") return 403;
+  if (error === "follow_up_failed") return 502;
   return 409;
+}
+
+const DENY_REASON_MAX = 500;
+
+/** `{ reason }` on a deny; a body-less POST (the approve path, older clients) reads as none. */
+async function decisionReason(c: Context<AppEnv>): Promise<string | null> {
+  const body = (await c.req.json().catch(() => null)) as { reason?: unknown } | null;
+  const reason = typeof body?.reason === "string" ? body.reason.trim().slice(0, DENY_REASON_MAX) : "";
+  return reason || null;
+}
+
+/**
+ * The decision reaches a settled run's thread the way a bot message does: a
+ * follow-up turn chained under the thread head through the run-create door
+ * (`handleRunCreate` with `parent_run_id`), owned by the person who decided.
+ */
+async function startDecisionFollowUp(
+  c: Context<AppEnv>,
+  input: ApprovalFollowUpInput,
+): Promise<ApprovalFollowUpOutcome> {
+  const head = await latestRunInThread(c.get("orgId"), input.request.threadId);
+  if (!head) return { error: "thread_not_found" };
+  const response = await handleRunCreate(c, {
+    body: {
+      prompt: approvalDecisionPrompt(input.request, input.decision, input.reason),
+      parent_run_id: head.id,
+    },
+  });
+  const body = (await response.json().catch(() => null)) as { id?: unknown; error?: unknown } | null;
+  if (response.status === 201 && typeof body?.id === "string") return { runId: body.id };
+  return { error: typeof body?.error === "string" ? body.error : `run_create_${response.status}` };
 }
 
 export function createGatewayApprovalRoutes(
@@ -147,23 +184,18 @@ export function createGatewayApprovalRoutes(
 
   // Mid-run approval-request lane (#77): the human side of approval_request /
   // approval_poll. Same boundary as the mint route above - an org member's
-  // session, and resolution additionally requires the target run to be ACTIVE
-  // and belong to that member. The parked capability is never exposed here; it
-  // reaches only the requesting run through approval_poll. Resolved requests
-  // are served alongside pending ones (status, resolved_by, resolved_at) so a
-  // reloaded thread still shows what was approved or denied and by whom;
-  // `?status=pending` narrows to the actionable set.
+  // session, and resolution additionally requires the target run to be live or
+  // settled (a settled run's thread gets a follow-up turn carrying the
+  // decision) and to belong to that member. The parked capability is never
+  // exposed here; it reaches only the consuming run through approval_poll.
   routes.get("/requests", async (c) => {
     const runId = c.req.query("runId")?.trim() ?? "";
     const threadId = c.req.query("threadId")?.trim() ?? "";
     if (!runId && !threadId) return c.json({ error: "run_or_thread_required" }, 400);
-    const status = c.req.query("status")?.trim();
-    if (status && status !== "pending") return c.json({ error: "invalid_status" }, 400);
-    const requests = await listApprovalRequests({
+    const requests = await listPendingApprovalRequests({
       orgId: c.get("orgId"),
       ...(runId ? { runId } : {}),
       ...(threadId ? { threadId } : {}),
-      ...(status === "pending" ? { status } : {}),
     });
     return c.json({ requests: requests.map(approvalRequestSummary) });
   });
@@ -175,6 +207,7 @@ export function createGatewayApprovalRoutes(
     const serviceDependencies = {
       findRun: dependencies.findRun,
       mint: dependencies.mint,
+      startFollowUp: (followUp: ApprovalFollowUpInput) => startDecisionFollowUp(c, followUp),
     };
     const result =
       decision === "approve"
@@ -182,11 +215,21 @@ export function createGatewayApprovalRoutes(
             { ...input, approvedBy: userId },
             serviceDependencies,
           )
-        : await denyApprovalRequest({ ...input, deniedBy: userId }, serviceDependencies);
+        : await denyApprovalRequest(
+            { ...input, deniedBy: userId, reason: await decisionReason(c) },
+            serviceDependencies,
+          );
     if (!result.ok) {
-      return c.json({ error: result.error }, resolutionErrorStatus(result.error));
+      return c.json(
+        { error: result.error, ...(result.detail ? { detail: result.detail } : {}) },
+        resolutionErrorStatus(result.error),
+      );
     }
-    return c.json({ id: result.request.id, status: result.request.status });
+    return c.json({
+      id: result.request.id,
+      status: result.request.status,
+      ...(result.followUpRunId ? { follow_up_run_id: result.followUpRunId } : {}),
+    });
   };
 
   routes.post("/requests/:id/approve", (c) => resolveRequest(c, "approve"));

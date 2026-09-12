@@ -1,8 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
+import { getBotRow } from "../src/bots/repo";
+import { botContextForTurn } from "../src/bots/prompt-context";
 import { db } from "../src/db/client";
 import { runs } from "../src/db/schema";
-import { createOrgSession, fetchApi, json, waitFor } from "./helpers";
+import { bus, RUN_SPAWNED } from "../src/worker";
+import { createOrgSession, fetchApi, json } from "./helpers";
 
 const previousFlag = process.env.BOTS;
 
@@ -133,22 +136,14 @@ describe("bots", () => {
     expect(loserBody.error).toBe("home_thread_already_created");
     expect(loserBody.homeThreadId).toBe(home);
 
-    // The stray root was cancelled (failed while queued) or had already
-    // settled; either way no root other than the home thread is still live.
+    // The loser's acceptance rolled back with its stamp: the home thread is the
+    // only root this org has, and no stray run ever existed to cancel.
     const roots = await db
       .select({ id: runs.id, threadId: runs.threadId, status: runs.status })
       .from(runs)
       .where(eq(runs.orgId, orgId));
     const rootIds = roots.filter((run) => run.id === run.threadId).map((run) => run.id);
-    expect(rootIds).toHaveLength(2);
-    const strayId = rootIds.find((id) => id !== home)!;
-    // Cancelling a queued root fails it in place; a root the worker had already
-    // picked up settles asynchronously. Either way it leaves queued/running.
-    const stray = await waitFor(async () => {
-      const [run] = await db.select({ status: runs.status }).from(runs).where(eq(runs.id, strayId));
-      return run && run.status !== "queued" && run.status !== "running" ? run : null;
-    });
-    expect(["failed", "completed"]).toContain(stray.status);
+    expect(rootIds).toEqual([home]);
   });
 
   test("a preset is validated against live config at create time", async () => {
@@ -220,13 +215,63 @@ describe("bots", () => {
     expect(detail.status).toBe(200);
     expect(detail.body.bot.archived).toBe(true);
 
+    // Readable, but nothing new is sent to it while archived.
+    const refused = await json<{ error: string; reason: string }>(`/api/bots/${vale.id}/messages`, { method: "POST", cookies, body: { text: "Still there?" } });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toBe("bot_archived");
+    expect(refused.body.reason).toContain("Vale is archived");
+
     // The name stays reserved while archived, and restoring brings the bot back.
     const reuse = await fetchApi("/api/bots", { method: "POST", cookies, body: { name: "vale", engine: "mock" } });
     expect(reuse.status).toBe(409);
     const restored = await json<{ bot: { archived: boolean } }>(`/api/bots/${vale.id}`, { method: "PATCH", cookies, body: { archived: false } });
     expect(restored.body.bot.archived).toBe(false);
+    const accepted = await fetchApi(`/api/bots/${vale.id}/messages`, { method: "POST", cookies, body: { text: "Welcome back." } });
+    expect(accepted.status).toBe(201);
     const again = await json<{ bots: BotBody[] }>("/api/bots", { cookies });
     expect(again.body.bots.map((b) => b.name).toSorted()).toEqual(["Quill", "Vale"]);
+  });
+
+  test("the home thread is recorded before the first turn is dispatched, so turn one carries the identity", async () => {
+    const { cookies, orgId } = await createOrgSession("bots-first-turn");
+    const bot = await createBot(cookies, "Night triage");
+    // The worker looks the bot up by thread the moment it is spawned; observe
+    // the bot row at exactly that moment (spawn happens inside the POST).
+    const observed = new Map<string, Promise<string | null>>();
+    const onSpawn = (runId: string) => {
+      observed.set(runId, getBotRow(orgId, bot.id).then((row) => row?.homeThreadId ?? null));
+    };
+    bus.on(RUN_SPAWNED, onSpawn);
+    try {
+      const first = await json<{ id: string }>(`/api/bots/${bot.id}/messages`, {
+        method: "POST",
+        cookies,
+        body: { text: "Tell me in one sentence what you do." },
+      });
+      expect(first.status).toBe(201);
+      expect(await observed.get(first.body.id)).toBe(first.body.id);
+    } finally {
+      bus.off(RUN_SPAWNED, onSpawn);
+    }
+    const detail = await json<{ bot: BotBody }>(`/api/bots/${bot.id}`, { cookies });
+    expect(detail.body.bot.homeThreadId).toBeTruthy();
+    // What the worker composes for that turn: the bot's identity and its rules.
+    const context = await botContextForTurn({ orgId, threadId: detail.body.bot.homeThreadId!, engine: "chat" });
+    expect(context.identity).toContain("<bot_assignment>");
+    expect(context.identity).toContain("Night triage");
+    expect(context.identity).toContain("Never merge without approval.");
+  });
+
+  test("a first message whose run was never accepted leaves the bot free to open its thread", async () => {
+    const { cookies } = await createOrgSession("bots-first-turn-failed");
+    const bot = await createBot(cookies, "Scout");
+    // A first message the run-create door refuses (the mock engine takes no repos it cannot resolve).
+    const refused = await fetchApi(`/api/bots/${bot.id}/messages`, { method: "POST", cookies, body: { text: "x".repeat(20_001) } });
+    expect(refused.status).toBe(400);
+    const stillFree = await json<{ bot: BotBody }>(`/api/bots/${bot.id}`, { cookies });
+    expect(stillFree.body.bot.homeThreadId).toBeNull();
+    const first = await fetchApi(`/api/bots/${bot.id}/messages`, { method: "POST", cookies, body: { text: "Start." } });
+    expect(first.status).toBe(201);
   });
 
   test("a workspace tops out at 50 active bots", async () => {

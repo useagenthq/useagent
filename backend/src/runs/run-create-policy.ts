@@ -43,6 +43,27 @@ export function boundedRunPrompt(value: unknown):
   return { ok: true, prompt };
 }
 
+const UPLOAD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ATTACHMENTS_MAX = 10;
+
+/** `attachments`: up to ten upload ids, deduplicated; a run with any needs a person behind it. */
+export function runAttachmentIds(value: unknown, hasUser: boolean):
+  | { readonly ok: true; readonly ids: string[] }
+  | { readonly ok: false; readonly error: string; readonly status: 400 | 401 } {
+  const raw = value ?? [];
+  if (!Array.isArray(raw) || raw.length > ATTACHMENTS_MAX) {
+    return { ok: false, error: `attachments must be an array of at most ${ATTACHMENTS_MAX} upload ids`, status: 400 };
+  }
+  const ids = [...new Set(raw)];
+  if (ids.some((id) => typeof id !== "string" || !UPLOAD_ID.test(id))) {
+    return { ok: false, error: "attachments contain an invalid upload id", status: 400 };
+  }
+  if (ids.length > 0 && !hasUser) {
+    return { ok: false, error: "authenticated user required for attachments", status: 401 };
+  }
+  return { ok: true, ids: ids as string[] };
+}
+
 export const runCreateBodyLimit = bodyLimit({
   maxSize: RUN_CREATE_MAX_BODY_BYTES,
   onError: (c) => c.json({ error: "request_too_large" }, 413),

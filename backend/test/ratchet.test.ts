@@ -70,7 +70,7 @@ const BACKEND_SIZE_BASELINE: Record<string, number> = {
   "engines/acp-server.ts":     1504,
   "engines/runtime-orchestration.ts": 802,
   // Read-only and windowed thread routes live in runs/read-routes.ts.
-  "runs/routes.ts": 1072,
+  "runs/routes.ts": 1069,
   "memory/team-memory.ts": 1005,
   // Scripted mock execution and worker events live in focused worker modules.
   "worker.ts": 839,

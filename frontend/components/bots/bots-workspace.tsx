@@ -1,8 +1,7 @@
 import type { ThreadView } from "@/components/chat/load-thread-view";
-import { SessionView } from "@/components/chat/session-view";
 import { cx } from "@/utils/cx";
-import { AvatarMark } from "./avatar-mark";
 import { BotThreadHeader } from "./bot-details";
+import { BotThreadPane } from "./bot-thread-pane";
 import { BotsRoster } from "./bots-roster";
 import { FirstMessage } from "./first-message";
 import { BotsOnboarding } from "./onboarding";
@@ -30,23 +29,14 @@ export function BotsWorkspace({
         {!selected ? (
           <BotsOnboarding />
         ) : (
-          <>
-            {/* The model is per turn (the composer's picker is live), so the header shows the newest turn's. */}
-            <BotThreadHeader bot={selected} threadModel={thread?.thread.at(-1)?.model ?? null} />
-            {thread ? (
-              <SessionView
-                initialThread={thread.thread}
-                initialOutline={thread.outline}
-                initialRelationshipHint={thread.relationshipHint}
-                assistantIdentity={{
-                  name: selected.name,
-                  avatar: <AvatarMark tone={selected.avatarTone} icon={selected.avatarIcon} size="size-5" />,
-                }}
-              />
-            ) : (
+          thread ? (
+            <BotThreadPane bot={selected} thread={thread} />
+          ) : (
+            <>
+              <BotThreadHeader bot={selected} threadModel={null} />
               <FirstMessage bot={selected} />
-            )}
-          </>
+            </>
+          )
         )}
       </div>
     </div>

@@ -19,6 +19,7 @@ import {
   getThreadForRun,
 } from "./repo";
 import {
+  BotHomeThreadTakenError,
   acceptRunCommand,
   preflightRunCommandReplay,
   RunAdmissionClosedError,
@@ -79,7 +80,7 @@ import { UploadClaimError } from "../uploads/repo";
 import { registerRunReadRoutes } from "./read-routes.js";
 import { registerExecutionGraphRoutes } from "./execution-graph-routes.js";
 import { registerProviderSessionRoutes } from "./provider-session-routes.js";
-import { boundedRunPrompt, runCreateBodyLimit, type RunCreateBody } from "./run-create-policy";
+import { boundedRunPrompt, runAttachmentIds, runCreateBodyLimit, type RunCreateBody } from "./run-create-policy";
 import { acceptExistingThreadFollowup, ThreadFollowupTargetError } from "./thread-followups";
 export type { RunCreateBody } from "./run-create-policy";
 export const runsRoutes = new Hono<AppEnv>();
@@ -89,6 +90,9 @@ export async function handleRunCreate(
   options: {
     readonly body?: RunCreateBody;
     readonly origin?: InternalRunOrigin;
+    /** The bot whose home thread this root run opens (stamped with the run, see
+     *  RunCommandInput.botHome); a lost race answers 409 with no run created. */
+    readonly botHome?: { readonly botId: string };
   } = {},
 ): Promise<Response> {
   let body: RunCreateBody;
@@ -109,23 +113,9 @@ export async function handleRunCreate(
   if (!promptResult.ok) return c.json({ error: promptResult.error }, promptResult.status);
   const prompt = promptResult.prompt;
 
-  const rawAttachments = body.attachments ?? [];
-  if (!Array.isArray(rawAttachments) || rawAttachments.length > 10) {
-    return c.json({ error: "attachments must be an array of at most 10 upload ids" }, 400);
-  }
-  const attachmentIds = [...new Set(rawAttachments)];
-  if (
-    attachmentIds.some(
-      (id) =>
-        typeof id !== "string" ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id),
-    )
-  ) {
-    return c.json({ error: "attachments contain an invalid upload id" }, 400);
-  }
-  if (attachmentIds.length > 0 && !c.get("userId")) {
-    return c.json({ error: "authenticated user required for attachments" }, 401);
-  }
+  const attachments = runAttachmentIds(body.attachments, Boolean(c.get("userId")));
+  if (!attachments.ok) return c.json({ error: attachments.error }, attachments.status);
+  const attachmentIds = attachments.ids;
 
   const botMentions = runBotMentions(c.get("orgId"), body.bot_mentions);
   if ("status" in botMentions) return c.json(botMentions.body, botMentions.status);
@@ -443,6 +433,7 @@ export async function handleRunCreate(
       actorId: c.get("userId"),
       intent,
       run: { id, prompt: finalPrompt, model, engine, parentRunId, threadId, repos, resolvedResources, attachmentIds, memoryScope, skillId, skillVersion, skillContentHash, commandName, commandProvider, commandSessionId, commandCatalogRevision },
+      ...(options.botHome && !parentRunId ? { botHome: options.botHome } : {}),
     };
     accepted = parentRunId
       ? await acceptExistingThreadFollowup(c.get("orgId"), parentRunId, commandInput)
@@ -457,6 +448,12 @@ export async function handleRunCreate(
       return c.json({ error: "upload_unavailable" }, 409);
     }
     if (error instanceof ThreadFollowupTargetError) return c.json({ error: error.code }, error.status);
+    if (error instanceof BotHomeThreadTakenError) {
+      return c.json(
+        { error: error.code, reason: "Another message opened this bot's thread first. Send yours again into that thread." },
+        409,
+      );
+    }
     if (error instanceof RunAdmissionClosedError) {
       return c.json({ error: error.code, retryable: true }, 503);
     }

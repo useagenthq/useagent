@@ -128,6 +128,14 @@ export function UserBubble({ children }: { children: string }) {
   );
 }
 
+/** The latest turn when it failed with a summary, else undefined: only the
+ *  thread's current state raises the failure banner, never an older turn. */
+export function latestTurnFailure(turns: readonly Turn[], running: boolean | undefined): Turn | undefined {
+  if (running) return undefined;
+  const latest = turns.at(-1);
+  return latest?.status === "failed" && latest.summary ? latest : undefined;
+}
+
 /** Who answers in this thread when it is not the generic agent: a bot's own mark
  *  and name on its home thread. Also names the reply composer ("Message Nova"). */
 export interface AssistantIdentity {
@@ -667,12 +675,12 @@ export const Conversation = memo(function Conversation({
     return { approvalsByRun: byRun, orphanApprovals: orphans };
   }, [gatewayApprovals, renderedTurns]);
 
-  // Thread-error banner: the newest FAILED run's real summary, dismissible for
-  // the session (a NEW error re-appears because the key includes the message).
-  // No banner while a turn is running - the live pill owns that state.
-  const newestFailed = running
-    ? undefined
-    : [...turns].reverse().find((t) => t.status === "failed" && t.summary);
+  // Thread-error banner: the LATEST turn's failure summary, dismissible for the
+  // session (a NEW error re-appears because the key includes the message). A
+  // later turn that succeeded retires it: the failure is that turn's history,
+  // not the thread's state. No banner while a turn is running - the live pill
+  // owns that state.
+  const newestFailed = latestTurnFailure(turns, running);
   const threadErrorKey = getThreadErrorBannerKey(
     newestFailed?.run.id ?? "",
     newestFailed?.summary ?? null,

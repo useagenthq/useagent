@@ -10,6 +10,7 @@ import { RiShieldCheckLine } from "@remixicon/react";
 import { useState } from "react";
 import { ApprovalCard } from "@/components/ai/approval-card";
 import { Chip } from "@/components/base/badges/chip";
+import { Input } from "@/components/base/input/input";
 import {
   type GatewayApproval,
   type GatewayApprovalDecision,
@@ -65,6 +66,8 @@ export function GatewayApprovalCard({
   onResolved?: () => void;
 }) {
   const [resolution, setResolution] = useState<ApprovalResolution>(idleResolution);
+  // Why a denial: carried to the agent when the decision continues the thread.
+  const [reason, setReason] = useState("");
   const status = effectiveStatus(approval.status, resolution);
   const error = resolution.phase === "idle" ? resolution.error : null;
   const entries = summarizeApprovalArguments(approval.arguments);
@@ -75,7 +78,11 @@ export function GatewayApprovalCard({
     if (resolution.phase === "submitting") return;
     setResolution(beginResolution(resolution, decision));
     try {
-      const settledStatus = await resolveGatewayApproval(approval.id, decision);
+      const settledStatus = await resolveGatewayApproval(
+        approval.id,
+        decision,
+        decision === "deny" ? reason.trim() || null : null,
+      );
       setResolution(resolutionSucceeded(settledStatus));
       onResolved?.();
     } catch (cause) {
@@ -139,17 +146,27 @@ export function GatewayApprovalCard({
       </div>
 
       {status === "pending" && (
-        <ApprovalCard
-          question={`Allow ${approval.toolName}?`}
-          options={[
-            {
-              label: `Run ${approval.toolName}`,
-              detail: "One-time approval for this tool call",
-            },
-          ]}
-          onApprove={() => void submit("approve")}
-          onDeny={() => void submit("deny")}
-        />
+        <>
+          <Input
+            size="small"
+            aria-label="Reason for denying"
+            placeholder="Reason, if you deny (optional)"
+            value={reason}
+            onChange={setReason}
+            isDisabled={resolution.phase === "submitting"}
+          />
+          <ApprovalCard
+            question={`Allow ${approval.toolName}?`}
+            options={[
+              {
+                label: `Run ${approval.toolName}`,
+                detail: "One-time approval for this tool call",
+              },
+            ]}
+            onApprove={() => void submit("approve")}
+            onDeny={() => void submit("deny")}
+          />
+        </>
       )}
     </section>
   );

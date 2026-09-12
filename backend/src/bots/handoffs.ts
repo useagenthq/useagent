@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { botHandle } from "@useagent/agent-client";
 import { db, type Executor } from "../db/client";
 import {
   botHandoffs,
@@ -154,9 +155,15 @@ function boundedHandoffText(text: string): string {
   return `${clean.slice(0, CHILD_PROMPT_MAX_CHARS - 40).trimEnd()}\n\n[message truncated for the handoff]`;
 }
 
-/** "<bot>: <ask>", with the bot's own @mention token removed so the title does not name it twice. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** "<bot>: <ask>", with the bot's own @mention token (its name or its handle,
+ *  see `botHandle`) removed so the title does not name it twice. */
 function handoffTitle(name: string, text: string): string {
-  const token = new RegExp(`@bot/${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "giu");
+  const handles = [...new Set([name, botHandle(name)])].filter(Boolean).map(escapeRegExp);
+  const token = new RegExp(`@bot/(?:${handles.join("|")})(?![\\p{L}\\p{N}])`, "giu");
   const ask = text.replace(token, " ").replace(/\s+/g, " ").trim().slice(0, 120);
   return ask ? `${name}: ${ask}` : name;
 }
@@ -720,7 +727,8 @@ export async function recordBotHandoff(
   return winner;
 }
 
-/** Resolve an @mention typed by an agent: a bot id, or a case-insensitive name. */
+/** Resolve an @mention typed by an agent: a bot id, a case-insensitive name,
+ *  or the name's handle (`@bot/night-triage` for "Night triage"). */
 export async function resolveBotMention(
   orgId: string,
   raw: string,
@@ -741,16 +749,15 @@ export async function resolveBotMention(
       .limit(1);
     return row ?? null;
   }
-  const [row] = await db
+  const rows = await db
     .select()
     .from(bots)
-    .where(
-      and(
-        eq(bots.orgId, orgId),
-        eq(bots.archived, false),
-        sql`lower(${bots.name}) = lower(${needle})`,
-      ),
-    )
-    .limit(1);
-  return row ?? null;
+    .where(and(eq(bots.orgId, orgId), eq(bots.archived, false)));
+  const name = needle.toLowerCase();
+  const handle = botHandle(needle);
+  return (
+    rows.find((row) => row.name.toLowerCase() === name) ??
+    (handle ? rows.find((row) => botHandle(row.name) === handle) : undefined) ??
+    null
+  );
 }
