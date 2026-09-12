@@ -15,9 +15,13 @@ import type { ScheduleTrigger } from "../db/schema";
 import { createRunResourceAuthorization } from "../resources/authorization";
 import {
   explicitRepositoryResources,
+  legacyParentResources,
   resolveRunIntake,
 } from "../resources/run-intake";
 import { resolveExecutableSkillPin } from "../skills/pins";
+import { botFiringTarget, composeRootPrompt, setBotHomeThread } from "../bots/repo";
+import { acceptExistingThreadFollowup } from "../runs/thread-followups";
+import type { MemoryScope } from "../memory/scope";
 
 /**
  * Deterministic per-occurrence idempotency key. A cron firing keys on the MINUTE
@@ -51,8 +55,10 @@ export interface ScheduleFireOutcome {
 /**
  * Fire a schedule: create a run through the durable command lane (the same
  * `acceptRunCommand` + mailbox pump `POST /api/runs` uses) and append an
- * immutable firing row. A firing is always a fresh thread root
- * (`parentRunId: null`, `threadId === runId`). Shared by the 60s scheduler loop
+ * immutable firing row. A firing is a fresh thread root (`parentRunId: null`,
+ * `threadId === runId`) unless the schedule is a bot routine: then it posts
+ * into the bot's home thread as a follow-up (or opens that thread with the
+ * bot's standing rules when none exists yet). Shared by the 60s scheduler loop
  * (`trigger: "cron"`) and the manual run-now route (`trigger: "manual"`).
  *
  * IDEMPOTENT per occurrence. The command lane is keyed by {@link firingKey}, so
@@ -79,17 +85,24 @@ export async function fireScheduleWithOutcome(
   );
   const idempotencyKey = firingKey(schedule.id, trigger, occurrence);
   const runId = crypto.randomUUID();
+  // A bot routine targets the bot's home thread; a deleted/archived bot falls
+  // back to a plain root so the schedule keeps working instead of failing.
+  const target = schedule.botId ? await botFiringTarget(schedule.orgId, schedule.botId) : null;
+  const home = target?.head ?? null;
+  const prompt = target && !home ? composeRootPrompt(target.bot, schedule.prompt) : schedule.prompt;
+  const threadId = home ? home.threadId : runId;
+  const memoryScope: MemoryScope = target ? target.bot.memoryScope : "org";
   const intent: RunCommandIntent = {
-    prompt: schedule.prompt,
+    prompt,
     model: schedule.model,
     engine: schedule.engine,
-    parentRunId: null,
-    requestedRepos: schedule.repos,
+    parentRunId: home?.id ?? null,
+    requestedRepos: home ? [] : schedule.repos,
     requestedResources: [],
     attachmentIds: [],
-    memoryScope: "org",
-    skillId: schedule.skillId,
-    skillVersion: schedule.skillVersion,
+    memoryScope,
+    skillId: home ? null : schedule.skillId,
+    skillVersion: home ? null : schedule.skillVersion,
     commandName: null,
     commandProvider: null,
     commandSessionId: null,
@@ -104,40 +117,57 @@ export async function fireScheduleWithOutcome(
     // A first occurrence still resolves immediately before persistence. Removed
     // access or an unavailable provider fails before a run/firing is created.
     const intake = await resolveRunIntake(
-      {
-        source: "automation",
-        text: schedule.prompt,
-        explicitResources: explicitRepositoryResources(schedule.repos),
-      },
+      home
+        ? {
+            source: "automation",
+            text: "",
+            inheritedResources: home.resolvedResources.length > 0
+              ? home.resolvedResources
+              : legacyParentResources(home.repos, "web"),
+          }
+        : {
+            source: "automation",
+            text: schedule.prompt,
+            explicitResources: explicitRepositoryResources(schedule.repos),
+          },
       { authorize: createRunResourceAuthorization(schedule.orgId) },
     );
-    outcome = await acceptRunCommand({
+    const command = {
       idempotencyKey,
       orgId: schedule.orgId,
       actorId: schedule.userId,
-      acceptedModelPolicy: "persisted",
+      acceptedModelPolicy: "persisted" as const,
       intent,
       run: {
         id: runId,
-        prompt: schedule.prompt,
+        prompt,
         model: schedule.model,
         engine: schedule.engine,
-        parentRunId: null,
-        threadId: runId,
+        parentRunId: home?.id ?? null,
+        threadId,
         repos: [...intake.repos],
         resolvedResources: intake.resources,
-        // Scheduled runs are always fresh roots — organization memory by default.
-        memoryScope: "org",
-        skillId: schedule.skillId,
-        skillVersion: schedule.skillVersion,
-        skillContentHash: schedule.skillContentHash,
+        // Plain scheduled runs are fresh roots with organization memory; a bot
+        // routine inherits the bot's scope.
+        memoryScope,
+        skillId: home ? null : schedule.skillId,
+        skillVersion: home ? null : schedule.skillVersion,
+        skillContentHash: home ? null : schedule.skillContentHash,
         // A scheduled turn is never a native provider command.
         commandName: null,
         commandProvider: null,
         commandSessionId: null,
         commandCatalogRevision: null,
       },
-    });
+    };
+    if (home) {
+      outcome = await acceptExistingThreadFollowup(schedule.orgId, home.id, command);
+    } else {
+      outcome = await acceptRunCommand(command);
+      if (target && outcome.status === "created") {
+        await setBotHomeThread(schedule.orgId, target.bot.id, runId);
+      }
+    }
   }
 
   // A firing key can only conflict if the schedule's prompt/model/engine changed
@@ -186,7 +216,7 @@ export async function fireScheduleWithOutcome(
   // Dispatch the thread's mailbox. On `created` this starts the run; on `replayed`
   // it is an idempotent no-op if the original is already in flight (claimNextRun
   // CAS) and closes the gap if a prior fire crashed after accept but before pump.
-  await pumpThread(acceptedRunId);
+  await pumpThread(home ? home.threadId : acceptedRunId);
 
   return {
     runId: acceptedRunId,

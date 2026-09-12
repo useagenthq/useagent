@@ -10,6 +10,7 @@ import * as Textarea from "@/components/base/textarea/textarea";
 import { backendFetch } from "@/lib/backend-fetch";
 import { AvatarMark } from "./avatar-mark";
 import { type ApiBot, apiErrorText, engineLabel } from "./types";
+import { RoutinesSection } from "./routines-section";
 
 /**
  * Header over the bot's thread plus the details drawer behind the info
@@ -113,6 +114,8 @@ export function BotThreadHeader({ bot }: { bot: ApiBot }) {
                 </p>
               )}
             </section>
+
+            <RoutinesSection bot={bot} />
 
             <section className="flex flex-col gap-1.5">
               <h3 className="text-body-2-medium text-text-primary">Approvals</h3>

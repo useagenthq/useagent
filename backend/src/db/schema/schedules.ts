@@ -1,5 +1,6 @@
 import { type EngineId } from "@useagent/agent-client/wire";
 import { sql } from "drizzle-orm";
+import { bots } from "./bots";
 import {
   boolean,
   index,
@@ -57,6 +58,8 @@ export const schedules = pgTable(
     delivery: jsonb("delivery").$type<AutomationJson | null>(),
     notifications: jsonb("notifications").$type<AutomationJson | null>(),
     runActorId: text("run_actor_id"),
+    /** Owning bot: firings post into its home thread instead of a fresh root. */
+    botId: uuid("bot_id").references(() => bots.id, { onDelete: "set null" }),
     concurrency: jsonb("concurrency").$type<AutomationJson | null>(),
     queue: jsonb("queue").$type<AutomationJson | null>(),
     costLimits: jsonb("cost_limits").$type<AutomationJson | null>(),

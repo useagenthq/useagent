@@ -7,7 +7,9 @@ import {
 } from "@useagent/agent-client";
 import { and, count, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { db } from "../db/client";
-import { bots, gatewayApprovalRequests, runs, type BotRow } from "../db/schema";
+import { bots, gatewayApprovalRequests, runs, schedules, type BotRow } from "../db/schema";
+
+type ScheduleRecord = typeof schedules.$inferSelect;
 import { isMemoryScope, type MemoryScope } from "../memory/scope";
 
 const NAME_MAX = 60;
@@ -38,6 +40,8 @@ export interface BotView {
   readonly lastOutcome: string | null;
   readonly lastAt: string | null;
   readonly pendingApprovals: number;
+  /** Enabled routines (schedules owned by this bot). */
+  readonly routines: number;
 }
 
 export interface BotInput {
@@ -148,7 +152,7 @@ export function parseBotInput(
       title: title ?? base?.title ?? "",
       rules: rules ?? base?.rules ?? "",
       engine: engine ?? base?.engine ?? "opencode",
-      model: model === undefined ? (base?.model ?? null) : (model || null),
+      model: model === undefined ? (base?.model ?? null) : model,
       skillIds: skillIds ?? [...(base?.skillIds ?? [])],
       repos: repos ?? [...(base?.repos ?? [])],
       memoryScope: memoryScope ?? base?.memoryScope ?? "org",
@@ -230,12 +234,17 @@ export async function setBotHomeThread(orgId: string, id: string, threadId: stri
   return rows.length > 0;
 }
 
-interface ThreadHead {
+export interface ThreadHead {
   readonly threadId: string;
   readonly id: string;
   readonly status: string;
   readonly summary: string | null;
   readonly updatedAt: Date;
+  readonly model: string;
+  readonly engine: EngineId;
+  readonly memoryScope: MemoryScope;
+  readonly repos: string[];
+  readonly resolvedResources: (typeof runs.$inferSelect)["resolvedResources"];
 }
 
 /** Head run per thread in one query (the run a follow-up chains under). */
@@ -248,6 +257,11 @@ async function threadHeads(orgId: string, threadIds: readonly string[]): Promise
       status: runs.status,
       summary: runs.summary,
       updatedAt: runs.updatedAt,
+      model: runs.model,
+      engine: runs.engine,
+      memoryScope: runs.memoryScope,
+      repos: runs.repos,
+      resolvedResources: runs.resolvedResources,
     })
     .from(runs)
     .where(and(eq(runs.orgId, orgId), inArray(runs.threadId, [...threadIds])))
@@ -283,7 +297,18 @@ export function deriveState(latestStatus: string | null, pendingApprovals: numbe
   return "idle";
 }
 
-function toView(row: BotRow, head: ThreadHead | null, pending: number): BotView {
+/** Enabled routines per bot in one query. */
+async function routineCounts(orgId: string, botIds: readonly string[]): Promise<Map<string, number>> {
+  if (botIds.length === 0) return new Map();
+  const rows = await db
+    .select({ botId: schedules.botId, routines: count() })
+    .from(schedules)
+    .where(and(eq(schedules.orgId, orgId), inArray(schedules.botId, [...botIds]), eq(schedules.enabled, true)))
+    .groupBy(schedules.botId);
+  return new Map(rows.flatMap((row) => (row.botId ? [[row.botId, Number(row.routines)] as const] : [])));
+}
+
+function toView(row: BotRow, head: ThreadHead | null, pending: number, routines: number): BotView {
   return {
     id: row.id,
     name: row.name,
@@ -305,21 +330,24 @@ function toView(row: BotRow, head: ThreadHead | null, pending: number): BotView 
     lastOutcome: head?.summary?.trim() || null,
     lastAt: head ? head.updatedAt.toISOString() : null,
     pendingApprovals: pending,
+    routines,
   };
 }
 
-/** Attach the derived fields for many bots with two queries total. */
+/** Attach the derived fields for many bots with three queries total. */
 export async function describeBots(orgId: string, rows: readonly BotRow[]): Promise<BotView[]> {
   const threadIds = rows.flatMap((row) => (row.homeThreadId ? [row.homeThreadId] : []));
-  const [heads, pending] = await Promise.all([
+  const [heads, pending, routines] = await Promise.all([
     threadHeads(orgId, threadIds),
     pendingApprovalCounts(orgId, threadIds),
+    routineCounts(orgId, rows.map((row) => row.id)),
   ]);
   return rows.map((row) =>
     toView(
       row,
       row.homeThreadId ? (heads.get(row.homeThreadId) ?? null) : null,
       row.homeThreadId ? (pending.get(row.homeThreadId) ?? 0) : 0,
+      routines.get(row.id) ?? 0,
     ),
   );
 }
@@ -345,4 +373,54 @@ export function composeRootPrompt(bot: Pick<BotInput, "name" | "title" | "rules"
     "Standing rules:",
     rules,
   ].join("\n");
+}
+
+/** True when `threadId` is some bot's home thread in this org. */
+export async function isBotHomeThread(orgId: string, threadId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: bots.id })
+    .from(bots)
+    .where(and(eq(bots.orgId, orgId), eq(bots.homeThreadId, threadId)))
+    .limit(1);
+  return Boolean(row);
+}
+
+export interface BotFiringTarget {
+  readonly bot: BotRow;
+  /** Head of the home thread, or null when the firing must open it. */
+  readonly head: ThreadHead | null;
+}
+
+/** Where a routine owned by `botId` posts: the home thread head, or a new root. */
+export async function botFiringTarget(orgId: string, botId: string): Promise<BotFiringTarget | null> {
+  const bot = await getBotRow(orgId, botId);
+  if (!bot || bot.archived) return null;
+  const head = bot.homeThreadId ? await latestRunInThread(orgId, bot.homeThreadId) : null;
+  return { bot, head };
+}
+
+export async function listBotRoutines(orgId: string, botId: string): Promise<ScheduleRecord[]> {
+  return db
+    .select()
+    .from(schedules)
+    .where(and(eq(schedules.orgId, orgId), eq(schedules.botId, botId)))
+    .orderBy(desc(schedules.createdAt), desc(schedules.id));
+}
+
+export async function attachRoutine(orgId: string, scheduleId: string, botId: string): Promise<boolean> {
+  const rows = await db
+    .update(schedules)
+    .set({ botId })
+    .where(and(eq(schedules.orgId, orgId), eq(schedules.id, scheduleId), isNull(schedules.botId)))
+    .returning({ id: schedules.id });
+  return rows.length > 0;
+}
+
+export async function getBotRoutine(orgId: string, botId: string, scheduleId: string): Promise<ScheduleRecord | null> {
+  const [row] = await db
+    .select()
+    .from(schedules)
+    .where(and(eq(schedules.orgId, orgId), eq(schedules.botId, botId), eq(schedules.id, scheduleId)))
+    .limit(1);
+  return row ?? null;
 }

@@ -31,6 +31,29 @@ export interface ApiBot {
   lastOutcome: string | null;
   lastAt: string | null;
   pendingApprovals: number;
+  /** Enabled routines (schedules owned by this bot). */
+  routines: number;
+}
+
+/** Wire shape of GET /api/bots/:id/routines. */
+export interface ApiRoutine {
+  id: string;
+  name: string;
+  cron: string;
+  timezone: string | null;
+  prompt: string;
+  enabled: boolean;
+  lastFiredAt: string | null;
+  createdAt: string;
+}
+
+export interface ApiFiring {
+  id: string;
+  run_id: string;
+  fired_at: string;
+  trigger: string;
+  run_status: string | null;
+  run_summary: string | null;
 }
 
 const ENGINE_LABELS: Record<string, string> = {
