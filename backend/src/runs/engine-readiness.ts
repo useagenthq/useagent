@@ -69,7 +69,7 @@ export function engineResolutionErrorBody(
   };
 }
 
-const ENGINE_DISPLAY_NAMES: Record<UserFacingEngineId, string> = {
+export const ENGINE_DISPLAY_NAMES: Record<UserFacingEngineId, string> = {
   chat: "Chat",
   opencode: "OpenCode",
   claude: "Claude Code",
@@ -79,18 +79,21 @@ const ENGINE_DISPLAY_NAMES: Record<UserFacingEngineId, string> = {
 
 function unavailableMessage(readiness: EngineReadiness): string {
   const label = ENGINE_DISPLAY_NAMES[readiness.engine];
+  const provider = readiness.provider === "anthropic"
+    ? "Anthropic"
+    : readiness.provider === "openai"
+      ? "OpenAI"
+      : "OpenRouter";
   if (readiness.reason === "provider_unhealthy" && readiness.provider) {
-    const provider = readiness.provider === "anthropic"
-      ? "Anthropic"
-      : readiness.provider === "openai"
-        ? "OpenAI"
-        : "OpenRouter";
     if (readiness.providerHealth === "insufficient_credit") {
       return `${label} is configured, but ${provider} reports insufficient credits. Add credits or update the provider key in Settings, then retry.`;
     }
     return `${label} is configured, but ${provider} is unavailable${readiness.providerHealth ? ` (${readiness.providerHealth})` : ""}. Check provider credentials and billing in Settings, then retry.`;
   }
   if (readiness.reason === "disabled") return `${label} is disabled on this server.`;
+  if (readiness.provider) {
+    return `${label} is configured, but no ${provider} connection is verified. Connect an ${provider} key in Settings, then retry.`;
+  }
   return `${label} is configured but not ready. Check its provider connection in Settings, then retry.`;
 }
 
@@ -217,12 +220,9 @@ export function engineReadiness(
   }
 
   const engineHealth = explicitEngineHealth(engine, env);
-  if (!engineHealth || !POSITIVE_HEALTH.has(engineHealth)) {
-    return { engine, ready: false, reason: "not_proven" };
-  }
-
-  if (engineAuthMode(engine, env) === null) {
-    return { engine, ready: false, reason: "not_proven" };
+  if (!engineHealth || !POSITIVE_HEALTH.has(engineHealth) || engineAuthMode(engine, env) === null) {
+    const readiness: EngineReadiness = { engine, ready: false, reason: "not_proven" };
+    return { ...readiness, message: unavailableMessage(readiness) };
   }
 
   const provider = engineUsesProviderGateway(engine, env)

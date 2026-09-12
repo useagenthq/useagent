@@ -287,3 +287,20 @@ describe("engine dispatch readiness", () => {
     ).toBe(true);
   });
 });
+
+describe("readiness remedy text", () => {
+  test("an unproven engine and an unverified provider both name the remedy", () => {
+    expect(engineReadiness("claude", { ...PROD, ENABLED_ENGINES: "claude" }).message)
+      .toBe("Claude Code is configured but not ready. Check its provider connection in Settings, then retry.");
+    expect(engineReadiness("claude", {
+      ...PROD,
+      ENABLED_ENGINES: "claude",
+      ENGINE_READINESS_CLAUDE: "verified",
+    })).toMatchObject({
+      ready: false,
+      reason: "not_proven",
+      provider: "anthropic",
+      message: "Claude Code is configured, but no Anthropic connection is verified. Connect an Anthropic key in Settings, then retry.",
+    });
+  });
+});
