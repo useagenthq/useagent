@@ -563,7 +563,9 @@ export function WorkspacePane({
             aria-hidden={tab.id !== activeId}
             className={cx(
               "absolute inset-0",
-              tab.id === activeId ? "visible" : "pointer-events-none invisible",
+              // Active editors must inherit the rail's visibility. Explicit
+              // `visible` would paint through an inactive Workspace parent.
+              tab.id !== activeId && "pointer-events-none invisible",
             )}
           >
             <WorkpieceEditorPane
