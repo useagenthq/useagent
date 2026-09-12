@@ -31,6 +31,7 @@ import type { RunStatus } from "@useagent/agent-client/wire";
 import Link from "next/link";
 import { memo } from "react";
 import { Loader } from "@/components/agent-ui/agent-loader";
+import { runTitle } from "@/components/chat/types";
 import { GitChips, runGitRefs } from "@/components/session-ui/git-chip";
 import { type DotTone, StatusDot } from "@/components/shared/status-dot";
 import {
@@ -111,7 +112,7 @@ export const ThreadRow = memo(function ThreadRow({
   active?: boolean;
 }) {
   const pill = resolveThreadRowPill({ status: effectiveThreadStatus(run) });
-  const title = run.prompt || "Untitled run";
+  const title = runTitle(run.prompt);
   const timestampMs = threadRowTimestamp(run);
   const gitRefs = runGitRefs(run);
 

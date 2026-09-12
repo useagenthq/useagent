@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { type DotTone, StatusDot } from "@/components/shared/status-dot";
+import { runTitle } from "@/components/chat/types";
 import { AppShell } from "@/components/shell/app-shell";
 import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import { backendFetch } from "@/lib/backend-fetch";
@@ -58,7 +59,7 @@ function RecentTasks({ runs }: { runs: RecentRun[] }) {
           >
             <StatusDot tone={STATUS_DOT[run.status] ?? "info"} />
             <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-primary">
-              {run.prompt}
+              {runTitle(run.prompt)}
             </span>
             <span className="shrink-0 text-caption-1-regular tabular-nums text-text-tertiary">
               {relativeTimeShort(run.created_at)}

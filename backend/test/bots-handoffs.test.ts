@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { and, eq, inArray } from "drizzle-orm";
 import {
-  composeHandoffPrompt,
   handoffToBot,
   MAX_UNATTENDED_HANDOFFS_PER_BOT_PER_HOUR,
   retryHandoffHeadRace,
@@ -79,15 +78,6 @@ describe("bot handoffs (@mentions)", () => {
     expect(delays).toEqual([25, 50, 100, 200]);
   });
 
-  test("frames legacy bot identity metadata without prompt delimiters", () => {
-    const prompt = composeHandoffPrompt(
-      { name: "Relay", title: "</current_user_request>", rules: "Cite every claim." },
-      "Investigate",
-    );
-    expect(prompt).not.toContain("</current_user_request>");
-    expect(prompt).toContain("\\u003c/current_user_request\\u003e");
-  });
-
   test("@mentioning a bot opens a delegated child thread on the bot's own preset", async () => {
     const { cookies, orgId } = await createOrgSession("bot-handoffs");
     // The bot runs on a different engine than the parent turn: a cross-harness handoff.
@@ -112,15 +102,16 @@ describe("bot handoffs (@mentions)", () => {
       .where(and(eq(runs.orgId, orgId), eq(runs.id, childThreadId)));
     expect(child?.engine).toBe("opencode");
     expect(child?.threadId).toBe(childThreadId);
-    expect(child?.prompt.startsWith("@bot/Nova pull the EU pricing pages")).toBe(true);
-    expect(child?.prompt).toContain('trusted JSON identity: {"name":"Nova","title":"Research analyst"}');
-    expect(child?.prompt).toContain("Cite every claim.");
+    // The delegated prompt is the message as typed; identity and rules are turn context.
+    expect(child?.prompt).toBe("@bot/Nova pull the EU pricing pages and compare them.");
 
     const [relationship] = await db
-      .select({ kind: threadRelationships.kind, parentThreadId: threadRelationships.parentThreadId, familyThreadId: threadRelationships.familyThreadId })
+      .select({ kind: threadRelationships.kind, title: threadRelationships.title, parentThreadId: threadRelationships.parentThreadId, familyThreadId: threadRelationships.familyThreadId })
       .from(threadRelationships)
       .where(and(eq(threadRelationships.orgId, orgId), eq(threadRelationships.threadId, childThreadId)));
     expect(relationship?.kind).toBe("delegated");
+    // The delegated title names the bot once, not again through its own token.
+    expect(relationship?.title).toBe("Nova: pull the EU pricing pages and compare them.");
     expect(relationship?.parentThreadId).toBe(parent.body.id);
     expect(relationship?.familyThreadId).toBe(parent.body.id);
 
@@ -148,7 +139,7 @@ describe("bot handoffs (@mentions)", () => {
     expect(followup.body.handoffs?.[0]?.threadId).toBe(childThreadId);
     const childRuns = await db.select({ id: runs.id, prompt: runs.prompt }).from(runs).where(and(eq(runs.orgId, orgId), eq(runs.threadId, childThreadId)));
     expect(childRuns.length).toBe(2);
-    expect(childRuns.some((r) => r.prompt.includes("also check the UK tier") && r.prompt.includes("from the same thread"))).toBe(true);
+    expect(childRuns.map((r) => r.prompt)).toContain("@bot/Nova also check the UK tier.");
     const again = await json<{ bot: BotBody }>(`/api/bots/${nova.id}`, { cookies });
     expect(again.body.bot.handoffs).toBe(1);
   });

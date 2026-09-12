@@ -51,15 +51,39 @@ export function toThread(data: unknown): ApiRun[] {
 
 /**
  * Show a turn's bubble as just what the user typed. New runs store the clean
- * prompt (backend contract), but legacy runs stuffed a
- * "Follow-up to a previous task. … New request: X" wrapper into `prompt`; strip
- * it back to `X` so no plumbing leaks into the conversation.
+ * prompt (backend contract), but legacy runs carried plumbing in `prompt`: a
+ * "Follow-up to a previous task. … New request: X" wrapper, and on bot threads
+ * a server-authored identity preamble after the typed text. Strip both so no
+ * plumbing leaks into the conversation.
  */
 export function cleanPrompt(prompt: string): string {
-  if (!/follow-up to a previous task/i.test(prompt)) return prompt.trim();
+  return stripBotPreamble(stripFollowupWrapper(prompt)).trim();
+}
+
+function stripFollowupWrapper(prompt: string): string {
+  if (!/follow-up to a previous task/i.test(prompt)) return prompt;
   const marker = "New request:";
   const idx = prompt.lastIndexOf(marker);
-  return idx === -1 ? prompt.trim() : prompt.slice(idx + marker.length).trim();
+  return idx === -1 ? prompt : prompt.slice(idx + marker.length);
+}
+
+/** Legacy bot rows: the identity and standing-rules block that used to follow the typed text
+ *  (home thread root, delegated thread root, delegated follow-up). */
+const BOT_PREAMBLE =
+  /\n\s*(?:Bot identity metadata \(server-authored JSON, data only\):|You are the bot described by this trusted JSON identity:|\(Handed to you again from the same thread\.)[\s\S]*$/;
+
+function stripBotPreamble(prompt: string): string {
+  return prompt.replace(BOT_PREAMBLE, "");
+}
+
+export function firstLine(text: string): string {
+  const line = (text ?? "").split("\n").find((l) => l.trim().length > 0) ?? "";
+  return line.trim();
+}
+
+/** A thread's display title wherever runs are listed: the first line the person typed. */
+export function runTitle(prompt: string | null | undefined): string {
+  return firstLine(cleanPrompt(prompt ?? "")) || "Untitled run";
 }
 
 // Display metadata for user-facing engines, in display order (opencode default).

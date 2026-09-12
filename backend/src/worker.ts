@@ -42,7 +42,7 @@ import {
   RUN_TIMING_STAGES,
   type RunStageTimer,
 } from "./runs/run-timing";
-import { botContextForTurn } from "./bots/prompt-context";
+import { botContextForTurn, NO_BOT_TURN_CONTEXT } from "./bots/prompt-context";
 import { frameTurnContexts } from "./engines/turn-contexts";
 import { formatInputContext, runInputFiles } from "./uploads/materialize";
 import { CHAT_SYSTEM_PROMPT } from "./chat/prompt";
@@ -266,8 +266,9 @@ async function runWorker(runId: string): Promise<void> {
       await runMock(runId, run.threadId, run.orgId, run.origin, ac.signal, wasCancelled);
       return;
     }
+    const bot = run.commandName ? NO_BOT_TURN_CONTEXT : await botContextForTurn({ orgId: run.orgId, threadId: run.threadId, engine: run.engine });
     if (run.engine === "chat") {
-      await runChat(run, skillContext, ac.signal, wasCancelled);
+      await runChat(run, skillContext, bot.identity, ac.signal, wasCancelled);
       return;
     }
 
@@ -358,8 +359,7 @@ async function runWorker(runId: string): Promise<void> {
     const providerSession = providerSessionState.binding ?? undefined;
     const engineSessionId = providerSession?.nativeSessionId ??
       providerSessionState.legacySessionId ?? undefined;
-    const botContext = run.commandName ? "" : await botContextForTurn({ orgId: run.orgId, threadId: run.threadId, engine: run.engine });
-    const { turnContext, skillCatalogContext, resourceContext } = frameTurnContexts({ recall, skillCatalogPage, resourceSnapshot });
+    const { turnContext, skillCatalogContext, resourceContext } = frameTurnContexts({ recall, skillCatalogPage, resourceSnapshot, botIdentity: bot.identity });
 
     if (turnContext || bootstrapContext || skillContext || skillCatalogContext || resourceContext) {
       console.log(
@@ -419,7 +419,7 @@ async function runWorker(runId: string): Promise<void> {
         resourceContext,
         skillContext,
         skillCatalogContext,
-        botContext,
+        bot.delegation,
         run.threadId,
         engineSessionId,
         providerSession,
@@ -465,7 +465,7 @@ type WorkerRun = NonNullable<Awaited<ReturnType<typeof getRun>>>;
 
 async function runChat(
   run: WorkerRun,
-  skillContext: string,
+  skillContext: string, botIdentity: string,
   signal: AbortSignal,
   wasCancelled: () => string | null,
 ): Promise<void> {
@@ -524,7 +524,7 @@ async function runChat(
         : Promise.resolve(null),
     ]);
 
-    const systemParts = [CHAT_SYSTEM_PROMPT];
+    const systemParts = botIdentity ? [CHAT_SYSTEM_PROMPT, botIdentity] : [CHAT_SYSTEM_PROMPT];
     if (skillContext) systemParts.push(skillContext);
     if (resourceSnapshot) systemParts.push(formatResourceAccessContext(resourceSnapshot));
     if (context.block) systemParts.push(context.block);

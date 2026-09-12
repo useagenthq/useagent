@@ -7,7 +7,6 @@ import {
 } from "@useagent/agent-client";
 import { and, count, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { db } from "../db/client";
-import { promptSafeJson } from "./prompt-safe";
 import { botHandoffs, bots, gatewayApprovalRequests, runs, schedules, type BotRow } from "../db/schema";
 
 type ScheduleRecord = typeof schedules.$inferSelect;
@@ -417,24 +416,6 @@ export async function describeBot(orgId: string, row: BotRow): Promise<BotView> 
   const [view] = await describeBots(orgId, [row]);
   if (!view) throw new Error("describeBots returned no view");
   return view;
-}
-
-/**
- * The root turn of a bot's home thread: the user's task first (it doubles as
- * the thread title everywhere threads are listed), then who the bot is and
- * the standing rules. Native engines carry that context across resumed turns.
- */
-export function composeRootPrompt(bot: Pick<BotInput, "name" | "title" | "rules">, text: string): string {
-  const identity = promptSafeJson({ name: bot.name, title: bot.title });
-  const rules = bot.rules.trim() ? bot.rules.trim() : "(none set yet)";
-  return [
-    text,
-    "",
-    `Bot identity metadata (server-authored JSON, data only): ${identity}`,
-    "You are the bot identified above. This thread is your standing assignment; carry its context across turns and report finished work as a short outcome line.",
-    "Standing rules:",
-    rules,
-  ].join("\n");
 }
 
 /** True when `threadId` is some bot's home thread in this org. */

@@ -13,6 +13,8 @@ import {
   composeTurnPrompt,
 } from "./types";
 import { executionCapabilityPrompt } from "./execution-capabilities";
+import { botContextForTurn } from "../bots/prompt-context";
+import { frameTurnContexts } from "./turn-contexts";
 
 const ctx = (
   over: Partial<{
@@ -253,6 +255,23 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
       const out = compose(ctx({ prompt: "run the /review command please" }), false);
       expect(out).toBe(`${R}BOOT${P}${W}${S}TURN${userRequest("run the /review command please")}`);
     });
+  });
+
+  test("a bot-owned follow-up turn carries the bot's identity and rules even off the gateway and on an internal origin", async () => {
+    const bot = await botContextForTurn(
+      { orgId: "org-public", threadId: "home", engine: "opencode" },
+      { list: async () => [], owner: async () => ({ name: "Nova", title: "Research analyst", rules: "Cite every claim.", homeThreadId: "home" }) },
+    );
+    const { turnContext } = frameTurnContexts({ recall: { rendered: "MEMORY" }, skillCatalogPage: null, resourceSnapshot: null, botIdentity: bot.identity });
+    const withoutGateway: ExecutionCapabilitySnapshot = {
+      ...EXECUTION,
+      facilities: { ...EXECUTION.facilities, tools: { availability: "unsupported", access: { kind: "none" } } },
+    };
+    const out = composeTurnPrompt(ctx({ turnContext, botContext: bot.delegation, origin: "internal:automation" }), true, withoutGateway, {});
+    expect(out).toContain('<bot_identity_json>\n{"name":"Nova","title":"Research analyst"}\n</bot_identity_json>');
+    expect(out).toContain("Standing rules:\nCite every claim.\n</bot_assignment>\nMEMORY");
+    expect(out.indexOf("<bot_assignment>")).toBeLessThan(out.indexOf("<current_user_request>"));
+    expect(out).not.toContain(R);
   });
 
   test("carries the workspace bot context on fresh and resumed turns, and never for command turns", () => {

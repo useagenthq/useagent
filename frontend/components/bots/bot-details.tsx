@@ -86,7 +86,7 @@ export function BotThreadHeader({ bot }: { bot: ApiBot }) {
                 placeholder="Never send external messages without approval."
               />
               <span className="text-caption-1-regular text-text-tertiary">
-                Rules go into the first turn of the home thread and stay in force across turns.
+                Rules go to the bot with every turn, in its home thread and in any thread handed to it.
               </span>
             </label>
 

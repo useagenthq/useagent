@@ -21,6 +21,7 @@ import {
   type StatusChipColor,
 } from '@/components/application/data-table/cells';
 import { Chip } from '@/components/base/badges/chip';
+import { runTitle } from '@/components/chat/types';
 import { InputBase } from '@/components/base/input/input';
 import { Pagination } from '@/components/base/pagination/pagination';
 import {
@@ -86,7 +87,7 @@ const COLUMNS: ColumnDef<Run>[] = [
           <StatusDot {...TONE_TO_DOT[statusTone(run.status)]} />
           <div className='min-w-0'>
             <p className='truncate text-body-2-medium text-text-primary'>
-              {run.prompt || 'Untitled run'}
+              {runTitle(run.prompt)}
             </p>
             {run.summary && (
               <p className='mt-0.5 truncate text-caption-1-regular text-text-secondary'>

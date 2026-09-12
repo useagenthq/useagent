@@ -71,15 +71,12 @@ describe("bots", () => {
     const turns = Array.isArray(thread.body) ? thread.body : (thread.body.thread ?? []);
     expect(turns.length).toBeGreaterThanOrEqual(2);
 
-    // The user's task leads the root prompt (it doubles as the thread title);
-    // identity and standing rules follow.
+    // Stored prompts are only what the person typed (they double as thread
+    // titles and bubbles); identity and standing rules travel as turn context.
     const rootRun = await json<{ prompt: string }>(`/api/runs/${rootRunId}`, { cookies });
-    expect(rootRun.body.prompt.startsWith("Review the payments PR.")).toBe(true);
-    expect(rootRun.body.prompt).toContain(
-      'Bot identity metadata (server-authored JSON, data only): {"name":"Atlas","title":"Code reviewer"}',
-    );
-    expect(rootRun.body.prompt).toContain("You are the bot identified above.");
-    expect(rootRun.body.prompt).toContain("Never merge without approval.");
+    expect(rootRun.body.prompt).toBe("Review the payments PR.");
+    const followup = await json<{ prompt: string }>(`/api/runs/${second.body.id}`, { cookies });
+    expect(followup.body.prompt).toBe("Now fix the changelog.");
 
     const list = await json<{ bots: BotBody[] }>("/api/bots", { cookies });
     expect(list.body.bots.map((b) => b.name)).toEqual(["Atlas"]);
