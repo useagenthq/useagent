@@ -8,6 +8,7 @@ import {
   terminalFontLoadRequests,
   terminalTheme,
   isIdleTerminalNotice,
+  isTerminalUnavailableNotice,
 } from "./terminal-surface";
 
 describe("quoteTerminalFontFamilies", () => {
@@ -132,5 +133,18 @@ describe("isIdleTerminalNotice", () => {
   test("preserves real terminal output", () => {
     expect(isIdleTerminalNotice("root@tpl-123:~/work# bun test")).toBe(false);
     expect(isIdleTerminalNotice("Sandbox integration tests passed")).toBe(false);
+  });
+});
+
+describe("isTerminalUnavailableNotice", () => {
+  test("recognizes the backend's declared capability gap and nothing else", () => {
+    expect(
+      isTerminalUnavailableNotice(
+        "\r\n\x1b[2m[useAgent] terminal unavailable: Box terminals need the Box CLI (box) installed on the useAgent server\x1b[0m\r\n",
+      ),
+    ).toBe(true);
+    expect(isTerminalUnavailableNotice("\r\n\x1b[2m[useAgent] no live sandbox yet\x1b[0m\r\n")).toBe(false);
+    expect(isTerminalUnavailableNotice("\x1b[31m[useAgent] run not found\x1b[0m")).toBe(false);
+    expect(isTerminalUnavailableNotice("$ ls\r\nterminal unavailable: nope")).toBe(false);
   });
 });

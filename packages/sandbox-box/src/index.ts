@@ -9,6 +9,7 @@ export {
   type BoxMachineType,
   type BoxProviderOptions,
   BoxApiError,
+  boxCliProblem,
   boxPreviewLink,
   boxSandboxProvider,
   boxSandboxState,
