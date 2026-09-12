@@ -19,6 +19,7 @@ import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { AddKnowledgeModal } from "./add-knowledge-modal";
 import { ContextCardStack } from "./context-card";
 import { KnowledgeRow } from "./knowledge-rows";
+import { KnowledgeUploadDrop } from "./knowledge-upload";
 import {
   deleteKnowledge,
   fetchKnowledgeItems,
@@ -221,8 +222,16 @@ export function KnowledgeGallery({
         <AddKnowledgeModal folders={folderOptions} onIngested={refetch} />
       </div>
 
-      {/* Search */}
+      {/* Document upload: lands in the folder being viewed, or the first one. */}
       <div className="mt-6">
+        <KnowledgeUploadDrop
+          folder={folderFilter === "all" ? (folderOptions[0] ?? "Global") : folderFilter}
+          onIngested={refetch}
+        />
+      </div>
+
+      {/* Search */}
+      <div className="mt-4">
         <Input
           aria-label="Search knowledge"
           placeholder="Search knowledge..."

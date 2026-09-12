@@ -1,7 +1,14 @@
+import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import { embeddingsEnabled, embedOne } from "./embed";
+import {
+  DocumentExtractionError,
+  extractDocumentText,
+  KNOWLEDGE_UPLOAD_MAX_BYTES,
+  type ExtractedDocument,
+} from "./extract-text";
 import { ingestOne, IngestValidationError } from "./ingest";
 import {
   deleteRecord,
@@ -30,6 +37,9 @@ import {
 export const knowledgeRoutes = new Hono<AppEnv>();
 
 knowledgeRoutes.use("*", orgScope);
+
+const UPLOAD_FORM_OVERHEAD = 64 * 1024;
+const uploadTooLarge = `Files larger than ${KNOWLEDGE_UPLOAD_MAX_BYTES / (1024 * 1024)} MB cannot be added`;
 
 /** Shape a stored row for the read API (flattens the useful distilled meta). */
 function toApi(row: KnowledgeRow) {
@@ -82,6 +92,64 @@ knowledgeRoutes.post("/ingest", async (c) => {
   } catch (e) {
     if (e instanceof IngestValidationError) return c.json({ error: e.message }, 400);
     console.error("[knowledge] ingest error:", (e as Error).message);
+    return c.json({ error: "ingest failed", detail: (e as Error).message }, 500);
+  }
+});
+
+// POST /api/knowledge/upload (multipart: file, optional folder) — a document
+// upload. The file's text is extracted here (md/txt as-is, pdf through the
+// text extractor) and then goes through the SAME ingest contract as a pasted
+// note, so distillation, dedupe and search treat both alike. The content hash
+// is the external id: uploading the same file twice is a skip, not a duplicate.
+knowledgeRoutes.post("/upload", async (c) => {
+  const declaredLength = Number(c.req.header("content-length") ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > KNOWLEDGE_UPLOAD_MAX_BYTES + UPLOAD_FORM_OVERHEAD) {
+    return c.json({ error: "file_too_large", message: uploadTooLarge }, 413);
+  }
+  let form: FormData;
+  try {
+    form = await c.req.formData();
+  } catch {
+    return c.json({ error: "invalid_multipart", message: "Expected a multipart form with a file" }, 400);
+  }
+  const file = form.get("file");
+  if (!(file instanceof File)) return c.json({ error: "file_required", message: "Choose a file to add" }, 400);
+  if (file.size > KNOWLEDGE_UPLOAD_MAX_BYTES) {
+    return c.json({ error: "file_too_large", message: uploadTooLarge }, 413);
+  }
+  const folderField = form.get("folder");
+  const domain = typeof folderField === "string" && folderField.trim() ? folderField.trim() : null;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let extracted: ExtractedDocument;
+  try {
+    extracted = await extractDocumentText(file.name, bytes);
+  } catch (e) {
+    if (e instanceof DocumentExtractionError) {
+      return c.json({ error: e.code, message: e.message }, e.code === "unsupported_type" ? 400 : 422);
+    }
+    throw e;
+  }
+  const title = file.name.replace(/\.[^.]+$/, "");
+  try {
+    const result = await ingestOne({
+      meta: {
+        source_type: "document",
+        external_id: `upload:${createHash("sha256").update(bytes).digest("hex")}`,
+        connector_instance_id: "upload:web",
+        created_at: new Date().toISOString(),
+        domain,
+      },
+      text: `${title}\n\n${extracted.text}`,
+      org_id: c.get("orgId"),
+      user_id: c.get("userId"),
+    });
+    return c.json({
+      ...result,
+      file: { name: file.name, bytes: file.size, pages: extracted.pages, chars: extracted.text.length },
+    });
+  } catch (e) {
+    if (e instanceof IngestValidationError) return c.json({ error: e.message }, 400);
+    console.error("[knowledge] upload ingest error:", (e as Error).message);
     return c.json({ error: "ingest failed", detail: (e as Error).message }, 500);
   }
 });
