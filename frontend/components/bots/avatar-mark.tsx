@@ -9,7 +9,9 @@ import {
   RiSearchEyeLine,
   RiUserSearchLine,
 } from "@remixicon/react";
+import { Badge } from "@/components/base/badges/badge";
 import { cx } from "@/utils/cx";
+import { stateLabel } from "./roster-model";
 import type { BotState } from "./types";
 
 /**
@@ -60,15 +62,24 @@ export function iconFor(icon: string): React.ComponentType<{ className?: string 
 }
 
 const GLYPH: Record<string, string> = {
+  "size-5": "size-3",
   "size-8": "size-4",
   "size-10": "size-5",
   "size-14": "size-7",
   "size-16": "size-8",
 };
 
+/** The state in words beside a name: the dot alone is colour only. */
+export function StateBadge({ state }: { state: BotState }) {
+  const label = stateLabel(state);
+  if (!label) return null;
+  return <Badge color={state === "attention" ? "primary" : "neutral"}>{label}</Badge>;
+}
+
 /**
  * Flat, rounded, one color, one-ink glyph - the reference's avatar language.
- * State is one small dot in the theme's success/warning color; nothing else.
+ * State is one small dot in the theme's success/warning color, paired with
+ * the StateBadge wherever the name is shown.
  */
 export function AvatarMark({
   tone,

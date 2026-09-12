@@ -14,6 +14,7 @@ import {
   createBotRow,
   describeBot,
   describeBots,
+  findBotByName,
   getBotRoutine,
   getBotRow,
   latestRunInThread,
@@ -26,7 +27,7 @@ import {
   updateBotRow,
 } from "./repo";
 import { botsEnabled } from "./rollout";
-import { listFirings } from "../schedules/repo";
+import { listFirings, markFired } from "../schedules/repo";
 import {
   createScheduleForOrg,
   deleteScheduleForOrg,
@@ -75,6 +76,11 @@ async function readBody(c: { req: { json: () => Promise<unknown> } }): Promise<R
 
 type PresetProblem = { readonly status: 400 | 403 | 404; readonly body: Record<string, unknown> };
 
+/** Names are unique per org ignoring case; the message names the bot that holds it. */
+function nameTaken(name: string) {
+  return { error: "invalid_bot", field: "name", reason: `A bot named ${name} already exists. Choose another name.` };
+}
+
 /** Live-config checks a structurally valid preset still has to pass. */
 async function checkPreset(orgId: string, input: BotInput): Promise<PresetProblem | null> {
   const engine = resolveAcceptedEngine(input.engine);
@@ -108,13 +114,13 @@ botsRoutes.post("/", async (c) => {
   }
   const problem = await checkPreset(c.get("orgId"), parsed.input);
   if (problem) return c.json(problem.body, problem.status);
+  const holder = await findBotByName(c.get("orgId"), parsed.input.name);
+  if (holder) return c.json(nameTaken(holder.name), 409);
   try {
     const row = await createBotRow(c.get("orgId"), parsed.input, c.get("userId"));
     return c.json({ bot: await describeBot(c.get("orgId"), row) }, 201);
   } catch (error) {
-    if (isUniqueViolation(error)) {
-      return c.json({ error: "invalid_bot", field: "name", reason: "a bot with this name already exists" }, 409);
-    }
+    if (isUniqueViolation(error)) return c.json(nameTaken(parsed.input.name), 409);
     throw error;
   }
 });
@@ -137,6 +143,12 @@ botsRoutes.patch("/:id", async (c) => {
   const base = rowToInput(row);
   const parsed = parseBotInput(body, base);
   if ("error" in parsed) return c.json({ error: "invalid_bot", ...parsed.error }, 400);
+  // Archiving is a lifecycle flag, not part of the preset: the bot leaves the
+  // roster and @mentions while its threads stay readable.
+  const archived = body.archived;
+  if (archived !== undefined && typeof archived !== "boolean") {
+    return c.json({ error: "invalid_bot", field: "archived", reason: "archived must be true or false" }, 400);
+  }
   // The home thread already runs on the stored preset; a changed engine would
   // 400 every follow-up and changed skills/repos/scope would silently not apply.
   const changed = changedPresetFields(base, parsed.input);
@@ -152,14 +164,16 @@ botsRoutes.patch("/:id", async (c) => {
     const problem = await checkPreset(c.get("orgId"), parsed.input);
     if (problem) return c.json(problem.body, problem.status);
   }
+  if (parsed.input.name !== base.name) {
+    const holder = await findBotByName(c.get("orgId"), parsed.input.name, row.id);
+    if (holder) return c.json(nameTaken(holder.name), 409);
+  }
   try {
-    const updated = await updateBotRow(c.get("orgId"), row.id, parsed.input);
+    const updated = await updateBotRow(c.get("orgId"), row.id, parsed.input, archived);
     if (!updated) return c.json({ error: "not_found" }, 404);
     return c.json({ bot: await describeBot(c.get("orgId"), updated) });
   } catch (error) {
-    if (isUniqueViolation(error)) {
-      return c.json({ error: "invalid_bot", field: "name", reason: "a bot with this name already exists" }, 409);
-    }
+    if (isUniqueViolation(error)) return c.json(nameTaken(parsed.input.name), 409);
     throw error;
   }
 });
@@ -338,7 +352,8 @@ botsRoutes.delete("/:id/routines/:routineId", async (c) => {
   }
 });
 
-/** Test run: fire the routine now. Posts into the home thread like a cron firing. */
+/** Test run: fire the routine now. Posts into the home thread like a cron firing;
+ *  the response carries the routine as fired (its `lastFiredAt` just moved). */
 botsRoutes.post("/:id/routines/:routineId/run-now", async (c) => {
   const orgId = c.get("orgId");
   const id = botId(c.req.param("id"));
@@ -348,7 +363,10 @@ botsRoutes.post("/:id/routines/:routineId/run-now", async (c) => {
   if (!routine) return c.json({ error: "not_found" }, 404);
   try {
     const runId = await fireScheduleForOrg(routine, "manual");
-    return c.json({ runId }, 202);
+    // A test run is a firing too: the row's "last run" must show it, not wait for cron.
+    await markFired(routine.id, new Date());
+    const fired = (await getBotRoutine(orgId, id, routineId)) ?? routine;
+    return c.json({ runId, routine: routineView(fired) }, 202);
   } catch (error) {
     return scheduleError(error) ?? Promise.reject(error);
   }

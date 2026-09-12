@@ -33,6 +33,9 @@ export interface ApiBot {
   pendingApprovals: number;
   /** Enabled routines (schedules owned by this bot). */
   routines: number;
+  /** Delegated threads opened for this bot by @mentions, and their root run ids. */
+  handoffs: number;
+  handoffThreadIds: string[];
 }
 
 /** Wire shape of GET /api/bots/:id/routines. */
@@ -68,6 +71,18 @@ const ENGINE_LABELS: Record<string, string> = {
 export function engineLabel(id: string): string {
   return ENGINE_LABELS[id] ?? id;
 }
+
+/** Only the chat engine answers from context alone; every other engine runs in its own sandbox. */
+export function engineHasComputer(id: string): boolean {
+  return id !== "chat";
+}
+
+export function memoryScopeLabel(scope: ApiBot["memoryScope"]): string {
+  return scope === "org" ? "Team" : "Personal";
+}
+
+/** What a request that never reached the backend should say, with the recovery step. */
+export const OFFLINE_MESSAGE = "Unable to reach the server. Check your connection and try again.";
 
 /** The message a failed request should show: human text first, codes last. */
 export function apiErrorText(data: unknown, fallback: string): string {

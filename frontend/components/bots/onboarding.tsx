@@ -14,7 +14,7 @@ const CLUSTER = [
 ] as const;
 
 /** The reference's first screen: floating marks, one line, one button. */
-export function BotsOnboarding({ firstBot }: { firstBot: boolean }) {
+export function BotsOnboarding() {
   const [creating, setCreating] = useState(false);
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
@@ -24,13 +24,13 @@ export function BotsOnboarding({ firstBot }: { firstBot: boolean }) {
         ))}
       </div>
       <div className="flex flex-col gap-1.5">
-        <p className="text-title-2-medium text-text-primary">Your team of always-on bots</p>
+        <h2 className="text-display-sm text-text-primary">Your team of always-on bots</h2>
         <p className="max-w-sm text-body-regular text-text-secondary">
           Each one has a job, its own computer, and a thread that never resets.
         </p>
       </div>
       <Button variant="primary" size="medium" onClick={() => setCreating(true)}>
-        {firstBot ? "Create your first bot" : "New bot"}
+        Create bot
       </Button>
       <NewBotDialog open={creating} onOpenChange={setCreating} />
     </div>

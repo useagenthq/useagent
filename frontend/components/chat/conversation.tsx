@@ -123,15 +123,25 @@ export function UserBubble({ children }: { children: string }) {
   );
 }
 
-/** The assistant turn's identity row: brand glyph + "Agent" + the engine label.
+/** Who answers in this thread when it is not the generic agent: a bot's own mark
+ *  and name on its home thread. Also names the reply composer ("Message Nova"). */
+export interface AssistantIdentity {
+  readonly name: string;
+  readonly avatar: React.ReactNode;
+}
+
+/** The assistant turn's identity row: brand glyph + "Agent" + the engine label,
+ *  or the thread's own identity when one is given.
  *  Shared by TurnBlock and the /lab/session sample so both read identically. */
-export function AssistantTurnHeader({ engine }: { engine: EngineId }) {
+export function AssistantTurnHeader({ engine, identity }: { engine: EngineId; identity?: AssistantIdentity }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="ring-border-button-default bg-background-secondary-default flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
-        <OrbitKnotMark className="size-3.5" stroke={2.2} />
-      </span>
-      <span className="text-body-2-medium text-text-primary">Agent</span>
+      {identity?.avatar ?? (
+        <span className="ring-border-button-default bg-background-secondary-default flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
+          <OrbitKnotMark className="size-3.5" stroke={2.2} />
+        </span>
+      )}
+      <span className="text-body-2-medium text-text-primary">{identity?.name ?? "Agent"}</span>
       <span className="text-mono-label text-text-tertiary">{engineLabel(engine)}</span>
     </div>
   );
@@ -209,6 +219,7 @@ const TurnBlock = memo(function TurnBlock({
   onOpenProductChild,
   isLatestTurn = false,
   windowOwnsRunMarker = false,
+  assistantIdentity,
 }: {
   turn: Turn;
   /** 1-based place among this thread's queued turns (queued rendering only). */
@@ -226,6 +237,7 @@ const TurnBlock = memo(function TurnBlock({
   isLatestTurn?: boolean;
   /** The turn-window wrapper owns the rail marker for virtualized rows. */
   windowOwnsRunMarker?: boolean;
+  assistantIdentity?: AssistantIdentity;
 }) {
   const { run, steps, status, summary, live, liveText, liveReasoning } = turn;
   // Capture whether this turn was streaming when it first mounted, so its
@@ -322,7 +334,7 @@ const TurnBlock = memo(function TurnBlock({
           worklog capsule aligned to the same left content edge as every other
           assistant turn — one column, symmetric with the user bubble's bounds. */}
       <div className="group/turn space-y-3">
-        <AssistantTurnHeader engine={run.engine} />
+        <AssistantTurnHeader engine={run.engine} identity={assistantIdentity} />
 
         {/* Thinking surfaced ahead of the answer: real streamed reasoning tokens
             (not a spinner), yielding the instant answer text starts. */}
@@ -453,8 +465,11 @@ export const Conversation = memo(function Conversation({
   prefill,
   repoRevisions, resourceMentions = true, onTurnsNeeded, composerLocked = false, composerLockedMessage,
   productChildren = [], onOpenProductChild,
+  assistantIdentity,
 }: {
   turns: Turn[];
+  /** The thread's own identity (a bot on its home thread): heads every assistant turn and names the composer. */
+  assistantIdentity?: AssistantIdentity;
   defaultEngine: EngineId;
   defaultModel: string;
   /** The thread's current memory scope — the reply composer starts here. */
@@ -670,6 +685,7 @@ export const Conversation = memo(function Conversation({
                 onOpenProductChild={onOpenProductChild}
                 isLatestTurn={index === renderedTurns.length - 1}
                 windowOwnsRunMarker={windowOwnsRunMarker}
+                assistantIdentity={assistantIdentity}
               />
             )}
           />
@@ -719,7 +735,8 @@ export const Conversation = memo(function Conversation({
               ? composerCanAnswerQuestion
                 ? "Answer Agent’s question…"
                 : "Answer the question above to continue…"
-              : composerLocked ? composerLockedMessage ?? "Loading thread controls…" : undefined
+              : composerLocked ? composerLockedMessage ?? "Loading thread controls…"
+                : assistantIdentity ? `Message ${assistantIdentity.name}` : undefined
         }
         onReply={onReply}
         running={running}
