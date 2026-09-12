@@ -3724,25 +3724,37 @@ html {
  * ------------------------------------------------------------------------- */
 .orb {
   --orb-k: calc(var(--orb-px, 40) / 40);
-  --orb-deep: color-mix(in oklab, var(--orb-tone) 55%, black);
-  --orb-mid: color-mix(in oklab, var(--orb-tone) 85%, black);
-  --orb-rim: color-mix(in oklab, var(--orb-tone) 60%, black);
-  --orb-glow: color-mix(in oklab, var(--orb-tone) 45%, transparent);
-  --orb-y: color(from var(--orb-tone) srgb-linear clamp(0, (0.3 - (0.2126 * r + 0.7152 * g + 0.0722 * b)) * 1000, 1) 0 0);
-  --orb-ink: color(from var(--orb-y) srgb-linear r r r);
-  color: var(--orb-ink);
-  background:
-    radial-gradient(circle at 32% 26%, rgb(255 255 255 / 0.6) 0, rgb(255 255 255 / 0.22) 20%, transparent 46%),
-    radial-gradient(circle at 50% 110%, var(--orb-deep) 0, var(--orb-mid) 35%, var(--orb-tone) 75%),
-    var(--orb-tone);
+  color: hsl(var(--static-white));
+  background-color: var(--orb-tone);
   box-shadow:
     inset 0 calc(-2px * var(--orb-k)) calc(4px * var(--orb-k)) rgb(0 0 0 / 0.28),
     inset 0 1px 1px rgb(255 255 255 / 0.35),
-    0 0 0 1px var(--orb-rim),
-    0 calc(2px * var(--orb-k)) calc(8px * var(--orb-k)) var(--orb-glow);
+    0 0 0 1px rgb(0 0 0 / 0.35);
 }
-.orb > svg {
-  filter: drop-shadow(0 1px 1px color(from var(--orb-y) srgb-linear 0 0 0 / calc(r * 0.35)));
+
+@supports (color: color-mix(in oklab, black, white)) and (color: color(from red srgb r g b)) {
+  .orb {
+    --orb-deep: color-mix(in oklab, var(--orb-tone) 55%, black);
+    --orb-mid: color-mix(in oklab, var(--orb-tone) 85%, black);
+    --orb-rim: color-mix(in oklab, var(--orb-tone) 60%, black);
+    --orb-glow: color-mix(in oklab, var(--orb-tone) 45%, transparent);
+    --orb-y: color(from var(--orb-tone) srgb-linear clamp(0, (0.3 - (0.2126 * r + 0.7152 * g + 0.0722 * b)) * 1000, 1) 0 0);
+    --orb-ink: color(from var(--orb-y) srgb-linear r r r);
+    color: var(--orb-ink);
+    background:
+      radial-gradient(circle at 32% 26%, rgb(255 255 255 / 0.6) 0, rgb(255 255 255 / 0.22) 20%, transparent 46%),
+      radial-gradient(circle at 50% 110%, var(--orb-deep) 0, var(--orb-mid) 35%, var(--orb-tone) 75%),
+      var(--orb-tone);
+    box-shadow:
+      inset 0 calc(-2px * var(--orb-k)) calc(4px * var(--orb-k)) rgb(0 0 0 / 0.28),
+      inset 0 1px 1px rgb(255 255 255 / 0.35),
+      0 0 0 1px var(--orb-rim),
+      0 calc(2px * var(--orb-k)) calc(8px * var(--orb-k)) var(--orb-glow);
+  }
+
+  .orb > svg {
+    filter: drop-shadow(0 1px 1px color(from var(--orb-y) srgb-linear 0 0 0 / calc(r * 0.35)));
+  }
 }
 
 /* The iridescent ball: a conic sweep under the same highlight (literal hues,
@@ -3751,6 +3763,7 @@ html {
  * glyph, so the ink is always black. */
 .orb[data-variant="prism"] {
   --orb-ink: hsl(var(--static-black));
+  color: hsl(var(--static-black));
   background:
     radial-gradient(circle at 32% 26%, rgb(255 255 255 / 0.6) 0, rgb(255 255 255 / 0.22) 20%, transparent 46%),
     conic-gradient(

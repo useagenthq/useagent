@@ -50,20 +50,26 @@ describe("the orb recipe in globals.css", () => {
     expect(start).toBeGreaterThan(-1);
     return css.slice(start, css.indexOf("}", start));
   };
+  const orbRecipe = css.slice(css.indexOf(".orb {"), css.indexOf('.orb[data-variant="prism"]'));
 
   test("reads the tone the component sets and paints the gloss from it alone", () => {
-    const orb = block(".orb");
-    expect(orb).toContain("var(--orb-tone)");
-    expect(orb).toContain("var(--orb-px");
-    expect(orb).toContain("radial-gradient(circle at 32% 26%");
-    expect(orb).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(orbRecipe).toContain("var(--orb-tone)");
+    expect(orbRecipe).toContain("var(--orb-px");
+    expect(orbRecipe).toContain("radial-gradient(circle at 32% 26%");
+    expect(orbRecipe).not.toMatch(/#[0-9a-f]{3,8}\b/i);
   });
 
   test("decides the glyph ink from the tone's own luminance at the 3:1 line", () => {
+    expect(orbRecipe).toContain("--orb-y: color(from var(--orb-tone) srgb-linear");
+    expect(orbRecipe).toContain("0.2126 * r + 0.7152 * g + 0.0722 * b");
+    expect(orbRecipe).toContain("color: var(--orb-ink)");
+  });
+
+  test("keeps a solid fallback outside the advanced-color support query", () => {
     const orb = block(".orb");
-    expect(orb).toContain("--orb-y: color(from var(--orb-tone) srgb-linear");
-    expect(orb).toContain("0.2126 * r + 0.7152 * g + 0.0722 * b");
-    expect(orb).toContain("color: var(--orb-ink)");
+    expect(orb).toContain("color: hsl(var(--static-white))");
+    expect(orb).toContain("background-color: var(--orb-tone)");
+    expect(orbRecipe).toContain("@supports (color: color-mix(");
   });
 
   test("the prism variant is a conic sweep with a dark ring and black ink", () => {
@@ -71,5 +77,6 @@ describe("the orb recipe in globals.css", () => {
     expect(prism).toContain("conic-gradient(");
     expect(prism).toContain("0 0 0 2px rgb(0 0 0 / 0.35)");
     expect(prism).toContain("--orb-ink: hsl(var(--static-black))");
+    expect(prism).toContain("color: hsl(var(--static-black))");
   });
 });

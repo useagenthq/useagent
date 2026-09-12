@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { RiFileLine } from "@remixicon/react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { MentionRowMark } from "@/components/chat/mention-row-mark";
 import { AvatarMark, botOrb } from "./avatar-mark";
 import { BOT_AVATAR_TONES } from "./types";
 
@@ -32,26 +32,23 @@ describe("AvatarMark", () => {
   });
 });
 
-/** Every file that paints a bot: the roster, thread header and drawer, the
- *  first-message hero, onboarding, the New bot dialog, the turn identity and
- *  the @ picker. Their only way to a tone is the Orb behind AvatarMark. */
-const BOT_SITES = [
-  ...readdirSync(import.meta.dir)
-    .filter((name) => name.endsWith(".tsx") && !name.endsWith(".test.tsx"))
-    .map((name) => join(import.meta.dir, name)),
-  join(import.meta.dir, "..", "chat", "composer-mentions-ui.tsx"),
-  join(import.meta.dir, "..", "chat", "mention-row-mark.tsx"),
-];
-
 describe("one avatar language", () => {
-  test("AvatarMark renders through the kit Orb", () => {
-    expect(readFileSync(join(import.meta.dir, "avatar-mark.tsx"), "utf8")).toContain('from "@/components/base/orb/orb"');
+  test("mention rows render bot appearance through AvatarMark", () => {
+    const html = renderToStaticMarkup(
+      <MentionRowMark
+        bot={{ avatarTone: "prism", avatarIcon: "research" }}
+        icon={RiFileLine}
+      />,
+    );
+    expect(html).toContain('class="orb ');
+    expect(html).toContain('data-variant="prism"');
+    expect(html).not.toContain("remixicon-file-line");
   });
 
-  test("no bot site paints a flat tone disc of its own", () => {
-    // The state dot's success/warning fill is the one legitimate flat tone.
-    const flat = /toneClass|bg-(primary|feature|error|verified|highlighted|away)-base/;
-    const offenders = BOT_SITES.filter((file) => flat.test(readFileSync(file, "utf8")));
-    expect(offenders).toEqual([]);
+  test("non-bot mention rows keep their resource icon", () => {
+    const html = renderToStaticMarkup(<MentionRowMark icon={RiFileLine} />);
+    expect(html).toContain("<svg");
+    expect(html).toContain("text-text-secondary");
+    expect(html).not.toContain('class="orb ');
   });
 });

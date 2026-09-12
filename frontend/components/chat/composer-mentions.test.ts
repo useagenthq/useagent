@@ -162,9 +162,15 @@ describe("identity + short id helpers", () => {
 
 describe("bot mentions", () => {
   test("a bot chip is a handoff, not a resource: token names it, the id rides separately", () => {
-    const nova = botMention("11111111-1111-4111-8111-111111111111", "Nova");
+    const nova = botMention(
+      "11111111-1111-4111-8111-111111111111",
+      "Nova",
+      "prism",
+      "research",
+    );
     expect(nova.token).toBe("@bot/nova");
     expect(nova.name).toBe("Nova");
+    expect(nova).toMatchObject({ avatarTone: "prism", avatarIcon: "research" });
     expect(toRunResources([nova, skillMention("s1", "review-pr")])).toEqual([]);
     expect(mentionedBotIds([nova, nova, skillMention("s1", "review-pr")])).toEqual(["11111111-1111-4111-8111-111111111111"]);
     expect(mentionedBotIds([])).toEqual([]);
@@ -221,6 +227,17 @@ describe("parseDraftMentions - chips restored with the draft", () => {
     const parsed = parseDraftMentions(JSON.stringify(saved));
     expect(parsed).toHaveLength(5);
     expect(mentionedBotIds(parsed)).toEqual(["bot-nova"]);
+    expect(parsed[0]).toMatchObject({ avatarTone: "blue", avatarIcon: "robot" });
+  });
+
+  test("preserves bot appearance and upgrades older drafts with safe defaults", () => {
+    const saved = botMention("bot-nova", "Nova", "prism", "research");
+    expect(parseDraftMentions(JSON.stringify([saved]))).toEqual([saved]);
+    expect(
+      parseDraftMentions(
+        JSON.stringify([{ kind: "bot", id: "bot-old", name: "Old bot", token: "@bot/old-bot" }]),
+      ),
+    ).toEqual([botMention("bot-old", "Old bot")]);
   });
 
   test("nothing saved, or unreadable storage, means no chips", () => {

@@ -295,7 +295,9 @@ export function useComposerMentions(opts: {
       } else if (row.type === "skill") insertMention(skillMention(row.id, row.name));
       else if (row.type === "thread") insertMention(threadMention(row.id, row.title));
       else if (row.type === "pr") insertMention(prMention(row.repo, row.number, row.title));
-      else if (row.type === "bot") insertMention(botMention(row.id, row.name));
+      else if (row.type === "bot") {
+        insertMention(botMention(row.id, row.name, row.avatarTone, row.avatarIcon));
+      }
       else if (row.type === "repo") {
         const repo = repos.items.find((item) => item.full_name === row.full_name);
         setView({
@@ -530,7 +532,10 @@ function MentionChips({
             key={mentionKey(m)}
             className="border-border-button-default bg-background-secondary-default text-text-secondary inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-caption-1-medium"
           >
-            <Icon className="size-3.5 shrink-0 text-foreground-icon-secondary" aria-hidden />
+            <MentionRowMark
+              bot={m.kind === "bot" ? m : undefined}
+              icon={Icon}
+            />
             <span className="max-w-52 truncate" title={m.token}>
               {chipLabel(m)}
             </span>
