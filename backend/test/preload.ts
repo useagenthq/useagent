@@ -15,9 +15,9 @@
  *    import) and pins its runs to the fast `mock` engine. Outbound Slack calls
  *    are intercepted via setSlackClientForTest — nothing hits the network.
  */
-process.env.DATABASE_URL =
-  process.env.TEST_DATABASE_URL ??
-  "postgres://postgres@localhost:5432/useagent_test";
+import { testDatabaseUrl } from "./test-database";
+
+process.env.DATABASE_URL = testDatabaseUrl();
 process.env.PORT = "3211";
 
 delete process.env.OPENROUTER_API_KEY;
