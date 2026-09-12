@@ -63,6 +63,21 @@ describe("artifact gateway contract", () => {
     expect(create?.description).toContain("no file");
   });
 
+  test("advertises object state and explains the real JSON-string argument failure", async () => {
+    const create = ARTIFACT_TOOLS.find((tool) => tool.name === "workpiece_create");
+    expect(create?.inputSchema.properties.state).toMatchObject({ type: "object" });
+    const state = { slides: [{ title: "GitHub Trending", body: "Top five repositories" }] };
+    const response = await executeArtifactTool({
+      orgId: "org-1", userId: "user-1", threadId: "thread-1", runId: "run-1",
+      scope: "run", exp: Date.now() + 60_000,
+    }, "workpiece_create", {
+      kind: "presentation", name: "Trending.pptx", state: JSON.stringify(state),
+    });
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("received string");
+    expect(response.content[0]?.text).toContain("Do not JSON.stringify");
+  });
+
   test("exposes direct requested edits without adding an approval capability", () => {
     const update = ARTIFACT_TOOLS.find((tool) => tool.name === "workpiece_update");
 

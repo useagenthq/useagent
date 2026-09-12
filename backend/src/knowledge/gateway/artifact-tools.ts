@@ -455,8 +455,11 @@ async function workpieceCreateTool(
   const name = typeof args.name === "string" && args.name.trim() ? args.name.trim() : "";
   if (!name) return failure("workpiece_create requires a `name` for the workpiece.");
   if (!args.state || typeof args.state !== "object" || Array.isArray(args.state)) {
+    const received = args.state === null ? "null" : Array.isArray(args.state) ? "array" : typeof args.state;
     return failure(
-      `workpiece_create requires a \`state\` object matching the kind (${
+      `workpiece_create expected state to be a JSON object; received ${received}. ` +
+      `Pass the object directly as the state argument. Do not JSON.stringify or quote the whole state. ` +
+      `Use the ${kind} shape (${
         WORKPIECE_STATE_SHAPES[kind] ?? "the kind's documented shape"
       }).`,
     );
