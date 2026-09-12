@@ -182,7 +182,7 @@ function ThreadBranch({
         onToggle={() => onToggle(thread.id)}
       />
       {expanded ? (
-        // biome-ignore lint/a11y/useSemanticElements: WAI-ARIA tree children require a role=group container; fieldset would add unrelated form semantics.
+        // WAI-ARIA tree children require a role=group container; fieldset would add unrelated form semantics.
         <div role="group" className="pl-4">
           {thread.nativeChildren ? (
             <NativeAgentRows

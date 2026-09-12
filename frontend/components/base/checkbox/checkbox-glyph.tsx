@@ -54,7 +54,7 @@ export function CheckboxGlyph({
         isFocusVisible && "ring-2 ring-border-focus-ring ring-offset-2",
       )}
     >
-      <svg viewBox="0 0 16 16" fill="none" className={s.glyph}>
+      <svg viewBox="0 0 16 16" fill="none" className={s.glyph} aria-hidden="true">
         {isIndeterminate ? (
           <path d="M4.5 8H8H11.5" stroke="white" strokeWidth="2" strokeLinecap="round" />
         ) : isSelected ? (

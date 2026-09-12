@@ -6,7 +6,7 @@
  */
 export default function SessionLoading() {
   return (
-    <div className="flex h-full min-h-0 flex-col gap-6 p-6 motion-safe:animate-pulse" aria-label="Loading session">
+    <div className="flex h-full min-h-0 flex-col gap-6 p-6 motion-safe:animate-pulse" role="status" aria-label="Loading session">
       <div className="ml-auto h-9 w-2/5 rounded-2xl bg-background-secondary-default" />
       <div className="flex flex-col gap-3">
         <div className="h-4 w-40 rounded-lg bg-background-secondary-default" />

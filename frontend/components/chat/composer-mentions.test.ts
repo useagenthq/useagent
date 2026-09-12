@@ -3,7 +3,6 @@ import {
   mentionedBotIds,
   mentionsToRunResources as toRunResources,
   parseDraftMentions,
-  skillMention,
   unlinkedBotTokens,
 } from "./composer-mentions";
 import { describe, expect, test } from "bun:test";

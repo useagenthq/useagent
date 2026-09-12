@@ -175,7 +175,7 @@ export function SocialButton({ href, ...props }: SocialButtonProps | SocialButto
   ) : (
     <svg
       viewBox={meta!.viewBox}
-      aria-hidden
+      aria-hidden="true"
       className={styles.glyph[size]}
       // On the filled appearances the glyph rides the white label; outlined
       // falls back to the brand colour so it is not a grey smudge.

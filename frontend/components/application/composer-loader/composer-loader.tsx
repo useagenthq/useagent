@@ -191,6 +191,7 @@ export function ComposerLoader({
         }}
       >
         <svg
+          aria-hidden="true"
           width="100%"
           height="100%"
           viewBox={`0 0 ${box.w} ${box.h}`}

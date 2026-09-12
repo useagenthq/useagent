@@ -195,6 +195,7 @@ export const WorkEntryRow = memo(function WorkEntryRow({
       {expanded && canExpand && expandedBody ? (
         <div
           className="mt-1 ms-7 cursor-default border-s border-border-button-default ps-3 pt-0.5"
+          role="presentation"
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         >

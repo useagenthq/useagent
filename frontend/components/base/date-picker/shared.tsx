@@ -28,7 +28,7 @@ import { cx } from "@/utils/cx";
  *  16×16 glyph, 2px round-capped stroke, mirrored around x=8. */
 export function ChevronLeft16({ className }: { className?: string }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={className} aria-hidden>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
       <path
         d="M9 4L5.70711 7.29289C5.31658 7.68342 5.31658 8.31658 5.70711 8.70711L9 12"
         stroke="currentColor"
@@ -41,7 +41,7 @@ export function ChevronLeft16({ className }: { className?: string }) {
 
 export function ChevronRight16({ className }: { className?: string }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={className} aria-hidden>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
       <path
         d="M7 4L10.2929 7.29289C10.6834 7.68342 10.6834 8.31658 10.2929 8.70711L7 12"
         stroke="currentColor"

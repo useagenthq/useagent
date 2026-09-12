@@ -103,6 +103,7 @@ export function Tooltip({ children, className, size = "sm", showArrow = true, of
             const caret = TOOLTIP_CARETS[placement as keyof typeof TOOLTIP_CARETS] ?? TOOLTIP_CARETS.top;
             return (
               <svg
+                aria-hidden="true"
                 width={caret.width}
                 height={caret.height}
                 viewBox={`0 0 ${caret.width} ${caret.height}`}

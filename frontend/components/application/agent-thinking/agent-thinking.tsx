@@ -153,6 +153,7 @@ function StarsIndicator() {
         return (
           <svg
             key={i}
+            aria-hidden="true"
             viewBox="0 0 24 24"
             className="bui-agent-thinking-star absolute"
             style={{
@@ -186,7 +187,7 @@ const INFINITY_PATH =
 function InfinityIndicator() {
   return (
     <svg
-      aria-hidden
+      aria-hidden="true"
       viewBox="0 0 56 28"
       className="shrink-0"
       // The figure-eight spans x 9-47 of the 56-wide viewBox, so the svg box
@@ -259,7 +260,6 @@ export function AgentThinking({
       {variant === "stars" && <StarsIndicator />}
       {variant === "infinity" && <InfinityIndicator />}
       <span
-        aria-label={label}
         className={cx("text-body-medium", shimmer && "bui-agent-thinking-label")}
       >
         {label}

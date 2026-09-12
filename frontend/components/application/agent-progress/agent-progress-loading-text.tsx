@@ -14,7 +14,6 @@ export function AgentProgressLoadingText({
 }: AgentProgressLoadingTextProps) {
   return (
     <span
-      aria-label={children}
       className={cx("agent-progress-loading-text inline-block", className)}
     >
       {children}
