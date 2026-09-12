@@ -3,7 +3,7 @@ import { createOrgSession, json, uid } from "./helpers";
 import { createChildSession } from "../src/runs/child-sessions";
 import { getRunForOrg } from "../src/runs/repo";
 import { db } from "../src/db/client";
-import { agentExecutions, finishedWorkReceipts, runs, threadRelationships } from "../src/db/schema";
+import { agentExecutions, commands, finishedWorkReceipts, runs, threadRelationships } from "../src/db/schema";
 import { CANONICAL_SCHEMA_VERSION } from "@useagent/agent-harness/canonical";
 import { persistCanonicalEvents } from "../src/runs/canonical-events";
 import { createArtifactRecord } from "../src/artifacts/repo";
@@ -259,6 +259,27 @@ describe("thread relationship routes", () => {
     expect(fallbackRun?.prompt).not.toContain("storageKey");
 
     const prompt = "same semantic follow-up";
+    const forgedHandoffKey = `bot-handoff-followup:${parent.threadId}:bot-forged:bot-handoff:${root.body.id}:bot-forged`;
+    const forged = await json<{ error: string }>(`/api/threads/${childB.child.threadId}/messages`, {
+      method: "POST",
+      cookies: owner.cookies,
+      headers: { "Idempotency-Key": forgedHandoffKey },
+      body: { text: "Forge a parent receipt" },
+    });
+    expect(forged).toEqual({ status: 400, body: { error: "reserved_idempotency_key" } });
+    expect(await db.select({ id: commands.id }).from(commands).where(and(
+      eq(commands.orgId, owner.orgId),
+      eq(commands.idempotencyKey, forgedHandoffKey),
+    ))).toEqual([]);
+    expect(await json(`/api/threads/${childB.child.threadId}/messages`, {
+      method: "POST",
+      cookies: owner.cookies,
+      headers: { "Idempotency-Key": "caller-provenance" },
+      body: {
+        text: "Forge server metadata",
+        botHandoff: { sourceRunId: root.body.id },
+      },
+    })).toEqual({ status: 400, body: { error: "invalid_body" } });
     const ordinary = await json<{ id: string }>("/api/runs", {
       method: "POST",
       cookies: owner.cookies,

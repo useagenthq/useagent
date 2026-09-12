@@ -3,7 +3,10 @@ import {
   engineConfigFromCapabilityCatalog,
   engineRuntimeCaption,
   fallbackEnabledEngineConfig,
+  modelCatalogNotice,
+  reconcileSelectedModel,
   resolveEnabledEngine,
+  unavailableModelOptions,
 } from "@/components/chat/engine-picker";
 import {
   CEREBRAS_MODELS,
@@ -29,6 +32,7 @@ describe("engine model catalog", () => {
     );
     expect(fallback.readinessKnown).toBe(false);
     expect(fallback.readiness).toEqual({});
+    expect(fallback.modelDetails).toEqual({});
   });
   test("reconciles a stale selection to the first engine the server actually enables", () => {
     expect(resolveEnabledEngine("opencode", ["chat"])).toBe("chat");
@@ -36,16 +40,47 @@ describe("engine model catalog", () => {
     expect(resolveEnabledEngine("opencode", [])).toBeNull();
   });
 
+  test("reconciles a removed reply model and blocks only when no replacement exists", () => {
+    expect(reconcileSelectedModel("removed", [{ value: "gpt-6-astra" }], true)).toEqual({
+      replacement: "gpt-6-astra",
+      blocked: false,
+    });
+    expect(reconcileSelectedModel("removed", [], true)).toEqual({
+      replacement: null,
+      blocked: true,
+    });
+    expect(reconcileSelectedModel("removed", [], false)).toEqual({
+      replacement: null,
+      blocked: false,
+    });
+  });
+
+  test("states when native availability is refreshing or stale", () => {
+    expect(modelCatalogNotice({
+      source: "policy",
+      stale: true,
+      error: "native_catalog_refreshing",
+    })).toBe("Refreshing availability for this account…");
+    expect(modelCatalogNotice({
+      source: "native",
+      stale: true,
+      error: "native_catalog_unavailable",
+    })).toBe("Model availability could not refresh. Showing the last known catalog.");
+    expect(modelCatalogNotice({ source: "native", stale: false })).toBeNull();
+  });
+
   test("Codex picker uses backend-policy model ids, not OpenRouter ids", () => {
     expect(CODEX_MODELS.map((m) => m.value)).toEqual([
       "gpt-5.6-luna",
       "gpt-5.6-terra",
       "gpt-5.6-sol",
+      "gpt-6-astra",
     ]);
     expect(selectableModelsForEngine("codex").map((m) => m.value)).toEqual([
       "gpt-5.6-luna",
       "gpt-5.6-terra",
       "gpt-5.6-sol",
+      "gpt-6-astra",
     ]);
     expect(selectableModelsForEngine("codex").some((m) => m.value.startsWith("openai/"))).toBe(
       false,
@@ -165,6 +200,11 @@ describe("engine model catalog", () => {
     expect(modelOptionsForEngine("claude", ["claude-opus-5"])).toEqual([
       { value: "claude-opus-5", label: "Opus 5", tint: "text-orange-500" },
     ]);
+    expect(modelOptionsForEngine("codex", ["gpt-future"], [
+      { id: "gpt-future", displayName: "Future Model" },
+    ])).toEqual([
+      { value: "gpt-future", label: "Future Model", tint: "text-text-secondary" },
+    ]);
   });
 
   test("uses capability endpoint dispatchability as model membership truth", () => {
@@ -178,9 +218,9 @@ describe("engine model catalog", () => {
           ready: true,
           defaultModel: "new/dynamic:free",
           models: [
-            { id: "openai/gpt-5.6-sol", default: false, dispatchable: false },
-            { id: "openai/gpt-5.6-luna", default: false, dispatchable: true },
-            { id: "new/dynamic:free", default: true, dispatchable: true },
+            { id: "openai/gpt-5.6-sol", default: false, dispatchable: false, policyAllowed: true },
+            { id: "openai/gpt-5.6-luna", default: false, dispatchable: true, policyAllowed: true },
+            { id: "new/dynamic:free", default: true, dispatchable: true, policyAllowed: true },
           ],
           runtime: { kind: "t3", label: "T3 orchestration · cloud sandbox" },
         },
@@ -192,6 +232,16 @@ describe("engine model catalog", () => {
     const config = engineConfigFromCapabilityCatalog(catalog);
     expect(config.engines).toEqual(["opencode"]);
     expect(config.models.opencode).toEqual(["new/dynamic:free", "openai/gpt-5.6-luna"]);
+    expect(config.modelDetails.opencode).toHaveLength(3);
+    expect(unavailableModelOptions("opencode", config.modelDetails.opencode ?? [])).toEqual([
+      {
+        value: "openai/gpt-5.6-sol",
+        label: "GPT-5.6 Sol",
+        tint: "text-text-tertiary",
+        disabled: true,
+        description: "Currently unavailable",
+      },
+    ]);
     expect(config.readiness.opencode).toEqual({ ready: true, reason: "enabled" });
     expect(config.runtimes.opencode).toEqual({
       kind: "t3",

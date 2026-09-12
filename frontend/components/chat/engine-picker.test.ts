@@ -18,7 +18,12 @@ const MANIFEST: CapabilityCatalog = {
       configured: true,
       ready: true,
       defaultModel: "anthropic/claude-sonnet-5",
-      models: [{ id: "anthropic/claude-sonnet-5", default: true, dispatchable: true }],
+      models: [{
+        id: "anthropic/claude-sonnet-5",
+        default: true,
+        dispatchable: true,
+        policyAllowed: true,
+      }],
       runtime: { kind: "direct", label: "direct model · no sandbox" },
     },
     {
@@ -26,7 +31,12 @@ const MANIFEST: CapabilityCatalog = {
       configured: true,
       ready: true,
       defaultModel: "openai/gpt-5.6-luna",
-      models: [{ id: "openai/gpt-5.6-luna", default: true, dispatchable: true }],
+      models: [{
+        id: "openai/gpt-5.6-luna",
+        default: true,
+        dispatchable: true,
+        policyAllowed: true,
+      }],
       runtime: { kind: "native", label: "any model · cloud sandbox" },
     },
     {
@@ -63,6 +73,7 @@ describe("new-thread engine picker", () => {
       "utf8",
     );
     expect(composer).toContain("pickerEngineOptions(enabledEngines)");
+    expect(composer).toContain("engineConfig.modelDetails[engineId]");
     expect(composer).not.toContain('e.id !== "chat"');
   });
 });

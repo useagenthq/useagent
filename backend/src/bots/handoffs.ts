@@ -171,6 +171,8 @@ function handoffTitle(name: string, text: string): string {
 export interface HandoffResult {
   readonly botId: string;
   readonly name: string;
+  readonly avatarTone?: string;
+  readonly avatarIcon?: string;
   readonly threadId: string | null;
   /** `followed_up`: the bot already has a delegated thread under this parent
    *  thread, so the message became its next turn instead of a second thread.
@@ -196,6 +198,15 @@ export interface HandoffResult {
 }
 
 export type HandoffRefusal = "self" | "cycle" | "depth" | "cap";
+
+function handoffIdentity(bot: Pick<BotRow, "id" | "name" | "avatarTone" | "avatarIcon">) {
+  return {
+    botId: bot.id,
+    name: bot.name,
+    avatarTone: bot.avatarTone,
+    avatarIcon: bot.avatarIcon,
+  };
+}
 
 /** The bot that owns a thread: its home thread, or a delegated thread handed to it. */
 export async function botOwningThread(
@@ -399,7 +410,9 @@ export async function handoffToBot(input: {
     title: input.title || handoffTitle(bot.name, input.text),
     engine: bot.engine,
     model: bot.model ?? defaultModelForEngine(bot.engine),
-    repos: [...bot.repos],
+    // createChildSession inherits only the parent's authorized repositories.
+    // Bot preset repositories belong to home and routine work, not handoffs.
+    repos: [],
     memoryScope: bot.memoryScope,
     idempotencyKey: input.idempotencyKey,
     origin: BOT_HANDOFF_RUN_ORIGIN,
@@ -425,8 +438,7 @@ export async function handoffToBot(input: {
           }))
         ) {
           return {
-            botId: bot.id,
-            name: bot.name,
+            ...handoffIdentity(bot),
             threadId: null,
             status: "refused",
             reason: "cap",
@@ -435,8 +447,7 @@ export async function handoffToBot(input: {
         const refusal = await handoffRefusal(input.orgId, bot, input.threadId);
         if (refusal)
           return {
-            botId: bot.id,
-            name: bot.name,
+            ...handoffIdentity(bot),
             threadId: null,
             status: "refused",
             reason: refusal,
@@ -453,8 +464,7 @@ export async function handoffToBot(input: {
         const created = await findCommandByKey(input.orgId, creationKey);
         if (created?.threadId)
           return {
-            botId: bot.id,
-            name: bot.name,
+            ...handoffIdentity(bot),
             threadId: created.threadId,
             status: "replayed",
           };
@@ -486,8 +496,7 @@ export async function handoffToBot(input: {
               )))
           ) {
             return {
-              botId: bot.id,
-              name: bot.name,
+              ...handoffIdentity(bot),
               threadId: handedByMention,
               status: "replayed",
             };
@@ -512,6 +521,12 @@ export async function handoffToBot(input: {
                 bot.id,
                 input.idempotencyKey,
               ),
+              botHandoff: {
+                kind: "bot_handoff_followup",
+                sourceRunId: input.parentRunId,
+                parentThreadId: input.threadId,
+                botId: bot.id,
+              },
             }),
           );
           if (followup.status === "created" || followup.status === "replayed") {
@@ -524,8 +539,7 @@ export async function handoffToBot(input: {
               });
             }
             return {
-              botId: bot.id,
-              name: bot.name,
+              ...handoffIdentity(bot),
               threadId: existing,
               status:
                 followup.status === "created" ? "followed_up" : "replayed",
@@ -533,8 +547,7 @@ export async function handoffToBot(input: {
           }
           if (followup.status === "conflict")
             return {
-              botId: bot.id,
-              name: bot.name,
+              ...handoffIdentity(bot),
               threadId: null,
               status: "conflict",
             };
@@ -547,8 +560,7 @@ export async function handoffToBot(input: {
             )
           ) {
             return {
-              botId: bot.id,
-              name: bot.name,
+              ...handoffIdentity(bot),
               threadId: existing,
               status: "busy",
             };
@@ -563,8 +575,7 @@ export async function handoffToBot(input: {
         );
         if (capped) {
           return {
-            botId: bot.id,
-            name: bot.name,
+            ...handoffIdentity(bot),
             threadId: null,
             status: "refused",
             reason: "cap",
@@ -577,8 +588,7 @@ export async function handoffToBot(input: {
         const outcome = await createChildSession(createInput);
         if (outcome.status === "conflict")
           return {
-            botId: bot.id,
-            name: bot.name,
+            ...handoffIdentity(bot),
             threadId: null,
             status: "conflict",
           };
@@ -593,8 +603,7 @@ export async function handoffToBot(input: {
           db,
         );
         return {
-          botId: bot.id,
-          name: bot.name,
+          ...handoffIdentity(bot),
           threadId,
           status: threadId === outcome.child.id ? outcome.status : "replayed",
         };
@@ -602,7 +611,7 @@ export async function handoffToBot(input: {
     );
   } catch (error) {
     if (error instanceof HandoffLockTimeout)
-      return { botId: bot.id, name: bot.name, threadId: null, status: "busy" };
+      return { ...handoffIdentity(bot), threadId: null, status: "busy" };
     throw error;
   }
 }

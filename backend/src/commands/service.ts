@@ -29,6 +29,62 @@ import { runs } from "../db/schema";
 
 /** Bounded audit copy of the accepted request. */
 const PAYLOAD_CAP = 8_192;
+const textEncoder = new TextEncoder();
+
+function payloadBytes(value: string): number {
+  return textEncoder.encode(value).byteLength;
+}
+
+function serializeRunCommandPayload(
+  input: RunCommandInput,
+  intent: RunCommandIntent,
+  fingerprint: string,
+): string {
+  const full = {
+    botHandoff: input.botHandoff ?? null,
+    prompt: input.run.prompt,
+    model: input.run.model,
+    engine: input.run.engine,
+    parentRunId: input.run.parentRunId,
+    threadId: input.run.threadId,
+    repos: input.run.repos,
+    resolvedResources: input.run.resolvedResources ?? [],
+    attachmentIds: input.run.attachmentIds ?? [],
+    memoryScope: input.run.memoryScope,
+    skillId: input.run.skillId,
+    skillVersion: input.run.skillVersion,
+    commandName: input.run.commandName,
+    commandProvider: input.run.commandProvider,
+    commandSessionId: input.run.commandSessionId,
+    commandCatalogRevision: input.run.commandCatalogRevision,
+    intent,
+  };
+  const serialized = JSON.stringify(full);
+  if (payloadBytes(serialized) <= PAYLOAD_CAP) return serialized;
+
+  const withoutDuplicatePrompt = JSON.stringify({
+    ...full,
+    intent: { ...intent, prompt: undefined },
+    _audit: { omitted: ["intent.prompt"] },
+  });
+  if (payloadBytes(withoutDuplicatePrompt) <= PAYLOAD_CAP) return withoutDuplicatePrompt;
+
+  const promptBytes = payloadBytes(input.run.prompt);
+  return JSON.stringify({
+    botHandoff: input.botHandoff ?? null,
+    model: input.run.model,
+    engine: input.run.engine,
+    parentRunId: input.run.parentRunId,
+    threadId: input.run.threadId,
+    _audit: {
+      omitted: ["prompt", "intent", "repos", "resolvedResources", "attachmentIds"],
+      promptChars: input.run.prompt.length,
+      promptBytes,
+      promptSha256: new Bun.CryptoHasher("sha256").update(input.run.prompt).digest("hex"),
+      intentFingerprint: fingerprint,
+    },
+  });
+}
 
 export class StaleThreadHeadError extends Error {
   readonly code = "stale_thread_head" as const;
@@ -137,24 +193,7 @@ async function acceptRunCommandWithOrigin(
 ): Promise<RunCommandOutcome> {
   const intent = input.intent ?? runIntentFromAcceptedRun(input.run);
   const fingerprint = acceptedFingerprint(intent, input.threadRelationship);
-  const payload = JSON.stringify({
-    prompt: input.run.prompt,
-    model: input.run.model,
-    engine: input.run.engine,
-    parentRunId: input.run.parentRunId,
-    threadId: input.run.threadId,
-    repos: input.run.repos,
-    resolvedResources: input.run.resolvedResources ?? [],
-    attachmentIds: input.run.attachmentIds ?? [],
-    memoryScope: input.run.memoryScope,
-    skillId: input.run.skillId,
-    skillVersion: input.run.skillVersion,
-    commandName: input.run.commandName,
-    commandProvider: input.run.commandProvider,
-    commandSessionId: input.run.commandSessionId,
-    commandCatalogRevision: input.run.commandCatalogRevision,
-    intent,
-  }).slice(0, PAYLOAD_CAP);
+  const payload = serializeRunCommandPayload(input, intent, fingerprint);
   const commandId = crypto.randomUUID();
 
   let outcome: RunCommandOutcome | null;

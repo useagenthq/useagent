@@ -40,3 +40,13 @@ test("treats 404 as rollback/legacy root but transient failures as ambiguous", a
     throw new Error("network");
   })).toBe("ambiguous");
 });
+
+test("known bot home threads skip the inapplicable relationship request", async () => {
+  let requests = 0;
+  const hint = await loadThreadRelationshipHint("bot-home", async () => {
+    requests += 1;
+    return new Response(null, { status: 404 });
+  }, false);
+  expect(hint).toBe("inapplicable");
+  expect(requests).toBe(0);
+});

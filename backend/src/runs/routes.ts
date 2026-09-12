@@ -9,6 +9,7 @@ import {
 } from "../db/schema";
 import { isMemoryScope } from "../memory/scope";
 import { acceptedRunHandoffs, runBotMentions } from "../bots/handoffs";
+import { isReservedBotHandoffKey } from "../bots/handoff-keys";
 import { orgScope } from "../middleware/org";
 import {
   getRun,
@@ -289,6 +290,9 @@ export async function handleRunCreate(
   }
 
   const idempotencyKey = c.req.header("Idempotency-Key")?.trim() || null;
+  if (!options.origin && idempotencyKey && isReservedBotHandoffKey(idempotencyKey)) {
+    return c.json({ error: "reserved_idempotency_key" }, 400);
+  }
   const intent: RunCommandIntent = {
     prompt: finalPrompt,
     model: requestedModel,
@@ -419,10 +423,6 @@ export async function handleRunCreate(
     }
     throw error;
   }
-  // Accept the run as a durable command. An `Idempotency-Key` makes a lost-
-  // response retry observe the ORIGINAL run instead of starting duplicate work;
-  // the un-keyed path behaves exactly as before (new run every call). Empty /
-  // whitespace-only keys are treated as absent.
   let accepted;
   try {
     const commandInput = {

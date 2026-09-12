@@ -139,6 +139,23 @@ describe("Codex app-server JSON-RPC transport", () => {
     client.close();
   });
 
+  test("uses the trusted app-server transport for model discovery", async () => {
+    const child = new FakeAppServerProcess();
+    const client = createClient(child);
+    await initialize(child);
+
+    const models = client.listModels({ limit: 100, includeHidden: false });
+    await Promise.resolve();
+    expect(child.messages().at(-1)).toEqual({
+      id: 2,
+      method: "model/list",
+      params: { limit: 100, includeHidden: false },
+    });
+    child.send('{"id":2,"result":{"data":[],"nextCursor":null}}\n');
+    await expect(models).resolves.toEqual({ data: [], nextCursor: null });
+    client.close();
+  });
+
   test("handles the allowlisted token refresh server request after the initialization handshake", async () => {
     const child = new FakeAppServerProcess();
     const onNotification = mock(() => undefined);

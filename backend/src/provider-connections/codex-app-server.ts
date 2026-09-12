@@ -91,6 +91,14 @@ export class CodexAppServerRpcClient
     }
     return this.requestRpc(method, params);
   }
+
+  async listModels(params: {
+    readonly cursor?: string;
+    readonly limit: number;
+    readonly includeHidden: false;
+  }): Promise<unknown> {
+    return this.requestRpc("model/list", params);
+  }
 }
 
 type CodexAppServerRpcClientFactory = PooledCodexAppServerClientFactory<CodexAppServerRpcClient>;
@@ -131,6 +139,13 @@ export const startManagedCodexChatGptLogin = managedBroker.start;
 export const cancelManagedCodexChatGptLogin = managedBroker.cancel;
 export const readManagedCodexChatGptStatus = managedBroker.readStatus;
 export const revokeManagedCodexChatGptLogin = managedBroker.revoke;
+
+export async function listManagedCodexModels(
+  scope: ProviderConnectionScope,
+  params: { readonly cursor?: string; readonly limit: number; readonly includeHidden: false },
+): Promise<unknown> {
+  return (await managedClientPool.get(scope)).listModels(params);
+}
 
 export {
   cancelCodexChatGptAppServerLogin,

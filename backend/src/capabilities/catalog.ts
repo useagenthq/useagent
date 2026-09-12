@@ -22,6 +22,8 @@ import {
 } from "../runs/engine-readiness";
 import { allowedModelsForEngine, defaultModelForEngine } from "../runs/model-policy";
 import { t3ProviderDrivers } from "../engines/t3-provider-driver";
+import type { NativeCodexModelCatalog } from "../provider-connections/codex-model-catalog";
+import { engineAuthMode } from "../runs/engine-auth-mode";
 
 export const CAPABILITY_CATALOG_VERSION = 1 as const;
 const MAX_TOOLS = 256;
@@ -37,13 +39,19 @@ export interface CapabilityCatalogOptions {
   readonly childSessionsConfigured?: boolean;
   readonly productChildThreadsConfigured?: boolean;
   readonly botsConfigured?: boolean;
+  readonly codexModelCatalog?: NativeCodexModelCatalog;
 }
 
 export interface CapabilityCatalogModel {
   readonly id: string;
   readonly default: boolean;
   readonly dispatchable: boolean;
-  readonly degradationReason?: EngineReadinessReason | "model_provider_not_ready";
+  readonly policyAllowed: boolean;
+  readonly displayName?: string;
+  readonly nativeAvailable?: true;
+  readonly defaultReasoningEffort?: string;
+  readonly supportedReasoningEfforts?: readonly string[];
+  readonly degradationReason?: EngineReadinessReason | "model_provider_not_ready" | "model_not_allowed";
 }
 
 export interface CapabilityCatalogEngine {
@@ -54,6 +62,11 @@ export interface CapabilityCatalogEngine {
   readonly message?: string;
   readonly defaultModel: string;
   readonly models: readonly CapabilityCatalogModel[];
+  readonly modelCatalog?: {
+    readonly source: "native" | "policy";
+    readonly stale: boolean;
+    readonly error?: string;
+  };
   readonly runtime: {
     readonly kind: "t3" | "native" | "acp_compat" | "direct";
     readonly label: string;
@@ -145,21 +158,58 @@ function buildEngine(
   engine: UserFacingEngineId,
   env: Record<string, string | undefined>,
   gatewayConfigured: boolean,
+  codexModelCatalog?: NativeCodexModelCatalog,
 ): CapabilityCatalogEngine {
-  const readiness = engineReadiness(engine, env);
+  const baseReadiness = engineReadiness(engine, env);
+  const subscriptionCatalogUnavailable = engine === "codex" &&
+    engineAuthMode("codex", env) === "subscription" &&
+    codexModelCatalog?.error !== undefined;
+  const readiness = subscriptionCatalogUnavailable
+    ? {
+        engine: "codex" as const,
+        ready: false,
+        reason: "provider_unhealthy" as const,
+        message: codexModelCatalog?.error === "not_connected"
+          ? "Connect a Codex account in Settings, then retry."
+          : "Codex could not verify this account's model catalog. Refresh models or reconnect the account.",
+      }
+    : baseReadiness;
   const defaultModel = defaultModelForEngine(engine, env);
   const configured = configuredUserFacingEngines(env).includes(engine);
-  const models = allowedModelsForEngine(engine as EngineId, env).map((id) => {
-    const dispatchable = engineModelReadyForDispatch(engine as EngineId, id, env);
+  const allowedModelIds = allowedModelsForEngine(engine as EngineId, env);
+  const policyModels = new Set(allowedModelIds);
+  const nativeModels = engine === "codex"
+    ? new Map(codexModelCatalog?.models.map((model) => [model.id, model]) ?? [])
+    : new Map();
+  const modelIds = engine === "codex"
+    ? [...new Set([...allowedModelIds, ...nativeModels.keys()])]
+    : allowedModelIds;
+  const models = modelIds.map((id) => {
+    const policyAllowed = policyModels.has(id);
+    const nativeModel = nativeModels.get(id);
+    const dispatchable = policyAllowed &&
+      readiness.ready &&
+      engineModelReadyForDispatch(engine as EngineId, id, env);
     return {
       id,
       default: id === defaultModel,
       dispatchable,
+      policyAllowed,
+      ...(nativeModel?.displayName ? { displayName: nativeModel.displayName } : {}),
+      ...(nativeModel ? { nativeAvailable: true as const } : {}),
+      ...(nativeModel?.defaultReasoningEffort
+        ? { defaultReasoningEffort: nativeModel.defaultReasoningEffort }
+        : {}),
+      ...(nativeModel?.supportedReasoningEfforts.length
+        ? { supportedReasoningEfforts: nativeModel.supportedReasoningEfforts }
+        : {}),
       ...(!dispatchable
         ? {
-            degradationReason: readiness.ready
-              ? ("model_provider_not_ready" as const)
-              : readiness.reason,
+            degradationReason: !policyAllowed
+              ? ("model_not_allowed" as const)
+              : readiness.ready
+                ? ("model_provider_not_ready" as const)
+                : readiness.reason,
           }
         : {}),
     };
@@ -172,6 +222,15 @@ function buildEngine(
     ...(readiness.message ? { message: readiness.message } : {}),
     defaultModel,
     models,
+    ...(engine === "codex"
+      ? {
+          modelCatalog: {
+            source: codexModelCatalog?.status === "native" ? ("native" as const) : ("policy" as const),
+            stale: codexModelCatalog?.stale ?? false,
+            ...(codexModelCatalog?.error ? { error: codexModelCatalog.error } : {}),
+          },
+        }
+      : {}),
     runtime: engineRuntime(engine, env),
     session: {
       declared: normalizeNegotiatedCapabilities(declaredSessionCapabilities(engine, env)),
@@ -223,7 +282,7 @@ export function buildCapabilityCatalog(options: CapabilityCatalogOptions): Capab
     scope: "pre_run",
     bots: options.botsConfigured === true,
     engines: USER_FACING_ENGINES.map((engine) =>
-      buildEngine(engine, env, options.gatewayConfigured),
+      buildEngine(engine, env, options.gatewayConfigured, options.codexModelCatalog),
     ),
     tools: { gatewayConfigured: options.gatewayConfigured, families: familyConfigured, declared: tools },
     nativeSlashCommands: { catalog: "session_runtime", currentRun: null },

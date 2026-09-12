@@ -11,9 +11,13 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   // A thread a bot owns (delegated to it by an @mention) answers as that bot;
   // the roster is optional context, so its failure never blocks the thread.
-  const [view, bots] = await Promise.all([loadThreadView(id), loadBots().catch(() => null)]);
-  if (!view) notFound();
+  const botsPromise = loadBots().catch(() => null);
+  const [bots, view] = await Promise.all([
+    botsPromise,
+    loadThreadView(id, botsPromise.then((items) => botForThread(items, id)?.homeThreadId !== id)),
+  ]);
   const bot = botForThread(bots, id);
+  if (!view) notFound();
   // The persistent shell lives in the (thread) layout above this segment.
   return (
     <SessionView

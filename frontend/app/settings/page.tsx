@@ -10,6 +10,10 @@ import { IntegrationConnections } from "./integration-connections";
 import { ProviderConnectionsCard } from "./provider-connections-card";
 import { SecretsCard } from "./secrets-card";
 import { SettingsRail } from "./settings-rail";
+import {
+  SETTINGS_ACTIVATION_RATIO,
+  SETTINGS_SCROLL_TAIL_RATIO,
+} from "./settings-rail-active";
 import { SettingsCard, SettingsRow } from "./settings-rows";
 import { TeamCard } from "./team-card";
 import { UsageMeters } from "./usage-meters";
@@ -36,7 +40,10 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="scroll-mt-6">
+    <section
+      id={id}
+      style={{ scrollMarginTop: `${SETTINGS_ACTIVATION_RATIO * 100}vh` }}
+    >
       <div className="rounded-2xl border border-border-button-default bg-background-primary-default p-5 shadow-sm">
         <div className="mb-4 flex flex-col gap-0.5">
           <h2 className="text-headline-medium text-text-primary">{title}</h2>
@@ -75,7 +82,10 @@ export default function SettingsPage() {
 
           {/* Sections */}
           <ProviderConnectionsProvider>
-            <div className="flex min-w-0 flex-1 flex-col gap-8">
+            <div
+              className="flex min-w-0 flex-1 flex-col gap-8"
+              style={{ paddingBottom: `${SETTINGS_SCROLL_TAIL_RATIO * 100}vh` }}
+            >
               {/* General */}
               <Section
                 id="general"

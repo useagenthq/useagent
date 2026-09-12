@@ -27,6 +27,7 @@ interface BotBody {
   presetLocked: boolean;
   homeThreadId: string | null;
   lastAt: string | null;
+  repos: string[];
 }
 
 async function createBot(cookies: string, name: string): Promise<BotBody> {
@@ -40,6 +41,34 @@ async function createBot(cookies: string, name: string): Promise<BotBody> {
 }
 
 describe("bots", () => {
+  test("repositories round-trip through create, edit, and reload before the preset locks", async () => {
+    const { cookies } = await createOrgSession("bot-repositories");
+    const created = await json<{ bot: BotBody }>("/api/bots", {
+      method: "POST",
+      cookies,
+      body: {
+        name: "Repo scout",
+        title: "Tracks repository changes",
+        rules: "Summarize the relevant diff.",
+        engine: "mock",
+        repos: ["useagenthq/app", "useagenthq/docs"],
+      },
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.bot.repos).toEqual(["useagenthq/app", "useagenthq/docs"]);
+
+    const edited = await json<{ bot: BotBody }>(`/api/bots/${created.body.bot.id}`, {
+      method: "PATCH",
+      cookies,
+      body: { repos: ["useagenthq/app"] },
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body.bot.repos).toEqual(["useagenthq/app"]);
+
+    const reloaded = await json<{ bot: BotBody }>(`/api/bots/${created.body.bot.id}`, { cookies });
+    expect(reloaded.body.bot.repos).toEqual(["useagenthq/app"]);
+  });
+
   test("a bot is a preset over one home thread created by its first message", async () => {
     const { cookies } = await createOrgSession("bots");
     const bot = await createBot(cookies, "Atlas");

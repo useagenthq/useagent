@@ -76,6 +76,7 @@ export const CODEX_MODELS: { value: string; label: string; tint: string }[] = [
   { value: "gpt-5.6-luna", label: "GPT-5.6 Luna · Fast", tint: "text-sky-500" },
   { value: "gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
   { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", tint: "text-teal-500" },
+  { value: "gpt-6-astra", label: "GPT-6 Astra", tint: "text-violet-500" },
 ];
 
 /** Claude Code accepts the backend's exact Anthropic model policy ids. */
@@ -102,7 +103,13 @@ export const CHAT_MODELS: { value: string; label: string; tint: string }[] = [
   { value: "z-ai/glm-5.2", label: "GLM 5.2", tint: "text-purple-500" },
 ];
 
-export type ModelOption = { value: string; label: string; tint: string };
+export type ModelOption = {
+  value: string;
+  label: string;
+  tint: string;
+  disabled?: boolean;
+  description?: string;
+};
 
 // Stable reference so per-render callers never see a fresh array identity.
 const OPENCODE_SELECTABLE_MODELS: ModelOption[] = [
@@ -134,6 +141,7 @@ export function supportsPreSessionModelSelection(engine: EngineId): boolean {
 export function modelOptionsForEngine(
   engine: EngineId,
   allowedModelIds?: readonly string[],
+  details: readonly { readonly id: string; readonly displayName?: string }[] = [],
 ): ModelOption[] {
   const known = selectableModelsForEngine(engine);
   if (known.length === 0) return [];
@@ -142,7 +150,7 @@ export function modelOptionsForEngine(
     (value) =>
       known.find((model) => model.value === value) ?? {
         value,
-        label: value,
+        label: details.find((model) => model.id === value)?.displayName ?? value,
         tint: "text-text-secondary",
       },
   );

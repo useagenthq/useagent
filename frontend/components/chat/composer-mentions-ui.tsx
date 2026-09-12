@@ -25,6 +25,7 @@ import {
   useState,
 } from "react";
 import type { BotState } from "@useagent/agent-client";
+import { botStatus } from "@/components/bots/bot-status";
 import { StatusDot } from "@/components/shared/status-dot";
 import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { cx as cn } from "@/utils/cx";
@@ -56,7 +57,6 @@ import {
   fetchPulls,
   fetchBots,
   fetchRepos,
-  repoTreeUrl,
   fetchTree,
   orderRepos,
   fetchSkillsPicker,
@@ -616,18 +616,12 @@ function rowSecondary(row: MentionRow): string | undefined {
   }
 }
 
-const BOT_STATE: Record<BotState, { label: string; tone: "neutral" | "info" | "away"; pulse: boolean }> = {
-  idle: { label: "Idle", tone: "neutral", pulse: false },
-  working: { label: "Working", tone: "info", pulse: true },
-  attention: { label: "Needs attention", tone: "away", pulse: false },
-};
-
 /** A bot row's second line: its live state from /api/bots, then its title. */
 function BotStateCaption({ row }: { row: Extract<MentionRow, { type: "bot" }> }) {
-  const state = BOT_STATE[row.state];
+  const state = botStatus(row.state);
   return (
     <span className="flex items-center gap-1 text-caption-1-regular text-text-tertiary">
-      <StatusDot tone={state.tone} pulse={state.pulse} />
+      <StatusDot tone={state.dotTone} pulse={state.pulse} />
       <span className="truncate">{[state.label, row.title || null].filter(Boolean).join(" · ")}</span>
     </span>
   );

@@ -11,8 +11,9 @@ import {
   type EngineId,
   type ThreadRelationshipKind,
 } from "../db/schema";
-import { FOLLOWUP_KEY_PATTERN, mentionFollowupSourceRunId } from "../bots/handoff-keys";
+import { FOLLOWUP_KEY_PATTERN, parseMentionFollowupKey } from "../bots/handoff-keys";
 import { boundedChildTitle } from "./child-session-policy";
+import { BOT_HANDOFF_RUN_ORIGIN } from "./origin";
 import { projectProductThreadStatus, type ProductThreadStatus } from "./thread-status";
 
 export interface NewThreadRelationship {
@@ -45,7 +46,18 @@ export interface ThreadRelationshipView {
   readonly updatedAt: Date;
   /** The bot this delegated thread was handed to through an @mention; null for
    *  roots and for children the agent opened itself. */
-  readonly bot: { readonly id: string; readonly name: string } | null;
+  readonly bot: {
+    readonly id: string;
+    readonly name: string;
+    readonly avatarTone: string;
+    readonly avatarIcon: string;
+  } | null;
+  /** Exact child turn admitted by each parent-run bot mention. */
+  readonly handoffOutcomes: readonly {
+    readonly sourceRunId: string;
+    readonly status: ProductThreadStatus;
+    readonly summary: string | null;
+  }[];
   /** Parent-thread runs whose later @mention became a turn of this thread
    *  (the creating run is `sourceRunId`, not listed here). */
   readonly followUpRunIds: readonly string[];
@@ -55,6 +67,33 @@ export interface ThreadRelationshipCursor {
   /** Exact PostgreSQL epoch microseconds. Never round through JavaScript Date. */
   readonly createdAtMicros: string;
   readonly threadId: string;
+}
+
+interface StoredHandoffProvenance {
+  readonly sourceRunId: string;
+  readonly parentThreadId: string;
+  readonly botId: string;
+}
+
+function storedHandoffProvenance(payload: string | null): StoredHandoffProvenance | null {
+  if (!payload) return null;
+  try {
+    const body = JSON.parse(payload) as { botHandoff?: Record<string, unknown> };
+    const provenance = body.botHandoff;
+    if (
+      provenance?.kind !== "bot_handoff_followup" ||
+      typeof provenance.sourceRunId !== "string" ||
+      typeof provenance.parentThreadId !== "string" ||
+      typeof provenance.botId !== "string"
+    ) return null;
+    return {
+      sourceRunId: provenance.sourceRunId,
+      parentThreadId: provenance.parentThreadId,
+      botId: provenance.botId,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function cursorTimestamp(microseconds: string) {
@@ -185,31 +224,117 @@ async function latestViews(
     .groupBy(runs.id, runAdmissions.state, runAdmissions.queueReason)
     .orderBy(asc(runs.threadId), desc(runs.createdAt), desc(runs.id));
   const latestByThread = new Map<string, (typeof runRows)[number]>();
+  const runById = new Map(runRows.map((row) => [row.id, row]));
   for (const row of runRows) if (!latestByThread.has(row.threadId)) latestByThread.set(row.threadId, row);
-  const handoffRows = await exec.select({ threadId: botHandoffs.threadId, botId: bots.id, botName: bots.name })
+  const handoffRows = await exec.select({
+    threadId: botHandoffs.threadId,
+    botId: bots.id,
+    botName: bots.name,
+    avatarTone: bots.avatarTone,
+    avatarIcon: bots.avatarIcon,
+  })
     .from(botHandoffs)
     .innerJoin(bots, and(eq(bots.orgId, botHandoffs.orgId), eq(bots.id, botHandoffs.botId)))
     .where(and(eq(botHandoffs.orgId, orgId), inArray(botHandoffs.threadId, threadIds)));
-  const botByThread = new Map(handoffRows.map((row) => [row.threadId, { id: row.botId, name: row.botName }] as const));
-  const followUpRows = await exec.select({ threadId: runs.threadId, key: commands.idempotencyKey })
+  const botByThread = new Map(handoffRows.map((row) => [row.threadId, {
+    id: row.botId,
+    name: row.botName,
+    avatarTone: row.avatarTone,
+    avatarIcon: row.avatarIcon,
+  }] as const));
+  const followUpRows = await exec.select({
+    threadId: runs.threadId,
+    runId: commands.runId,
+    key: commands.idempotencyKey,
+    payload: commands.payload,
+    origin: runs.origin,
+  })
     .from(commands)
-    .innerJoin(runs, eq(runs.id, commands.runId))
+    .innerJoin(runs, and(eq(runs.id, commands.runId), eq(runs.orgId, commands.orgId)))
     .where(and(
       eq(commands.orgId, orgId),
       inArray(runs.threadId, threadIds),
       like(commands.idempotencyKey, FOLLOWUP_KEY_PATTERN),
-    ));
-  const followUpsByThread = new Map<string, string[]>();
+    ))
+    .orderBy(asc(commands.createdAt), asc(commands.id));
+  const relationshipByThread = new Map(relationships.map((relationship) => [relationship.threadId, relationship]));
+  const candidates: {
+    threadId: string;
+    parentThreadId: string;
+    sourceRunId: string;
+    childRunId: string;
+  }[] = [];
   for (const row of followUpRows) {
-    const sourceRunId = row.key ? mentionFollowupSourceRunId(row.key) : null;
-    if (!sourceRunId) continue;
-    const list = followUpsByThread.get(row.threadId) ?? [];
-    if (!list.includes(sourceRunId)) list.push(sourceRunId);
-    followUpsByThread.set(row.threadId, list);
+    const key = row.key ? parseMentionFollowupKey(row.key) : null;
+    const provenance = storedHandoffProvenance(row.payload);
+    const relationship = relationshipByThread.get(row.threadId);
+    const bot = botByThread.get(row.threadId);
+    if (
+      !key ||
+      !provenance ||
+      !row.runId ||
+      row.origin !== BOT_HANDOFF_RUN_ORIGIN ||
+      !relationship?.parentThreadId ||
+      !bot ||
+      key.sourceRunId !== provenance.sourceRunId ||
+      key.parentThreadId !== provenance.parentThreadId ||
+      key.botId !== provenance.botId ||
+      provenance.parentThreadId !== relationship.parentThreadId ||
+      provenance.botId !== bot.id
+    ) continue;
+    candidates.push({
+      threadId: row.threadId,
+      parentThreadId: provenance.parentThreadId,
+      sourceRunId: provenance.sourceRunId,
+      childRunId: row.runId,
+    });
   }
+  const sourceRunIds = [...new Set(candidates.map((candidate) => candidate.sourceRunId))];
+  const sourceRows = sourceRunIds.length > 0
+    ? await exec.select({ id: runs.id, threadId: runs.threadId }).from(runs).where(and(
+        eq(runs.orgId, orgId),
+        inArray(runs.id, sourceRunIds),
+      ))
+    : [];
+  const sourceThreads = new Map(sourceRows.map((row) => [row.id, row.threadId]));
+  const followUpsByThread = new Map<string, { sourceRunId: string; childRunId: string }[]>();
+  for (const candidate of candidates) {
+    if (sourceThreads.get(candidate.sourceRunId) !== candidate.parentThreadId) continue;
+    const { threadId, sourceRunId, childRunId } = candidate;
+    const list = followUpsByThread.get(threadId) ?? [];
+    if (!list.some((item) => item.sourceRunId === sourceRunId)) {
+      list.push({ sourceRunId, childRunId });
+    }
+    followUpsByThread.set(threadId, list);
+  }
+  const outcome = (sourceRunId: string, childRunId: string) => {
+    const run = runById.get(childRunId);
+    if (!run) return null;
+    return {
+      sourceRunId,
+      status: projectProductThreadStatus({
+        runStatus: run.status,
+        admissionState: run.admissionState,
+        queueReason: run.queueReason,
+        cancelIntent: run.cancelCount > 0,
+      }),
+      summary: !run.summary
+        ? null
+        : run.summary.length > 1_000
+          ? `${run.summary.slice(0, 999)}…`
+          : run.summary,
+    };
+  };
   return relationships.flatMap((relationship) => {
     const latest = latestByThread.get(relationship.threadId);
     if (!latest) return [];
+    const bot = botByThread.get(relationship.threadId) ?? null;
+    const followUpOutcomes = bot
+      ? (followUpsByThread.get(relationship.threadId) ?? [])
+          .map(({ sourceRunId, childRunId }) => outcome(sourceRunId, childRunId))
+          .filter((item): item is NonNullable<typeof item> => item !== null)
+      : [];
+    const initialOutcome = bot ? outcome(relationship.sourceRunId, relationship.threadId) : null;
     return [{
       threadId: relationship.threadId,
       parentThreadId: relationship.parentThreadId,
@@ -236,8 +361,9 @@ async function latestViews(
       latestActivityAt: latest.updatedAt,
       createdAt: relationship.createdAt,
       updatedAt: relationship.updatedAt,
-      bot: botByThread.get(relationship.threadId) ?? null,
-      followUpRunIds: followUpsByThread.get(relationship.threadId) ?? [],
+      bot,
+      handoffOutcomes: initialOutcome ? [initialOutcome, ...followUpOutcomes] : followUpOutcomes,
+      followUpRunIds: followUpOutcomes.map((item) => item.sourceRunId),
     }];
   });
 }

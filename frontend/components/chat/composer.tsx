@@ -237,6 +237,7 @@ export function Composer({
   // can still override it without changing the call sites.
   const [engineState] = useState<EngineId>(defaultEngine);
   const [model, setModel] = useState(defaultModel);
+  const [modelAvailable, setModelAvailable] = useState(true);
   const [command, setCommand] = useState<Agent | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -282,7 +283,7 @@ export function Composer({
   const slashActive = allowAgent && !command && value.trimStart().startsWith("/");
   const showAgentPopover = slashActive || toolsOpen;
   const busy = pending || submitting;
-  const blocked = busy || locked || runUploads.blocked;
+  const blocked = busy || locked || runUploads.blocked || (enableModelPicker && !modelAvailable);
   const hasDraft = value.trim().length > 0;
   const canSend = hasDraft && !blocked;
   const composerAction = getComposerAction({
@@ -495,6 +496,11 @@ export function Composer({
       {failed && (
         <ComposerAlert>
           {failureMessage ?? "Couldn't send - your message is restored. Press send to try again."}
+        </ComposerAlert>
+      )}
+      {enableModelPicker && !modelAvailable && (
+        <ComposerAlert testId="model-unavailable">
+          No available model is selected. Refresh the model list or reconnect the provider.
         </ComposerAlert>
       )}
       {notice && !failed && <ComposerAlert testId="composer-notice">{notice}</ComposerAlert>}
@@ -720,7 +726,12 @@ export function Composer({
             >
               {/* One engine now — the meaningful per-message choice is the MODEL. */}
               {enableModelPicker && (
-                <ModelPicker engine={engine} model={model} onChange={setModel} />
+                <ModelPicker
+                  engine={engine}
+                  model={model}
+                  onChange={setModel}
+                  onAvailabilityChange={setModelAvailable}
+                />
               )}
               {hero && (
                 <button

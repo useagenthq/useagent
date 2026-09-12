@@ -17,6 +17,12 @@ export const PRODUCT_THREAD_STATUSES = [
 ] as const;
 export type ProductThreadStatus = (typeof PRODUCT_THREAD_STATUSES)[number];
 
+export interface HandoffOutcome {
+  readonly sourceRunId: string;
+  readonly status: ProductThreadStatus;
+  readonly summary: string | null;
+}
+
 /** Browser-safe hierarchy metadata for one ordinary, messageable product thread. */
 export interface ThreadRelationship {
   readonly threadId: string;
@@ -36,7 +42,15 @@ export interface ThreadRelationship {
   readonly latestDurationMs: number | null;
   readonly latestActivityAt: string;
   /** The bot this thread was handed to through an @mention; null otherwise. */
-  readonly bot: { readonly id: string; readonly name: string } | null;
+  readonly bot: {
+    readonly id: string;
+    readonly name: string;
+    /** Additive bot-orb identity fields; omitted by older backends. */
+    readonly avatarTone?: string;
+    readonly avatarIcon?: string;
+  } | null;
+  /** Exact child turn admitted by each parent-run bot mention. */
+  readonly handoffOutcomes?: readonly HandoffOutcome[];
   /** Parent-thread runs whose later @mention became a turn of this thread. */
   readonly followUpRunIds: readonly string[];
 }
@@ -62,18 +76,51 @@ function nullableString(value: unknown): string | null | undefined {
 }
 
 /** Additive fields: an older backend omits them, which decodes as "no bot". */
-function handoffBot(value: unknown): { id: string; name: string } | null | undefined {
+function handoffBot(value: unknown): ThreadRelationship["bot"] | undefined {
   if (value === undefined || value === null) return null;
   const raw = record(value);
   const id = raw ? string(raw.id) : null;
   const name = raw ? string(raw.name) : null;
-  return id && name ? { id, name } : undefined;
+  if (!id || !name) return undefined;
+  const avatarTone = string(raw?.avatarTone);
+  const avatarIcon = string(raw?.avatarIcon);
+  if ((raw?.avatarTone !== undefined && !avatarTone) || (raw?.avatarIcon !== undefined && !avatarIcon)) {
+    return undefined;
+  }
+  return {
+    id,
+    name,
+    ...(avatarTone ? { avatarTone } : {}),
+    ...(avatarIcon ? { avatarIcon } : {}),
+  };
 }
 
 function runIdList(value: unknown): string[] | undefined {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) return undefined;
   return value as string[];
+}
+
+function handoffOutcomeList(value: unknown): HandoffOutcome[] | undefined {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return undefined;
+  const outcomes: HandoffOutcome[] = [];
+  for (const item of value) {
+    const raw = record(item);
+    const sourceRunId = string(raw?.source_run_id);
+    const summary = additiveNullableString(raw?.summary);
+    if (
+      !sourceRunId ||
+      !(PRODUCT_THREAD_STATUSES as readonly unknown[]).includes(raw?.status) ||
+      summary === undefined
+    ) return undefined;
+    outcomes.push({
+      sourceRunId,
+      status: raw?.status as ProductThreadStatus,
+      summary,
+    });
+  }
+  return outcomes;
 }
 
 /** Additive summary fields: a backend from before they were emitted omits them,
@@ -106,6 +153,7 @@ export function decodeThreadRelationship(value: unknown): ThreadRelationship | n
   const latestDurationMs = additiveNullableNonNegativeInteger(raw.latest_duration_ms);
   const latestActivityAt = string(raw.latest_activity_at);
   const bot = handoffBot(raw.bot);
+  const handoffOutcomes = handoffOutcomeList(raw.handoff_outcomes);
   const followUpRunIds = runIdList(raw.follow_up_run_ids);
   if (
     !threadId ||
@@ -125,6 +173,7 @@ export function decodeThreadRelationship(value: unknown): ThreadRelationship | n
     latestDurationMs === undefined ||
     !latestActivityAt ||
     bot === undefined ||
+    handoffOutcomes === undefined ||
     followUpRunIds === undefined
   ) return null;
   return {
@@ -145,6 +194,7 @@ export function decodeThreadRelationship(value: unknown): ThreadRelationship | n
     latestDurationMs,
     latestActivityAt,
     bot,
+    handoffOutcomes,
     followUpRunIds,
   };
 }

@@ -24,6 +24,7 @@ import { groupApprovalsByRun } from "@/components/chat/gateway-approval-state";
 import { toGatewayChildSession } from "@/components/chat/gateway-children";
 import {
   deriveHandoffReceipts,
+  mergeHandoffReceipts,
   type HandoffReceipt,
   HandoffReceipts,
 } from "@/components/chat/handoff-receipts";
@@ -537,8 +538,7 @@ export const Conversation = memo(function Conversation({
   productChildren?: readonly ThreadRelationship[];
   onOpenProductChild?: (threadId: string) => void;
   /** Live handoff outcomes from this page's own replies, keyed by run id. They
-   *  win over the durable ones derived from `productChildren` (which survive a
-   *  reload but only know created / followed_up). */
+   *  bridge admission until the matching durable child-turn outcome arrives. */
   handoffReceipts?: ReadonlyMap<string, readonly HandoffReceipt[]>;
   /** Composer notice for a reply whose bots did not all get the message. */
   handoffNotice?: string | null;
@@ -714,7 +714,7 @@ export const Conversation = memo(function Conversation({
                 childSessions={childSessionsByParent.get(turn.run.id)}
                 productChildren={productChildrenByParent.get(turn.run.id)}
                 onOpenProductChild={onOpenProductChild}
-                handoffs={handoffReceipts?.get(turn.run.id) ?? durableHandoffs.get(turn.run.id)}
+                handoffs={mergeHandoffReceipts(handoffReceipts?.get(turn.run.id), durableHandoffs.get(turn.run.id))}
                 approvals={approvalsByRun.get(turn.run.id)}
                 onGatewayApprovalResolved={onGatewayApprovalResolved}
                 isLatestTurn={index === renderedTurns.length - 1}

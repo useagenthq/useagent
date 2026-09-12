@@ -53,24 +53,59 @@ describe("requestModelCatalogRefresh", () => {
     });
   });
 
-  test("POSTs the refresh endpoint and returns the parsed manifest", async () => {
+  test("refreshes the free lane and the actor-scoped native capability catalog", async () => {
     const seen: { url: string; method?: string }[] = [];
     const catalog = await requestModelCatalogRefresh(async (url, init) => {
       seen.push({ url, method: init?.method });
+      if (url === "/api/config/models/refresh") return jsonResponse({ refreshed: true });
       return jsonResponse({
-        refreshed: true,
-        free: ["newvendor/brand-new-model:free"],
-        models: {
-          opencode: ["openai/gpt-5.6-luna", "newvendor/brand-new-model:free"],
-          chat: ["anthropic/claude-sonnet-5"],
-          bogus: ["ignored"],
-        },
+        version: 1,
+        scope: "pre_run",
+        bots: false,
+        engines: [{
+          id: "codex",
+          configured: true,
+          ready: true,
+          defaultModel: "gpt-5.6-luna",
+          models: [
+            {
+              id: "gpt-6-astra",
+              displayName: "GPT-6 Astra",
+              default: false,
+              dispatchable: true,
+              policyAllowed: true,
+              nativeAvailable: true,
+            },
+            {
+              id: "gpt-future-native",
+              displayName: "Future Native",
+              default: false,
+              dispatchable: false,
+              policyAllowed: false,
+              nativeAvailable: true,
+              degradationReason: "model_not_allowed",
+            },
+          ],
+          modelCatalog: { source: "native", stale: false },
+          runtime: { kind: "t3", label: "OpenAI agent" },
+        }],
+        tools: { gatewayConfigured: false, declared: [] },
+        nativeSlashCommands: { catalog: "session_runtime", currentRun: null },
       });
     });
-    expect(seen).toEqual([{ url: "/api/config/models/refresh", method: "POST" }]);
+    expect(seen).toEqual([
+      { url: "/api/config/models/refresh", method: "POST" },
+      { url: "/api/capabilities?refresh=models", method: undefined },
+    ]);
     expect(catalog).toEqual({
-      opencode: ["openai/gpt-5.6-luna", "newvendor/brand-new-model:free"],
-      chat: ["anthropic/claude-sonnet-5"],
+      models: { codex: ["gpt-6-astra"] },
+      modelDetails: {
+        codex: [
+          expect.objectContaining({ id: "gpt-6-astra", dispatchable: true }),
+          expect.objectContaining({ id: "gpt-future-native", dispatchable: false }),
+        ],
+      },
+      modelCatalogStatuses: { codex: { source: "native", stale: false } },
     });
   });
 
@@ -95,14 +130,37 @@ describe("requestModelCatalogRefresh", () => {
     ).toBeNull();
   });
 
-  test("a manifest without model arrays parses to an empty catalog, not a crash", async () => {
+  test("a Codex-only refresh does not call the shared Free-lane endpoint", async () => {
+    const seen: string[] = [];
+    await requestModelCatalogRefresh(async (url) => {
+      seen.push(url);
+      return jsonResponse({
+        version: 1,
+        scope: "pre_run",
+        bots: false,
+        engines: [],
+        tools: { gatewayConfigured: false, declared: [] },
+        nativeSlashCommands: { catalog: "session_runtime", currentRun: null },
+      });
+    }, { refreshFree: false });
+    expect(seen).toEqual(["/api/capabilities?refresh=models"]);
+  });
+
+  test("an empty capability catalog parses without inventing models", async () => {
+    let call = 0;
     expect(
-      await requestModelCatalogRefresh(async () => jsonResponse({ refreshed: true })),
-    ).toEqual({});
-    expect(
-      await requestModelCatalogRefresh(async () =>
-        jsonResponse({ models: { opencode: "not-an-array" } }),
-      ),
-    ).toEqual({});
+      await requestModelCatalogRefresh(async () => {
+        call += 1;
+        if (call === 1) return jsonResponse({ refreshed: true });
+        return jsonResponse({
+          version: 1,
+          scope: "pre_run",
+          bots: false,
+          engines: [],
+          tools: { gatewayConfigured: false, declared: [] },
+          nativeSlashCommands: { catalog: "session_runtime", currentRun: null },
+        });
+      }),
+    ).toEqual({ models: {}, modelDetails: {}, modelCatalogStatuses: {} });
   });
 });

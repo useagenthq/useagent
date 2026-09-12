@@ -48,6 +48,10 @@ export function threadSubmissionLane(
   return "root";
 }
 
+export function threadFamilyShouldLoad(initialHint: InitialThreadRelationshipHint): boolean {
+  return initialHint !== "inapplicable";
+}
+
 export function threadFamilyShouldRefresh(
   state: Pick<ThreadFamilyState, "relationship" | "children">,
   currentThreadId: string,
@@ -64,17 +68,22 @@ export function threadFamilyShouldRefresh(
 }
 
 /** Lightweight family metadata only. Child transcripts keep their own thread stream. */
-export function useThreadFamily(threadId: string): ThreadFamilyState {
+export function useThreadFamily(
+  threadId: string,
+  initialHint: InitialThreadRelationshipHint,
+): ThreadFamilyState {
+  const shouldLoad = threadFamilyShouldLoad(initialHint);
   const [state, setState] = useState<ThreadFamilySnapshot>({
     relationship: null,
     parent: null,
     children: [],
-    loading: true,
+    loading: shouldLoad,
     error: null,
   });
   const refreshScheduled = useRef(false);
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    if (!shouldLoad) return;
     try {
       const relationship = await fetchThreadRelationship(threadId, signal);
       const [family, parent] = await Promise.all([
@@ -95,7 +104,7 @@ export function useThreadFamily(threadId: string): ThreadFamilyState {
         }));
       }
     }
-  }, [threadId]);
+  }, [shouldLoad, threadId]);
 
   useOrgChanges((change) => {
     if (
@@ -111,10 +120,10 @@ export function useThreadFamily(threadId: string): ThreadFamilyState {
 
   useEffect(() => {
     const controller = new AbortController();
-    setState({ relationship: null, parent: null, children: [], loading: true, error: null });
+    setState({ relationship: null, parent: null, children: [], loading: shouldLoad, error: null });
     void load(controller.signal);
     return () => controller.abort();
-  }, [load]);
+  }, [load, shouldLoad]);
 
   const childActive = threadFamilyHasActiveChild(state.children);
   useEffect(() => {

@@ -3,6 +3,8 @@
 // "Streaming Text" grammar). Rendered wherever answer text carries source
 // attributions; the retrieval layer decides placement, this only draws.
 
+import { Chip } from "@/components/base/badges/chip";
+
 const LETTER_TONES = [
   "bg-sky-100 text-sky-600",
   "bg-lime-100 text-lime-600",
@@ -27,25 +29,28 @@ export function SourceChip({ domain, href }: { domain: string; href?: string }) 
       {domain.charAt(0)}
     </span>
   );
-  const pill =
-    "inline-flex translate-y-[-1px] items-center gap-1 rounded-full border border-border-button-default bg-background-primary-default px-1.5 py-px align-middle text-caption-1-medium text-text-secondary";
+  const chip = (
+    <Chip
+      color="soft"
+      className="max-w-72 gap-1 rounded-full py-px align-middle"
+      data-testid="source-chip"
+    >
+      {letter}
+      <span className="truncate">{domain}</span>
+    </Chip>
+  );
   if (href) {
     return (
       <a
         href={href}
         target="_blank"
         rel="noreferrer"
-        className={`${pill} outline-none transition-colors hover:border-border-button-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring`}
+        aria-label={`Open source: ${domain}`}
+        className="inline-flex translate-y-[-1px] rounded-full outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
-        {letter}
-        {domain}
+        {chip}
       </a>
     );
   }
-  return (
-    <span className={pill}>
-      {letter}
-      {domain}
-    </span>
-  );
+  return <span className="inline-flex translate-y-[-1px]">{chip}</span>;
 }

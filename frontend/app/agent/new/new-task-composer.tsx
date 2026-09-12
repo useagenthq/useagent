@@ -10,7 +10,14 @@ import {
   RiRefreshLine,
 } from "@remixicon/react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AddFilesRow,
   AddMenuDivider,
@@ -96,7 +103,11 @@ export function NewTaskComposer({
   const engineConfig = useEnabledEngineConfig();
   const enabledEngines = engineConfig.engines;
   const engineId = engine as EngineId;
-  const selectableModels = modelOptionsForEngine(engineId, engineConfig.models[engineId] ?? []);
+  const selectableModels = modelOptionsForEngine(
+    engineId,
+    engineConfig.models[engineId] ?? [],
+    engineConfig.modelDetails[engineId] ?? [],
+  );
   // The Free lane tracks OpenRouter's live catalog; the heading's refresh
   // re-derives it on demand (same affordance as the chat surface's picker).
   const [refreshingModels, setRefreshingModels] = useState(false);
@@ -105,12 +116,12 @@ export function NewTaskComposer({
     async (preserveModel: string) => {
       setRefreshingModels(true);
       try {
-        await refreshModels(preserveModel);
+        await refreshModels(preserveModel, engineId);
       } finally {
         setRefreshingModels(false);
       }
     },
-    [refreshModels],
+    [engineId, refreshModels],
   );
   const modelGroups: PickerGroup[] = useMemo(() => {
     const toOption = (m: (typeof selectableModels)[number]) => ({
@@ -219,7 +230,7 @@ export function NewTaskComposer({
     };
   }, [engine]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (selectableModels.length === 0) return;
     if (!selectableModels.some((m) => m.value === model)) {
       setModel(selectableModels[0]?.value ?? "");

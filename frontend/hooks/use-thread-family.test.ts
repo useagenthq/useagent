@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   threadFamilyHasActiveChild,
+  threadFamilyShouldLoad,
   threadFamilyShouldRefresh,
   threadSubmissionLane,
 } from "./use-thread-family";
@@ -53,4 +54,11 @@ test("only concrete or ambiguous product-child hints fail closed", () => {
   expect(threadSubmissionLane(unresolved, "child")).toBe("blocked");
   expect(threadSubmissionLane(unresolved, "ambiguous")).toBe("blocked");
   expect(threadSubmissionLane({ ready: true, isProductChild: true }, "root")).toBe("child");
+});
+
+test("only the explicit bot-home hint suppresses family loading", () => {
+  expect(threadFamilyShouldLoad("inapplicable")).toBe(false);
+  for (const hint of ["root", "child", "legacy_or_off", "ambiguous"] as const) {
+    expect(threadFamilyShouldLoad(hint)).toBe(true);
+  }
 });

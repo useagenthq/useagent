@@ -14,6 +14,7 @@ import { cx } from "@/utils/cx";
 import { ArchiveBotButton } from "./archive-bot";
 import { AvatarMark, StateBadge } from "./avatar-mark";
 import { PresetSection } from "./bot-preset";
+import { BotRepositories } from "./bot-repositories";
 import { RoutinesSection } from "./routines-section";
 import { type ApiBot, apiErrorText, engineHasComputer, engineLabel, OFFLINE_MESSAGE } from "./types";
 
@@ -29,10 +30,15 @@ export function BotThreadHeader({ bot, threadModel }: { bot: ApiBot; threadModel
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState(bot.title);
   const [rules, setRules] = useState(bot.rules);
+  const [repos, setRepos] = useState([...bot.repos]);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dirty = title !== bot.title || rules !== bot.rules;
+  const dirty =
+    title !== bot.title ||
+    rules !== bot.rules ||
+    repos.length !== bot.repos.length ||
+    repos.some((repo, index) => repo !== bot.repos[index]);
   const model = threadModel ?? bot.model;
 
   const save = async () => {
@@ -43,7 +49,7 @@ export function BotThreadHeader({ bot, threadModel }: { bot: ApiBot; threadModel
       const response = await backendFetch(`/api/bots/${bot.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), rules: rules.trim() }),
+        body: JSON.stringify({ title: title.trim(), rules: rules.trim(), repos }),
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -124,6 +130,15 @@ export function BotThreadHeader({ bot, threadModel }: { bot: ApiBot; threadModel
               </span>
             </label>
 
+            <BotRepositories
+              value={repos}
+              onChange={(next) => {
+                setRepos(next);
+                setSaved(false);
+              }}
+              locked={bot.presetLocked}
+            />
+
             {(dirty || error || saved) && (
               <div className="flex items-center justify-between gap-3">
                 <span
@@ -166,12 +181,12 @@ export function BotThreadHeader({ bot, threadModel }: { bot: ApiBot; threadModel
             )}
 
             <section className="flex flex-col gap-1.5">
-              <h2 className="text-body-2-medium text-text-primary">Approvals</h2>
+              <h2 className="text-body-2-medium text-text-primary">Human input</h2>
               <p className="flex items-start gap-2 text-body-2-regular text-text-secondary">
                 <RiShieldCheckLine className="mt-0.5 size-4 shrink-0 text-text-tertiary" aria-hidden />
                 {bot.pendingApprovals > 0
-                  ? `${bot.pendingApprovals} waiting in the thread.`
-                  : "Anything external waits for you in the thread."}
+                  ? `${bot.pendingApprovals} ${bot.pendingApprovals === 1 ? "request" : "requests"} waiting in the thread.`
+                  : "Approvals and questions wait for you in the thread."}
               </p>
             </section>
 

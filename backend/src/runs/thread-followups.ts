@@ -103,6 +103,7 @@ export async function acceptThreadFollowup(input: {
   readonly text: string;
   readonly attachmentIds: readonly string[];
   readonly idempotencyKey: string;
+  readonly botHandoff?: RunCommandInput["botHandoff"];
 }): Promise<RunCommandOutcome | { readonly status: "not_found" } | { readonly status: "stale_parent" } | { readonly status: "attachments_require_actor" }> {
   const relationship = await getThreadRelationship(input.orgId, input.threadId);
   if (!relationship) return { status: "not_found" };
@@ -188,6 +189,7 @@ export async function acceptThreadFollowup(input: {
     orgId: input.orgId,
     actorId: input.actorId,
     intent,
+    ...(input.botHandoff ? { botHandoff: input.botHandoff } : {}),
     run: {
       id: crypto.randomUUID(),
       prompt: text,

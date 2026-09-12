@@ -18,18 +18,18 @@ describe("orderRoster", () => {
 });
 
 describe("stateLabel", () => {
-  test("words for the two states that matter, nothing for idle", () => {
+  test("uses one label for every backend bot state", () => {
     expect(stateLabel("attention")).toBe("Needs you");
     expect(stateLabel("working")).toBe("Working");
-    expect(stateLabel("idle")).toBeNull();
+    expect(stateLabel("idle")).toBe("Idle");
   });
 });
 
 describe("outcomeLine", () => {
   test("shows a short outcome whole and falls back honestly", () => {
     expect(outcomeLine(bot({ lastOutcome: "PR #482: 2 blockers found", lastAt: "2026-09-01T11:55:00.000Z" }), NOW)).toBe("PR #482: 2 blockers found");
-    expect(outcomeLine(bot({ state: "attention", pendingApprovals: 1 }), NOW)).toBe("Waiting on your approval");
-    expect(outcomeLine(bot({ state: "attention", pendingApprovals: 3 }), NOW)).toBe("Waiting on 3 approvals");
+    expect(outcomeLine(bot({ state: "attention", pendingApprovals: 1 }), NOW)).toBe("Waiting for your input");
+    expect(outcomeLine(bot({ state: "attention", pendingApprovals: 3 }), NOW)).toBe("3 requests need your input");
     expect(outcomeLine(bot({ state: "working" }), NOW)).toBe("Working on it");
     expect(outcomeLine(bot({ homeThreadId: "t1" }), NOW)).toBe("Finished, no summary yet");
     expect(outcomeLine(bot({}), NOW)).toBe("No conversations yet");

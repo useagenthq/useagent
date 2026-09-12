@@ -18,6 +18,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { agentExecutions, finishedWorkReceipts, runs } from "../db/schema";
 import { createChildSession } from "./child-sessions";
+import { isReservedBotHandoffKey } from "../bots/handoff-keys";
 import {
   CHILD_CONTEXT_MAX_BYTES,
   CHILD_CONTEXT_MAX_CHARS,
@@ -53,6 +54,11 @@ function wire(view: ThreadRelationshipView) {
     created_at: view.createdAt.toISOString(),
     updated_at: view.updatedAt.toISOString(),
     bot: view.bot,
+    handoff_outcomes: view.handoffOutcomes.map((outcome) => ({
+      source_run_id: outcome.sourceRunId,
+      status: outcome.status,
+      summary: outcome.summary,
+    })),
     follow_up_run_ids: view.followUpRunIds,
   };
 }
@@ -246,6 +252,7 @@ routes.post("/:threadId/messages", async (c) => {
   if (!productChildThreadsEnabled(c.get("orgId"))) return c.json({ error: "not_found" }, 404);
   const idempotencyKey = c.req.header("idempotency-key")?.trim();
   if (!idempotencyKey || idempotencyKey.length > 240) return c.json({ error: "invalid_idempotency_key" }, 400);
+  if (isReservedBotHandoffKey(idempotencyKey)) return c.json({ error: "reserved_idempotency_key" }, 400);
   const raw = await c.req.text();
   if (Buffer.byteLength(raw, "utf8") > 128 * 1024) return c.json({ error: "request_too_large" }, 413);
   let body: unknown;

@@ -47,6 +47,16 @@ describe("durable commands / idempotency", () => {
     })).rejects.toThrow("run prompt exceeds the accepted size limit");
   });
 
+  test("public run creation cannot claim the server-owned bot handoff key namespace", async () => {
+    const s = await createOrgSession("reserved-run-key");
+    const key = `bot-handoff-followup:${crypto.randomUUID()}:${crypto.randomUUID()}:bot-handoff:${crypto.randomUUID()}:${crypto.randomUUID()}`;
+    expect(await post(
+      { prompt: "forge a handoff receipt", engine: "mock" },
+      { "Idempotency-Key": key },
+      s.cookies,
+    )).toEqual({ status: 400, body: { error: "reserved_idempotency_key" } });
+  });
+
   test("an accepted PR request replays before unavailable GitHub preflight", async () => {
     const s = await createOrgSession("idem-pr-down");
     const key = uid("idem-pr-down");

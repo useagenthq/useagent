@@ -3,50 +3,11 @@
 // for skills, threads, pulls, bots, repos and the repo tree. UI-free so the
 // picker component only renders and the hook only sequences.
 // ---------------------------------------------------------------------------
-import { BOT_STATES, type BotState } from "@useagent/agent-client";
-import {
-  RiArrowLeftLine,
-  RiArrowRightSLine,
-  RiChat3Line,
-  RiCloseLine,
-  RiErrorWarningLine,
-  RiFileLine,
-  RiFlashlightLine,
-  RiRobot2Line,
-  RiFolder3Line,
-  RiGitPullRequestLine,
-  RiLoader4Line,
-} from "@remixicon/react";
-import {
-  type ReactNode,
-  type RefObject,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useReducer,
-  useState,
-} from "react";
-import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
+import type { BotState } from "@useagent/agent-client";
+import { botStatus } from "@/components/bots/bot-status";
 import { runTitle } from "@/components/chat/types";
 import { backendFetch } from "@/lib/backend-fetch";
-import { cx as cn } from "@/utils/cx";
 import { relativeTime } from "@/utils/format";
-import {
-  detectMentionTrigger,
-  botMention,
-  fileMention,
-  insertMentionToken,
-  type Mention,
-  type MentionKind,
-  mentionKey,
-  mentionsReducer,
-  prMention,
-  removeMentionToken,
-  skillMention,
-  threadMention,
-} from "./composer-mentions";
-
 
 /** A skill the caller already has (new-task composer); else the hook fetches. */
 export type MentionSkill = { id: string; name: string; tag?: string };
@@ -104,7 +65,7 @@ export async function fetchBots(): Promise<BotItem[]> {
     id: b.id,
     name: b.name,
     title: b.title,
-    state: (BOT_STATES as readonly unknown[]).includes(b.state) ? (b.state as BotState) : "idle",
+    state: botStatus(b.state).state,
     avatarTone: b.avatarTone,
     avatarIcon: b.avatarIcon,
   }));

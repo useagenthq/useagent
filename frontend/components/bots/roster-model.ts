@@ -1,4 +1,5 @@
 import type { ApiBot, BotState } from "./types";
+import { botStatus } from "./bot-status";
 
 /** Roster order: what needs you first, then what is moving, then the rest. */
 const ORDER: readonly BotState[] = ["attention", "working", "idle"];
@@ -18,11 +19,9 @@ export function orderRoster(bots: readonly ApiBot[]): ApiBot[] {
   );
 }
 
-/** The state in words for the badge beside the name; idle needs none. */
-export function stateLabel(state: BotState): string | null {
-  if (state === "attention") return "Needs you";
-  if (state === "working") return "Working";
-  return null;
+/** The state in words for every bot projection. */
+export function stateLabel(state: BotState): string {
+  return botStatus(state).label;
 }
 
 /** The one line under the name: the bot's own outcome when it is short, else an honest fallback. */
@@ -31,7 +30,9 @@ export function outcomeLine(
   now: number | null,
 ): string {
   if (bot.state === "attention") {
-    return bot.pendingApprovals === 1 ? "Waiting on your approval" : `Waiting on ${bot.pendingApprovals} approvals`;
+    return bot.pendingApprovals > 1
+      ? `${bot.pendingApprovals} requests need your input`
+      : "Waiting for your input";
   }
   const outcome = bot.lastOutcome?.trim() ?? "";
   if (outcome && outcome.length <= SHORT_OUTCOME_MAX && !outcome.includes("\n")) return outcome;

@@ -63,7 +63,7 @@ const DEFAULT_MODEL = "claude-opus-5";
 /** Pinned versions for npx-on-demand installs inside the sandbox (the default
  *  image has no engines preinstalled). */
 const CLAUDE_CODE_VERSION = "2.1.222";
-const CODEX_VERSION = "0.146.0";
+const CODEX_VERSION = "0.153.3";
 
 /** In-sandbox paths for one engine turn: the staged prompt (fed via stdin
  *  redirect — see SandboxEngineSpec.command), the live output log the poll loop

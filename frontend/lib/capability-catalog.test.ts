@@ -11,8 +11,8 @@ const WIRE = {
       ready: true,
       defaultModel: "openai/gpt-5.6-luna",
       models: [
-        { id: "openai/gpt-5.6-luna", default: true, dispatchable: true },
-        { id: "new/free:free", default: false, dispatchable: true },
+        { id: "openai/gpt-5.6-luna", default: true, dispatchable: true, policyAllowed: true },
+        { id: "new/free:free", default: false, dispatchable: true, policyAllowed: true },
       ],
       runtime: { kind: "t3", label: "T3 orchestration · cloud sandbox" },
       session: { declared: {}, currentRun: null },

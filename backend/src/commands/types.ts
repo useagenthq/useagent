@@ -72,6 +72,14 @@ export interface RunCommandInput {
    * rolls back for a loser), so the worker's first turn always finds the bot
    * and a lost race never leaves a stray root behind. */
   readonly botHome?: { readonly botId: string };
+  /** Server-only proof that a bot mention admitted this exact child follow-up.
+   * Public routes never accept or derive this from request content. */
+  readonly botHandoff?: {
+    readonly kind: "bot_handoff_followup";
+    readonly sourceRunId: string;
+    readonly parentThreadId: string;
+    readonly botId: string;
+  };
   readonly run: {
     readonly id: string;
     readonly prompt: string;
