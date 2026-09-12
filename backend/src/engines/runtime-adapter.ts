@@ -5,6 +5,7 @@ import { acquireThreadSandbox } from "./thread-sandbox";
 import {
   awaitRuntimeProviderReady,
   prepareRuntimeProviderBridge,
+  prepareStableRuntimeProvider,
   type RuntimeProviderReadiness,
   type RuntimeProviderBridgeLease,
 } from "./runtime-provider-bridge";
@@ -550,6 +551,9 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
           : undefined,
         // Frozen timing prefix: hosted cutover canaries read these values.
         timingPrefix: "t3",
+        prepareStableProvider(sandbox) {
+          return prepareStableRuntimeProvider(sandbox, ctx, engine);
+        },
         async prepareProvider(sandbox, workdir) {
           return await prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir);
         },

@@ -28,6 +28,13 @@ export interface SandboxTurnPreparationOptions<T> {
   /** Providers that establish a lower-privilege runtime user must run after
    * repository/input materialization so ownership cannot race those writes. */
   readonly providerAfterResources?: boolean;
+  /** One-time provider installation for a fresh sandbox. This phase may write
+   * stable runtime settings, but must not mint a run-bound capability or lease. */
+  readonly prepareStableProvider?: (
+    sandbox: SandboxHandle,
+    workdir: string,
+    binding: SandboxBinding,
+  ) => Promise<void>;
   readonly resourceUser?: {
     readonly uid: number;
     readonly gid: number;
@@ -126,6 +133,13 @@ export async function prepareSandboxTurn<T>(
         secretInjection,
       ),
     );
+    const prepareStableProvider = options.prepareStableProvider;
+    if (!lease.reused && prepareStableProvider) {
+      await stage("provider_bootstrap", () =>
+        prepareStableProvider(sandbox, workdir, lease.binding)
+      );
+      ctx.signal.throwIfAborted();
+    }
     const prepareResources = async () => {
       const [changedRepoPaths] = await Promise.all([
         stage("repos", async () => {
@@ -166,8 +180,12 @@ export async function prepareSandboxTurn<T>(
       return state;
     });
     let resolvedProviderState: T;
-    if (options.providerAfterResources) {
+    if (
+      options.providerAfterResources ||
+      (!lease.reused && options.prepareStableProvider)
+    ) {
       await prepareResources();
+      ctx.signal.throwIfAborted();
       resolvedProviderState = await prepareProvider();
     } else {
       const providerOperation = prepareProvider();

@@ -12,6 +12,7 @@ import {
   claudeProviderReadiness,
   codexBridgeAuthPath,
   prepareRuntimeProviderBridge,
+  prepareStableRuntimeProvider,
   prewarmRuntimeProviderBridge,
   resetRuntimeProviderBridgeCacheForTest,
 } from "./runtime-provider-bridge";
@@ -715,6 +716,45 @@ exit 17
     expect(bootstraps[0]).toContain("@openai/codex@0.153.3");
     expect(bootstraps[1]).toContain("@anthropic-ai/claude-code@2.1.226");
     expect(bootstraps[2]).toContain("opencode-ai@1.18.7");
+  });
+
+  test("prepares only the selected stable provider without a run-bound lease", async () => {
+    const commands: string[] = [];
+    const sandbox = {
+      id: "fresh-selected-provider",
+      providerKind: "cube",
+      process: {
+        executeCommand: async (command: string) => {
+          commands.push(command);
+          return { exitCode: 0, result: "" };
+        },
+      },
+    } as unknown as SandboxHandle;
+    const context = {
+      runId: "run-selected-provider",
+      threadId: "thread-selected-provider",
+      prompt: "work",
+      bootstrapContext: "",
+      turnContext: "",
+      workdir: "/root/work",
+      orgId: "org-a",
+      userId: "user-a",
+      model: "gpt-5.6-luna",
+      signal: new AbortController().signal,
+      emit: async () => undefined,
+      setSummary: () => undefined,
+    } as const;
+
+    await expect(
+      prepareStableRuntimeProvider(sandbox, context, "codex"),
+    ).resolves.toBeUndefined();
+
+    const bootstraps = commands.filter((command) => command.includes("NATIVE_PACKAGE="));
+    expect(bootstraps).toHaveLength(1);
+    expect(bootstraps[0]).toContain("@openai/codex@0.153.3");
+    expect(bootstraps[0]).not.toContain("providerInstances");
+    expect(commands.some((command) => command.includes("exec-server"))).toBe(false);
+    expect(commands.some((command) => command.includes("codex-relay"))).toBe(false);
   });
 
   test.each(["claude", "opencode"] as const)("revalidates cached %s identity and repairs only after mutation", async (engine) => {
