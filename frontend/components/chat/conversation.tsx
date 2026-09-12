@@ -1,17 +1,23 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ExecutionSummarySnapshot, ThreadRelationship } from "@useagent/agent-client";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { LoadingState } from "@/components/ai/loading-state";
 import { Thinking } from "@/components/ai/thinking";
+import { AgentAnswer } from "@/components/chat/agent-answer";
 import type { ApprovalDecision, PendingApproval } from "@/components/chat/approval-state";
+import {
+  type AssistantIdentity,
+  AssistantTurnHeader,
+} from "@/components/chat/assistant-turn-header";
 import {
   buildTimelineFromCanonical,
   type CommandCatalogState,
   type StoredCanonicalEvent,
   shouldUseCanonicalTimeline,
 } from "@/components/chat/canonical-timeline";
-import { type ComposerSubmit } from "@/components/chat/composer";
+import { chatCitationsFromSteps } from "@/components/chat/chat-citations";
+import type { ComposerSubmit } from "@/components/chat/composer";
 import { useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { GatewayApprovalCard } from "@/components/chat/gateway-approval-card";
 import { groupApprovalsByRun } from "@/components/chat/gateway-approval-state";
@@ -25,23 +31,43 @@ import { InboundAttachments } from "@/components/chat/inbound-attachments";
 import { NativeApprovalCard } from "@/components/chat/native-approval-card";
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import { QuestionCard } from "@/components/chat/question-card";
-import { ReplyComposer } from "@/components/chat/reply-composer";
 import {
   composerAcceptsRunResources,
   type PendingQuestion,
 } from "@/components/chat/question-state";
+import { ReplyComposer } from "@/components/chat/reply-composer";
 import type { SlashCommand } from "@/components/chat/slash-command";
-import {
-  type GatewayChildSession,
-  SubagentsFold,
-} from "@/components/chat/subagents-fold";
+import { type GatewayChildSession, SubagentsFold } from "@/components/chat/subagents-fold";
 import { buildTimeline, hasNarration } from "@/components/chat/timeline";
-import { MD_CLASS, MD_CLASS_REASONING, Timeline } from "@/components/chat/timeline-view";
-import { splitTurn, turnNodesFromSteps, withTransientLiveReasoning } from "@/components/chat/turn-trace-model";
+import {
+  MD_CLASS,
+  MD_CLASS_REASONING,
+  Timeline,
+  turnTraceContext,
+} from "@/components/chat/timeline-view";
+import {
+  splitTurn,
+  turnNodesFromSteps,
+  withTransientLiveReasoning,
+} from "@/components/chat/turn-trace-model";
 import { TurnWindow } from "@/components/chat/turn-window";
-// Re-exported so existing importers (lab samples, workspace sample) keep working.
+
+export { AgentAnswer } from "@/components/chat/agent-answer";
+export {
+  type AssistantIdentity,
+  AssistantTurnHeader,
+} from "@/components/chat/assistant-turn-header";
 export { Timeline } from "@/components/chat/timeline-view";
-import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
+
+import {
+  type ApiRun,
+  type ApiStep,
+  cleanPrompt,
+  type EngineId,
+  isRenderableTimelineStep,
+  type MemoryScope,
+  type RunStatus,
+} from "@/components/chat/types";
 import { Markdown } from "@/components/prompt-kit/markdown";
 import { MessageCopyButton } from "@/components/session-ui/message-copy-button";
 import { MessageScrollerRail } from "@/components/session-ui/message-scroller-rail";
@@ -56,17 +82,6 @@ import {
   shouldShowThreadErrorBanner,
 } from "@/components/session-ui/thread-error-banner";
 import type { GatewayApproval } from "@/lib/gateway-approvals";
-
-import {
-  type ApiRun,
-  type ApiStep,
-  cleanPrompt,
-  type EngineId,
-  engineLabel,
-  isRenderableTimelineStep,
-  type MemoryScope,
-  type RunStatus,
-} from "@/components/chat/types";
 
 /** One conversation turn: a run, plus its live-or-settled step/summary state. */
 export type Turn = {
@@ -103,7 +118,9 @@ export type Turn = {
 /** Terminal note for a run that failed before writing a summary. */
 function FailedNote() {
   return (
-    <p className="text-body-2-regular text-text-error-primary">This run failed before producing a summary.</p>
+    <p className="text-body-2-regular text-text-error-primary">
+      This run failed before producing a summary.
+    </p>
   );
 }
 
@@ -113,42 +130,6 @@ export function UserBubble({ children }: { children: string }) {
       <div className="bg-background-secondary-default text-text-primary text-body-2-regular max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2.5">
         {children}
       </div>
-    </div>
-  );
-}
-
-/** Who answers in this thread when it is not the generic agent: a bot's own mark
- *  and name on its home thread. Also names the reply composer ("Message Nova"). */
-export interface AssistantIdentity {
-  readonly name: string;
-  readonly avatar: React.ReactNode;
-}
-
-/** The assistant turn's identity row: brand glyph + "Agent" + the engine label,
- *  or the thread's own identity when one is given.
- *  Shared by TurnBlock and the /lab/session sample so both read identically. */
-export function AssistantTurnHeader({ engine, identity }: { engine: EngineId; identity?: AssistantIdentity }) {
-  return (
-    <div className="flex items-center gap-2">
-      {identity?.avatar ?? (
-        <span className="ring-border-button-default bg-background-secondary-default flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
-          <OrbitKnotMark className="size-3.5" stroke={2.2} />
-        </span>
-      )}
-      <span className="text-body-2-medium text-text-primary">{identity?.name ?? "Agent"}</span>
-      <span className="text-mono-label text-text-tertiary">{engineLabel(engine)}</span>
-    </div>
-  );
-}
-
-/** The agent's answer. No fake typewriter: real streaming is LiveNarration's
- * job (progressive markdown on actual deltas); once a run completes, the
- * summary renders as settled Markdown immediately — a plain-text re-typing
- * animation both lied about liveness and showed raw markdown runes. */
-export function AgentAnswer({ summary }: { summary: string; stream?: boolean }) {
-  return (
-    <div className="animate-ai-fade-up" data-testid="agent-answer">
-      <Markdown className={MD_CLASS}>{summary}</Markdown>
     </div>
   );
 }
@@ -236,7 +217,7 @@ const TurnBlock = memo(function TurnBlock({
 }) {
   const { run, steps, status, summary, live, liveText, liveReasoning } = turn;
   // Every thread reads like chat: the work is ONE trace, the reply is the block.
-  const trace = { durationMs: run.duration_ms, defaultOpen: !assistantIdentity };
+  const trace = turnTraceContext(turn, !assistantIdentity);
   // Capture whether this turn was streaming when it first mounted, so its
   // summary typewriters in on arrival but settled history renders instantly.
   const [wasLive] = useState(() => live);
@@ -274,18 +255,16 @@ const TurnBlock = memo(function TurnBlock({
   // Which lane actually drove the timeline above - a test/debug hook (asserted by the
   // flag-on browser E2E to prove the canonical path really rendered, not just that a
   // timeline appeared). Cheap + pure.
-  const timelineSource: "canonical" | "native" = shouldUseCanonicalTimeline(
-    canonicalTimeline,
-    turn,
-  )
+  const timelineSource: "canonical" | "native" = shouldUseCanonicalTimeline(canonicalTimeline, turn)
     ? "canonical"
     : "native";
 
   const activity = steps.filter((s) => s.kind !== "done" && isRenderableTimelineStep(s));
+  const citations = chatCitationsFromSteps(steps);
   const failed = status === "failed";
   // The steps-only lane: settled history drops sandbox plumbing and the engine's
   // prose preview (the summary is the reply); live keeps the boot signal.
-  const settledNodes = turnNodesFromSteps(activity, false);
+  const settledNodes = turnNodesFromSteps(steps, false, status);
   // While narration is streaming it IS this turn's live indicator: show the
   // fading text + caret and suppress the Thinking shimmer so only one live
   // signal shows at a time.
@@ -343,9 +322,11 @@ const TurnBlock = memo(function TurnBlock({
 
         {/* Thinking surfaced ahead of the answer: real streamed reasoning tokens
             (not a spinner), yielding the instant answer text starts. */}
-        {live && !assistantIdentity && !answerStarted && !timelineOwnsReasoning && liveReasoning && (
-          <LiveThinking text={liveReasoning} />
-        )}
+        {live &&
+          !assistantIdentity &&
+          !answerStarted &&
+          !timelineOwnsReasoning &&
+          liveReasoning && <LiveThinking text={liveReasoning} />}
 
         {timeline ? (
           /* Native turn: the interleaved timeline IS the turn — narration bursts
@@ -360,7 +341,7 @@ const TurnBlock = memo(function TurnBlock({
               showFollowups={isLatestTurn}
               trace={trace}
             />
-            {summary && !timelineReply && <AgentAnswer summary={summary} />}
+            {summary && !timelineReply && <AgentAnswer summary={summary} citations={citations} />}
             {/* A run whose native frames carry no text (the chat engine streams its
                 answer as deltas only) still narrates live from the delta channel. */}
             {narrating && !summary && !hasNarration(timeline) && <LiveNarration text={liveText} />}
@@ -379,21 +360,23 @@ const TurnBlock = memo(function TurnBlock({
               : live
                 ? activity.length > 0 && (
                     <Timeline
-                      nodes={turnNodesFromSteps(activity, true)}
+                      nodes={turnNodesFromSteps(steps, true, status)}
                       live
                       workingSince={run.created_at}
                       trace={trace}
                     />
                   )
-                : settledNodes.length > 0 && (
-                    <Timeline
-                      nodes={settledNodes}
-                      live={false}
-                      trace={trace}
-                    />
+                : (settledNodes.length > 0 || trace.failure) && (
+                    <Timeline nodes={settledNodes} live={false} trace={trace} />
                   )}
 
-            {summary && <AgentAnswer summary={summary} stream={wasLive && !sawNarration} />}
+            {summary && (
+              <AgentAnswer
+                summary={summary}
+                stream={wasLive && !sawNarration}
+                citations={citations}
+              />
+            )}
 
             {/* Answer-in-progress: the run's live tokens stream in word-by-word
                 until the durable summary/markdown takes over on completion. */}
@@ -481,9 +464,16 @@ export const Conversation = memo(function Conversation({
   onStop,
   runStartedAt,
   prefill,
-  repoRevisions, resourceMentions = true, onTurnsNeeded, composerLocked = false, composerLockedMessage,
-  productChildren = [], onOpenProductChild,
-  handoffReceipts, handoffNotice, onDismissHandoffNotice,
+  repoRevisions,
+  resourceMentions = true,
+  onTurnsNeeded,
+  composerLocked = false,
+  composerLockedMessage,
+  productChildren = [],
+  onOpenProductChild,
+  handoffReceipts,
+  handoffNotice,
+  onDismissHandoffNotice,
   assistantIdentity,
   canonicalTimeline = process.env.NEXT_PUBLIC_CANONICAL_TIMELINE === "1",
 }: {
@@ -538,7 +528,8 @@ export const Conversation = memo(function Conversation({
   prefill?: { readonly text: string; readonly nonce: number } | null;
   repoRevisions?: Readonly<Record<string, string | null>>;
   resourceMentions?: boolean;
-  composerLocked?: boolean; composerLockedMessage?: string;
+  composerLocked?: boolean;
+  composerLockedMessage?: string;
   /** Windowed initial loading: called with the run ids of not-yet-loaded
    *  (outline stub) turns entering the render window, so their island can be
    *  fetched. Absent on fully-loaded threads. */
@@ -605,7 +596,10 @@ export const Conversation = memo(function Conversation({
     }
     const folded = new Set([...grouped.values()].flat().map((t) => t.run.id));
     const cache = childRowsCacheRef.current;
-    const next = new Map<string, { source: readonly Turn[]; rows: readonly GatewayChildSession[] }>();
+    const next = new Map<
+      string,
+      { source: readonly Turn[]; rows: readonly GatewayChildSession[] }
+    >();
     const byParent = new Map<string, readonly GatewayChildSession[]>();
     for (const [parentId, children] of grouped) {
       const cached = cache.get(parentId);
@@ -646,7 +640,11 @@ export const Conversation = memo(function Conversation({
   );
   const threadBusy = turns.some((t) => t.status === "running");
   const { byRun: approvalsByRun, orphans: orphanApprovals } = useMemo(
-    () => groupApprovalsByRun(gatewayApprovals ?? [], renderedTurns.map((t) => t.run.id)),
+    () =>
+      groupApprovalsByRun(
+        gatewayApprovals ?? [],
+        renderedTurns.map((t) => t.run.id),
+      ),
     [gatewayApprovals, renderedTurns],
   );
 
@@ -683,11 +681,11 @@ export const Conversation = memo(function Conversation({
       engineConfig.engines,
       engineConfig.readinessKnown,
       engineConfig.readiness,
-    ) !==
-    null;
-  const engineUnavailableMessage = engineConfig.readiness[defaultEngine]?.ready === false
-    ? engineConfig.readiness[defaultEngine]?.message
-    : undefined;
+    ) !== null;
+  const engineUnavailableMessage =
+    engineConfig.readiness[defaultEngine]?.ready === false
+      ? engineConfig.readiness[defaultEngine]?.message
+      : undefined;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -773,8 +771,11 @@ export const Conversation = memo(function Conversation({
               ? composerCanAnswerQuestion
                 ? "Answer Agent’s question…"
                 : "Answer the question above to continue…"
-              : composerLocked ? composerLockedMessage ?? "Loading thread controls…"
-                : assistantIdentity ? `Message ${assistantIdentity.name}` : undefined
+              : composerLocked
+                ? (composerLockedMessage ?? "Loading thread controls…")
+                : assistantIdentity
+                  ? `Message ${assistantIdentity.name}`
+                  : undefined
         }
         onReply={onReply}
         running={running}

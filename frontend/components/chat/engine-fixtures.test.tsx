@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { ApiRun } from "./types";
+import { chatCitationsFromSteps } from "./chat-citations";
 import { AgentAnswer, Timeline } from "./conversation";
 import chat from "./fixtures/engine-runs/chat.json";
 import claude from "./fixtures/engine-runs/claude.json";
@@ -12,6 +12,7 @@ import opencode from "./fixtures/engine-runs/opencode.json";
 import pi from "./fixtures/engine-runs/pi.json";
 import type { TimelineNode } from "./timeline";
 import { traceRowsFromWork, turnNodesFromSteps } from "./turn-trace-model";
+import type { ApiRun } from "./types";
 
 interface EngineFixture {
   readonly id: string;
@@ -33,11 +34,17 @@ const FIXTURES: EngineFixture[] = [
 /** A settled turn exactly as TurnBlock's steps-only lane draws it: the trace
  *  (when there is work) and the run's summary as the reply. */
 function renderSettled(fixture: EngineFixture): string {
-  const nodes = turnNodesFromSteps(fixture.steps, false);
+  const nodes = turnNodesFromSteps(fixture.steps, false, "completed");
   return renderToStaticMarkup(
     <>
-      <Timeline nodes={nodes} live={false} trace={{ durationMs: fixture.duration_ms, defaultOpen: true }} />
-      {fixture.summary && <AgentAnswer summary={fixture.summary} />}
+      <Timeline
+        nodes={nodes}
+        live={false}
+        trace={{ durationMs: fixture.duration_ms, defaultOpen: true }}
+      />
+      {fixture.summary && (
+        <AgentAnswer summary={fixture.summary} citations={chatCitationsFromSteps(fixture.steps)} />
+      )}
     </>,
   );
 }
@@ -45,11 +52,18 @@ function renderSettled(fixture: EngineFixture): string {
 /** The same steps mid-run: boot rows included, the last node running. */
 function renderLive(fixture: EngineFixture): string {
   const nodes: TimelineNode[] = [
-    ...(fixture.reasoning ? [{ kind: "reasoning" as const, key: "r", text: fixture.reasoning }] : []),
-    ...turnNodesFromSteps(fixture.steps, true),
+    ...(fixture.reasoning
+      ? [{ kind: "reasoning" as const, key: "r", text: fixture.reasoning }]
+      : []),
+    ...turnNodesFromSteps(fixture.steps, true, "running"),
   ];
   return renderToStaticMarkup(
-    <Timeline nodes={nodes} live trace={{ durationMs: null, defaultOpen: true }} workingSince="2026-09-04T12:59:25Z" />,
+    <Timeline
+      nodes={nodes}
+      live
+      trace={{ durationMs: null, defaultOpen: true }}
+      workingSince="2030-01-01T00:00:00Z"
+    />,
   );
 }
 
@@ -67,10 +81,21 @@ function visibleText(html: string): string {
 /** Markdown runes and whitespace normalized away, so a rendered reply can be
  *  matched against its source text. */
 function plain(text: string): string {
-  return text.replace(/[`*_#]/g, "").replace(/\s+/g, " ").trim();
+  return text
+    .replace(/[`*_#]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-const LEAKS = ["Execute", "mcp__", "mcp.", "useagent_", '{"result"', '{"formatted_output"', "formatted_output"];
+const LEAKS = [
+  "Execute",
+  "mcp__",
+  "mcp.",
+  "useagent_",
+  '{"result"',
+  '{"formatted_output"',
+  "formatted_output",
+];
 
 describe.each(FIXTURES)("trace grammar on a synthetic $engine wire fixture", (fixture) => {
   test("settled: at most one header, verb-first rows, the reply outside the block", () => {
@@ -88,7 +113,9 @@ describe.each(FIXTURES)("trace grammar on a synthetic $engine wire fixture", (fi
     // No raw JSON, no engine tool title, no tool id anywhere a person reads.
     for (const leak of LEAKS) expect(text).not.toContain(leak);
     // Every row carries a verb-first label.
-    const labels = [...html.matchAll(/data-testid="trace-row-label"[^>]*>([^<]*)</g)].map((m) => m[1]!);
+    const labels = [...html.matchAll(/data-testid="trace-row-label"[^>]*>([^<]*)</g)].map(
+      (m) => m[1] ?? "",
+    );
     for (const label of labels) {
       expect(label.trim().length).toBeGreaterThan(0);
       expect(/^[A-Z]/.test(label)).toBe(true);
@@ -114,6 +141,8 @@ describe("what each engine's fixture proves", () => {
     const html = renderSettled(chat as EngineFixture);
     expect(html).not.toContain('data-testid="turn-trace"');
     expect(html).toContain('data-testid="agent-answer"');
+    // What it retrieved closes the reply as the Sources strip.
+    expect(html).toContain('data-testid="chat-sources"');
     // Live, its context preparation is one boot line, never a Thinking row.
     const live = renderLive(chat as EngineFixture);
     expect(live).toContain(">Preparing chat context<");
@@ -142,22 +171,30 @@ describe("what each engine's fixture proves", () => {
     expect(html).toContain('data-status="failed"');
   });
 
-  test("codex: execute-bridged MCP calls, shell commands and reads all read as verbs", () => {
-    const rows = traceRowsFromWork(turnNodesFromSteps((codex as EngineFixture).steps, false), false);
+  test("codex: execute-bridged MCP calls, shell commands, reads and listings all read as verbs", () => {
+    const rows = traceRowsFromWork(
+      turnNodesFromSteps((codex as EngineFixture).steps, false, "completed"),
+      false,
+    ).filter((row) => row.kind === "step");
     const labels = new Set(rows.map((row) => row.label));
     expect(labels.has("Searched playbooks")).toBe(true);
     expect(labels.has("Activated playbook")).toBe(true);
     expect(labels.has("Run")).toBe(true);
     expect(labels.has("Read")).toBe(true);
     expect(labels.has("Search")).toBe(true);
+    expect(labels.has("Listed")).toBe(true);
     for (const row of rows) {
       expect(row.label).not.toContain("Execute");
       expect(row.label).not.toContain("mcp.");
       expect(row.chip?.text ?? "").not.toContain('{"');
     }
-    // Shell rows chip the command line, read rows the file.
+    // Shell rows chip the command line, read rows the file, and a directory
+    // listing ("List files in '.'") is Listed + the directory, never "Read .".
     expect(rows.find((row) => row.label === "Run")?.chip).toMatchObject({ mono: true });
-    expect(rows.find((row) => row.label === "Read")?.chip?.text).toBe("README.md");
+    expect(rows.filter((row) => row.label === "Read").map((row) => row.chip?.text)).toEqual([
+      "README.md",
+    ]);
+    expect(rows.find((row) => row.label === "Listed")?.chip).toEqual({ text: ".", mono: true });
     // Tool payloads never surface in a row.
     const html = renderSettled(codex as EngineFixture);
     expect(html).not.toContain("Synthetic project overview");

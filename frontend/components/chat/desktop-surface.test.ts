@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import type { DesktopFocusGuardDoc } from "./desktop-pane";
 import {
   buildDesktopFrameSrc,
   DESKTOP_PROBE_MAX_DELAY,
@@ -10,7 +11,6 @@ import {
   shouldReleaseStolenFocus,
   watchDesktopFocusSteal,
 } from "./desktop-pane";
-import type { DesktopFocusGuardDoc } from "./desktop-pane";
 
 describe("Desktop product surface", () => {
   const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -140,9 +140,7 @@ describe("Desktop product surface", () => {
     expect(desktopPane).toContain("frameRef.current?.contentDocument ?? null");
     expect(desktopPane).toContain("isCaptured: () => inputCapturedRef.current");
     // Stolen focus returns to the last legitimate outer element (the composer).
-    expect(desktopPane).toContain(
-      'window.addEventListener("focusin", rememberOuterFocus, true)',
-    );
+    expect(desktopPane).toContain('window.addEventListener("focusin", rememberOuterFocus, true)');
     expect(desktopPane).toContain("lastOuterFocusRef.current = target");
     expect(desktopPane).toContain("previous.focus()");
     // Enabling control never strands keyboard focus in the cross-origin frame.
@@ -150,6 +148,27 @@ describe("Desktop product surface", () => {
     expect(desktopPane).toContain("inputCapturedRef.current = true;");
     // Release resets the synchronous mirror too, so the guard resumes bouncing.
     expect(desktopPane).toContain("inputCapturedRef.current = false;");
+  });
+
+  test("the pill, Open and Take control wait for the RFB session, not just the vnc.html load", () => {
+    const desktopPane = read("./desktop-pane.tsx");
+
+    // The iframe's onLoad fires about 2.5s before noVNC connects (sweep m9), so
+    // load alone never counts as connected: the pane polls the same-origin
+    // frame document for noVNC's connected marker and stops once it appears.
+    expect(desktopPane).not.toContain("const connected = ready && loaded;");
+    expect(desktopPane).toContain("const connected = ready && loaded && frameConnected;");
+    expect(desktopPane).toContain("watchDesktopFrameConnected({");
+    expect(desktopPane).toContain(
+      "isDesktopFrameConnected(frameRef.current?.contentDocument ?? null)",
+    );
+    expect(desktopPane).toContain("window.setInterval(tick, DESKTOP_CONNECT_POLL_INTERVAL)");
+    // A thread switch starts over from Loading.
+    expect(desktopPane).toContain("setFrameConnected(false);");
+    // Everything the sweep saw lift early keys off that connected flag.
+    expect(desktopPane).toContain("loading={!connected}");
+    expect(desktopPane).toContain("disabled={!connected}");
+    expect(desktopPane).toContain("status={desktopScreenStatus({ connected, live })}");
   });
 
   test("bot home, delegated and plain threads share the SessionView rail and its Agent Screen card", () => {
@@ -325,25 +344,32 @@ describe("Desktop product surface", () => {
     expect(desktopPane).toContain("window.setInterval(tick, DESKTOP_FOCUS_WATCHDOG_INTERVAL)");
     expect(desktopPane).toContain('window.addEventListener("focusin", tick, true)');
     expect(desktopPane).toContain('window.addEventListener("blur", tick, true)');
-    expect(desktopPane).toContain(
-      "restoreOuterFocus(lastOuterFocusRef.current, frameRef.current)",
-    );
+    expect(desktopPane).toContain("restoreOuterFocus(lastOuterFocusRef.current, frameRef.current)");
   });
 });
 
 describe("Desktop probe copy", () => {
   test("names the binaries a sandbox image lacks instead of waiting forever", () => {
-    expect(desktopProbeStatus(502, "desktop proxy failed: missing desktop binaries: xfce4-clipman"))
-      .toBe("Browser is unavailable on this sandbox image: it is missing xfce4-clipman. Rebuild the image with those packages to enable it.");
-    expect(desktopProbeStatus(502, "desktop proxy failed: missing desktop binaries: xdotool xfce4-clipman"))
-      .toContain("missing xdotool, xfce4-clipman");
+    expect(
+      desktopProbeStatus(502, "desktop proxy failed: missing desktop binaries: xfce4-clipman"),
+    ).toBe(
+      "Browser is unavailable on this sandbox image: it is missing xfce4-clipman. Rebuild the image with those packages to enable it.",
+    );
+    expect(
+      desktopProbeStatus(
+        502,
+        "desktop proxy failed: missing desktop binaries: xdotool xfce4-clipman",
+      ),
+    ).toContain("missing xdotool, xfce4-clipman");
   });
 
   test("keeps the waiting and no-sandbox states for every other answer", () => {
     expect(desktopProbeStatus(409, "no live sandbox for this conversation yet")).toBe(
       "No active sandbox. Send a message to start one.",
     );
-    expect(desktopProbeStatus(502, "desktop proxy failed: connect ECONNREFUSED")).toBe("Starting sandbox desktop…");
+    expect(desktopProbeStatus(502, "desktop proxy failed: connect ECONNREFUSED")).toBe(
+      "Starting sandbox desktop…",
+    );
     expect(desktopProbeStatus(500, null)).toBe("Starting sandbox desktop…");
   });
 

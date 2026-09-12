@@ -173,7 +173,14 @@ export type TimelineNode =
   | { kind: "artifact"; key: string; artifact: TimelineArtifact }
   | { kind: "file"; key: string; file: TimelineFileChange }
   | { kind: "plan"; key: string; entries: readonly TimelinePlanEntry[] }
-  | { kind: "tool"; key: string; step: ApiStep }
+  | {
+      kind: "tool";
+      key: string;
+      step: ApiStep;
+      /** The run's failure cut this command short before it recorded an outcome
+       *  of its own (./command-failed-with-run); the row renders as failed. */
+      failedWithRun?: true;
+    }
   | { kind: "followups"; key: string; suggestions: readonly string[] };
 
 /** One distinct web source a turn actually fetched: the display domain + the
@@ -303,9 +310,7 @@ export function parseMarker(eventType: string, payload: unknown): TimelineMarker
       state: eventType === "gateway.approval.resolved" ? "resolved" : "requested",
       toolName: typeof p.toolName === "string" && p.toolName ? p.toolName : "tool",
       status:
-        status === "approved" || status === "denied" || status === "expired"
-          ? status
-          : "pending",
+        status === "approved" || status === "denied" || status === "expired" ? status : "pending",
       resolvedBy: typeof p.resolvedBy === "string" && p.resolvedBy ? p.resolvedBy : null,
     };
   }

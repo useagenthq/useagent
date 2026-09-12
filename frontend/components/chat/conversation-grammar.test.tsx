@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { renderToStaticMarkup } from "react-dom/server";
 import type { ThreadRelationship } from "@useagent/agent-client";
+import { renderToStaticMarkup } from "react-dom/server";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
 import type { ApiRun, RunStatus } from "./types";
 
@@ -292,9 +292,11 @@ test("settled turn renders its work as one trace block", () => {
   expect(timelineWrapper).toContain("space-y-3");
   expect(html.match(/data-testid="turn-trace"/g)).toHaveLength(1);
   // A plain thread opens the trace: the skill receipt and the 3 tools are its
-  // step lines, one short line each, in the Thinking grammar.
+  // step lines, one short line each, in the Thinking grammar; the pre-tool
+  // prose is a narration line between them, with no verb and no chip.
   expect(html).toContain('aria-expanded="true"');
-  expect(html.match(/data-testid="trace-row"/g)).toHaveLength(5);
+  expect(html.match(/data-testid="trace-row"/g)).toHaveLength(4);
+  expect(html.match(/data-testid="trace-narration"/g)).toHaveLength(1);
   // The context marker is a receipt, not a tool call. Pre-tool prose is one
   // narration message inside the trace; the durable summary owns the reply.
   expect(html).toContain("3 tool calls, 1 message, 1 failed");
@@ -344,6 +346,51 @@ test("a timeline work row owns transient reasoning before its durable frame arri
   expect(html.match(/data-testid="thinking-header"/g)).toHaveLength(1);
   expect(html.match(/data-family="reasoning"/g)).toHaveLength(1);
   expect(html).toContain("Checking the synthetic retry policy.");
+});
+
+test("a run that failed at boot traces its category with the full reason and copies it", () => {
+  // Synthetic steps-only relay failure: all sandbox plumbing, then a done step
+  // that says just "Engine error"; run.summary carries the detailed reason.
+  const reason =
+    "error: synthetic engine relay stopped during startup after the child process exited before signaling readiness. Diagnostic output remains visible in full so operators can copy the complete failure context.";
+  const boot = (
+    idx: number,
+    kind: "task" | "done",
+    label: string,
+    chip: string | null,
+  ): Turn["steps"][number] => ({
+    id: `st${idx}`,
+    run_id: "run-boot-failed",
+    idx,
+    kind,
+    label,
+    chip,
+    code_json: null,
+    created_at: "2030-01-01T00:00:00.000Z",
+  });
+  const turn = makeTurn("run-boot-failed", "failed", undefined, [
+    boot(0, "task", "Preparing context and runtime…", "boot"),
+    boot(1, "task", "Provisioning cloud sandbox…", "claude"),
+    boot(2, "task", "Sandbox sandbox-demo-02 ready in 4s (4 CPU / 8 GiB)", "claude"),
+    boot(3, "task", "Preparing browser, tools, and integrations…", "claude"),
+    boot(4, "done", "Engine error", null),
+  ]);
+  turn.summary = reason;
+  const html = render([turn]);
+  const escaped = reason.replaceAll("'", "&#x27;");
+
+  // The trace exists for the failure alone: the header is the category in the
+  // failure tint with the reason as its detail, and one failed terminal row.
+  expect(html).toContain('data-testid="turn-trace"');
+  const header = html.split('data-testid="thinking-header"')[1]?.split("</button>")[0] ?? "";
+  expect(header).toContain(">Engine error<");
+  expect(header).toContain(escaped);
+  expect(html.match(/data-testid="trace-row"/g)).toHaveLength(1);
+  expect(html).toContain('data-status="failed"');
+  // The failure banner shows the whole reason with its own copy affordance.
+  expect(html).toContain('data-session-ui="thread-error-banner"');
+  expect(html).toContain('aria-label="Copy error"');
+  expect(html).not.toContain("line-clamp");
 });
 
 test("settled turn shows the failed step as an x in the open trace", () => {
@@ -416,9 +463,7 @@ test("durable OpenCode todowrite fallback renders the checklist instead of a gen
     }),
     created_at: "2026-08-17T09:00:00Z",
   };
-  const html = render([
-    makeTurn("run-plan-fallback", "completed", undefined, [planStep]),
-  ]);
+  const html = render([makeTurn("run-plan-fallback", "completed", undefined, [planStep])]);
 
   expect(html).toContain('data-testid="todo-list"');
   expect(html).toContain("Create components");

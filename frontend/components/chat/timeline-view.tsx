@@ -31,6 +31,7 @@ import {
   type TimelineNode,
   type TurnSource,
 } from "@/components/chat/timeline";
+import { failureRow, type TurnFailure, turnFailure } from "@/components/chat/turn-failure";
 import { TurnTrace } from "@/components/chat/turn-trace";
 import {
   latestPlanEntries,
@@ -38,7 +39,7 @@ import {
   traceHeader,
   traceRowsFromWork,
 } from "@/components/chat/turn-trace-model";
-import { basename } from "@/components/chat/types";
+import { type ApiStep, basename, type RunStatus } from "@/components/chat/types";
 import { useOpenWorkpiece } from "@/components/chat/workspace-open-context";
 import { Markdown } from "@/components/prompt-kit/markdown";
 import { changedFilesFromTimeline } from "@/components/session-ui/adapter";
@@ -293,13 +294,28 @@ function TimelineFollowups({ suggestions }: { suggestions: readonly string[] }) 
 }
 
 /** How the turn's trace block opens: the run's own duration for the settled
- *  header, and whether it starts open (plain threads) or folded (a bot's). */
+ *  header, whether it starts open (plain threads) or folded (a bot's), and the
+ *  run's terminal failure, which heads the trace and closes its rows. */
 export interface TraceContext {
   readonly durationMs: number | null;
   readonly defaultOpen: boolean;
+  readonly failure?: TurnFailure | null;
 }
 
 const DEFAULT_TRACE: TraceContext = { durationMs: null, defaultOpen: true };
+
+/** One turn's trace context, from the run it renders. */
+export function turnTraceContext(
+  turn: {
+    run: { duration_ms: number | null };
+    status: RunStatus;
+    summary: string | null;
+    steps: readonly ApiStep[];
+  },
+  defaultOpen: boolean,
+): TraceContext {
+  return { durationMs: turn.run.duration_ms, defaultOpen, failure: turnFailure(turn) };
+}
 
 interface TimelineProps {
   nodes: TimelineNode[];
@@ -325,14 +341,28 @@ export function Timeline({
   trace = DEFAULT_TRACE,
 }: TimelineProps) {
   const { work, reply, tail } = useMemo(() => splitTurn(nodes, live), [nodes, live]);
-  const rows = useMemo(() => traceRowsFromWork(work, live), [work, live]);
+  const failure = trace.failure ?? null;
+  // A failed run closes its rows with the terminal failure, so even a run that
+  // failed before any work still traces why.
+  const rows = useMemo(() => {
+    const workRows = traceRowsFromWork(work, live);
+    return failure ? [...workRows, failureRow(failure)] : workRows;
+  }, [work, live, failure]);
   // Durable file.changed receipts live in the closing tail, while edit/write
   // tool calls live in work. Aggregate the complete turn so either source feeds
   // the same compact changed-files strip.
   const files = useMemo(() => changedFilesFromTimeline(nodes), [nodes]);
   const header = useMemo(
-    () => traceHeader({ live, rows, work, durationMs: trace.durationMs, changedFileCount: files.length }),
-    [live, rows, work, trace.durationMs, files.length],
+    () =>
+      traceHeader({
+        live,
+        rows,
+        work,
+        durationMs: trace.durationMs,
+        changedFileCount: files.length,
+        failure,
+      }),
+    [live, rows, work, trace.durationMs, files.length, failure],
   );
   const plan = useMemo(() => latestPlanEntries(work), [work]);
   // Cited web sources settle with the turn (the live list would churn row by row).
@@ -358,9 +388,7 @@ export function Timeline({
       )}
       {reply && <TextBurst text={reply} />}
       {/* Nothing to trace yet and nothing said: the boot gap keeps a live signal. */}
-      {live && rows.length === 0 && !reply && (
-        <WorkingIndicator createdAt={workingSince ?? null} />
-      )}
+      {live && rows.length === 0 && !reply && <WorkingIndicator createdAt={workingSince ?? null} />}
       {tail.map((node) =>
         node.kind === "file" ? (
           <FileChangeRow key={node.key} node={node} />

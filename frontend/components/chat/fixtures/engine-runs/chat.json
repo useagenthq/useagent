@@ -4,7 +4,7 @@
   "summary": "A retry budget limits repeated attempts and prevents one failing dependency from consuming all available capacity.",
   "duration_ms": 1200,
   "steps": [
-    {"id":"chat-step-context","run_id":"chat-run","idx":0,"kind":"task","label":"Preparing chat context...","chip":"chat","code_json":"{\"phase\":\"retrieval\"}","created_at":"2026-01-01T09:00:00.000Z"},
-    {"id":"chat-step-done","run_id":"chat-run","idx":1,"kind":"done","label":"Done","chip":null,"code_json":"{\"citations\":[]}","created_at":"2026-01-01T09:00:01.200Z"}
+    {"id":"chat-step-context","run_id":"chat-run","idx":0,"kind":"task","label":"Preparing chat context...","chip":"chat","code_json":"{\"phase\":\"retrieval\"}","created_at":"2030-01-01T00:00:00.000Z"},
+    {"id":"chat-step-done","run_id":"chat-run","idx":1,"kind":"done","label":"Done","chip":null,"code_json":"{\"citations\":[{\"title\":\"Retry Budgets\",\"source\":\"wiki\"},{\"title\":\"Deployments &amp; Rollbacks\",\"source\":\"wiki\"},{\"title\":\"Backoff Policy\",\"source\":\"wiki\"},{\"title\":\"Queue Architecture\",\"source\":\"wiki\"},{\"title\":\"Synthetic note one\",\"source\":\"memory\"},{\"title\":\"Synthetic note two\",\"source\":\"memory\"},{\"title\":\"Synthetic note three\",\"source\":\"memory\"},{\"title\":\"Synthetic note four\",\"source\":\"memory\"},{\"title\":\"Synthetic note five\",\"source\":\"memory\"},{\"title\":\"Deployments & Rollbacks\",\"source\":\"wiki\"}]}","created_at":"2030-01-01T00:00:01.200Z"}
   ]
 }

@@ -2,8 +2,8 @@ import type { AgentScreenStatus } from "@/components/ai/agent-screen";
 
 /**
  * Status pill for the live desktop card: Loading until the screen is
- * connected (readiness probe passed and the noVNC frame loaded), then Working
- * while the thread has a live run, else Idle.
+ * connected (readiness probe passed, the noVNC frame loaded and its RFB
+ * session is up), then Working while the thread has a live run, else Idle.
  */
 export function desktopScreenStatus({
   connected,

@@ -12,7 +12,7 @@ function step(over: Partial<ApiStep> & { code?: Record<string, unknown> }): ApiS
     label: rest.label ?? "",
     chip: rest.chip ?? null,
     code_json: code ? JSON.stringify(code) : (rest.code_json ?? null),
-    created_at: "2026-09-03T09:00:00Z",
+    created_at: "2030-01-01T00:00:00Z",
   };
 }
 
@@ -23,7 +23,7 @@ const MCP_RESULT = JSON.stringify({
     content: [
       {
         type: "text",
-        text: "[c4001dc4-e24c-4cc4-82b0-7c551ddd1238] skill: screen-recording (v2)\nRecord and publish a demo video.",
+        text: "[synthetic-skill] skill: screen-recording (v2)\nRecord a demo video.",
       },
     ],
   },
@@ -32,13 +32,13 @@ const MCP_RESULT = JSON.stringify({
 describe("unwrapToolOutput", () => {
   test("MCP-shaped results unwrap to their text blocks", () => {
     expect(unwrapToolOutput(MCP_RESULT)).toBe(
-      "[c4001dc4-e24c-4cc4-82b0-7c551ddd1238] skill: screen-recording (v2)\nRecord and publish a demo video.",
+      "[synthetic-skill] skill: screen-recording (v2)\nRecord a demo video.",
     );
   });
 
   test("formatted_output shapes unwrap to the formatted text", () => {
-    expect(unwrapToolOutput(JSON.stringify({ formatted_output: "$ git log\nb233c469 Merge" }))).toBe(
-      "$ git log\nb233c469 Merge",
+    expect(unwrapToolOutput(JSON.stringify({ formatted_output: "$ git log\nabc1234 Merge" }))).toBe(
+      "$ git log\nabc1234 Merge",
     );
   });
 
@@ -53,7 +53,7 @@ describe("unwrapToolOutput", () => {
     const truncated = MCP_RESULT.slice(0, 94);
     expect(truncated.endsWith("}")).toBe(false);
     const text = unwrapToolOutput(truncated);
-    expect(text).toStartWith("[c4001dc4-e24c-4cc4-82b0-7c551ddd1238] skill: scr");
+    expect(text).toStartWith("[synthetic-skill] skill: screen");
     expect(text).not.toContain("{");
   });
 });
@@ -68,7 +68,9 @@ describe("summarizeToolStep", () => {
           title: "Execute",
           input: { name: "memory_search", arguments: { query: "release notes" } },
           output: JSON.stringify({
-            result: { content: [{ type: "text", text: "\n2 memories matched\n- ship on Fridays" }] },
+            result: {
+              content: [{ type: "text", text: "\n2 memories matched\n- ship on Fridays" }],
+            },
           }),
         },
       }),
@@ -111,9 +113,12 @@ describe("summarizeToolStep", () => {
         chip: "bash",
         code: {
           tool: "execute",
-          input: { command: "bun run --cwd frontend typecheck && (cd backend && bunx tsc --noEmit)" },
+          input: {
+            command: "bun run --cwd frontend typecheck && (cd backend && bunx tsc --noEmit)",
+          },
           output: JSON.stringify({
-            formatted_output: "$ bun run --cwd frontend typecheck\nerror TS2322: Type 'x' is not assignable",
+            formatted_output:
+              "$ bun run --cwd frontend typecheck\nerror TS2322: Type 'x' is not assignable",
           }),
           exit_code: 1,
         },
@@ -139,7 +144,12 @@ describe("summarizeToolStep", () => {
     const summary = summarizeToolStep(
       step({
         label: "bash",
-        code: { tool: "bash", input: { command: "bun test" }, output: "12 pass\n0 fail", exit_code: 0 },
+        code: {
+          tool: "bash",
+          input: { command: "bun test" },
+          output: "12 pass\n0 fail",
+          exit_code: 0,
+        },
       }),
     );
     expect(summary.label).toBe("bun test");
@@ -150,7 +160,11 @@ describe("summarizeToolStep", () => {
     const summary = summarizeToolStep(
       step({
         label: "Execute",
-        code: { tool: "execute", input: {}, output: JSON.stringify({ result: { ok: true, rows: 4 } }) },
+        code: {
+          tool: "execute",
+          input: {},
+          output: JSON.stringify({ result: { ok: true, rows: 4 } }),
+        },
       }),
     );
     expect(summary.label).toBe("Execute");
@@ -167,7 +181,9 @@ describe("summarizeToolStep", () => {
     );
     expect(namespaced.label).toBe("Activated playbook: design-taste");
     const legacy = summarizeToolStep(
-      step({ code: { tool: "skynet-knowledge_memory_read", input: { memoryRef: "tencent:l1:1" } } }),
+      step({
+        code: { tool: "skynet-knowledge_memory_read", input: { memoryRef: "tencent:l1:1" } },
+      }),
     );
     expect(legacy.label).toBe("Recalled memory");
   });
@@ -179,7 +195,11 @@ describe("summarizeToolStep", () => {
     expect(search.label).toBe("Searched the web for bun test timeout");
     const read = summarizeToolStep(
       step({
-        code: { tool: "read", input: { file_path: "frontend/components/chat/timeline.ts" }, output: "// Interleaved" },
+        code: {
+          tool: "read",
+          input: { file_path: "frontend/components/chat/timeline.ts" },
+          output: "// Interleaved",
+        },
       }),
     );
     expect(read.label).toBe("Read timeline.ts");
@@ -197,7 +217,11 @@ describe("summarizeToolStep", () => {
   test("overlong titles and details are clipped", () => {
     const summary = summarizeToolStep(
       step({
-        code: { tool: "bash", input: { command: `echo ${"x".repeat(200)}` }, output: "y".repeat(400) },
+        code: {
+          tool: "bash",
+          input: { command: `echo ${"x".repeat(200)}` },
+          output: "y".repeat(400),
+        },
       }),
     );
     expect(summary.label.length).toBeLessThanOrEqual(96);
@@ -211,7 +235,12 @@ describe("summarizeToolStep verb + object (the trace row's text and chip)", () =
     const summary = summarizeToolStep(
       step({ code: { tool: "execute", input: { command: "git status" }, output: "clean" } }),
     );
-    expect(summary).toMatchObject({ verb: "Run", object: "git status", objectMono: true, command: "git status" });
+    expect(summary).toMatchObject({
+      verb: "Run",
+      object: "git status",
+      objectMono: true,
+      command: "git status",
+    });
   });
 
   test("a known gateway call splits its verb from its object; the label keeps its wording", () => {
@@ -242,7 +271,11 @@ describe("summarizeToolStep verb + object (the trace row's text and chip)", () =
         },
       }),
     );
-    expect(recall).toMatchObject({ label: "Recalled memory", verb: "Recalled memory", object: "digest" });
+    expect(recall).toMatchObject({
+      label: "Recalled memory",
+      verb: "Recalled memory",
+      object: "digest",
+    });
   });
 
   test("codex's MCP bridge (execute + input.tool + a dotted title) names the real call, never Execute", () => {
@@ -252,7 +285,9 @@ describe("summarizeToolStep verb + object (the trace row's text and chip)", () =
         tool: "execute",
         title: "mcp.useagent.skills_list",
         input: { server: "useagent", tool: "skills_list", arguments: { cursor: 0, limit: 100 } },
-        output: JSON.stringify({ result: { content: [{ type: "text", text: "[abc] skill: pr-review (v3)" }] } }),
+        output: JSON.stringify({
+          result: { content: [{ type: "text", text: "[abc] skill: pr-review (v3)" }] },
+        }),
       },
     });
     const summary = summarizeToolStep(codex);
@@ -265,13 +300,70 @@ describe("summarizeToolStep verb + object (the trace row's text and chip)", () =
 
   test("a file tool's object is the file, a read tool's object the file it read", () => {
     const read = summarizeToolStep(
-      step({ code: { tool: "read", input: { file_path: "frontend/components/chat/timeline.ts" }, output: "// Interleaved" } }),
+      step({
+        code: {
+          tool: "read",
+          input: { file_path: "frontend/components/chat/timeline.ts" },
+          output: "// Interleaved",
+        },
+      }),
     );
     expect(read).toMatchObject({ verb: "Read", object: "timeline.ts", objectMono: true });
     const edit = summarizeToolStep(
-      step({ kind: "file", code: { tool: "edit", input: { file_path: "src/app.ts", old_string: "a", new_string: "b" } } }),
+      step({
+        kind: "file",
+        code: {
+          tool: "edit",
+          input: { file_path: "src/app.ts", old_string: "a", new_string: "b" },
+        },
+      }),
     );
     expect(edit).toMatchObject({ verb: "Edit", object: "app.ts", objectMono: true });
+  });
+
+  test("a read aimed at a directory is Listed + the directory, never Read .", () => {
+    // codex's ACP listing: kind read, an empty input and a sentence title.
+    const listed = summarizeToolStep(
+      step({
+        label: "List files in '.'",
+        chip: "read",
+        code: {
+          tool: "read",
+          title: "List files in '.'",
+          input: {},
+          output: "README.md\nsrc/",
+          status: "completed",
+        },
+      }),
+    );
+    expect(listed).toMatchObject({
+      label: "Listed .",
+      verb: "Listed",
+      object: ".",
+      objectMono: true,
+    });
+    // A trailing slash or a bare "." names a directory on its own.
+    const trailing = summarizeToolStep(
+      step({
+        label: "Read src/",
+        chip: "read",
+        code: { tool: "read", title: "Read file 'src/'", input: {}, output: "" },
+      }),
+    );
+    expect(trailing).toMatchObject({ verb: "Listed", object: "src/" });
+    const dot = summarizeToolStep(
+      step({ code: { tool: "read", input: { file_path: "." }, output: "" } }),
+    );
+    expect(dot).toMatchObject({ verb: "Listed", object: "." });
+    // A file read keeps its verb and the file's basename.
+    const file = summarizeToolStep(
+      step({
+        label: "Read README.md",
+        chip: "read",
+        code: { tool: "read", title: "Read file '/tmp/x/README.md'", input: {}, output: "" },
+      }),
+    );
+    expect(file).toMatchObject({ verb: "Read", object: "README.md" });
   });
 
   test("an uncatalogued tool takes its object from its own arguments, never the server", () => {
@@ -280,7 +372,11 @@ describe("summarizeToolStep verb + object (the trace row's text and chip)", () =
         code: {
           tool: "execute",
           title: "mcp.useagent.resource_catalog_search",
-          input: { server: "useagent", tool: "resource_catalog_search", arguments: { provider: "github", query: "useagent" } },
+          input: {
+            server: "useagent",
+            tool: "resource_catalog_search",
+            arguments: { provider: "github", query: "useagent" },
+          },
           output: JSON.stringify({ result: { content: [{ type: "text", text: "1 repository" }] } }),
         },
       }),

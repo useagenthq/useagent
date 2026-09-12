@@ -3,6 +3,7 @@ import type { TimelineNode } from "./timeline";
 import {
   latestPlanEntries,
   splitTurn,
+  type TraceRow,
   traceFailureCount,
   traceHeader,
   traceRowsFromWork,
@@ -11,7 +12,14 @@ import {
 } from "./turn-trace-model";
 import type { ApiStep } from "./types";
 
-function toolNode(id: string, code: Record<string, unknown>, createdAt = "2026-09-03T09:00:00Z"): TimelineNode {
+/** The step rows of a trace (a narration line carries no label, chip or status). */
+const stepRows = (rows: readonly TraceRow[]) => rows.filter((row) => row.kind === "step");
+
+function toolNode(
+  id: string,
+  code: Record<string, unknown>,
+  createdAt = "2030-01-01T00:00:00Z",
+): TimelineNode {
   const step: ApiStep = {
     id,
     run_id: "run-1",
@@ -39,13 +47,21 @@ const PLAYBOOK: TimelineNode = {
   key: "m2",
   marker: { kind: "skill", playbook: true, name: "pr-review", version: 3, hash: "abc" },
 };
-const THOUGHT: TimelineNode = { kind: "reasoning", key: "r1", text: "Check the log first.\n\nThen the diff." };
+const THOUGHT: TimelineNode = {
+  kind: "reasoning",
+  key: "r1",
+  text: "Check the log first.\n\nThen the diff.",
+};
 const NARRATION: TimelineNode = { kind: "text", key: "t1", text: "Looking at today's commits." };
-const GIT_LOG = toolNode("s1", { tool: "execute", input: { command: "git log --since=yesterday" }, output: "b233c469 Merge" });
+const GIT_LOG = toolNode("s1", {
+  tool: "execute",
+  input: { command: "git log --since=yesterday" },
+  output: "abc1234 Merge",
+});
 const TYPECHECK = toolNode(
   "s2",
   { tool: "execute", input: { command: "bun run typecheck" }, output: "", error: true },
-  "2026-09-03T09:03:12Z",
+  "2030-01-01T00:03:12Z",
 );
 const IMPLICIT_FAILURE = toolNode("s3", {
   tool: "execute",
@@ -61,7 +77,13 @@ const REPLY: TimelineNode = { kind: "text", key: "t2", text: "Here is today's di
 const ARTIFACT: TimelineNode = {
   kind: "artifact",
   key: "a1",
-  artifact: { id: "a1", name: "digest.md", bytes: 10, sha256: "0".repeat(64), contentType: "text/markdown" },
+  artifact: {
+    id: "a1",
+    name: "digest.md",
+    bytes: 10,
+    sha256: "0".repeat(64),
+    contentType: "text/markdown",
+  },
 };
 const FILE_RECEIPT: TimelineNode = {
   kind: "file",
@@ -70,7 +92,17 @@ const FILE_RECEIPT: TimelineNode = {
 };
 const FOLLOWUPS: TimelineNode = { kind: "followups", key: "f1", suggestions: ["Post it to Slack"] };
 
-const SETTLED = [RECALL, THOUGHT, NARRATION, GIT_LOG, TYPECHECK, REPLY, FILE_RECEIPT, ARTIFACT, FOLLOWUPS];
+const SETTLED = [
+  RECALL,
+  THOUGHT,
+  NARRATION,
+  GIT_LOG,
+  TYPECHECK,
+  REPLY,
+  FILE_RECEIPT,
+  ARTIFACT,
+  FOLLOWUPS,
+];
 
 describe("splitTurn", () => {
   test("a settled turn keeps the last burst as the reply and folds everything before it", () => {
@@ -130,21 +162,48 @@ describe("withTransientLiveReasoning", () => {
 });
 
 describe("trace rows", () => {
-  test("every work node is one short line: verb-first label, the object in a chip, status", () => {
-    const rows = traceRowsFromWork([RECALL, PLAYBOOK, THOUGHT, NARRATION, GIT_LOG, TYPECHECK, MEMORY_SEARCH], false);
-    expect(rows.map((row) => [row.family, row.label, row.chip?.text ?? null, row.chip?.mono ?? null, row.detail, row.status])).toEqual([
+  test("every step is one short line (verb-first label, the object in a chip, status); narration is a prose line", () => {
+    const rows = traceRowsFromWork(
+      [RECALL, PLAYBOOK, THOUGHT, NARRATION, GIT_LOG, TYPECHECK, MEMORY_SEARCH],
+      false,
+    );
+    expect(
+      rows.map((row) =>
+        row.kind === "narration"
+          ? ["narration", row.text]
+          : [
+              row.family,
+              row.label,
+              row.chip?.text ?? null,
+              row.chip?.mono ?? null,
+              row.detail,
+              row.status,
+            ],
+      ),
+    ).toEqual([
       ["memory", "Recalled memory", null, null, "4 items", "done"],
       ["playbook", "Activated playbook", "pr-review", true, "v3", "done"],
       ["reasoning", "Thought", "Check the log first.", false, null, "done"],
-      ["reasoning", "Said", "Looking at today's commits.", false, null, "done"],
+      ["narration", "Looking at today's commits."],
       ["shell", "Run", "git log --since=yesterday", true, null, "done"],
       ["shell", "Run", "bun run typecheck", true, null, "failed"],
       ["memory", "Recalled memory", "digest", false, null, "done"],
     ]);
   });
 
+  test("mid-work narration is a prose line with no verb and no chip; an empty burst is no line", () => {
+    const rows = traceRowsFromWork([THOUGHT, NARRATION, GIT_LOG], false);
+    expect(rows[1]).toEqual({ kind: "narration", key: "t1", text: "Looking at today's commits." });
+    expect(traceRowsFromWork([{ kind: "text", key: "t0", text: " \n " }], false)).toEqual([]);
+  });
+
   test("a shell step failing with an exit code carries the code as its detail", () => {
-    const exit = toolNode("s9", { tool: "bash", input: { command: "bun test" }, output: "1 fail", exit_code: 1 });
+    const exit = toolNode("s9", {
+      tool: "bash",
+      input: { command: "bun test" },
+      output: "1 fail",
+      exit_code: 1,
+    });
     expect(traceRowsFromWork([exit], false)[0]).toMatchObject({
       family: "shell",
       label: "Run",
@@ -185,17 +244,17 @@ describe("trace rows", () => {
         label,
         chip,
         code_json: null,
-        created_at: "2026-09-03T09:00:00Z",
+        created_at: "2030-01-01T00:00:00Z",
       },
     });
     const steps = [
       boot(0, "Preparing context and runtime…", "boot"),
       boot(1, "Provisioning cloud sandbox…", "codex"),
-      boot(2, "Sandbox bx_geyha ready in 6s (4 CPU / 8 GiB)", "codex"),
+      boot(2, "Sandbox sandbox-demo-03 ready in 6s (4 CPU / 8 GiB)", "codex"),
       boot(3, "Preparing browser, tools, and integrations…", "codex"),
       boot(4, "Running Codex…", "codex"),
     ];
-    const settled = traceRowsFromWork([...steps, GIT_LOG], false);
+    const settled = stepRows(traceRowsFromWork([...steps, GIT_LOG], false));
     expect(settled.map((row) => [row.family, row.label, row.detail, row.status])).toEqual([
       ["boot", "Sandbox ready in 6s", "4 CPU / 8 GiB", "done"],
       ["shell", "Run", null, "done"],
@@ -203,45 +262,60 @@ describe("trace rows", () => {
     // Still booting: the latest stage, running, without its trailing ellipsis.
     const booting = traceRowsFromWork(steps.slice(0, 2), true);
     expect(booting).toHaveLength(1);
-    expect(booting[0]).toMatchObject({ family: "boot", label: "Provisioning cloud sandbox", status: "running" });
+    expect(booting[0]).toMatchObject({
+      family: "boot",
+      label: "Provisioning cloud sandbox",
+      status: "running",
+    });
   });
 
   test("reasoning folds into its row: the prose is the payload, its first line the chip", () => {
-    const [thought] = traceRowsFromWork([THOUGHT], false);
+    const [thought] = stepRows(traceRowsFromWork([THOUGHT], false));
     expect(thought?.body).toEqual({ kind: "prose", text: THOUGHT.text });
     expect(thought?.label).toBe("Thought");
     expect(thought?.chip).toEqual({ text: "Check the log first.", mono: false });
-    expect(traceRowsFromWork([THOUGHT], true)[0]?.label).toBe("Thinking");
+    expect(stepRows(traceRowsFromWork([THOUGHT], true))[0]?.label).toBe("Thinking");
   });
 
   test("a tool row keeps its payload behind the row and never in the label", () => {
-    const [recall] = traceRowsFromWork([MEMORY_SEARCH], false);
+    const [recall] = stepRows(traceRowsFromWork([MEMORY_SEARCH], false));
     expect(recall?.label).not.toContain('{"result"');
     expect(recall?.chip?.text).not.toContain('{"result"');
     expect(recall?.body?.kind).toBe("entry");
-    const [gitLog] = traceRowsFromWork([GIT_LOG], false);
+    const [gitLog] = stepRows(traceRowsFromWork([GIT_LOG], false));
     expect(gitLog?.body?.kind).toBe("entry");
   });
 
   test("while live the last node is the running row; a failure is never running", () => {
-    const rows = traceRowsFromWork([RECALL, GIT_LOG, MEMORY_SEARCH], true);
+    const rows = stepRows(traceRowsFromWork([RECALL, GIT_LOG, MEMORY_SEARCH], true));
     expect(rows.map((row) => row.status)).toEqual(["done", "done", "running"]);
-    const failed = traceRowsFromWork([GIT_LOG, TYPECHECK], true);
+    const failed = stepRows(traceRowsFromWork([GIT_LOG, TYPECHECK], true));
     expect(failed.at(-1)?.status).toBe("failed");
   });
 
   test("an implicit failure (error-shaped output) reads as failed", () => {
     const rows = traceRowsFromWork([IMPLICIT_FAILURE], false);
-    expect(rows[0]?.status).toBe("failed");
+    expect(stepRows(rows)[0]?.status).toBe("failed");
     expect(traceFailureCount(rows)).toBe(1);
   });
 
   test("a failed memory write is a failed row, never a fake save", () => {
     const rows = traceRowsFromWork(
-      [{ kind: "marker", key: "w", marker: { kind: "memory", op: "remember", scope: "org", failed: true, reconciled: false } }],
+      [
+        {
+          kind: "marker",
+          key: "w",
+          marker: { kind: "memory", op: "remember", scope: "org", failed: true, reconciled: false },
+        },
+      ],
       false,
     );
-    expect(rows[0]).toMatchObject({ family: "memory", label: "Memory not saved", detail: "service unavailable", status: "failed" });
+    expect(rows[0]).toMatchObject({
+      family: "memory",
+      label: "Memory not saved",
+      detail: "service unavailable",
+      status: "failed",
+    });
   });
 
   test("a plan never becomes a step line; it is the checklist beside the trace", () => {
@@ -311,7 +385,9 @@ describe("traceHeader", () => {
       "Thought for 3m 12s, 1 failed",
     );
     const recallOnly = traceRowsFromWork([RECALL], false);
-    expect(traceHeader({ live: false, rows: recallOnly, work: [RECALL], durationMs: null })).toEqual({
+    expect(
+      traceHeader({ live: false, rows: recallOnly, work: [RECALL], durationMs: null }),
+    ).toEqual({
       label: "Context",
       detail: null,
       failed: false,
@@ -340,26 +416,74 @@ describe("traceHeader", () => {
     ).toEqual({ label: "Changed 2 files", detail: null, failed: false });
   });
 
+  test("a failed run heads the trace with its category and the failure reason as the detail", () => {
+    const reason =
+      "error: refusing to prepare example/widgets: workspace repository parent is not writable";
+    const failure = { label: "Engine error", reason };
+    // The reason wins over the counts and the duration: why it stopped is the line.
+    const work = [RECALL, GIT_LOG];
+    const rows = traceRowsFromWork(work, false);
+    expect(traceHeader({ live: false, rows, work, durationMs: 45_000, failure })).toEqual({
+      label: "Engine error",
+      detail: reason,
+      failed: true,
+    });
+    // A run that failed before doing any work still gets the same header.
+    expect(traceHeader({ live: false, rows: [], work: [], durationMs: 37_503, failure })).toEqual({
+      label: "Engine error",
+      detail: reason,
+      failed: true,
+    });
+    // Only the first line of a multi-line reason fits the pill.
+    expect(
+      traceHeader({
+        live: false,
+        rows: [],
+        work: [],
+        durationMs: null,
+        failure: { label: "Engine error", reason: "error: clone failed\nfatal: not found" },
+      }).detail,
+    ).toBe("error: clone failed");
+  });
+
   test("live: Thinking, with the running step (label + chip) as the detail", () => {
     const work = [RECALL, GIT_LOG, TYPECHECK];
-    expect(traceHeader({ live: true, rows: traceRowsFromWork(work, true), work, durationMs: null })).toEqual({
+    expect(
+      traceHeader({ live: true, rows: traceRowsFromWork(work, true), work, durationMs: null }),
+    ).toEqual({
       label: "Thinking",
       detail: null,
       failed: false,
     });
     const running = [GIT_LOG, THOUGHT];
-    expect(traceHeader({ live: true, rows: traceRowsFromWork(running, true), work: running, durationMs: null }).detail).toBe(
-      "Thinking Check the log first.",
-    );
+    expect(
+      traceHeader({
+        live: true,
+        rows: traceRowsFromWork(running, true),
+        work: running,
+        durationMs: null,
+      }).detail,
+    ).toBe("Thinking Check the log first.");
     const command = [RECALL, GIT_LOG];
-    expect(traceHeader({ live: true, rows: traceRowsFromWork(command, true), work: command, durationMs: null }).detail).toBe(
-      "Run git log --since=yesterday",
-    );
+    expect(
+      traceHeader({
+        live: true,
+        rows: traceRowsFromWork(command, true),
+        work: command,
+        durationMs: null,
+      }).detail,
+    ).toBe("Run git log --since=yesterday");
   });
 });
 
 describe("turnNodesFromSteps (the lane without native frames)", () => {
-  const step = (idx: number, kind: ApiStep["kind"], label: string, chip: string | null, code: unknown = null): ApiStep => ({
+  const step = (
+    idx: number,
+    kind: ApiStep["kind"],
+    label: string,
+    chip: string | null,
+    code: unknown = null,
+  ): ApiStep => ({
     id: `st${idx}`,
     run_id: "run-1",
     idx,
@@ -367,23 +491,32 @@ describe("turnNodesFromSteps (the lane without native frames)", () => {
     label,
     chip,
     code_json: code === null ? null : JSON.stringify(code),
-    created_at: "2026-09-03T09:00:00Z",
+    created_at: "2030-01-01T00:00:00Z",
   });
   const STEPS: ApiStep[] = [
     step(0, "task", "Preparing context and runtime…", "boot", { phase: "preparing" }),
     step(1, "task", "Provisioning cloud sandbox…", "claude"),
-    step(2, "task", "Sandbox bx_2gv77 ready in 4s (4 CPU / 8 GiB)", "claude"),
-    step(3, "command", "cat hello.txt", "bash", { tool: "bash", input: { command: "cat hello.txt" }, output: "ready" }),
+    step(2, "task", "Sandbox sandbox-demo-04 ready in 4s (4 CPU / 8 GiB)", "claude"),
+    step(3, "command", "cat hello.txt", "bash", {
+      tool: "bash",
+      input: { command: "cat hello.txt" },
+      output: "ready",
+    }),
     step(4, "task", "Hey! Scout here — I watch competitors and write the weekly …", "task"),
     step(5, "done", "Done", null),
   ];
 
   test("settled history keeps the work and drops plumbing, the prose preview and the done step", () => {
-    expect(turnNodesFromSteps(STEPS, false).map((node) => node.key)).toEqual(["st3"]);
+    expect(turnNodesFromSteps(STEPS, false, "completed").map((node) => node.key)).toEqual(["st3"]);
   });
 
   test("live keeps the boot steps (they are the signal) but never the prose preview", () => {
-    expect(turnNodesFromSteps(STEPS, true).map((node) => node.key)).toEqual(["st0", "st1", "st2", "st3"]);
+    expect(turnNodesFromSteps(STEPS, true, "running").map((node) => node.key)).toEqual([
+      "st0",
+      "st1",
+      "st2",
+      "st3",
+    ]);
   });
 
   test("a chat turn (context preparation only) has no work at all once settled", () => {
@@ -391,8 +524,8 @@ describe("turnNodesFromSteps (the lane without native frames)", () => {
       step(0, "task", "Preparing chat context...", "chat", { phase: "retrieval" }),
       step(1, "done", "Done", null, { citations: [] }),
     ];
-    expect(turnNodesFromSteps(chat, false)).toEqual([]);
-    expect(traceRowsFromWork(turnNodesFromSteps(chat, true), true)).toMatchObject([
+    expect(turnNodesFromSteps(chat, false, "completed")).toEqual([]);
+    expect(traceRowsFromWork(turnNodesFromSteps(chat, true, "running"), true)).toMatchObject([
       { family: "boot", label: "Preparing chat context", status: "running" },
     ]);
   });

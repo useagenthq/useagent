@@ -27,7 +27,8 @@ function codePoint(n: number): string {
   }
 }
 
-function decodeEntities(text: string): string {
+/** Decode the common named and numeric HTML entities in stored text. */
+export function decodeEntities(text: string): string {
   return text
     .replace(/&(amp|lt|gt|quot|apos|nbsp);/g, (_, name: string) => NAMED_ENTITIES[name] ?? " ")
     .replace(/&#(\d{1,7});/g, (_, dec: string) => codePoint(Number(dec)))

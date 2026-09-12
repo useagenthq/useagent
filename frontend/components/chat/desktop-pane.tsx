@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentScreen } from "@/components/ai/agent-screen";
 import { Button } from "@/components/base/buttons/button";
+import {
+  DESKTOP_CONNECT_POLL_INTERVAL,
+  isDesktopFrameConnected,
+  watchDesktopFrameConnected,
+} from "./desktop-frame-connection";
 import { desktopFrameInteractive, desktopScreenStatus } from "./desktop-screen-state";
 
 export function buildDesktopFrameSrc(threadId: string): string {
@@ -173,6 +178,8 @@ export function DesktopPane({
 }) {
   const [ready, setReady] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  // vnc.html has loaded AND noVNC reports its RFB session up (see the poll below).
+  const [frameConnected, setFrameConnected] = useState(false);
   const [inputCaptured, setInputCaptured] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [status, setStatus] = useState("No active sandbox. Send a message to start one.");
@@ -198,6 +205,7 @@ export function DesktopPane({
     let delay: number | null = null;
     setReady(false);
     setLoaded(false);
+    setFrameConnected(false);
     inputCapturedRef.current = false;
     setInputCaptured(false);
     setStatus("No active sandbox. Send a message to start one.");
@@ -351,7 +359,24 @@ export function DesktopPane({
     });
   }, [loaded, inputCaptured]);
 
-  const connected = ready && loaded;
+  // The iframe's load event fires when vnc.html has parsed, seconds before the
+  // RFB WebSocket session is up, while the frame still shows noVNC's own
+  // "Connecting...". noVNC then stamps noVNC_connected on its document, so poll
+  // the same-origin frame for it (stopping once seen, or on unmount/reload) and
+  // hold the card on Loading until a desktop is actually on screen.
+  useEffect(() => {
+    if (!loaded) return;
+    return watchDesktopFrameConnected({
+      check: () => isDesktopFrameConnected(frameRef.current?.contentDocument ?? null),
+      onConnected: () => setFrameConnected(true),
+      schedule: (tick) => {
+        const id = window.setInterval(tick, DESKTOP_CONNECT_POLL_INTERVAL);
+        return () => window.clearInterval(id);
+      },
+    });
+  }, [loaded]);
+
+  const connected = ready && loaded && frameConnected;
   const frameInteractive = desktopFrameInteractive({ loaded, captured: inputCaptured });
 
   return (
