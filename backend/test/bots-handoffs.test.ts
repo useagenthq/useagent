@@ -104,7 +104,7 @@ describe("bot handoffs (@mentions)", () => {
     expect(followup.body.handoffs?.[0]?.threadId).toBe(childThreadId);
     const childRuns = await db.select({ id: runs.id, prompt: runs.prompt }).from(runs).where(and(eq(runs.orgId, orgId), eq(runs.threadId, childThreadId)));
     expect(childRuns.length).toBe(2);
-    expect(childRuns.some((r) => r.prompt.includes("also check the UK tier") && r.prompt.includes("from the same thread as before"))).toBe(true);
+    expect(childRuns.some((r) => r.prompt.includes("also check the UK tier") && r.prompt.includes("from the same thread"))).toBe(true);
     const again = await json<{ bot: BotBody }>(`/api/bots/${nova.id}`, { cookies });
     expect(again.body.bot.handoffs).toBe(1);
   });

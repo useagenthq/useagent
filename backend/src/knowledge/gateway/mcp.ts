@@ -5,8 +5,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Hono } from "hono";
 import { findSlackThreadForProductThread } from "../../slack/repo";
-import { childSessionToolsEnabled } from "./child-session-tools";
-import { productChildThreadsEnabled } from "../../runs/thread-relationship-rollout";
+import { gatewayToolListOptionsFor } from "./child-session-tools";
 import {
   executeRegisteredGatewayTool,
   gatewayToolListDescriptors,
@@ -83,11 +82,8 @@ export async function handleMcpMessage(
   msg: RpcRequest,
 ): Promise<RpcResponse | null> {
   const params = msg.params as Record<string, unknown> | undefined;
-  const listOptions = async () => ({
-    childSessions: await childSessionToolsEnabled(claims),
-    slack: Boolean(await findSlackThreadForProductThread(claims.orgId, claims.threadId)),
-    productChildThreads: productChildThreadsEnabled(claims.orgId),
-  });
+  const listOptions = async () =>
+    gatewayToolListOptionsFor(claims, Boolean(await findSlackThreadForProductThread(claims.orgId, claims.threadId)));
   switch (msg.method) {
     case "initialize": {
       const requested = (params?.protocolVersion as string) || DEFAULT_PROTOCOL_VERSION;

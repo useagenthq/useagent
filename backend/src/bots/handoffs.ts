@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { botHandoffs, bots, type BotRow } from "../db/schema";
 import { findCommandByKey } from "../commands/repo";
+import { CHILD_PROMPT_MAX_CHARS } from "../runs/child-session-policy";
 import { threadRelationships } from "../db/schema";
 import { pumpProductChildThread } from "../runs/child-session-pump";
 import { createChildSession, productChildCommandKey } from "../runs/child-sessions";
@@ -11,7 +12,8 @@ import { defaultModelForEngine } from "../runs/model-policy";
 import { productChildThreadsEnabled } from "../runs/thread-relationship-rollout";
 import { botsEnabled } from "./rollout";
 
-const MENTIONS_MAX = 5;
+/** Bots one message (or one turn through the gateway tool) may hand work to. */
+export const MENTIONS_MAX = 5;
 /** A thread may hand work to a bot only while its own delegation depth is below this. */
 export const MAX_HANDOFF_DEPTH = 2;
 /** Delegated threads one parent thread may open, and one thread family may hold, in total. */
@@ -65,8 +67,10 @@ export async function acceptedRunHandoffs(input: {
     const handoffs = await dispatchBotHandoffs({ ...input, parentRunId: input.runId });
     return handoffs.length > 0 ? { handoffs } : {};
   } catch (error) {
+    // The parent run is accepted; the caller still learns that no bot got the work.
     console.error(`[bots] handoff dispatch failed for run ${input.runId}:`, error);
-    return {};
+    const message = error instanceof Error ? error.message : String(error);
+    return { handoffs: input.botIds.map((botId) => ({ botId, name: "", threadId: null, status: "failed" as const, error: message })) };
   }
 }
 
@@ -75,11 +79,17 @@ export async function acceptedRunHandoffs(input: {
  * the bot is and its standing rules. The child inherits the parent thread's
  * repositories and resources through the child-session path.
  */
+function boundedHandoffText(text: string): string {
+  const clean = text.trim();
+  if (clean.length <= CHILD_PROMPT_MAX_CHARS) return clean;
+  return `${clean.slice(0, CHILD_PROMPT_MAX_CHARS - 40).trimEnd()}\n\n[message truncated for the handoff]`;
+}
+
 export function composeHandoffPrompt(bot: Pick<BotRow, "name" | "title" | "rules">, text: string): string {
   const who = bot.title ? `${bot.name}, ${bot.title}` : bot.name;
   const rules = bot.rules.trim() ? bot.rules.trim() : "(none set yet)";
   return [
-    text,
+    boundedHandoffText(text),
     "",
     `You are ${who}. This thread was handed to you from another thread; do the part addressed to you and end with a short outcome line for whoever handed it over.`,
     "If the message is a question, answer it. If it names no task, say what you can do from your standing rules and skills instead of waiting.",
@@ -98,8 +108,10 @@ export interface HandoffResult {
    *  head kept moving under the follow-up, try again later.
    *  `unavailable`: product child threads are off for this org, so a handoff
    *  would degrade to a deferred turn on the parent's engine - refused instead. */
-  readonly status: "created" | "replayed" | "followed_up" | "refused" | "busy" | "conflict" | "not_found" | "unavailable";
+  readonly status: "created" | "replayed" | "followed_up" | "refused" | "busy" | "conflict" | "not_found" | "unavailable" | "failed";
   readonly reason?: HandoffRefusal;
+  /** For `failed`: why dispatch threw (prompt too large, queue ceiling, ...). */
+  readonly error?: string;
 }
 
 export type HandoffRefusal = "self" | "cycle" | "depth" | "cap";
@@ -179,9 +191,11 @@ export async function findOpenHandoffThread(orgId: string, botId: string, parent
 }
 
 /** A follow-up into the bot's existing delegated thread: the ask, plus where it came from. */
-export function composeHandoffFollowup(bot: Pick<BotRow, "name">, text: string): string {
-  return `${text}\n\n(Handed to you, ${bot.name}, from the same thread as before; continue there and end with a short outcome line.)`;
+export function composeHandoffFollowup(bot: Pick<BotRow, "name" | "title">, text: string): string {
+  const who = bot.title ? `${bot.name}, ${bot.title}` : bot.name;
+  return `${boundedHandoffText(text)}\n\n(Handed to you again from the same thread. You are still ${who}; your standing rules apply. Continue here and end with a short outcome line.)`;
 }
+
 
 /**
  * Hand one message to one bot. The first mention under a parent thread opens
@@ -205,6 +219,8 @@ export async function handoffToBot(input: {
   // A retry with the same key after the child was created must replay, never append a turn.
   const created = await findCommandByKey(input.orgId, productChildCommandKey(input.threadId, input.parentRunId, input.idempotencyKey));
   if (created?.threadId) return { botId: bot.id, name: bot.name, threadId: created.threadId, status: "replayed" };
+  // The bot's delegated thread under this parent is continued even after a failed turn: the
+  // follow-up is the retry, in context. A fresh thread would fail the same way and lose history.
   const existing = await findOpenHandoffThread(input.orgId, bot.id, input.threadId);
   if (existing) {
     for (let attempt = 0; attempt < HEAD_RACE_RETRIES; attempt += 1) {
@@ -249,13 +265,18 @@ export async function handoffToBot(input: {
     idempotencyKey: input.idempotencyKey,
   });
   if (outcome.status === "conflict") return { botId: bot.id, name: bot.name, threadId: null, status: "conflict" };
-  await recordBotHandoff({
-    orgId: input.orgId,
-    botId: bot.id,
-    threadId: outcome.child.id,
-    parentThreadId: input.threadId,
-    sourceRunId: input.parentRunId,
-  });
+  try {
+    await recordBotHandoff({
+      orgId: input.orgId,
+      botId: bot.id,
+      threadId: outcome.child.id,
+      parentThreadId: input.threadId,
+      sourceRunId: input.parentRunId,
+    });
+  } catch (error) {
+    // The child exists and runs; without this row the next mention opens another. Loud, not fatal.
+    console.error(`[bots] handoff attribution failed for thread ${outcome.child.id} (bot ${bot.id}):`, error);
+  }
   return { botId: bot.id, name: bot.name, threadId: outcome.child.id, status: outcome.status };
 }
 
@@ -307,6 +328,15 @@ export async function dispatchBotHandoffs(input: {
     );
   }
   return results;
+}
+
+/** Bots a run has already handed work to (through mentions or the gateway tool). */
+export async function distinctBotsHandedOffByRun(orgId: string, runId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ botId: botHandoffs.botId })
+    .from(botHandoffs)
+    .where(and(eq(botHandoffs.orgId, orgId), eq(botHandoffs.sourceRunId, runId)));
+  return new Set(rows.map((row) => row.botId));
 }
 
 /** Attribute a delegated child thread to a bot; idempotent per thread. */

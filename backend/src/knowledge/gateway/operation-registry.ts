@@ -12,7 +12,6 @@ import {
   type FinishedWorkReceiptRecord,
 } from "../../runs/finished-work-repo";
 import { finishedWorkRolloutMode } from "../../runs/finished-work-rollout";
-import { productChildThreadsEnabled } from "../../runs/thread-relationship-rollout";
 import { providerEventExists, recordProviderEvent } from "../../runs/provider-events";
 import {
   APPROVAL_REQUEST_TOOLS,
@@ -30,6 +29,7 @@ import {
   advertisedChildSessionTools,
   childSessionToolsEnabled,
   executeChildSessionTool,
+  gatewayToolListOptionsFor,
 } from "./child-session-tools";
 import { CONTEXT_TOOLS, executeContextTool } from "./context-tools";
 import { COMPUTER_USE_TOOLS, executeComputerUseTool } from "./computer-use-tools";
@@ -96,6 +96,7 @@ export interface GatewayToolListOptions {
   readonly childSessions: boolean;
   readonly slack: boolean;
   readonly productChildThreads?: boolean;
+  readonly orgId?: string | null;
 }
 
 interface GatewayToolFamily {
@@ -260,7 +261,7 @@ export function advertisedGatewayToolDescriptors(
   return [
     ...BASE_TOOL_FAMILIES.flatMap<GatewayToolDescriptor>((family) =>
       family.tools === CHILD_SESSION_TOOLS
-        ? (!options.childSessions ? [] : [...advertisedChildSessionTools(options.productChildThreads)])
+        ? (!options.childSessions ? [] : [...advertisedChildSessionTools(options.productChildThreads, options.orgId ?? null)])
         : [...family.tools],
     ),
     ...(options.slack ? SLACK_TOOLS : []),
@@ -726,11 +727,7 @@ export async function executeRegisteredGatewayTool(
   context?: GatewayToolExecutionContext,
 ): Promise<GatewayToolExecution> {
   const canonicalName = TOOL_ALIASES.get(name) ?? name;
-  const resolvedOptions = options ?? {
-    childSessions: await childSessionToolsEnabled(claims),
-    slack: false,
-    productChildThreads: productChildThreadsEnabled(claims.orgId),
-  };
+  const resolvedOptions = options ?? (await gatewayToolListOptionsFor(claims));
   if (isGatewayMetaToolName(canonicalName)) {
     const availableTools = availableGatewayToolDescriptors(resolvedOptions);
     return {

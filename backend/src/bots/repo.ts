@@ -381,9 +381,14 @@ export async function describeBots(orgId: string, rows: readonly BotRow[]): Prom
     // Approvals wait for a person wherever the bot works: its home thread or a delegated one.
     const pendingForBot = [...(row.homeThreadId ? [row.homeThreadId] : []), ...delegated]
       .reduce((sum, threadId) => sum + (pending.get(threadId) ?? 0), 0);
+    // The bot's latest activity, wherever it worked: its home thread or a delegated one.
+    const newestHead = [...(row.homeThreadId ? [row.homeThreadId] : []), ...delegated]
+      .map((threadId) => heads.get(threadId) ?? null)
+      .filter((head): head is ThreadHead => head !== null)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0] ?? null;
     return toView(
       row,
-      row.homeThreadId ? (heads.get(row.homeThreadId) ?? null) : null,
+      newestHead,
       pendingForBot,
       routines.get(row.id) ?? 0,
       { total: delegated.length, live },

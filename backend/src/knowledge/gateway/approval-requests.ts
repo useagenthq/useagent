@@ -237,7 +237,9 @@ async function gateResolution(
   const run = await deps.findRun(request.orgId, request.runId);
   if (!run) return "run_not_found";
   if (run.status !== "running") return "run_not_active";
-  if (run.userId !== resolvedBy) return "run_user_mismatch";
+  // A run started by a person is that person's to approve. A run without a user
+  // (a bot routine firing) belongs to the org: any member who reached this route may act.
+  if (run.userId !== null && run.userId !== resolvedBy) return "run_user_mismatch";
   return null;
 }
 

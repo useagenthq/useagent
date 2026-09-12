@@ -101,11 +101,15 @@ export function composeTurnPrompt(
   if (ctx.commandName) return ctx.prompt;
   const skillReference = ctx.skillContext ||
     AGENT_SKILL_DISCOVERY_RULES + (ctx.skillCatalogContext ?? "");
+  // Bots are reachable only through the gateway tools; a turn that cannot reach them
+  // (no gateway, or an internal origin such as Slack) must not be told to use them.
+  const tools = executionCapabilities.facilities.tools;
+  const botsReachable = tools.availability === "ready" && tools.access.kind === "useagent_gateway" && ctx.origin === null;
   const perTurn =
     executionCapabilityPrompt(executionCapabilities) +
     AGENT_WORKFLOW_ROUTING_RULES +
     productFanoutRoutingRules(ctx, executionCapabilities, env) +
-    (ctx.botContext ?? "") +
+    (botsReachable ? (ctx.botContext ?? "") : "") +
     skillReference +
     (ctx.resourceContext ?? "") +
     (ctx.inputContext ?? "") +
