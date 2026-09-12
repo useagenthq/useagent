@@ -390,6 +390,28 @@ function cubePtyHandle(sandbox: E2BSandbox, handle: CommandHandle): SandboxPtyHa
   const encoder = new TextEncoder();
   return {
     waitForConnection: async () => {},
+    waitForTermination: async () => {
+      try {
+        const result = await handle.wait();
+        return {
+          exitCode: result.exitCode,
+          ...(result.error ? { error: "Cube PTY termination failed" } : {}),
+        };
+      } catch (error) {
+        const exitCode = handle.exitCode ?? (
+          error && typeof error === "object" && "exitCode" in error &&
+            typeof error.exitCode === "number"
+            ? error.exitCode
+            : undefined
+        );
+        return {
+          ...(exitCode === undefined ? {} : { exitCode }),
+          ...(exitCode === undefined || handle.error
+            ? { error: "Cube PTY termination failed" }
+            : {}),
+        };
+      }
+    },
     sendInput: (data) =>
       sandbox.pty.sendInput(
         handle.pid,

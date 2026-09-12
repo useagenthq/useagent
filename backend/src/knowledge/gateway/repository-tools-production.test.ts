@@ -158,6 +158,7 @@ function sandboxHandle(): SandboxHandle {
       getSessionCommandLogs: async () => ({}),
       createPty: async () => ({
         waitForConnection: async () => undefined,
+        waitForTermination: async () => new Promise(() => {}),
         sendInput: async () => undefined,
         resize: async () => undefined,
         disconnect: async () => undefined,

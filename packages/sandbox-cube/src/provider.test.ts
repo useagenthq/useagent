@@ -35,6 +35,7 @@ function fakeSandbox(options: {
   kill?: (pid: number) => Promise<boolean>;
   list?: () => Promise<Array<{ pid: number; envs: Record<string, string> }>>;
   ptySendInput?: (pid: number, data: Uint8Array) => Promise<void>;
+  ptyWait?: () => Promise<{ exitCode: number; error?: string; stdout: string; stderr: string }>;
   run?: (command: string, options?: unknown) => Promise<unknown>;
   write?: (path: string, data: string) => Promise<unknown>;
 } = {}): E2BSandbox {
@@ -53,8 +54,11 @@ function fakeSandbox(options: {
     pty: {
       create: async () => ({
         disconnect: async () => {},
+        exitCode: undefined,
+        error: undefined,
         kill: async () => true,
         pid: 42,
+        wait: options.ptyWait ?? (async () => ({ exitCode: 0, stdout: "", stderr: "" })),
         sendStdin: async () => {
           throw new Error("CommandHandle.sendStdin must not be used for a PTY");
         },
@@ -209,6 +213,30 @@ describe("Cube sandbox provider", () => {
     await pty.sendInput("printf 'CUBE_PTY_OK\\n'\n");
 
     expect(writes).toEqual([{ pid: 42, text: "printf 'CUBE_PTY_OK\\n'\n" }]);
+    expect(await pty.waitForTermination()).toEqual({ exitCode: 0 });
+
+    create.mockRestore();
+    getInfo.mockRestore();
+  });
+
+  test("settles Cube PTY termination for a non-zero process exit", async () => {
+    process.env.CUBE_PROXY_SCHEME = "https";
+    const sandbox = fakeSandbox({
+      ptyWait: async () => {
+        throw { exitCode: 23, error: "provider detail", stdout: "", stderr: "failed" };
+      },
+    });
+    const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
+    const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
+    const handle = await cubeSandboxProvider("", ready).create({ snapshot: "agent-template" });
+    const pty = await handle.process.createPty({
+      id: "terminal-1",
+      cols: 80,
+      rows: 24,
+      onData: () => {},
+    });
+
+    expect(await pty.waitForTermination()).toEqual({ exitCode: 23 });
 
     create.mockRestore();
     getInfo.mockRestore();

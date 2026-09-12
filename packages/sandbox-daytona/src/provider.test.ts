@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   daytonaSandboxProvider,
   type DaytonaClientPort,
+  type DaytonaPtyPort,
   type DaytonaSandboxPort,
   type DaytonaSnapshotPort,
 } from "./provider";
@@ -11,6 +12,7 @@ interface FakeSandboxOptions {
   id?: string;
   state?: string;
   deleteSandbox?: (timeout?: number, wait?: boolean) => Promise<void>;
+  pty?: DaytonaPtyPort;
 }
 
 function fakeSandbox(options: FakeSandboxOptions = {}): DaytonaSandboxPort {
@@ -27,8 +29,12 @@ function fakeSandbox(options: FakeSandboxOptions = {}): DaytonaSandboxPort {
       getSession: async () => ({ commands: [] }),
       executeSessionCommand: async () => ({ cmdId: "command-1", exitCode: 0 }),
       getSessionCommandLogs: async () => ({ output: "log", stdout: "log", stderr: "" }),
-      createPty: async () => ({
+      createPty: async () => options.pty ?? ({
+        exitCode: 0,
+        error: undefined,
+        isConnected: () => false,
         waitForConnection: async () => {},
+        wait: async () => ({ exitCode: 0 }),
         sendInput: async () => {},
         resize: async () => {},
         disconnect: async () => {},
@@ -246,6 +252,180 @@ describe("Daytona sandbox provider", () => {
       memory: 8,
       state: "started",
     });
+  });
+
+  test("PTY termination handles late and instant process exit with one memoized wait", async () => {
+    const lateExit = Promise.withResolvers<{ exitCode?: number; error?: string }>();
+    let waits = 0;
+    const late = fakeSandbox({
+      pty: {
+        exitCode: undefined,
+        error: undefined,
+        isConnected: () => true,
+        waitForConnection: async () => {},
+        wait: async () => {
+          waits += 1;
+          return await lateExit.promise;
+        },
+        sendInput: async () => {},
+        resize: async () => {},
+        disconnect: async () => {},
+        kill: async () => {},
+      },
+    });
+    const lateHandle = await daytonaSandboxProvider(config, fakeClient([late])).get(late.id);
+    const latePty = await lateHandle.process.createPty({
+      id: "late",
+      cols: 80,
+      rows: 24,
+      onData: () => {},
+    });
+    const first = latePty.waitForTermination();
+    expect(latePty.waitForTermination()).toBe(first);
+    await Bun.sleep(0);
+    expect(waits).toBe(1);
+    lateExit.resolve({ exitCode: 7 });
+    expect(await first).toEqual({ exitCode: 7 });
+    expect(waits).toBe(1);
+
+    let instantWaits = 0;
+    const instant = fakeSandbox({
+      pty: {
+        exitCode: 0,
+        error: undefined,
+        isConnected: () => false,
+        waitForConnection: async () => {
+          throw new Error("transport already closed");
+        },
+        wait: async () => {
+          instantWaits += 1;
+          return { exitCode: 0 };
+        },
+        sendInput: async () => {},
+        resize: async () => {},
+        disconnect: async () => {},
+        kill: async () => {},
+      },
+    });
+    const instantHandle = await daytonaSandboxProvider(config, fakeClient([instant])).get(instant.id);
+    const instantPty = await instantHandle.process.createPty({
+      id: "instant",
+      cols: 80,
+      rows: 24,
+      onData: () => {},
+    });
+    expect(await instantPty.waitForTermination()).toEqual({ exitCode: 0 });
+    expect(instantWaits).toBe(0);
+  });
+
+  test("PTY termination observes an SDK error that does not close the transport", async () => {
+    let error: string | undefined;
+    const raw = fakeSandbox({
+      pty: {
+        exitCode: undefined,
+        get error() {
+          return error;
+        },
+        isConnected: () => true,
+        waitForConnection: async () => {},
+        wait: () => new Promise(() => {}),
+        sendInput: async () => {},
+        resize: async () => {},
+        disconnect: async () => {},
+        kill: async () => {},
+      },
+    });
+    const handle = await daytonaSandboxProvider(config, fakeClient([raw])).get(raw.id);
+    const pty = await handle.process.createPty({
+      id: "error",
+      cols: 80,
+      rows: 24,
+      onData: () => {},
+    });
+    const termination = pty.waitForTermination();
+    await Bun.sleep(0);
+    error = "credential-bearing wss://secret.example.test/session/token";
+
+    expect(await termination).toEqual({ error: "Daytona PTY termination failed" });
+  });
+
+  test("PTY termination keeps observing late errors after successful and failed kill calls", async () => {
+    const run = async (kill: () => Promise<unknown>): Promise<void> => {
+      let error: string | undefined;
+      const raw = fakeSandbox({
+        pty: {
+          exitCode: undefined,
+          get error() {
+            return error;
+          },
+          isConnected: () => true,
+          waitForConnection: async () => {},
+          wait: () => new Promise(() => {}),
+          sendInput: async () => {},
+          resize: async () => {},
+          disconnect: async () => {},
+          kill,
+        },
+      });
+      const handle = await daytonaSandboxProvider(config, fakeClient([raw])).get(raw.id);
+      const pty = await handle.process.createPty({
+        id: "kill",
+        cols: 80,
+        rows: 24,
+        onData: () => {},
+      });
+      const termination = pty.waitForTermination();
+      await Bun.sleep(0);
+
+      await pty.kill().catch(() => {});
+      error = "late SDK failure";
+
+      expect(await termination).toEqual({ error: "Daytona PTY termination failed" });
+    };
+
+    await Promise.all([
+      run(async () => {}),
+      run(async () => {
+        throw new Error("kill failed");
+      }),
+    ]);
+  });
+
+  test("disconnect during connection wait prevents a late termination poll", async () => {
+    const connection = Promise.withResolvers<void>();
+    let connectionChecks = 0;
+    const raw = fakeSandbox({
+      pty: {
+        exitCode: undefined,
+        error: undefined,
+        isConnected: () => {
+          connectionChecks += 1;
+          return true;
+        },
+        waitForConnection: () => connection.promise,
+        wait: () => new Promise(() => {}),
+        sendInput: async () => {},
+        resize: async () => {},
+        disconnect: async () => {},
+        kill: async () => {},
+      },
+    });
+    const handle = await daytonaSandboxProvider(config, fakeClient([raw])).get(raw.id);
+    const pty = await handle.process.createPty({
+      id: "disconnect",
+      cols: 80,
+      rows: 24,
+      onData: () => {},
+    });
+    const termination = pty.waitForTermination();
+    await Bun.sleep(0);
+
+    await pty.disconnect();
+    expect(await termination).toEqual({ error: "Daytona PTY disconnected" });
+    connection.resolve();
+    await Bun.sleep(300);
+
+    expect(connectionChecks).toBe(0);
   });
 
   test("normalizes lifecycle, process, filesystem, preview auth, and computer use", async () => {

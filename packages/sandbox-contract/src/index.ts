@@ -24,6 +24,8 @@ export interface SandboxSession {
 
 export interface SandboxPtyHandle {
   waitForConnection(): Promise<void>;
+  /** Resolves when the PTY process or its transport closes. This does not imply model success. */
+  waitForTermination(): Promise<{ exitCode?: number; error?: string }>;
   sendInput(data: string | Uint8Array): Promise<void>;
   resize(cols: number, rows: number): Promise<unknown>;
   disconnect(): Promise<void>;

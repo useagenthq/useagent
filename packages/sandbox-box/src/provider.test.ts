@@ -548,13 +548,47 @@ describe("Box sandbox provider", () => {
     await waiting;
     await handle.sendInput("pwd\r");
     await handle.resize(120, 40);
+    const termination = handle.waitForTermination();
+    expect(handle.waitForTermination()).toBe(termination);
     await handle.disconnect();
+    expect(await termination).toEqual({ exitCode: 143 });
     await handle.kill();
     expect(writes).toEqual(["pwd\r"]);
     expect(sizes).toEqual([[120, 40]]);
     expect(kills).toBe(1);
     expect(closes).toBe(1);
     expect(cleanups).toBe(1);
+  });
+
+  test("PTY termination does not wait for or expose eager cleanup failures", async () => {
+    for (const cleanup of [
+      async () => {
+        throw new Error("cleanup failed");
+      },
+      () => new Promise<void>(() => {}),
+    ]) {
+      const exited = Promise.withResolvers<number>();
+      const handle = boxPtyHandle(
+        {
+          write: () => 0,
+          resize: () => {},
+          close: () => {},
+        },
+        {
+          exited: exited.promise,
+          exitCode: null,
+          killed: false,
+          kill: () => {},
+        },
+        cleanup,
+      );
+      const termination = handle.waitForTermination();
+
+      exited.resolve(0);
+
+      expect(await termination).toEqual({ exitCode: 0 });
+      await Bun.sleep(0);
+    }
   });
 
   test("PTY readiness suppresses first-connection key output and split markers", async () => {

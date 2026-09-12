@@ -1,7 +1,27 @@
 import { describe, expect, test } from "bun:test";
 import { RpcFrameEncoder } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-frame";
 import type { SandboxHandle, SandboxProcess } from "../sandboxes/provider";
+import type { ProviderEventInput } from "../runs/provider-events";
+import { createPiRpcFrameMapper } from "./pi-canonical";
+import { runNativeBridgeTurn } from "./native-bridge-runtime";
 import { DefaultPiBridgeManager } from "./pi-rpc-bridge";
+
+interface BridgeTestControl {
+  emit?: (data: string) => Promise<void>;
+  sent?: string[];
+  lifecycle?: string[];
+  terminate?: (result?: { exitCode?: number; error?: string }) => void;
+  terminations?: Array<(result?: { exitCode?: number; error?: string }) => void>;
+  releaseKills?: Array<() => void>;
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error("test condition did not become true");
+}
 
 function sandboxWithBracketedPastePrefix(
   requests: Array<Record<string, unknown>> = [],
@@ -13,12 +33,15 @@ function sandboxWithBracketedPastePrefix(
     readonly resetChildAOnce?: boolean;
     readonly negotiatedVersion?: number;
     readonly readyOnPtyAttempt?: number;
-    readonly control?: {
-      emit?: (data: string) => Promise<void>;
-      sent?: string[];
-      lifecycle?: string[];
-    };
+    readonly control?: BridgeTestControl;
     readonly failRequestType?: string;
+    readonly hangRequestType?: string;
+    readonly terminateOnWait?: { exitCode?: number; error?: string };
+    readonly hangConnection?: boolean;
+    readonly hangStartupSend?: boolean;
+    readonly rejectKill?: boolean;
+    readonly deferKill?: boolean;
+    readonly deferKillOnPtyAttempt?: number;
   } = {},
 ): SandboxHandle {
   const encoder = new TextEncoder();
@@ -34,16 +57,31 @@ function sandboxWithBracketedPastePrefix(
       async createPty({ onData }: Parameters<SandboxProcess["createPty"]>[0]) {
         ptyAttempt += 1;
         const thisAttempt = ptyAttempt;
+        const termination = Promise.withResolvers<{ exitCode?: number; error?: string }>();
+        const killRelease = Promise.withResolvers<void>();
+        const terminate = (result: { exitCode?: number; error?: string } = {}) => {
+          termination.resolve(result);
+        };
         options.control?.lifecycle?.push(`create-${thisAttempt}`);
         if (options.control) {
           options.control.emit = async (data) => onData(encoder.encode(data));
+          options.control.terminate = terminate;
+          options.control.terminations?.push(terminate);
+          options.control.releaseKills?.push(killRelease.resolve);
         }
         return {
-          async waitForConnection() {},
+          async waitForConnection() {
+            if (options.hangConnection) await new Promise(() => {});
+          },
+          async waitForTermination() {
+            if (options.terminateOnWait) terminate(options.terminateOnWait);
+            return termination.promise;
+          },
           async sendInput(input: string | Uint8Array) {
             const text = typeof input === "string" ? input : new TextDecoder().decode(input);
             options.control?.sent?.push(text);
             if (text.startsWith("stty ")) {
+              if (options.hangStartupSend) await new Promise(() => {});
               if (thisAttempt < (options.readyOnPtyAttempt ?? 1)) return;
               nonCanonicalInput = text.includes(" -icanon min 1 time 0");
               await onData(encoder.encode("\u001b[?2004hroot@box:/work# "));
@@ -63,6 +101,7 @@ function sandboxWithBracketedPastePrefix(
             };
             requests.push(request);
             if (request.type === options.failRequestType) throw new Error("PTY send failed");
+            if (request.type === options.hangRequestType) await new Promise(() => {});
             if ((request.message?.length ?? 0) > 4_095 && !nonCanonicalInput) {
               throw new Error("canonical PTY input corrupted the long RPC frame");
             }
@@ -143,6 +182,11 @@ function sandboxWithBracketedPastePrefix(
           },
           async kill() {
             options.control?.lifecycle?.push(`kill-${thisAttempt}`);
+            if (options.rejectKill) throw new Error("remote kill rejected");
+            terminate({ exitCode: 0 });
+            if (options.deferKill || options.deferKillOnPtyAttempt === thisAttempt) {
+              await killRelease.promise;
+            }
           },
         };
       },
@@ -157,7 +201,7 @@ function sandboxWithBracketedPastePrefix(
 }
 
 describe("Pi RPC frame parsing", () => {
-  test("becomes ready when Cube prefixes the first RPC frame with terminal control bytes", async () => {
+  test("tolerates a pre-ready shell prompt and terminal control bytes", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const sent: string[] = [];
     const manager = new DefaultPiBridgeManager();
@@ -238,6 +282,50 @@ describe("Pi RPC frame parsing", () => {
       "create-2",
     ]);
     await session.dispose();
+  });
+
+  test("bounds startup when PTY connection never settles", async () => {
+    const manager = new DefaultPiBridgeManager(5, 5);
+    const startup = manager.ensure({
+      sandbox: sandboxWithBracketedPastePrefix([], { hangConnection: true }),
+      workdir: "/work",
+      runtime: {
+        model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+        fingerprint: "runtime",
+        knowledgeTools: false,
+        executable: "/opt/useagent/pi-runtime/cli.js",
+        bunExecutable: "/opt/useagent/pi-runtime/bun",
+        runAsUser: "useagent-pi",
+        home: "/home/useagent-pi",
+      },
+    });
+
+    await expect(Promise.race([
+      startup,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("startup stayed pending")), 40)),
+    ])).rejects.toThrow("RPC readiness timed out");
+  });
+
+  test("bounds startup when initial PTY input never settles", async () => {
+    const manager = new DefaultPiBridgeManager(5, 5);
+    const startup = manager.ensure({
+      sandbox: sandboxWithBracketedPastePrefix([], { hangStartupSend: true }),
+      workdir: "/work",
+      runtime: {
+        model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+        fingerprint: "runtime",
+        knowledgeTools: false,
+        executable: "/opt/useagent/pi-runtime/cli.js",
+        bunExecutable: "/opt/useagent/pi-runtime/bun",
+        runAsUser: "useagent-pi",
+        home: "/home/useagent-pi",
+      },
+    });
+
+    await expect(Promise.race([
+      startup,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("startup stayed pending")), 40)),
+    ])).rejects.toThrow("RPC readiness timed out");
   });
 
   test("delivers prompt frames larger than Linux MAX_CANON intact", async () => {
@@ -587,6 +675,7 @@ describe("Pi RPC frame parsing", () => {
     await control.emit('{"type":\n');
     await expect(session.command({ kind: "steer", text: "must fail" }))
       .rejects.toThrow("Pi RPC session is disposed");
+    expect(manager.get(session.sessionFile)).toBeUndefined();
   });
 
   test("clears pending request state when PTY input fails", async () => {
@@ -655,5 +744,377 @@ describe("Pi RPC frame parsing", () => {
     await control.emit(`${frame("a")}\n${frame("b")}\n`);
     await expect(session.command({ kind: "steer", text: "still alive" })).resolves.toBeUndefined();
     await session.dispose();
+  });
+
+  test("fails startup promptly when the PTY terminates during a pending command write", async () => {
+    const control: BridgeTestControl = { sent: [] };
+    const manager = new DefaultPiBridgeManager();
+    const startedAt = performance.now();
+    const startup = manager.ensure({
+      sandbox: sandboxWithBracketedPastePrefix([], { control, hangStartupSend: true }),
+      workdir: "/work",
+      runtime: {
+        model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+        fingerprint: "runtime",
+        knowledgeTools: false,
+        executable: "/opt/useagent/pi-runtime/cli.js",
+        bunExecutable: "/opt/useagent/pi-runtime/bun",
+        runAsUser: "useagent-pi",
+        home: "/home/useagent-pi",
+      },
+    });
+    await waitUntil(() => Boolean(control.sent?.some((value) => value.startsWith("stty "))));
+    control.terminate?.({ exitCode: 17 });
+
+    await expect(Promise.race([
+      startup,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("startup stayed pending")), 250)),
+    ])).rejects.toThrow("Pi RPC process exited unexpectedly (code 17)");
+    expect(performance.now() - startedAt).toBeLessThan(250);
+  });
+
+  test("unexpected PTY termination fails an active native bridge turn exactly once", async () => {
+    const control: BridgeTestControl = { sent: [] };
+    const manager = new DefaultPiBridgeManager();
+    const session = await manager.ensure({
+      sandbox: sandboxWithBracketedPastePrefix([], { control, hangRequestType: "prompt" }),
+      workdir: "/work",
+      runtime: {
+        model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+        fingerprint: "runtime",
+        knowledgeTools: false,
+        executable: "/opt/useagent/pi-runtime/cli.js",
+        bunExecutable: "/opt/useagent/pi-runtime/bun",
+        runAsUser: "useagent-pi",
+        home: "/home/useagent-pi",
+      },
+    });
+    const captured: ProviderEventInput[] = [];
+    const turn = runNativeBridgeTurn({
+      ctx: {
+        runId: "run",
+        threadId: "thread",
+        signal: new AbortController().signal,
+        reportActivity: () => {},
+      } as never,
+      driver: {
+        steer: async () => {
+          await session.command({ kind: "prompt", text: "keep working" });
+          return { status: "ok" };
+        },
+        cancel: async () => ({ status: "ok" }),
+      } as never,
+      session: { nativeSessionId: session.sessionFile } as never,
+      bridge: session,
+      prompt: "keep working",
+      mapFrame: createPiRpcFrameMapper("pi-message-run"),
+      redact: { text: (value) => value, unknown: (value) => value },
+    }, async (event) => {
+      captured.push(event);
+    });
+    while (!control.sent?.some((value) => value.includes('"type":"prompt"'))) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    control.terminate?.({ error: "provider-secret-transport-detail" });
+
+    await expect(Promise.race([
+      turn,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("turn stayed pending")), 250)),
+    ])).rejects.toThrow("Pi RPC transport closed with an error");
+    expect(captured.filter((event) => event.eventType === "pi.turn.failed")).toHaveLength(1);
+    expect(JSON.stringify(captured)).not.toContain("provider-secret-transport-detail");
+    expect(manager.get(session.sessionFile)).toBeUndefined();
+  });
+
+  test("intentional disposal emits no protocol error and evicts the session", async () => {
+    const manager = new DefaultPiBridgeManager();
+    const session = await manager.ensure({
+      sandbox: sandboxWithBracketedPastePrefix(),
+      workdir: "/work",
+      runtime: {
+        model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+        fingerprint: "runtime",
+        knowledgeTools: false,
+        executable: "/opt/useagent/pi-runtime/cli.js",
+        bunExecutable: "/opt/useagent/pi-runtime/bun",
+        runAsUser: "useagent-pi",
+        home: "/home/useagent-pi",
+      },
+    });
+    const frames: unknown[] = [];
+    session.subscribe((frame) => frames.push(frame));
+
+    await session.dispose();
+
+    expect(frames.filter((frame) => (frame as { type?: string }).type === "rpc_frame_error"))
+      .toHaveLength(0);
+    expect(manager.get(session.sessionFile)).toBeUndefined();
+  });
+
+  test("waits for remote kill before resuming the same durable session file", async () => {
+    const sent: string[] = [];
+    const lifecycle: string[] = [];
+    const terminations: Array<(result?: { exitCode?: number; error?: string }) => void> = [];
+    const releaseKills: Array<() => void> = [];
+    const control: BridgeTestControl = { sent, lifecycle, terminations, releaseKills };
+    const sandbox = sandboxWithBracketedPastePrefix([], { control, deferKill: true });
+    const manager = new DefaultPiBridgeManager();
+    const runtime = {
+      model: { provider: "openai" as const, modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+      fingerprint: "runtime",
+      knowledgeTools: false,
+      executable: "/opt/useagent/pi-runtime/cli.js",
+      bunExecutable: "/opt/useagent/pi-runtime/bun",
+      runAsUser: "useagent-pi",
+      home: "/home/useagent-pi",
+    };
+    const first = await manager.ensure({ sandbox, workdir: "/work", runtime });
+    terminations[0]?.({ exitCode: 9 });
+    await waitUntil(() => manager.get(first.sessionFile) === undefined);
+    expect(manager.get(first.sessionFile)).toBeUndefined();
+
+    const replacementPromise = manager.ensure({
+      sandbox,
+      workdir: "/work",
+      runtime,
+      resumeSessionFile: first.sessionFile,
+    });
+    await Promise.resolve();
+    expect(lifecycle.filter((value) => value.startsWith("create-"))).toEqual(["create-1"]);
+    releaseKills[0]?.();
+
+    const replacement = await replacementPromise;
+    expect(replacement).not.toBe(first);
+    const resumedCommand = sent.filter((value) => value.startsWith("stty "))[1];
+    expect(resumedCommand).toContain("--resume");
+    expect(resumedCommand).toContain(first.sessionFile);
+
+    await waitUntil(() => lifecycle.includes("disconnect-1"));
+    await Promise.resolve();
+    expect(manager.get(first.sessionFile)).toBe(replacement);
+
+    const disposed = replacement.dispose();
+    releaseKills[1]?.();
+    await disposed;
+  });
+
+  test("refuses native resume when remote kill rejects", async () => {
+    const lifecycle: string[] = [];
+    const control: BridgeTestControl = { lifecycle };
+    const sandbox = sandboxWithBracketedPastePrefix([], { control, rejectKill: true });
+    const manager = new DefaultPiBridgeManager();
+    const runtime = {
+      model: { provider: "openai" as const, modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+      fingerprint: "runtime",
+      knowledgeTools: false,
+      executable: "/opt/useagent/pi-runtime/cli.js",
+      bunExecutable: "/opt/useagent/pi-runtime/bun",
+      runAsUser: "useagent-pi",
+      home: "/home/useagent-pi",
+    };
+    const first = await manager.ensure({ sandbox, workdir: "/work", runtime });
+    control.terminate?.({ error: "socket closed" });
+    await waitUntil(() => manager.get(first.sessionFile) === undefined);
+
+    await expect(manager.ensure({
+      sandbox,
+      workdir: "/work",
+      runtime,
+      resumeSessionFile: first.sessionFile,
+    })).rejects.toThrow("Pi RPC remote teardown failed; refusing native resume");
+    expect(lifecycle.filter((value) => value.startsWith("create-"))).toEqual(["create-1"]);
+  });
+
+  test("times out remote teardown and keeps native resume fenced", async () => {
+    const lifecycle: string[] = [];
+    const releaseKills: Array<() => void> = [];
+    const control: BridgeTestControl = { lifecycle, releaseKills };
+    const sandbox = sandboxWithBracketedPastePrefix([], { control, deferKill: true });
+    const manager = new DefaultPiBridgeManager(30_000, 5);
+    const runtime = {
+      model: { provider: "openai" as const, modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+      fingerprint: "runtime",
+      knowledgeTools: false,
+      executable: "/opt/useagent/pi-runtime/cli.js",
+      bunExecutable: "/opt/useagent/pi-runtime/bun",
+      runAsUser: "useagent-pi",
+      home: "/home/useagent-pi",
+    };
+    const first = await manager.ensure({ sandbox, workdir: "/work", runtime });
+    control.terminate?.({ exitCode: 9 });
+    await waitUntil(() => manager.get(first.sessionFile) === undefined);
+
+    await expect(manager.ensure({
+      sandbox,
+      workdir: "/work",
+      runtime,
+      resumeSessionFile: first.sessionFile,
+    })).rejects.toThrow("Pi RPC remote teardown timed out; refusing native resume");
+    expect(lifecycle.filter((value) => value.startsWith("create-"))).toEqual(["create-1"]);
+
+    releaseKills[0]?.();
+    await waitUntil(() => lifecycle.includes("disconnect-1"));
+  });
+
+  test("keeps resume fenced when transport closure lacks a confirmed remote exit", async () => {
+    const lifecycle: string[] = [];
+    const control: BridgeTestControl = { lifecycle };
+    const sandbox = sandboxWithBracketedPastePrefix([], { control });
+    const manager = new DefaultPiBridgeManager();
+    const runtime = {
+      model: { provider: "openai" as const, modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+      fingerprint: "runtime",
+      knowledgeTools: false,
+      executable: "/opt/useagent/pi-runtime/cli.js",
+      bunExecutable: "/opt/useagent/pi-runtime/bun",
+      runAsUser: "useagent-pi",
+      home: "/home/useagent-pi",
+    };
+    const first = await manager.ensure({ sandbox, workdir: "/work", runtime });
+    control.terminate?.({ error: "provider-secret-transport-detail" });
+    await waitUntil(() => manager.get(first.sessionFile) === undefined);
+
+    await expect(manager.ensure({
+      sandbox,
+      workdir: "/work",
+      runtime,
+      resumeSessionFile: first.sessionFile,
+    })).rejects.toThrow("Pi RPC remote exit could not be confirmed; refusing native resume");
+    expect(lifecycle.filter((value) => value.startsWith("create-"))).toEqual(["create-1"]);
+  });
+
+  test("does not retry startup when cleanup cannot confirm remote exit", async () => {
+    const manager = new DefaultPiBridgeManager(5, 5);
+    const initialRuntime = {
+      model: { provider: "openai" as const, modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+      fingerprint: "runtime-1",
+      knowledgeTools: false,
+      executable: "/opt/useagent/pi-runtime/cli.js",
+      bunExecutable: "/opt/useagent/pi-runtime/bun",
+      runAsUser: "useagent-pi",
+      home: "/home/useagent-pi",
+    };
+    const first = await manager.ensure({
+      sandbox: sandboxWithBracketedPastePrefix(),
+      workdir: "/work",
+      runtime: initialRuntime,
+    });
+    const lifecycle: string[] = [];
+    const releaseKills: Array<() => void> = [];
+    const retrySandbox = sandboxWithBracketedPastePrefix([], {
+      readyOnPtyAttempt: 2,
+      deferKillOnPtyAttempt: 1,
+      control: { lifecycle, releaseKills },
+    });
+
+    await expect(manager.ensure({
+      sandbox: retrySandbox,
+      workdir: "/work",
+      runtime: { ...initialRuntime, fingerprint: "runtime-2" },
+      resumeSessionFile: first.sessionFile,
+    })).rejects.toThrow("Pi RPC remote teardown timed out; refusing native resume");
+    expect(lifecycle.filter((value) => value.startsWith("create-"))).toEqual(["create-1"]);
+
+    await expect(manager.awaitTeardown(first.sessionFile))
+      .rejects.toThrow("Pi RPC remote teardown timed out; refusing native resume");
+    releaseKills[0]?.();
+    await waitUntil(() => lifecycle.includes("disconnect-1"));
+  });
+
+  test("request timeout remains bounded while PTY input never settles", async () => {
+    const manager = new DefaultPiBridgeManager();
+    const session = await manager.ensure({
+      sandbox: sandboxWithBracketedPastePrefix([], { hangRequestType: "get_subagent_messages" }),
+      workdir: "/work",
+      runtime: {
+        model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+        fingerprint: "runtime",
+        knowledgeTools: false,
+        executable: "/opt/useagent/pi-runtime/cli.js",
+        bunExecutable: "/opt/useagent/pi-runtime/bun",
+        runAsUser: "useagent-pi",
+        home: "/home/useagent-pi",
+      },
+    });
+
+    await expect(session.readSubagentMessages?.({ subagentId: "child-a", fromByte: 0 }))
+      .rejects.toThrow("get_subagent_messages timed out");
+    await session.dispose();
+  }, 3_000);
+
+  test("a BEL-prefixed terminal agent_end frame completes the native bridge turn", async () => {
+    const control: BridgeTestControl = { sent: [] };
+    const manager = new DefaultPiBridgeManager();
+    const session = await manager.ensure({
+      sandbox: sandboxWithBracketedPastePrefix([], { control }),
+      workdir: "/work",
+      runtime: {
+        model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+        fingerprint: "runtime",
+        knowledgeTools: false,
+        executable: "/opt/useagent/pi-runtime/cli.js",
+        bunExecutable: "/opt/useagent/pi-runtime/bun",
+        runAsUser: "useagent-pi",
+        home: "/home/useagent-pi",
+      },
+    });
+    const captured: ProviderEventInput[] = [];
+    const turn = runNativeBridgeTurn({
+      ctx: {
+        runId: "run",
+        threadId: "thread",
+        signal: new AbortController().signal,
+        reportActivity: () => {},
+      } as never,
+      driver: {
+        steer: async () => {
+          await session.command({ kind: "prompt", text: "finish" });
+          return { status: "ok" };
+        },
+        cancel: async () => ({ status: "ok" }),
+      } as never,
+      session: { nativeSessionId: session.sessionFile } as never,
+      bridge: session,
+      prompt: "finish",
+      mapFrame: createPiRpcFrameMapper("pi-message-run"),
+      redact: { text: (value) => value, unknown: (value) => value },
+    }, async (event) => {
+      captured.push(event);
+    });
+    await waitUntil(() => Boolean(
+      control.sent?.some((value) => value.includes('"type":"prompt"')),
+    ));
+    await control.emit?.('\u0007{"type":"agent_end","isTerminal":true,"messages":[]}\n');
+
+    await expect(turn).resolves.toBe("");
+    expect(captured.filter((event) => event.eventType === "pi.turn.completed")).toHaveLength(1);
+    await session.dispose();
+  });
+
+  test("fails on non-JSON output after readiness instead of dropping it", async () => {
+    const control: BridgeTestControl = {};
+    const manager = new DefaultPiBridgeManager();
+    const session = await manager.ensure({
+      sandbox: sandboxWithBracketedPastePrefix([], { control }),
+      workdir: "/work",
+      runtime: {
+        model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+        fingerprint: "runtime",
+        knowledgeTools: false,
+        executable: "/opt/useagent/pi-runtime/cli.js",
+        bunExecutable: "/opt/useagent/pi-runtime/bun",
+        runAsUser: "useagent-pi",
+        home: "/home/useagent-pi",
+      },
+    });
+    const frames: unknown[] = [];
+    session.subscribe((frame) => frames.push(frame));
+    await control.emit?.("native process wrote plain text\n");
+
+    expect(frames).toContainEqual({
+      type: "rpc_frame_error",
+      error: "Pi RPC frame decode failed: unexpected non-JSON Pi RPC output",
+    });
+    expect(manager.get(session.sessionFile)).toBeUndefined();
   });
 });

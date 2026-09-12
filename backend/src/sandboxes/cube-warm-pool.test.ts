@@ -48,6 +48,7 @@ function sandbox(id: string): SandboxHandle & { deleted: boolean } {
       getSessionCommandLogs: async () => ({ output: "", stdout: "", stderr: "" }),
       createPty: async () => ({
         waitForConnection: async () => undefined,
+        waitForTermination: async () => new Promise(() => {}),
         sendInput: async () => undefined,
         resize: async () => undefined,
         disconnect: async () => undefined,

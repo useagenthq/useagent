@@ -29,13 +29,36 @@ export interface DaytonaSandboxPort {
   readonly memory: number;
   state?: string;
   labels?: Record<string, string>;
-  readonly process: SandboxProcess;
+  readonly process: DaytonaProcessPort;
   readonly fs: SandboxFileSystem;
   readonly computerUse: SandboxComputerUse;
   start(timeout?: number): Promise<void>;
   delete(timeout?: number, wait?: boolean): Promise<void>;
   getPreviewLink(port: number): Promise<{ url: string; token?: string }>;
 }
+
+export interface DaytonaPtyPort {
+  readonly exitCode?: number;
+  readonly error?: string;
+  isConnected(): boolean;
+  waitForConnection(): Promise<void>;
+  wait(): Promise<{ exitCode?: number; error?: string }>;
+  sendInput(data: string | Uint8Array): Promise<void>;
+  resize(cols: number, rows: number): Promise<unknown>;
+  disconnect(): Promise<void>;
+  kill(): Promise<unknown>;
+}
+
+export type DaytonaProcessPort = Omit<SandboxProcess, "createPty"> & {
+  createPty(options: {
+    id: string;
+    cols: number;
+    rows: number;
+    cwd?: string;
+    envs?: Record<string, string>;
+    onData: (data: Uint8Array) => void | Promise<void>;
+  }): Promise<DaytonaPtyPort>;
+};
 
 /** The slice of a Daytona snapshot record the provider reads. */
 export interface DaytonaSnapshotPort {
@@ -65,6 +88,11 @@ export interface DaytonaProviderOptions {
 
 const DEFAULT_ACTIVATION_TIMEOUT_MS = 6 * 60_000;
 const DEFAULT_ACTIVATION_POLL_MS = 5_000;
+const PTY_TERMINATION_POLL_MS = 250;
+const DAYTONA_PTY_CONNECTION_FAILED = "Daytona PTY connection failed";
+const DAYTONA_PTY_TERMINATION_FAILED = "Daytona PTY termination failed";
+const DAYTONA_PTY_TRANSPORT_CLOSED = "Daytona PTY transport closed before reporting termination";
+const DAYTONA_PTY_DISCONNECTED = "Daytona PTY disconnected";
 /** Daytona states a snapshot passes through on its way to active. */
 const ACTIVATING_STATES: ReadonlySet<string> = new Set(["building", "pending", "pulling", "snapshotting"]);
 
@@ -74,7 +102,7 @@ function isSnapshotNotFound(error: unknown): boolean {
 }
 
 class DaytonaProcess implements SandboxProcess {
-  constructor(private readonly source: SandboxProcess) {}
+  constructor(private readonly source: DaytonaProcessPort) {}
 
   async executeCommand(
     command: string,
@@ -128,11 +156,93 @@ class DaytonaProcess implements SandboxProcess {
     onData: (data: Uint8Array) => void | Promise<void>;
   }): Promise<SandboxPtyHandle> {
     const pty = await this.source.createPty(options);
+    let terminationPromise: Promise<{ exitCode?: number; error?: string }> | undefined;
+    let terminationMonitor: ReturnType<typeof setInterval> | undefined;
+    let terminationSettled = false;
+    let settleTermination:
+      | ((result: { exitCode?: number; error?: string }) => void)
+      | undefined;
+    const clearTerminationMonitor = (): void => {
+      if (terminationMonitor === undefined) return;
+      clearInterval(terminationMonitor);
+      terminationMonitor = undefined;
+    };
+    const result = (
+      exitCode: number | undefined,
+      hasError = false,
+    ): { exitCode?: number; error?: string } => ({
+      ...(exitCode === undefined ? {} : { exitCode }),
+      ...(hasError ? { error: DAYTONA_PTY_TERMINATION_FAILED } : {}),
+    });
+    const inspectTermination = (): { exitCode?: number; error?: string } | undefined => {
+      if (pty.exitCode !== undefined) return result(pty.exitCode, Boolean(pty.error));
+      if (pty.error) return result(undefined, true);
+      if (!pty.isConnected()) return { error: DAYTONA_PTY_TRANSPORT_CLOSED };
+      return undefined;
+    };
+    const waitForTermination = (): Promise<{ exitCode?: number; error?: string }> => {
+      if (terminationPromise) return terminationPromise;
+      terminationPromise = new Promise((resolve) => {
+        settleTermination = (termination) => {
+          if (terminationSettled) return;
+          terminationSettled = true;
+          clearTerminationMonitor();
+          resolve(termination);
+        };
+        void (async () => {
+          try {
+            await pty.waitForConnection();
+          } catch {
+            if (pty.exitCode !== undefined) {
+              settleTermination?.(result(pty.exitCode, Boolean(pty.error)));
+            } else if (pty.error) {
+              settleTermination?.(result(undefined, true));
+            } else {
+              settleTermination?.({ error: DAYTONA_PTY_CONNECTION_FAILED });
+            }
+            return;
+          }
+          if (terminationSettled) return;
+
+          const current = inspectTermination();
+          if (current) {
+            settleTermination?.(current);
+            return;
+          }
+
+          void pty.wait().then(
+            (termination) => settleTermination?.(
+              result(termination.exitCode, Boolean(termination.error)),
+            ),
+            () => settleTermination?.(inspectTermination() ?? {
+              error: DAYTONA_PTY_TERMINATION_FAILED,
+            }),
+          );
+          terminationMonitor = setInterval(() => {
+            const termination = inspectTermination();
+            if (termination) settleTermination?.(termination);
+          }, PTY_TERMINATION_POLL_MS);
+          terminationMonitor.unref();
+
+          const afterSubscribe = inspectTermination();
+          if (afterSubscribe) settleTermination?.(afterSubscribe);
+        })();
+      });
+      return terminationPromise;
+    };
     return {
       waitForConnection: () => pty.waitForConnection(),
+      waitForTermination,
       sendInput: (data) => pty.sendInput(data),
       resize: (cols, rows) => pty.resize(cols, rows),
-      disconnect: () => pty.disconnect(),
+      disconnect: async () => {
+        try {
+          await pty.disconnect();
+        } finally {
+          clearTerminationMonitor();
+          settleTermination?.({ error: DAYTONA_PTY_DISCONNECTED });
+        }
+      },
       kill: () => pty.kill(),
     };
   }
