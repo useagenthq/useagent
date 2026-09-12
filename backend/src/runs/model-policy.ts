@@ -8,6 +8,7 @@ export const DEEPSEEK_V4_FLASH_MODEL = "deepseek/deepseek-v4-flash";
 export const GEMINI_FLASH_MODEL = "google/gemini-3.7-flash";
 export const FAST_OPENCODE_MODEL = "openai/gpt-5.6-luna";
 export const FAST_CODEX_MODEL = "gpt-5.6-luna";
+export const CEREBRAS_GEMMA_MODEL = "cerebras/gemma-4-31b";
 export const CODEX_ALLOWED_MODELS = [
   FAST_CODEX_MODEL,
   "gpt-5.6-terra",
@@ -32,6 +33,7 @@ export const OPENCODE_ALLOWED_MODELS = {
     DEEPSEEK_V4_FLASH_MODEL,
     GEMINI_FLASH_MODEL,
   ],
+  cerebras: [CEREBRAS_GEMMA_MODEL],
 } as const;
 
 // The Free lane (OpenRouter ":free" variants, OpenCode only) is DYNAMIC. The
@@ -41,7 +43,16 @@ export const OPENCODE_ALLOWED_MODELS = {
 // path as the paid ones, so a user's own connected OpenRouter key is spent when
 // present and the shared house key serves only where that fallback is allowed.
 
-const OPENCODE_MODELS = new Set<string>(Object.values(OPENCODE_ALLOWED_MODELS).flat());
+const SHARED_SANDBOX_MODELS = [
+  ...OPENCODE_ALLOWED_MODELS.anthropic,
+  ...OPENCODE_ALLOWED_MODELS.openai,
+  ...OPENCODE_ALLOWED_MODELS.openrouter,
+];
+const OPENCODE_MODELS = new Set<string>([
+  ...SHARED_SANDBOX_MODELS,
+  ...OPENCODE_ALLOWED_MODELS.cerebras,
+]);
+const SHARED_SANDBOX_MODEL_SET = new Set<string>(SHARED_SANDBOX_MODELS);
 const CLAUDE_MODELS = new Set<string>(OPENCODE_ALLOWED_MODELS.anthropic);
 export const DEFAULT_OPENCODE_MODEL = FAST_OPENCODE_MODEL;
 export const DEFAULT_CLAUDE_MODEL = "claude-opus-5";
@@ -66,7 +77,7 @@ export function allowedModelsForEngine(
       return [...Object.values(OPENCODE_ALLOWED_MODELS).flat(), ...freeModelLane()];
     case "daytona":
     case "pi":
-      return Object.values(OPENCODE_ALLOWED_MODELS).flat();
+      return SHARED_SANDBOX_MODELS;
     case "claude":
     case "claude-sdk":
       return OPENCODE_ALLOWED_MODELS.anthropic;
@@ -116,7 +127,7 @@ export function isModelAllowedForEngine(
       return OPENCODE_MODELS.has(model) || isAllowedFreeModel(model);
     case "daytona":
     case "pi":
-      return OPENCODE_MODELS.has(model);
+      return SHARED_SANDBOX_MODEL_SET.has(model);
     case "claude":
     case "claude-sdk":
       return CLAUDE_MODELS.has(model);

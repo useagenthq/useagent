@@ -4,7 +4,7 @@ import type { SandboxHandle } from "../sandboxes/provider";
 import { providerGatewayConfig, PROVIDER_GATEWAY_PATH } from "./config";
 import { type ProviderId } from "./provider";
 import { mintProviderToken } from "./token";
-import { DEFAULT_CODEX_MODEL } from "../runs/model-policy";
+import { CEREBRAS_GEMMA_MODEL, DEFAULT_CODEX_MODEL } from "../runs/model-policy";
 import {
   THREAD_TOKEN_REUSE_WINDOW_MS,
   ThreadTokenMemo,
@@ -23,6 +23,38 @@ import { sandboxSecretMode, type SandboxSecretMode } from "../secrets/inject";
 export interface OpenCodeProviderOptions {
   readonly baseURL: string;
   readonly apiKey: string;
+}
+
+export function mergeOpenCodeProviderConfig(
+  provider: string,
+  current: unknown,
+  options: OpenCodeProviderOptions,
+): Record<string, unknown> {
+  const existing = current && typeof current === "object"
+    ? current as Record<string, unknown>
+    : {};
+  const existingOptions = existing.options && typeof existing.options === "object"
+    ? existing.options as Record<string, unknown>
+    : {};
+  if (provider !== "cerebras") {
+    return { ...existing, options: { ...existingOptions, ...options } };
+  }
+  const existingModels = existing.models && typeof existing.models === "object"
+    ? existing.models as Record<string, unknown>
+    : {};
+  return {
+    ...existing,
+    npm: "@ai-sdk/cerebras",
+    name: "Cerebras",
+    models: {
+      ...existingModels,
+      [CEREBRAS_GEMMA_MODEL.slice("cerebras/".length)]: {
+        name: "Gemma 4 31B",
+        limit: { context: 131_072, output: 40_960 },
+      },
+    },
+    options: { ...existingOptions, ...options },
+  };
 }
 
 // v17 replaces retained sandboxes whose resident harnesses still expose the
@@ -249,12 +281,14 @@ export function opencodeProviderGatewayOptions(
   const anthropicToken = mintResidentThreadToken(ctx, "opencode", "anthropic");
   const openaiToken = mintResidentThreadToken(ctx, "opencode", "openai");
   const openrouterToken = mintResidentThreadToken(ctx, "opencode", "openrouter");
+  const cerebrasToken = mintResidentThreadToken(ctx, "opencode", "cerebras");
   // OpenCode passes provider options directly to the AI SDK; provider baseURLs
   // include `/v1` for the SDK-specific endpoint suffixes. Claude Code's
   // ANTHROPIC_BASE_URL seam differs and appends `/v1/messages` itself.
   const anthropicBase = providerGatewayEndpoint("anthropic", true);
   const openaiBase = providerGatewayEndpoint("openai", true);
   const openrouterBase = providerGatewayEndpoint("openrouter", true);
+  const cerebrasBase = providerGatewayEndpoint("cerebras", true);
   return {
     ...(anthropicToken && anthropicBase
       ? { anthropic: { baseURL: anthropicBase, apiKey: anthropicToken } }
@@ -264,6 +298,9 @@ export function opencodeProviderGatewayOptions(
       : {}),
     ...(openrouterToken && openrouterBase
       ? { openrouter: { baseURL: openrouterBase, apiKey: openrouterToken } }
+      : {}),
+    ...(cerebrasToken && cerebrasBase
+      ? { cerebras: { baseURL: cerebrasBase, apiKey: cerebrasToken } }
       : {}),
   };
 }

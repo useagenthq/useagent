@@ -45,6 +45,7 @@ const UPSTREAM_ORIGINS: Record<ProviderId, string> = {
   anthropic: "https://api.anthropic.com",
   openai: "https://api.openai.com",
   openrouter: "https://openrouter.ai/api",
+  cerebras: "https://api.cerebras.ai",
 };
 
 export function providerUpstreamOrigin(
@@ -121,6 +122,13 @@ function normalizeOpenAIModelForUpstream(run: GatewayRun, body: string): string 
   if (parsed.model === run.model) {
     parsed.model = run.model.slice("openai/".length);
   }
+  return JSON.stringify(parsed);
+}
+
+function normalizeCerebrasModelForUpstream(run: GatewayRun, body: string): string {
+  if (run.engine !== "opencode" || !run.model.startsWith("cerebras/") || !body) return body;
+  const parsed = JSON.parse(body) as Record<string, unknown>;
+  if (parsed.model === run.model) parsed.model = run.model.slice("cerebras/".length);
   return JSON.stringify(parsed);
 }
 
@@ -274,6 +282,8 @@ export function createProviderGatewayRoutes(deps: ProviderRouteDeps = {}): Hono 
       upstreamBody = applyOpenRouterProviderRouting(run.model, upstreamBody);
     } else if (target.provider === "openai") {
       upstreamBody = normalizeOpenAIModelForUpstream(run, upstreamBody);
+    } else if (target.provider === "cerebras") {
+      upstreamBody = normalizeCerebrasModelForUpstream(run, upstreamBody);
     }
 
     const resolved = await resolveCredential({
@@ -399,6 +409,10 @@ export function createProviderGatewayRoutes(deps: ProviderRouteDeps = {}): Hono 
   routes.post(
     "/openrouter/v1/chat/completions",
     proxy({ provider: "openrouter", upstreamPath: "/v1/chat/completions", outputLimitField: "max_tokens" }),
+  );
+  routes.post(
+    "/cerebras/v1/chat/completions",
+    proxy({ provider: "cerebras", upstreamPath: "/v1/chat/completions", outputLimitField: "max_tokens" }),
   );
   return routes;
 }

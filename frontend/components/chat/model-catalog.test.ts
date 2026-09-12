@@ -6,6 +6,7 @@ import {
   resolveEnabledEngine,
 } from "@/components/chat/engine-picker";
 import {
+  CEREBRAS_MODELS,
   CHAT_MODELS,
   CODEX_MODELS,
   FREE_MODELS,
@@ -52,7 +53,11 @@ describe("engine model catalog", () => {
   });
 
   test("OpenCode picker keeps provider-qualified model ids", () => {
-    expect(selectableModelsForEngine("opencode")).toEqual([...MODELS, ...FREE_MODELS]);
+    expect(selectableModelsForEngine("opencode")).toEqual([
+      ...MODELS,
+      ...CEREBRAS_MODELS,
+      ...FREE_MODELS,
+    ]);
     expect(selectableModelsForEngine("opencode")[0]?.value).toBe("openai/gpt-5.6-luna");
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
       "openai/gpt-5.6-luna",
@@ -71,6 +76,12 @@ describe("engine model catalog", () => {
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
       "google/gemini-3.7-flash",
     );
+    expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
+      "cerebras/gemma-4-31b",
+    );
+    expect(modelLabel("cerebras/gemma-4-31b", "opencode")).toBe(
+      "Gemma 4 31B · Cerebras",
+    );
   });
 
   test("Free lane is OpenCode-only and grouped after the paid catalog", () => {
@@ -82,7 +93,9 @@ describe("engine model catalog", () => {
     const opencode = selectableModelsForEngine("opencode").map((m) => m.value);
     expect(opencode).not.toContain("nvidia/nemotron-3-ultra-550b-a55b:free");
     // Appended after the paid catalog so the default (first entry) stays paid.
-    expect(opencode.slice(MODELS.length)).toEqual(FREE_MODELS.map((m) => m.value));
+    expect(opencode.slice(MODELS.length + CEREBRAS_MODELS.length)).toEqual(
+      FREE_MODELS.map((m) => m.value),
+    );
     for (const engine of ["pi", "codex", "chat"] as const) {
       expect(selectableModelsForEngine(engine).some((m) => isFreeModel(m.value))).toBe(false);
     }

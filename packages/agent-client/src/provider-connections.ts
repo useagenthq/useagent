@@ -1,6 +1,11 @@
 /** Browser-safe provider-connection API and realtime wire contract. */
 
-export const MODEL_PROVIDER_CONNECTION_PROVIDERS = ["openai", "anthropic", "openrouter"] as const;
+export const MODEL_PROVIDER_CONNECTION_PROVIDERS = [
+  "openai",
+  "anthropic",
+  "openrouter",
+  "cerebras",
+] as const;
 /** Computer providers: where an org's sandboxes run when it brings its own key. */
 export const COMPUTER_PROVIDER_CONNECTION_PROVIDERS = ["daytona", "box"] as const;
 export type ComputerProviderConnectionProvider = (typeof COMPUTER_PROVIDER_CONNECTION_PROVIDERS)[number];

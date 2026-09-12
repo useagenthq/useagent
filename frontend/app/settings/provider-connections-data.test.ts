@@ -44,6 +44,7 @@ describe("provider connection presentation", () => {
         apiKey: { ...base, id: "pc_2", provider: "openrouter", authMethod: "api_key" },
         chatGptOAuth: null,
       },
+      { provider: "cerebras", apiKey: null, chatGptOAuth: null },
     ]);
   });
 

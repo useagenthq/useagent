@@ -15,7 +15,7 @@ function renderProviderConnectionsCard(): string {
 test("renders the provider connection summary and loading state before client effects", () => {
   const html = renderProviderConnectionsCard();
 
-  expect(html).toContain("0 of 3 providers connected");
+  expect(html).toContain("0 of 4 providers connected");
   expect(html).toContain("Loading provider connections...");
   expect(html).toContain(">Refresh<");
   expect(html).not.toContain("Updates refresh from the org event stream");
@@ -96,6 +96,6 @@ test("a provider served by the deployment's own key says so instead of Not conne
 
 test("keeps Daytona out of the model-provider count", () => {
   const html = renderProviderConnectionsCard();
-  expect(html).toContain("0 of 3 providers connected");
-  expect(html).not.toContain("0 of 4 providers connected");
+  expect(html).toContain("0 of 4 providers connected");
+  expect(html).not.toContain("0 of 5 providers connected");
 });

@@ -146,6 +146,12 @@ export const PROVIDER_LABELS: Record<
     keyHint: "OpenRouter API key",
     keyPlaceholder: "sk-or-v1-...",
   },
+  cerebras: {
+    name: "Cerebras",
+    scope: "Cerebras inference models in OpenCode",
+    keyHint: "Cerebras API key",
+    keyPlaceholder: "csk-...",
+  },
   daytona: {
     name: "Daytona",
     scope: "Personal cloud sandbox runtime",

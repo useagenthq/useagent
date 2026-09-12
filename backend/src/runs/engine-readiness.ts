@@ -85,7 +85,9 @@ function unavailableMessage(readiness: EngineReadiness): string {
     ? "Anthropic"
     : readiness.provider === "openai"
       ? "OpenAI"
-      : "OpenRouter";
+      : readiness.provider === "cerebras"
+        ? "Cerebras"
+        : "OpenRouter";
   if (readiness.reason === "provider_unhealthy" && readiness.provider) {
     if (readiness.providerHealth === "insufficient_credit") {
       return `${label} is configured, but ${provider} reports insufficient credits. Add credits or update the provider key in Settings, then retry.`;
@@ -178,6 +180,8 @@ export function modelProviderReadinessErrorBody(
       ? "OpenAI"
       : provider === "openrouter"
         ? "OpenRouter"
+        : provider === "cerebras"
+          ? "Cerebras"
         : "The selected model provider";
   const action = health === "insufficient_credit"
     ? "Add credits or update the provider key in Settings, then retry."
