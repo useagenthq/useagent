@@ -329,6 +329,36 @@ describe("native bridge turn settlement", () => {
     expect(transcriptPersisted).toBe(true);
   });
 
+  test("handles terminal failure that arrives before steer returns", async () => {
+    let listener: ((frame: unknown) => void) | undefined;
+    await expect(runNativeBridgeTurn({
+      ctx: {
+        runId: "run",
+        threadId: "thread",
+        signal: new AbortController().signal,
+      } as never,
+      driver: {
+        steer: async () => {
+          listener?.({ bodies: [{ kind: "turn.failed", error: "early provider failure" }] });
+          await Bun.sleep(5);
+          return { status: "ok" };
+        },
+        cancel: async () => ({ status: "ok" }),
+      } as never,
+      session: { nativeSessionId: "parent" } as never,
+      bridge: {
+        sessionFile: "/sessions/pi.jsonl",
+        subscribe: (next) => {
+          listener = next;
+          return () => {};
+        },
+      },
+      prompt: "fail before steer returns",
+      mapFrame: mappedBodies,
+      redact: { text: (value) => value, unknown: (value) => value },
+    }, async () => {})).rejects.toThrow("early provider failure");
+  });
+
   test("required transcript persistence failure cannot be marked complete", async () => {
     const captured: ProviderEventInput[] = [];
     let listener: ((frame: unknown) => void) | undefined;

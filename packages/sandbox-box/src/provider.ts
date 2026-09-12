@@ -242,11 +242,22 @@ export function boxPtyReadyGate(
   const { promise, resolve, reject } = Promise.withResolvers<void>();
   let pending = Buffer.alloc(0);
   let settled = false;
+  const deliver = (data: Uint8Array): void => {
+    try {
+      void Promise.resolve(onData(data)).catch(() => {
+        console.warn("[box-pty] data callback failed");
+      });
+    } catch {
+      // A consumer failure must not escape the terminal callback and crash the
+      // process that owns every other sandbox session.
+      console.warn("[box-pty] data callback failed");
+    }
+  };
   return {
     ready: promise,
     push(data) {
       if (settled) {
-        void Promise.resolve(onData(data)).catch(() => {});
+        deliver(data);
         return;
       }
       pending = Buffer.concat([pending, Buffer.from(data)]);
@@ -257,7 +268,7 @@ export function boxPtyReadyGate(
       while (visible[0] === 10 || visible[0] === 13) visible = visible.subarray(1);
       pending = Buffer.alloc(0);
       resolve();
-      if (visible.length > 0) void Promise.resolve(onData(visible)).catch(() => {});
+      if (visible.length > 0) deliver(visible);
     },
     fail(error) {
       if (settled) return;

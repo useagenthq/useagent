@@ -572,6 +572,16 @@ describe("Box sandbox provider", () => {
     expect(visible).toEqual(["user@box:~$ ", "pwd\r\n"]);
   });
 
+  test("PTY data callback failures never escape the terminal callback", async () => {
+    const gate = boxPtyReadyGate("READY", () => {
+      throw new Error("consumer failed");
+    });
+    expect(() => gate.push(Buffer.from("READY\r\nfirst"))).not.toThrow();
+    await gate.ready;
+    expect(() => gate.push(Buffer.from("second"))).not.toThrow();
+    await Bun.sleep(0);
+  });
+
   test("a box that never becomes ready is deleted with its label row, and the error surfaces", async () => {
     const api = fakeBoxApi([], { createState: "failing" });
     const { provider: box, labels } = provider(api);
