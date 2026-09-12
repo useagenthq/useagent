@@ -23,8 +23,7 @@ import {
   type ManagedCodexAppServerClient,
 } from "../src/provider-connections/codex-app-server";
 import { createProviderConnectionsRoutes, type CodexChatGptOAuthLifecycle } from "../src/provider-connections/routes";
-import { DaytonaConnectionValidationError } from "../src/provider-connections/daytona";
-import { BoxConnectionValidationError } from "../src/provider-connections/box";
+import { SandboxCredentialError } from "@useagent/sandbox-contract";
 import {
   getCurrentUserProviderConnection,
   getCodexSubscriptionRuntimeSelection,
@@ -141,7 +140,7 @@ describe("provider connections", () => {
     const app = new Hono<AppEnv>().route(
       "/api/provider-connections",
       createProviderConnectionsRoutes({
-        validateDaytona: async (input) => {
+        validateCredential: async (_kind, input) => {
           validations.push(input);
         },
       }),
@@ -206,8 +205,8 @@ describe("provider connections", () => {
     const app = new Hono<AppEnv>().route(
       "/api/provider-connections",
       createProviderConnectionsRoutes({
-        validateDaytona: async () => {
-          throw new DaytonaConnectionValidationError("snapshot_not_found");
+        validateCredential: async () => {
+          throw new SandboxCredentialError("snapshot_not_found", 404);
         },
       }),
     );
@@ -1309,7 +1308,7 @@ describe("provider connections", () => {
     const app = new Hono<AppEnv>().route(
       "/api/provider-connections",
       createProviderConnectionsRoutes({
-        validateBox: async (input) => {
+        validateCredential: async (_kind, input) => {
           validations.push(input);
         },
       }),
@@ -1350,8 +1349,8 @@ describe("provider connections", () => {
     const app = new Hono<AppEnv>().route(
       "/api/provider-connections",
       createProviderConnectionsRoutes({
-        validateBox: async () => {
-          throw new BoxConnectionValidationError("authentication_failed");
+        validateCredential: async () => {
+          throw new SandboxCredentialError("authentication_failed", 401);
         },
       }),
     );

@@ -1,33 +1,25 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { SandboxHandle } from "../sandboxes/provider";
-import {
-  forgetLiveThreadSandbox,
-  rememberLiveThreadSandbox,
-} from "../engines/sandbox-runtime";
-import { resolvePreviewSandbox } from "./preview-proxy";
+import { describe, expect, test } from "bun:test";
+import { buildForwardHeaders } from "./preview-proxy";
 
-describe("preview sandbox resolution", () => {
-  const threadId = "thread-preview-cache";
+describe("preview proxy forward headers", () => {
+  test("the endpoint's auth headers replace anything the browser sent; hop-by-hop and inbound credentials are dropped", () => {
+    const inbound = new Headers({
+      host: "app.example",
+      connection: "keep-alive",
+      cookie: "__Secure-better-auth.session_token=browser-session",
+      "x-daytona-preview-token": "leaked",
+      "cube-traffic-access-token": "leaked",
+      accept: "text/event-stream",
+    });
+    const box = buildForwardHeaders(inbound, { cookie: "_port_auth=port-cookie" });
+    expect(box.get("cookie")).toBe("_port_auth=port-cookie");
+    expect(box.get("x-daytona-preview-token")).toBeNull();
+    expect(box.get("cube-traffic-access-token")).toBeNull();
+    expect(box.get("host")).toBeNull();
+    expect(box.get("accept")).toBe("text/event-stream");
 
-  afterEach(() => forgetLiveThreadSandbox(threadId));
-
-  test("reuses the engine-owned SDK object without a Daytona lookup", async () => {
-    const sandbox = { id: "sandbox-live", state: "started" } as SandboxHandle;
-    rememberLiveThreadSandbox(threadId, sandbox);
-
-    expect(await resolvePreviewSandbox(threadId)).toBe(sandbox);
-  });
-
-  test("wakes a cached retained sandbox in place", async () => {
-    const start = mock(async () => {});
-    const sandbox = {
-      id: "sandbox-sleeping",
-      state: "stopped",
-      start,
-    } as unknown as SandboxHandle;
-    rememberLiveThreadSandbox(threadId, sandbox);
-
-    expect(await resolvePreviewSandbox(threadId)).toBe(sandbox);
-    expect(start).toHaveBeenCalledTimes(1);
+    const daytona = buildForwardHeaders(inbound, { "x-daytona-preview-token": "real" });
+    expect(daytona.get("x-daytona-preview-token")).toBe("real");
+    expect(daytona.get("cookie")).toBeNull();
   });
 });

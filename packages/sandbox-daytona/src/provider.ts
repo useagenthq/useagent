@@ -1,7 +1,5 @@
-import { previewAuthHeaders } from "./preview-auth";
 import { Daytona } from "@daytona/sdk";
 import type {
-  DaytonaApiConfig,
   SandboxComputerUse,
   SandboxCreateOptions,
   SandboxFileSystem,
@@ -11,7 +9,18 @@ import type {
   SandboxProvider,
   SandboxPtyHandle,
   SandboxRecording,
-} from "./provider";
+} from "@useagent/sandbox-contract";
+
+export interface DaytonaApiConfig {
+  apiKey: string;
+  apiUrl: string;
+  target: string;
+}
+
+/** Daytona preview links authenticate with the token in its own header. */
+export function daytonaPreviewAuthHeaders(token: string): Record<string, string> {
+  return token ? { "x-daytona-preview-token": token } : {};
+}
 
 export interface DaytonaSandboxPort {
   readonly id: string;
@@ -219,7 +228,7 @@ export class DaytonaSandboxHandle implements SandboxHandle {
     return {
       url: link.url,
       token: link.token,
-      headers: previewAuthHeaders(link.token ?? "", "daytona"),
+      headers: daytonaPreviewAuthHeaders(link.token ?? ""),
     };
   }
 }

@@ -137,7 +137,7 @@ first terminal writer wins (`backend/src/runs/repo.ts:L638-L665`).
 
 ## 6. Sandboxes, fleet, and recovery
 
-`SandboxProvider` is provider-neutral, with Cube and Daytona implementations
+`SandboxProvider` is provider-neutral, with Daytona, Cube and Box implementations shipped as plugin packages (`packages/sandbox-*`) behind the registry in `backend/src/sandboxes/plugins.ts`
 (`packages/sandbox-contract/src/index.ts:L14-L20`, `packages/sandbox-contract/src/index.ts:L174-L185`).
 The code default is Daytona when `SANDBOX_PROVIDER` is unset
 (`backend/src/sandboxes/provider.ts:L24-L28`); the checked-in Hetzner production configuration

@@ -1,4 +1,5 @@
 import type { SandboxProviderKind } from "@useagent/sandbox-contract";
+import { sandboxPlugin } from "../sandboxes/plugins";
 import { type SandboxHandle, sandboxProviderKind } from "../sandboxes/provider";
 import type { RunInputFile } from "../engines/types";
 import { artifactStorage } from "../artifacts/storage";
@@ -6,11 +7,11 @@ import { resolveSandboxBindingForRun } from "../sandboxes/binding";
 import { listRunUploads } from "./repo";
 
 const INPUT_ROOT = "/root/work/.skynet-inputs";
-/** Box sandboxes run as `user`; /root is not writable there. */
-const BOX_INPUT_ROOT = "/home/user/work/.skynet-inputs";
 
+/** Root-run sandboxes keep inputs under /root; others under the runtime user's home. */
 export function sandboxInputRoot(kind: SandboxProviderKind | undefined): string {
-  return kind === "box" ? BOX_INPUT_ROOT : INPUT_ROOT;
+  const plugin = sandboxPlugin(kind ?? sandboxProviderKind());
+  return plugin.runsAsRoot ? INPUT_ROOT : `${plugin.home}/work/.skynet-inputs`;
 }
 
 function safeName(name: string): string {

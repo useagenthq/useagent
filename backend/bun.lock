@@ -15,7 +15,10 @@
         "@useagent/agent-harness": "file:../packages/agent-harness",
         "@useagent/artifact-formats": "file:../packages/artifact-formats",
         "@useagent/artifact-workspace": "file:../packages/artifact-workspace",
+        "@useagent/sandbox-box": "file:../packages/sandbox-box",
         "@useagent/sandbox-contract": "file:../packages/sandbox-contract",
+        "@useagent/sandbox-cube": "file:../packages/sandbox-cube",
+        "@useagent/sandbox-daytona": "file:../packages/sandbox-daytona",
         "better-auth": "^1.6.25",
         "drizzle-orm": "^0.45.2",
         "e2b": "2.38.3",
@@ -448,7 +451,13 @@
 
     "@useagent/artifact-workspace": ["@useagent/artifact-workspace@file:../packages/artifact-workspace", { "devDependencies": { "@types/bun": "^1.3.14" } }],
 
+    "@useagent/sandbox-box": ["@useagent/sandbox-box@file:../packages/sandbox-box", { "dependencies": { "@useagent/sandbox-contract": "file:../sandbox-contract" }, "devDependencies": { "@types/bun": "^1.3.14" } }],
+
     "@useagent/sandbox-contract": ["@useagent/sandbox-contract@file:../packages/sandbox-contract", { "devDependencies": { "@types/bun": "^1.3.14" } }],
+
+    "@useagent/sandbox-cube": ["@useagent/sandbox-cube@file:../packages/sandbox-cube", { "dependencies": { "@useagent/sandbox-contract": "file:../sandbox-contract", "e2b": "2.38.3" }, "devDependencies": { "@types/bun": "^1.3.14" } }],
+
+    "@useagent/sandbox-daytona": ["@useagent/sandbox-daytona@file:../packages/sandbox-daytona", { "dependencies": { "@daytona/sdk": "^0.203.0", "@useagent/sandbox-contract": "file:../sandbox-contract" }, "devDependencies": { "@types/bun": "^1.3.14" } }],
 
     "@xmldom/xmldom": ["@xmldom/xmldom@0.8.14", "", {}, "sha512-T4EDRUBVZYRldYApjEJiU0e1stYWaRAX7CuSnKzrpwdZKo53zGV8/pqfzV6FfwNl9YThD2OumQYvqtvjvgG7aQ=="],
 
@@ -1195,6 +1204,12 @@
     "@useagent/agent-client/@useagent/artifact-workspace": ["@useagent/artifact-workspace@file:../packages/artifact-workspace", { "devDependencies": { "@types/bun": "^1.3.14" } }],
 
     "@useagent/artifact-formats/@useagent/artifact-workspace": ["@useagent/artifact-workspace@file:../packages/artifact-workspace", { "devDependencies": { "@types/bun": "^1.3.14" } }],
+
+    "@useagent/sandbox-box/@useagent/sandbox-contract": ["@useagent/sandbox-contract@file:../packages/sandbox-contract", {}],
+
+    "@useagent/sandbox-cube/@useagent/sandbox-contract": ["@useagent/sandbox-contract@file:../packages/sandbox-contract", {}],
+
+    "@useagent/sandbox-daytona/@useagent/sandbox-contract": ["@useagent/sandbox-contract@file:../packages/sandbox-contract", {}],
 
     "accepts/mime-types": ["mime-types@3.0.2", "", { "dependencies": { "mime-db": "^1.54.0" } }, "sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A=="],
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { DaytonaProvider } from "./daytona-provider";
+import { DaytonaProvider } from "@useagent/sandbox-daytona";
 import {
   boxApiConfig,
   sandboxPreviewHeaders,
@@ -31,7 +31,7 @@ describe("sandbox provider selection", () => {
 
   test("rejects unknown providers instead of silently falling back", () => {
     expect(() => sandboxProviderKind({ SANDBOX_PROVIDER: "other" })).toThrow(
-      "SANDBOX_PROVIDER must be daytona, cube, or box",
+      "SANDBOX_PROVIDER must be daytona, cube, box",
     );
   });
 

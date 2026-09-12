@@ -4,6 +4,10 @@ import type { SandboxProvider } from "@useagent/sandbox-contract";
 import type { AppEnv } from "../src/http";
 import { createProviderConnectionsRoutes } from "../src/provider-connections/routes";
 import { setRunSandbox } from "../src/runs/repo";
+import { clearMissingRetainedSandboxMappings, listCurrentRetainedSandboxMappings } from "../src/fleet/lease-repo";
+import { db } from "../src/db/client";
+import { runs } from "../src/db/schema";
+import { eq } from "drizzle-orm";
 import {
   bindingSnapshot,
   resolveSandboxBindingForRun,
@@ -45,7 +49,7 @@ describe("sandbox binding", () => {
     const userId = await userIdForCookies(cookies);
     const app = new Hono<AppEnv>().route(
       "/api/provider-connections",
-      createProviderConnectionsRoutes({ validateBox: async () => {}, validateDaytona: async () => {} }),
+      createProviderConnectionsRoutes({ validateCredential: async () => {} }),
     );
     const put = (provider: string, body: Record<string, unknown>) =>
       app.request(`/api/provider-connections/${provider}/api-key`, {
@@ -100,5 +104,22 @@ describe("sandbox binding", () => {
     const legacyRun = await json<{ id: string }>("/api/runs", { method: "POST", cookies, body: { prompt: "Legacy.", engine: "mock" } });
     await setRunSandbox(legacyRun.body.id, "legacy_1");
     expect((await resolveSandboxBindingForSandbox("legacy_1", deps)).credential).toBe("env");
+  });
+
+  test("reconciling the deployment provider's listing leaves personal-computer mappings alone", async () => {
+    const { cookies } = await createOrgSession("binding-reconcile");
+    const serverRun = await json<{ id: string }>("/api/runs", { method: "POST", cookies, body: { prompt: "Server.", engine: "mock" } });
+    const userRun = await json<{ id: string }>("/api/runs", { method: "POST", cookies, body: { prompt: "Personal.", engine: "mock" } });
+    await setRunSandbox(serverRun.body.id, "srv_gone", { kind: "daytona", credential: "env" });
+    await setRunSandbox(userRun.body.id, "bx_personal", { kind: "box", credential: "user" });
+
+    // The deployment provider's authoritative listing returned neither id (everything else stays live).
+    const others = (await listCurrentRetainedSandboxMappings()).map((m) => m.sandboxId).filter((id) => id !== "srv_gone" && id !== "bx_personal");
+    await clearMissingRetainedSandboxMappings(new Set(others));
+
+    const [server] = await db.select({ sandboxId: runs.sandboxId }).from(runs).where(eq(runs.id, serverRun.body.id));
+    const [personal] = await db.select({ sandboxId: runs.sandboxId }).from(runs).where(eq(runs.id, userRun.body.id));
+    expect(server?.sandboxId).toBeNull();
+    expect(personal?.sandboxId).toBe("bx_personal");
   });
 });

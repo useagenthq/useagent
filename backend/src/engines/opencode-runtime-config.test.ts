@@ -8,7 +8,7 @@ import {
 const server: OpenCodeRuntimeServer = {
   baseUrl: "https://sandbox.example.test",
   token: "preview-token",
-  headers: {},
+  headers: { cookie: "_port_auth=preview-cookie" },
   workdir: "/root/work",
 };
 
@@ -49,9 +49,11 @@ function json(value: unknown, status = 200): Response {
 describe("OpenCode resident runtime config", () => {
   test("activates exact managed capabilities without restarting the process", async () => {
     const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const authCookies: Array<string | null> = [];
     const fetcher = async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
+      authCookies.push(new Headers(init?.headers).get("cookie"));
       calls.push({
         url,
         method,
@@ -79,6 +81,9 @@ describe("OpenCode resident runtime config", () => {
       timeoutMs: 100,
     });
 
+    // every request to the resident server carries the link's auth headers (Box: the port-auth cookie)
+    expect(authCookies.length).toBeGreaterThan(0);
+    expect(authCookies.every((cookie) => cookie === "_port_auth=preview-cookie")).toBe(true);
     expect(calls[0]).toEqual({
       url: "https://sandbox.example.test/global/config",
       method: "PATCH",

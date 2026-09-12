@@ -93,32 +93,49 @@ T3 route. `daytona` and `claude-sdk` remain aliases for older rows.
 - Desktop and knowledge tools are runtime resources, not pure protocol negotiation. They are only true when the session actually has them.
 - The T3 orchestration path exposes the fullest capability set, including approvals and authoritative history.
 
-## Sandbox Provider Matrix
+## Sandbox Provider Plugins
 
-`src/sandboxes/provider.ts` defines the provider-neutral contract and selects
-the provider with `SANDBOX_PROVIDER`. The matrix describes implemented source
-capabilities, not current hosted proof. Daytona invokes a small shared
-create/get/list conformance fixture, then adds Daytona-specific tests. Cube has
-its own provider-specific suite and does not invoke that fixture, so the two
-adapters do not yet share one complete conformance helper.
+Every sandbox vendor is a plugin package. `packages/sandbox-contract` holds the
+provider-neutral contract (`SandboxProvider`, `SandboxHandle`, the
+`SandboxProviderPlugin` shape and the shared create/get/list conformance
+helper); `packages/sandbox-daytona`, `packages/sandbox-cube` and
+`packages/sandbox-box` each export one plugin that owns its API client, env
+config, credential validation, preview auth headers and runtime layout (home
+directory, root or not). `src/sandboxes/plugins.ts` is the registry and
+`src/sandboxes/provider.ts` the env-coupled selector (`SANDBOX_PROVIDER`);
+nothing else in the backend switches on a vendor name.
 
-| Capability | Daytona | Cube | Notes |
-|---|---|---|---|
-| Commands | Yes | Yes | Both providers expose the command lane. |
-| Persistent command sessions | Yes | Yes | Session IDs are preserved at the provider boundary. |
-| PTY | Yes | Yes | The frontend terminal uses this path. |
-| File upload and download | Yes | Yes | Used for repo materialization and artifacts. |
-| Preview links | Yes | Yes | Browser access is proxied through provider-issued credentials. |
-| Native computer use API | Yes | No | Cube intentionally omits this surface. |
-| Desktop workstation | Yes | Yes | Cube drives the workstation through the trusted gateway instead of a native computer-use API. |
-| Recording | Yes | Yes | Daytona uses native recording. Cube uses the X11 and FFmpeg path. |
-| Resume after timeout | Yes | Yes | Cube pauses and resumes through its provider lifecycle; Daytona resumes through its own provider lifecycle. |
-| Pause, checkpoint, snapshot primitives in the shared interface | No | No | This is still a bounded roadmap item. |
+Adding a vendor: create `packages/sandbox-<vendor>` from the Box package,
+export its plugin, add one line to the registry, add the package to the root
+`typecheck` script, the CI `package-test` matrix and `Dockerfile.backend`.
+Run its conformance test plus a live smoke against a real account before
+sign-off; the in-memory fakes hide vendor quirks.
 
-The library default is Daytona unless `SANDBOX_PROVIDER=cube` is set. The
-current Hetzner bootstrap configures Cube explicitly. Hosted Daytona
-credentials, preview-header behavior, confirmed deletion, and latency remain
-unproven for the current tree.
+The matrix describes implemented source capabilities, not current hosted
+proof.
+
+| Capability | Daytona | Cube | Box | Notes |
+|---|---|---|---|---|
+| Commands | Yes | Yes | Yes | Box runs sync commands under a 600 s cap and longer ones detached with an exit marker. |
+| Persistent command sessions | Yes | Yes | Yes | Box sessions are pid-file process groups under `/home/user/.useagent`. |
+| PTY | Yes | Yes | No | The frontend terminal uses this path; Box has no PTY API yet. |
+| File upload and download | Yes | Yes | Yes | Used for repo materialization and artifacts. |
+| Preview links | Yes | Yes | Yes | Auth headers come from the plugin: token headers for Daytona and Cube, a port-auth cookie for Box. |
+| Native computer use API | Yes | No | No | |
+| Desktop workstation | Yes | Yes | No | Cube drives the workstation through the trusted gateway. |
+| Recording | Yes | Yes | No | Daytona uses native recording. Cube uses the X11 and FFmpeg path. |
+| Resume after timeout | Yes | Yes | Yes | Box archives on its absolute TTL and resumes on the next start. |
+| Runs as root | Yes | Yes | No | Box runs as `user`; the T3 runtime lane needs root, so engines use the CLI lane there. |
+| Labels | Native | Native | Control plane | Box labels live in `sandbox_labels`; the box cannot rewrite them. |
+| Pause, checkpoint, snapshot primitives in the shared interface | No | No | No | This is still a bounded roadmap item. |
+
+The library default is Daytona unless `SANDBOX_PROVIDER=cube` or `box` is
+set. The current Hetzner bootstrap configures Cube explicitly. Box is verified
+live (create, commands, files, previews, sessions, archive/resume, delete);
+hosted Daytona credentials, preview-header behavior, confirmed deletion, and
+latency remain unproven for the current tree. With `USER_COMPUTERS=on`, a
+user's stored Daytona or Box key (Settings) runs that user's threads instead
+of the deployment's provider.
 
 ## Skills, Knowledge, Memory, Playbooks, Automations
 

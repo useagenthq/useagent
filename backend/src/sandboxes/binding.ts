@@ -4,12 +4,9 @@ import { db } from "../db/client";
 import { runs } from "../db/schema";
 import { listProviderConnections } from "../provider-connections/repo";
 import { getTrustedProviderCredential } from "../provider-connections/service";
-import { boxSandboxProvider } from "./box-provider";
-import { daytonaSandboxProvider } from "./daytona-provider";
 import {
-  boxApiConfig,
-  daytonaApiConfig,
   sandboxProvider,
+  sandboxProviderFor,
   sandboxProviderApiKey,
   sandboxProviderKind,
   sandboxTemplate,
@@ -40,10 +37,8 @@ export interface SandboxBindingDeps {
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly connections?: typeof listProviderConnections;
   readonly credential?: typeof getTrustedProviderCredential;
-  readonly providers?: {
-    readonly daytona?: (apiKey: string) => SandboxProvider;
-    readonly box?: (apiKey: string) => SandboxProvider;
-  };
+  /** Test seam: provider factories per kind (default: the plugin registry). */
+  readonly providers?: Partial<Record<SandboxProviderKind, (apiKey: string) => SandboxProvider>>;
   readonly envProvider?: () => SandboxBinding | null;
 }
 
@@ -84,9 +79,8 @@ async function userSandboxBinding(
   if (!row || !isComputerKind(row.provider)) return null;
   const opened = await credential({ ...scope, provider: row.provider, authMethod: "api_key" });
   if (!opened || opened.authMethod !== "api_key" || typeof opened.value !== "string") return null;
-  const build = row.provider === "box"
-    ? (deps.providers?.box ?? ((key: string) => boxSandboxProvider(boxApiConfig(key, deps.env))))
-    : (deps.providers?.daytona ?? ((key: string) => daytonaSandboxProvider(daytonaApiConfig(key))));
+  const kind = row.provider;
+  const build = deps.providers?.[kind] ?? ((key: string) => sandboxProviderFor(kind, key, deps.env));
   return {
     kind: row.provider,
     provider: build(opened.value),

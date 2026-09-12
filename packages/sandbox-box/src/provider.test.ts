@@ -7,9 +7,9 @@ import {
   boxSandboxState,
   boxTtlSeconds,
   composeBoxCommand,
-} from "./box-provider";
-import { sandboxProviderConformance } from "./provider-conformance.test-support";
-import { memorySandboxLabelStore } from "./sandbox-labels";
+} from "./provider";
+import { sandboxProviderConformance } from "@useagent/sandbox-contract/conformance";
+import { memorySandboxLabelStore } from "@useagent/sandbox-contract";
 
 const config: BoxApiConfig = {
   apiKey: "box_test_key",
@@ -26,7 +26,7 @@ interface FakeBox {
 }
 
 /** An in-memory Box API: boxes, files, canned command results, hosted ports, cursor pages. */
-function fakeBoxApi(initial: FakeBox[] = [], options: { pageSize?: number; archivingPolls?: number } = {}) {
+function fakeBoxApi(initial: FakeBox[] = [], options: { pageSize?: number; archivingPolls?: number; createState?: string } = {}) {
   const boxes = new Map(initial.map((box) => [box.id, { ...box }]));
   const files = new Map<string, Buffer>();
   const requests: { method: string; path: string; body: unknown; headers: Record<string, string> }[] = [];
@@ -56,7 +56,7 @@ function fakeBoxApi(initial: FakeBox[] = [], options: { pageSize?: number; archi
     if (method === "POST" && path === "/boxes") {
       created += 1;
       const id = `bx_${created}`;
-      boxes.set(id, { id, state: created === 1 ? "provisioning" : "ready", vcpu: 4, memoryGB: 8, subdomain: `slug-${created}` });
+      boxes.set(id, { id, state: options.createState ?? (created === 1 ? "provisioning" : "ready"), vcpu: 4, memoryGB: 8, subdomain: `slug-${created}` });
       return json(200, { ok: true, type: "box.created", box: boxes.get(id) });
     }
     if (method === "GET" && path === "/boxes") {
@@ -74,6 +74,7 @@ function fakeBoxApi(initial: FakeBox[] = [], options: { pageSize?: number; archi
     const sub = match[2] ?? "";
     if (method === "GET" && sub === "") {
       if (box.state === "provisioning") box.state = "ready";
+      if (box.state === "failing") box.state = "error";
       if (box.state === "archiving" && archivingPolls-- <= 0) box.state = "archived";
       return json(200, { ok: true, type: "box", box });
     }
@@ -253,6 +254,17 @@ describe("Box sandbox provider", () => {
     expect(kill).toContain(`kill -TERM -- "-$p"`);
     expect(kill).toContain("rm -rf '/home/user/.useagent/sessions/sess-1'");
     await expect(sandbox.process.createPty({ id: "t", cols: 80, rows: 24, onData: () => {} })).rejects.toThrow(/interactive terminals/);
+  });
+
+  test("a box that never becomes ready is deleted with its label row, and the error surfaces", async () => {
+    const api = fakeBoxApi([], { createState: "failing" });
+    const { provider: box, labels } = provider(api);
+    await expect(box.create({ labels: { "skynet-run": "r1" } })).rejects.toMatchObject({ code: "box_error" });
+    const del = api.requests.find((r) => r.method === "DELETE")!;
+    expect(del.path).toBe("/boxes/bx_1");
+    expect(del.headers["X-Ascii-Confirm-Delete"]).toBe("bx_1");
+    expect(api.boxes.has("bx_1")).toBe(false);
+    expect((await labels.read(["bx_1"])).size).toBe(0);
   });
 
   test("API failures surface the Box error code instead of a bare HTTP status", async () => {

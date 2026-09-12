@@ -8,9 +8,11 @@ import type {
   SandboxProcess,
   SandboxProvider,
   SandboxPtyHandle,
+  SandboxLabelStore,
+  SandboxProviderPorts,
   SandboxSession,
 } from "@useagent/sandbox-contract";
-import { dbSandboxLabelStore, type SandboxLabelStore } from "./sandbox-labels";
+import { memorySandboxLabelStore } from "@useagent/sandbox-contract";
 
 /**
  * Box (box.ascii.dev) behind the sandbox provider contract, over its public
@@ -44,11 +46,7 @@ export interface BoxApiConfig {
 
 export type BoxFetch = (input: string, init: RequestInit) => Promise<Response>;
 
-export interface BoxProviderOptions {
-  readonly fetchImpl?: BoxFetch;
-  readonly labels?: SandboxLabelStore;
-  readonly sleep?: (ms: number) => Promise<void>;
-}
+export type BoxProviderOptions = Pick<SandboxProviderPorts, "fetchImpl" | "labels" | "sleep">;
 
 export class BoxApiError extends Error {
   constructor(
@@ -451,7 +449,9 @@ class BoxProvider implements SandboxProvider {
     options: BoxProviderOptions,
   ) {
     this.api = new BoxApi(config, options.fetchImpl ?? ((input, init) => fetch(input, init)), options.sleep ?? defaultSleep);
-    this.labels = options.labels ?? dbSandboxLabelStore("box");
+    // Labels are the trust anchor; the control plane passes its durable store. Without one (tests,
+    // dry runs) they live in this process only.
+    this.labels = options.labels ?? memorySandboxLabelStore();
   }
 
   async create(options: SandboxCreateOptions = {}): Promise<SandboxHandle> {
@@ -471,7 +471,17 @@ class BoxProvider implements SandboxProvider {
     const labels = options.labels ?? {};
     // Labels are the trust anchor: recorded before anything can run in the box.
     await this.labels.write(created.box.id, labels);
-    const ready = await this.api.waitUntilReady(created.box.id);
+    let ready: BoxRecord;
+    try {
+      ready = await this.api.waitUntilReady(created.box.id);
+    } catch (error) {
+      // Never leave a half-created box (or its label row) behind.
+      await this.api
+        .request("DELETE", `/boxes/${encodeURIComponent(created.box.id)}`, undefined, { "X-Ascii-Confirm-Delete": created.box.id })
+        .catch(() => {});
+      await this.labels.remove(created.box.id).catch(() => {});
+      throw error;
+    }
     return new BoxSandboxHandle(this.api, this.labels, ready, labels);
   }
 

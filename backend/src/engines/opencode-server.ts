@@ -78,7 +78,6 @@ import {
   markProviderGatewaySandboxCurrent,
   providerGatewaySandboxLabels,
   opencodeProviderGatewayOptions,
-  providerGatewaySandboxIsCurrent,
   providerGatewayWired,
 } from "../provider-gateway/sandbox-config";
 import { opencodeAssistantError } from "./opencode-message";
@@ -103,9 +102,9 @@ import {
 } from "./opencode-runtime-config";
 import {
   forgetLiveThreadSandbox,
-  getLiveThreadSandbox,
   rememberLiveThreadSandbox,
 } from "./sandbox-runtime";
+import { reviveRetainedSandbox } from "./thread-sandbox";
 import {
   assertSandboxResources,
   resolveSandboxResourceTarget,
@@ -114,7 +113,7 @@ import {
 import { claimCubeWarmSandbox } from "../sandboxes/cube-warm-pool";
 import { errorMessage } from "../util/error-message";
 import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
-import { bindingRecord, bindingSnapshot, resolveSandboxBindingForRun, resolveSandboxBindingForSandbox, resolveSandboxBindingForThread } from "../sandboxes/binding";
+import { bindingRecord, bindingSnapshot, resolveSandboxBindingForRun, resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -1058,6 +1057,8 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
     const startedAt = Date.now();
     const binding = await resolveSandboxBindingForRun(ctx);
     const provider = binding.provider;
+    // Recorded next to the sandbox id: the binding that actually produced the sandbox.
+    let effectiveBinding = binding;
     const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 600_000);
 
     // Gateway-only mode keeps org secrets out of the sandbox. Compatibility mode
@@ -1092,24 +1093,10 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         (ctx.threadId ? await getThreadSandbox(ctx.threadId) : null);
       if (rememberedId) {
         try {
-          const cachedSandbox = ctx.threadId ? getLiveThreadSandbox(ctx.threadId) : null;
-          const prior =
-            cachedSandbox?.id === rememberedId
-              ? cachedSandbox
-              : await provider.get(rememberedId);
-          const state = (prior as { state?: string }).state;
-          if (state === "stopped" || state === "paused" || state === "archived") {
-            await ctx.emit({ kind: "task", label: `Resuming thread sandbox ${prior.id.slice(0, 8)}…`, chip: "opencode" });
-            await prior.start();
-          } else if (state !== "started") {
-            throw new Error(`unusable state: ${state}`);
-          }
-          if (!(await providerGatewaySandboxIsCurrent(prior))) {
-            await prior.delete().catch(() => {});
-            throw new Error("legacy sandbox credential generation");
-          }
-          sandbox = prior;
+          const revived = await reviveRetainedSandbox(ctx, rememberedId, { chip: "opencode" });
+          sandbox = revived.sandbox;
           retainForThread = true;
+          effectiveBinding = revived.binding;
         } catch {
           if (ctx.threadId) {
             forgetOpenCodeThreadServer(ctx.threadId);
@@ -1195,7 +1182,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
           runId: ctx.runId,
           sandboxId: box.id,
           reused: retainForThread,
-          persist: (runId, sandboxId) => setRunSandbox(runId, sandboxId, bindingRecord(binding)),
+          persist: (runId, sandboxId) => setRunSandbox(runId, sandboxId, bindingRecord(effectiveBinding)),
           deleteFreshSandbox: () => box.delete(),
         });
       } catch (error) {

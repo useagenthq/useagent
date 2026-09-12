@@ -1,8 +1,5 @@
-import {
-  sandboxProvider,
-  sandboxProviderApiKey,
-  sandboxProviderKind,
-} from "../sandboxes/provider";
+import { sandboxProvider, sandboxProviderApiKey, sandboxProviderKind, sandboxTemplate } from "../sandboxes/provider";
+import { sandboxPlugin } from "../sandboxes/plugins";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { runs } from "../db/schema";
@@ -161,11 +158,12 @@ const STOPPED_STATES = new Set(["stopped", "archived", "paused"]);
  * isn't ours is invisible here.
  */
 export async function getMachineStats(orgId: string): Promise<MachineStats> {
-  const snapshot = sandboxProviderKind() === "box"
-    ? (process.env.BOX_SNAPSHOT?.trim() || "box base image")
-    : sandboxProviderKind() === "cube"
-    ? process.env.CUBE_TEMPLATE_ID ?? "unconfigured"
-    : process.env.DAYTONA_SNAPSHOT ?? "skynet-agent-v17";
+  let snapshot: string;
+  try {
+    snapshot = sandboxTemplate("DAYTONA_SNAPSHOT", "skynet-agent-v17") || `${sandboxPlugin(sandboxProviderKind()).label} base image`;
+  } catch {
+    snapshot = "unconfigured";
+  }
   if (sandboxProviderApiKey() === undefined) return { snapshot, sandboxes: null };
 
   ensureInventory();

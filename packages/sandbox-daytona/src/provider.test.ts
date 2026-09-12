@@ -3,8 +3,8 @@ import {
   daytonaSandboxProvider,
   type DaytonaClientPort,
   type DaytonaSandboxPort,
-} from "./daytona-provider";
-import { sandboxProviderConformance } from "./provider-conformance.test-support";
+} from "./provider";
+import { sandboxProviderConformance } from "@useagent/sandbox-contract/conformance";
 
 interface FakeSandboxOptions {
   id?: string;

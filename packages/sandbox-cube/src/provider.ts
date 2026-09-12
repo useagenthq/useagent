@@ -1,4 +1,3 @@
-import { previewAuthHeaders } from "./preview-auth";
 import {
   Sandbox as E2BSandbox,
   type CommandHandle,
@@ -10,13 +9,27 @@ import type {
   SandboxExecuteResult,
   SandboxFileSystem,
   SandboxHandle,
+  SandboxInventory,
+  SandboxPreviewLink,
   SandboxProcess,
   SandboxProvider,
   SandboxPtyHandle,
   SandboxSession,
-} from "./provider";
-import type { SandboxInventory, SandboxPreviewLink } from "@useagent/sandbox-contract";
-import { buildRuntimeIdentityPreflightCommand } from "../engines/runtime-environment";
+} from "@useagent/sandbox-contract";
+
+export const CUBE_SANDBOX_DOMAIN = "cube.app";
+
+export interface CubeProviderOptions {
+  /** Shell probe that exits 0 once the runtime identity and workspace are ready; the control plane supplies it. */
+  readonly identityPreflightCommand: string;
+}
+
+/** Cube preview links authenticate with the traffic token in Cube's own and E2B's header. */
+export function cubePreviewAuthHeaders(token: string): Record<string, string> {
+  return token
+    ? { "cube-traffic-access-token": token, "e2b-traffic-access-token": token }
+    : {};
+}
 
 interface CubeConnectionOptions {
   apiKey?: string;
@@ -74,6 +87,7 @@ function requireDnsHostname(value: string, envName: string): string {
 async function waitForCubeReadiness(
   sandbox: SandboxHandle,
   domain: string,
+  identityPreflightCommand: string,
 ): Promise<void> {
   const attempts = positiveInteger(
     process.env.CUBE_READINESS_ATTEMPTS,
@@ -92,7 +106,7 @@ async function waitForCubeReadiness(
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const probe = await sandbox.process.executeCommand(
-        `${buildRuntimeIdentityPreflightCommand()} >/dev/null && ` +
+        `${identityPreflightCommand} >/dev/null && ` +
           `getent hosts ${previewHost} >/dev/null 2>&1 && getent hosts ${publicHost} >/dev/null 2>&1`,
         undefined,
         undefined,
@@ -114,14 +128,17 @@ async function waitForCubeReadiness(
 
 class CubeRuntimeIdentityMismatchError extends Error {}
 
-async function assertCubeRuntimeIdentity(sandbox: SandboxHandle): Promise<void> {
+async function assertCubeRuntimeIdentity(
+  sandbox: SandboxHandle,
+  identityPreflightCommand: string,
+): Promise<void> {
   const attempts = positiveInteger(process.env.CUBE_IDENTITY_PROBE_ATTEMPTS, 3);
   const delayMs = positiveInteger(process.env.CUBE_IDENTITY_PROBE_DELAY_MS, 100);
   let transientFailure: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const probe = await sandbox.process.executeCommand(
-        buildRuntimeIdentityPreflightCommand(),
+        identityPreflightCommand,
         undefined,
         undefined,
         5,
@@ -170,7 +187,7 @@ function cubeConnectionOptions(apiKey: string): CubeConnectionOptions {
     ...(apiKey ? { apiKey } : {}),
     apiUrl: (process.env.CUBE_API_URL?.trim() || "http://127.0.0.1:3000").replace(/\/+$/, ""),
     debug: scheme === "http",
-    domain: process.env.CUBE_SANDBOX_DOMAIN?.trim() || "cube.app",
+    domain: process.env.CUBE_SANDBOX_DOMAIN?.trim() || CUBE_SANDBOX_DOMAIN,
     requestTimeoutMs: positiveInteger(process.env.CUBE_REQUEST_TIMEOUT_MS, 30_000),
     validateApiKey: false,
   };
@@ -392,7 +409,7 @@ class CubeSandboxHandle implements SandboxHandle {
     return {
       url: `${scheme}://${sandbox.getHost(port)}`,
       token: sandbox.trafficAccessToken,
-      headers: previewAuthHeaders(sandbox.trafficAccessToken ?? "", "cube"),
+      headers: cubePreviewAuthHeaders(sandbox.trafficAccessToken ?? ""),
     };
   }
 }
@@ -400,7 +417,10 @@ class CubeSandboxHandle implements SandboxHandle {
 class CubeProvider implements SandboxProvider {
   private readonly connection: CubeConnectionOptions;
 
-  constructor(apiKey: string) {
+  constructor(
+    apiKey: string,
+    private readonly options: CubeProviderOptions,
+  ) {
     this.connection = cubeConnectionOptions(apiKey);
   }
 
@@ -436,7 +456,11 @@ class CubeProvider implements SandboxProvider {
     const info = await E2BSandbox.getInfo(sandbox.sandboxId, this.connection);
     const handle = new CubeSandboxHandle(info, this.connection, sandbox);
     try {
-      await waitForCubeReadiness(handle, this.connection.domain);
+      await waitForCubeReadiness(
+        handle,
+        this.connection.domain,
+        this.options.identityPreflightCommand,
+      );
       return handle;
     } catch (error) {
       await handle.delete().catch(() => undefined);
@@ -448,7 +472,7 @@ class CubeProvider implements SandboxProvider {
     const info = await E2BSandbox.getInfo(sandboxId, this.connection);
     const handle = new CubeSandboxHandle(info, this.connection, null);
     try {
-      await assertCubeRuntimeIdentity(handle);
+      await assertCubeRuntimeIdentity(handle, this.options.identityPreflightCommand);
       return handle;
     } catch (error) {
       if (error instanceof CubeRuntimeIdentityMismatchError) {
@@ -507,6 +531,9 @@ class CubeProvider implements SandboxProvider {
   }
 }
 
-export function cubeSandboxProvider(apiKey: string): SandboxProvider {
-  return new CubeProvider(apiKey);
+export function cubeSandboxProvider(
+  apiKey: string,
+  options: CubeProviderOptions,
+): SandboxProvider {
+  return new CubeProvider(apiKey, options);
 }
