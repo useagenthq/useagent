@@ -16,8 +16,8 @@
  *   LIVE_ARTIFACT_PORT                  backend port (default a random 35xxx port)
  *
  * The proof writes its source file under the artifact workspace root the publish
- * capability enforces (ARTIFACT_WORKSPACE_ROOT in src/artifacts/publish.ts); any
- * other sandbox path is refused by design, so the path is taken from that constant.
+ * capability enforces for its attached provider. The path comes from the same
+ * provider runtime layout as execution, never a universal home-directory assumption.
  *
  * Safety: the journey owns a uniquely named throwaway database, a temporary
  * artifact directory, and exactly one labeled sandbox. Cleanup deletes and
@@ -135,8 +135,8 @@ try {
 
   // Publish refuses any path outside the workspace root, so write where the
   // capability can read (imported after DATABASE_URL is set, like the tools).
-  const { ARTIFACT_WORKSPACE_ROOT } = await import("../../src/artifacts/publish");
-  const sourceDir = `${ARTIFACT_WORKSPACE_ROOT}/outputs`;
+  const { sandboxRuntimeLayout } = await import("../../src/sandboxes/provider");
+  const sourceDir = `${sandboxRuntimeLayout("daytona").workdir}/outputs`;
   const sourcePath = `${sourceDir}/daytona-proof.txt`;
   const encoded = expected.toString("base64");
   const write = await sandbox.process.executeCommand(
@@ -159,7 +159,7 @@ try {
     repos: [],
     memoryScope: "org",
   });
-  await setRunSandbox(runId, sandbox.id);
+  await setRunSandbox(runId, sandbox.id, { kind: "daytona", credential: "env" });
 
   const { executeArtifactTool } = await import("../../src/knowledge/gateway/artifact-tools");
   const claims: ToolTokenClaims = {

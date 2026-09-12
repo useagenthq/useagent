@@ -207,6 +207,40 @@ describe("subagents fold (inline conversation group)", () => {
     expect(html).toContain("Poem: Rome · Failed");
   });
 
+  test("renders combined results markdown without adding a card or unsafe markup", () => {
+    const markdown = [
+      "**Prices ready**",
+      "",
+      "| Symbol | Price |",
+      "| --- | --- |",
+      "| NVDA | $100 |",
+      "",
+      "[Source](https://example.com/prices)",
+      "[Unsafe](javascript:alert(1))",
+      "",
+      "<script>alert('raw html')</script>",
+    ].join("\n");
+    const html = renderToStaticMarkup(
+      <SubagentsFold
+        steps={[]}
+        live={false}
+        productChildren={[
+          productChild({ threadId: "child-1", title: "NVIDIA", latestSummary: markdown }),
+          productChild({ threadId: "child-2", title: "Google", latestSummary: "**Done**" }),
+        ]}
+      />,
+    );
+
+    const resultsClass = html.match(/<li class="([^"]*)" data-testid="product-child-results"/)?.[1];
+    expect(resultsClass).toBeDefined();
+    expect(resultsClass).not.toMatch(/\b(?:border|bg-|shadow|rounded)/);
+    expect(html).toContain("<strong>Prices ready</strong>");
+    expect(html).toContain("<table");
+    expect(html).toContain('<a href="https://example.com/prices" target="_blank" rel="noreferrer">Source</a>');
+    expect(html).not.toContain('href="javascript:');
+    expect(html).not.toContain("<script>");
+  });
+
   test("a bot's thread is named after the bot and counted apart from subagents", () => {
     const html = renderToStaticMarkup(
       <SubagentsFold

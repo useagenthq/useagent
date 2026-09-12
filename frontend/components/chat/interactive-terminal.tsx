@@ -22,9 +22,9 @@ import {
  * active; the socket and PTY die with unmount.
  *
  * The ~400KB WASM ships INLINED in the ghostty-web bundle as a base64 data URL,
- * so `init()` decodes it in-process — no separate asset to copy into `public/`
- * and no Turbopack path wiring. `init()` is an idempotent singleton, so
- * remounting the Shell tab is cheap.
+ * so it loads in-process with no separate asset or public-path wiring.
+ * Each mounted pane owns its WASM instance: freed pages from an old terminal
+ * must not become the next pane's screen or parser memory.
  *
  * Render-surface choreography (fonts before boot, DPR watching, settled-resize
  * notify, full ANSI palette) follows T3 Code's ghostty surface layer; the pure
@@ -100,11 +100,11 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
     let unavailable = false;
 
     void (async () => {
-      const { init, Terminal, FitAddon } = await import("ghostty-web");
-      // Decode the inlined WASM (idempotent — a no-op once loaded) and wait for
+      const { Ghostty, Terminal, FitAddon } = await import("ghostty-web");
+      // Load isolated parser memory and wait for
       // the web fonts so glyph metrics are measured against JetBrains Mono, not
       // a fallback (otherwise the grid misaligns until the font swaps in).
-      await init();
+      const ghostty = await Ghostty.load();
       await document.fonts?.ready;
       if (disposed) return;
 
@@ -122,6 +122,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
       const reducedMotion =
         window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
       term = new Terminal({
+        ghostty,
         cursorBlink: !reducedMotion,
         cursorStyle: "block",
         fontSize: TERMINAL_FONT_SIZE,
@@ -132,6 +133,9 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.open(host);
+      // ghostty-web 0.4.0 reuses uncleared WASM pages across disposed terminals.
+      // Clear the new viewport before any connection output, never on reconnect.
+      term.clear();
       fit.fit();
       term.focus();
 
@@ -187,13 +191,13 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
           // waiting line (below) instead of letting them spam each reconnect.
           // Covers the "no live sandbox" notice and the older red
           // "[useAgent] Sandbox <id> not found" variant from the provider.
-          if (isIdleTerminalNotice(text)) {
-            idleNoticeSeen = true;
-            return;
-          }
           if (isTerminalUnavailableNotice(text)) {
             unavailable = true;
             term?.write(text);
+            return;
+          }
+          if (isIdleTerminalNotice(text)) {
+            idleNoticeSeen = true;
             return;
           }
           idleNoticeSeen = false;

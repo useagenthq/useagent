@@ -32,6 +32,7 @@ import type { ChildStatus, NativeFrame } from "@/components/chat/native-events";
 import type { SubagentCard } from "@/components/chat/subagents";
 import { useTurnUiState } from "@/components/chat/turn-ui-state";
 import type { ApiStep } from "@/components/chat/types";
+import { Markdown } from "@/components/prompt-kit/markdown";
 import {
   CHILD_META_CLASS,
   formatChildEngineModel,
@@ -235,9 +236,9 @@ function ProductChildResults({ children }: { children: readonly ThreadRelationsh
               {child.title}
               {child.status === "completed" ? "" : ` · ${childStatusLabel(PRODUCT_CHILD_STATUS[child.status])}`}
             </p>
-            <p className="text-body-2-regular text-text-secondary mt-0.5 whitespace-pre-wrap">
-              {child.latestSummary}
-            </p>
+            <Markdown className="text-body-2-regular text-text-secondary mt-0.5 break-words">
+              {child.latestSummary ?? ""}
+            </Markdown>
           </div>
         ))}
       </div>

@@ -20,3 +20,13 @@ substitute ACP, another engine, or a reduced lifecycle.
 Runtime generation is not workspace lifetime. Never delete or silently replace
 a retained sandbox because a release, runtime label, or rollback is incompatible.
 Preserve the workspace and upgrade safely or fail closed with a clear explanation.
+
+## Provider-owned workspace invariant
+
+Paths for execution, inputs, screenshots, artifact publishing, and delivery come
+from the provider runtime layout of the sandbox already attached to the run.
+Never treat `/root/work` as a universal workspace, select a new provider from
+current settings to interpret retained files, or copy files into another home
+directory to satisfy a publisher. Preserve canonical-path, symlink, and secret
+protections. A deliverable is shared only after publication returns its durable
+artifact reference; a path on sandbox disk alone is not delivery.

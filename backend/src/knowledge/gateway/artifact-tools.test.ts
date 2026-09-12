@@ -238,20 +238,25 @@ describe("artifact gateway contract", () => {
     expect(rejected.isError).toBe(true);
     expect(rejected.content[0]?.text).toContain("Private desktop inspection screenshots");
 
-    const daytonaRejected = await executeArtifactTool(
-      {
-        orgId: "org-1",
-        userId: "user-1",
-        threadId: "thread-1",
-        runId: "run-1",
-        scope: "run",
-        exp: Date.now() + 60_000,
-      },
-      "artifact_publish",
-      { path: "/home/daytona/work/screenshots/screenshot-1786558088313.png" },
-    );
-
-    expect(daytonaRejected.isError).toBe(true);
+    for (const path of [
+      "/home/daytona/work/screenshots/screenshot-1786558088313.png",
+      "/home/user/work/screenshots/screenshot-1786558088313.png",
+    ]) {
+      const providerRejected = await executeArtifactTool(
+        {
+          orgId: "org-1",
+          userId: "user-1",
+          threadId: "thread-1",
+          runId: "run-1",
+          scope: "run",
+          exp: Date.now() + 60_000,
+        },
+        "artifact_publish",
+        { path },
+      );
+      expect(providerRejected.isError).toBe(true);
+      expect(providerRejected.content[0]?.text).toContain("Private desktop inspection screenshots");
+    }
   });
 
   test("rejects protected secret paths before invoking the artifact publisher", async () => {
@@ -284,9 +289,9 @@ describe("artifact gateway contract", () => {
       id: "artifact-1",
       run_id: "run-1",
       thread_id: "thread-1",
-      name: "report.pdf",
-      source_path: "/root/work/report.pdf",
-      content_type: "application/pdf",
+      name: "proof.png",
+      source_path: "/home/user/work/screenshots/screenshot-1786558088313.png",
+      content_type: "image/png",
       size_bytes: 1234,
       sha256: "abc",
       created_at: "2026-08-17T00:00:00.000Z",
@@ -295,7 +300,10 @@ describe("artifact gateway contract", () => {
       preview_pdf_url: null,
       workpiece: null,
     };
-    setSandboxArtifactPublisherForTest(async () => ({ artifact, created: true }));
+    setSandboxArtifactPublisherForTest(async (input) => {
+      expect(input.purpose).toBe("user_requested_proof");
+      return { artifact, created: true };
+    });
 
     const published = await executeArtifactTool(
       {
@@ -307,7 +315,7 @@ describe("artifact gateway contract", () => {
         exp: Date.now() + 60_000,
       },
       "artifact_publish",
-      { path: "/root/work/report.pdf" },
+      { path: artifact.source_path, purpose: "user_requested_proof" },
     );
 
     expect(published.isError).toBeUndefined();
