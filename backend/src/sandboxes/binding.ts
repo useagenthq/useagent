@@ -1,5 +1,5 @@
 import type { SandboxProvider, SandboxProviderKind } from "@useagent/sandbox-contract";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { runs } from "../db/schema";
 import { listProviderConnections } from "../provider-connections/repo";
@@ -156,8 +156,36 @@ export async function resolveSandboxBindingForRun(
 interface RecordedSandbox {
   readonly userId: string | null;
   readonly orgId: string | null;
-  readonly sandboxProvider: string | null;
-  readonly sandboxCredential: string | null;
+  readonly sandboxProvider: SandboxProviderKind | null;
+  readonly sandboxCredential: SandboxCredentialSource | null;
+}
+
+const recordedSandboxColumns = {
+  sandboxId: runs.sandboxId,
+  userId: runs.userId,
+  orgId: runs.orgId,
+  sandboxProvider: runs.sandboxProvider,
+  sandboxCredential: runs.sandboxCredential,
+};
+
+/** A run's actor may differ from the owner of the retained personal sandbox. */
+async function sandboxOwnerRecord(sandboxId: string, recorded: RecordedSandbox): Promise<RecordedSandbox> {
+  const [owner] = await db
+    .select(recordedSandboxColumns)
+    .from(runs)
+    .where(and(
+      eq(runs.sandboxId, sandboxId),
+      recorded.orgId === null ? isNull(runs.orgId) : eq(runs.orgId, recorded.orgId),
+      recorded.sandboxProvider === null
+        ? isNull(runs.sandboxProvider)
+        : eq(runs.sandboxProvider, recorded.sandboxProvider),
+      recorded.sandboxCredential === null
+        ? isNull(runs.sandboxCredential)
+        : eq(runs.sandboxCredential, recorded.sandboxCredential),
+    ))
+    .orderBy(asc(runs.createdAt), asc(runs.id))
+    .limit(1);
+  return owner ?? recorded;
 }
 
 async function bindingForRecorded(recorded: RecordedSandbox | null, deps: SandboxBindingDeps): Promise<SandboxBinding> {
@@ -191,23 +219,37 @@ export async function resolveSandboxBindingForThread(
   deps: SandboxBindingDeps = {},
 ): Promise<SandboxBinding> {
   const [recorded] = await db
-    .select({ userId: runs.userId, orgId: runs.orgId, sandboxProvider: runs.sandboxProvider, sandboxCredential: runs.sandboxCredential })
+    .select(recordedSandboxColumns)
     .from(runs)
     .where(and(eq(runs.orgId, orgId), eq(runs.threadId, threadId), isNotNull(runs.sandboxId)))
     .orderBy(desc(runs.createdAt), desc(runs.id))
     .limit(1);
-  return bindingForRecorded(recorded ?? null, deps);
+  return bindingForRecorded(recorded?.sandboxId ? await sandboxOwnerRecord(recorded.sandboxId, recorded) : null, deps);
 }
 
 /** The provider that created a sandbox, by sandbox id (for callers that hold only the id). */
 export async function resolveSandboxBindingForSandbox(sandboxId: string, deps: SandboxBindingDeps = {}): Promise<SandboxBinding> {
-  const [recorded] = await db
-    .select({ userId: runs.userId, orgId: runs.orgId, sandboxProvider: runs.sandboxProvider, sandboxCredential: runs.sandboxCredential })
+  const orgs = await db
+    .select({ orgId: runs.orgId })
     .from(runs)
     .where(eq(runs.sandboxId, sandboxId))
+    .groupBy(runs.orgId)
+    .limit(2);
+  if (orgs.length > 1) {
+    throw new Error("sandbox owner cannot be resolved from an id shared by multiple organizations");
+  }
+  const orgId = orgs[0]?.orgId;
+  if (orgId === undefined) return bindingForRecorded(null, deps);
+  const [recorded] = await db
+    .select(recordedSandboxColumns)
+    .from(runs)
+    .where(and(
+      eq(runs.sandboxId, sandboxId),
+      orgId === null ? isNull(runs.orgId) : eq(runs.orgId, orgId),
+    ))
     .orderBy(desc(runs.createdAt), desc(runs.id))
     .limit(1);
-  return bindingForRecorded(recorded ?? null, deps);
+  return bindingForRecorded(recorded ? await sandboxOwnerRecord(sandboxId, recorded) : null, deps);
 }
 
 /** The snapshot a binding creates from: the user's own, or the server's template for the lane. */

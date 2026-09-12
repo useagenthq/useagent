@@ -532,6 +532,25 @@ export async function handleSlackEvent(
   ) {
     await options.checkpointStagedAttachmentIds(attachmentIds);
   }
+  const skippedAttachmentCount = files.length - attachmentIds.length;
+  if (skippedAttachmentCount > 0) {
+    const label = skippedAttachmentCount === 1
+      ? "the attached file"
+      : `${skippedAttachmentCount} attached files`;
+    await enqueuePostMessage({
+      idempotencyKey: `slack-attachment-guidance:${teamId}:${channel}:${ts}`,
+      orgId,
+      teamId,
+      channel,
+      threadTs: slackThreadTs,
+      text: attachmentIds.length === 0
+        ? `I couldn't safely process ${label}. No run was started. Please re-upload and try again.`
+        : `I couldn't safely process ${label}. I sent the remaining attachments to the agent.`,
+    });
+    if (attachmentIds.length === 0) {
+      return { status: "permanent_noop", reason: "attachments_unavailable" };
+    }
+  }
 
   let resources: readonly RunResource[];
   let boundRepos: string[];

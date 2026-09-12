@@ -71,6 +71,7 @@ import {
 } from "../src/slack/workspaces";
 import { fetchApi, json, uid, waitFor } from "./helpers";
 import { setRunAdmission } from "../src/commands";
+import { UploadScanError, setUploadScannerForTest } from "../src/uploads/scan";
 
 // This DB-backed integration suite shares the CI Postgres service with the
 // full backend matrix. Keep its bounded async waits above Bun's 5s unit-test
@@ -2453,6 +2454,41 @@ describe("slack inbound attachments", () => {
     expect(run.prompt).toBe("Review the attached files.");
   });
 
+  test("a scanner rejection is explicit and never starts a text-only run", async () => {
+    const marker = uid("scan-reject");
+    const channel = `D${uid("dm")}`;
+    const ts = `${uid("ts")}.1`;
+    setUploadScannerForTest(async () => {
+      throw new UploadScanError("scanner unavailable");
+    });
+    try {
+      await postSlack(
+        eventCallback({
+          type: "message",
+          subtype: "file_share",
+          channel,
+          channel_type: "im",
+          user: "U-HUMAN",
+          text: `describe ${marker}`,
+          ts,
+          files: [slackFile(`${marker}.png`, { mimetype: "image/png" })],
+        }),
+      );
+
+      await waitFor(async () =>
+        rec.messages.find((message) =>
+          message.channel === channel && message.threadTs === ts
+        ) ?? null,
+      );
+      expect(await findRunByPrompt(`describe ${marker}`)).toBeNull();
+      expect(
+        rec.messages.find((message) => message.channel === channel && message.threadTs === ts)?.text,
+      ).toContain("No run was started");
+    } finally {
+      setUploadScannerForTest(null);
+    }
+  });
+
   test("count cap: only the first 5 of 7 files are staged", async () => {
     const marker = uid("cap");
     const names = Array.from({ length: 7 }, (_, i) => `${marker}-${i}.txt`);
@@ -2481,19 +2517,24 @@ describe("slack inbound attachments", () => {
   test("size cap: an over-declared file is skipped without downloading", async () => {
     const marker = uid("big");
     const fileName = `${marker}.bin`;
+    const channel = `D${uid("dm")}`;
+    const ts = `${uid("ts")}.1`;
     const before = downloaded.length;
     await postSlack(
       eventCallback({
         type: "message",
-        channel: `D${uid("dm")}`,
+        channel,
         channel_type: "im",
         user: "U-HUMAN",
         text: `big ${marker}`,
-        ts: `${uid("ts")}.1`,
+        ts,
         files: [slackFile(fileName, { size: 21 * 1024 * 1024 })],
       }),
     );
-    await waitFor(async () => findRunByPrompt(`big ${marker}`));
+    await waitFor(async () =>
+      rec.messages.find((message) => message.channel === channel && message.threadTs === ts) ?? null,
+    );
+    expect(await findRunByPrompt(`big ${marker}`)).toBeNull();
     expect(await uploadsByName(fileName)).toHaveLength(0);
     expect(downloaded.length).toBe(before); // rejected on declared size, never fetched
   });
@@ -2501,15 +2542,17 @@ describe("slack inbound attachments", () => {
   test("only Slack-hosted https URLs are fetched (bot token never leaves Slack)", async () => {
     const marker = uid("offhost");
     const fileName = `${marker}.txt`;
+    const channel = `D${uid("dm")}`;
+    const ts = `${uid("ts")}.1`;
     const before = downloaded.length;
     await postSlack(
       eventCallback({
         type: "message",
-        channel: `D${uid("dm")}`,
+        channel,
         channel_type: "im",
         user: "U-HUMAN",
         text: `offhost ${marker}`,
-        ts: `${uid("ts")}.1`,
+        ts,
         files: [
           slackFile(fileName, {
             url_private_download: `https://evil.example.com/steal-token/${fileName}`,
@@ -2517,7 +2560,10 @@ describe("slack inbound attachments", () => {
         ],
       }),
     );
-    await waitFor(async () => findRunByPrompt(`offhost ${marker}`));
+    await waitFor(async () =>
+      rec.messages.find((message) => message.channel === channel && message.threadTs === ts) ?? null,
+    );
+    expect(await findRunByPrompt(`offhost ${marker}`)).toBeNull();
     expect(await uploadsByName(fileName)).toHaveLength(0);
     expect(downloaded.length).toBe(before);
   });
@@ -2525,21 +2571,26 @@ describe("slack inbound attachments", () => {
   test("a lying declared size is caught after download (post-check cap)", async () => {
     const marker = uid("liar");
     const fileName = `${marker}.bin`;
+    const channel = `D${uid("dm")}`;
+    const ts = `${uid("ts")}.1`;
     const original = payload;
     payload = new Uint8Array(20 * 1024 * 1024 + 1); // real bytes over the cap
     try {
       await postSlack(
         eventCallback({
           type: "message",
-          channel: `D${uid("dm")}`,
+          channel,
           channel_type: "im",
           user: "U-HUMAN",
           text: `liar ${marker}`,
-          ts: `${uid("ts")}.1`,
+          ts,
           files: [slackFile(fileName, { size: 100 })],
         }),
       );
-      await waitFor(async () => findRunByPrompt(`liar ${marker}`));
+      await waitFor(async () =>
+        rec.messages.find((message) => message.channel === channel && message.threadTs === ts) ?? null,
+      );
+      expect(await findRunByPrompt(`liar ${marker}`)).toBeNull();
       expect(await uploadsByName(fileName)).toHaveLength(0);
     } finally {
       payload = original;

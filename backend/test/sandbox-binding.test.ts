@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import type { SandboxProvider } from "@useagent/sandbox-contract";
 import type { AppEnv } from "../src/http";
 import { createProviderConnectionsRoutes } from "../src/provider-connections/routes";
-import { setRunSandbox } from "../src/runs/repo";
+import { clearThreadSandbox, createRun, setRunSandbox } from "../src/runs/repo";
 import { clearMissingRetainedSandboxMappings, listCurrentRetainedSandboxMappings } from "../src/fleet/lease-repo";
 import { db } from "../src/db/client";
 import { runs } from "../src/db/schema";
@@ -118,6 +118,108 @@ describe("sandbox binding", () => {
     const legacyRun = await json<{ id: string }>("/api/runs", { method: "POST", cookies, body: { prompt: "Legacy.", engine: "mock" } });
     await setRunSandbox(legacyRun.body.id, "legacy_1");
     expect((await resolveSandboxBindingForSandbox("legacy_1", deps)).credential).toBe("env");
+  });
+
+  test("a collaborator reuses the personal computer owner's credential, not the reply actor's", async () => {
+    const orgId = `org-binding-owner-${crypto.randomUUID()}`;
+    const ownerId = `owner-${crypto.randomUUID()}`;
+    const collaboratorId = `collaborator-${crypto.randomUUID()}`;
+    const rootRunId = crypto.randomUUID();
+    const replyRunId = crypto.randomUUID();
+    const sandboxId = `box-${crypto.randomUUID()}`;
+    const rootCreatedAt = new Date("2026-09-05T06:00:00.000Z");
+    const replyCreatedAt = new Date("2026-09-05T06:00:01.000Z");
+    const resolvedUsers: string[] = [];
+    const deps = {
+      env: { USER_COMPUTERS: "on" },
+      connections: async ({ userId }: { orgId: string; userId: string }) => [{
+        provider: "box",
+        authMethod: "api_key",
+        status: "connected",
+        updatedAt: new Date("2026-09-05T05:00:00.000Z"),
+        metadata: {},
+        userId,
+      }] as never,
+      credential: async ({ userId }: { orgId: string; userId: string }) => {
+        resolvedUsers.push(userId);
+        return userId === ownerId
+          ? { authMethod: "api_key", value: "owner-test-credential" } as never
+          : null;
+      },
+      providers: { box: () => fakeProvider("owner-box") },
+      envProvider: () => envBinding,
+    };
+
+    await createRun({
+      id: rootRunId,
+      prompt: "Create the retained workspace.",
+      model: "mock-model",
+      engine: "mock",
+      orgId,
+      userId: ownerId,
+      parentRunId: null,
+      threadId: rootRunId,
+      repos: [],
+      memoryScope: "org",
+    });
+    await db.update(runs).set({ createdAt: rootCreatedAt }).where(eq(runs.id, rootRunId));
+    await setRunSandbox(rootRunId, sandboxId, { kind: "box", credential: "user" });
+
+    const firstBinding = await resolveSandboxBindingForThread(orgId, rootRunId, deps);
+    expect(firstBinding.userId).toBe(ownerId);
+
+    await createRun({
+      id: replyRunId,
+      prompt: "Continue in the retained workspace.",
+      model: "mock-model",
+      engine: "mock",
+      orgId,
+      userId: collaboratorId,
+      parentRunId: rootRunId,
+      threadId: rootRunId,
+      repos: [],
+      memoryScope: "org",
+    });
+    await db.update(runs).set({ createdAt: replyCreatedAt }).where(eq(runs.id, replyRunId));
+    await setRunSandbox(replyRunId, sandboxId, { kind: "box", credential: "user" });
+
+    resolvedUsers.length = 0;
+    expect((await resolveSandboxBindingForThread(orgId, rootRunId, deps)).userId).toBe(ownerId);
+    expect((await resolveSandboxBindingForSandbox(sandboxId, deps)).userId).toBe(ownerId);
+    expect(resolvedUsers).toEqual([ownerId, ownerId]);
+
+    expect(await clearThreadSandbox(orgId, rootRunId, sandboxId)).toBe(2);
+    const mappings = await db
+      .select({ id: runs.id, sandboxId: runs.sandboxId })
+      .from(runs)
+      .where(eq(runs.threadId, rootRunId));
+    expect(mappings).toEqual(expect.arrayContaining([
+      { id: rootRunId, sandboxId: null },
+      { id: replyRunId, sandboxId: null },
+    ]));
+  });
+
+  test("an unscoped sandbox lookup fails closed when two organizations recorded the same id", async () => {
+    const sandboxId = `shared-${crypto.randomUUID()}`;
+    for (const orgId of [`org-a-${crypto.randomUUID()}`, `org-b-${crypto.randomUUID()}`]) {
+      const runId = crypto.randomUUID();
+      await createRun({
+        id: runId,
+        prompt: "Ambiguous provider id.",
+        model: "mock-model",
+        engine: "mock",
+        orgId,
+        userId: crypto.randomUUID(),
+        parentRunId: null,
+        threadId: runId,
+        repos: [],
+        memoryScope: "org",
+      });
+      await setRunSandbox(runId, sandboxId, { kind: "box", credential: "user" });
+    }
+
+    await expect(resolveSandboxBindingForSandbox(sandboxId, { envProvider: () => envBinding }))
+      .rejects.toThrow(/shared by multiple organizations/);
   });
 
   test("retained env sandboxes keep their recorded provider when the deployment default changes", async () => {
