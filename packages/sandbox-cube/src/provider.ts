@@ -65,13 +65,19 @@ function cubeCommandFailure(error: unknown): CubeCommandFailure | null {
     : null;
 }
 
+// The Cube runtime layout is root (`/root`, `/root/work`). envd picks its own
+// default user when a request names none, and that choice differed between two
+// templates built from images with identical OCI config (root on one, `user` on
+// the other), so every envd request says root explicitly.
+const CUBE_EXEC_USER = "root";
+
 async function runCubeCommand(
   sandbox: E2BSandbox,
   command: string,
   options: { cwd?: string; envs?: Record<string, string>; timeoutMs?: number } = {},
 ): Promise<CubeCommandFailure> {
   try {
-    return await sandbox.commands.run(command, options);
+    return await sandbox.commands.run(command, { ...options, user: CUBE_EXEC_USER });
   } catch (error) {
     const failure = cubeCommandFailure(error);
     if (failure) return failure;
@@ -299,7 +305,7 @@ class CubeProcess implements SandboxProcess {
 
   async createSession(sessionId: string): Promise<void> {
     const sandbox = await this.sandbox();
-    await sandbox.commands.run(`mkdir -p ${sessionDirectory(sessionId)}`);
+    await sandbox.commands.run(`mkdir -p ${sessionDirectory(sessionId)}`, { user: CUBE_EXEC_USER });
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -310,7 +316,7 @@ class CubeProcess implements SandboxProcess {
         .filter((process) => processSessionId(process.envs) === sessionId)
         .map((process) => sandbox.commands.kill(process.pid).catch(() => false)),
     );
-    await sandbox.commands.run(`rm -rf ${sessionDirectory(sessionId)}`);
+    await sandbox.commands.run(`rm -rf ${sessionDirectory(sessionId)}`, { user: CUBE_EXEC_USER });
   }
 
   async getSession(sessionId: string): Promise<SandboxSession> {
@@ -349,8 +355,9 @@ class CubeProcess implements SandboxProcess {
     const directory = sessionDirectory(sessionId);
     const script = `${directory}/${commandId}.sh`;
     const log = `${directory}/${commandId}.log`;
-    await sandbox.files.write(script, request.command);
+    await sandbox.files.write(script, request.command, { user: CUBE_EXEC_USER });
     await sandbox.commands.run(`nohup setsid sh ${script} </dev/null >${log} 2>&1 &`, {
+      user: CUBE_EXEC_USER,
       envs: {
         USEAGENT_COMMAND_ID: commandId,
         USEAGENT_SESSION_ID: sessionId,
@@ -365,7 +372,7 @@ class CubeProcess implements SandboxProcess {
   ): Promise<{ output: string; stdout: string; stderr: string }> {
     const sandbox = await this.sandbox();
     const log = `${sessionDirectory(sessionId)}/${commandId}.log`;
-    const output = await sandbox.files.read(log).catch(() => "");
+    const output = await sandbox.files.read(log, { user: CUBE_EXEC_USER }).catch(() => "");
     return { output, stdout: output, stderr: "" };
   }
 
@@ -381,6 +388,7 @@ class CubeProcess implements SandboxProcess {
       cols: options.cols,
       rows: options.rows,
       onData: options.onData,
+      user: CUBE_EXEC_USER,
       ...(options.cwd ? { cwd: options.cwd } : {}),
       ...(options.envs ? { envs: options.envs } : {}),
     });
@@ -430,18 +438,18 @@ class CubeFileSystem implements SandboxFileSystem {
 
   async getFileDetails(path: string): Promise<{ size?: number }> {
     const sandbox = await this.sandbox();
-    const info = await sandbox.files.getInfo(path);
+    const info = await sandbox.files.getInfo(path, { user: CUBE_EXEC_USER });
     return { size: info.size };
   }
 
   async downloadFile(path: string): Promise<Buffer> {
     const sandbox = await this.sandbox();
-    return Buffer.from(await sandbox.files.read(path, { format: "bytes" }));
+    return Buffer.from(await sandbox.files.read(path, { format: "bytes", user: CUBE_EXEC_USER }));
   }
 
   async uploadFile(file: Buffer, remotePath: string): Promise<void> {
     const sandbox = await this.sandbox();
-    await sandbox.files.write(remotePath, new Blob([new Uint8Array(file)]));
+    await sandbox.files.write(remotePath, new Blob([new Uint8Array(file)]), { user: CUBE_EXEC_USER });
   }
 }
 
@@ -564,15 +572,9 @@ class CubeProvider implements SandboxProvider {
       throw error;
     }
     const handle = new CubeSandboxHandle(info, this.connection, null);
-    try {
-      await assertCubeRuntimeIdentity(handle, this.options.identityPreflightCommand);
-      return handle;
-    } catch (error) {
-      if (error instanceof CubeRuntimeIdentityMismatchError) {
-        await handle.delete().catch(() => undefined);
-      }
-      throw error;
-    }
+    // A retained workspace belongs to the user even when this runtime cannot use it.
+    await assertCubeRuntimeIdentity(handle, this.options.identityPreflightCommand);
+    return handle;
   }
 
   async *list(): AsyncIterable<SandboxHandle> {

@@ -49,6 +49,12 @@ const NATIVE_VERSION_PROBE_DIAGNOSTIC_PREFIX = "useagent-native-version-probe:";
 const CODEX_VERSION = "0.153.3";
 const CLAUDE_CODE_VERSION = "2.1.226";
 const OPENCODE_VERSION = "1.18.7";
+/** The pinned driver versions the bootstrap installs; the native image name is derived from them. */
+export const RUNTIME_ENGINE_VERSIONS = {
+  codex: CODEX_VERSION,
+  claude: CLAUDE_CODE_VERSION,
+  opencode: OPENCODE_VERSION,
+} as const;
 const CLAUDE_RUNTIME_UID = 1000;
 const CLAUDE_RUNTIME_GID = CLAUDE_CAPABILITY_GID;
 const CLAUDE_RUNTIME_HOME = "/home/user";

@@ -253,6 +253,8 @@ export interface SandboxProvider {
     sourceSandboxId: string,
     name: string,
   ): Promise<SandboxTemplateStatus>;
+  /** Remove a named template so its name can be saved again; an absent name is not an error. */
+  deleteTemplate?(name: string): Promise<void>;
   /**
    * OPTIONAL capacity/inventory telemetry. Providers that can observe node-level
    * headroom (multi-node Cube) implement this; single-node or telemetry-less

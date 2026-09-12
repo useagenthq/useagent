@@ -11,3 +11,9 @@ export {
   daytonaSandboxProvider,
 } from "./provider";
 export { type DaytonaConnectionValidatorClient, validateDaytonaConnection } from "./validate";
+export {
+  type DaytonaRegistryCredential,
+  type ImportDaytonaSnapshotInput,
+  ensureDaytonaRegistry,
+  importDaytonaSnapshot,
+} from "./snapshot-import";

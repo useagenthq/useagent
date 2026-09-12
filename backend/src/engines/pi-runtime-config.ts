@@ -151,6 +151,24 @@ function buildPiRuntimeVerificationCommand(input: {
   );
 }
 
+/** Verify-or-install as one script: exit 0 when the cached runtime already verifies. */
+export function buildPiRuntimeEnsureCommand(input: {
+  readonly runtimeRoot: string;
+  readonly runtimeManifestDir: string;
+  readonly bunExecutable: string;
+  readonly executable: string;
+}): string {
+  const verification = {
+    runtimeRoot: input.runtimeRoot,
+    bunExecutable: input.bunExecutable,
+    executable: input.executable,
+  };
+  return [
+    `if ( ${buildPiRuntimeVerificationCommand({ ...verification, requireCacheLock: true })} ); then exit 0; fi`,
+    `${buildPiRuntimeInstallCommand(input)} && ( ${buildPiRuntimeVerificationCommand({ ...verification, requireCacheLock: false })} )`,
+  ].join("\n");
+}
+
 type PiRuntimeCommandProcess = Pick<SandboxHandle["process"], "executeCommand">;
 type PiRuntimeCommandResult = Awaited<ReturnType<PiRuntimeCommandProcess["executeCommand"]>>;
 

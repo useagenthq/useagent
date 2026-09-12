@@ -884,6 +884,30 @@ class BoxProvider implements SandboxProvider {
     return new BoxSandboxHandle(this.api, this.labels, ready, labels);
   }
 
+  /** A named snapshot's state by lookup only: Box snapshots never park, so nothing is activated. */
+  async ensureTemplate(name: string): Promise<SandboxTemplateStatus> {
+    let snapshot: BoxNamedSnapshot;
+    try {
+      snapshot = await this.api.namedSnapshot(name);
+    } catch (error) {
+      if (error instanceof BoxApiError && error.status === 404) return { name, state: "absent" };
+      throw error;
+    }
+    if (snapshot.status === "ready") return { name, state: "active" };
+    if (snapshot.status === "saving") return { name, state: "activating", detail: "saving" };
+    return { name, state: "error", detail: snapshot.error ?? snapshot.status };
+  }
+
+  /** Remove a named snapshot so the same name can be saved again. Absent is success. */
+  async deleteTemplate(name: string): Promise<void> {
+    try {
+      await this.api.request("DELETE", `/named-snapshots/${encodeURIComponent(name)}`, undefined, { "X-Ascii-Confirm-Delete": name });
+    } catch (error) {
+      if (error instanceof BoxApiError && error.status === 404) return;
+      throw error;
+    }
+  }
+
   async saveTemplate(sourceSandboxId: string, name: string): Promise<SandboxTemplateStatus> {
     let snapshot: BoxNamedSnapshot | null = null;
     try {

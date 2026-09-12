@@ -184,7 +184,7 @@ describe("Cube sandbox provider", () => {
       exitCode: 7,
       result: "outerr",
     });
-    expect(commandOptions).toEqual({ cwd: "/work", envs: { A: "1" }, timeoutMs: 12_000 });
+    expect(commandOptions).toEqual({ cwd: "/work", envs: { A: "1" }, timeoutMs: 12_000, user: "root" });
     expect(await handle.getPreviewLink(4096)).toEqual({
       token: "traffic-token",
       headers: { "cube-traffic-access-token": "traffic-token", "e2b-traffic-access-token": "traffic-token" },
@@ -332,7 +332,7 @@ describe("Cube sandbox provider", () => {
     kill.mockRestore();
   });
 
-  test("deletes a retained uid-1000 sandbox before returning its handle", async () => {
+  test("preserves a retained sandbox when its runtime identity is incompatible", async () => {
     const sandbox = fakeSandbox({
       run: async (command) => ({
         exitCode: command.includes('test "$(id -u)" = "0"') ? 1 : 0,
@@ -348,7 +348,7 @@ describe("Cube sandbox provider", () => {
       "did not reach root identity/workspace",
     );
     expect(connect).toHaveBeenCalledWith("cube-1", expect.any(Object));
-    expect(kill).toHaveBeenCalledWith("cube-1", expect.any(Object));
+    expect(kill).not.toHaveBeenCalled();
 
     getInfo.mockRestore();
     connect.mockRestore();
@@ -413,6 +413,7 @@ describe("Cube sandbox provider", () => {
     expect(writes[0]?.data).toBe("exec opencode serve");
     expect(calls.at(-1)?.command).toMatch(/^nohup setsid sh .* <\/dev\/null >.* 2>&1 &$/);
     expect(calls.at(-1)?.options).toEqual({
+      user: "root",
       envs: {
         USEAGENT_COMMAND_ID: result.cmdId,
         USEAGENT_SESSION_ID: "resident",

@@ -453,6 +453,18 @@ describe("T3 run adapter gate", () => {
     })).toBe("candidate-v9");
   });
 
+  test("prefers the baked native Box snapshot over the generic Box template", () => {
+    expect(runtimeRunSnapshot({ SANDBOX_PROVIDER: "box" })).toBe("");
+    expect(runtimeRunSnapshot({ SANDBOX_PROVIDER: "box", BOX_SNAPSHOT: "generic" })).toBe("generic");
+    expect(
+      runtimeRunSnapshot({
+        SANDBOX_PROVIDER: "box",
+        BOX_SNAPSHOT: "generic",
+        RUNTIME_BOX_SNAPSHOT: "useagent-native-524d46b-a2f93ea",
+      }),
+    ).toBe("useagent-native-524d46b-a2f93ea");
+  });
+
   test("inherits the configured Daytona snapshot unless a T3 override is present", () => {
     expect(
       runtimeRunSnapshot({
@@ -843,7 +855,7 @@ describe("T3 run adapter gate", () => {
       "awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS)",
     );
     // (A) Deterministic restart is the fallback, then a single verify.
-    expect(source).toContain("restartRuntimeEnvironment(sandbox, ctx.signal)");
+    expect(source).toContain("restartRuntimeEnvironment(sandbox, ctx.signal, ctx.timing)");
     expect(source).toContain("invalidateRuntimeEnvironmentAccess(sandbox)");
     expect(source).toContain(
       "awaitCodexProviderReady(sandbox, ctx.signal, CODEX_VERIFY_DEADLINE_MS)",
@@ -860,7 +872,7 @@ describe("T3 run adapter gate", () => {
       "awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS)",
     );
     const restartIdx = source.indexOf(
-      "restartRuntimeEnvironment(sandbox, ctx.signal)",
+      "restartRuntimeEnvironment(sandbox, ctx.signal, ctx.timing)",
       barrierIdx,
     );
     const establishIdx = source.indexOf("await establishProviderSession({");
@@ -885,6 +897,41 @@ describe("T3 run adapter gate", () => {
 
     expect(barrierIdx).toBeGreaterThan(bridgeIdx);
     expect(establishIdx).toBeGreaterThan(barrierIdx);
+  });
+
+  test("boots a runtime that is not up instead of waiting out the barrier first", async () => {
+    const calls: string[] = [];
+    await ensureRuntimeProviderReadyForTurn({
+      sandbox: {} as never,
+      signal: new AbortController().signal,
+      readiness: {
+        instanceId: "claudeAgent",
+        driver: "claudeAgent",
+        displayName: "UseAgent Claude gateway current",
+      },
+      barrierDeadlineMs: 10,
+      verifyDeadlineMs: 10,
+      providerLabel: "Claude",
+      dependencies: {
+        healthy: async () => {
+          calls.push("healthy");
+          return false;
+        },
+        awaitReady: async () => {
+          calls.push("await");
+          return true;
+        },
+        restart: async () => {
+          calls.push("restart");
+          return {} as never;
+        },
+        invalidateAccess: () => {
+          calls.push("invalidate");
+        },
+      },
+    });
+    // No barrier poll against a server that does not exist: boot, then one verify.
+    expect(calls).toEqual(["healthy", "restart", "invalidate", "await"]);
   });
 
   test("skips the Claude runtime restart on the ready fast path", async () => {

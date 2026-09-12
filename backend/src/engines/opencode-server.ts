@@ -118,9 +118,8 @@ import {
   stopServerForConfigReload,
 } from "./opencode-serve";
 import {
-  OPENCODE_TEMPLATE_NAME,
-  scheduleOpenCodeTemplatePreparation,
-} from "./opencode-template";
+  boxTemplateHasOpenCode,
+} from "./box-native-template";
 export { prewarmOpenCodeRuntime } from "./opencode-serve";
 import {
   assertSandboxResources,
@@ -869,7 +868,6 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
     const startedAt = Date.now();
     const binding = await resolveSandboxBindingForRun(ctx);
     const provider = binding.provider;
-    scheduleOpenCodeTemplatePreparation(ctx, binding);
     // Recorded next to the sandbox id: the binding that actually produced the sandbox.
     let effectiveBinding = binding;
     const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 600_000);
@@ -957,7 +955,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const resources = assertSandboxResources(box, resourceTarget);
       const launcher = opencodeLauncherFor(box, ctx, {
         baseImage,
-        prebaked: snapshot === OPENCODE_TEMPLATE_NAME,
+        prebaked: boxTemplateHasOpenCode(snapshot),
       });
       if (provisionedFresh) {
         await ctx.emit({

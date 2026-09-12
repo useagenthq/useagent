@@ -57,6 +57,7 @@ import {
   runtimeGeneration,
   RUNTIME_GENERATION,
   RUNTIME_GENERATION_LABEL,
+  runtimeEnvironmentHealthy,
 } from "./runtime-environment";
 import { createNoProgressWatchdog, NoProgressError } from "./turn-no-progress";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
@@ -106,12 +107,15 @@ interface RuntimeProviderBarrierDependencies {
   readonly awaitReady: typeof awaitRuntimeProviderReady;
   readonly restart: typeof restartRuntimeEnvironment;
   readonly invalidateAccess: typeof invalidateRuntimeEnvironmentAccess;
+  /** Whether the runtime server is up at all. Absent in tests means "up". */
+  readonly healthy?: typeof runtimeEnvironmentHealthy;
 }
 
 const runtimeProviderBarrierDependencies: RuntimeProviderBarrierDependencies = {
   awaitReady: awaitRuntimeProviderReady,
   restart: restartRuntimeEnvironment,
   invalidateAccess: invalidateRuntimeEnvironmentAccess,
+  healthy: runtimeEnvironmentHealthy,
 };
 
 export async function ensureRuntimeProviderReadyForTurn(input: {
@@ -124,13 +128,19 @@ export async function ensureRuntimeProviderReadyForTurn(input: {
   readonly dependencies?: RuntimeProviderBarrierDependencies;
 }): Promise<void> {
   const dependencies = input.dependencies ?? runtimeProviderBarrierDependencies;
+  // A fresh sandbox has no runtime server yet, so its status cache cannot fill
+  // no matter how long the barrier waits. Boot straight away instead of
+  // burning the whole barrier deadline first; the boot reads the settings
+  // written just before it, which is the deterministic path anyway.
+  const up = dependencies.healthy ? await dependencies.healthy(input.sandbox) : true;
   if (
-    await dependencies.awaitReady(
+    up &&
+    (await dependencies.awaitReady(
       input.sandbox,
       input.signal,
       input.barrierDeadlineMs,
       input.readiness,
-    )
+    ))
   ) {
     return;
   }
@@ -231,7 +241,14 @@ export function runtimeRunSnapshot(
     return template;
   }
   if (sandboxProviderKind(env) === "box") {
-    return env.BOX_SNAPSHOT?.trim() || "";
+    // The baked native snapshot (bun, the runtime, every provider driver, Pi,
+    // the document toolchain) wins over the generic Box template; "" is Box's
+    // base image, which installs all of that on every fresh run.
+    return (
+      operatorEnv(env, "RUNTIME_BOX_SNAPSHOT", "T3_BOX_SNAPSHOT")?.trim() ||
+      env.BOX_SNAPSHOT?.trim() ||
+      ""
+    );
   }
   return (
     operatorEnv(env, "RUNTIME_DAYTONA_SNAPSHOT", "T3_DAYTONA_SNAPSHOT")?.trim() ||
@@ -601,18 +618,24 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         if (providerBridgeLease?.authPath === "subscription") {
           const endBarrier = ctx.timing?.begin("t3.prepare.runtime_barrier");
           try {
+            // A fresh sandbox has no runtime server yet: nothing can publish the
+            // status cache, so polling it only spends the barrier deadline. Boot
+            // now (timed as runtime.readiness); the boot reads the relay config
+            // written above synchronously.
+            const up = await runtimeEnvironmentHealthy(sandbox);
             // (B) Barrier: wait for the reconcile to publish the subscription
             // (relay-backed) codex instance into its status cache. Content, not
             // mtime: health refreshes rewrite the cache for the legacy instance
             // too. Fast path, no restart cost.
             if (
+              !up ||
               !(await awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS))
             ) {
               // (A) Fallback: the reconcile did not land in time. Bounce T3 so boot
               // reads the relay config synchronously and builds the remote instance
               // from the start, then verify once before steering. Honest error if
               // the runtime never reports ready.
-              await restartRuntimeEnvironment(sandbox, ctx.signal);
+              await restartRuntimeEnvironment(sandbox, ctx.signal, ctx.timing);
               invalidateRuntimeEnvironmentAccess(sandbox);
               if (
                 !(await awaitCodexProviderReady(sandbox, ctx.signal, CODEX_VERIFY_DEADLINE_MS))

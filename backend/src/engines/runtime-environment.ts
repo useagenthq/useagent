@@ -207,7 +207,7 @@ export function buildRuntimeEnvironmentLaunchCommand(
   ].join("\n");
 }
 
-async function runtimeEnvironmentHealthy(sandbox: RuntimeEnvironmentSandbox): Promise<boolean> {
+export async function runtimeEnvironmentHealthy(sandbox: RuntimeEnvironmentSandbox): Promise<boolean> {
   try {
     const probe = await sandbox.process.executeCommand(
       buildRuntimeEnvironmentReadinessCommand(),
