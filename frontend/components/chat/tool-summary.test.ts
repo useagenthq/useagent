@@ -205,3 +205,88 @@ describe("summarizeToolStep", () => {
     expect(summary.detail?.length).toBeLessThanOrEqual(160);
   });
 });
+
+describe("summarizeToolStep verb + object (the trace row's text and chip)", () => {
+  test("a shell step is Run + the command line", () => {
+    const summary = summarizeToolStep(
+      step({ code: { tool: "execute", input: { command: "git status" }, output: "clean" } }),
+    );
+    expect(summary).toMatchObject({ verb: "Run", object: "git status", objectMono: true, command: "git status" });
+  });
+
+  test("a known gateway call splits its verb from its object; the label keeps its wording", () => {
+    const activate = summarizeToolStep(
+      step({ code: { tool: "skill_activate", input: { name: "design-taste" }, output: "ok" } }),
+    );
+    expect(activate).toMatchObject({
+      label: "Activated playbook: design-taste",
+      verb: "Activated playbook",
+      object: "design-taste",
+      objectMono: true,
+    });
+    const search = summarizeToolStep(
+      step({ code: { tool: "websearch", input: { query: "bun test timeout" }, output: "..." } }),
+    );
+    expect(search).toMatchObject({
+      label: "Searched the web for bun test timeout",
+      verb: "Searched the web",
+      object: "bun test timeout",
+      objectMono: false,
+    });
+    const recall = summarizeToolStep(
+      step({
+        code: {
+          tool: "execute",
+          input: { name: "memory_search", arguments: { query: "digest" } },
+          output: MCP_RESULT,
+        },
+      }),
+    );
+    expect(recall).toMatchObject({ label: "Recalled memory", verb: "Recalled memory", object: "digest" });
+  });
+
+  test("codex's MCP bridge (execute + input.tool + a dotted title) names the real call, never Execute", () => {
+    const codex = step({
+      label: "mcp.useagent.skills_list",
+      code: {
+        tool: "execute",
+        title: "mcp.useagent.skills_list",
+        input: { server: "useagent", tool: "skills_list", arguments: { cursor: 0, limit: 100 } },
+        output: JSON.stringify({ result: { content: [{ type: "text", text: "[abc] skill: pr-review (v3)" }] } }),
+      },
+    });
+    const summary = summarizeToolStep(codex);
+    expect(summary.label).toBe("Searched playbooks");
+    expect(summary.verb).toBe("Searched playbooks");
+    expect(summary.detail).toBe("[abc] skill: pr-review (v3)");
+    expect(summary.label).not.toContain("Execute");
+    expect(summary.label).not.toContain("mcp.");
+  });
+
+  test("a file tool's object is the file, a read tool's object the file it read", () => {
+    const read = summarizeToolStep(
+      step({ code: { tool: "read", input: { file_path: "frontend/components/chat/timeline.ts" }, output: "// Interleaved" } }),
+    );
+    expect(read).toMatchObject({ verb: "Read", object: "timeline.ts", objectMono: true });
+    const edit = summarizeToolStep(
+      step({ kind: "file", code: { tool: "edit", input: { file_path: "src/app.ts", old_string: "a", new_string: "b" } } }),
+    );
+    expect(edit).toMatchObject({ verb: "Edit", object: "app.ts", objectMono: true });
+  });
+
+  test("an uncatalogued tool takes its object from its own arguments, never the server", () => {
+    const summary = summarizeToolStep(
+      step({
+        code: {
+          tool: "execute",
+          title: "mcp.useagent.resource_catalog_search",
+          input: { server: "useagent", tool: "resource_catalog_search", arguments: { provider: "github", query: "useagent" } },
+          output: JSON.stringify({ result: { content: [{ type: "text", text: "1 repository" }] } }),
+        },
+      }),
+    );
+    expect(summary.verb).toBe("Resource catalog search");
+    expect(summary.object).toBe("useagent");
+    expect(summary.verb).not.toContain("Execute");
+  });
+});

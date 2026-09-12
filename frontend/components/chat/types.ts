@@ -138,7 +138,9 @@ const TRANSPORT_PLACEHOLDER_LABELS = new Set([
   "tool updated",
 ]);
 
-const TRANSPORT_TOOL_NAMES = new Set(["dynamic_tool_call", "mcp_tool_call", "tool", "unknown"]);
+// `execute` is the ACP bridge's generic call: a shell command when the input
+// carries one, otherwise the MCP tool named in `input.tool` (codex) / `input.name`.
+const TRANSPORT_TOOL_NAMES = new Set(["dynamic_tool_call", "mcp_tool_call", "tool", "unknown", "execute"]);
 
 /**
  * Durable runs can contain provider transport receipts that are useful for raw
@@ -359,8 +361,9 @@ export interface StepTrace {
   isError: boolean;
 }
 
-/** Engine ids that tag a sandbox lifecycle/boot row (chip === engine id). */
-const ENGINE_CHIPS = new Set<string>(["opencode", "claude", "codex"]);
+/** Chips that tag a sandbox lifecycle/boot row: the engine id, the shared
+ *  `boot` phase row, and the chat engine's context-preparation row. */
+const ENGINE_CHIPS = new Set<string>(["boot", "opencode", "claude", "codex", "pi", "chat"]);
 
 /** Tool name (lower-cased) → its display verb + glyph family. */
 const TOOL_VERB: Record<string, { verb: string; glyph: TraceGlyph }> = {
@@ -425,7 +428,7 @@ function semanticToolName(
   return (
     pickString(code, ["name", "toolName", "tool_name", "method", "functionName"]) ??
     pickNestedString(code, ["function", "name"]) ??
-    pickString(input, ["name", "toolName", "tool_name", "method", "functionName"]) ??
+    pickString(input, ["name", "tool", "toolName", "tool_name", "method", "functionName"]) ??
     tool
   );
 }

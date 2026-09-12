@@ -458,7 +458,7 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
   // Canonical context markers (useAgent lane): skill.loaded + context.retrieved.
   // Emitted at run START (lowest seqs), so they LEAD the turn (k0 below the boot
   // sentinel of -1) — "Loaded skill X · Recalled N memories" as the turn's header.
-  // Rendered as typed rows in this shared grammar (MarkerRow), never a parallel
+  // Rendered as step lines of the turn trace (turn-trace-model), never a parallel
   // context pane. Reconnect replays them from the durable native lane like any
   // other frame. An unknown useAgent eventType parses to null → rendered as nothing.
   for (const f of nativeFrames) {

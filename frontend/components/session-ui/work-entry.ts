@@ -263,6 +263,19 @@ export function buildToolCallExpandedBody(
   return blocks.length > 0 ? blocks.join("\n\n") : null;
 }
 
+/** Port addition: whether buildToolCallExpandedBody would render anything,
+ *  decided without building it (a row settles its expandability per render;
+ *  the body itself is built only once the row is opened). */
+export function workEntryHasExpandedBody(entry: WorkEntry): boolean {
+  return Boolean(
+    (entry.itemType === "mcp_tool_call" && entry.toolData !== undefined) ||
+      entry.rawCommand?.trim() ||
+      entry.command?.trim() ||
+      entry.detail?.trim() ||
+      (entry.changedFiles?.length ?? 0) > 0,
+  );
+}
+
 // ── Icon grammar (MessagesTimeline.tsx) ─────────────────────────────────────
 
 export type WorkEntryIconName =

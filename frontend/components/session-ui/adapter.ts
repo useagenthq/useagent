@@ -13,18 +13,15 @@
 //   while the icon stays eye/square-pen/terminal.
 // - Uncatalogued/MCP tools ("task" glyph with a real verb) become dynamic_tool_call
 //   rows; output rides in `detail` (expanded body), never `command`, so the icon
-//   resolves to the hammer, not the terminal.
+//   resolves to the generic tool glyph, not the terminal.
 
 import { type ChildUsage } from "@/components/chat/child-usage";
 import { type TimelineNode } from "@/components/chat/timeline";
 import { summarizeToolStep } from "@/components/chat/tool-summary";
-import { deriveTrace, parseFileEntries, parseTodos } from "@/components/chat/types";
+import { deriveTrace, parseFileEntries } from "@/components/chat/types";
 import { type ChangedFile } from "./changed-files";
 import { type ContextWindowUsage } from "./context-window-meter";
-import {
-  type WorkEntry,
-  toolWorkEntryHeading,
-} from "./work-entry";
+import { type WorkEntry } from "./work-entry";
 
 export type RowState = "running" | "done";
 
@@ -106,87 +103,6 @@ export function workEntriesFromTimeline(
     if (entry) entries.push(entry);
   }
   return entries;
-}
-
-// ── Session-timeline segmentation (conversation.tsx binding) ─────────────────
-//
-// Upstream renders the timeline as message rows interleaved with WorkGroupSection
-// bursts, plus ONE working row at the tail while a turn is in flight; in-progress
-// tool entries never render as rows (groupWorkEntryOverflow filters neutral
-// status) - the working indicator's step suffix represents them instead.
-
-export type TimelineSegment =
-  | { kind: "node"; key: string; node: Exclude<TimelineNode, { kind: "tool" } | { kind: "plan" }> }
-  | { kind: "plan"; key: string; entries: Extract<TimelineNode, { kind: "plan" }>["entries"] }
-  | { kind: "tools"; key: string; entries: WorkEntry[] };
-
-export interface TimelineProjection {
-  segments: TimelineSegment[];
-  /** "Heading - preview" of the in-flight tool while live (WorkingIndicator's
-   *  stepLabel, upstream workingStepLabel); null unless the timeline currently
-   *  ends in a running tool. */
-  workingLabel: string | null;
-}
-
-/** Compact semantic heading for the live indicator. Detailed tool output stays in
- *  the expandable work entry instead of overflowing the one-line status suffix. */
-function entryDisplayLabel(entry: WorkEntry): string {
-  return toolWorkEntryHeading(entry);
-}
-
-/**
- * Segment a canonical timeline for the session conversation: non-tool nodes stay
- * in true order under their own renderers; consecutive tool nodes fold into one
- * T3 work group. While live, the trailing tool maps to "running" (the group
- * filters it) and its label rides out as `workingLabel`.
- */
-export function segmentTimeline(
-  nodes: readonly TimelineNode[],
-  live: boolean,
-): TimelineProjection {
-  const segments: TimelineSegment[] = [];
-  let workingLabel: string | null = null;
-  let latestPlanIndex = -1;
-  const planEntries = new Map<number, Extract<TimelineNode, { kind: "plan" }>["entries"]>();
-  for (const [index, node] of nodes.entries()) {
-    if (node.kind === "plan") {
-      latestPlanIndex = index;
-      planEntries.set(index, node.entries);
-      continue;
-    }
-    if (node.kind !== "tool") continue;
-    const todos = parseTodos(node.step);
-    if (!todos) continue;
-    latestPlanIndex = index;
-    planEntries.set(
-      index,
-      todos.map(({ id, content, status }) => ({ id, text: content, status })),
-    );
-  }
-  for (const [index, node] of nodes.entries()) {
-    const entries = planEntries.get(index);
-    if (entries) {
-      if (index === latestPlanIndex) {
-        segments.push({ kind: "plan", key: node.key, entries });
-      }
-      continue;
-    }
-    if (node.kind === "plan") continue;
-    if (node.kind !== "tool") {
-      segments.push({ kind: "node", key: node.key, node });
-      continue;
-    }
-    const state: RowState = live && index === nodes.length - 1 ? "running" : "done";
-    const entry = workEntryFromTimelineNode(node, state);
-    if (!entry) continue;
-    const last = segments.at(-1);
-    if (last?.kind === "tools") last.entries.push(entry);
-    else segments.push({ kind: "tools", key: node.key, entries: [entry] });
-    if (state === "running" && entry.toolLifecycleStatus === "inProgress") {
-      workingLabel = entryDisplayLabel(entry);
-    }
-  }
-  return { segments, workingLabel };
 }
 
 // ── Changed-files aggregation (ChangedFilesCard binding) ───────────────────

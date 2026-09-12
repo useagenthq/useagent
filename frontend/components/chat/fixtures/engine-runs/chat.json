@@ -1,0 +1,10 @@
+{
+  "id": "chat-run",
+  "engine": "chat",
+  "summary": "A retry budget limits repeated attempts and prevents one failing dependency from consuming all available capacity.",
+  "duration_ms": 1200,
+  "steps": [
+    {"id":"chat-step-context","run_id":"chat-run","idx":0,"kind":"task","label":"Preparing chat context...","chip":"chat","code_json":"{\"phase\":\"retrieval\"}","created_at":"2026-01-01T09:00:00.000Z"},
+    {"id":"chat-step-done","run_id":"chat-run","idx":1,"kind":"done","label":"Done","chip":null,"code_json":"{\"citations\":[]}","created_at":"2026-01-01T09:00:01.200Z"}
+  ]
+}
