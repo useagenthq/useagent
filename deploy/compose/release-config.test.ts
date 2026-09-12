@@ -55,6 +55,13 @@ describe("release configuration", () => {
 		]) {
 			expect(compose).toContain(contract);
 		}
+		const gateway = compose.slice(
+			compose.indexOf("  gateway:"),
+			compose.indexOf("  frontend:"),
+		);
+		expect(gateway).toContain(
+			"USEAGENT_API_ORIGIN: http://127.0.0.1:${USEAGENT_BACKEND_PORT}",
+		);
 		expect(compose).not.toContain(":/var/lib/skynet");
 	});
 

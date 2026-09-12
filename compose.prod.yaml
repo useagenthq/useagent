@@ -60,6 +60,7 @@ services:
       USEAGENT_RELEASE_COMMIT: ${USEAGENT_RELEASE_COMMIT:?set the exact release commit}
       NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt
       SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+      USEAGENT_API_ORIGIN: http://127.0.0.1:${USEAGENT_BACKEND_PORT}
       GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL:?set the sandbox-reachable HTTPS gateway origin}
       PROVIDER_GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL}
     healthcheck:
