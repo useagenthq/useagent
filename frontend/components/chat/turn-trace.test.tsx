@@ -160,7 +160,7 @@ describe("turn trace", () => {
     expect(html).not.toContain('data-session-ui="working-indicator"');
   });
 
-  test("the Thinking label keeps the same leading slot after a turn settles", () => {
+  test("the loader slot leads the live label and is gone once the turn settles", () => {
     const live = renderToStaticMarkup(
       <Timeline nodes={NODES.slice(0, 3)} live trace={PLAIN} workingSince="2026-09-03T09:00:00Z" />,
     );
@@ -174,10 +174,10 @@ describe("turn trace", () => {
       'data-testid="thinking-status-slot" class="flex size-4 shrink-0 items-center justify-center"';
 
     expect(liveHeader).toContain(slot);
-    expect(settledHeader).toContain(slot);
     expect(liveHeader.indexOf(slot)).toBeLessThan(liveHeader.indexOf("Thinking"));
-    expect(settledHeader.indexOf(slot)).toBeLessThan(settledHeader.indexOf("Thought for"));
     expect(liveHeader).toContain('data-pattern="dots"');
+    // Settled, nothing pads the label from the left: no slot, no loader.
+    expect(settledHeader).not.toContain('data-testid="thinking-status-slot"');
     expect(settledHeader).not.toContain("data-pattern");
   });
 
