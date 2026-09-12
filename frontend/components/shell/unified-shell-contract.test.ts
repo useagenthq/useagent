@@ -318,7 +318,11 @@ describe("unified shell contract", () => {
     expect(promptInput).toContain('el.style.height = "0px"');
     expect(promptInput).not.toContain('el.style.height = "auto"');
     expect(conversation).toContain("flex min-h-0 flex-1 flex-col overflow-hidden");
-    expect(replyComposer).toContain("mx-auto w-full max-w-5xl");
+    // The composer spans the conversation column like the timeline; a fixed cap
+    // left it narrower than the messages once the rail was dragged in.
+    expect(replyComposer).toContain('<div className="w-full">');
+    expect(replyComposer).not.toContain("max-w-5xl");
+    expect(replyComposer).toContain('className="shrink-0 px-5');
     expect(conversation).not.toContain("shrink-0 border-t p-3");
     expect(replyComposer).not.toContain("shrink-0 border-t p-3");
   });

@@ -69,8 +69,10 @@ export function ReplyComposer({
   repoRevisions?: Readonly<Record<string, string | null>>;
 }) {
   return (
-    <div className="shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
-      <div className="mx-auto w-full max-w-5xl">
+    <div className="shrink-0 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
+      {/* Full column width, like the timeline above it: the two edges line up
+          however wide the conversation is dragged. */}
+      <div className="w-full">
         <Composer
           variant="compact"
           placeholder={placeholder}

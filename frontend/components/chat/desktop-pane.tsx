@@ -178,7 +178,7 @@ export function DesktopPane({
   const [status, setStatus] = useState("No active sandbox. Send a message to start one.");
   // The Agent Screen stage: the frame plus, while expanded, the viewer chrome.
   // Pointer and focus activity inside it never releases captured input.
-  const surfaceRef = useRef<HTMLDialogElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   // Mirrors inputCaptured synchronously so the focus-steal guard cannot race
   // the explicit transition from watch-only to interactive desktop input.
@@ -252,14 +252,9 @@ export function DesktopPane({
     setInputCaptured(true);
   }, []);
 
-  // Collapsing the viewer always hands input back: the card is view-only.
-  const setViewer = useCallback(
-    (open: boolean) => {
-      if (!open) releaseCapture();
-      setViewerOpen(open);
-    },
-    [releaseCapture],
-  );
+  // Control survives collapsing the viewer: the card can hold the pointer too.
+  // Any click or focus outside the stage still releases it (the effect below).
+  const setViewer = useCallback((open: boolean) => setViewerOpen(open), []);
 
   // SessionView keeps the desktop mounted to preserve its WebSocket. When a
   // different rail surface becomes active, close the modal and release input
@@ -357,16 +352,18 @@ export function DesktopPane({
   }, [loaded, inputCaptured]);
 
   const connected = ready && loaded;
+  const frameInteractive = desktopFrameInteractive({ loaded, captured: inputCaptured });
 
   return (
     <div className="size-full overflow-y-auto p-3">
       <AgentScreen
-        ref={surfaceRef}
+        surfaceRef={surfaceRef}
         status={desktopScreenStatus({ connected, live })}
         loading={!connected}
         loadingCaption={ready ? undefined : status}
         open={viewerOpen}
         onOpenChange={setViewer}
+        interactive={frameInteractive}
         controls={
           <Button
             variant="secondary"
@@ -393,15 +390,7 @@ export function DesktopPane({
                 event.currentTarget.blur();
               }}
               className="absolute inset-0 size-full border-0"
-              style={{
-                pointerEvents: desktopFrameInteractive({
-                  expanded: viewerOpen,
-                  loaded,
-                  captured: inputCaptured,
-                })
-                  ? "auto"
-                  : "none",
-              }}
+              style={{ pointerEvents: frameInteractive ? "auto" : "none" }}
               allow="clipboard-read; clipboard-write"
             />
           ) : null

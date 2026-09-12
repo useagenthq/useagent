@@ -17,18 +17,16 @@ export function desktopScreenStatus({
 }
 
 /**
- * The noVNC frame takes pointer input only inside the expanded viewer, once
- * it has loaded, after the explicit take-control gesture. The collapsed card
- * is view-only whatever else is true, so it can never steal a click or focus.
+ * The noVNC frame takes pointer input only once it has loaded and after the
+ * explicit take-control gesture, in the card and in the viewer alike. Until
+ * that gesture the frame is view-only, so it can never steal a click or focus.
  */
 export function desktopFrameInteractive({
-  expanded,
   loaded,
   captured,
 }: {
-  expanded: boolean;
   loaded: boolean;
   captured: boolean;
 }): boolean {
-  return expanded && loaded && captured;
+  return loaded && captured;
 }

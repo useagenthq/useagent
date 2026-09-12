@@ -118,11 +118,11 @@ describe("Desktop product surface", () => {
 
     expect(desktopPane).toContain("tabIndex={-1}");
     expect(desktopPane).toContain('data-testid="desktop-frame"');
-    // Pointer input reaches the frame only in the expanded viewer, once loaded,
-    // after the explicit take-control gesture (desktopFrameInteractive).
-    expect(desktopPane).toContain("pointerEvents: desktopFrameInteractive({");
-    expect(desktopPane).toContain("expanded: viewerOpen,");
-    expect(desktopPane).toContain("captured: inputCaptured,");
+    // Pointer input reaches the frame only once loaded and after the explicit
+    // take-control gesture (desktopFrameInteractive), card or viewer alike.
+    expect(desktopPane).toContain("desktopFrameInteractive({ loaded, captured: inputCaptured })");
+    expect(desktopPane).toContain('pointerEvents: frameInteractive ? "auto" : "none"');
+    expect(desktopPane).toContain("interactive={frameInteractive}");
     expect(desktopPane).toContain('aria-label="Control sandbox desktop"');
     expect(desktopPane).toContain('window.addEventListener("focusin", releaseDesktopInput, true)');
     expect(desktopPane).toContain(
@@ -169,16 +169,22 @@ describe("Desktop product surface", () => {
     expect(threadPage).toContain("<SessionView");
   });
 
-  test("the viewer's take-control toggle is the only way into the frame; collapsing releases it", () => {
+  test("the take-control toggle is the only way into the frame; control survives collapse, leaving the surface releases it", () => {
     const desktopPane = read("./desktop-pane.tsx");
+    const agentScreen = read("../ai/agent-screen.tsx");
 
     expect(desktopPane).toContain("aria-pressed={inputCaptured}");
     expect(desktopPane).toContain('{inputCaptured ? "Release control" : "Take control"}');
     expect(desktopPane).toContain("onClick={inputCaptured ? releaseCapture : captureInput}");
-    expect(desktopPane).toContain("if (!open) releaseCapture();");
+    expect(desktopPane).not.toContain("if (!open) releaseCapture();");
     expect(desktopPane).toContain("if (active) return;");
     expect(desktopPane).toContain("setViewerOpen(false);");
-    // The collapsed card has no capture affordance at all.
+    // The one toggle lives in the card's status row while collapsed and in the
+    // viewer's title bar while open; no click-to-control overlay anywhere.
+    expect(agentScreen).toContain("{!open && controls}");
+    expect(agentScreen).toContain("ref={surfaceRef}");
+    expect(agentScreen).toContain("ref={openButtonRef}");
+    expect(desktopPane).toContain("surfaceRef={surfaceRef}");
     expect(desktopPane).not.toContain("Click to control desktop");
   });
 
