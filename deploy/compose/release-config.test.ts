@@ -263,7 +263,7 @@ describe("release configuration", () => {
 
 	test("adopts the legacy production topology without changing unrelated Caddy directives", () => {
 		const source = [
-			"app.useagent.org, skynet.meow.gs {",
+			"app.useagent.org, legacy.example {",
 			'\theader { X-Content-Type-Options "nosniff" }',
 			"\t@relay path /api/internal/codex-relay/*",
 			"\thandle @relay {",
@@ -275,11 +275,11 @@ describe("release configuration", () => {
 			"\t\treverse_proxy 127.0.0.1:3400",
 			"\t}",
 			"}",
-			"gateway.sandbox.skynet.meow.gs {",
+			"gateway.sandbox.legacy.example {",
 			"\treverse_proxy 127.0.0.1:3202",
 			"}",
-			"registry.sandbox.skynet.meow.gs { reverse_proxy 127.0.0.1:5000 }",
-			"*.sandbox.skynet.meow.gs {",
+			"registry.sandbox.legacy.example { reverse_proxy 127.0.0.1:5000 }",
+			"*.sandbox.legacy.example {",
 			"\ttls internal",
 			"\t@backend remote_ip 127.0.0.1 ::1",
 			"\thandle @backend { reverse_proxy 127.0.0.1:18080 }",
@@ -315,8 +315,8 @@ describe("release configuration", () => {
 		for (const preserved of [
 			'header { X-Content-Type-Options "nosniff" }',
 			"handle @oauth { reverse_proxy 127.0.0.1:3300 }",
-			"registry.sandbox.skynet.meow.gs { reverse_proxy 127.0.0.1:5000 }",
-			"*.sandbox.skynet.meow.gs {",
+			"registry.sandbox.legacy.example { reverse_proxy 127.0.0.1:5000 }",
+			"*.sandbox.legacy.example {",
 			"handle @backend { reverse_proxy 127.0.0.1:18080 }",
 			'respond "Forbidden" 403',
 		]) {
