@@ -16,6 +16,7 @@ import {
 } from "../provider-gateway/sandbox-config";
 import type { EngineRunContext } from "./types";
 import { RUNTIME_ENVIRONMENT_HOME, RUNTIME_GENERATION } from "./runtime-environment";
+import { BOX_HOSTING_DOMAIN } from "../sandboxes/box-provider";
 
 const CODEX_EXEC_SERVER_PORT = 37_734;
 const CODEX_EXEC_SERVER_SESSION = "skynet-codex-exec-server";
@@ -304,6 +305,13 @@ function assertTrustedPreviewHost(
     const domain = env.CUBE_SANDBOX_DOMAIN?.trim().toLowerCase() || "cube.app";
     if (hostname !== domain && !hostname.endsWith(`.${domain}`)) {
       throw new Error("Codex exec-server preview is outside the Cube sandbox domain");
+    }
+    return;
+  }
+  if (provider === "box") {
+    const domain = env.BOX_HOSTING_DOMAIN?.trim().toLowerCase() || BOX_HOSTING_DOMAIN;
+    if (url.protocol !== "https:" || !hostname.endsWith(`.${domain}`)) {
+      throw new Error("Codex exec-server preview is outside the Box hosting domain");
     }
     return;
   }

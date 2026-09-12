@@ -1,6 +1,7 @@
 import {
   sandboxProvider,
   sandboxProviderApiKey,
+  sandboxProviderKind,
   sandboxTemplate,
   type SandboxHandle,
 } from "../sandboxes/provider";
@@ -580,7 +581,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         // The documented CLI fallback must honor the same persisted repository
         // and change-resource scope as the resident ACP/runtime adapters. Prepare
         // the base checkout first, then pin an authorized PR to its exact head.
-        const workdir = "/home/daytona/work";
+        const workdir = sandboxProviderKind() === "box" ? "/home/user/work" : "/home/daytona/work";
         await prepareRepos(box, workdir, ctx);
         await checkoutPullRequestResources(
           box,

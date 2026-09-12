@@ -21,9 +21,11 @@ import {
   daytonaValidationHttpStatus,
   validateDaytonaConnection,
 } from "./daytona";
+import { BoxConnectionValidationError, boxValidationHttpStatus, validateBoxConnection } from "./box";
 import {
   isProviderConnectionAuthMethod,
   isProviderConnectionProvider,
+  readBoxConnectionMetadata,
   readDaytonaConnectionMetadata,
   readModelProviderMetadata,
   type ProviderConnectionAuthMethod,
@@ -56,10 +58,12 @@ const defaultCodexChatGptOAuthLifecycle: CodexChatGptOAuthLifecycle = {
 export function createProviderConnectionsRoutes(input: {
   codexChatGptOAuth?: CodexChatGptOAuthLifecycle;
   validateDaytona?: typeof validateDaytonaConnection;
+  validateBox?: typeof validateBoxConnection;
 } = {}): Hono<AppEnv> {
   const providerConnectionsRoutes = new Hono<AppEnv>();
   const codexChatGptOAuth = input.codexChatGptOAuth ?? defaultCodexChatGptOAuthLifecycle;
   const validateDaytona = input.validateDaytona ?? validateDaytonaConnection;
+  const validateBox = input.validateBox ?? validateBoxConnection;
 
   providerConnectionsRoutes.use("*", orgScope);
 
@@ -165,7 +169,21 @@ export function createProviderConnectionsRoutes(input: {
     if (provider === "daytona" && !daytonaMetadata) {
       return c.json({ error: "valid Daytona snapshotName is required" }, 400);
     }
-    const metadata = daytonaMetadata ?? readModelProviderMetadata(body.metadata);
+    const boxMetadata = provider === "box" ? readBoxConnectionMetadata(body.metadata) : null;
+    if (provider === "box" && !boxMetadata) {
+      return c.json({ error: "Box snapshotName must be a valid snapshot name" }, 400);
+    }
+    const metadata = daytonaMetadata ?? boxMetadata ?? readModelProviderMetadata(body.metadata);
+    if (provider === "box") {
+      try {
+        await validateBox({ apiKey, ...(boxMetadata?.snapshotName ? { snapshotName: boxMetadata.snapshotName } : {}) });
+      } catch (error) {
+        if (error instanceof BoxConnectionValidationError) {
+          return c.json({ error: error.code }, boxValidationHttpStatus(error.code));
+        }
+        throw error;
+      }
+    }
     if (provider === "daytona") {
       try {
         await validateDaytona({ apiKey, snapshotName: daytonaMetadata!.snapshotName });

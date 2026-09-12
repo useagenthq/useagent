@@ -4,7 +4,7 @@ import { Chip } from "@/components/base/badges/chip";
 import { AppShell } from "@/components/shell/app-shell";
 import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import { ApiKeysCard } from "./api-keys-card";
-import { DaytonaConnectionCard } from "./daytona-connection-card";
+import { ComputerConnectionsCard } from "./computer-connections-card";
 import { GeneralCard } from "./general-card";
 import { IntegrationConnections } from "./integration-connections";
 import { ProviderConnectionsCard } from "./provider-connections-card";
@@ -125,7 +125,7 @@ export default function SettingsPage() {
                 title="Infrastructure"
                 description="View the managed runtime and connect optional sandbox accounts."
               >
-                <DaytonaConnectionCard />
+                <ComputerConnectionsCard />
               </Section>
 
               {/* Secrets */}

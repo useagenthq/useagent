@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { DaytonaProvider } from "./daytona-provider";
 import {
+  boxApiConfig,
+  sandboxPreviewHeaders,
   sandboxProvider,
   sandboxProviderApiKey,
   sandboxProviderKind,
-  sandboxPreviewHeaders,
   sandboxTemplate,
 } from "./provider";
 
@@ -30,7 +31,7 @@ describe("sandbox provider selection", () => {
 
   test("rejects unknown providers instead of silently falling back", () => {
     expect(() => sandboxProviderKind({ SANDBOX_PROVIDER: "other" })).toThrow(
-      "SANDBOX_PROVIDER must be daytona or cube",
+      "SANDBOX_PROVIDER must be daytona, cube, or box",
     );
   });
 
@@ -67,6 +68,22 @@ describe("sandbox provider selection", () => {
         DAYTONA_SNAPSHOT: "daytona-template",
       }),
     ).toBe("daytona-template");
+  });
+});
+
+describe("Box provider selection", () => {
+  test("selects Box explicitly and reads its own key, snapshot, and machine type", () => {
+    const env = { SANDBOX_PROVIDER: "box", BOX_API_KEY: " box_key ", BOX_SNAPSHOT: "useagent-runtime", BOX_MACHINE_TYPE: "large" };
+    expect(sandboxProviderKind(env)).toBe("box");
+    expect(sandboxProviderApiKey(env)).toBe("box_key");
+    expect(sandboxTemplate("DAYTONA_SNAPSHOT", "fallback", env)).toBe("useagent-runtime");
+    expect(sandboxTemplate("DAYTONA_SNAPSHOT", "fallback", { SANDBOX_PROVIDER: "box" })).toBe("");
+    expect(boxApiConfig("k", env)).toEqual({ apiKey: "k", apiUrl: "https://ascii.dev/api/box/v1", machineType: "large" });
+    expect(() => boxApiConfig("k", { BOX_MACHINE_TYPE: "huge" })).toThrow(/BOX_MACHINE_TYPE/);
+  });
+
+  test("Box preview links carry their token in the URL, never in headers", () => {
+    expect(sandboxPreviewHeaders("tok", "box")).toEqual({});
   });
 });
 

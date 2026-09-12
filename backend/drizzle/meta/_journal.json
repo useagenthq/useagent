@@ -535,24 +535,10 @@
       "breakpoints": true
     },
     {
-      "idx": 76,
+      "idx": 79,
       "version": "7",
-      "when": 1791700000000,
-      "tag": "0078_bots",
-      "breakpoints": true
-    },
-    {
-      "idx": 77,
-      "version": "7",
-      "when": 1791800000000,
-      "tag": "0079_bot_routines",
-      "breakpoints": true
-    },
-    {
-      "idx": 78,
-      "version": "7",
-      "when": 1791900000000,
-      "tag": "0080_bot_handoffs",
+      "when": 1792000000000,
+      "tag": "0081_box_provider_connections",
       "breakpoints": true
     }
   ]

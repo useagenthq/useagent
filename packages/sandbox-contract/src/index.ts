@@ -11,7 +11,7 @@
 // Keep this file a pure leaf: types only, zero imports, zero runtime, so any
 // runtime can depend on the contract without pulling server code.
 
-export type SandboxProviderKind = "daytona" | "cube";
+export type SandboxProviderKind = "daytona" | "cube" | "box";
 
 export interface SandboxExecuteResult {
   result?: string;
