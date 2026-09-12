@@ -15,15 +15,26 @@ import {
   createBotRow,
   describeBot,
   describeBots,
+  getBotRoutine,
   getBotRow,
   latestRunInThread,
+  listBotRoutines,
   listBotRows,
   parseBotInput,
   rowToInput,
+  attachRoutine,
   setBotHomeThread,
   updateBotRow,
 } from "./repo";
 import { botsEnabled } from "./rollout";
+import { listFirings } from "../schedules/repo";
+import {
+  createScheduleForOrg,
+  deleteScheduleForOrg,
+  fireScheduleForOrg,
+  ScheduleServiceError,
+  updateScheduleForOrg,
+} from "../schedules/service";
 
 const MESSAGE_MAX = 20_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -203,4 +214,142 @@ botsRoutes.post("/:id/messages", async (c) => {
     );
   }
   return response;
+});
+
+/* ------------------------------------------------------------------------ */
+/* Routines: schedules owned by the bot. They reuse the automations service  */
+/* (validation, cron, skill pinning, firing) and differ only in where they   */
+/* post - the bot's home thread - and in inheriting the bot's preset.        */
+/* ------------------------------------------------------------------------ */
+
+const ROUTINE_PATCH_FIELDS = ["name", "cron", "timezone", "prompt", "enabled"] as const;
+
+function routineView(row: {
+  id: string;
+  name: string;
+  cron: string;
+  timezone: string | null;
+  prompt: string;
+  enabled: boolean;
+  lastFiredAt: Date | null;
+  createdAt: Date;
+}) {
+  return {
+    id: row.id,
+    name: row.name,
+    cron: row.cron,
+    timezone: row.timezone,
+    prompt: row.prompt,
+    enabled: row.enabled,
+    lastFiredAt: row.lastFiredAt ? row.lastFiredAt.toISOString() : null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function scheduleError(error: unknown): Response | null {
+  return error instanceof ScheduleServiceError ? Response.json(error.body, { status: error.status }) : null;
+}
+
+botsRoutes.get("/:id/routines", async (c) => {
+  const id = botId(c.req.param("id"));
+  if (!id) return c.json({ error: "not_found" }, 404);
+  const row = await getBotRow(c.get("orgId"), id);
+  if (!row) return c.json({ error: "not_found" }, 404);
+  const routines = await listBotRoutines(c.get("orgId"), row.id);
+  return c.json({ routines: routines.map(routineView) });
+});
+
+botsRoutes.post("/:id/routines", async (c) => {
+  const orgId = c.get("orgId");
+  const id = botId(c.req.param("id"));
+  if (!id) return c.json({ error: "not_found" }, 404);
+  const row = await getBotRow(orgId, id);
+  if (!row) return c.json({ error: "not_found" }, 404);
+  const body = await readBody(c);
+  if (!body) return c.json({ error: "invalid_body" }, 400);
+  const skillId = row.skillIds[0];
+  // The routine carries the bot's preset; the body may only shape when/what.
+  const draft: Record<string, unknown> = {
+    name: body.name,
+    cron: body.cron,
+    timezone: body.timezone,
+    prompt: body.prompt,
+    enabled: body.enabled ?? true,
+    engine: row.engine,
+    ...(row.model ? { model: row.model } : {}),
+    ...(row.repos.length > 0 ? { repos: [...row.repos] } : {}),
+    ...(skillId ? { skill: { id: skillId } } : {}),
+  };
+  try {
+    const created = await createScheduleForOrg({ orgId, userId: c.get("userId") }, draft);
+    await attachRoutine(orgId, created.id, row.id);
+    // Automations are created paused; a routine is on unless asked otherwise.
+    if (body.enabled !== false) await updateScheduleForOrg(orgId, created.id, { enabled: true });
+    const routine = await getBotRoutine(orgId, row.id, created.id);
+    if (!routine) return c.json({ error: "routine_not_attached" }, 500);
+    return c.json({ routine: routineView(routine) }, 201);
+  } catch (error) {
+    return scheduleError(error) ?? Promise.reject(error);
+  }
+});
+
+botsRoutes.patch("/:id/routines/:routineId", async (c) => {
+  const orgId = c.get("orgId");
+  const id = botId(c.req.param("id"));
+  const routineId = botId(c.req.param("routineId"));
+  if (!id || !routineId) return c.json({ error: "not_found" }, 404);
+  const routine = await getBotRoutine(orgId, id, routineId);
+  if (!routine) return c.json({ error: "not_found" }, 404);
+  const body = await readBody(c);
+  if (!body) return c.json({ error: "invalid_body" }, 400);
+  const patch: Record<string, unknown> = {};
+  for (const field of ROUTINE_PATCH_FIELDS) if (body[field] !== undefined) patch[field] = body[field];
+  try {
+    await updateScheduleForOrg(orgId, routine.id, patch);
+    const updated = await getBotRoutine(orgId, id, routineId);
+    return c.json({ routine: updated ? routineView(updated) : null });
+  } catch (error) {
+    return scheduleError(error) ?? Promise.reject(error);
+  }
+});
+
+botsRoutes.delete("/:id/routines/:routineId", async (c) => {
+  const orgId = c.get("orgId");
+  const id = botId(c.req.param("id"));
+  const routineId = botId(c.req.param("routineId"));
+  if (!id || !routineId) return c.json({ error: "not_found" }, 404);
+  const routine = await getBotRoutine(orgId, id, routineId);
+  if (!routine) return c.json({ error: "not_found" }, 404);
+  try {
+    await deleteScheduleForOrg(orgId, routine.id);
+    return c.body(null, 204);
+  } catch (error) {
+    return scheduleError(error) ?? Promise.reject(error);
+  }
+});
+
+/** Test run: fire the routine now. Posts into the home thread like a cron firing. */
+botsRoutes.post("/:id/routines/:routineId/run-now", async (c) => {
+  const orgId = c.get("orgId");
+  const id = botId(c.req.param("id"));
+  const routineId = botId(c.req.param("routineId"));
+  if (!id || !routineId) return c.json({ error: "not_found" }, 404);
+  const routine = await getBotRoutine(orgId, id, routineId);
+  if (!routine) return c.json({ error: "not_found" }, 404);
+  try {
+    const runId = await fireScheduleForOrg(routine, "manual");
+    return c.json({ runId }, 202);
+  } catch (error) {
+    return scheduleError(error) ?? Promise.reject(error);
+  }
+});
+
+botsRoutes.get("/:id/routines/:routineId/history", async (c) => {
+  const orgId = c.get("orgId");
+  const id = botId(c.req.param("id"));
+  const routineId = botId(c.req.param("routineId"));
+  if (!id || !routineId) return c.json({ error: "not_found" }, 404);
+  const routine = await getBotRoutine(orgId, id, routineId);
+  if (!routine) return c.json({ error: "not_found" }, 404);
+  return c.json({ firings: await listFirings(routine.id) });
 });

@@ -24,6 +24,7 @@ function bot(overrides: Partial<ApiBot>): ApiBot {
     lastOutcome: null,
     lastAt: null,
     pendingApprovals: 0,
+    routines: 0,
     ...overrides,
   };
 }

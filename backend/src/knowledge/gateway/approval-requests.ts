@@ -4,6 +4,7 @@ import { gatewayApprovalRequests } from "../../db/schema";
 import { recordProviderEvent } from "../../runs/provider-events";
 import { getRunForOrg } from "../../runs/repo";
 import { approvalArgumentsHash, mintApprovalCapability } from "./approval-capability";
+import { isBotHomeThread } from "../../bots/repo";
 
 // ---------------------------------------------------------------------------
 // Durable approval-request lane (#77). The agent records a request for one
@@ -19,6 +20,13 @@ import { approvalArgumentsHash, mintApprovalCapability } from "./approval-capabi
 
 /** How long a request waits for the human before it lapses. */
 const REQUEST_TTL_MS = 15 * 60_000;
+/** A bot's home thread is a standing assignment: its approvals wait for a
+ *  person instead of expiring in minutes and leaving the bot silently stuck. */
+export const BOT_REQUEST_TTL_MS = 7 * 24 * 60 * 60_000;
+
+async function approvalTtlMs(orgId: string, threadId: string): Promise<number> {
+  return (await isBotHomeThread(orgId, threadId)) ? BOT_REQUEST_TTL_MS : REQUEST_TTL_MS;
+}
 const LIST_LIMIT = 50;
 
 /** Timeline provider lane for approval cards (mirrors "useAgent-knowledge"). */
@@ -168,7 +176,7 @@ export async function createApprovalRequest(
       argumentsHash,
       status: "pending",
       requestedAt: now,
-      expiresAt: new Date(now.getTime() + REQUEST_TTL_MS),
+      expiresAt: new Date(now.getTime() + (await approvalTtlMs(input.orgId, input.threadId))),
     })
     .returning();
   if (!request) throw new Error("failed to record gateway approval request");
