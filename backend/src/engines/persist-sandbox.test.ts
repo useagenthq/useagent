@@ -73,48 +73,15 @@ describe("persistSandboxBeforeExecution (P1-B: persist-before-execution, fail-cl
   });
 });
 
-// Static guard: BOTH adapters must go through the shared fail-closed helper and must NOT leave
-// a fire-and-forget `void setRunSandbox(...)` in an execution path (the P1-B regression).
-describe("both engine adapters obey the persistence-before-execution invariant (static guard)", () => {
+// Static guard: the shared sandbox acquisition every engine uses must go through the
+// fail-closed helper and must NOT leave a fire-and-forget `void setRunSandbox(...)` in an
+// execution path (the P1-B regression).
+describe("the shared sandbox acquisition obeys the persistence-before-execution invariant (static guard)", () => {
   const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
-  const acp = read("./acp-server.ts");
-  const opencode = read("./opencode-server.ts");
+  const threadSandbox = read("./thread-sandbox.ts");
 
-  test("ACP awaits persistSandboxBeforeExecution and has no fire-and-forget setRunSandbox", () => {
-    expect(acp).toContain("await persistSandboxBeforeExecution({");
-    expect(acp).not.toMatch(/void\s+setRunSandbox\(/);
-  });
-
-  test("OpenCode awaits persistSandboxBeforeExecution and has no fire-and-forget setRunSandbox", () => {
-    expect(opencode).toContain("await persistSandboxBeforeExecution({");
-    expect(opencode).not.toMatch(/void\s+setRunSandbox\(/);
-  });
-
-  test("ACP clears the fresh sandbox ref on a persist failure so the finally cannot double-delete", () => {
-    // fresh path: the helper tears the box down once; ACP nulls `sandbox` before rethrow so the
-    // run's finally (which also deletes on !succeeded) does not delete the SAME box a 2nd time.
-    // Guarded on `!retainForThread` so the reused-sandbox lifecycle is untouched.
-    expect(acp).toMatch(/if \(!retainForThread\) sandbox = null;/);
-  });
-
-  test("persistence is awaited BEFORE the engine prepares/boots (ordering, both adapters)", () => {
-    // ACP: persist precedes per-run provider/repo preparation.
-    expect(acp.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(
-      acp.indexOf("cfg.prepare?.(box, ctx)"),
-    );
-    expect(acp).toContain("const [, secretState] = await stagesTogether([");
-    // OpenCode: persist precedes wiring the knowledge gateway + booting `opencode serve`.
-    expect(opencode.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(
-      opencode.indexOf("prepareOpencodeSandboxConfig(box, ctx, baseOpenCodeConfig)"),
-    );
-  });
-
-  test("both resident adapters publish the live SDK object only after durable persistence", () => {
-    expect(acp.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(
-      acp.indexOf("rememberLiveThreadSandbox(ctx.threadId, box)"),
-    );
-    expect(opencode.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(
-      opencode.indexOf("rememberLiveThreadSandbox(ctx.threadId, box)"),
-    );
+  test("thread-sandbox awaits persistSandboxBeforeExecution and has no fire-and-forget setRunSandbox", () => {
+    expect(threadSandbox).toContain("await persistSandboxBeforeExecution({");
+    expect(threadSandbox).not.toMatch(/void\s+setRunSandbox\(/);
   });
 });

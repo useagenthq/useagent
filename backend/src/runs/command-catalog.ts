@@ -11,11 +11,11 @@ import { sandboxTemplate } from "../sandboxes/provider";
 // ---------------------------------------------------------------------------
 // Slash-command catalog — a snapshot-level cache of the engine's real command
 // list (opencode's GET /command). The list is identical for every fresh sandbox
-// of a given snapshot, so it is fetched opportunistically (the live-proxy taps
-// any thread's /command response) and cached ONCE per snapshot. The New Task
+// of a given snapshot, so it is fetched opportunistically from a live sandbox
+// and cached ONCE per snapshot. The New Task
 // composer reads it via GET /api/commands to power "/" autocomplete BEFORE a
 // sandbox exists. Best-effort throughout: a caching failure must never disturb
-// the live-proxy, and an empty cache simply means no popover.
+// a turn, and an empty cache simply means no popover.
 // ---------------------------------------------------------------------------
 
 /** The snapshot new sandboxes are created from. Mirrors the resolution in
@@ -116,38 +116,6 @@ export async function readCommandCatalog(
   return row ? { commands: row.commands, fetchedAt: row.fetchedAt } : null;
 }
 
-/** The New Task cache key for an ACP engine's native commands. Keyed by ORG **and** ENGINE:
- *  ORG so one tenant's session-derived commands (which can include org-specific skills) never
- *  leak into another tenant's New Task picker; ENGINE so a Claude session never shows
- *  Codex/OpenCode commands. This is only the PRE-session cache - a live session's snapshot
- *  (delivered through the thread stream) always wins and re-caches (self-healing on an adapter
- *  upgrade). (The `snapshot` PK column doubles as a generic catalog key.) */
-export function acpCatalogKey(orgId: string, engine: string): string {
-  return `acp:${orgId}:${engine}`;
-}
-
-/**
- * Cache an ACP engine's native command snapshot (from available_commands_update) for the
- * PRE-session New Task picker, scoped to the run's org. Upserts only a NON-empty snapshot so
- * a transient empty frame never clobbers a good cache (empty REPLACEMENT is honored on the
- * live thread stream, not in this priming cache). Never throws - callers fire-and-forget.
- */
-export async function cacheAcpCommands(
-  orgId: string,
-  engine: string,
-  commands: readonly CanonicalCommand[],
-): Promise<void> {
-  if (commands.length === 0) return;
-  await upsertCatalog(acpCatalogKey(orgId, engine), commands);
-}
-
-// The AUTHORITATIVE per-session command snapshot is NOT cached here - it is captured durably
-// in the ordered provider-events lane (acp-server records each `available_commands_update` as
-// an `acp.commands` provider event) and emitted as the run's canonical `commands.updated` by
-// the translator. This module keeps ONLY the org-scoped PRE-session New Task priming cache
-// (`acp:<org>:<engine>`, non-empty snapshots), deliberately separate from authoritative
-// session state so a live session's snapshot on the thread stream always wins.
-
 async function upsertCatalog(key: string, commands: readonly CanonicalCommand[]): Promise<void> {
   const rows: CatalogCommand[] = commands.map((c) => ({
     name: c.name,
@@ -169,13 +137,10 @@ export const commandsRoutes = new Hono<AppEnv>();
 commandsRoutes.use("*", orgScope);
 
 commandsRoutes.get("/", async (c) => {
-  // `?engine=claude|codex` reads that ACP engine's native catalog for THIS org; the default
-  // (opencode) reads the org-neutral snapshot catalog. Keyed so no engine (and no other org)
-  // ever shows commands it should not.
+  // The pre-session picker reads the org-neutral snapshot catalog; a live session's
+  // own command snapshot arrives on the thread stream and always wins.
   const engine = c.req.query("engine");
-  const orgId = c.get("orgId") ?? "";
-  const key = engine && engine !== "opencode" ? acpCatalogKey(orgId, engine) : defaultSnapshot();
-  const cached = await readCommandCatalog(key);
+  const cached = await readCommandCatalog(defaultSnapshot());
   return c.json({
     engine: engine ?? "opencode",
     commands: cached?.commands ?? [],

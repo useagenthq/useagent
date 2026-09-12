@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createSecretRedactor } from "../secrets/redact";
-import { sandboxExitError, withSandboxOutputRedaction } from "./sandbox";
+import { sandboxExitError, withSandboxOutputRedaction } from "./sandbox-output-redaction";
 import type { EmitStep, EngineRunContext } from "./types";
 
 const SECRET = "CLI_SYNTHETIC_SECRET_MARKER_9f1c2d";

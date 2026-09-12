@@ -4,191 +4,18 @@ import {
   unsupportedProviderDriverOperations,
   validateProviderDriver,
 } from "@useagent/agent-harness/control";
-import type { HarnessSession } from "@useagent/agent-harness/canonical";
 import {
   resolveHarness,
   resolveProviderDriver,
   resolveProviderDriverForSession,
   resolveProviderRegistration,
 } from "./index";
-import {
-  makeOpenCodeProviderDriver,
-  opencodeProviderDriver,
-} from "./opencode-server";
 import { t3ProviderDrivers } from "./t3-provider-driver";
 import { RUNTIME_GENERATION } from "./runtime-environment";
 
-const residentServer = {
-  baseUrl: "https://opencode.test",
-  token: "preview-token", headers: {},
-  dirQ: "?directory=%2Fworkspace",
-};
-
-function mockFetch(
-  handler: (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>,
-): typeof fetch {
-  return Object.assign(handler, {
-    preconnect(_url: string | URL): void {},
-  });
-}
-
-function sessionFor(driver: ReturnType<typeof makeOpenCodeProviderDriver>): HarnessSession {
-  return {
-    provider: driver.provider,
-    nativeSessionId: "ses/opencode 1",
-    runtime: { kind: "sandbox", id: "sandbox-1" },
-    protocolVersion: providerProtocolIdentity(driver.descriptor.protocol),
-    capabilities: driver.descriptor.capabilities,
-    generation: driver.descriptor.sessionGeneration as number,
-  };
-}
-
-describe("OpenCode provider driver", () => {
-  test("start preserves provider, runtime, protocol, and negotiated capability identity", async () => {
-    const driver = makeOpenCodeProviderDriver({
-      resolveResidentServer: async () => residentServer,
-      fetcher: mockFetch(async () => Response.json({ id: "ses-created" })),
-    });
-
-    const result = await driver.start({
-      runId: "run-1",
-      threadId: "thread-1",
-      runtime: { kind: "sandbox", id: "sandbox-1" },
-    });
-
-    expect(result.status).toBe("ok");
-    if (result.status !== "ok") return;
-    expect(result.value).toMatchObject({
-      provider: "opencode",
-      nativeSessionId: "ses-created",
-      runtime: { kind: "sandbox", id: "sandbox-1" },
-      protocolVersion: "opencode-server/compat",
-      generation: 1,
-    });
-    expect(result.value.capabilities).toEqual(driver.descriptor.capabilities);
-  });
-
-  test("resume probes the encoded native session and returns the same portable session", async () => {
-    const requests: string[] = [];
-    const driver = makeOpenCodeProviderDriver({
-      resolveResidentServer: async () => residentServer,
-      fetcher: mockFetch(async (input) => {
-        requests.push(String(input));
-        return new Response(null, { status: 200 });
-      }),
-    });
-    const session = sessionFor(driver);
-
-    await expect(driver.resume({ session })).resolves.toEqual({ status: "ok", value: session });
-    expect(requests).toEqual([
-      "https://opencode.test/session/ses%2Fopencode%201?directory=%2Fworkspace",
-    ]);
-  });
-
-  test("resume classifies only a missing session as stale", async () => {
-    const statuses = [404, 503];
-    const driver = makeOpenCodeProviderDriver({
-      resolveResidentServer: async () => residentServer,
-      fetcher: mockFetch(async () => new Response(null, { status: statuses.shift() ?? 500 })),
-    });
-    const session = sessionFor(driver);
-
-    await expect(driver.resume({ session })).resolves.toEqual({
-      status: "error",
-      code: "session_invalid",
-      message: "HTTP 404",
-    });
-    await expect(driver.resume({ session })).resolves.toEqual({
-      status: "error",
-      code: "session_resume_failed",
-      message: "HTTP 503",
-    });
-  });
-
-  test("reconcile projects provider-native history through the portable driver", async () => {
-    const driver = makeOpenCodeProviderDriver({
-      reconcile: async (input) => ({
-        outcome: "completed",
-        summary: `${input.sandboxId}:${input.sessionId}:${input.sinceMs}`,
-      }),
-    });
-
-    await expect(driver.reconcile?.({
-      session: sessionFor(driver),
-      checkpoint: { sinceMs: 42 },
-    })).resolves.toEqual({
-      status: "completed",
-      summary: "sandbox-1:ses/opencode 1:42",
-    });
-  });
-
-  test("approval steering is explicitly unsupported before touching the provider", async () => {
-    let resolverCalls = 0;
-    const driver = makeOpenCodeProviderDriver({
-      resolveResidentServer: async () => {
-        resolverCalls += 1;
-        return residentServer;
-      },
-    });
-
-    await expect(driver.steer({
-      runId: "run-1",
-      threadId: "thread-1",
-      session: sessionFor(driver),
-      input: { kind: "approval", approvalId: "approval-1", decision: "accept" },
-    })).resolves.toEqual({
-      status: "unsupported_capability",
-      provider: "opencode",
-      capability: "steer",
-      message: "OpenCode provider driver currently supports prompt steering only",
-    });
-    expect(resolverCalls).toBe(0);
-  });
-
-  test("prompt steering retries one transient server response", async () => {
-    let calls = 0;
-    const driver = makeOpenCodeProviderDriver({
-      resolveResidentServer: async () => residentServer,
-      fetcher: mockFetch(async () => {
-        calls += 1;
-        return calls === 1
-          ? Response.json({ name: "UnknownError" }, { status: 500 })
-          : new Response(null, { status: 200 });
-      }),
-    });
-
-    await expect(driver.steer({
-      runId: "run-1",
-      threadId: "thread-1",
-      session: sessionFor(driver),
-      input: { kind: "prompt", text: "hello", model: "cerebras/qwen-3.8-27b" },
-    })).resolves.toEqual({ status: "ok" });
-    expect(calls).toBe(2);
-  });
-
-  test("cancel uses the driver factory dependencies and encodes the native session", async () => {
-    const requests: Array<{ url: string; method: string }> = [];
-    const driver = makeOpenCodeProviderDriver({
-      resolveResidentServer: async () => residentServer,
-      fetcher: mockFetch(async (input, init) => {
-        requests.push({ url: String(input), method: init?.method ?? "GET" });
-        return new Response(null, { status: 200 });
-      }),
-    });
-
-    await expect(driver.cancel(sessionFor(driver), "user stop")).resolves.toEqual({
-      status: "ok",
-    });
-    expect(requests).toEqual([{
-      url: "https://opencode.test/session/ses%2Fopencode%201/abort?directory=%2Fworkspace",
-      method: "POST",
-    }]);
-  });
-});
-
 describe("production provider registry", () => {
-  test("keeps ACP exclusive to the explicit compatibility engine", () => {
-    for (const engineId of ["acp", "claude", "claude-sdk", "codex", "daytona", "opencode", "pi"]) {
+  test("registers every engine on a native lifecycle driver", () => {
+    for (const engineId of ["claude", "claude-sdk", "codex", "daytona", "opencode", "pi"]) {
       const registration = resolveProviderRegistration(engineId);
       expect(registration).toBeDefined();
       if (!registration) continue;
@@ -200,11 +27,11 @@ describe("production provider registry", () => {
     expect(resolveProviderRegistration("pi")?.execution.kind).toBe("provider");
     expect(resolveProviderRegistration("codex")?.execution.kind).toBe("provider");
     expect(resolveProviderRegistration("claude")?.execution.kind).toBe("provider");
-    expect(resolveProviderRegistration("acp")?.execution.kind).toBe("acp_compatibility");
     expect(resolveProviderDriver("codex")).toBe(t3ProviderDrivers.codex);
     expect(resolveProviderDriver("claude")).toBe(t3ProviderDrivers.claude);
 
-    expect(resolveProviderDriver("opencode")).toBe(opencodeProviderDriver);
+    expect(resolveProviderDriver("opencode")).toBe(t3ProviderDrivers.opencode);
+    expect(resolveProviderRegistration("acp")).toBeUndefined();
     expect(resolveProviderRegistration("daytona")).toBe(resolveProviderRegistration("opencode"));
     expect(resolveProviderRegistration("claude-sdk")).toBe(resolveProviderRegistration("claude"));
   });
@@ -262,7 +89,7 @@ describe("production provider registry", () => {
       expect(resolveProviderDriver("codex", ctx, env, "box")).toBe(t3ProviderDrivers.codex);
       expect(resolveProviderDriver("claude", ctx, env, "box")).toBe(t3ProviderDrivers.claude);
     }
-    expect(resolveProviderDriver("opencode", ctx, {}, "box")).toBe(opencodeProviderDriver);
+    expect(resolveProviderDriver("opencode", ctx, {}, "box")).toBe(t3ProviderDrivers.opencode);
     expect(resolveProviderDriver("pi", ctx, {}, "box")?.descriptor.protocol.name)
       .toBe("oh-my-pi-rpc");
   });
@@ -371,7 +198,7 @@ describe("production provider registry", () => {
     }
   });
 
-  test("primary native drivers retain lifecycle while explicit ACP stays compatibility-only", () => {
+  test("primary native drivers retain their full lifecycle", () => {
     for (const engine of ["claude", "codex"] as const) {
       const registration = resolveProviderRegistration(engine);
       expect(registration?.driver).toBe(t3ProviderDrivers[engine]);
@@ -385,15 +212,5 @@ describe("production provider registry", () => {
         "cancel",
       ]);
     }
-    const acp = resolveProviderRegistration("acp");
-    expect(acp).toBeDefined();
-    if (!acp) return;
-    expect(unsupportedProviderDriverOperations(acp.driver)).toEqual([
-      "start",
-      "resume",
-      "reconcile",
-      "steer",
-      "cancel",
-    ]);
   });
 });

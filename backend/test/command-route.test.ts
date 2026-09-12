@@ -8,18 +8,18 @@ import { describe, expect, test, beforeAll } from "bun:test";
 import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { canonicalEvents, commandsCatalog, runs } from "../src/db/schema";
-import { acpCatalogKey, readSessionCommandCatalog } from "../src/runs/command-catalog";
+import { defaultSnapshot, readSessionCommandCatalog } from "../src/runs/command-catalog";
 import { DEV_ORG_ID } from "../src/seed";
 import { fetchApi, waitFor } from "./helpers";
 
 beforeAll(async () => {
   await waitFor(() => true, 1);
-  // Seed the ORG PRIMING cache (what the pre-session New Task picker shows). engine "mock" is
-  // non-opencode, so the picker reads acp:<org>:mock. C3: this must NEVER authorize execution.
+  // Seed the PRIMING cache (what the pre-session New Task picker shows): the snapshot
+  // catalog every engine reads. C3: this must NEVER authorize execution.
   const cache = [{ name: "review", description: null, input: null }, { name: "status", description: null, input: null }];
   await db
     .insert(commandsCatalog)
-    .values({ snapshot: acpCatalogKey(DEV_ORG_ID, "mock"), commands: cache, fetchedAt: new Date() })
+    .values({ snapshot: defaultSnapshot(), commands: cache, fetchedAt: new Date() })
     .onConflictDoUpdate({ target: commandsCatalog.snapshot, set: { commands: cache } });
 });
 

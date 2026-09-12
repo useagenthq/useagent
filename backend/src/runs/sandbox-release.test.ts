@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { providerSessionBinding } from "@useagent/agent-harness/canonical";
+import { providerProtocolIdentity } from "@useagent/agent-harness/control";
+import { t3ProviderDrivers } from "../engines/t3-provider-driver";
 import { eq, sql } from "drizzle-orm";
 import { acceptRunCommand } from "../commands";
 import { db } from "../db/client";
@@ -90,10 +92,10 @@ describe("explicit sandbox release", () => {
     await setRunProviderSession(fixture.runId, providerSessionBinding({
       provider: "opencode",
       nativeSessionId: "session-1",
-      protocolVersion: "opencode-server/compat",
+      protocolVersion: providerProtocolIdentity(t3ProviderDrivers.opencode.descriptor.protocol),
       runtime: { kind: "sandbox", id: fixture.sandboxId },
       capabilities: {} as never,
-      generation: 1,
+      generation: t3ProviderDrivers.opencode.descriptor.sessionGeneration as number,
     }));
     const live = new Set([fixture.sandboxId, "unrelated-sandbox"]);
     const { provider, deleted } = fakeProvider(live);

@@ -5,7 +5,7 @@ import { jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 // Slash-command catalog cache. The engine's real command list (opencode's GET
 // /command) is IDENTICAL for every fresh sandbox of a given snapshot, so it is
 // cached ONCE per snapshot name rather than re-fetched per thread. The
-// live-proxy upserts this row whenever a live sandbox answers /command; the New
+// A live sandbox's /command answer upserts this row; the New
 // Task composer reads it (via GET /api/commands) to power "/" autocomplete
 // BEFORE any sandbox exists. Single row per snapshot — a tiny keyed cache, not
 // event-sourced state.

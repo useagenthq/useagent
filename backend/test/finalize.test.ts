@@ -15,6 +15,8 @@ import { db } from "../src/db/client";
 import { artifacts } from "../src/db/schema";
 import { sql } from "drizzle-orm";
 import { providerSessionBinding } from "@useagent/agent-harness/canonical";
+import { providerProtocolIdentity } from "@useagent/agent-harness/control";
+import { t3ProviderDrivers } from "../src/engines/t3-provider-driver";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
 
 // Regression for GAP 2: a completed run could miss its memory capture. The
@@ -232,10 +234,10 @@ describe("finalizeRun — transactional memory capture (GAP 2)", () => {
       await setRunProviderSession(id, providerSessionBinding({
         provider: "opencode",
         nativeSessionId: "ses_done",
-        protocolVersion: "opencode-server/compat",
+        protocolVersion: providerProtocolIdentity(t3ProviderDrivers.opencode.descriptor.protocol),
         runtime: { kind: "sandbox", id: "sb" },
         capabilities: {} as never,
-        generation: 1,
+        generation: t3ProviderDrivers.opencode.descriptor.sessionGeneration as number,
       }));
       await db.execute(sql`update commands set state='dispatched' where run_id=${id} and kind='run.create'`);
 

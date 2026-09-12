@@ -72,18 +72,17 @@ engine's native driver, protocol, session identity, lifecycle, or event grammar.
 
 | Adapter | Where it runs | Notes |
 |---|---|---|
-| `opencode` | Resident `opencode serve` inside the thread sandbox | Uses the native OpenCode `ProviderDriver` for start, resume, steer, and cancel. |
+| `opencode` | Resident OpenCode runtime inside the thread sandbox | Uses the native OpenCode driver through the shared runtime lifecycle for start, resume, steer, questions, and cancel. |
 | `claude` | Resident Claude Code runtime inside the thread sandbox | Uses the native Claude Code driver and event grammar for start, resume, steer, approvals, questions, and cancel where supported. |
 | `codex` | Resident Codex runtime inside the thread sandbox | Uses the native Codex driver and event grammar for start, resume, steer, approvals, questions, and cancel where supported. |
 | `pi` | Resident Pi runtime inside the thread sandbox | Uses the native Pi driver and event grammar. |
-| `acp` | Explicit future compatibility engines only | Never a fallback for Codex, Claude Code, OpenCode, or Pi. |
 | `daytona` | Alias for the OpenCode path | Keeps old thread rows and replies readable after the provider rename. |
 | `mock` | Scripted worker path | Used for deterministic local runs and tests. |
 
 Cube, Daytona, and Box change only the execution substrate. If one cannot host
 an engine's native runtime, readiness reports that engine/provider pair as
-unsupported and stops before the turn starts. It must not silently select ACP,
-another engine, or a reduced lifecycle. `daytona` and `claude-sdk` remain
+unsupported and stops before the turn starts. It must not silently select
+another engine or a reduced lifecycle. `daytona` and `claude-sdk` remain
 aliases for older rows, but aliases resolve to the same native engine contract.
 
 ### Capability Notes
@@ -242,7 +241,6 @@ The important variables are:
 - The org-change SSE bus must move to durable pub/sub or outbox fanout before multi-replica operation.
 - The sandbox provider interface still lacks explicit pause, checkpoint, and snapshot operations.
 - Hosted Daytona credentials, preview isolation, deletion, and latency still require release-gate evidence.
-- Explicit future ACP compatibility engines require their own restart-reconciliation evidence before release.
 - Artifact storage is still local to the backend node.
 - Rich Office/PDF binary round-trip editors, PDF import, and shared object
   storage remain future work. The current presentation and PDF editors operate

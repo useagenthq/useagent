@@ -34,8 +34,7 @@ seven private `@useagent/*` packages linked with `file:` dependencies rather tha
 
 ### 1.1 Native engine boundary
 
-Codex, Claude Code, OpenCode, and Pi are native engines, not ACP compatibility
-registrations. Each keeps its own driver, wire protocol, native session identity,
+Codex, Claude Code, OpenCode, and Pi are native engines. Each keeps its own driver, wire protocol, native session identity,
 event grammar, lifecycle controls, approval and question behavior, and child-event
 semantics. The canonical event layer translates those native events for durable
 storage and UI projection; it does not replace the engine protocol.
@@ -43,13 +42,13 @@ storage and UI projection; it does not replace the engine protocol.
 Cube, Daytona, and Box are execution substrates only. Selecting a sandbox
 provider may change its runtime layout, credentials, preview transport, or
 resource capabilities, but it must not select a different engine transport or
-rewrite native session behavior. ACP is reserved for an explicitly registered
-future compatibility engine that lacks a native driver. It is never a fallback
-for the four native engines.
+rewrite native session behavior. There is no compatibility transport: the ACP
+lane and the direct OpenCode server were removed once every engine ran on its
+native driver, so an engine either has a native driver or is not an engine.
 
 An engine/provider pair that cannot boot the engine's native runtime is
 unsupported. Admission and readiness must fail closed before a turn starts;
-the system must not fall back to ACP, another engine, or a reduced lifecycle.
+the system must not fall back to another engine or a reduced lifecycle.
 
 ## 2. Ingress and transport scope
 
@@ -252,7 +251,7 @@ gate at acceptance and again at worker dispatch (`backend/src/commands/service.t
 A sandbox-provider or engine change is not releasable until evidence proves:
 
 - registry tests select the same native protocol identity for Codex, Claude
-  Code, OpenCode, and Pi on Cube, Daytona, and Box, and reject ACP fallback;
+  Code, OpenCode, and Pi on Cube, Daytona, and Box;
 - each engine's lifecycle and translator tests cover native start, session
   identity, resume/reconnect, cancellation, approvals or questions where
   supported, child events, and canonical projection;

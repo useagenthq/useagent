@@ -39,7 +39,6 @@ export const ENGINE_IDS = [
   "chat",
   "daytona",
   "claude-sdk",
-  "acp",
 ] as const;
 export type EngineId = (typeof ENGINE_IDS)[number];
 

@@ -1,6 +1,4 @@
 import { type SandboxProvider } from "../sandboxes/provider";
-import { forgetAcpThreadRelays } from "../engines/acp-server";
-import { forgetOpenCodeThreadServer } from "../engines/opencode-runtime";
 import { forgetLiveThreadSandbox } from "../engines/sandbox-runtime";
 import { piBridgeManager } from "../engines/pi-rpc-bridge";
 import {
@@ -93,8 +91,6 @@ export async function releaseRunSandbox(
 
   if (released.ok && released.released) {
     forgetLiveThreadSandbox(released.threadId, released.sandboxId);
-    forgetOpenCodeThreadServer(released.threadId);
-    forgetAcpThreadRelays(released.threadId);
     const binding = parseProviderSessionBinding(released.providerSession);
     const piSessionId = binding?.provider === "pi"
       ? binding.nativeSessionId

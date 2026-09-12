@@ -109,7 +109,7 @@ desktopProxyRoutes.get(
       onOpen: (_evt, ws) => {
         void (async () => {
           try {
-            // Org gate: threadId IS its root run's id (see live-proxy).
+            // Org gate: threadId IS its root run's id.
             if (!(await getRunForOrg(orgId, threadId))) throw new Error("thread not found");
 
             await ensureDesktopPreview(threadId);

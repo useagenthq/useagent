@@ -14,10 +14,10 @@ import {
   type NativeImageInputs,
 } from "../sandboxes/native-image";
 import { sandboxRuntimeLayout } from "../sandboxes/provider";
-import { OPENCODE_VERSION } from "./opencode-serve";
+import { RUNTIME_ENGINE_VERSIONS } from "./runtime-provider-bridge";
 
 /** The earlier opencode-only Box template; still recognised so those boxes skip the npx bootstrap. */
-export const OPENCODE_TEMPLATE_NAME = `useagent-opencode-${OPENCODE_VERSION.replaceAll(".", "-")}`;
+export const OPENCODE_TEMPLATE_NAME = `useagent-opencode-${RUNTIME_ENGINE_VERSIONS.opencode.replaceAll(".", "-")}`;
 const BAKE_TIMEOUT_MS = 40 * 60_000;
 // Absolute Box TTL for the bake box, longer than the bake itself: an interrupted
 // bake (backend restart, lost network) can never leave a box running for good.

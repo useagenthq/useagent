@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
-  runtimeAdapterEnabled,
-  runtimeAdapterEngineSelected,
-  runtimeAdapterMode,
-  runtimeAdapterSelected,
   runtimeRunSnapshot,
   runtimeSessionHasAuthoritativeHistory,
   configuredRuntimeMode,
@@ -352,76 +348,6 @@ describe("T3 run adapter gate", () => {
       } satisfies OpenCodeSessionReloadDependencies,
     })).rejects.toThrow("Timed out waiting for the retained OpenCode session to stop");
     expect(dispatches).toBe(1);
-  });
-
-  test("is disabled unless explicitly enabled", () => {
-    expect(runtimeAdapterEnabled({})).toBe(false);
-    expect(runtimeAdapterEnabled({ RUNTIME_RUN_ADAPTER_ENABLED: "true" })).toBe(true);
-    // Deployment-safe dual-read: legacy name still works; the new name wins.
-    expect(runtimeAdapterEnabled({ T3_RUN_ADAPTER_ENABLED: "true" })).toBe(true);
-    expect(
-      runtimeAdapterEnabled({
-        RUNTIME_RUN_ADAPTER_ENABLED: "false",
-        T3_RUN_ADAPTER_ENABLED: "true",
-      }),
-    ).toBe(false);
-  });
-
-  test("defaults an enabled adapter to explicit canary threads", () => {
-    const ctx = { runId: "run-1", threadId: "thread-1" };
-    expect(runtimeAdapterMode({ T3_RUN_ADAPTER_ENABLED: "true" })).toBe("canary");
-    expect(runtimeAdapterSelected(ctx, { T3_RUN_ADAPTER_ENABLED: "true" })).toBe(false);
-    expect(
-      runtimeAdapterSelected(ctx, {
-        T3_RUN_ADAPTER_ENABLED: "true",
-        T3_CANARY_THREAD_IDS: "other, thread-1",
-      }),
-    ).toBe(true);
-    expect(
-      runtimeAdapterSelected(ctx, {
-        RUNTIME_RUN_ADAPTER_ENABLED: "true",
-        RUNTIME_CANARY_THREAD_IDS: "other, thread-1",
-      }),
-    ).toBe(true);
-    expect(
-      runtimeAdapterSelected(ctx, {
-        T3_RUN_ADAPTER_ENABLED: "true",
-        T3_RUN_ADAPTER_MODE: "all",
-      }),
-    ).toBe(true);
-  });
-
-  test("rejects an unknown routing mode", () => {
-    expect(() => runtimeAdapterMode({ T3_RUN_ADAPTER_MODE: "maybe" })).toThrow(
-      "RUNTIME_RUN_ADAPTER_MODE (legacy T3_RUN_ADAPTER_MODE) must be canary or all",
-    );
-    expect(runtimeAdapterMode({ RUNTIME_RUN_ADAPTER_MODE: "all" })).toBe("all");
-  });
-
-  test("can restrict an all-mode cutover to proven engines", () => {
-    expect(runtimeAdapterEngineSelected("codex", {})).toBe(true);
-    expect(runtimeAdapterEngineSelected("opencode", {})).toBe(true);
-    expect(runtimeAdapterEngineSelected("claude", {})).toBe(false);
-    expect(
-      runtimeAdapterEngineSelected("codex", {
-        T3_RUN_ADAPTER_ENGINES: "codex, opencode",
-      }),
-    ).toBe(true);
-    expect(
-      runtimeAdapterEngineSelected("claude", {
-        T3_RUN_ADAPTER_ENGINES: "claude, codex, opencode",
-      }),
-    ).toBe(true);
-    expect(
-      runtimeAdapterEngineSelected("claude", {
-        T3_RUN_ADAPTER_ENGINES: "codex, opencode",
-      }),
-    ).toBe(false);
-    expect(
-      runtimeAdapterEngineSelected("claude", {
-        RUNTIME_RUN_ADAPTER_ENGINES: "claude",
-      }),
-    ).toBe(true);
   });
 
   test("uses a separate Cube candidate template during parity testing", () => {
