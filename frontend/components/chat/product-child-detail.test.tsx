@@ -40,6 +40,7 @@ const run: ApiRun = {
   child_session: false,
   thread_id: "child-1",
   engine_session_id: null,
+  sandbox_id: null,
   repo: null,
   repos: [],
   repo_specs: [],

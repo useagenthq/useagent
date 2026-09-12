@@ -143,6 +143,7 @@ export function outlineStubTurn(entry: ApiThreadOutlineTurn, threadId: string): 
     child_session: false,
     thread_id: threadId,
     engine_session_id: null,
+    sandbox_id: null,
     repo: null,
     repos: [],
     repo_specs: [],

@@ -90,6 +90,7 @@ function makeTurn(index: number): Turn {
     child_session: false,
     thread_id: "long-turn-0",
     engine_session_id: null,
+    sandbox_id: null,
     repo: null,
     repos: [],
     repo_specs: [],

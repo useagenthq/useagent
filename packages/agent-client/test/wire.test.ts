@@ -62,6 +62,7 @@ const run = {
   child_session: false,
   thread_id: "run-1",
   engine_session_id: null,
+  sandbox_id: null,
   resolved_resources: [],
   memory_scope: "org",
   skill_id: null,

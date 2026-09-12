@@ -24,6 +24,7 @@ const run = {
   child_session: false,
   thread_id: "a",
   engine_session_id: null,
+  sandbox_id: null,
   repo: null,
   repos: [],
   repo_specs: [],

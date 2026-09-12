@@ -45,7 +45,7 @@ import {
 } from "../secrets/inject";
 import { materializeRunInputs } from "../uploads/materialize";
 import { createSecretRedactor } from "../secrets/redact";
-import { ensureSandboxDesktopView } from "./desktop";
+import { desktopUnavailableStep, ensureSandboxDesktopView } from "./desktop";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import {
   acpToolResultFailed,
@@ -698,11 +698,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         const desktop = await desktopPreparation;
         const computerToolsReady = desktop.available && Boolean(gateway && ctx.orgId);
         if (!computerToolsReady) {
-          await ctx.emit({
-            kind: "task",
-            label: desktop.reason ?? "Desktop computer-use tools unavailable in this sandbox",
-            chip: "warning",
-          });
+          await ctx.emit(desktopUnavailableStep(cfg.id, desktop));
         }
         // A relay (re)boot this call means a fresh agent process - the previous turn's
         // in-memory native session id is dead. Invalidate it below so we session/load

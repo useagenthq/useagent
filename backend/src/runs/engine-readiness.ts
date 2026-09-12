@@ -306,7 +306,7 @@ export function resolveAcceptedEngine(
       typeof rawEngine !== "string" ||
       !ENGINE_ID_SET.has(rawEngine)
     ) {
-      return { ok: false, status: 400, error: `engine must be one of: ${ENGINE_IDS.join(", ")}` };
+      return { ok: false, status: 400, error: `engine must be one of: ${USER_FACING_ENGINES.join(", ")}` };
     }
     const engine = rawEngine as EngineId;
     if (engine === "mock") {

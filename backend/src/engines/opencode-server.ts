@@ -81,7 +81,7 @@ import {
   providerGatewayWired,
 } from "../provider-gateway/sandbox-config";
 import { opencodeAssistantError } from "./opencode-message";
-import { ensureSandboxDesktopView } from "./desktop";
+import { desktopUnavailableStep, ensureSandboxDesktopView } from "./desktop";
 import { createSecretRedactor } from "../secrets/redact";
 import { DEFAULT_OPENCODE_MODEL } from "../runs/model-policy";
 import {
@@ -1239,11 +1239,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       // reads this config from disk at boot; a warm server applies the same
       // immutable payload through OpenCode's runtime config API below.
       if (!desktop.available) {
-        await ctx.emit({
-          kind: "task",
-          label: desktop.reason ?? "Desktop computer-use tools unavailable in this sandbox",
-          chip: "warning",
-        });
+        await ctx.emit(desktopUnavailableStep("opencode", desktop));
       }
       const [preparedConfig] = await Promise.all([
         prepareStage("config_merge", () =>

@@ -73,6 +73,7 @@ import {
   modelProviderReadinessErrorBody,
   modelProviderReadyForEngine,
   resolveAcceptedEngine,
+  USER_FACING_ENGINES,
 } from "./engine-readiness";
 import { releaseRunSandbox } from "./sandbox-release";
 import { parseProviderSessionBinding } from "@useagent/agent-harness/canonical";
@@ -130,11 +131,8 @@ export async function handleRunCreate(
       : null;
   let requestedEngine: EngineId | null = null;
   if (body.engine !== undefined && body.engine !== null && body.engine !== "") {
-    if (
-      typeof body.engine !== "string" ||
-      !(ENGINE_IDS as readonly string[]).includes(body.engine)
-    ) {
-      return c.json({ error: `engine must be one of: ${ENGINE_IDS.join(", ")}` }, 400);
+    if (typeof body.engine !== "string" || !(ENGINE_IDS as readonly string[]).includes(body.engine)) {
+      return c.json({ error: `engine must be one of: ${USER_FACING_ENGINES.join(", ")}` }, 400);
     }
     requestedEngine = body.engine as EngineId;
   }
