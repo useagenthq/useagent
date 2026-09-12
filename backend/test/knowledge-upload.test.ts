@@ -126,4 +126,36 @@ describe("POST /api/knowledge/upload", () => {
     const huge = new File([new Uint8Array(KNOWLEDGE_UPLOAD_MAX_BYTES + 1)], "huge.txt");
     expect((await upload(huge)).status).toBe(413);
   });
+
+  test("rejects a chunked oversized multipart body before parsing it", async () => {
+    const boundary = "useagent-upload-boundary";
+    let remaining = KNOWLEDGE_UPLOAD_MAX_BYTES + 128 * 1024;
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(
+          `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="huge.txt"\r\n` +
+            "Content-Type: text/plain\r\n\r\n",
+        ));
+      },
+      pull(controller) {
+        if (remaining <= 0) {
+          controller.enqueue(encoder.encode(`\r\n--${boundary}--\r\n`));
+          controller.close();
+          return;
+        }
+        const size = Math.min(256 * 1024, remaining);
+        remaining -= size;
+        controller.enqueue(new Uint8Array(size));
+      },
+    });
+    const response = await fetchApi("/api/knowledge/upload", {
+      method: "POST",
+      body: stream,
+      cookies: session.cookies,
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+    });
+    expect(response.status).toBe(413);
+    expect(await response.json()).toMatchObject({ error: "file_too_large" });
+  });
 });

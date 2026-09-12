@@ -122,7 +122,7 @@ describe("tool gateway capability descriptor", () => {
     });
     expect(toAcpKnowledgeMcpServer(descriptor!)).toEqual({
       type: "http",
-      name: "skynet-knowledge",
+      name: TOOL_GATEWAY_SERVER_NAME,
       url: "https://gateway.example.test/api/mcp/knowledge",
       headers: [{ name: "Authorization", value: descriptor!.authorizationHeader }],
     });

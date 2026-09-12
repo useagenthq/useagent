@@ -28,8 +28,8 @@ describe("T3 semantic tool names", () => {
   });
 
   test("recovers a semantic server and tool from T3 summary-only wrappers", () => {
-    expect(t3SummaryToolIdentity("skynet-knowledge_github_clone_repository")).toEqual({
-      server: "skynet-knowledge",
+    expect(t3SummaryToolIdentity("useagent_github_clone_repository")).toEqual({
+      server: "useagent",
       tool: "github_clone_repository",
     });
     expect(t3SummaryToolIdentity("skynet-knowledge · computer_screenshot started")).toEqual({

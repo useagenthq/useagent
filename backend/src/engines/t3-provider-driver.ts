@@ -168,7 +168,7 @@ export function makeT3ProviderDriver(
         steerInputs: ["prompt"],
       },
       model: { selection: "per_turn", supportsArbitraryModel: true },
-      tools: { mode: "skynet_brokered", approval: "skynet" },
+      tools: { mode: "useagent_brokered", approval: "useagent" },
     },
 
     async start(request: ProviderStartRequest) {

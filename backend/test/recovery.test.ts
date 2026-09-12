@@ -254,7 +254,7 @@ describe("command-lane restart recovery", () => {
     await setRunProviderSession(runId, providerSessionBinding({
       provider: "codex",
       nativeSessionId: "auth-session",
-      protocolVersion: "t3-orchestration/useagent-runtime-v7",
+      protocolVersion: "t3-orchestration/useagent-runtime-v8",
       runtime: { kind: "sandbox", id: "auth-sandbox" },
       capabilities: {} as never,
       generation: 2,

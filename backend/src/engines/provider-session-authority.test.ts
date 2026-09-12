@@ -6,7 +6,7 @@ const binding = (authEpoch: string | null): ProviderSessionBinding => ({
   version: 1,
   provider: "codex",
   nativeSessionId: "session-1",
-  protocol: "t3-orchestration/useagent-runtime-v7",
+  protocol: "t3-orchestration/useagent-runtime-v8",
   generation: 2,
   runtime: { kind: "sandbox", id: "sandbox-1" },
   authEpoch,

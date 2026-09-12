@@ -28,13 +28,13 @@ const config = {
     },
   },
   mcp: {
-    "skynet-knowledge": {
+    useagent: {
       type: "remote",
       url: "https://gateway.example.test/mcp",
       enabled: true,
       headers: { Authorization: "Bearer run-tool-token" },
     },
-    "skynet-browser": {
+    "useagent-browser": {
       type: "local",
       command: ["/root/.local/bin/playwright-mcp", "--cdp-endpoint", "http://127.0.0.1:9222"],
       enabled: true,
@@ -64,8 +64,8 @@ describe("OpenCode resident runtime config", () => {
       if (url.includes("/provider?")) return json([]);
       if (url.includes("/mcp?")) {
         return json({
-          "skynet-knowledge": { status: "connected" },
-          "skynet-browser": { status: "connected" },
+          useagent: { status: "connected" },
+          "useagent-browser": { status: "connected" },
         });
       }
       if (url.includes("/session/ses_warm?")) return json({ id: "ses_warm" });
@@ -106,8 +106,8 @@ describe("OpenCode resident runtime config", () => {
       if (url.includes("/provider?")) return json([]);
       if (url.includes("/mcp?")) {
         return json({
-          "skynet-knowledge": { status: "connected" },
-          "skynet-browser": { status: "connected" },
+          useagent: { status: "connected" },
+          "useagent-browser": { status: "connected" },
         });
       }
       throw new Error(`unexpected request ${url}`);
@@ -131,8 +131,8 @@ describe("OpenCode resident runtime config", () => {
       if (url.includes("/provider?")) return json([]);
       if (url.includes("/mcp?")) {
         return json({
-          "skynet-knowledge": { status: "failed", error: "not ready" },
-          "skynet-browser": { status: "connected" },
+          useagent: { status: "failed", error: "not ready" },
+          "useagent-browser": { status: "connected" },
         });
       }
       throw new Error(`unexpected request ${url}`);

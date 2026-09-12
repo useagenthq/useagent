@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import { embeddingsEnabled, embeddingsUnavailableReason, embedOne } from "./embed";
@@ -40,6 +41,10 @@ knowledgeRoutes.use("*", orgScope);
 
 const UPLOAD_FORM_OVERHEAD = 64 * 1024;
 const uploadTooLarge = `Files larger than ${KNOWLEDGE_UPLOAD_MAX_BYTES / (1024 * 1024)} MB cannot be added`;
+const knowledgeUploadBodyLimit = bodyLimit({
+  maxSize: KNOWLEDGE_UPLOAD_MAX_BYTES + UPLOAD_FORM_OVERHEAD,
+  onError: (c) => c.json({ error: "file_too_large", message: uploadTooLarge }, 413),
+});
 
 /** Shape a stored row for the read API (flattens the useful distilled meta). */
 function toApi(row: KnowledgeRow) {
@@ -101,7 +106,7 @@ knowledgeRoutes.post("/ingest", async (c) => {
 // text extractor) and then goes through the SAME ingest contract as a pasted
 // note, so distillation, dedupe and search treat both alike. The content hash
 // is the external id: uploading the same file twice is a skip, not a duplicate.
-knowledgeRoutes.post("/upload", async (c) => {
+knowledgeRoutes.post("/upload", knowledgeUploadBodyLimit, async (c) => {
   const declaredLength = Number(c.req.header("content-length") ?? 0);
   if (Number.isFinite(declaredLength) && declaredLength > KNOWLEDGE_UPLOAD_MAX_BYTES + UPLOAD_FORM_OVERHEAD) {
     return c.json({ error: "file_too_large", message: uploadTooLarge }, 413);

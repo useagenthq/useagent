@@ -466,7 +466,8 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
       f.provider !== "skynet" &&
       f.provider !== "skynet-knowledge" &&
       f.provider !== "skynet-memory" &&
-      f.provider !== "skynet-gateway"
+      f.provider !== "skynet-gateway" &&
+      f.provider !== "useagent"
     )
       continue;
     const marker = parseMarker(f.eventType, f.payload);

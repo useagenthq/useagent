@@ -97,6 +97,7 @@ import {
 } from "./opencode-question";
 import {
   activateOpenCodeRuntimeConfig,
+  setUseAgentMcpEntries,
   verifyOpenCodeRuntimeConfig,
   type OpenCodeRuntimeServer,
 } from "./opencode-runtime-config";
@@ -124,7 +125,6 @@ import { claimCubeWarmSandbox } from "../sandboxes/cube-warm-pool";
 import { errorMessage } from "../util/error-message";
 import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
 import { bindingRecord, bindingSnapshot, resolveSandboxBindingForRun, resolveSandboxBindingForSandbox } from "../sandboxes/binding";
-
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
 // thread's Daytona sandbox runs a persistent `opencode serve` (the same server
@@ -285,6 +285,7 @@ export async function prepareOpencodeSandboxConfig(
     const cfg = baseConfig ?? await readOpencodeSandboxConfig(sandbox);
     cfg["$schema"] = cfg["$schema"] ?? "https://opencode.ai/config.json";
     const mcp = (typeof cfg.mcp === "object" && cfg.mcp ? (cfg.mcp as Record<string, unknown>) : {});
+    let knowledgeMcp: ReturnType<typeof toOpenCodeKnowledgeMcpEntry> | null = null;
     if (gw && ctx.orgId) {
       const orgId = ctx.orgId;
       // Thread-scoped + memoized so warm turns build a byte-identical MCP entry
@@ -331,10 +332,9 @@ export async function prepareOpencodeSandboxConfig(
             { config: gw },
           );
       if (!descriptor) throw new Error("tool gateway could not mint OpenCode capability");
-      mcp["skynet-knowledge"] = toOpenCodeKnowledgeMcpEntry(descriptor);
-    } else delete mcp["skynet-knowledge"];
-    if (browser) mcp["skynet-browser"] = browser;
-    else delete mcp["skynet-browser"];
+      knowledgeMcp = toOpenCodeKnowledgeMcpEntry(descriptor);
+    }
+    setUseAgentMcpEntries(mcp, knowledgeMcp, browser);
     cfg.mcp = mcp;
     const providers =
       typeof cfg.provider === "object" && cfg.provider
@@ -636,8 +636,8 @@ export function makeOpenCodeProviderDriver(
         supportsArbitraryModel: true,
       },
       tools: {
-        mode: "skynet_brokered",
-        approval: "skynet",
+        mode: "useagent_brokered",
+        approval: "useagent",
       },
     },
 

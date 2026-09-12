@@ -16,6 +16,10 @@ services:
       USEAGENT_BIND_HOST: 127.0.0.1
       USEAGENT_RELEASE_COMMIT: ${USEAGENT_RELEASE_COMMIT:?set the exact release commit}
       REQUIRE_SINGLE_BACKEND: "true"
+      # Runtime compatibility belongs to the immutable image. An empty override
+      # defeats stale host env pins while letting each image use its own default,
+      # so rollback selects the previous generation automatically.
+      USEAGENT_RUNTIME_GENERATION: ""
       ARTIFACT_STORAGE_DIR: /app/backend/.artifacts
       RUNS_ROOT: /app/backend/.runs
       SLACK_UPLOAD_STAGING_ROOT: /app/backend/.slack-uploads

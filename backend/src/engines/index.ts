@@ -99,7 +99,7 @@ function makeEngineAdapterCompatibilityDriver(
       capabilities,
       lifecycle: { operations: lifecycle, steerInputs: [] },
       model: { selection: "fixed" },
-      tools: { mode: "skynet_brokered", approval: "skynet" },
+      tools: { mode: "useagent_brokered", approval: "useagent" },
     },
     async start() {
       return unavailable("start");

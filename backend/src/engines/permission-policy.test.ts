@@ -54,68 +54,68 @@ describe("decideAcpPermission - actual response payloads (pure logic)", () => {
       decideAcpPermission(
         [ALLOW_ONCE, ALLOW_ALWAYS],
         false,
-        "mcp.skynet-knowledge.computer_screenshot",
+        "mcp.useagent.computer_screenshot",
       ),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
       decideAcpPermission(
         [ALLOW_ONCE, ALLOW_ALWAYS],
         false,
-        "mcp.skynet-knowledge.computer_sequence",
+        "mcp.useagent.computer_sequence",
       ),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
       decideAcpPermission(
         [ALLOW_ONCE, ALLOW_ALWAYS],
         false,
-        "mcp.skynet-knowledge.desktop_recording_start",
+        "mcp.useagent.desktop_recording_start",
       ),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
       decideAcpPermission(
         [ALLOW_ONCE],
         false,
-        "mcp.skynet-knowledge.desktop_recording_stop",
+        "mcp.useagent.desktop_recording_stop",
       ),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
       decideAcpPermission(
         [ALLOW_ONCE],
         false,
-        "mcp.skynet-knowledge.github_repositories",
+        "mcp.useagent.github_repositories",
       ),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
       decideAcpPermission(
         [ALLOW_ONCE],
         false,
-        "mcp.skynet-knowledge.github_clone_repository",
+        "mcp.useagent.github_clone_repository",
       ),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
-      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.skills_list"),
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.useagent.skills_list"),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
-      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.skill_activate"),
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.useagent.skill_activate"),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
-      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.automation_create"),
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.useagent.automation_create"),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
-      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.automation_delete"),
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.useagent.automation_delete"),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
       decideAcpPermission(
         [ALLOW_ALWAYS],
         false,
-        "mcp.skynet-knowledge.memory_search",
+        "mcp.useagent.memory_search",
       ),
     ).toEqual({ outcome: { outcome: "cancelled" } });
     expect(
-      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.computer_future"),
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.useagent.computer_future"),
     ).toEqual({ outcome: { outcome: "cancelled" } });
     expect(
-      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.memory_delete_all"),
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.useagent.memory_delete_all"),
     ).toEqual({ outcome: { outcome: "cancelled" } });
     expect(
       decideAcpPermission(
@@ -125,13 +125,13 @@ describe("decideAcpPermission - actual response payloads (pure logic)", () => {
       ),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
-      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.web_search"),
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.useagent.web_search"),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
-      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.gcs_list_buckets"),
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.useagent.gcs_list_buckets"),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
-      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.gcs_delete_bucket"),
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.useagent.gcs_delete_bucket"),
     ).toEqual({ outcome: { outcome: "cancelled" } });
     expect(
       decideAcpPermission(
@@ -157,7 +157,7 @@ describe("decideAcpPermission - actual response payloads (pure logic)", () => {
       decideAcpPermission(
         [ALLOW_ONCE],
         false,
-        "mcp__skynet-knowledge__gcs_list_buckets",
+        "mcp__useagent__gcs_list_buckets",
       ),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(

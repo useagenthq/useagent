@@ -80,8 +80,8 @@ describe("opencode provider driver lifecycle seam", () => {
       supportsArbitraryModel: true,
     });
     expect(opencodeProviderDriver.descriptor.tools).toMatchObject({
-      mode: "skynet_brokered",
-      approval: "skynet",
+      mode: "useagent_brokered",
+      approval: "useagent",
     });
   });
 

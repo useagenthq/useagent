@@ -8,6 +8,12 @@
 		-Server
 	}
 
+	@gateway path /api/mcp/* /api/provider/*
+	handle @gateway {
+		# useagent-release: gateway
+		reverse_proxy {{GATEWAY_UPSTREAM}}
+	}
+
 	@codex_relay path /api/internal/codex-relay/*
 	handle @codex_relay {
 		# useagent-release: backend

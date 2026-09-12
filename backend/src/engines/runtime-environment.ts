@@ -1,5 +1,6 @@
 import type { SandboxHandle } from "../sandboxes/provider";
 import { operatorEnv } from "./runtime-env";
+import { TOOL_GATEWAY_SERVER_NAME } from "../knowledge/gateway/descriptor";
 import {
   RUN_TIMING_OUTCOMES,
   RUN_TIMING_STAGES,
@@ -11,7 +12,7 @@ export const RUNTIME_GENERATION_LABEL = "useagent.runtime";
 // Bump this identity whenever the embedded provider runtime changes. It is
 // stamped on retained/warm sandboxes and doubles as the pool name, so a new
 // release cannot accidentally resume a thread against an older runtime binary.
-const DEFAULT_RUNTIME_GENERATION = "useagent-runtime-v7";
+const DEFAULT_RUNTIME_GENERATION = "useagent-runtime-v8";
 
 export function runtimeGeneration(
   env: Readonly<Record<string, string | undefined>> = process.env,
@@ -33,6 +34,7 @@ const RUNTIME_ENVIRONMENT_PROCESS_SESSION = "skynet-t3-environment";
 export const RUNTIME_ENVIRONMENT_HOME = "$HOME/.skynet/t3";
 export const RUNTIME_ENVIRONMENT_WORKDIR = "/root/work";
 export const RUNTIME_SANDBOX_HOME = "/root";
+const RUNTIME_MCP_SERVER_MARKER = `${RUNTIME_ENVIRONMENT_HOME}/.useagent-required-mcp`;
 const RUNTIME_READINESS_DEADLINE_MS = 60_000;
 const RUNTIME_READINESS_DELAY_MS = 100;
 const RUNTIME_STOP_DEADLINE_MS = 15_000;
@@ -65,7 +67,10 @@ export function runtimeEnvironmentEnabled(
 }
 
 export function buildRuntimeEnvironmentReadinessCommand(): string {
-  return `curl -fsS -m 3 -o /dev/null http://127.0.0.1:${RUNTIME_ENVIRONMENT_PORT}/api/auth/session`;
+  return [
+    `test "$(cat \"${RUNTIME_MCP_SERVER_MARKER}\" 2>/dev/null)" = "${TOOL_GATEWAY_SERVER_NAME}"`,
+    `curl -fsS -m 3 -o /dev/null http://127.0.0.1:${RUNTIME_ENVIRONMENT_PORT}/api/auth/session`,
+  ].join(" && ");
 }
 
 export function buildRuntimeIdentityPreflightCommand(): string {
@@ -140,7 +145,7 @@ export function buildRuntimeEnvironmentLaunchCommand(
     "export T3CODE_MODE=web",
     "export T3CODE_HOST=0.0.0.0",
     `export T3CODE_PORT=${RUNTIME_ENVIRONMENT_PORT}`,
-    "export T3_CODEX_REQUIRED_MCP_SERVERS=skynet-knowledge",
+    `export T3_CODEX_REQUIRED_MCP_SERVERS=${TOOL_GATEWAY_SERVER_NAME}`,
     // The embedded T3 Codex adapter suppresses child-thread notifications by
     // default. Keep a separate operator kill switch from graph READ/SHADOW.
     ...(runtimeCodexChildForwardingEnabled(env)
@@ -153,6 +158,7 @@ export function buildRuntimeEnvironmentLaunchCommand(
     "export T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD=false",
     "export T3CODE_LOG_WS_EVENTS=false",
     `mkdir -p "${RUNTIME_ENVIRONMENT_HOME}" "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
+    `printf '%s\\n' "${TOOL_GATEWAY_SERVER_NAME}" > "${RUNTIME_MCP_SERVER_MARKER}"`,
     // Org secrets are deliberately NOT sourced into the T3 process environment:
     // the codex provider adapter composes child/session environments from the
     // T3 process env, and foreign variables there broke the codex subscription

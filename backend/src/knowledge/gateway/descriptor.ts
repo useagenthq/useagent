@@ -60,7 +60,12 @@ export type GatewayToolExecutor = (
   args: Record<string, unknown>,
 ) => Promise<ToolCallResult<ToolCallContent>>;
 
-export const TOOL_GATEWAY_SERVER_NAME = "skynet-knowledge";
+export const TOOL_GATEWAY_SERVER_NAME = "useagent";
+export const LEGACY_TOOL_GATEWAY_SERVER_NAME = "skynet-knowledge";
+export const TOOL_GATEWAY_SERVER_NAMES = [
+  TOOL_GATEWAY_SERVER_NAME,
+  LEGACY_TOOL_GATEWAY_SERVER_NAME,
+] as const;
 
 export interface ToolGatewayBindingInput {
   readonly orgId?: string | null;

@@ -371,7 +371,7 @@ export function translateOpenCode(
       ensureChild(produced, f); // lossless child-session establishment
     }
 
-    if (f.provider.startsWith("skynet")) {
+    if (f.provider === "useagent" || f.provider.startsWith("skynet")) {
       const marker = markerFromUseAgent(et, p);
       if (marker) {
         // Carry the originating frame verbatim so the frontend reconstructs the FULL

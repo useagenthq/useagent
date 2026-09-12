@@ -17,6 +17,7 @@ import {
 } from "./sandbox-config";
 import { verifyProviderToken } from "./token";
 import { verifyToolToken } from "../knowledge/gateway/token";
+import { TOOL_GATEWAY_SERVER_NAME } from "../knowledge/gateway/descriptor";
 
 const original = { ...process.env };
 
@@ -132,7 +133,8 @@ describe("sandbox provider gateway config", () => {
     expect(config).toContain("[model_providers.skynet.auth]");
     expect(config).toContain('command = "sh"');
     expect(config).not.toContain("env_key");
-    expect(config).toContain("[mcp_servers.skynet-knowledge]");
+    expect(config).toContain(`[mcp_servers.${TOOL_GATEWAY_SERVER_NAME}]`);
+    expect(config).not.toContain("mcp_servers.skynet-knowledge");
     expect(config).toContain('url = "https://gateway.example.test/api/mcp/knowledge"');
     expect(config).toContain('http_headers = { Authorization = "Bearer tool-token" }');
     expect(config).toContain("enabled = true");
@@ -155,7 +157,7 @@ describe("sandbox provider gateway config", () => {
         { type: string; url: string; headers: { Authorization: string } }
       >;
     };
-    const knowledge = mcpConfig.mcpServers["skynet-knowledge"]!;
+    const knowledge = mcpConfig.mcpServers[TOOL_GATEWAY_SERVER_NAME]!;
     expect(knowledge).toMatchObject({
       type: "http",
       url: "https://gateway.example.test/api/mcp/knowledge",
@@ -257,7 +259,7 @@ describe("sandbox provider gateway config", () => {
     expect(verifyProviderToken(options.anthropic?.apiKey)).toMatchObject({ provider: "anthropic" });
     expect(verifyProviderToken(options.openai?.apiKey)).toMatchObject({ provider: "openai" });
     expect(verifyProviderToken(options.openrouter?.apiKey)).toMatchObject({ provider: "openrouter" });
-    expect(SANDBOX_GENERATION).toBe("provider-gateway-v16-gateway-only-secrets");
+    expect(SANDBOX_GENERATION).toBe("provider-gateway-v17-useagent-mcp-gateway-only-secrets");
     expect(providerGatewaySandboxLabels("run-a")).toEqual({
       "skynet-run": "run-a",
       "skynet-provider-generation": SANDBOX_GENERATION,
@@ -307,7 +309,7 @@ describe("sandbox provider gateway config", () => {
     const config = JSON.parse(files["/tmp/useagent-claude-capability/useagent-mcp.json"]!) as {
       mcpServers: Record<string, { headers: { Authorization: string } }>;
     };
-    const token = config.mcpServers["skynet-knowledge"]!.headers.Authorization.replace(/^Bearer /, "");
+    const token = config.mcpServers[TOOL_GATEWAY_SERVER_NAME]!.headers.Authorization.replace(/^Bearer /, "");
     const claims = verifyToolToken(token, before);
 
     expect(claims).not.toBeNull();
@@ -484,7 +486,7 @@ describe("sandbox provider gateway config", () => {
     const sandbox = {
       labels: {
         "skynet-run": "run-a",
-        "skynet-provider-generation": "provider-gateway-v10",
+        "skynet-provider-generation": "provider-gateway-v16-gateway-only-secrets",
       },
       process: {
         executeCommand: async () => {
@@ -509,7 +511,7 @@ describe("sandbox provider gateway config", () => {
     process.env.SANDBOX_SECRET_MODE = "compatibility";
     const compatibilityLabels = providerGatewaySandboxLabels("run-compatibility");
     expect(compatibilityLabels["skynet-provider-generation"]).toBe(
-      "provider-gateway-v16-compatibility-secrets",
+      "provider-gateway-v17-useagent-mcp-compatibility-secrets",
     );
 
     process.env.SANDBOX_SECRET_MODE = "gateway_only";
