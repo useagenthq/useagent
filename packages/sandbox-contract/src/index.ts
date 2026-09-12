@@ -356,6 +356,8 @@ export interface SandboxProviderPlugin<Config = unknown> {
   readonly runtime: {
     readonly home: string;
     readonly workdir: string;
+    /** Provider-baked Bun used by resident runtimes, when exact-version verified. */
+    readonly bunExecutable?: string;
   };
   /** Headers a preview link's token must travel in (token header, or Box's port-auth cookie). */
   previewAuthHeaders(token: string): Record<string, string>;

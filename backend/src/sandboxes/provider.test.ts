@@ -38,6 +38,7 @@ describe("sandbox provider selection", () => {
       home: "/home/user",
       workdir: "/home/user/work",
       runsAsRoot: false,
+      bunExecutable: "/usr/local/bin/bun",
     });
   });
 

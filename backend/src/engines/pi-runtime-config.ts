@@ -112,6 +112,27 @@ const runtimeFiles = Promise.all([
   readFile(new URL("../../pi-runtime/package-lock.json", import.meta.url), "utf8"),
 ]);
 
+export function buildPiRuntimeInstallCommand(input: {
+  readonly runtimeRoot: string;
+  readonly runtimeManifestDir: string;
+  readonly bunExecutable: string;
+  readonly executable: string;
+}): string {
+  const { runtimeRoot, runtimeManifestDir, bunExecutable, executable } = input;
+  return (
+    `if ! test -f '${runtimeRoot}/.lock-sha256' || ` +
+    `! grep -Fxq '${PI_RUNTIME_LOCK_SHA256}' '${runtimeRoot}/.lock-sha256'; then ` +
+    `{ install -d -m 755 '${runtimeRoot}/current' && ` +
+    `cp '${runtimeManifestDir}/package.json' '${runtimeManifestDir}/package-lock.json' '${runtimeRoot}/current/' && ` +
+    `cd '${runtimeRoot}/current' && npm ci --omit=dev --silent >/dev/null; } || ` +
+    `{ rm -f '${runtimeRoot}/.lock-sha256'; exit 1; }; fi; ` +
+    `if ! '${bunExecutable}' --version | grep -Fxq '${PI_BUN_VERSION}' || ` +
+    `! '${bunExecutable}' '${executable}' --version | grep -Fq '${PI_CODING_AGENT_VERSION}'; then ` +
+    `rm -f '${runtimeRoot}/.lock-sha256'; exit 1; fi; ` +
+    `printf '%s\\n' '${PI_RUNTIME_LOCK_SHA256}' > '${runtimeRoot}/.lock-sha256'`
+  );
+}
+
 /** Installs the pinned Pi runtime once per retained sandbox and refreshes only
  * run-scoped model/MCP capability files on subsequent turns. */
 export async function preparePiRuntime(
@@ -167,16 +188,15 @@ export async function preparePiRuntime(
     uploadPrivateFile(sandbox, `${runtimeManifestDir}/package.json`, runtimePackageJson),
     uploadPrivateFile(sandbox, `${runtimeManifestDir}/package-lock.json`, runtimeLockJson),
   ]);
-  const bunExecutable = `${runtimeRoot}/current/node_modules/.bin/bun`;
+  const bunExecutable = layout.bunExecutable ?? `${runtimeRoot}/current/node_modules/.bin/bun`;
   const executable = `${runtimeRoot}/current/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`;
   const install = await sandbox.process.executeCommand(
-    `if ! test -f '${runtimeRoot}/.lock-sha256' || ` +
-      `! grep -Fxq '${PI_RUNTIME_LOCK_SHA256}' '${runtimeRoot}/.lock-sha256'; then ` +
-      `install -d -m 755 '${runtimeRoot}/current' && ` +
-      `cp '${runtimeManifestDir}/package.json' '${runtimeManifestDir}/package-lock.json' '${runtimeRoot}/current/' && ` +
-      `cd '${runtimeRoot}/current' && npm ci --omit=dev --silent >/dev/null && ` +
-      `printf '%s\\n' '${PI_RUNTIME_LOCK_SHA256}' > '${runtimeRoot}/.lock-sha256'; fi; ` +
-      `'${bunExecutable}' '${executable}' --version | grep -Fq '${PI_CODING_AGENT_VERSION}'`,
+    buildPiRuntimeInstallCommand({
+      runtimeRoot,
+      runtimeManifestDir,
+      bunExecutable,
+      executable,
+    }),
     undefined,
     undefined,
     300,

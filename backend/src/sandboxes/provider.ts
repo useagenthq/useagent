@@ -35,6 +35,7 @@ export interface SandboxRuntimeLayout {
   readonly home: string;
   readonly workdir: string;
   readonly runsAsRoot: boolean;
+  readonly bunExecutable?: string;
 }
 
 export function sandboxRuntimeLayout(kind: SandboxProviderKind): SandboxRuntimeLayout {
