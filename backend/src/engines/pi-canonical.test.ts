@@ -540,4 +540,81 @@ describe("Pi RPC canonical bridge mapping", () => {
     }));
     expect(translated.accounting[0]?.suppressed).toBeUndefined();
   });
+  test("carries the tool input onto the completed frame and reads result text plainly", () => {
+    const map = createPiRpcFrameMapper("pi-message-run");
+    const started = map({
+      type: "tool_execution_start",
+      toolCallId: "call-write",
+      toolName: "write",
+      args: { path: "/root/work/hello.txt", content: "ready" },
+    });
+    expect(started[0]).toMatchObject({ kind: "tool.started", input: { path: "/root/work/hello.txt", content: "ready" } });
+    const completed = map({
+      type: "tool_execution_end",
+      toolCallId: "call-write",
+      toolName: "write",
+      isError: false,
+      result: { content: [{ type: "text", text: "Successfully wrote 5 bytes to hello.txt" }] },
+    });
+    expect(completed).toEqual([{
+      kind: "tool.completed",
+      toolCallId: "call-write",
+      name: "write",
+      status: "ok",
+      preview: "Successfully wrote 5 bytes to hello.txt",
+      input: { path: "/root/work/hello.txt", content: "ready" },
+    }]);
+    // The durable row is one id upserted per revision; the surviving completed
+    // revision must still carry the command or the path.
+    const event = piBridgeProviderEvent(
+      { runId: "run", threadId: "thread" },
+      new NativeBridgeSequencer("session", () => 1).frame(completed[0]!),
+    );
+    expect(event.eventType).toBe("part.tool.completed");
+    expect(event.payload).toMatchObject({
+      tool: "write",
+      input: { path: "/root/work/hello.txt", content: "ready" },
+      state: { status: "ok", output: "Successfully wrote 5 bytes to hello.txt" },
+    });
+    // The toolResult message that follows the execution end upserts the same
+    // durable row last, so it must carry the input too.
+    const [fromResultMessage] = map({
+      type: "message_end",
+      message: { role: "toolResult", toolCallId: "call-write", toolName: "write", isError: false, content: [{ type: "text", text: "ok" }] },
+    });
+    expect(fromResultMessage).toMatchObject({ kind: "tool.completed", input: { path: "/root/work/hello.txt", content: "ready" } });
+    // A completion for an unknown call has none.
+    expect(map({ type: "tool_execution_end", toolCallId: "call-unknown", toolName: "bash", result: "x" })[0])
+      .not.toHaveProperty("input");
+  });
+
+  test("a tool result message carries its text and the call input through message_end", () => {
+    const map = createPiRpcFrameMapper("pi-message-run");
+    map({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        timestamp: 5,
+        content: [{ type: "toolCall", id: "call-bash", name: "bash", arguments: { command: "cat hello.txt" } }],
+      },
+    });
+    const [completed] = map({
+      type: "message_end",
+      message: {
+        role: "toolResult",
+        toolCallId: "call-bash",
+        toolName: "bash",
+        isError: false,
+        content: [{ type: "text", text: "ready\n\nWall time: 0.02 seconds" }],
+      },
+    });
+    expect(completed).toEqual({
+      kind: "tool.completed",
+      toolCallId: "call-bash",
+      name: "bash",
+      status: "ok",
+      preview: "ready\n\nWall time: 0.02 seconds",
+      input: { command: "cat hello.txt" },
+    });
+  });
 });
