@@ -10,7 +10,8 @@ import {
   useState,
 } from "react";
 import { useOrgChanges } from "@/hooks/use-org-changes";
-import { fetchEnabledSandboxEngines, fetchProviderConnections } from "./provider-connections-api";
+import { fetchDeploymentConfig, fetchProviderConnections } from "./provider-connections-api";
+import type { ProviderConnectionProvider } from "./provider-connections-data";
 import type { ProviderConnectionMeta } from "./provider-connections-data";
 
 function useProviderConnectionsState() {
@@ -19,15 +20,18 @@ function useProviderConnectionsState() {
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [enabledSandboxEngines, setEnabledSandboxEngines] = useState<string[] | null>(null);
+  const [deploymentProviders, setDeploymentProviders] = useState<Partial<
+    Record<ProviderConnectionProvider, boolean>
+  > | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
   const load = useCallback(async () => {
     setRefreshing(true);
-    const [connectionsResult, enginesResult] = await Promise.allSettled([
+    const [connectionsResult, configResult] = await Promise.allSettled([
       fetchProviderConnections(),
-      fetchEnabledSandboxEngines(),
+      fetchDeploymentConfig(),
     ]);
     if (connectionsResult.status === "fulfilled") {
       setConnections(connectionsResult.value);
@@ -35,7 +39,9 @@ function useProviderConnectionsState() {
     } else {
       setError(true);
     }
-    setEnabledSandboxEngines(enginesResult.status === "fulfilled" ? enginesResult.value : null);
+    const config = configResult.status === "fulfilled" ? configResult.value : null;
+    setEnabledSandboxEngines(config?.enabledSandboxEngines ?? null);
+    setDeploymentProviders(config?.deploymentProviders ?? null);
     setLoading(false);
     setRefreshing(false);
   }, []);
@@ -50,6 +56,7 @@ function useProviderConnectionsState() {
 
   return {
     connections,
+    deploymentProviders,
     enabledSandboxEngines,
     error,
     load,

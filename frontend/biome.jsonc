@@ -11,9 +11,40 @@
       "**",
       "!**/.next",
       "!**/.next-*",
-      "!**/node_modules"
+      "!**/node_modules",
+      // Static assets (public/*.svg) are served as-is, not linted source.
+      "!**/public"
     ]
   },
+  "linter": {
+    "rules": {
+      "a11y": {
+        // Biome counts mouse-enter/leave and propagation guards; those hover surfaces (charts, menus, tooltips) wrap real buttons that own the keyboard path.
+        "noStaticElementInteractions": "off",
+        // Kit composites put role=group/separator/button on div/span; the suggested fieldset/hr/button swaps change styling and a button cannot nest in a button.
+        "useSemanticElements": "off",
+        // Biome models role=separator as a focusable splitter (focus + aria-valuenow); the kit Divider and the sheet column-resize handle are static separators.
+        "useFocusableInteractive": "off",
+        "useAriaPropsForRole": "off",
+        // Textarea.Root is the kit textarea (Biome matches the member name), so a wrapping <label> does label a control.
+        "noLabelWithoutControl": {
+          "level": "error",
+          "options": { "inputComponents": ["Root"] }
+        }
+      },
+      "performance": {
+        // <img> is deliberate for user and remote content: next/image needs a host allowlist and fixed sizing.
+        "noImgElement": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      // Figma-ported dashboard template rows are placeholder anchors (href="#"); a <button> swap changes cursor and alignment.
+      "includes": ["components/application/dashboard/**"],
+      "linter": { "rules": { "a11y": { "useValidAnchor": "off" } } }
+    }
+  ],
   // Keep OUR existing house style (2-space, double quotes, 100 cols) so Biome is a
   // BUG LINTER, not a whole-repo reformatter to tabs (that diff would be the very
   // "fuck up huge code" we're guarding against). A style migration is a separate,

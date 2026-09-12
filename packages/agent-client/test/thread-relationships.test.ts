@@ -53,6 +53,20 @@ describe("thread relationship wire contract", () => {
     });
   });
 
+  test("treats the latest summary fields as additive: omitted decodes as null, malformed still rejects", () => {
+    const { latest_summary: _summary, latest_duration_ms: _duration, ...older } = relationship;
+    expect(decodeThreadRelationship(older)).toMatchObject({
+      threadId: "child-1",
+      latestSummary: null,
+      latestDurationMs: null,
+    });
+    expect(decodeThreadRelationship({ ...relationship, latest_summary: null, latest_duration_ms: null }))
+      .toMatchObject({ latestSummary: null, latestDurationMs: null });
+    expect(decodeThreadRelationship({ ...relationship, latest_summary: 42 })).toBeNull();
+    expect(decodeThreadRelationship({ ...relationship, latest_duration_ms: "1250" })).toBeNull();
+    expect(decodeThreadRelationship({ ...relationship, latest_duration_ms: 1.5 })).toBeNull();
+  });
+
   test("rejects malformed identity, enums, and missing derived status", () => {
     expect(decodeThreadRelationship({ ...relationship, thread_id: "" })).toBeNull();
     expect(decodeThreadRelationship({ ...relationship, kind: "native" })).toBeNull();

@@ -41,7 +41,7 @@ describe("sandbox binding", () => {
     expect(binding).toBe(envBinding);
     await expect(resolveSandboxBindingForRun({ orgId: "org", userId: "user" }, { env: {}, envProvider: () => null }))
       .rejects.toThrow(/credentials are unavailable/);
-    expect(bindingSnapshot({ ...envBinding, kind: "box" }, "DAYTONA_SNAPSHOT", "fallback")).toBeDefined();
+    expect(bindingSnapshot({ ...envBinding, kind: "box" }, "DAYTONA_SNAPSHOT")).toBeDefined();
   });
 
   test("a connected personal computer runs the user's work, most recently updated connection first", async () => {
@@ -74,7 +74,7 @@ describe("sandbox binding", () => {
     expect(binding.credential).toBe("user");
     expect(binding.snapshot).toBe("my-box-snap");
     expect(built).toEqual(["box:box_user"]);
-    expect(bindingSnapshot(binding, "DAYTONA_SNAPSHOT", "server-fallback")).toBe("my-box-snap");
+    expect(bindingSnapshot(binding, "DAYTONA_SNAPSHOT")).toBe("my-box-snap");
 
     // Off for the org: same user, same connections, server provider.
     expect((await resolveSandboxBindingForRun({ orgId, userId }, { ...deps, env: {} })).credential).toBe("env");

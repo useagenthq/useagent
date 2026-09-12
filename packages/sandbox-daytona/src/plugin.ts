@@ -33,6 +33,21 @@ function isPrivateIpLiteral(rawHostname: string): boolean {
   return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 }
 
+/**
+ * The product snapshots new sandboxes start from when the operator sets nothing.
+ * This is the one place the pins live: set `DAYTONA_SNAPSHOT` (OpenCode, Pi and
+ * the CLI lane; a root image) and `DAYTONA_ACP_SNAPSHOT` (Claude and Codex over
+ * ACP; a non-root image) in the deployment env to move off them. Both defaults
+ * are active in the product org today; `skynet-agent-v23` also exists there but
+ * lacks the desktop binaries the Browser surface needs. A snapshot that goes
+ * unused for about two weeks is deactivated by Daytona; the provider reactivates
+ * it on the next create (see `ensureTemplate`).
+ */
+export const DAYTONA_SNAPSHOT_DEFAULTS: Readonly<Record<string, string>> = {
+  DAYTONA_SNAPSHOT: "skynet-agent-v17",
+  DAYTONA_ACP_SNAPSHOT: "skynet-acp-v3",
+};
+
 /** Everything the control plane needs to run work on Daytona. */
 export const daytonaPlugin: SandboxProviderPlugin<DaytonaApiConfig> = {
   kind: "daytona",
@@ -40,12 +55,20 @@ export const daytonaPlugin: SandboxProviderPlugin<DaytonaApiConfig> = {
   credentialEnv: "DAYTONA_API_KEY",
   credentialRequired: true,
   templateEnv: "DAYTONA_SNAPSHOT",
+  // Daytona's default image is 1 vCPU / 1 GiB: far below the product target, so
+  // a snapshot failure never silently lands there unless the operator lowered
+  // SANDBOX_CPU / SANDBOX_MEMORY_GIB to fit it.
+  baseImageResources: { cpu: 1, memory: 1 },
   home: "/home/daytona",
   runsAsRoot: true,
   previewAuthHeaders: daytonaPreviewAuthHeaders,
   configFromEnv: daytonaApiConfig,
-  template(env, fallback) {
-    return env[fallback.envName]?.trim() || fallback.value;
+  template(env, templateEnv = "DAYTONA_SNAPSHOT") {
+    const configured = env[templateEnv]?.trim();
+    if (configured) return configured;
+    const fallback = DAYTONA_SNAPSHOT_DEFAULTS[templateEnv];
+    if (!fallback) throw new Error(`Daytona has no default snapshot for ${templateEnv}`);
+    return fallback;
   },
   createProvider(config) {
     return daytonaSandboxProvider(config);

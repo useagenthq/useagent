@@ -32,12 +32,8 @@ import { type AssistantIdentity, Conversation } from "@/components/chat/conversa
 import { DesktopPane } from "@/components/chat/desktop-pane";
 import { DiffPane } from "@/components/chat/diff-pane";
 import { EditorPane } from "@/components/chat/editor-pane";
-import { gatewayApprovalSignature } from "@/components/chat/gateway-approval-state";
 import { decodeRunAccepted, type HandoffReceipt, handoffNotice } from "@/components/chat/handoff-receipts";
-import {
-  type GatewayApprovalSignal,
-  useGatewayApprovals,
-} from "@/components/chat/use-gateway-approvals";
+import { useGatewayApprovals } from "@/components/chat/use-gateway-approvals";
 import { OrbBootIndicator } from "@/components/chat/orb-boot-indicator";
 import { type PendingQuestion, selectPendingQuestion } from "@/components/chat/question-state";
 import {
@@ -107,13 +103,19 @@ const RAIL_TAB_LABEL_COLLAPSE = "@max-[40rem]:sr-only";
  * A reply starts a child run in the same thread and arrives on the open stream -
  * never navigating away, never reconnecting.
  */
-export function SessionView({ initialThread, initialOutline = null, initialRelationshipHint = "legacy_or_off", assistantIdentity }: {
+export function SessionView({ initialThread, initialOutline = null, initialRelationshipHint = "legacy_or_off", assistantIdentity, readOnlyMessage, onNewestTurnChange }: {
   initialThread: ApiRun[];
   /** Windowed initial loading (long threads): the WHOLE thread's per-turn
    *  skeleton, while `initialThread` carries only the root + the fully-loaded
    *  tail. Turns known only by outline render as sized placeholders and are
    *  fetched in islands as the user scrolls into them. Null = full load. */
   initialOutline?: ApiThreadOutlineTurn[] | null; initialRelationshipHint?: InitialThreadRelationshipHint; assistantIdentity?: AssistantIdentity;
+  /** Set when nothing new may be sent here (an archived bot): the composer is
+   *  locked with this message while the thread stays readable. */
+  readOnlyMessage?: string;
+  /** The thread's newest run as the live stream sees it, for a header that
+   *  renders outside this view (a bot header's per-turn model label). */
+  onNewestTurnChange?: (run: ApiRun) => void;
 }) {
   const root = initialThread[0];
   if (!root) throw new Error("SessionView requires a non-empty thread");
@@ -148,6 +150,9 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   const { snapshot, reconcile, mergeRuns } = useThreadStream(rootId, initialThread);
   const thread = snapshot.runs.length ? snapshot.runs : initialThread;
   const newest = thread.at(-1) ?? root;
+  useEffect(() => {
+    onNewestTurnChange?.(newest);
+  }, [newest, onNewestTurnChange]);
   const { turns, onTurnsNeeded: handleTurnsNeeded } = useWindowedThread({
     rootId,
     thread,
@@ -232,28 +237,12 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
     return null;
   }, [turns]);
 
-  // Gateway approvals (#77): same seam as the question card - the run's OWN
-  // projection decides. A live turn whose timeline carries an approval step /
-  // provider event signals this lane, which then fetches the authoritative
-  // records from GET /api/gateway/approvals. The SIGNATURE (not a poll) drives
-  // revalidation: a new approval event arriving on the thread SSE re-projects
-  // the turn, changes the signature, and triggers exactly one refetch. Settled
-  // turns are excluded like questions: history never re-raises a card.
-  const gatewayApprovalSignals = useMemo(() => {
-    const signals: GatewayApprovalSignal[] = [];
-    for (const turn of turns) {
-      if (!isLiveStatus(turn.status)) continue;
-      const signature = gatewayApprovalSignature(
-        turn.steps,
-        turn.native?.nativeFrames ?? [],
-        turn.canonical ?? [],
-      );
-      if (signature) signals.push({ runId: turn.run.id, signature });
-    }
-    return signals;
-  }, [turns]);
+  // Gateway approvals (#77): the thread's durable requests, pending AND resolved
+  // (history survives reload), from GET /api/gateway/approvals. The turns' approval
+  // SIGNATURES (not a poll) drive revalidation: an approval event on the thread SSE
+  // re-projects the turn and triggers exactly one refetch (see use-gateway-approvals).
   const { approvals: gatewayApprovals, refresh: refreshGatewayApprovals } =
-    useGatewayApprovals(gatewayApprovalSignals);
+    useGatewayApprovals(rootId, turns);
 
   const submitQuestionAnswers = useCallback(
     async (target: { runId: string; request: PendingQuestion }, answers: string[][]) => {
@@ -768,7 +757,8 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
               newest.repo_specs.map((spec) => [spec.repo, spec.branch]),
             )}
             resourceMentions={!isProductChild}
-            composerLocked={composerRelationshipBlocked} composerLockedMessage="Verifying child session…"
+            composerLocked={composerRelationshipBlocked || readOnlyMessage !== undefined}
+            composerLockedMessage={readOnlyMessage ?? "Verifying child session…"}
             onTurnsNeeded={initialOutline ? handleTurnsNeeded : undefined}
             productChildren={productChildren}
             onOpenProductChild={openProductChild}

@@ -1,14 +1,17 @@
 import { describe, expect, mock, test } from "bun:test";
 import { SandboxCredentialError } from "@useagent/sandbox-contract";
-import { daytonaApiConfig, daytonaPlugin } from "./plugin";
-
-const fallback = { envName: "DAYTONA_SNAPSHOT", value: "useagent-runtime-v17" };
+import { DAYTONA_SNAPSHOT_DEFAULTS, daytonaApiConfig, daytonaPlugin } from "./plugin";
 
 describe("Daytona plugin", () => {
-  test("template reads the named env var and falls back to the shipped snapshot", () => {
-    expect(daytonaPlugin.template({ DAYTONA_SNAPSHOT: " custom-v1 " }, fallback)).toBe("custom-v1");
-    expect(daytonaPlugin.template({ DAYTONA_SNAPSHOT: "  " }, fallback)).toBe("useagent-runtime-v17");
-    expect(daytonaPlugin.template({}, fallback)).toBe("useagent-runtime-v17");
+  test("template reads the lane's env var and falls back to the plugin's own pin", () => {
+    expect(daytonaPlugin.template({ DAYTONA_SNAPSHOT: " custom-v1 " })).toBe("custom-v1");
+    expect(daytonaPlugin.template({ DAYTONA_SNAPSHOT: "  " })).toBe(DAYTONA_SNAPSHOT_DEFAULTS.DAYTONA_SNAPSHOT ?? "");
+    expect(daytonaPlugin.template({})).toBe("skynet-agent-v17");
+    expect(daytonaPlugin.template({ DAYTONA_SNAPSHOT: "root-image" }, "DAYTONA_ACP_SNAPSHOT")).toBe("skynet-acp-v3");
+    expect(daytonaPlugin.template({ DAYTONA_ACP_SNAPSHOT: "acp-custom" }, "DAYTONA_ACP_SNAPSHOT")).toBe("acp-custom");
+    expect(() => daytonaPlugin.template({}, "DAYTONA_OTHER_SNAPSHOT")).toThrow(/no default snapshot for DAYTONA_OTHER_SNAPSHOT/);
+    // The default image is far below the product target, so a fallback there is refused unless the target says so.
+    expect(daytonaPlugin.baseImageResources).toEqual({ cpu: 1, memory: 1 });
   });
 
   test("configFromEnv defaults the API URL and target", () => {

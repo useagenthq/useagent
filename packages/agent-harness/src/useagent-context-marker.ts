@@ -33,6 +33,24 @@ export function markerFromUseAgent(
       title: `Recalled ${count} item${count === 1 ? "" : "s"} from ${source}`,
     };
   }
+  if (eventType === "gateway.approval.requested" || eventType === "gateway.approval.resolved") {
+    const tool = stringValue(payload?.toolName) ?? "tool";
+    const status = stringValue(payload?.status);
+    const resolvedBy = stringValue(payload?.resolvedBy);
+    const verb =
+      eventType === "gateway.approval.requested"
+        ? "Approval requested for"
+        : status === "approved"
+          ? "Approved"
+          : status === "denied"
+            ? "Denied"
+            : "Resolved";
+    return {
+      markerType: "approval",
+      title: `${verb} ${tool}`,
+      ...(resolvedBy && eventType === "gateway.approval.resolved" ? { detail: `by ${resolvedBy}` } : {}),
+    };
+  }
   if (
     eventType === "memory.l0_accepted" ||
     eventType === "memory.updated" ||

@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { acceptRunCancel } from "../commands/cancel";
 import { isUniqueViolation } from "../db/pg-errors";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
@@ -23,7 +22,6 @@ import {
   parseBotInput,
   rowToInput,
   attachRoutine,
-  setBotHomeThread,
   updateBotRow,
 } from "./repo";
 import { botsEnabled } from "./rollout";
@@ -193,6 +191,10 @@ botsRoutes.post("/:id/messages", async (c) => {
   if (!id) return c.json({ error: "not_found" }, 404);
   const row = await getBotRow(orgId, id);
   if (!row) return c.json({ error: "not_found" }, 404);
+  // An archived bot's threads stay readable; nothing new is sent to it.
+  if (row.archived) {
+    return c.json({ error: "bot_archived", reason: `${row.name} is archived. Restore it to send messages.` }, 409);
+  }
   const body = await readBody(c);
   const text = typeof body?.text === "string" ? body.text.trim() : "";
   if (!text) return c.json({ error: "text_required" }, 400);
@@ -203,6 +205,11 @@ botsRoutes.post("/:id/messages", async (c) => {
     return handleRunCreate(c, { body: { prompt: text, parent_run_id: head.id } });
   }
 
+  // The first message opens the home thread. The bot is stamped in the same
+  // transaction that accepts the root (`botHome`): the worker's first turn
+  // looks the bot up by thread, and dispatch can claim the run the instant it
+  // exists. First writer wins; a concurrent first message answers 409 with no
+  // stray root left behind.
   const skillId = row.skillIds[0];
   const runBody: RunCreateBody = {
     prompt: text,
@@ -212,32 +219,13 @@ botsRoutes.post("/:id/messages", async (c) => {
     ...(row.repos.length > 0 ? { repos: [...row.repos] } : {}),
     ...(skillId ? { skill: { id: skillId } } : {}),
   };
-  const response = await handleRunCreate(c, { body: runBody });
-  // 201 = accepted now; 200 = an idempotent replay of the same first message.
-  if (response.status !== 201 && response.status !== 200) return response;
-  const accepted = (await response.clone().json()) as { id?: unknown };
-  if (typeof accepted.id !== "string") return response;
-  if (await setBotHomeThread(orgId, row.id, accepted.id)) return response;
-
-  // Lost a race with a concurrent first message: the other root is the home
-  // thread. Cancel this stray root rather than leave it running unattached.
+  const response = await handleRunCreate(c, { body: runBody, botHome: { botId: row.id } });
+  if (response.status !== 409) return response;
+  const refused = (await response.clone().json().catch(() => null)) as { error?: unknown } | null;
+  if (refused?.error !== "home_thread_already_created") return response;
+  // Tell the loser where the thread went so it can send into it.
   const current = await getBotRow(orgId, row.id);
-  if (current?.homeThreadId !== accepted.id) {
-    try {
-      await acceptRunCancel({ orgId, actorId: c.get("userId"), runId: accepted.id });
-    } catch (error) {
-      console.error(`[bots] could not cancel stray root ${accepted.id} for bot ${row.id}:`, error);
-    }
-    return c.json(
-      {
-        error: "home_thread_already_created",
-        homeThreadId: current?.homeThreadId ?? null,
-        reason: "Another message opened this bot's thread first. Send yours again into that thread.",
-      },
-      409,
-    );
-  }
-  return response;
+  return c.json({ ...refused, homeThreadId: current?.homeThreadId ?? null }, 409);
 });
 
 /* ------------------------------------------------------------------------ */

@@ -20,6 +20,7 @@ import {
 import { mentionsToRunResources, useComposerMentions } from "@/components/chat/composer-mentions-ui";
 import {
   engineRuntimeCaption,
+  pickerEngineOptions,
   resolveEnabledEngine,
   useEnabledEngineConfig,
 } from "@/components/chat/engine-picker";
@@ -32,7 +33,6 @@ import {
   slashInsertText,
 } from "@/components/chat/slash-command";
 import {
-  ENGINES,
   type EngineId,
   engineLabel,
   modelOptionsForEngine,
@@ -333,7 +333,7 @@ export function NewTaskComposer({
     () => [
       {
         label: "Engines",
-        options: ENGINES.filter((e) => e.id !== "chat" && enabledEngines.includes(e.id)).map(
+        options: pickerEngineOptions(enabledEngines).map(
           (e) => ({
             value: e.id,
             label: e.label,

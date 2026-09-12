@@ -164,6 +164,7 @@ const COLUMNS: ColumnDef<Run>[] = [
       // Swallow presses so the peek button never triggers row navigation.
       <div
         className='flex justify-end'
+        role='presentation'
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}

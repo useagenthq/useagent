@@ -4,10 +4,26 @@
  *
  *     bun run test/e2e/playbook-proof.ts
  *
- * It boots an isolated backend (throwaway DB `useagent_pb_proof`, PORT 3424 - NEVER
- * the shared `useagent` dev DB, NEVER :3401/:3501) with the REAL Daytona/opencode
- * keys from backend/.env (memory disabled so the proof never touches the shared
- * pool), then proves the substrate end to end on a REAL opencode(haiku) run:
+ * It boots an isolated backend (a throwaway DB and its own port - NEVER the shared
+ * `useagent` dev DB, NEVER :3401/:3501) with the REAL Daytona/opencode keys from
+ * the environment (memory disabled so the proof never touches the shared pool),
+ * then proves the substrate end to end on a REAL opencode run:
+ *
+ * Environment (defaults in parentheses):
+ *   DAYTONA_API_KEY (+ DAYTONA_TARGET) and the provider key for the chosen model,
+ *   plus a provider gateway the sandbox can reach.
+ *   TEST_ADMIN_URL              admin connection for DROP/CREATE DATABASE
+ *                               (postgres://postgres@localhost:5432/postgres)
+ *   PLAYBOOK_PROOF_DATABASE_URL the throwaway database; its name comes from the
+ *                               URL path and is dropped at the end
+ *                               (postgres://postgres@localhost:5432/useagent_pb_proof)
+ *   PLAYBOOK_PROOF_PORT         isolated backend port (3424)
+ *   PLAYBOOK_PROOF_MODEL        opencode model; it must be on OPENCODE_ALLOWED_MODELS
+ *                               in src/runs/model-policy.ts and its provider must be
+ *                               ready (ENGINE_READINESS_OPENCODE=ready plus the
+ *                               PROVIDER_HEALTH_* flag for that provider), or the
+ *                               run is refused and the proof stops with the refusal
+ *                               (deepseek/deepseek-v4-flash)
  *
  *   1. Create a PLAYBOOK via the API (kind:"playbook") whose Procedure tells the
  *      agent to end every answer with a numbered VERIFY section.
@@ -25,11 +41,14 @@ import { Daytona } from "@daytona/sdk";
 import postgres from "postgres";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
-const DB = "useagent_pb_proof";
-const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
-const PORT = 3424;
+const DB_URL = process.env.PLAYBOOK_PROOF_DATABASE_URL ?? "postgres://postgres@localhost:5432/useagent_pb_proof";
+const DB = decodeURIComponent(new URL(DB_URL).pathname.replace(/^\//, ""));
+if (!/^[a-z_][a-z0-9_]{0,62}$/i.test(DB)) {
+  throw new Error(`PLAYBOOK_PROOF_DATABASE_URL must name a plain database identifier, got "${DB}"`);
+}
+const PORT = Number(process.env.PLAYBOOK_PROOF_PORT ?? 3424);
 const BASE = `http://localhost:${PORT}`;
-const MODEL = "claude-haiku-4-5";
+const MODEL = process.env.PLAYBOOK_PROOF_MODEL ?? "deepseek/deepseek-v4-flash";
 const backendDir = new URL("../..", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
 const backendLog = `${scratch}/skynet-playbook-proof-backend.log`;
@@ -174,7 +193,7 @@ async function cleanupSandboxes(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  console.log("REAL PLAYBOOK PROOF — real Daytona + opencode(claude-haiku-4-5), memory disabled");
+  console.log(`REAL PLAYBOOK PROOF - real Daytona + opencode(${MODEL}), memory disabled`);
   console.log(`  DB=${DB} PORT=${PORT} backend-log=${backendLog}`);
   if (!process.env.DAYTONA_API_KEY) {
     console.error("ABORT: DAYTONA_API_KEY not set — this proof needs a real sandbox.");
@@ -225,7 +244,13 @@ async function main(): Promise<void> {
     // 2. Run it on the REAL opencode engine.
     const prompt = `What is the capital of France? [proof ${uniq}]`;
     const ran = await api(`/api/skills/${playbookId}/run`, { prompt, engine: "opencode", model: MODEL });
-    check("run accepted with the playbook pinned", ran.status === 201 && !!ran.body.id, `status=${ran.status}`);
+    const accepted = ran.status === 201 && typeof ran.body.id === "string" && ran.body.id.length > 0;
+    check("run accepted with the playbook pinned", accepted, accepted ? `status=${ran.status}` : `status=${ran.status} body=${JSON.stringify(ran.body)}`);
+    if (!accepted) {
+      // Nothing to wait for: the refusal (model policy, engine or provider
+      // readiness) is the finding. Stop here instead of dereferencing a run id.
+      throw new Error(`run refused: HTTP ${ran.status} ${JSON.stringify(ran.body)}`);
+    }
     const runId = ran.body.id as string;
     note(`run ${runId} created; waiting for the REAL sandbox turn (up to 6 min)…`);
 
@@ -270,6 +295,11 @@ async function main(): Promise<void> {
     check("historical run STILL pinned to v1 (immutable)", after?.skill_version === 1 && after?.skill_content_hash === pinnedHashV1, `v=${after?.skill_version} hashStable=${after?.skill_content_hash === pinnedHashV1}`);
 
     note(`answer was: "${answer.replace(/\n/g, "\\n").slice(0, 300)}"`);
+  } catch (error) {
+    // The failing check is already counted; report why the proof stopped so the
+    // summary and the backend log tail still print.
+    if (fail === 0) fail++;
+    note(`stopped: ${(error as Error).message}`);
   } finally {
     await killBackend(proc).catch(() => {});
     await cleanupSandboxes().catch((e) => console.log(`  cleanup error: ${(e as Error).message}`));

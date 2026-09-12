@@ -22,11 +22,13 @@ import type {
   HarnessSessionHandle,
 } from "./types";
 import { composeTurnPrompt } from "./types";
-import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
+import { parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
+import { toolStep } from "./tool-step";
+import { createToolCallWatchdog, toolCallTimeoutMs } from "./tool-call-watchdog";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { checkoutPullRequestResources, prepareRepos, shq } from "./repo-prep";
 import { assertNever } from "../util/exhaustive";
-import { nextPollDelayMs, stagesTogether } from "../util/startup";
+import { stagesTogether } from "../util/startup";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import {
   buildToolGatewayCapabilityDescriptor,
@@ -68,9 +70,7 @@ import {
   materializeSecretInjection,
   PROVIDER_SECRET_NAMES,
   recordSecretsInjected,
-  sandboxSecretMode,
   sandboxSecretSourceCommand,
-  SECRET_DOTENV_PATH,
 } from "../secrets/inject";
 import { materializeRunInputs } from "../uploads/materialize";
 import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
@@ -81,7 +81,7 @@ import {
   providerGatewayWired,
 } from "../provider-gateway/sandbox-config";
 import { opencodeAssistantError } from "./opencode-message";
-import { ensureSandboxDesktopView } from "./desktop";
+import { desktopUnavailableStep, ensureSandboxDesktopView } from "./desktop";
 import { createSecretRedactor } from "../secrets/redact";
 import { DEFAULT_OPENCODE_MODEL } from "../runs/model-policy";
 import {
@@ -105,6 +105,16 @@ import {
   rememberLiveThreadSandbox,
 } from "./sandbox-runtime";
 import { reviveRetainedSandbox } from "./thread-sandbox";
+import { provisionSandbox } from "./sandbox-provision";
+import { noteLostWorkspace } from "./workspace-continuity";
+import {
+  ensureServer,
+  opencodeLauncherFor,
+  reuseHealthyResidentServer,
+  SERVE_PORT,
+  stopServerForConfigReload,
+} from "./opencode-serve";
+export { prewarmOpenCodeRuntime } from "./opencode-serve";
 import {
   assertSandboxResources,
   resolveSandboxResourceTarget,
@@ -127,9 +137,6 @@ import { bindingRecord, bindingSnapshot, resolveSandboxBindingForRun, resolveSan
 // ---------------------------------------------------------------------------
 
 const DEFAULT_MODEL = DEFAULT_OPENCODE_MODEL;
-const SERVE_PORT = 4096;
-const OPENCODE_VERSION = "1.18.7";
-const SERVER_PROCESS_SESSION = "skynet-opencode-serve";
 
 // Run-invariant config (perf slice): thread-scoped tool tokens memoized so warm
 // turns build byte-identical MCP config, and the hash of the last SUCCESSFULLY
@@ -174,41 +181,6 @@ function modelBody(model: string): { providerID: string; modelID: string } {
  *  can disable Bun's 5-min idle cap without an `as any`/`as RequestInit` bypass. */
 type FetchInit = RequestInit & { timeout?: number };
 
-const FILE_TOOLS = new Set(["write", "edit", "patch", "multiedit"]);
-
-/** Render an opencode Part's tool call as a step (same grammar as the CLI
- *  JSONL path — the server streams the identical Part model). */
-function toolStep(
-  tool: string,
-  input: Record<string, unknown>,
-  title: string | undefined,
-  output: string | undefined,
-): EmitStep {
-  const code = { tool, input, ...(output !== undefined ? { output } : {}) };
-  if (tool === "task") {
-    const desc = String(input.description ?? title ?? "subagent");
-    return {
-      kind: "task",
-      label: `Subagent — ${truncate(desc, 50)}`,
-      chip: "subagent",
-      code_json: code,
-    };
-  }
-  const isFile = FILE_TOOLS.has(tool.toLowerCase());
-  const filePath = (input.filePath as string) ?? (input.file_path as string) ?? "";
-  const label = isFile
-    ? filePath
-      ? basename(filePath)
-      : title ?? tool
-    : (input.command as string) ?? title ?? tool;
-  return {
-    kind: isFile ? "file" : "command",
-    label: truncate(String(label)),
-    chip: isFile ? "file" : tool === "bash" ? "bash" : tool,
-    code_json: code,
-  };
-}
-
 export async function emitOpenCodeFinalReply(
   ctx: Pick<EngineRunContext, "emit" | "setSummary">,
   texts: readonly string[],
@@ -237,176 +209,6 @@ export function redactOpenCodeSessionLifecycleInfo<T extends Record<string, unkn
     if (typeof info[key] === "string") safe[key] = info[key];
   }
   return safe as T;
-}
-
-/** Boot (or confirm) `opencode serve` inside the sandbox and resolve its
- *  preview endpoint + the sandbox user's workdir. Idempotent per sandbox.
- *
- *  Startup and readiness are deliberately separate operations. Keeping a shell
- *  probe loop inside one Daytona command lets repeated slow probes consume the
- *  daemon's entire execution timeout and yields an opaque 408. The backend can
- *  instead poll OpenCode's real health endpoint through the same preview link
- *  used for the session, with one bounded fetch per attempt. */
-async function ensureServer(
-  sandbox: SandboxHandle,
-  npx: boolean,
-  signal: AbortSignal,
-  secretSourceCommand = sandboxSecretSourceCommand(),
-): Promise<OpenCodeRuntimeServer> {
-  const bin = npx ? `npx -y opencode-ai@${OPENCODE_VERSION}` : "opencode";
-  const homeResult = await sandbox.process.executeCommand(
-    'mkdir -p ~/work && printf %s "$HOME"',
-    undefined,
-    undefined,
-    15,
-  );
-  if ((homeResult.exitCode ?? 1) !== 0) throw new Error("opencode workspace preparation failed");
-  const home = homeResult.result?.trim() || "/home/daytona";
-  const server = { ...previewLinkBase(await sandbox.getPreviewLink(SERVE_PORT)), workdir: `${home}/work` };
-
-  // A healthy resident process survives turns and is always reused: the liveness
-  // probe here already proves it is serving, so return immediately and skip the
-  // readiness poll's redundant first probe (perf plan Phase 1 item 4 - skip probes
-  // once a prior step proves liveness). Only when the sandbox was stopped/restarted
-  // (probe not 2xx) do we recreate Daytona's dedicated background session:
-  // executeCommand is synchronous even with shell `&`, whereas an async session
-  // command is Daytona's supported long-lived-process primitive.
-  const initialStatus = await opencodeHealthStatus(server, signal);
-  if (initialStatus !== null && initialStatus >= 200 && initialStatus < 300) {
-    return server;
-  }
-  await sandbox.process.deleteSession(SERVER_PROCESS_SESSION).catch(() => {});
-  await sandbox.process.createSession(SERVER_PROCESS_SESSION);
-  await sandbox.process.executeSessionCommand(
-    SERVER_PROCESS_SESSION,
-    {
-      command: `${secretSourceCommand} && cd ${shq(`${home}/work`)} && exec ${bin} serve --hostname 0.0.0.0 --port ${SERVE_PORT}`,
-      runAsync: true,
-      suppressInputEcho: true,
-    },
-    30,
-  );
-
-  const deadline = Date.now() + 120_000;
-  let lastStatus: number | null = null;
-  // Bounded exponential polling (perf plan Phase 1): a server that is ready in
-  // 200ms is seen in ~200ms instead of at the next full-second tick; the overall
-  // deadline is unchanged.
-  let pollDelay: number | null = null;
-  while (Date.now() < deadline && !signal.aborted) {
-    lastStatus = await opencodeHealthStatus(server, signal);
-    if (lastStatus !== null && lastStatus >= 200 && lastStatus < 300) {
-      return server;
-    }
-    const delay = nextPollDelayMs(pollDelay);
-    pollDelay = delay;
-    await new Promise((resolve) => setTimeout(resolve, delay));
-  }
-  if (signal.aborted) throw new Error("opencode run aborted (timeout)");
-  let logs: { output?: string; stderr?: string; stdout?: string } | null = null;
-  try {
-    const session = await sandbox.process.getSession(SERVER_PROCESS_SESSION);
-    const command = session.commands.at(-1);
-    if (command?.id) {
-      logs = await sandbox.process.getSessionCommandLogs(SERVER_PROCESS_SESSION, command.id);
-    }
-  } catch {
-    // Readiness already failed. Logs are diagnostic only and must not mask the
-    // stable, redacted error below.
-  }
-  const safeTail = (logs?.output ?? logs?.stderr ?? logs?.stdout ?? "")
-    .replace(/v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "<capability>")
-    .trim();
-  throw new Error(
-    `opencode serve failed readiness${lastStatus ? ` (HTTP ${lastStatus})` : ""}: ${truncate(safeTail, 200)}`,
-  );
-}
-
-/** Prime a newly created Cube sandbox's OpenCode executable and preview route
- * without retaining a process that predates run-scoped secret materialization.
- * The real turn still starts a clean server after writing its 0600 dotenv. */
-export async function prewarmOpenCodeRuntime(
-  sandbox: SandboxHandle,
-  signal: AbortSignal,
-): Promise<void> {
-  const mode = sandboxSecretMode();
-  const secretFile = mode === "compatibility"
-    ? SECRET_DOTENV_PATH.startsWith("$HOME/")
-      ? `"$HOME/${SECRET_DOTENV_PATH.slice("$HOME/".length)}"`
-      : shq(SECRET_DOTENV_PATH)
-    : null;
-  const prepared = await sandbox.process.executeCommand(
-    secretFile
-      ? `mkdir -p "$(dirname ${secretFile})" "$HOME/work" && ` +
-        `chmod 700 "$(dirname ${secretFile})" && ` +
-        `touch ${secretFile} && chmod 600 ${secretFile}`
-      : `mkdir -p "$HOME/work"`,
-    undefined,
-    undefined,
-    15,
-  );
-  if ((prepared.exitCode ?? 1) !== 0) {
-    throw new Error("OpenCode prewarm workspace preparation failed");
-  }
-  try {
-    await ensureServer(sandbox, false, signal, sandboxSecretSourceCommand(mode));
-  } finally {
-    await sandbox.process.deleteSession(SERVER_PROCESS_SESSION).catch(() => {});
-  }
-}
-
-async function opencodeHealthStatus(
-  server: OpenCodeRuntimeServer,
-  signal: AbortSignal,
-): Promise<number | null> {
-  try {
-    const response = await fetch(`${server.baseUrl}/global/health`, {
-      headers: authHeaders(server),
-      signal: AbortSignal.any([signal, AbortSignal.timeout(5_000)]),
-    });
-    const status = response.status;
-    await response.body?.cancel().catch(() => {});
-    return status;
-  } catch {
-    return null;
-  }
-}
-
-async function reuseHealthyResidentServer(
-  cached: OpenCodeThreadServer | null,
-  sandboxId: string,
-  signal: AbortSignal,
-): Promise<OpenCodeRuntimeServer | null> {
-  if (!cached || cached.sandboxId !== sandboxId) return null;
-  const status = await opencodeHealthStatus(cached, signal);
-  return status !== null && status >= 200 && status < 300 ? cached : null;
-}
-
-/** Stop the resident process and prove its preview endpoint is no longer serving
- * before a fallback restart. Swallowing delete errors can otherwise let
- * ensureServer observe the old healthy process and dispatch with stale config. */
-async function stopServerForConfigReload(
-  sandbox: SandboxHandle,
-  server: OpenCodeRuntimeServer,
-  signal: AbortSignal,
-): Promise<void> {
-  let deletionFailed = false;
-  try {
-    await sandbox.process.deleteSession(SERVER_PROCESS_SESSION);
-  } catch {
-    deletionFailed = true;
-  }
-  const deadline = Date.now() + 10_000;
-  do {
-    const status = await opencodeHealthStatus(server, signal);
-    if (status === null || status < 200 || status >= 300) return;
-    if (Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
-  } while (!signal.aborted && Date.now() < deadline);
-  throw new Error(
-    deletionFailed
-      ? "OpenCode config fallback could not stop the resident server"
-      : "OpenCode resident server remained healthy after stop",
-  );
 }
 
 // shq / repo cloning live in the shared engine-neutral ./repo-prep (imported above).
@@ -1077,10 +879,10 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
     const secretSourceCommand = sandboxSecretSourceCommand(secretInjection.mode);
     const redact = createSecretRedactor(secretInjection.redactionValues);
 
-    const snapshot = bindingSnapshot(binding, "DAYTONA_SNAPSHOT", "skynet-agent-v17");
+    const snapshot = bindingSnapshot(binding, "DAYTONA_SNAPSHOT");
     const resourceTarget = resolveSandboxResourceTarget();
     let sandbox: SandboxHandle | null = null;
-    let npxFallback = false;
+    let baseImage = false;
     let retainForThread = false;
     let persistedForThread = false;
 
@@ -1132,6 +934,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         if (binding.kind === "cube" && binding.credential === "env") {
           sandbox = await claimCubeWarmSandbox();
           if (sandbox) {
+            await noteLostWorkspace(ctx);
             await ctx.emit({
               kind: "task",
               label: `Claimed warm sandbox ${sandbox.id.slice(0, 8)}`,
@@ -1141,28 +944,24 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         }
       }
       if (provisionedFresh && !sandbox) {
-        try {
-          // No `envVars`: keeps this create warm-pool eligible (see the secret
-          // injection note above). Labels + auto-stop/delete do not disqualify a
-          // pool claim.
-          sandbox = await provider.create({
-            snapshot,
-            labels: providerGatewaySandboxLabels(ctx.runId),
-            autoStopInterval,
-            autoDeleteInterval,
-          });
-        } catch {
-          sandbox = await provider.create({
-            labels: providerGatewaySandboxLabels(ctx.runId),
-            autoStopInterval,
-            autoDeleteInterval,
-          });
-          npxFallback = true;
-        }
+        // No `envVars`: keeps this create warm-pool eligible (see the secret
+        // injection note above). Labels + auto-stop/delete do not disqualify a
+        // pool claim.
+        const provisioned = await provisionSandbox({
+          ctx,
+          binding,
+          snapshot,
+          chip: "opencode",
+          create: { labels: providerGatewaySandboxLabels(ctx.runId), autoStopInterval, autoDeleteInterval },
+          resourceTarget,
+        });
+        sandbox = provisioned.sandbox;
+        baseImage = !provisioned.fromTemplate;
       }
       if (!sandbox) throw new Error("Sandbox provider returned no sandbox");
       const box = sandbox;
       const resources = assertSandboxResources(box, resourceTarget);
+      const launcher = opencodeLauncherFor(box, ctx, { baseImage });
       if (provisionedFresh) {
         await ctx.emit({
           kind: "task",
@@ -1218,7 +1017,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       // sandbox; if it is absent/unhealthy, ensureServer starts it AFTER the
       // current secret files are materialized so a resumed process cannot inherit
       // stale or revoked credentials.
-      const [desktop, cachedRuntimeServer, , baseOpenCodeConfig] = await stagesTogether([
+      const [desktop, cachedRuntimeServer, secretState, baseOpenCodeConfig] = await stagesTogether([
         () => prepareStage("desktop", () => ensureSandboxDesktopView(box, ctx.signal)),
         () =>
           prepareStage("resident_probe", () =>
@@ -1239,18 +1038,11 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       // reads this config from disk at boot; a warm server applies the same
       // immutable payload through OpenCode's runtime config API below.
       if (!desktop.available) {
-        await ctx.emit({
-          kind: "task",
-          label: desktop.reason ?? "Desktop computer-use tools unavailable in this sandbox",
-          chip: "warning",
-        });
+        await ctx.emit(desktopUnavailableStep("opencode", desktop));
       }
-      const [preparedConfig] = await Promise.all([
-        prepareStage("config_merge", () =>
-          prepareOpencodeSandboxConfig(box, ctx, baseOpenCodeConfig),
-        ),
-        prepareStage("secret_marker", () => recordSecretsInjected(ctx, secretInjection)),
-      ]);
+      const preparedConfig = await prepareStage("config_merge", () =>
+        prepareOpencodeSandboxConfig(box, ctx, baseOpenCodeConfig),
+      );
       const gatewayState = preparedConfig?.state ?? {
         knowledge: false,
         provider: false,
@@ -1279,9 +1071,19 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const endRuntimeSpan = ctx.timing?.begin("runtime");
 
       // ── persistent server + preview endpoint ────────────────────────────────
+      // A resident process sourced the org secret dotenv when it launched, so a
+      // dotenv that changed since (a secret added or rotated) means that process
+      // no longer carries the org's secrets: relaunch it before the turn. The
+      // names-only marker is recorded only once the process running the turn
+      // exists with the current values.
+      const secretsChanged = secretState.changed;
       let runtimeServer =
-        cachedRuntimeServer ??
-        await ensureServer(box, npxFallback, ctx.signal, secretSourceCommand);
+        cachedRuntimeServer && !secretsChanged
+          ? cachedRuntimeServer
+          : await ensureServer(box, launcher, ctx.signal, secretSourceCommand, {
+              restart: secretsChanged,
+            });
+      await prepareStage("secret_marker", () => recordSecretsInjected(ctx, secretInjection));
       const activateRuntime = async (): Promise<void> => {
         try {
           if (preparedConfig?.required) {
@@ -1293,7 +1095,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
             const desiredHash = configHash(preparedConfig.config);
             const hashKey = ctx.threadId ? `${ctx.threadId}:${box.id}` : null;
             const configUnchanged =
-              retainForThread && hashKey !== null &&
+              retainForThread && hashKey !== null && !secretsChanged &&
               threadActivatedConfigHash.get(hashKey) === desiredHash;
             if (retainForThread) {
               try {
@@ -1323,12 +1125,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
                 );
                 await writeOpencodeSandboxConfig(box, preparedConfig.config);
                 await stopServerForConfigReload(box, runtimeServer, ctx.signal);
-                runtimeServer = await ensureServer(
-                  box,
-                  npxFallback,
-                  ctx.signal,
-                  secretSourceCommand,
-                );
+                runtimeServer = await ensureServer(box, launcher, ctx.signal, secretSourceCommand);
                 await verifyOpenCodeRuntimeConfig({
                   server: runtimeServer,
                   config: preparedConfig.config,
@@ -1551,6 +1348,18 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const textParts = new Map<string, string>(); // ordered final text parts
       const toolSteps = new Map<string, string>(); // part id → persisted step id
       const toolDone = new Set<string>();
+      const turnAbort = new AbortController();
+      // One wedged tool call must not spin for the whole turn budget: past the
+      // per-call ceiling the step is failed with the tool and command named and
+      // the turn is ended with that message (see the catch below).
+      const toolWatchdog = createToolCallWatchdog({
+        timeoutMs: toolCallTimeoutMs(),
+        onExpired: (expiry) => {
+          const stepId = toolSteps.get(expiry.id);
+          if (stepId) void ctx.updateStep?.(stepId, { ...expiry.code, output: expiry.message, error: true });
+          turnAbort.abort();
+        },
+      });
 
       // Translate one opencode Part (the v1 contract: message.part.updated
       // carries `properties.part`, token deltas ride inline on `properties.delta`)
@@ -1658,10 +1467,16 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
             const id = await ctx.emit(step);
             if (id) {
               toolSteps.set(partId, id);
+              toolWatchdog.start(partId, {
+                tool: part.tool,
+                label: step.label,
+                code: step.code_json as Record<string, unknown>,
+              });
             }
           }
           if ((status === "completed" || status === "error") && toolSteps.has(partId)) {
             toolDone.add(partId);
+            toolWatchdog.finish(partId);
             const output = status === "error" ? String(st.error ?? "") : String(st.output ?? "");
             // The REAL child session this task launched (metadata.sessionId or
             // the <task id> output marker) — the subagent pane attributes the
@@ -1870,7 +1685,6 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
 
       await ctx.emit({ kind: "task", label: "Thinking…", chip: "opencode" });
       const model = ctx.model?.trim() || DEFAULT_MODEL;
-      const turnAbort = new AbortController();
       const timer = setTimeout(() => turnAbort.abort(), Math.max(10_000, budgetMs - (Date.now() - startedAt)));
       const onAbort2 = () => turnAbort.abort();
       ctx.signal.addEventListener("abort", onAbort2, { once: true });
@@ -1929,7 +1743,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       // live tool events the mid-turn poller keeps feeding).
       const turnStartMs = Date.now();
       const waitForCompletion = async (): Promise<typeof reply> => {
-        while (!ctx.signal.aborted) {
+        while (!ctx.signal.aborted && !turnAbort.signal.aborted) {
           const r = await fetch(`${baseUrl}/session/${sessionId}/message${dirQ}`, {
             headers,
             signal: ctx.signal,
@@ -1997,10 +1811,13 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       } catch (err) {
         // Best-effort: tell the engine to stop the turn we abandoned.
         void fetch(`${baseUrl}/session/${sessionId}/abort${dirQ}`, { method: "POST", headers }).catch(() => {});
+        const expiry = toolWatchdog.expired;
+        if (expiry) throw new Error(expiry.message);
         throw err instanceof Error && err.name === "AbortError"
           ? new Error("opencode run aborted (timeout)")
           : err;
       } finally {
+        toolWatchdog.stop();
         clearTimeout(timer);
         ctx.signal.removeEventListener("abort", onAbort2);
         // Give trailing SSE frames a beat to land, then close the stream.

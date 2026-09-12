@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome lint",
     "lint:fix": "biome check --write",
-    "test": "bun test components"
+    "test": "bun test components app lib"
   },
   "dependencies": {
     "@internationalized/date": "^3.12.1",

@@ -47,6 +47,7 @@ function makeTurn(
     child_session: false,
     thread_id: id,
     engine_session_id: null,
+    sandbox_id: null,
     repo: null,
     repos: [],
     repo_specs: [],

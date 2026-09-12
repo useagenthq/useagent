@@ -16,6 +16,7 @@ import {
   DESKTOP_REQUIRED_BINARIES,
   ensureSandboxDesktop,
   ensureSandboxDesktopView,
+  desktopUnavailableStep,
 } from "./desktop";
 
 function relayFileSystem(): SandboxFileSystem {
@@ -355,5 +356,21 @@ describe("shared sandbox desktop", () => {
     expect(desktopLaunches).toBe(1);
     expect(created.filter((name) => name === "skynet-desktop")).toHaveLength(1);
     expect(deleted.filter((name) => name === "skynet-desktop")).toHaveLength(1);
+  });
+});
+
+describe("desktopUnavailableStep", () => {
+  test("is a boot-lane task row on the engine chip, never a warning, and names the reason", () => {
+    const step = desktopUnavailableStep("claude", { reason: "missing desktop binaries:xdotool" });
+    expect(step).toEqual({
+      kind: "task",
+      chip: "claude",
+      label: "Desktop and computer-use tools are not attached to this run (missing desktop binaries: xdotool)",
+    });
+    expect(desktopUnavailableStep("opencode", {})).toEqual({
+      kind: "task",
+      chip: "opencode",
+      label: "Desktop and computer-use tools are not attached to this run",
+    });
   });
 });

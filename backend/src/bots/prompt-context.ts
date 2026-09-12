@@ -1,4 +1,4 @@
-import type { EngineId } from "@useagent/agent-client";
+import { botHandle, type EngineId } from "@useagent/agent-client";
 import type { BotRow } from "../db/schema";
 import { promptSafeJson } from "./prompt-safe";
 import { MAX_HANDOFF_DEPTH, handoffsAvailable, threadAncestors, botOwningThread } from "./handoffs";
@@ -48,8 +48,9 @@ export function composeBotContext(
   if (others.length === 0) return "";
   const roster = others.slice(0, BOTS_MAX).map((bot) => ({
     id: bot.id,
-    // The handle people type; bot_handoff resolves names case-insensitively.
-    handle: `@bot/${bot.name}`,
+    // The handle people type (the name's slug, so it is one token even for
+    // "Night triage"); bot_handoff resolves ids, names and handles alike.
+    handle: `@bot/${botHandle(bot.name)}`,
     name: bot.name,
     title: bot.title,
     engine: bot.engine,

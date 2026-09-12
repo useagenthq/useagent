@@ -33,6 +33,27 @@ export function buildAcpRuntimeEnvExports(env: Readonly<Record<string, string>>)
     .join("");
 }
 
+/** The codex-acp session mode that runs commands and edits directly, without the
+ * agent's own nested Linux sandbox and without per-command approval. */
+export const CODEX_ACP_FULL_ACCESS_MODE = "agent-full-access";
+
+/** Put a Codex ACP session into full-access mode before its first prompt.
+ *
+ * codex-acp does not read `approval_policy` / `sandbox_mode` from config.toml for
+ * a turn: it sends its own session mode on every `turn/start`, and the default
+ * ("agent") is `workspace-write` plus `on-request`. Inside the tenant's Daytona
+ * sandbox codex's nested bubblewrap sandbox cannot set up its loopback network,
+ * so every command failed there and came back as a `session/request_permission`
+ * escalation, which the fail-closed production policy denies. Full access here is
+ * scoped to the already-isolated sandbox, exactly like the config.toml intent. */
+export function codexAgentModeRequest(
+  engine: string,
+  sessionId: string,
+): { method: "session/set_mode"; params: { sessionId: string; modeId: string } } | null {
+  if (engine !== "codex") return null;
+  return { method: "session/set_mode", params: { sessionId, modeId: CODEX_ACP_FULL_ACCESS_MODE } };
+}
+
 /** Apply a per-turn Codex model choice to an already-resident ACP session. */
 export function codexModelSelectionRequest(
   engine: string,

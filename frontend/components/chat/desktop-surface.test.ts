@@ -4,6 +4,7 @@ import {
   buildDesktopFrameSrc,
   DESKTOP_PROBE_MAX_DELAY,
   DESKTOP_PROBE_MIN_DELAY,
+  desktopProbeStatus,
   guardDesktopFocusSteal,
   nextDesktopProbeDelay,
   shouldReleaseStolenFocus,
@@ -284,5 +285,28 @@ describe("Desktop product surface", () => {
     expect(desktopPane).toContain(
       "restoreOuterFocus(lastOuterFocusRef.current, frameRef.current)",
     );
+  });
+});
+
+describe("Desktop probe copy", () => {
+  test("names the binaries a sandbox image lacks instead of waiting forever", () => {
+    expect(desktopProbeStatus(502, "desktop proxy failed: missing desktop binaries: xfce4-clipman"))
+      .toBe("Browser is unavailable on this sandbox image: it is missing xfce4-clipman. Rebuild the image with those packages to enable it.");
+    expect(desktopProbeStatus(502, "desktop proxy failed: missing desktop binaries: xdotool xfce4-clipman"))
+      .toContain("missing xdotool, xfce4-clipman");
+  });
+
+  test("keeps the waiting and no-sandbox states for every other answer", () => {
+    expect(desktopProbeStatus(409, "no live sandbox for this conversation yet")).toBe(
+      "No active sandbox. Send a message to start one.",
+    );
+    expect(desktopProbeStatus(502, "desktop proxy failed: connect ECONNREFUSED")).toBe("Starting sandbox desktop…");
+    expect(desktopProbeStatus(500, null)).toBe("Starting sandbox desktop…");
+  });
+
+  test("the pane reads the probe body so the copy can be honest", () => {
+    const desktopPane = readFileSync(new URL("./desktop-pane.tsx", import.meta.url), "utf8");
+    expect(desktopPane).toContain("desktopProbeStatus(");
+    expect(desktopPane).toContain("await response.json().catch(() => null)");
   });
 });

@@ -106,6 +106,19 @@ export function safeCodexChatGptStatus(value: unknown): CodexChatGptStatus | nul
   };
 }
 
+/** GET /api/config `providers`: which model providers the deployment serves
+ *  from its own keys. Unknown or malformed input reads as "none". */
+export function safeDeploymentProviders(
+  value: unknown,
+): Partial<Record<ProviderConnectionProvider, boolean>> {
+  if (!isRecord(value)) return {};
+  const out: Partial<Record<ProviderConnectionProvider, boolean>> = {};
+  for (const provider of MODEL_PROVIDER_CONNECTION_PROVIDERS) {
+    if (value[provider] === true) out[provider] = true;
+  }
+  return out;
+}
+
 export function safeEnabledSandboxEngines(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.filter((engine): engine is string => typeof engine === "string"))];

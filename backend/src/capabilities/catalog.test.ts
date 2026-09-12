@@ -16,6 +16,8 @@ const READY_ENV = {
   RUNTIME_RUN_ADAPTER_ENGINES: "codex,opencode",
   OPENCODE_SERVER_PASSWORD: "configured-but-secret",
   PROVIDER_GATEWAY_URL: "https://provider.example.test",
+  GATEWAY_PUBLIC_URL: "https://gateway.example.test",
+  PROVIDER_GATEWAY_SECRET: "catalog-test-provider-gateway-secret-0123456789",
   PROVIDER_HEALTH_ANTHROPIC: "ready",
   PROVIDER_HEALTH_OPENAI: "insufficient_credit",
   PROVIDER_HEALTH_OPENROUTER: "ready",

@@ -27,6 +27,7 @@ function makeRun(
     child_session: options.childSession ?? false,
     thread_id: "root",
     engine_session_id: null,
+    sandbox_id: null,
     repo: null,
     repos: [],
     repo_specs: [],

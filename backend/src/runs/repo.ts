@@ -102,6 +102,7 @@ function toRun(
     child_session: childSession,
     thread_id: r.threadId,
     engine_session_id: r.engineSessionId,
+    sandbox_id: r.sandboxId,
     repo: r.repo ? parseRepoRef(r.repo).repo : null,
     repos: specs.map((s) => s.repo),
     repo_specs: specs,

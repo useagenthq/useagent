@@ -18,7 +18,7 @@ import { cx as cn } from "@/utils/cx";
 export type EngineModelCatalog = Partial<Record<EngineId, readonly string[]>>;
 export interface EngineReadinessStatus {
   readonly ready: boolean;
-  readonly reason: "enabled" | "disabled" | "provider_unhealthy" | "not_proven";
+  readonly reason: "enabled" | "disabled" | "provider_unhealthy" | "gateway_unconfigured" | "not_proven";
   readonly provider?: "anthropic" | "openai" | "openrouter";
   readonly providerHealth?: string;
   readonly message?: string;
@@ -30,8 +30,17 @@ const ENGINE_RUNTIME_CAPTIONS: Partial<Record<EngineId, string>> = {
   claude: "Anthropic agent · cloud sandbox",
   codex: "OpenAI agent · cloud sandbox",
   pi: "native Pi harness · cloud sandbox",
-  chat: "direct model · no sandbox",
+  chat: "Chat only: answers from context, no computer or tools",
 };
+
+/** The engines the new-thread picker offers: every engine the server manifest
+ *  configured, in catalog order. Chat is a first-class choice; it simply has no
+ *  computer, which its caption says. */
+export function pickerEngineOptions(
+  enabledEngines: readonly EngineId[],
+): readonly { id: EngineId; label: string }[] {
+  return ENGINES.filter((e) => enabledEngines.includes(e.id));
+}
 
 export function engineRuntimeCaption(
   engine: EngineId,

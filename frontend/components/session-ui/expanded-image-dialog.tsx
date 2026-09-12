@@ -102,7 +102,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               <RiArrowLeftSLine aria-hidden className="size-5" />
             </button>
           )}
-          {/* biome-ignore lint/performance/noImgElement: dynamic artifact bytes
+          {/* Dynamic artifact bytes
               (/api/artifacts/:id/content) shown full-size in a lightbox -
               next/image optimization does not apply. */}
           <img

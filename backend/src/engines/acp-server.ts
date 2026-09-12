@@ -6,6 +6,7 @@ import {
 } from "../sandboxes/provider";
 import { bindingRecord, bindingSnapshot, resolveSandboxBindingForRun } from "../sandboxes/binding";
 import { reviveRetainedSandbox } from "./thread-sandbox";
+import { provisionSandbox } from "./sandbox-provision";
 import type { EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import {
@@ -22,9 +23,15 @@ import { parseRepoRef } from "../github/repo-ref";
 import { cacheAcpCommands } from "../runs/command-catalog";
 import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
-import { createAcpRpcClient, isAlreadyInitialized, parseRelayHealth, relayRegenerated, relayStateAfterBoot } from "./acp-rpc";
+import { AcpRelayError, createAcpRpcClient, isAlreadyInitialized, parseRelayHealth, relayRegenerated, relayStateAfterBoot } from "./acp-rpc";
+import {
+  acpFrameTraceEnabled,
+  createAcpFrameTrace,
+  describeAcpTurnStall,
+  type AcpOpenToolCall,
+} from "./acp-turn-diagnostics";
 import { sendSessionCancel } from "./acp-cancel";
-import { decideAcpPermission } from "./permission-policy";
+import { answerAcpPermissionRequest, type AcpPermissionRequest } from "./permission-policy";
 import { toolGatewayConfig, type ToolGatewayConfig } from "../knowledge/gateway/config";
 import {
   buildToolGatewayCapabilityDescriptor,
@@ -39,7 +46,7 @@ import {
 } from "../secrets/inject";
 import { materializeRunInputs } from "../uploads/materialize";
 import { createSecretRedactor } from "../secrets/redact";
-import { ensureSandboxDesktopView } from "./desktop";
+import { desktopUnavailableStep, ensureSandboxDesktopView } from "./desktop";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import {
   acpToolResultFailed,
@@ -54,6 +61,7 @@ import {
   providerGatewaySandboxLabels,
 } from "../provider-gateway/sandbox-config";
 import { CLAUDE_ACP_PRE_RELAY, CLAUDE_ACP_WRAPPER } from "./claude-acp-launch";
+import { RELAY_SCRIPT } from "./acp-relay-script";
 import { extractAcpToolOutput } from "./acp-content";
 import {
   forgetLiveThreadSandbox,
@@ -69,6 +77,7 @@ import { resumableProviderSessionId } from "./provider-turn";
 import {
   buildAcpInstallClause,
   buildAcpRuntimeEnvExports,
+  codexAgentModeRequest,
   codexModelSelectionRequest,
 } from "./acp-provisioning";
 export {
@@ -76,6 +85,7 @@ export {
   buildAcpRuntimeEnvExports,
   codexModelSelectionRequest,
 } from "./acp-provisioning";
+export { RELAY_SCRIPT } from "./acp-relay-script";
 
 // ---------------------------------------------------------------------------
 // Resident claude/codex via ACP — the opencode-server equivalent for the other
@@ -98,90 +108,6 @@ export const CLAUDE_ACP_PKG = "@agentclientprotocol/claude-agent-acp@0.66.0";
 export const CODEX_ACP_PKG = "@agentclientprotocol/codex-acp@1.1.14";
 export const CLAUDE_CODE_PKG = "@anthropic-ai/claude-code@2.1.226";
 
-/** The in-sandbox relay: stdin/stdout bridge to the ACP agent over plain HTTP
- *  (SSE out, POST in) — WebSockets are unnecessary and unproven through the
- *  preview proxy, SSE is proven (opencode /event). Node built-ins only. */
-export const RELAY_SCRIPT = `
-import { createServer } from "node:http";
-import { spawn } from "node:child_process";
-const PORT = Number(process.argv[2]);
-const CMD = process.argv[3];
-const ARGS = process.argv.slice(4);
-let child = null;
-let generation = 0;   // bumps on every (re)boot of the ACP CHILD (the relay HTTP server stays up)
-let childAlive = false;
-let childReady = false; // the child is spawned AND has had a moment to come up (accept stdin)
-let lastExit = null;
-let shuttingDown = false;
-const clients = new Set();
-function emit(line) { for (const res of clients) res.write("data: " + line + "\\n\\n"); }
-function boot() {
-  let buf = "";
-  generation += 1;
-  childReady = false;
-  child = spawn(CMD, ARGS, { stdio: ["pipe", "pipe", "pipe"], env: process.env });
-  childAlive = true;
-  // READINESS: mark ready once the child produces its first stdout (an ACP agent greets on
-  // start), or after a short grace window - whichever comes first. Until then /send is rejected
-  // so we never write a prompt into a child that is not yet accepting input.
-  const readyTimer = setTimeout(() => { if (childAlive) childReady = true; }, 750);
-  child.stdout.on("data", (d) => {
-    childReady = true;
-    buf += d.toString("utf8");
-    let i;
-    while ((i = buf.indexOf("\\n")) !== -1) {
-      const line = buf.slice(0, i); buf = buf.slice(i + 1);
-      if (line.trim()) emit(line);
-    }
-  });
-  child.stderr.on("data", (d) => process.stderr.write(d));
-  child.on("exit", (code, signal) => {
-    clearTimeout(readyTimer);
-    childAlive = false;
-    childReady = false;
-    lastExit = { code, signal };
-    // Tell connected clients the ACP CHILD died: the backend fails pending RPC immediately and
-    // treats the next turn as a NEW generation (never prompts the stale native session).
-    emit(JSON.stringify({ __relay: "child_exit", generation, code, signal }));
-    if (!shuttingDown) setTimeout(boot, 1000); // respawn -> a NEW generation (unless shutting down)
-  });
-}
-// CLEANUP: on relay shutdown, stop respawning and kill the child so it is never orphaned.
-function cleanup() { shuttingDown = true; try { if (child) child.kill("SIGTERM"); } catch (e) {} process.exit(0); }
-process.on("SIGTERM", cleanup);
-process.on("SIGINT", cleanup);
-boot();
-createServer((req, res) => {
-  if (req.url === "/health") {
-    // JSON so the backend can distinguish RELAY health from ACP CHILD health and observe the
-    // child generation + readiness. No secrets - just liveness + generation + a sanitized last-exit.
-    res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ relay: "ok", generation, childAlive, childReady, pid: (child && child.pid) || null, lastExit }));
-    return;
-  }
-  if (req.url === "/events") {
-    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache, no-transform", connection: "keep-alive" });
-    res.write(":ok\\n\\n");
-    clients.add(res);
-    const hb = setInterval(() => res.write(":hb\\n\\n"), 15000);
-    req.on("close", () => { clearInterval(hb); clients.delete(res); });
-    return;
-  }
-  if (req.method === "POST" && req.url === "/send") {
-    let b = "";
-    req.on("data", (c) => (b += c));
-    req.on("end", () => {
-      // Guard: never write into a dead/not-yet-ready child (its stdin would throw or be lost).
-      if (!child || !childAlive || !childReady) { res.writeHead(503); res.end("child not ready"); return; }
-      try { child.stdin.write(b.trim() + "\\n"); res.writeHead(204); res.end(); }
-      catch (e) { res.writeHead(503); res.end(String(e)); }
-    });
-    return;
-  }
-  res.writeHead(404); res.end();
-}).listen(PORT, "0.0.0.0");
-`;
-
 export interface AcpEngineConfig {
   id: "claude" | "codex";
   port: number;
@@ -192,6 +118,8 @@ export interface AcpEngineConfig {
   agentCmd: string[];
   /** Extra env exported before the relay starts. */
   agentEnv?: Record<string, string>;
+  /** The agent's own log file inside the sandbox, read back when a turn stalls. */
+  agentLogFile?: string;
   /** A shell snippet run once per relay boot AFTER the package install (so the agent bin
    *  is on PATH) and BEFORE the relay starts. Codex uses it to seed auth. Idempotent. */
   preRelay?: string;
@@ -535,7 +463,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);
-      const snapshot = bindingSnapshot(binding, "DAYTONA_ACP_SNAPSHOT", "skynet-acp-v3");
+      const snapshot = bindingSnapshot(binding, "DAYTONA_ACP_SNAPSHOT");
       const resourceTarget = resolveSandboxResourceTarget();
 
       const key = ctx.threadId ? relayKey(ctx.threadId, cfg.id) : null;
@@ -606,16 +534,11 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             autoStopInterval,
             autoDeleteInterval,
           };
-          try {
-            // ACP dependencies are pinned in a non-root Daytona snapshot. This
-            // removes three fresh-thread npm installs while preserving the
-            // default `daytona` user Claude requires. A missing/inactive image
-            // degrades to the ordinary image and the idempotent install clause.
-            sandbox = await provider.create({ snapshot, ...sandboxConfig });
-            snapshotBacked = true;
-          } catch {
-            sandbox = await provider.create(sandboxConfig);
-          }
+          // ACP dependencies are pinned in a non-root Daytona snapshot (no fresh-thread
+          // npm installs); the base image is used only when it meets the resource target.
+          const provisioned = await provisionSandbox({ ctx, binding, snapshot, chip: cfg.id, create: sandboxConfig, resourceTarget });
+          sandbox = provisioned.sandbox;
+          snapshotBacked = provisioned.fromTemplate;
         }
         if (!sandbox) throw new Error("Sandbox provider returned no sandbox");
         const box = sandbox;
@@ -771,11 +694,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         const desktop = await desktopPreparation;
         const computerToolsReady = desktop.available && Boolean(gateway && ctx.orgId);
         if (!computerToolsReady) {
-          await ctx.emit({
-            kind: "task",
-            label: desktop.reason ?? "Desktop computer-use tools unavailable in this sandbox",
-            chip: "warning",
-          });
+          await ctx.emit(desktopUnavailableStep(cfg.id, desktop));
         }
         // A relay (re)boot this call means a fresh agent process - the previous turn's
         // in-memory native session id is dead. Invalidate it below so we session/load
@@ -865,7 +784,15 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // ── JSON-RPC client over the relay (SSE in, POST out) ───────────────
         const sseAbort = new AbortController();
 
+        // Bounded frame evidence for this turn (ids, methods, statuses, short titles).
+        const trace = createAcpFrameTrace({
+          redact: redact.text,
+          echo: acpFrameTraceEnabled()
+            ? (line) => console.log(`[acp:${cfg.id}] run ${ctx.runId.slice(0, 8)} ${line}`)
+            : undefined,
+        });
         const post = async (msg: Record<string, unknown>): Promise<void> => {
+          trace.record("out", msg);
           const res = await fetch(`${live.baseUrl}/send`, {
             method: "POST",
             headers: { ...authHeaders(live), "content-type": "application/json" },
@@ -900,6 +827,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           string,
           { update: Record<string, unknown>; native: AcpToolNativeIds }
         >();
+        const openToolCalls = new Map<string, AcpOpenToolCall>(); // started, not yet completed/failed
         let finalText = "";
         // session/load replays historical messages before its JSON-RPC response.
         // Keep command-catalog updates, but do not attribute replayed text/tools
@@ -1113,6 +1041,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               { messageId, partId: `${messageId}_start` },
             );
             toolCalls.set(tcid, { update: u, native });
+            openToolCalls.set(tcid, {
+              id: tcid,
+              kind: typeof u.kind === "string" ? u.kind : undefined,
+              title: typeof u.title === "string" ? u.title : undefined,
+              startedAt: Date.now(),
+            });
             const id = await ctx.emit(buildAcpToolStep(u, undefined, native));
             if (id) toolSteps.set(tcid, id);
             return;
@@ -1121,6 +1055,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             const tcid = String(u.toolCallId ?? "");
             const status = String(u.status ?? "");
             if (!tcid || (status !== "completed" && status !== "failed")) return;
+            openToolCalls.delete(tcid);
             const recorded = toolCalls.get(tcid);
             const call = recorded?.update ?? u;
             const stepId = toolSteps.get(tcid);
@@ -1198,6 +1133,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
                 .join("");
               const msg = parseJsonLine(data);
               if (!msg) continue;
+              trace.record("in", msg);
               // Relay control frame: the resident ACP CHILD died mid-turn. Fail every pending
               // request NOW (don't hang until the turn timeout) and end the turn; the next turn
               // observes the new generation via /health and re-initializes instead of prompting
@@ -1215,30 +1151,10 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               // capability authorization remains server-side and this never opens
               // a generic shell or arbitrary MCP approval path.
               if (typeof msg.id === "number" && msg.method === "session/request_permission") {
-                const params = (msg.params ?? {}) as {
-                  options?: { optionId?: string; kind?: string }[];
-                  toolCall?: { title?: string; toolCallId?: string };
-                };
-                const toolCallId = params.toolCall?.toolCallId;
+                const permission = msg as unknown as AcpPermissionRequest;
+                const toolCallId = permission.params?.toolCall?.toolCallId;
                 const recordedTool = toolCallId ? toolCalls.get(toolCallId)?.update : undefined;
-                const recordedTitle = recordedTool?.title;
-                const toolTitle = typeof recordedTitle === "string"
-                  ? recordedTitle
-                  : params.toolCall?.title;
-                const recordedKind = recordedTool?.kind;
-                const toolKind = typeof recordedKind === "string"
-                  ? recordedKind
-                  : undefined;
-                void post({
-                  jsonrpc: "2.0",
-                  id: msg.id,
-                  result: decideAcpPermission(
-                    params.options ?? [],
-                    undefined,
-                    toolTitle,
-                    toolKind,
-                  ),
-                }).catch(() => {});
+                void post(answerAcpPermissionRequest(permission, recordedTool)).catch(() => {});
                 continue;
               }
               // Notifications.
@@ -1260,7 +1176,16 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         await new Promise((r) => setTimeout(r, 300));
 
         // ── ACP handshake + the turn ────────────────────────────────────────
-        const turnTimeout = setTimeout(() => sseAbort.abort(), Math.max(10_000, budgetMs - (Date.now() - startedAt)));
+        const budgetLabel = `${Math.round(budgetMs / 1000)}s`;
+        const turnTimeout = setTimeout(() => {
+          // Stop the agent natively (as Stop does) so a stuck tool does not keep
+          // running after we give up, and name the cause before dropping the
+          // stream so the failure is not reported as a relay death.
+          const sid = live.sessionId;
+          if (sid) void sendSessionCancel(live, sid);
+          rpc.failAll("turn_timeout", `${cfg.id} turn exceeded its ${budgetLabel} budget`);
+          sseAbort.abort();
+        }, Math.max(10_000, budgetMs - (Date.now() - startedAt)));
         try {
           // Initialize ONCE per resident process generation. A reused turn skips it
           // (the agent is already initialized); a (re)started agent has `initialized`
@@ -1333,6 +1258,11 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               : null;
           }
           if (live.commandCatalog?.sessionId !== sessionId) live.commandCatalog = null;
+          // Codex runs every tool directly inside the already-isolated sandbox: no
+          // nested agent sandbox, no per-command approval round trip (see
+          // codexAgentModeRequest). Applied to fresh and loaded sessions alike.
+          const modeSelection = codexAgentModeRequest(cfg.id, sessionId);
+          if (modeSelection) await request(modeSelection.method, modeSelection.params);
           if (cfg.id === "codex" && configuredGatewayDescriptor && knowledgeMcpServers.length > 0) {
             await awaitAcpMcpServerTools({
               serverName: "skynet-knowledge",
@@ -1434,6 +1364,34 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           if (stopReason === "refusal" || stopReason === "cancelled") {
             throw new Error(`${cfg.id} turn ended: ${stopReason}`);
           }
+        } catch (err) {
+          const stalled = err instanceof AcpRelayError &&
+            (err.code === "turn_timeout" || err.code === "relay_disconnected");
+          if (!stalled) throw err;
+          // A stalled turn: report the open tool call and the last frame, and read
+          // the in-sandbox logs an operator cannot otherwise reach (best effort).
+          const logs = await box.process.executeCommand(
+            `tail -c 1500 /tmp/acp-relay-${cfg.id}.log 2>/dev/null; echo; echo ACP-AGENT-LOG; ` +
+              (cfg.agentLogFile ? `tail -c 1500 ${cfg.agentLogFile} 2>/dev/null` : "true"),
+            undefined,
+            undefined,
+            15,
+          ).catch(() => null);
+          const [relayLog, agentLog] = (logs?.result ?? "").split("\nACP-AGENT-LOG\n");
+          const stall = describeAcpTurnStall({
+            engine: cfg.id,
+            reason: err.code === "turn_timeout"
+              ? `exceeded its ${budgetLabel} budget`
+              : `lost its relay stream (${err.message})`,
+            nowMs: Date.now(),
+            openToolCalls: [...openToolCalls.values()],
+            frames: trace.frames(),
+            relayLog,
+            agentLog,
+          });
+          console.error(`[acp:${cfg.id}] run ${ctx.runId} stalled\n${redact.text(stall.detail)}`);
+          await ctx.emit({ kind: "task", label: redact.text(stall.summary), chip: "warning" }).catch(() => {});
+          throw new Error(redact.text(stall.summary));
         } finally {
           clearTimeout(turnTimeout);
           // Let trailing updates land, then close the SSE; the relay + agent
@@ -1490,6 +1448,9 @@ export const codexAcpConfig: AcpEngineConfig = {
   port: 4098,
   packages: [{ pkg: CODEX_ACP_PKG, bin: "codex-acp" }],
   agentCmd: ["codex-acp"],
+  // codex-acp only writes its own log when APP_SERVER_LOGS names a directory.
+  agentEnv: { APP_SERVER_LOGS: "$HOME/.codex/acp-logs" },
+  agentLogFile: "$HOME/.codex/acp-logs/app-server.log",
   prepare: (sandbox, ctx) => prepareProviderGatewaySandbox(sandbox, ctx, "codex"),
   // SaaS-safe credentials: no host login or raw provider key is copied. Codex
   // reads an exact-run capability from its private token file and calls only the

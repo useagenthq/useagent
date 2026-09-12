@@ -11,6 +11,7 @@ import type { ProviderEventInput } from "../runs/provider-events";
 import { errorMessage } from "../util/error-message";
 import type { EngineRunContext } from "./types";
 import { piBridgeProviderEvent } from "./pi-provider-events";
+import { createNativeBridgeStepProjector } from "./native-bridge-steps";
 
 export interface NativeBridgeTurnSession {
   readonly sessionFile: string;
@@ -97,8 +98,12 @@ export async function runNativeBridgeTurn(
       }
     }
   };
+  const stepProjector = createNativeBridgeStepProjector(ctx, options.redact);
   const observeBody = (body: NativeBridgeFrameBody): void => {
     if (body.ownerChildId) {
+      ctx.reportActivity?.();
+    } else if (body.kind === "tool.started" || body.kind === "tool.completed") {
+      stepProjector.observe(body);
       ctx.reportActivity?.();
     } else if (body.kind === "message.delta") {
       const delta = options.redact.text(body.text);
@@ -210,12 +215,10 @@ export async function runNativeBridgeTurn(
       operationError = error;
     }
     stopListening();
-    let persistenceError: unknown;
-    try {
-      await eventWrites;
-    } catch (error) {
-      persistenceError = error;
-    }
+    const drained = await Promise.allSettled([eventWrites, stepProjector.drain()]);
+    const persistenceError = drained.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    )?.reason;
     if (operationError && persistenceError) {
       throw new AggregateError(
         [operationError, persistenceError],

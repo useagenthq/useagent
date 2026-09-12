@@ -25,6 +25,7 @@ import {
   RiServerLine,
   RiSparkling2Line,
   RiTerminalLine,
+  RiShieldCheckLine,
 } from "@remixicon/react";
 import { memo, useState } from "react";
 import { PlanChecklist } from "@/components/agent-ui/plan-checklist";
@@ -143,6 +144,24 @@ function markerView(marker: TimelineMarker): {
       verb: "Remembered",
       target: `in ${pool}`,
       badge: marker.reconciled ? "already saved" : "indexing",
+      error: false,
+    };
+  }
+  if (marker.kind === "approval") {
+    const verb =
+      marker.state === "requested"
+        ? "Approval requested"
+        : marker.status === "approved"
+          ? "Approved"
+          : marker.status === "denied"
+            ? "Denied"
+            : "Expired";
+    const by = marker.state === "resolved" && marker.resolvedBy ? ` by ${marker.resolvedBy}` : "";
+    return {
+      Icon: RiShieldCheckLine,
+      verb,
+      target: `${marker.toolName}${by}`,
+      badge: null,
       error: false,
     };
   }

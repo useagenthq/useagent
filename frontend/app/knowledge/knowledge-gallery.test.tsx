@@ -58,6 +58,26 @@ test("rows clamp the body behind an expand affordance and keep pin/delete wired"
   expect(markup).toContain('aria-label="Pin Prefer semantic tokens"');
   expect(markup).toContain('aria-label="Delete Prefer semantic tokens"');
   expect(markup).toContain(">policy<");
+  // Delete is a two-step: the icon opens an inline confirm (closed by default)
+  // instead of removing the record on one click.
+  expect(markup).not.toContain('data-testid="inline-delete-confirm"');
+  expect(markup).toMatch(/aria-label="Delete Prefer semantic tokens"[^>]*aria-expanded="false"|aria-expanded="false"[^>]*aria-label="Delete Prefer semantic tokens"/);
+});
+
+test("a keyword-only search note from the backend renders under the search box", () => {
+  const markup = renderToStaticMarkup(
+    <KnowledgeGallery
+      initialLive
+      initialError={false}
+      initialItems={[]}
+      initialSearchNote="Search is keyword-only: no embedding key is configured."
+    />,
+  );
+  expect(markup).toContain("Search is keyword-only: no embedding key is configured.");
+  const hybrid = renderToStaticMarkup(
+    <KnowledgeGallery initialLive initialError={false} initialItems={[]} initialSearchNote={null} />,
+  );
+  expect(hybrid).not.toContain("keyword-only");
 });
 
 test("the list caps the initial render behind a Show-more disclosure", () => {

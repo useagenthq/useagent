@@ -15,11 +15,20 @@ import {
 
 const jsonHeaders = { "content-type": "application/json" } as const;
 
-export async function fetchKnowledgeItems(): Promise<KnowledgeItem[]> {
+export interface KnowledgeIndex {
+  items: KnowledgeItem[];
+  /** Backend explanation when search runs keyword-only (embeddings off or failing); null when hybrid. */
+  searchNote: string | null;
+}
+
+export async function fetchKnowledge(): Promise<KnowledgeIndex> {
   const res = await backendFetch("/api/knowledge", { cache: "no-store" });
   if (!res.ok) throw new Error(`knowledge ${res.status}`);
-  const data = (await res.json()) as { records?: KnowledgeRecord[] };
-  return (data.records ?? []).map(recordToItem);
+  const data = (await res.json()) as { records?: KnowledgeRecord[]; search_note?: unknown };
+  return {
+    items: (data.records ?? []).map(recordToItem),
+    searchNote: typeof data.search_note === "string" ? data.search_note : null,
+  };
 }
 
 export interface IngestInput {
@@ -40,6 +49,42 @@ export interface IngestResult {
   id: string | null;
   status: "stored" | "skipped" | "dropped" | "deferred";
   kind?: string;
+}
+
+/** A refused upload: `code` is the backend's reason (unsupported_type,
+ *  file_too_large, empty_document, unreadable_document) or null on transport failure. */
+export class KnowledgeUploadError extends Error {
+  constructor(
+    readonly code: string | null,
+    readonly status: number | null,
+  ) {
+    super(code ?? "upload failed");
+    this.name = "KnowledgeUploadError";
+  }
+}
+
+/** Send one document (.md, .txt, .pdf) to `/api/knowledge/upload`; the backend
+ *  extracts its text and runs the same ingest as a pasted note. */
+export async function uploadKnowledgeDocument(
+  file: File,
+  folder: string,
+): Promise<IngestResult> {
+  const form = new FormData();
+  form.set("file", file);
+  form.set("folder", folder);
+  const res = await backendFetch("/api/knowledge/upload", { method: "POST", body: form });
+  const body = (await res.json().catch(() => null)) as
+    | (IngestResult & { error?: unknown })
+    | { error?: unknown }
+    | null;
+  if (!res.ok) {
+    throw new KnowledgeUploadError(
+      typeof body?.error === "string" ? body.error : null,
+      res.status,
+    );
+  }
+  if (!body || !("status" in body)) throw new KnowledgeUploadError(null, res.status);
+  return body;
 }
 
 export async function ingestKnowledge(

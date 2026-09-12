@@ -59,14 +59,14 @@ describe("sandbox provider selection", () => {
 
   test("uses the Cube template instead of a Daytona snapshot", () => {
     expect(
-      sandboxTemplate("DAYTONA_SNAPSHOT", "daytona-default", {
+      sandboxTemplate("DAYTONA_SNAPSHOT", {
         SANDBOX_PROVIDER: "cube",
         CUBE_TEMPLATE_ID: "cube-template",
         DAYTONA_SNAPSHOT: "daytona-template",
       }),
     ).toBe("cube-template");
     expect(
-      sandboxTemplate("DAYTONA_SNAPSHOT", "daytona-default", {
+      sandboxTemplate("DAYTONA_SNAPSHOT", {
         DAYTONA_SNAPSHOT: "daytona-template",
       }),
     ).toBe("daytona-template");
@@ -78,8 +78,8 @@ describe("Box provider selection", () => {
     const env = { SANDBOX_PROVIDER: "box", BOX_API_KEY: " box_key ", BOX_SNAPSHOT: "useagent-runtime", BOX_MACHINE_TYPE: "large" };
     expect(sandboxProviderKind(env)).toBe("box");
     expect(sandboxProviderApiKey(env)).toBe("box_key");
-    expect(sandboxTemplate("DAYTONA_SNAPSHOT", "fallback", env)).toBe("useagent-runtime");
-    expect(sandboxTemplate("DAYTONA_SNAPSHOT", "fallback", { SANDBOX_PROVIDER: "box" })).toBe("");
+    expect(sandboxTemplate("DAYTONA_SNAPSHOT", env)).toBe("useagent-runtime");
+    expect(sandboxTemplate("DAYTONA_SNAPSHOT", { SANDBOX_PROVIDER: "box" })).toBe("");
     expect(boxApiConfig("k", env)).toEqual({ apiKey: "k", apiUrl: "https://ascii.dev/api/box/v1", machineType: "large" });
     expect(() => boxApiConfig("k", { BOX_MACHINE_TYPE: "huge" })).toThrow(/BOX_MACHINE_TYPE/);
   });

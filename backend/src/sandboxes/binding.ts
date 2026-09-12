@@ -177,10 +177,10 @@ export async function resolveSandboxBindingForSandbox(sandboxId: string, deps: S
   return bindingForRecorded(recorded ?? null, deps);
 }
 
-/** The snapshot a binding creates from: the user's own, or the server's template. */
-export function bindingSnapshot(binding: SandboxBinding, daytonaEnvName: string, daytonaFallback: string): string {
+/** The snapshot a binding creates from: the user's own, or the server's template for the lane. */
+export function bindingSnapshot(binding: SandboxBinding, templateEnv: string): string {
   if (binding.credential === "user") return binding.snapshot ?? "";
-  return sandboxTemplate(daytonaEnvName, daytonaFallback);
+  return sandboxTemplate(templateEnv);
 }
 
 /** What `setRunSandbox` records next to the sandbox id. */

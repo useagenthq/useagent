@@ -251,7 +251,7 @@ export function FileUpload({
       />
 
       <svg
-        aria-hidden
+        aria-hidden="true"
         viewBox={`0 0 ${box.width} ${box.height}`}
         preserveAspectRatio="none"
         className={cx(

@@ -1,12 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { cubePlugin } from "./plugin";
 
-const fallback = { envName: "DAYTONA_SNAPSHOT", value: "useagent-runtime-v17" };
-
 describe("Cube plugin", () => {
   test("template requires CUBE_TEMPLATE_ID and ignores the Daytona fallback", () => {
-    expect(cubePlugin.template({ CUBE_TEMPLATE_ID: " tpl-1 " }, fallback)).toBe("tpl-1");
-    expect(() => cubePlugin.template({ DAYTONA_SNAPSHOT: "snap" }, fallback)).toThrow(
+    expect(cubePlugin.template({ CUBE_TEMPLATE_ID: " tpl-1 " }, "DAYTONA_SNAPSHOT")).toBe("tpl-1");
+    expect(() => cubePlugin.template({ DAYTONA_SNAPSHOT: "snap" }, "DAYTONA_SNAPSHOT")).toThrow(
       "CUBE_TEMPLATE_ID is required when SANDBOX_PROVIDER=cube",
     );
   });

@@ -86,10 +86,17 @@ function searchableThreadText(run: SidebarRun): string {
   return `${cleanPrompt(run.prompt) || "Untitled run"} ${repos.join(" ")}`.toLowerCase();
 }
 
+/** Every query word must appear somewhere in the text, in any order, so
+ *  "orbital heater" finds "Orbital H-200 heater". A blank query matches nothing. */
+export function matchesEveryWord(text: string, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return false;
+  const haystack = text.toLowerCase();
+  return words.every((word) => haystack.includes(word));
+}
+
 export function findThreadMatches(runs: readonly SidebarRun[], query: string): SidebarRun[] {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return [];
-  return rankThreads(runs).filter((run) => searchableThreadText(run).includes(normalized));
+  return rankThreads(runs).filter((run) => matchesEveryWord(searchableThreadText(run), query));
 }
 
 /** Delegated child threads (bot threads and the like) whose title matches the
@@ -98,10 +105,8 @@ export function findChildThreadMatches(
   relationships: readonly ThreadRelationship[],
   query: string,
 ): ThreadRelationship[] {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return [];
   return relationships
-    .filter((item) => item.parentThreadId !== null && item.title.toLowerCase().includes(normalized))
+    .filter((item) => item.parentThreadId !== null && matchesEveryWord(item.title, query))
     .toSorted((a, b) => Date.parse(b.latestActivityAt) - Date.parse(a.latestActivityAt));
 }
 
@@ -109,7 +114,6 @@ export function filterCommandEntries<T extends { readonly label: string }>(
   commands: readonly T[],
   query: string,
 ): T[] {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return [...commands];
-  return commands.filter((command) => command.label.toLowerCase().includes(normalized));
+  if (!query.trim()) return [...commands];
+  return commands.filter((command) => matchesEveryWord(command.label, query));
 }

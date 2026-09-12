@@ -575,7 +575,7 @@ export function SettingsStorage() {
                       </Chip>
                     </div>
                     <div className="flex w-[116px] shrink-0 items-center justify-end gap-2.5 px-3 py-2.5">
-                      <span onClick={() => deleteFile(file.id)}>
+                      <span role="presentation" onClick={() => deleteFile(file.id)}>
                         <RowActionButton icon={RiDeleteBin6Line} label="Delete file" />
                       </span>
                       <RowMoreMenu name={file.name} />

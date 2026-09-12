@@ -118,6 +118,15 @@ export function isIdleTerminalNotice(text: string): boolean {
   );
 }
 
+/**
+ * The backend's declaration that this sandbox provider cannot open a terminal
+ * from the server (Box without its CLI). Shown once; the pane stops reconnecting
+ * because retrying cannot change a declared capability gap.
+ */
+export function isTerminalUnavailableNotice(text: string): boolean {
+  return /\[(?:skynet|useAgent)\] terminal unavailable:/i.test(text);
+}
+
 /** Whether the PTY needs a resize message: only on settled dimension change. */
 export function gridChanged(previous: TerminalGrid | null, next: TerminalGrid): boolean {
   return previous === null || previous.cols !== next.cols || previous.rows !== next.rows;

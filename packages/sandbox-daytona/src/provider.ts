@@ -1,4 +1,4 @@
-import { Daytona } from "@daytona/sdk";
+import { Daytona, DaytonaNotFoundError } from "@daytona/sdk";
 import type {
   SandboxComputerUse,
   SandboxCreateOptions,
@@ -9,6 +9,7 @@ import type {
   SandboxProvider,
   SandboxPtyHandle,
   SandboxRecording,
+  SandboxTemplateStatus,
 } from "@useagent/sandbox-contract";
 
 export interface DaytonaApiConfig {
@@ -36,10 +37,40 @@ export interface DaytonaSandboxPort {
   getPreviewLink(port: number): Promise<{ url: string; token?: string }>;
 }
 
+/** The slice of a Daytona snapshot record the provider reads. */
+export interface DaytonaSnapshotPort {
+  readonly name: string;
+  readonly state: string;
+  readonly errorReason?: string | null;
+}
+
 export interface DaytonaClientPort {
   create(options?: SandboxCreateOptions): Promise<DaytonaSandboxPort>;
   get(sandboxId: string): Promise<DaytonaSandboxPort>;
   list(): AsyncIterable<DaytonaSandboxPort>;
+  readonly snapshot: {
+    /** Throws the SDK's not-found error when the org has no snapshot of that name. */
+    get(name: string): Promise<DaytonaSnapshotPort>;
+    activate(snapshot: DaytonaSnapshotPort): Promise<DaytonaSnapshotPort>;
+  };
+}
+
+export interface DaytonaProviderOptions {
+  /** How long ensureTemplate waits for an activating snapshot (activation took about two minutes in practice). */
+  readonly activationTimeoutMs?: number;
+  readonly activationPollMs?: number;
+  readonly sleep?: (ms: number) => Promise<void>;
+  readonly now?: () => number;
+}
+
+const DEFAULT_ACTIVATION_TIMEOUT_MS = 6 * 60_000;
+const DEFAULT_ACTIVATION_POLL_MS = 5_000;
+/** Daytona states a snapshot passes through on its way to active. */
+const ACTIVATING_STATES: ReadonlySet<string> = new Set(["building", "pending", "pulling", "snapshotting"]);
+
+function isSnapshotNotFound(error: unknown): boolean {
+  return error instanceof DaytonaNotFoundError ||
+    (error instanceof Error && /not found|does not exist/i.test(error.message));
 }
 
 class DaytonaProcess implements SandboxProcess {
@@ -234,10 +265,61 @@ export class DaytonaSandboxHandle implements SandboxHandle {
 }
 
 export class DaytonaProvider implements SandboxProvider {
-  constructor(private readonly client: DaytonaClientPort) {}
+  private readonly activationTimeoutMs: number;
+  private readonly activationPollMs: number;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly now: () => number;
+
+  constructor(private readonly client: DaytonaClientPort, options: DaytonaProviderOptions = {}) {
+    this.activationTimeoutMs = options.activationTimeoutMs ?? DEFAULT_ACTIVATION_TIMEOUT_MS;
+    this.activationPollMs = options.activationPollMs ?? DEFAULT_ACTIVATION_POLL_MS;
+    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.now = options.now ?? Date.now;
+  }
 
   async create(options: SandboxCreateOptions = {}): Promise<SandboxHandle> {
     return new DaytonaSandboxHandle(await this.client.create(options));
+  }
+
+  /**
+   * Daytona parks a snapshot nobody used for about two weeks as `inactive`, and
+   * a create from it fails with a validation error the old code hid behind the
+   * default image. Look the snapshot up first; wake an inactive one and wait a
+   * bounded time (in practice a few minutes) for it to come back.
+   */
+  async ensureTemplate(
+    name: string,
+    options: { readonly onActivating?: () => void | Promise<void> } = {},
+  ): Promise<SandboxTemplateStatus> {
+    let snapshot: DaytonaSnapshotPort;
+    try {
+      snapshot = await this.client.snapshot.get(name);
+    } catch (error) {
+      if (isSnapshotNotFound(error)) return { name, state: "absent" };
+      throw error;
+    }
+    if (snapshot.state === "active") return { name, state: "active" };
+    if (!ACTIVATING_STATES.has(snapshot.state) && snapshot.state !== "inactive") {
+      return { name, state: "error", detail: snapshot.errorReason?.trim() || snapshot.state };
+    }
+    await options.onActivating?.();
+    if (snapshot.state === "inactive") {
+      snapshot = await this.client.snapshot.activate(snapshot);
+      if (snapshot.state === "active") return { name, state: "active" };
+    }
+    const startedAt = this.now();
+    let state = snapshot.state;
+    while (this.now() - startedAt < this.activationTimeoutMs) {
+      await this.sleep(this.activationPollMs);
+      const current = await this.client.snapshot.get(name);
+      state = current.state;
+      if (state === "active") return { name, state: "active" };
+      if (!ACTIVATING_STATES.has(state)) {
+        return { name, state: state === "inactive" ? "inactive" : "error", detail: current.errorReason?.trim() || state };
+      }
+    }
+    const waited = Math.round((this.now() - startedAt) / 1000);
+    return { name, state: "activating", detail: `still ${state} after ${waited}s` };
   }
 
   async get(sandboxId: string): Promise<SandboxHandle> {
@@ -257,12 +339,18 @@ function daytonaClient(config: DaytonaApiConfig): DaytonaClientPort {
     async *list() {
       for await (const sandbox of client.list()) yield sandbox;
     },
+    snapshot: {
+      get: async (name) => await client.snapshot.get(name),
+      // The SDK activates by record, so re-read the live record before asking.
+      activate: async (snapshot) => await client.snapshot.activate(await client.snapshot.get(snapshot.name)),
+    },
   };
 }
 
 export function daytonaSandboxProvider(
   config: DaytonaApiConfig,
   client: DaytonaClientPort = daytonaClient(config),
+  options: DaytonaProviderOptions = {},
 ): SandboxProvider {
-  return new DaytonaProvider(client);
+  return new DaytonaProvider(client, options);
 }

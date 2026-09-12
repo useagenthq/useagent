@@ -280,6 +280,22 @@ async function provisionSandboxDesktop(
   }
 }
 
+/** The boot row an engine emits when the sandbox desktop is not attached. Nothing
+ *  in a run asks for the desktop up front (computer-use tools attach on demand),
+ *  so a box without the desktop binaries is information for the timeline's boot
+ *  lane, not a warning that reads as something went wrong with the customer's task. */
+export function desktopUnavailableStep(
+  engineId: string,
+  desktop: Pick<SandboxDesktop, "reason">,
+): { readonly kind: "task"; readonly label: string; readonly chip: string } {
+  const why = desktop.reason ? ` (${desktop.reason.replace(/:(?=\S)/, ": ")})` : "";
+  return {
+    kind: "task",
+    label: `Desktop and computer-use tools are not attached to this run${why}`,
+    chip: engineId,
+  };
+}
+
 /** Make only the user-visible noVNC surface ready. This intentionally skips the
  * Playwright MCP installation: opening Desktop must never wait on an agent-tool
  * dependency that the iframe does not use. */

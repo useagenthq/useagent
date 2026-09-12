@@ -26,7 +26,7 @@ function ImageAttachment({ upload }: { upload: RunUpload }) {
         aria-label={`Expand ${upload.name}`}
         className="block cursor-zoom-in overflow-hidden rounded-xl border border-border-button-default bg-background-secondary-default outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
-        {/* biome-ignore lint/performance/noImgElement: dynamic upload bytes
+        {/* Dynamic upload bytes
             (/api/uploads/:id/content), bounded + lazy - next/image optimization
             does not apply to authenticated same-origin blobs. */}
         <img

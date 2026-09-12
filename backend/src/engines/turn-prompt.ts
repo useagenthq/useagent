@@ -14,6 +14,8 @@ export interface TurnPromptContext {
   readonly commandName?: string | null;
   readonly orgId?: string | null;
   readonly origin?: string | null;
+  /** The conversation the run belongs to; names the port bridge the user opens. */
+  readonly threadId?: string;
 }
 
 /**
@@ -86,6 +88,23 @@ function productFanoutRoutingRules(
     "</delegation_routing>\n\n";
 }
 
+/** A port the agent serves inside its sandbox is unreachable as localhost from
+ * the user's browser; the product bridges it. Tell the agent the URL to print. */
+function servedPortsContext(
+  ctx: TurnPromptContext,
+  executionCapabilities: ExecutionCapabilitySnapshot,
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  const origin = env.FRONTEND_ORIGIN?.trim();
+  if (executionCapabilities.runtime !== "sandbox" || !ctx.threadId || !origin) return "";
+  return "<served_ports>\n" +
+    "Nothing you serve inside the workspace is reachable by the user as localhost. A server " +
+    `listening on port N (bind it to 0.0.0.0) opens for the user at ${portProxyUrl(origin, ctx.threadId, "N")} ` +
+    "with N replaced by the real port. When you start a dev server, serve a directory or " +
+    "expose a preview, print that URL instead of a localhost link.\n" +
+    "</served_ports>\n\n";
+}
+
 /**
  * Compose the exact text sent to an engine for one turn. Fresh sessions receive
  * reconstructed thread history and global rules. Resumed sessions receive only
@@ -109,6 +128,7 @@ export function composeTurnPrompt(
     executionCapabilityPrompt(executionCapabilities) +
     AGENT_WORKFLOW_ROUTING_RULES +
     productFanoutRoutingRules(ctx, executionCapabilities, env) +
+    servedPortsContext(ctx, executionCapabilities, env) +
     (botsReachable ? (ctx.botContext ?? "") : "") +
     skillReference +
     (ctx.resourceContext ?? "") +
@@ -119,3 +139,4 @@ export function composeTurnPrompt(
 }
 import type { ExecutionCapabilitySnapshot } from "@useagent/agent-harness/canonical";
 import { executionCapabilityPrompt } from "./execution-capabilities";
+import { portProxyUrl } from "../runs/port-proxy-url";

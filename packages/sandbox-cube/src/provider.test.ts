@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { Sandbox as E2BSandbox, type SandboxInfo } from "e2b";
-import { cubeSandboxProvider } from "./provider";
+import {
+  classifyCubeReadinessProbe,
+  cubeReadinessProbeCommand,
+  cubeSandboxProvider,
+  describeCubeReadinessFailure,
+} from "./provider";
 
 const originalEnv = { ...process.env };
 /** The control plane supplies the identity probe; these tests only need one that passes or one that checks root. */
@@ -250,9 +255,9 @@ describe("Cube sandbox provider", () => {
     process.env.CUBE_READINESS_ATTEMPTS = "1";
     const sandbox = fakeSandbox({
       run: async (command) => ({
-        exitCode: command.includes('test "$(id -u)" = "0"') ? 1 : 0,
+        exitCode: command.includes('test "$(id -u)" = "0"') ? 10 : 0,
         stderr: "",
-        stdout: "",
+        stdout: command.includes('test "$(id -u)" = "0"') ? "STAGE=identity uid=1000" : "",
       }),
     });
     const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
@@ -260,7 +265,7 @@ describe("Cube sandbox provider", () => {
     const kill = spyOn(E2BSandbox, "kill").mockResolvedValue(true);
 
     await expect(cubeSandboxProvider("", rootCheck).create({ snapshot: "agent-template" })).rejects.toThrow(
-      "did not reach root identity/workspace",
+      "failed readiness after 1 attempts at the runtime identity (uid, HOME) check: uid=1000",
     );
     expect(kill).toHaveBeenCalledWith("cube-1", expect.any(Object));
 
@@ -439,5 +444,69 @@ describe("Cube sandbox provider", () => {
     );
     list.mockRestore();
     fetchSpy.mockRestore();
+  });
+});
+
+describe("Cube readiness reasons", () => {
+  test("the probe reports the stage that stopped it, in order", () => {
+    const command = cubeReadinessProbeCommand('test "$(id -u)" = "0"', "readiness.sandbox.example.com", "github.com");
+    expect(command).toContain("STAGE=identity");
+    expect(command.indexOf("STAGE=identity")).toBeLessThan(command.indexOf("STAGE=workspace"));
+    expect(command.indexOf("STAGE=workspace")).toBeLessThan(command.indexOf("STAGE=preview_dns"));
+    expect(command.indexOf("STAGE=preview_dns")).toBeLessThan(command.indexOf("STAGE=public_dns"));
+    expect(command.endsWith("printf READY")).toBe(true);
+  });
+
+  test("classifies a passing probe, each failing stage, and a transport error", () => {
+    expect(classifyCubeReadinessProbe({ exitCode: 0, result: "READY" })).toBeNull();
+    expect(classifyCubeReadinessProbe({ exitCode: 10, result: "STAGE=identity uid=1000 is not root" })).toEqual({
+      stage: "identity",
+      detail: "uid=1000 is not root",
+    });
+    expect(classifyCubeReadinessProbe({ exitCode: 12, result: "STAGE=preview_dns readiness.sandbox.example.com" })).toEqual({
+      stage: "preview_dns",
+      detail: "readiness.sandbox.example.com",
+    });
+    expect(classifyCubeReadinessProbe({ error: new Error("unable to get local issuer certificate") })).toEqual({
+      stage: "command",
+      detail: "unable to get local issuer certificate",
+    });
+    expect(classifyCubeReadinessProbe({ exitCode: 137, result: "" })).toEqual({ stage: "command", detail: "exit 137" });
+  });
+
+  test("the run error names the stage, the attempts and the private CA hint for transport failures", () => {
+    expect(describeCubeReadinessFailure("cube-1", 20, { stage: "command", detail: "unable to get local issuer certificate" })).toBe(
+      "Cube sandbox cube-1 failed readiness after 20 attempts at the command transport (envd over the data plane): " +
+        "unable to get local issuer certificate (a backend off the Cube host must trust the data plane's private CA via NODE_EXTRA_CA_CERTS)",
+    );
+    expect(describeCubeReadinessFailure("cube-1", 3, { stage: "public_dns", detail: "github.com" })).toBe(
+      "Cube sandbox cube-1 failed readiness after 3 attempts at the DNS lookup of the public host: github.com",
+    );
+  });
+
+  test("a create whose probe fails at DNS is deleted and reports that stage, not a generic line", async () => {
+    process.env.CUBE_API_URL = "http://127.0.0.1:3000";
+    process.env.CUBE_PROXY_SCHEME = "https";
+    process.env.CUBE_SANDBOX_DOMAIN = "sandbox.example.com";
+    process.env.CUBE_READINESS_ATTEMPTS = "2";
+    process.env.CUBE_READINESS_RETRY_DELAY_MS = "1";
+    const sandbox = fakeSandbox({
+      run: async (command: string) =>
+        command.includes("STAGE=identity")
+          ? { exitCode: 12, stderr: "", stdout: "STAGE=preview_dns readiness.sandbox.example.com" }
+          : { exitCode: 0, stderr: "", stdout: "" },
+    });
+    const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
+    const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
+    const kill = spyOn(E2BSandbox, "kill").mockResolvedValue(true);
+    const error = await cubeSandboxProvider("cube-key", ready).create({ snapshot: "agent-template" }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(
+      "Cube sandbox cube-1 failed readiness after 2 attempts at the DNS lookup of the preview host: readiness.sandbox.example.com",
+    );
+    expect(kill).toHaveBeenCalled();
+    create.mockRestore();
+    getInfo.mockRestore();
+    kill.mockRestore();
   });
 });

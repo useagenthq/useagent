@@ -81,6 +81,32 @@ describe("knowledge ingest → search", () => {
     expect(found.visibility).toBe("internal"); // fail-closed default
   });
 
+  test("a configured key the provider rejects is reported as keyword-only, and heals on success", async () => {
+    const { embeddingsAvailable, markEmbeddingsDegraded, markEmbeddingsHealthy } = await import(
+      "../src/knowledge/embed"
+    );
+    process.env.OPENAI_API_KEY = "sk-rejected";
+    try {
+      markEmbeddingsDegraded("openai embeddings 401");
+      expect(embeddingsAvailable()).toBe(false);
+      const degraded = await json<any>("/api/knowledge", H);
+      expect(degraded.body.embeddings).toBe(false);
+      expect(degraded.body.search_note).toContain("keyword-only");
+      expect(degraded.body.search_note).toContain("openai embeddings 401");
+      markEmbeddingsHealthy();
+      expect(embeddingsAvailable()).toBe(true);
+      const healthy = await json<any>("/api/knowledge", H);
+      expect(healthy.body.embeddings).toBe(true);
+      expect(healthy.body.search_note).toBeNull();
+    } finally {
+      delete process.env.OPENAI_API_KEY;
+      markEmbeddingsHealthy();
+    }
+    const keyless = await json<any>("/api/knowledge", H);
+    expect(keyless.body.embeddings).toBe(false);
+    expect(keyless.body.search_note).toContain("no embedding key");
+  });
+
   test("search ranks the record and reports keyword mode", async () => {
     const { status, body } = await json<any>("/api/knowledge/search", {
       method: "POST",

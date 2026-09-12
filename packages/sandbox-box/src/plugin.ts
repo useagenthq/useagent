@@ -5,6 +5,7 @@ import {
   BOX_MACHINE_TYPES,
   type BoxApiConfig,
   type BoxMachineType,
+  boxCliProblem,
   boxSandboxProvider,
 } from "./provider";
 import { validateBoxConnection } from "./validate";
@@ -42,6 +43,9 @@ export const boxPlugin: SandboxProviderPlugin<BoxApiConfig> = {
   template(env) {
     // Optional snapshot to create from; empty means Box's base image.
     return env.BOX_SNAPSHOT?.trim() ?? "";
+  },
+  interactiveTerminalProblem() {
+    return boxCliProblem();
   },
   createProvider(config, ports: SandboxProviderPorts = {}) {
     return boxSandboxProvider(config, ports);

@@ -31,6 +31,16 @@ export function isUserStopSummary(error: string | null): boolean {
   return error !== null && /^stopped by user/i.test(error.trim());
 }
 
+/** The banner belongs to the thread's LATEST turn only. A failure an earlier
+ *  turn already recovered from (the next turn completed) must not render under
+ *  that newer, successful turn as if the new work had failed. */
+export function latestTurnFailure<T extends { status: string; summary: string | null }>(
+  turns: readonly T[],
+): T | undefined {
+  const newest = turns.at(-1);
+  return newest?.status === "failed" && newest.summary ? newest : undefined;
+}
+
 export function shouldShowThreadErrorBanner(
   threadKey: string,
   error: string | null,

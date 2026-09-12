@@ -15,6 +15,7 @@ import {
 import { type ComposerSubmit } from "@/components/chat/composer";
 import { useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { GatewayApprovalCard } from "@/components/chat/gateway-approval-card";
+import { groupApprovalsByRun } from "@/components/chat/gateway-approval-state";
 import { toGatewayChildSession } from "@/components/chat/gateway-children";
 import {
   deriveHandoffReceipts,
@@ -55,6 +56,7 @@ import {
   dismissThreadErrorBannerForSession,
   getThreadErrorBannerKey,
   isThreadErrorBannerDismissedForSession,
+  latestTurnFailure,
   shouldShowThreadErrorBanner,
 } from "@/components/session-ui/thread-error-banner";
 import type { GatewayApproval } from "@/lib/gateway-approvals";
@@ -165,12 +167,10 @@ export function AgentAnswer({ summary }: { summary: string; stream?: boolean }) 
 }
 
 /**
- * Live narration: the run's token deltas rendered as the answer-in-progress —
- * PROGRESSIVE MARKDOWN (Zola-style): remark-gfm parses whatever partial
- * markdown exists on each delta and degrades gracefully, so bold/tables/lists
- * render as they stream instead of arriving as raw `**`/`|` runes and snapping
- * into shape only at completion. A blinking caret tails the rendered block.
- * Replaced by the durable Markdown summary once the run settles.
+ * Live narration: the run's token deltas rendered as the answer-in-progress as
+ * PROGRESSIVE MARKDOWN: remark-gfm parses whatever partial markdown exists on each
+ * delta and degrades gracefully, so bold, tables and lists render as they stream
+ * instead of snapping into shape at completion. A blinking caret tails the block.
  */
 function LiveNarration({ text }: { text: string }) {
   return (
@@ -199,11 +199,6 @@ const LiveThinking = memo(function LiveThinking({ text }: { text: string }) {
   );
 });
 
-// NOTE: the mock NetworkApprovalRequest demo card was removed — engines run
-// one-shot in yolo mode, so nothing can actually pause a run for approval; a
-// fake approval card mid-run was actively misleading. When a real approval flow
-// lands backend-side, compose `@/components/ai/approval-card` here again.
-
 /** Wrap legacy ApiStep rows as canonical tool nodes so the T3 adapter stays the
  *  ONE step-to-work-entry mapping (no parallel grammar for the fallback lane). */
 function toolNodesFromSteps(steps: readonly ApiStep[]): TimelineNode[] {
@@ -223,14 +218,22 @@ const TurnBlock = memo(function TurnBlock({
   productChildren,
   onOpenProductChild,
   handoffs,
+  approvals,
+  onGatewayApprovalResolved,
   isLatestTurn = false,
   windowOwnsRunMarker = false,
   assistantIdentity,
+  threadBusy = false,
 }: {
   turn: Turn;
   /** 1-based place among this thread's queued turns (queued rendering only). */
   queuePosition?: number;
   onSendNow?: () => void;
+  /** A turn is running: a queued reply waits on it (otherwise only on admission). */
+  threadBusy?: boolean;
+  /** Gateway approvals this run raised: pending is actionable, resolved is its record. */
+  approvals?: readonly GatewayApproval[];
+  onGatewayApprovalResolved?: () => void;
   /** Gateway child sessions THIS turn spawned (deferred serial thread turns) -
    *  they fold under this turn's subagent group instead of rendering as their
    *  own top-level turns. */
@@ -321,7 +324,7 @@ const TurnBlock = memo(function TurnBlock({
         <HandoffReceipts receipts={handoffs} />
         <QueuedMessagePill
           position={queuePosition ?? 1}
-          waitingOnCurrentRun={run.parent_run_id !== null}
+          waitingOnCurrentRun={threadBusy}
           onSendNow={onSendNow}
         />
       </div>
@@ -363,6 +366,9 @@ const TurnBlock = memo(function TurnBlock({
               showFollowups={isLatestTurn}
             />
             {summary && !hasNarration(timeline) && <AgentAnswer summary={summary} />}
+            {/* A run whose native frames carry no text (the chat engine streams its
+                answer as deltas only) still narrates live from the delta channel. */}
+            {narrating && !summary && !hasNarration(timeline) && <LiveNarration text={liveText} />}
             {failed && !summary && !hasNarration(timeline) && <FailedNote />}
           </div>
         ) : (
@@ -407,6 +413,14 @@ const TurnBlock = memo(function TurnBlock({
           </div>
         )}
 
+        {approvals?.map((approval) => (
+          <GatewayApprovalCard
+            key={approval.id}
+            approval={approval}
+            onResolved={onGatewayApprovalResolved}
+          />
+        ))}
+
         {/* This turn's subagents: native task fan-out (same projection as the
             Agents rail) plus gateway child sessions it spawned - one fold, real
             per-child status/model/tokens. Renders nothing when none exist. */}
@@ -436,14 +450,12 @@ const TurnBlock = memo(function TurnBlock({
 });
 
 /**
- * Left column of the session: the whole thread as one conversation — one
- * `TurnBlock` per run (clean user bubble + agent answer + activity) — with a
- * reply composer pinned to the bottom. A reply appears optimistically until the
- * refetched thread carries the real child run.
- *
- * Memoized: SessionView hands it memoized `turns` and useCallback handlers, so
- * unrelated SessionView state (rail width commit, tab switches, workspace
- * bookkeeping) no longer re-renders the whole timeline.
+ * Left column of the session: the whole thread as one conversation, one
+ * `TurnBlock` per run (user bubble + agent answer + activity), with a reply
+ * composer pinned to the bottom. A reply appears optimistically until the
+ * refetched thread carries the real child run. Memoized: SessionView hands it
+ * memoized `turns` and useCallback handlers, so unrelated SessionView state
+ * (rail width, tab switches, workspace bookkeeping) does not re-render the timeline.
  */
 export const Conversation = memo(function Conversation({
   turns,
@@ -505,9 +517,8 @@ export const Conversation = memo(function Conversation({
   answeringApproval?: boolean;
   approvalError?: string | null;
   onAnswerApproval?: (decision: ApprovalDecision) => void | Promise<void>;
-  /** Gateway approvals (#77) for the thread's live runs - pending ones render
-   * as Approve/Deny cards (stacked when several are pending); each card owns
-   * its own optimistic resolve against /api/gateway/approvals. */
+  /** Gateway approvals (#77) for the thread's runs: pending cards act, resolved
+   *  cards stay as history; each renders under the turn whose run raised it. */
   gatewayApprovals?: readonly GatewayApproval[];
   /** Nudges the approvals fetch lane after a card resolves locally. */
   onGatewayApprovalResolved?: () => void;
@@ -634,13 +645,17 @@ export const Conversation = memo(function Conversation({
   const queuedPositions = new Map(
     turns.filter((t) => t.status === "queued").map((t, i) => [t.run.id, i + 1] as const),
   );
+  const threadBusy = turns.some((t) => t.status === "running");
+  const { byRun: approvalsByRun, orphans: orphanApprovals } = useMemo(
+    () => groupApprovalsByRun(gatewayApprovals ?? [], renderedTurns.map((t) => t.run.id)),
+    [gatewayApprovals, renderedTurns],
+  );
 
-  // Thread-error banner: the newest FAILED run's real summary, dismissible for
+  // Thread-error banner: the LATEST turn's real failure summary, dismissible for
   // the session (a NEW error re-appears because the key includes the message).
-  // No banner while a turn is running - the live pill owns that state.
-  const newestFailed = running
-    ? undefined
-    : [...turns].reverse().find((t) => t.status === "failed" && t.summary);
+  // No banner while a turn is running - the live pill owns that state - and none
+  // once a newer turn succeeded: that failure is history, not the thread's state.
+  const newestFailed = running ? undefined : latestTurnFailure(turns);
   const threadErrorKey = getThreadErrorBannerKey(
     newestFailed?.run.id ?? "",
     newestFailed?.summary ?? null,
@@ -703,9 +718,12 @@ export const Conversation = memo(function Conversation({
                 productChildren={productChildrenByParent.get(turn.run.id)}
                 onOpenProductChild={onOpenProductChild}
                 handoffs={handoffReceipts?.get(turn.run.id) ?? durableHandoffs.get(turn.run.id)}
+                approvals={approvalsByRun.get(turn.run.id)}
+                onGatewayApprovalResolved={onGatewayApprovalResolved}
                 isLatestTurn={index === renderedTurns.length - 1}
                 windowOwnsRunMarker={windowOwnsRunMarker}
                 assistantIdentity={assistantIdentity}
+                threadBusy={threadBusy}
               />
             )}
           />
@@ -727,7 +745,7 @@ export const Conversation = memo(function Conversation({
               onRespond={onAnswerApproval}
             />
           )}
-          {gatewayApprovals?.map((approval) => (
+          {orphanApprovals.map((approval) => (
             <GatewayApprovalCard
               key={approval.id}
               approval={approval}

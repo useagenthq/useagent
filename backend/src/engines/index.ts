@@ -12,6 +12,7 @@ import {
   runtimeAdapterEngineSelected,
   runtimeAdapterSelected,
 } from "./runtime-adapter";
+import { assertRunProviderCredential } from "./provider-credential-gate";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 import {
   normalizeNegotiatedCapabilities,
@@ -266,6 +267,7 @@ export async function runProviderTurn(
       )
     : selected;
   if (!registration || !driver) return false;
+  await assertRunProviderCredential(provider, ctx);
 
   if (driver.descriptor.protocol.name === "t3-orchestration") {
     if (!isRuntimeEngineId(driver.provider)) {

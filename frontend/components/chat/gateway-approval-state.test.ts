@@ -10,6 +10,7 @@ import {
   resolutionFailed,
   resolutionSucceeded,
   summarizeApprovalArguments,
+  groupApprovalsByRun,
 } from "./gateway-approval-state";
 import type { NativeFrame } from "./native-events";
 import type { ApiStep } from "./types";
@@ -215,5 +216,18 @@ describe("wire parse (contract boundary)", () => {
         resolved_by: "dana",
       }),
     ).toMatchObject({ arguments: {}, resolvedAt: "2026-08-20T10:01:00Z", resolvedBy: "dana" });
+  });
+});
+
+describe("groupApprovalsByRun", () => {
+  test("keeps each approval under its run, in order, and parks the rest as orphans", () => {
+    const a1 = { id: "a1", runId: "run-1" };
+    const a2 = { id: "a2", runId: "run-2" };
+    const a3 = { id: "a3", runId: "run-1" };
+    const folded = { id: "a4", runId: "run-child" };
+    const { byRun, orphans } = groupApprovalsByRun([a1, a2, a3, folded], ["run-1", "run-2"]);
+    expect(byRun.get("run-1")).toEqual([a1, a3]);
+    expect(byRun.get("run-2")).toEqual([a2]);
+    expect(orphans).toEqual([folded]);
   });
 });

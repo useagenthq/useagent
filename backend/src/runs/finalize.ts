@@ -37,7 +37,7 @@ import {
 } from "../slack/streaming";
 import { turnStream } from "./turn-stream";
 import { env } from "../env";
-import { findScheduleForRun } from "../schedules/repo";
+import { findScheduleForRun, settleFiring } from "../schedules/repo";
 import { publishRunLifecycleChange } from "./org-signals";
 import { enqueueCanonicalization } from "./canonicalization-outbox";
 import { canonicalEngine } from "../engines/engine-alias";
@@ -412,6 +412,7 @@ export async function finalizeRun(
     // allowlist is re-checked at delivery-enqueue time.
     const automation = await findScheduleForRun(runId, tx);
     if (automation) {
+      await settleFiring(runId, effectiveStatus, tx);
       const target = await resolveSlackAutomationTargetForOrg(
         automation.delivery,
         automation.orgId,

@@ -21,7 +21,7 @@ import { sandboxTemplate } from "../sandboxes/provider";
 /** The snapshot new sandboxes are created from. Mirrors the resolution in
  *  engines/opencode-server.ts — the catalog is keyed by exactly this value. */
 export function defaultSnapshot(): string {
-  return sandboxTemplate("DAYTONA_SNAPSHOT", "skynet-agent-v17");
+  return sandboxTemplate("DAYTONA_SNAPSHOT");
 }
 
 /** Normalize opencode's /command body (a bare `{name, description}[]`) into the

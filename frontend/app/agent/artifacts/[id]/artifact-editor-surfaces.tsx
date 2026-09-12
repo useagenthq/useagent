@@ -300,7 +300,7 @@ export function RichDocumentSurface({
           </div>
         )}
       </div>
-      {/* biome-ignore lint/a11y/useSemanticElements: contenteditable preserves inline document structure. */}
+      {/* contenteditable preserves inline document structure. */}
       <div
         ref={editorRef}
         id="workpiece-source"

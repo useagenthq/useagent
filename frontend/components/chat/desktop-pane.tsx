@@ -28,6 +28,17 @@ export const DESKTOP_PROBE_MAX_DELAY = 2_000;
  * demand), so there is no attempt limit - the delay simply plateaus at the cap and
  * keeps polling while the pane is mounted. `previous` is null for the first retry.
  */
+/** Product copy for one readiness probe answer. A sandbox image that lacks the
+ *  desktop binaries never becomes ready, so name them instead of waiting. */
+export function desktopProbeStatus(status: number, error: string | null): string {
+  if (status === 409) return "No active sandbox. Send a message to start one.";
+  const missing = /missing desktop binaries:\s*(.+)$/i.exec(error ?? "")?.[1]?.trim();
+  if (missing) {
+    return `Browser is unavailable on this sandbox image: it is missing ${missing.split(/\s+/).join(", ")}. Rebuild the image with those packages to enable it.`;
+  }
+  return "Starting sandbox desktop…";
+}
+
 export function nextDesktopProbeDelay(previous: number | null): number {
   if (previous === null) return DESKTOP_PROBE_MIN_DELAY;
   return Math.min(Math.ceil(previous * 1.5), DESKTOP_PROBE_MAX_DELAY);
@@ -176,16 +187,19 @@ export function DesktopPane({ threadId }: { threadId: string }) {
     const probe = async (): Promise<void> => {
       try {
         const response = await fetch(readySrc, { cache: "no-store" });
-        await response.body?.cancel();
-        if (cancelled) return;
         if (response.ok) {
+          await response.body?.cancel();
+          if (cancelled) return;
           setReady(true);
           return;
         }
+        const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
+        if (cancelled) return;
         setStatus(
-          response.status === 409
-            ? "No active sandbox. Send a message to start one."
-            : "Starting sandbox desktop…",
+          desktopProbeStatus(
+            response.status,
+            typeof payload?.error === "string" ? payload.error : null,
+          ),
         );
       } catch {
         if (cancelled) return;

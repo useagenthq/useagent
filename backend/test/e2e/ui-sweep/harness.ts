@@ -101,6 +101,15 @@ export async function newPage(browser: Browser): Promise<{ page: Page; consoleEr
   return { page, consoleErrors, pageErrors };
 }
 
+/** `next dev` mounts a <nextjs-portal> dev-tools badge over the bottom-left
+ *  corner, exactly where the account button sits, so clicks there hit the
+ *  portal instead of the product. Remove it before interacting with that area. */
+export async function removeDevOverlay(page: Page): Promise<void> {
+  await page
+    .evaluate('document.querySelectorAll("nextjs-portal").forEach((node) => node.remove())')
+    .catch(() => {});
+}
+
 export async function launch(): Promise<Browser> {
   await Bun.$`mkdir -p ${SHOTS}`.quiet().catch(() => {});
   return chromium.launch({ channel: "chrome", headless: true });

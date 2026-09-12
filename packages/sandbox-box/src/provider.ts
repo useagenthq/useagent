@@ -13,7 +13,7 @@ import type {
   SandboxProviderPorts,
   SandboxSession,
 } from "@useagent/sandbox-contract";
-import { memorySandboxLabelStore } from "@useagent/sandbox-contract";
+import { SandboxTerminalUnavailableError, memorySandboxLabelStore } from "@useagent/sandbox-contract";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -134,6 +134,20 @@ export function boxTtlSeconds(options: Pick<SandboxCreateOptions, "autoDeleteInt
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const BOX_CLI = "box";
+
+/**
+ * Why an interactive terminal cannot be opened from this server, or null. Box
+ * has no PTY API; the shell rides the Box CLI's `box ssh`, so the CLI must be on
+ * the useAgent server's PATH. Declared up front so the product can say so instead
+ * of failing the WebSocket on every attempt.
+ */
+export function boxCliProblem(which: (binary: string) => string | null = (binary) => Bun.which(binary)): string | null {
+  return which(BOX_CLI)
+    ? null
+    : "Box terminals need the Box CLI (box) installed on the useAgent server; commands and files still work";
 }
 
 export function boxPtyLoginArgv(apiKey: string): string[] {
@@ -496,6 +510,8 @@ class BoxProcess implements SandboxProcess {
     rows: number;
     onData: (data: Uint8Array) => void | Promise<void>;
   }): Promise<SandboxPtyHandle> {
+    const problem = boxCliProblem();
+    if (problem) throw new SandboxTerminalUnavailableError(problem);
     const home = await createBoxPtyHome();
     const env = boxPtyEnv(home);
     try {

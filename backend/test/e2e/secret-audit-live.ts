@@ -13,18 +13,41 @@
  * key in the sandbox is a hard regression, including in development.
  *
  * Run (from backend/):  bun test/e2e/secret-audit-live.ts
+ *
+ * Environment (defaults in parentheses):
+ *   DAYTONA_API_KEY, OPENROUTER_API_KEY (or the key for the model you pick), the
+ *   GitHub App/PAT for the org repo, and a provider gateway reachable from the
+ *   sandbox (GATEWAY_PUBLIC_URL + PROVIDER_GATEWAY_SECRET + TOOL_GATEWAY_SECRET).
+ *   TEST_ADMIN_URL             admin connection for DROP/CREATE DATABASE
+ *                              (postgres://postgres@localhost:5432/postgres)
+ *   SECRET_AUDIT_DATABASE_URL  the throwaway database; its name comes from the URL
+ *                              path and is dropped at the end
+ *                              (postgres://postgres@localhost:5432/useagent_e2e_secaudit)
+ *   SECRET_AUDIT_PORT          isolated backend port (3552)
+ *   SECRET_AUDIT_MODEL         opencode model for the cloning run; it must be on
+ *                              the OPENCODE_ALLOWED_MODELS list in
+ *                              src/runs/model-policy.ts or POST /api/runs answers
+ *                              400 model_not_allowed (deepseek/deepseek-v4-flash)
+ *   The spawned backend dispatches only when the engine and its provider are
+ *   ready, so export ENGINE_READINESS_OPENCODE=ready and the PROVIDER_HEALTH_*
+ *   flag for the model's provider (PROVIDER_HEALTH_OPENROUTER=ready for the
+ *   default); without them the run is refused and the refusal body is printed.
  */
 import postgres from "postgres";
 import { openSync, readFileSync } from "node:fs";
 import { Daytona } from "@daytona/sdk";
 import { deleteById, listAll } from "./soak/lib/daytona";
 
-const BE_PORT = 3552;
+const BE_PORT = Number(process.env.SECRET_AUDIT_PORT ?? 3552);
 const BE = `http://localhost:${BE_PORT}`;
 const ORIGIN = "http://localhost:3200";
-const DB = "useagent_e2e_secaudit";
-const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
+const DB_URL = process.env.SECRET_AUDIT_DATABASE_URL ?? "postgres://postgres@localhost:5432/useagent_e2e_secaudit";
+const DB = decodeURIComponent(new URL(DB_URL).pathname.replace(/^\//, ""));
+if (!/^[a-z_][a-z0-9_]{0,62}$/i.test(DB)) {
+  throw new Error(`SECRET_AUDIT_DATABASE_URL must name a plain database identifier, got "${DB}"`);
+}
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
+const MODEL = process.env.SECRET_AUDIT_MODEL ?? "deepseek/deepseek-v4-flash";
 const backendDir = new URL("../..", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
 const beLogPath = `${scratch}/secaudit-be.log`;
@@ -71,11 +94,14 @@ try {
 
   const post = await fetch(`${BE}/api/runs`, {
     method: "POST", headers: { "content-type": "application/json", Origin: ORIGIN },
-    body: JSON.stringify({ prompt: "Use the shell tool to run `git remote -v` and reply with the output.", engine: "opencode", model: "anthropic/claude-haiku-4.5", ...(repo ? { repos: [repo] } : {}) }),
+    body: JSON.stringify({ prompt: "Use the shell tool to run `git remote -v` and reply with the output.", engine: "opencode", model: MODEL, ...(repo ? { repos: [repo] } : {}) }),
   });
-  const runId = (await post.json().catch(() => ({})))?.id as string | undefined;
-  pass("repo-cloning run accepted", !!runId, `run=${short(runId)}`);
-  if (!runId) throw new Error("no run id");
+  const postBody = (await post.json().catch(() => ({}))) as { id?: string } & Record<string, unknown>;
+  const runId = postBody.id;
+  // A refusal (model policy, engine or provider readiness) is the reason the
+  // audit cannot proceed, so surface the status and body instead of hiding it.
+  pass("repo-cloning run accepted", !!runId, runId ? `run=${short(runId)}` : `HTTP ${post.status} ${JSON.stringify(postBody)}`);
+  if (!runId) throw new Error(`run refused: HTTP ${post.status} ${JSON.stringify(postBody)}`);
   myRunIds.push(runId);
 
   // wait for terminal + capture sandbox id

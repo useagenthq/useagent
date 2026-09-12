@@ -13,6 +13,7 @@ import {
   engineModelReadyForDispatch,
   engineResolutionErrorBody,
   resolveAcceptedEngine,
+  USER_FACING_ENGINES,
 } from "../runs/engine-readiness";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
 import { publishOrgChange, type OrgChange } from "../runs/org-signals";
@@ -171,7 +172,7 @@ function resolveDraftEngine(rawEngine: unknown): EngineId {
   }
   if (typeof rawEngine !== "string" || !ENGINE_IDS.includes(rawEngine as EngineId)) {
     throw new ScheduleServiceError(400, {
-      error: `engine must be one of: ${ENGINE_IDS.join(", ")}`,
+      error: `engine must be one of: ${USER_FACING_ENGINES.join(", ")}`,
     });
   }
   return rawEngine as EngineId;

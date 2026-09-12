@@ -202,6 +202,9 @@ export interface ApiRun {
   /** The engine's own native session id (opencode `ses_*`), when one was recorded.
    *  The thread's latest non-null value deep-links the Live tab into that session. */
   engine_session_id: string | null;
+  /** The provider sandbox this run executed on (null before provisioning, for
+   *  sandbox-less engines, and once the box is released). */
+  sandbox_id: string | null;
   /** Legacy single-repo mirror (= repos[0] ?? null), clean "owner/name". */
   repo: string | null;
   /** GitHub repos this thread works in (each clean "owner/name"); [] = bare workdir.
@@ -639,6 +642,9 @@ export function decodeApiRun(value: unknown): ApiRun | null {
     child_session: record.child_session,
     thread_id: record.thread_id,
     engine_session_id: record.engine_session_id,
+    // Tolerant on purpose: a response from a backend that predates the field
+    // must still decode, so absence reads as "no sandbox recorded".
+    sandbox_id: isNullableString(record.sandbox_id) ? record.sandbox_id : null,
     resolved_resources: record.resolved_resources,
     memory_scope: record.memory_scope as MemoryScope,
     skill_id: record.skill_id,
@@ -772,3 +778,18 @@ export type BotAvatarIcon = (typeof BOT_AVATAR_ICONS)[number];
 /** Derived from the home thread's runs + pending approvals; never stored. */
 export const BOT_STATES = ["attention", "working", "idle"] as const;
 export type BotState = (typeof BOT_STATES)[number];
+
+/**
+ * The whitespace-free handle a bot is mentioned by: `@bot/<handle>`. A name with
+ * spaces ("Night triage") cannot be one token, so the handle is its slug
+ * (night-triage): lower case, letters and digits kept, every other run of
+ * characters folded to one hyphen. Both the composer and the backend derive it
+ * from the name, so a token typed anywhere resolves to the same bot.
+ */
+export function botHandle(name: string): string {
+  return name
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+}

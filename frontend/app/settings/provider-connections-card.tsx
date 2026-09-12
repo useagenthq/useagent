@@ -19,11 +19,19 @@ import {
 import { useProviderConnections } from "./use-provider-connections";
 
 export function ProviderConnectionsCard() {
-  const { connections, enabledSandboxEngines, error, load, loading, refreshing } =
+  const { connections, deploymentProviders, enabledSandboxEngines, error, load, loading, refreshing } =
     useProviderConnections();
   const views = useMemo(() => providerConnectionViews(connections), [connections]);
   const connectedCount = views.filter(
     (view) => isActiveConnection(view.apiKey) || isActiveConnection(view.chatGptOAuth),
+  ).length;
+  // Providers the server keys serve on the org's behalf; shown honestly next to
+  // the org's own connections so "0 connected" never reads as "nothing works".
+  const deploymentCount = views.filter(
+    (view) =>
+      deploymentProviders?.[view.provider] === true &&
+      !isActiveConnection(view.apiKey) &&
+      !isActiveConnection(view.chatGptOAuth),
   ).length;
 
   if (error && connections.length === 0) {
@@ -34,13 +42,14 @@ export function ProviderConnectionsCard() {
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2 text-body-2-regular text-text-secondary">
-          {connectedCount > 0 ? (
+          {connectedCount + deploymentCount > 0 ? (
             <RiCheckboxCircleLine aria-hidden className="size-4 text-status-lime-text" />
           ) : (
             <RiCloseCircleLine aria-hidden className="size-4 text-foreground-icon-tertiary" />
           )}
           <span>
             {connectedCount} of {MODEL_PROVIDER_CONNECTION_PROVIDERS.length} providers connected
+            {deploymentCount > 0 ? `, ${deploymentCount} provided by this deployment` : ""}
           </span>
         </div>
         <Button
@@ -73,6 +82,7 @@ export function ProviderConnectionsCard() {
             connection={view.apiKey}
             oauthConnection={view.chatGptOAuth}
             codexSandboxExecutionEnabled={enabledSandboxEngines?.includes("codex") ?? null}
+            deploymentProvided={deploymentProviders?.[view.provider] === true}
             onSaved={load}
           />
         ))

@@ -2,6 +2,7 @@ import {
   assertGatewayCapabilitySecret,
   validateGatewayPublicUrl,
 } from "../security/gateway-boundary";
+import { errorMessage } from "../util/error-message";
 
 export const PROVIDER_GATEWAY_PATH = "/api/provider";
 
@@ -13,6 +14,26 @@ const MAX_TOKEN_TTL_MS = 5 * 60 * 60 * 1000;
 export interface ProviderGatewayConfig {
   readonly publicUrl: string;
   readonly tokenTtlMs: number;
+}
+
+/**
+ * Why sandbox engines cannot reach a provider gateway, or null when the wiring
+ * is complete. Readiness reports this so a missing GATEWAY_PUBLIC_URL shows up
+ * in the picker and refuses the run at acceptance instead of failing it a
+ * second later inside the adapter.
+ */
+export function providerGatewayProblem(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const rawPublicUrl = (env.PROVIDER_GATEWAY_PUBLIC_URL ?? env.GATEWAY_PUBLIC_URL)?.trim();
+  if (!rawPublicUrl) return "GATEWAY_PUBLIC_URL is not set";
+  try {
+    validateGatewayPublicUrl(rawPublicUrl, env);
+    assertGatewayCapabilitySecret("PROVIDER_GATEWAY_SECRET", env);
+  } catch (error) {
+    return errorMessage(error);
+  }
+  return null;
 }
 
 /**

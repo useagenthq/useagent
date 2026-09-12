@@ -8,6 +8,7 @@ import {
   type ProviderConnectionProvider,
   safeCodexChatGptLogin,
   safeCodexChatGptStatus,
+  safeDeploymentProviders,
   safeEnabledSandboxEngines,
   safeProviderConnectionMeta,
   safeProviderConnections,
@@ -38,11 +39,21 @@ export async function fetchSandboxConfig(): Promise<SandboxConfig> {
   };
 }
 
-export async function fetchEnabledSandboxEngines(): Promise<string[]> {
+export interface DeploymentConfig {
+  readonly enabledSandboxEngines: string[];
+  readonly deploymentProviders: Partial<Record<ProviderConnectionProvider, boolean>>;
+}
+
+/** The parts of GET /api/config the provider settings read: which sandbox
+ *  engines run here, and which providers the deployment serves from its own keys. */
+export async function fetchDeploymentConfig(): Promise<DeploymentConfig> {
   const res = await backendFetch("/api/config", { cache: "no-store" });
-  if (!res.ok) throw new Error(`sandbox-engines ${res.status}`);
-  const data = (await res.json()) as { engines?: unknown };
-  return safeEnabledSandboxEngines(data.engines);
+  if (!res.ok) throw new Error(`deployment-config ${res.status}`);
+  const data = (await res.json()) as { engines?: unknown; providers?: unknown };
+  return {
+    enabledSandboxEngines: safeEnabledSandboxEngines(data.engines),
+    deploymentProviders: safeDeploymentProviders(data.providers),
+  };
 }
 
 export async function putProviderApiKey(input: {

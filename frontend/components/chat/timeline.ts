@@ -60,6 +60,16 @@ export type TimelineMarker =
       readonly failed: boolean;
       /** remember only: true when the write was an idempotent no-op replay. */
       readonly reconciled: boolean;
+    }
+  | {
+      /** A gateway approval request (provider useAgent-gateway): the moment it
+       *  was raised, then the moment a person resolved it. Ordered by seq so
+       *  each row sits where it happened among the turn's tool calls. */
+      readonly kind: "approval";
+      readonly state: "requested" | "resolved";
+      readonly toolName: string;
+      readonly status: "pending" | "approved" | "denied" | "expired";
+      readonly resolvedBy: string | null;
     };
 
 export interface TimelineArtifact {
@@ -284,6 +294,21 @@ export function parseMarker(eventType: string, payload: unknown): TimelineMarker
       query: typeof p.query === "string" ? p.query : null,
     };
   }
+  // Gateway approval lane (approval-requests.ts emitApprovalEvent): the request
+  // row and its resolution, each a durable provider event on the run.
+  if (eventType === "gateway.approval.requested" || eventType === "gateway.approval.resolved") {
+    const status = p.status;
+    return {
+      kind: "approval",
+      state: eventType === "gateway.approval.resolved" ? "resolved" : "requested",
+      toolName: typeof p.toolName === "string" && p.toolName ? p.toolName : "tool",
+      status:
+        status === "approved" || status === "denied" || status === "expired"
+          ? status
+          : "pending",
+      resolvedBy: typeof p.resolvedBy === "string" && p.resolvedBy ? p.resolvedBy : null,
+    };
+  }
   // Adaptive-reconcile park marker (frozen contract, recovery.ts
   // RUN_RECONCILING): emitted once at boot-park; the run is potentially still
   // executing server-side while the loop re-probes.
@@ -440,14 +465,17 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
     if (
       f.provider !== "skynet" &&
       f.provider !== "skynet-knowledge" &&
-      f.provider !== "skynet-memory"
+      f.provider !== "skynet-memory" &&
+      f.provider !== "skynet-gateway"
     )
       continue;
     const marker = parseMarker(f.eventType, f.payload);
     if (!marker) continue;
     ranked.push({
       node: { kind: "marker", key: f.eventId, marker },
-      k0: -2,
+      // Approval rows happen mid-turn (raised by a tool call, decided by a
+      // person later), so they keep their seq position like reasoning bursts.
+      k0: marker.kind === "approval" ? f.seq : -2,
       k1: 0,
       k2: f.seq, // skill.loaded (seq 0) before context.retrieved (seq 1)
     });

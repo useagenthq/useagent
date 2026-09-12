@@ -313,6 +313,8 @@ describe("dynamic lane -> policy and manifest integration", () => {
     const models = engineModelsForReadyEngines({
       NODE_ENV: "production",
       USEAGENT_DEV_MODE: "false",
+      GATEWAY_PUBLIC_URL: "https://gateway.example.test",
+      PROVIDER_GATEWAY_SECRET: "free-lane-test-provider-gateway-secret-0123456789",
       ENGINE_READINESS_OPENCODE: "verified",
       PROVIDER_HEALTH_ANTHROPIC: "verified",
       PROVIDER_HEALTH_OPENAI: "verified",

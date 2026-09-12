@@ -22,8 +22,8 @@ describe("Box plugin", () => {
   });
 
   test("template is the optional snapshot; empty means the base image", () => {
-    expect(boxPlugin.template({}, { envName: "DAYTONA_SNAPSHOT", value: "ignored" })).toBe("");
-    expect(boxPlugin.template({ BOX_SNAPSHOT: " useagent-runtime " }, { envName: "DAYTONA_SNAPSHOT", value: "ignored" })).toBe("useagent-runtime");
+    expect(boxPlugin.template({}, "DAYTONA_SNAPSHOT")).toBe("");
+    expect(boxPlugin.template({ BOX_SNAPSHOT: " useagent-runtime " }, "DAYTONA_SNAPSHOT")).toBe("useagent-runtime");
   });
 
   test("preview auth is the port-auth cookie, never a token header", () => {

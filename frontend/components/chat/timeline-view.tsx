@@ -204,7 +204,7 @@ function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" 
           aria-label={`Expand ${artifact.name}`}
           className="block w-full cursor-zoom-in bg-background-primary-default outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring"
         >
-          {/* biome-ignore lint/performance/noImgElement: authenticated dynamic artifact content is not a Next Image optimization target. */}
+          {/* Authenticated dynamic artifact content is not a Next Image optimization target. */}
           <img
             src={content}
             alt={`Preview of ${artifact.name}`}

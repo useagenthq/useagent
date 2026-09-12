@@ -1,5 +1,6 @@
 import {
   acceptUnattendedRunCommand,
+  BotHomeThreadTakenError,
   preflightRunCommandReplay,
   preflightUnattendedRunCommandReplay,
   type RunCommandIntent,
@@ -22,10 +23,7 @@ import {
   resolveRunIntake,
 } from "../resources/run-intake";
 import { resolveExecutableSkillPin } from "../skills/pins";
-import {
-  botFiringTarget,
-  setBotHomeThread,
-} from "../bots/repo";
+import { botFiringTarget } from "../bots/repo";
 import { BotsDisabledError, botsEnabled } from "../bots/rollout";
 import { acceptExistingThreadFollowup } from "../runs/thread-followups";
 import type { MemoryScope } from "../memory/scope";
@@ -232,26 +230,19 @@ export async function fireScheduleWithOutcome(
         AUTOMATION_RUN_ORIGIN,
       );
     } else {
-      outcome = await acceptUnattendedRunCommand({
-        ...command,
-        origin: AUTOMATION_RUN_ORIGIN,
-      });
-      if (
-        target &&
-        outcome.status === "created" &&
-        !(await setBotHomeThread(schedule.orgId, target.bot.id, runId))
-      ) {
-        // Someone opened the bot's home thread first; this root would run unattached.
-        await acceptRunCancel({
-          orgId: schedule.orgId,
-          actorId: null,
-          runId,
-        }).catch((error) => {
-          console.error(
-            `[schedules] could not cancel the stray bot root ${runId}:`,
-            error,
-          );
+      // A bot's first firing opens its home thread: the bot is stamped in the
+      // same transaction as the root (`botHome`), so the pump can claim the run
+      // the instant it exists and its first turn finds the bot. A lost race
+      // rolls the root back; the retarget below posts into the winner instead.
+      try {
+        outcome = await acceptUnattendedRunCommand({
+          ...command,
+          origin: AUTOMATION_RUN_ORIGIN,
+          ...(target ? { botHome: { botId: target.bot.id } } : {}),
         });
+      } catch (error) {
+        if (!(error instanceof BotHomeThreadTakenError)) throw error;
+        outcome = null;
       }
     }
   }
@@ -259,7 +250,7 @@ export async function fireScheduleWithOutcome(
   // A firing key can only conflict if the schedule's prompt/model/engine changed
   // between a crash and its retry (the payload fingerprint differs under the same
   // key). Refuse rather than silently fire a second run for one occurrence.
-  if (outcome.status === "conflict") {
+  if (outcome?.status === "conflict") {
     throw new Error(
       `schedule ${schedule.id} firing ${idempotencyKey} conflicted (${outcome.reason})`,
     );
@@ -271,22 +262,23 @@ export async function fireScheduleWithOutcome(
   // directly instead of rebuilding an intent against a newer thread head.
   if (target) {
     const winner = await botFiringTarget(schedule.orgId, target.bot.id);
-    const accepted = await getRunForOrg(schedule.orgId, outcome.runId);
+    const accepted = outcome ? await getRunForOrg(schedule.orgId, outcome.runId) : null;
     if (
       winner?.head &&
-      accepted &&
-      accepted.threadId !== winner.head.threadId
+      (!accepted || accepted.threadId !== winner.head.threadId)
     ) {
-      await acceptRunCancel({
-        orgId: schedule.orgId,
-        actorId: null,
-        runId: accepted.id,
-      }).catch((error) => {
-        console.error(
-          `[schedules] could not cancel the stray bot root ${accepted.id}:`,
-          error,
-        );
-      });
+      if (accepted) {
+        await acceptRunCancel({
+          orgId: schedule.orgId,
+          actorId: null,
+          runId: accepted.id,
+        }).catch((error) => {
+          console.error(
+            `[schedules] could not cancel the stray bot root ${accepted.id}:`,
+            error,
+          );
+        });
+      }
       const retargetKey = `${idempotencyKey}:retarget`;
       const priorRetarget = await findCommandByKey(schedule.orgId, retargetKey);
       const priorRun = priorRetarget?.runId
@@ -359,6 +351,11 @@ export async function fireScheduleWithOutcome(
     }
   }
 
+  if (!outcome) {
+    throw new Error(
+      `schedule ${schedule.id} firing ${idempotencyKey} lost the home-thread race with no home to post into`,
+    );
+  }
   const acceptedRunId = outcome.runId;
   // Idempotent (unique idempotency_key + onConflictDoNothing) — a retry after a
   // crash-before-record re-records the ORIGINAL run's firing, never a duplicate.

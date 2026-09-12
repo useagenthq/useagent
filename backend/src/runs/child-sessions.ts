@@ -106,7 +106,7 @@ function toSummary(row: {
     model: row.model,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-    eventRef: `skynet://runs/${row.id}/native-events`,
+    eventRef: `useagent://runs/${row.id}/native-events`,
   };
 }
 

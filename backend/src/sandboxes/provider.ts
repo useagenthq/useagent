@@ -70,8 +70,10 @@ export function previewLinkBase(link: SandboxPreviewLink): PreviewLinkBase {
   };
 }
 
-export function sandboxTemplate(daytonaEnvName: string, daytonaFallback: string, env: SandboxEnv = process.env): string {
-  return sandboxPlugin(sandboxProviderKind(env)).template(env, { envName: daytonaEnvName, value: daytonaFallback });
+/** The template new sandboxes start from for one lane (`templateEnv` names the operator variable; the
+ *  plugin keeps the default behind it), or "" for the provider's base image. */
+export function sandboxTemplate(templateEnv: string, env: SandboxEnv = process.env): string {
+  return sandboxPlugin(sandboxProviderKind(env)).template(env, templateEnv);
 }
 
 /** The control-plane ports a provider of `kind` gets: durable labels and the runtime readiness probe. */

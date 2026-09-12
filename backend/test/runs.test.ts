@@ -697,6 +697,29 @@ describe("runs", () => {
     }
   });
 
+  test("GET /api/runs/:id carries sandbox_id (null for a sandbox-less run)", async () => {
+    const created = await json<{ id: string }>("/api/runs", {
+      method: "POST",
+      body: { prompt: "where do I run" },
+    });
+    const { status, body } = await json<Record<string, unknown>>(`/api/runs/${created.body.id}`);
+    expect(status).toBe(200);
+    expect("sandbox_id" in body).toBe(true);
+    expect(body.sandbox_id).toBeNull();
+  });
+
+  test("an unknown engine is refused with the user-facing engine list only", async () => {
+    const { status, body } = await json<{ error: string }>("/api/runs", {
+      method: "POST",
+      body: { prompt: "x", engine: "nonsense" },
+    });
+    expect(status).toBe(400);
+    expect(body.error).toBe("engine must be one of: chat, opencode, claude, codex, pi");
+    for (const internal of ["mock", "daytona", "claude-sdk", "acp"]) {
+      expect(body.error).not.toContain(internal);
+    }
+  });
+
   test("GET /api/runs/:id → 404 for unknown id", async () => {
     const { status, body } = await json(`/api/runs/${crypto.randomUUID()}`);
     expect(status).toBe(404);

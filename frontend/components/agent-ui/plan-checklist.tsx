@@ -64,7 +64,7 @@ function CompletionMark({ done, total }: { readonly done: number; readonly total
   const circumference = 2 * Math.PI * radius;
   const ratio = total === 0 ? 0 : done / total;
   return (
-    <svg viewBox="0 0 18 18" className="size-5 shrink-0" aria-hidden>
+    <svg viewBox="0 0 18 18" className="size-5 shrink-0" aria-hidden="true">
       <circle cx="9" cy="9" r={radius} strokeWidth="2" className="fill-none stroke-background-tertiary-default" />
       <circle
         cx="9"
@@ -120,6 +120,7 @@ export function PlanChecklist({
         <span
           className="text-caption-1-medium font-medium tabular-nums text-lime-600"
           aria-label={`${done} of ${total} complete`}
+          role="img"
         >
           {done}/{total}
         </span>

@@ -60,6 +60,12 @@ function ModelRow({ model, totalTokens }: { model: ModelBurn; totalTokens: numbe
   );
 }
 
+/** Usage is read from sandbox engine step-finish events; chat and automation
+ *  chat turns carry no metered usage, so the meter says so instead of showing
+ *  them as zero. */
+export const BURN_SCOPE_NOTE =
+  "Counts sandbox engine runs only. Chat turns are not metered here.";
+
 /** Token burn · today: stacked per-model meter + expandable breakdown. */
 function BurnSection({ fleet }: { fleet: FleetData | null }) {
   const [expanded, setExpanded] = useState(false);
@@ -69,8 +75,9 @@ function BurnSection({ fleet }: { fleet: FleetData | null }) {
       <div className="flex flex-col py-1">
         <span className="text-body-medium text-text-secondary">Token burn · today</span>
         <p className="mt-2 text-body-2-regular text-text-tertiary">
-          {fleet == null ? "Loading usage…" : "No model runs yet today."}
+          {fleet == null ? "Loading usage…" : "No sandbox runs yet today."}
         </p>
+        <p className="mt-1 text-caption-1-regular text-text-tertiary">{BURN_SCOPE_NOTE}</p>
       </div>
     );
   }
@@ -114,6 +121,7 @@ function BurnSection({ fleet }: { fleet: FleetData | null }) {
           ) : null,
         )}
       </Bar>
+      <p className="mt-1.5 text-caption-1-regular text-text-tertiary">{BURN_SCOPE_NOTE}</p>
 
       <AnimatePresence initial={false}>
         {expanded && (

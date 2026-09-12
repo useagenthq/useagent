@@ -18,6 +18,7 @@ import { productChildThreadsEnabled } from "../../runs/thread-relationship-rollo
 import { MENTIONS_MAX, distinctBotsHandedOffByRun, handoffToBot, handoffsAvailable, resolveBotMention } from "../../bots/handoffs";
 import type { GatewayToolListOptions } from "./operation-registry";
 import { botsEnabled } from "../../bots/rollout";
+import { productFlagsForToolList } from "./product-flags";
 import { ENGINE_IDS, type EngineId } from "../../db/schema";
 
 const MAX_TEXT_EVENT_LINES = 20;
@@ -167,18 +168,24 @@ export const CHILD_SESSION_TOOL_NAMES: ReadonlySet<string> = new Set(
   [...CHILD_SESSION_TOOLS.map((tool) => tool.name), BOT_HANDOFF_TOOL.name],
 );
 
-/** The one place the tool-list options are derived from a caller's claims (registry and MCP both use it). */
+/** The one place the tool-list options are derived from a caller's claims (registry and MCP both use it).
+ *  The product families follow the primary's answer in gateway mode (see product-flags). */
 export async function gatewayToolListOptionsFor(claims: ToolTokenClaims, slack = false): Promise<GatewayToolListOptions> {
-  return { childSessions: await childSessionToolsEnabled(claims), orgId: claims.orgId, slack, productChildThreads: productChildThreadsEnabled(claims.orgId) };
+  const [childSessions, flags] = await Promise.all([
+    childSessionToolsEnabled(claims),
+    productFlagsForToolList(claims.orgId),
+  ]);
+  return { childSessions, orgId: claims.orgId, slack, productChildThreads: flags.childThreads, bots: flags.bots };
 }
 
 export function advertisedChildSessionTools(
   productChildren = productChildThreadsEnabled(),
   orgId: string | null = null,
+  bots = botsEnabled(orgId),
 ): readonly ((typeof CHILD_SESSION_TOOLS)[number] | typeof BOT_HANDOFF_TOOL)[] {
   // The bots surface is org-flagged: the handoff tool is advertised exactly when
   // the turn prompt tells this org's agents about bots.
-  if (productChildren) return botsEnabled(orgId) ? [...CHILD_SESSION_TOOLS, BOT_HANDOFF_TOOL] : CHILD_SESSION_TOOLS;
+  if (productChildren) return bots ? [...CHILD_SESSION_TOOLS, BOT_HANDOFF_TOOL] : CHILD_SESSION_TOOLS;
   return CHILD_SESSION_TOOLS
     .filter((tool) => tool.name !== "child_session_create_many")
     .map((tool) => tool.name === "child_session_create"

@@ -386,6 +386,7 @@ describe("conformance: the run/step wire contract is a documented, consumable ex
       child_session: false,
       thread_id: "run_1",
       engine_session_id: null,
+      sandbox_id: null,
       repo: "acme/app",
       repos: ["acme/app"],
       repo_specs: [{ repo: "acme/app", branch: null }],

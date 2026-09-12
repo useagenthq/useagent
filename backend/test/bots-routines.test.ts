@@ -4,7 +4,8 @@ import { db } from "../src/db/client";
 import { runs } from "../src/db/schema";
 import { acceptUnattendedRunCommand, type RunCommandIntent } from "../src/commands";
 import { acceptRunCancel } from "../src/commands/cancel";
-import { botFiringTarget } from "../src/bots/repo";
+import { botFiringTarget, getBotRow } from "../src/bots/repo";
+import { bus, RUN_SPAWNED } from "../src/worker";
 import { APPROVAL_REQUEST_TTL_MS, BOT_REQUEST_TTL_MS, createApprovalRequest } from "../src/knowledge/gateway/approval-requests";
 import { acceptExistingThreadFollowup } from "../src/runs/thread-followups";
 import { fireScheduleWithOutcome, firingKey } from "../src/schedules/fire";
@@ -277,6 +278,41 @@ describe("bot routines", () => {
       { cookies },
     );
     expect(history.body.firings.map((f) => f.run_id)).toEqual([retargetId]);
+  });
+
+  test("a first firing records the home thread before its turn is dispatched, and the firing settles with the run", async () => {
+    const { cookies, orgId } = await createOrgSession("bot-routines-first");
+    const bot = await createBot(cookies, "Tock");
+    const created = await json<{ routine: RoutineBody }>(`/api/bots/${bot.id}/routines`, {
+      method: "POST",
+      cookies,
+      body: { name: "Tick", cron: "* * * * *", prompt: "Say tock." },
+    });
+    expect(created.status).toBe(201);
+    const observed = new Map<string, Promise<string | null>>();
+    const onSpawn = (runId: string) => {
+      observed.set(runId, getBotRow(orgId, bot.id).then((row) => row?.homeThreadId ?? null));
+    };
+    bus.on(RUN_SPAWNED, onSpawn);
+    let runId: string;
+    try {
+      const fired = await json<{ runId: string }>(`/api/bots/${bot.id}/routines/${created.body.routine.id}/run-now`, { method: "POST", cookies });
+      expect(fired.status).toBe(202);
+      runId = fired.body.runId;
+      expect(await observed.get(runId)).toBe(runId);
+    } finally {
+      bus.off(RUN_SPAWNED, onSpawn);
+    }
+    // The firing row follows the run: queued when fired, its terminal status once settled.
+    const history = await waitFor(async () => {
+      const page = await json<{ firings: { run_id: string; status: string; run_status: string | null }[] }>(
+        `/api/bots/${bot.id}/routines/${created.body.routine.id}/history`,
+        { cookies },
+      );
+      const row = page.body.firings.find((f) => f.run_id === runId);
+      return row?.status === "completed" ? row : null;
+    });
+    expect(history.run_status).toBe("completed");
   });
 
   test("approvals on a bot's home thread wait for a person instead of expiring in minutes", async () => {

@@ -41,6 +41,7 @@ function run(
     child_session: false,
     thread_id: "run",
     engine_session_id: null,
+    sandbox_id: null,
     repo: null,
     repos: [],
     repo_specs: [],

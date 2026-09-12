@@ -212,7 +212,10 @@ describe("unified shell contract", () => {
     // Model rides the compact engine + model chip.
     expect(composer).toContain('ariaLabel="Select model"');
     expect(newThreadPage).toContain("max-w-3xl");
-    expect(composer).toContain('e.id !== "chat"');
+    // Chat is a first-class engine choice (no computer); the picker reads the
+    // manifest-driven option list instead of filtering it out.
+    expect(composer).toContain("pickerEngineOptions(enabledEngines)");
+    expect(composer).not.toContain('e.id !== "chat"');
     expect(composer).not.toContain("<AsteriskMark");
   });
 

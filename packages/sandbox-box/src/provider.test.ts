@@ -3,6 +3,7 @@ import { access, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type BoxApiConfig,
+  boxCliProblem,
   boxPreviewLink,
   boxPtyEnv,
   boxPtyHandle,
@@ -17,7 +18,7 @@ import {
   composeBoxCommand,
 } from "./provider";
 import { sandboxProviderConformance } from "@useagent/sandbox-contract/conformance";
-import { memorySandboxLabelStore } from "@useagent/sandbox-contract";
+import { isSandboxTerminalUnavailableError, memorySandboxLabelStore } from "@useagent/sandbox-contract";
 
 const config: BoxApiConfig = {
   apiKey: "box_test_key",
@@ -409,5 +410,17 @@ describe("Box sandbox provider", () => {
   test("API failures surface the Box error code instead of a bare HTTP status", async () => {
     const api = fakeBoxApi();
     await expect(provider(api, { apiKey: "wrong" }).provider.get("bx_1")).rejects.toMatchObject({ name: "BoxApiError", status: 401, code: "unauthorized" });
+  });
+});
+
+describe("Box interactive terminal declaration", () => {
+  test("names the missing Box CLI up front instead of failing every PTY attempt", async () => {
+    expect(boxCliProblem(() => "/usr/local/bin/box")).toBeNull();
+    expect(boxCliProblem(() => null)).toMatch(/Box CLI \(box\) installed on the useAgent server/);
+    if (Bun.which("box")) return; // the live CLI is present here; the typed error path is covered by the fake above
+    const api = fakeBoxApi([{ id: "bx_term", state: "ready", vcpu: 4, memoryGB: 8, subdomain: "bx-term" }]);
+    const handle = await boxSandboxProvider(config, { fetchImpl: api.fetchImpl, sleep: async () => {} }).get("bx_term");
+    const error = await handle.process.createPty({ id: "t", cols: 80, rows: 24, onData: () => {} }).catch((e: unknown) => e);
+    expect(isSandboxTerminalUnavailableError(error)).toBe(true);
   });
 });

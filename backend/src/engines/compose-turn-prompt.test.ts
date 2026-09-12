@@ -282,3 +282,31 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
     expect(composeTurnPrompt(ctx(), true, EXECUTION, {})).not.toContain("<bot_delegation_policy>");
   });
 });
+
+describe("served ports", () => {
+  const env = { FRONTEND_ORIGIN: "https://app.example" };
+
+  test("a sandbox turn is told the product URL for a port it serves", () => {
+    const out = composeTurnPrompt(
+      { ...ctx(), threadId: "thread-1" } as never,
+      true,
+      EXECUTION,
+      env,
+    );
+    expect(out).toContain("<served_ports>");
+    expect(out).toContain("https://app.example/api/port-proxy/thread-1/N/");
+    expect(out).toContain("print that URL instead of a localhost link");
+  });
+
+  test("no thread, no origin or a managed runtime says nothing about ports", () => {
+    expect(composeTurnPrompt(ctx() as never, true, EXECUTION, env)).not.toContain("<served_ports>");
+    expect(composeTurnPrompt({ ...ctx(), threadId: "thread-1" } as never, true, EXECUTION, {}))
+      .not.toContain("<served_ports>");
+    expect(composeTurnPrompt(
+      { ...ctx(), threadId: "thread-1" } as never,
+      true,
+      { ...EXECUTION, runtime: "managed" },
+      env,
+    )).not.toContain("<served_ports>");
+  });
+});
