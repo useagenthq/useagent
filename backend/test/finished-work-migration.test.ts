@@ -8,9 +8,9 @@ import postgres from "postgres";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
 
-test("a seeded OSS 0073 database applies the appended finished-work migration", async () => {
+test("a seeded 0071 database upgrades through 0072 without crossing Slack tenants", async () => {
   const migrationsFolder = `${import.meta.dir}/../drizzle`;
-  const partialFolder = await mkdtemp(join(tmpdir(), "useagent-0073-"));
+  const partialFolder = await mkdtemp(join(tmpdir(), "useagent-0071-"));
   const databaseName = `useagent_fw_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`;
   const admin = postgres(ADMIN_URL, { max: 1 });
   const databaseUrl = new URL(ADMIN_URL);
@@ -25,16 +25,16 @@ test("a seeded OSS 0073 database applies the appended finished-work migration", 
       dialect: string;
       entries: Array<{ tag: string; [key: string]: unknown }>;
     };
-    const entries0073 = journal.entries.slice(
+    const entries0071 = journal.entries.slice(
       0,
-      journal.entries.findIndex((entry) => entry.tag === "0073_daytona_user_connections") + 1,
+      journal.entries.findIndex((entry) => entry.tag === "0071_slack_stream_progress") + 1,
     );
     await mkdir(join(partialFolder, "meta"), { recursive: true });
     await Bun.write(
       join(partialFolder, "meta/_journal.json"),
-      JSON.stringify({ ...journal, entries: entries0073 }, null, 2),
+      JSON.stringify({ ...journal, entries: entries0071 }, null, 2),
     );
-    for (const entry of entries0073) {
+    for (const entry of entries0071) {
       await Bun.write(
         join(partialFolder, `${entry.tag}.sql`),
         Bun.file(`${migrationsFolder}/${entry.tag}.sql`),

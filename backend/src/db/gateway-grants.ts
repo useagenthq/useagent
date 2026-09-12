@@ -3,12 +3,6 @@ import type { Sql } from "postgres";
 export const GATEWAY_DATABASE_ROLE = "useagent_gateway";
 const LEGACY_GATEWAY_DATABASE_ROLE = "skynet_gateway";
 
-export function gatewayDatabaseRoleRequired(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): boolean {
-  return Boolean(env.GATEWAY_PUBLIC_URL?.trim());
-}
-
 /**
  * Declarative grants for the RESTRICTED sandbox-gateway role, applied
  * idempotently at every backend boot (right after migrations).

@@ -11,7 +11,7 @@ export const RUNTIME_GENERATION_LABEL = "useagent.runtime";
 // Bump this identity whenever the embedded provider runtime changes. It is
 // stamped on retained/warm sandboxes and doubles as the pool name, so a new
 // release cannot accidentally resume a thread against an older runtime binary.
-const DEFAULT_RUNTIME_GENERATION = "useagent-runtime-v8";
+const DEFAULT_RUNTIME_GENERATION = "useagent-runtime-v7";
 
 export function runtimeGeneration(
   env: Readonly<Record<string, string | undefined>> = process.env,
@@ -31,7 +31,8 @@ const RUNTIME_ENVIRONMENT_PROCESS_SESSION = "skynet-t3-environment";
 // Frozen VALUE: the runtime binary's base-dir, baked into sandbox templates
 // (auth cookies, settings.json, and caches all live under it).
 export const RUNTIME_ENVIRONMENT_HOME = "$HOME/.skynet/t3";
-export const RUNTIME_ENVIRONMENT_WORKDIR = "$HOME/work";
+export const RUNTIME_ENVIRONMENT_WORKDIR = "/root/work";
+export const RUNTIME_SANDBOX_HOME = "/root";
 const RUNTIME_READINESS_DEADLINE_MS = 60_000;
 const RUNTIME_READINESS_DELAY_MS = 100;
 const RUNTIME_STOP_DEADLINE_MS = 15_000;
@@ -70,25 +71,12 @@ export function buildRuntimeEnvironmentReadinessCommand(): string {
 export function buildRuntimeIdentityPreflightCommand(): string {
   return [
     "set -eu",
-    `mkdir -p "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
-    `cd "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
-    "test -w .",
-    "pwd -P",
-  ].join("\n");
-}
-
-/** Cube templates are operator-owned and intentionally root-pinned. Keep that
- * stronger image contract at the Cube adapter boundary while the shared
- * runtime workspace resolver remains compatible with Daytona/custom homes. */
-export function buildCubeRuntimeIdentityPreflightCommand(): string {
-  return [
-    "set -eu",
     'test "$(id -u)" = "0"',
-    'test "$HOME" = "/root"',
-    'mkdir -p "/root/work"',
-    'test "$(cd "/root/work" && pwd -P)" = "/root/work"',
-    'test -w "/root/work"',
-    'printf \'%s\\n\' "/root/work"',
+    `test "${"$HOME"}" = "${RUNTIME_SANDBOX_HOME}"`,
+    `mkdir -p "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
+    `test "$(cd "${RUNTIME_ENVIRONMENT_WORKDIR}" && pwd -P)" = "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
+    `test -w "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
+    `printf '%s\\n' "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
   ].join("\n");
 }
 
@@ -102,8 +90,10 @@ export async function resolveRuntimeWorkspaceRoot(
     10,
   );
   const workdir = result.result?.trim();
-  if ((result.exitCode ?? 1) !== 0 || !workdir?.startsWith("/")) {
-    throw new Error("Sandbox runtime workspace contract failed (requires a writable absolute $HOME/work)");
+  if ((result.exitCode ?? 1) !== 0 || workdir !== RUNTIME_ENVIRONMENT_WORKDIR) {
+    throw new Error(
+      "Sandbox runtime identity contract failed (requires uid=0, HOME=/root, workspaceRoot=/root/work writable)",
+    );
   }
   return workdir;
 }

@@ -63,6 +63,6 @@ progress/
 /plans/
 .worktrees/
 
-# Internal ops (kept local, not public)
-/deploy/hetzner/
+# Production Terraform operator inputs remain local. The private Pro repository
+# versions deploy/hetzner so one application commit identifies its rollback code.
 /infra/terraform/prod/

@@ -152,8 +152,8 @@ startFreeModelRegistryHydrator();
 // otherwise the first boot permanently skips that capability.
 const { ready: prepareKnowledgeSchema } = await import("./knowledge/store");
 await prepareKnowledgeSchema();
-const { applyGatewayGrants, gatewayDatabaseRoleRequired } = await import("./db/gateway-grants");
-await applyGatewayGrants(client, { strict: gatewayDatabaseRoleRequired() });
+const { applyGatewayGrants } = await import("./db/gateway-grants");
+await applyGatewayGrants(client, { strict: process.env.NODE_ENV === "production" });
 
 // Idempotent boot seeding: dev org/user/member only. No demo content — the
 // Knowledge and Skills surfaces start empty and fill with real records.

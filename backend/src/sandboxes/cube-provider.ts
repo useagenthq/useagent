@@ -15,7 +15,7 @@ import type {
   SandboxSession,
 } from "./provider";
 import type { SandboxInventory } from "@useagent/sandbox-contract";
-import { buildCubeRuntimeIdentityPreflightCommand } from "../engines/runtime-environment";
+import { buildRuntimeIdentityPreflightCommand } from "../engines/runtime-environment";
 
 interface CubeConnectionOptions {
   apiKey?: string;
@@ -91,7 +91,7 @@ async function waitForCubeReadiness(
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const probe = await sandbox.process.executeCommand(
-        `${buildCubeRuntimeIdentityPreflightCommand()} >/dev/null && ` +
+        `${buildRuntimeIdentityPreflightCommand()} >/dev/null && ` +
           `getent hosts ${previewHost} >/dev/null 2>&1 && getent hosts ${publicHost} >/dev/null 2>&1`,
         undefined,
         undefined,
@@ -120,7 +120,7 @@ async function assertCubeRuntimeIdentity(sandbox: SandboxHandle): Promise<void> 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const probe = await sandbox.process.executeCommand(
-        buildCubeRuntimeIdentityPreflightCommand(),
+        buildRuntimeIdentityPreflightCommand(),
         undefined,
         undefined,
         5,

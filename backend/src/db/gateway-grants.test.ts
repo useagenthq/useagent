@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import type { Sql } from "postgres";
-import {
-  applyGatewayGrants,
-  GATEWAY_GRANTS,
-  gatewayDatabaseRoleRequired,
-} from "./gateway-grants";
+import { applyGatewayGrants, GATEWAY_GRANTS } from "./gateway-grants";
 
 /** Normalize a GRANT statement for comparison: collapse whitespace, drop the
  *  trailing semicolon, uppercase keywords are already literal in both sources. */
@@ -18,23 +13,6 @@ function normalize(grant: string): string {
  *  is provisioning-owned; boot grants it only when present). */
 
 describe("gateway grants single source of truth", () => {
-
-  test("requires the hosted role only when the backend enables its restricted gateway", () => {
-    expect(gatewayDatabaseRoleRequired({ NODE_ENV: "production" })).toBe(false);
-    expect(gatewayDatabaseRoleRequired({ GATEWAY_PUBLIC_URL: "  " })).toBe(false);
-    expect(gatewayDatabaseRoleRequired({
-      GATEWAY_PUBLIC_URL: "https://gateway.example.test",
-    })).toBe(true);
-  });
-
-  test("uses the gateway flag visible to backend in both Compose environments", () => {
-    for (const path of ["../../../compose.local.yaml", "../../../compose.prod.yaml"]) {
-      const compose = readFileSync(new URL(path, import.meta.url), "utf8");
-      const backend = compose.split("\n  gateway:\n", 1)[0] ?? "";
-      expect(backend).toContain("GATEWAY_PUBLIC_URL:");
-      expect(backend).not.toContain("GATEWAY_DATABASE_URL:");
-    }
-  });
 
   test("least privilege holds: no DELETE, no ALL, no provider_connections table grant", () => {
     for (const grant of GATEWAY_GRANTS) {

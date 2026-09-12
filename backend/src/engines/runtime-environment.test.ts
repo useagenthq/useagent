@@ -9,7 +9,6 @@ import {
 import {
   buildRuntimeEnvironmentLaunchCommand,
   buildRuntimeEnvironmentReadinessCommand,
-  buildCubeRuntimeIdentityPreflightCommand,
   buildRuntimeIdentityPreflightCommand,
   ensureRuntimeEnvironment,
   restartRuntimeEnvironment,
@@ -53,39 +52,31 @@ describe("T3 Cube environment", () => {
   });
 
   test("uses the operator runtime generation as the single source of truth", () => {
-    expect(runtimeGeneration({})).toBe("useagent-runtime-v8");
+    expect(runtimeGeneration({})).toBe("useagent-runtime-v7");
     expect(runtimeGeneration({ USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v9" }))
       .toBe("useagent-runtime-v9");
     expect(() => runtimeGeneration({ USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v8-candidate" }))
       .toThrow("USEAGENT_RUNTIME_GENERATION");
   });
 
-  test("resolves a provider-neutral writable workspace under the sandbox home", async () => {
+  test("fails closed unless the sandbox is root with the exact writable workspace", async () => {
     const command = buildRuntimeIdentityPreflightCommand();
-    expect(command).toContain('mkdir -p "$HOME/work"');
-    expect(command).toContain('cd "$HOME/work"');
-    expect(command).toContain("test -w .");
-    expect(command).not.toContain('test "$(id -u)" = "0"');
-    expect(command).not.toContain("/root/work");
-
-    const valid = runtimeSandbox("daytona", {
-      executeCommand: async () => ({ exitCode: 0, result: "/home/daytona/work\n" }),
-    });
-    await expect(resolveRuntimeWorkspaceRoot(valid)).resolves.toBe("/home/daytona/work");
-    const invalid = runtimeSandbox("relative", {
-      executeCommand: async () => ({ exitCode: 0, result: "work\n" }),
-    });
-    await expect(resolveRuntimeWorkspaceRoot(invalid)).rejects.toThrow(
-      "requires a writable absolute $HOME/work",
-    );
-  });
-
-  test("keeps the root identity contract at the Cube provider boundary", () => {
-    const command = buildCubeRuntimeIdentityPreflightCommand();
     expect(command).toContain('test "$(id -u)" = "0"');
     expect(command).toContain('test "$HOME" = "/root"');
     expect(command).toContain('pwd -P)" = "/root/work"');
     expect(command).toContain('test -w "/root/work"');
+    expect(command).not.toContain("/home/user/work");
+
+    const valid = runtimeSandbox("root", {
+      executeCommand: async () => ({ exitCode: 0, result: "/root/work\n" }),
+    });
+    await expect(resolveRuntimeWorkspaceRoot(valid)).resolves.toBe("/root/work");
+    const uid1000 = runtimeSandbox("uid1000", {
+      executeCommand: async () => ({ exitCode: 1, result: "/home/user/work\n" }),
+    });
+    await expect(resolveRuntimeWorkspaceRoot(uid1000)).rejects.toThrow(
+      "requires uid=0, HOME=/root, workspaceRoot=/root/work writable",
+    );
   });
 
   test("is opt-in until hosted parity is proven", () => {
@@ -132,8 +123,8 @@ describe("T3 Cube environment", () => {
     expect(command).toContain("export T3_CODEX_CHILD_EVENT_FORWARDING=true");
     expect(command).toContain("export T3CODE_NO_BROWSER=true");
     expect(command).toContain('exec t3 serve --host 0.0.0.0 --port 37733 --base-dir "$T3CODE_HOME"');
-    expect(command).toContain('"$HOME/work"');
-    expect(command).not.toContain("/root/work");
+    expect(command).toContain('"/root/work"');
+    expect(command).not.toContain("/home/user/work");
     expect(command).not.toContain("@latest");
     // Org secrets must NEVER enter the T3 process environment (the codex
     // provider adapter builds child environments from it and foreign variables
