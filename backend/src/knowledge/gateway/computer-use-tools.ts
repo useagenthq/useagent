@@ -3,12 +3,13 @@ import { getRunForOrg } from "../../runs/repo";
 import { sandboxPlugin } from "../../sandboxes/plugins";
 import { type SandboxHandle, sandboxProviderKind } from "../../sandboxes/provider";
 import { executeArtifactTool, type ToolResult } from "./artifact-tools";
+import { compressScreenshotForModel } from "./screenshot-compression";
 import type { ToolTokenClaims } from "./token";
 import { resolveSandboxBindingForThread } from "../../sandboxes/binding";
 
 export type ComputerToolContent =
   | { type: "text"; text: string }
-  | { type: "image"; data: string; mimeType: "image/png" };
+  | { type: "image"; data: string; mimeType: "image/png" | "image/jpeg" };
 
 interface ComputerToolResult {
   content: ComputerToolContent[];
@@ -444,11 +445,12 @@ export async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<
   const plugin = sandboxPlugin(sandbox.providerKind ?? sandboxProviderKind());
   const base = sandbox.computerUse ? "/home/daytona" : plugin.runsAsRoot ? "/root" : plugin.home;
   const path = `${base}/work/screenshots/screenshot-${Date.now()}.png`;
-  let data: string;
+  let file: Buffer;
   if (sandbox.computerUse) {
     const captured = await sandbox.computerUse.screenshot.takeFullScreen(true);
-    data = (captured.screenshot ?? "").replace(/^data:image\/png;base64,/, "");
+    const data = (captured.screenshot ?? "").replace(/^data:image\/png;base64,/, "");
     if (!data) throw new Error("Daytona returned an empty screenshot");
+    file = Buffer.from(data, "base64");
     await cubeCommand(
       sandbox,
       `mkdir -p "$(dirname '${path}')"; printf '%s' '${data}' | base64 -d > '${path}'`,
@@ -462,13 +464,12 @@ export async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<
         `ffmpeg -hide_banner -loglevel error -f x11grab -video_size "$size" -i ${display} ` +
         `-frames:v 1 -y '${path}'`,
     );
-    const file = await sandbox.fs.downloadFile(path);
-    if (file.byteLength === 0) throw new Error("desktop screenshot was empty");
-    data = file.toString("base64");
+    file = await sandbox.fs.downloadFile(path);
   }
+  const modelScreenshot = await compressScreenshotForModel(file);
   return {
     content: [
-      { type: "image", data, mimeType: "image/png" },
+      { type: "image", data: modelScreenshot.toString("base64"), mimeType: "image/jpeg" },
       {
         type: "text",
         text: screenshotArtifactHandoff(path),
