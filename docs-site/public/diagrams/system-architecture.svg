@@ -62,18 +62,18 @@
     <text x="651" y="297" font-size="10.5" fill="#737373" text-anchor="middle">engine output</text>
     <text x="651" y="310" font-size="10.5" fill="#737373" text-anchor="middle">provider_events</text>
 
-    <!-- daytona sandbox -->
+    <!-- provider sandbox -->
     <rect x="696" y="90" width="232" height="230" rx="10" fill="#ffffff" stroke="#ebebeb" stroke-width="1"/>
-    <text x="712" y="118" font-size="13" font-weight="600" fill="#171717">Daytona sandbox</text>
-    <text x="712" y="136" font-size="10.5" fill="#737373">sandboxes/daytona-provider.ts</text>
+    <text x="712" y="118" font-size="13" font-weight="600" fill="#171717">Provider sandbox</text>
+    <text x="712" y="136" font-size="10.5" fill="#737373">sandbox provider plugins</text>
 
     <rect x="712" y="150" width="200" height="52" rx="8" fill="#f7f7f7" stroke="#ebebeb" stroke-width="1"/>
     <text x="724" y="170" font-size="12" font-weight="600" fill="#171717">OpenCode</text>
-    <text x="724" y="187" font-size="10.5" fill="#737373">engines/opencode-server.ts</text>
+    <text x="724" y="187" font-size="10.5" fill="#737373">engines/runtime-adapter.ts</text>
 
     <rect x="712" y="212" width="200" height="52" rx="8" fill="#f7f7f7" stroke="#ebebeb" stroke-width="1"/>
-    <text x="724" y="232" font-size="12" font-weight="600" fill="#171717">Claude · Codex</text>
-    <text x="724" y="249" font-size="10.5" fill="#737373">engines/acp-server.ts (ACP)</text>
+    <text x="724" y="232" font-size="12" font-weight="600" fill="#171717">Claude · Codex · Pi</text>
+    <text x="724" y="249" font-size="10.5" fill="#737373">native runtime / Pi adapters</text>
 
     <text x="712" y="296" font-size="10.5" fill="#737373">repo + tool work happens here</text>
 

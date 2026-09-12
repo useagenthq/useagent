@@ -32,18 +32,16 @@ This is the life of a single agent turn, following the units from
     process leases. Short-lived run credentials are therefore not minted before
     a long clone, and a failed resource preparation creates no activation lease.
 
-    Pi has a separate resources-first preparation path. Direct OpenCode prepares
-    its runtime configuration and repositories concurrently; it does not use
-    the T3-backed split described above. Retained sandboxes keep provider
+    Pi has a separate resources-first preparation path. Retained sandboxes keep provider
     preparation and resource validation in parallel where the runtime ownership
     contract allows it. These preparation differences do not change the native
     drivers of Codex, Claude Code, OpenCode, or Pi. ACP is not a fallback.
   </Step>
   <Step title="The turn reaches its native engine session">
     The engine registry resolves a `ProviderDriver` for the engine, and the turn
-    is dispatched to the thread's native runtime inside the sandbox: Codex and
-    Claude Code through T3, OpenCode through its native server or selected T3
-    path, and Pi through its RPC bridge. ACP is not a fallback for these engines.
+    is dispatched to the thread's native runtime inside the sandbox: Codex,
+    Claude Code, and OpenCode through T3, and Pi through its RPC bridge.
+    There is no generic ACP execution lane.
     The engine works in its own directory and starts emitting native events.
   </Step>
   <Step title="Privileged work goes through the gateway">

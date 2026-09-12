@@ -203,9 +203,8 @@ async function threadCycle(t: number): Promise<void> {
     }
   }
 
-  // KILL / RESTART mid-turn. SOAK invariant (sustained crash resilience — NOT the
-  // one-shot reconcile-to-completed proof, which real-full-stack.ts owns by waiting
-  // for opencode to finish server-side before restart): the killed turn must reach
+  // KILL / RESTART mid-turn. SOAK invariant (sustained crash resilience, not a
+  // guarantee that a killed turn completes successfully): the killed turn must reach
   // a TERMINAL state (never stuck), and the conversation must CONTINUE afterward.
   // Whether recovery reconciles-to-completed or honest-fails depends on whether the
   // turn finished server-side within recovery's one-shot ~11s probe — both are

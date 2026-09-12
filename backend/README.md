@@ -188,7 +188,6 @@ bun run start
 bun run gateway
 bun run test
 bun run e2e
-bun run e2e:real
 bun run soak
 ```
 
@@ -198,7 +197,7 @@ Notes:
 - `bun run start` runs the backend once, without watch mode.
 - `bun run gateway` starts the sandbox gateway on `:3202`.
 - `bun run test` prepares `useagent_test` and then runs the backend test suite; it requires a reachable PostgreSQL test database.
-- `bun run e2e:real` and `bun run soak` are the manual runtime checks.
+- `bun run soak` runs the manual runtime checks; live-provider execution requires an explicit cost budget.
 
 ### Local Environment
 

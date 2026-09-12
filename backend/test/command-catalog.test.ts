@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { canonicalEvents, runs } from "../src/db/schema";
 import { readLatestEngineCommandCatalog } from "../src/runs/command-catalog";
@@ -27,10 +28,11 @@ async function advertise(
 }
 
 describe("pre-session command catalog from the canonical stream", () => {
-  test("returns the latest catalog a native session of this org advertised for the engine", async () => {
+  test("returns the latest delivered catalog even when its wall-clock timestamp is older", async () => {
     const provider = uid("engine");
     await advertise(DEV_ORG_ID, provider, [{ name: "old-review" }]);
-    await advertise(DEV_ORG_ID, provider, [{ name: "review", description: "Review the diff" }, { name: "status" }]);
+    const latestRun = await advertise(DEV_ORG_ID, provider, [{ name: "review", description: "Review the diff" }, { name: "status" }]);
+    await db.update(canonicalEvents).set({ createdAt: new Date("2000-01-01T00:00:00Z") }).where(eq(canonicalEvents.runId, latestRun));
     const latest = await readLatestEngineCommandCatalog(DEV_ORG_ID, provider);
     expect(latest?.commands).toEqual([
       { name: "review", description: "Review the diff", input: null },

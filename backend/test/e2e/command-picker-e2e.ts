@@ -32,7 +32,6 @@ const FE_PORT = 3422;
 const BE = `http://localhost:${BE_PORT}`;
 const FE = `http://localhost:${FE_PORT}`;
 const DIST = ".next-cmd-e2e";
-const DEV_ORG_ID = "org-skynet-dev"; // anonymous (dev-org) requests scope here; the catalog key must match
 const SHOTS = process.env.CMD_E2E_SHOTS ?? "/tmp/cmd-picker-shots/";
 
 const backendDir = new URL("../..", import.meta.url).pathname;
@@ -84,7 +83,7 @@ async function main() {
 
   try {
     // ── 2. boot backend on the throwaway DB (mock engine only, no cloud) ──────
-    const beLog = openSync(`${scratch}/skynet-cmd-e2e-backend.log`, "a");
+    const beLog = openSync(`${scratch}/useagent-cmd-e2e-backend.log`, "a");
     try {
       be = Bun.spawn(["bun", "src/index.ts"], {
         cwd: backendDir,
@@ -108,7 +107,7 @@ async function main() {
     ok("backend booted", await waitHttp(`${BE}/health`, 60_000));
 
     // ── 3. boot the frontend (isolated dist, rewrites -> our backend) ─────────
-    const feLog = openSync(`${scratch}/skynet-cmd-e2e-frontend.log`, "a");
+    const feLog = openSync(`${scratch}/useagent-cmd-e2e-frontend.log`, "a");
     try {
       fe = Bun.spawn(["bun", "run", "dev", "--port", String(FE_PORT)], {
         cwd: frontendDir,
@@ -190,7 +189,7 @@ async function main() {
       // textarea would otherwise be matched by a bare `textarea` selector). `:visible`
       // scopes to the mounted composer: on RELOAD the tree double-renders and settles, so a
       // stale hidden copy can briefly coexist - we always drive the visible one.
-      const composer = () => page.locator('textarea[placeholder*="Reply to useAgent"]:visible');
+      const composer = () => page.locator('textarea[placeholder*="Reply to Agent"]:visible');
       await composer().waitFor({ state: "visible", timeout: 60_000 });
 
       // type "/" -> the native-command popover appears with the seeded commands. The picker

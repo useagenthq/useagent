@@ -258,12 +258,12 @@ describe("conformance: libraries are independently consumable (documented export
       resume: true, cancel: true, streaming: "parts", authoritativeHistory: true, childSessions: true,
       approvals: true, questions: true, reasoning: true, todos: true, patches: true, usage: true,
     };
-    const acpCaps: HarnessCapabilities = {
+    const limitedCaps: HarnessCapabilities = {
       resume: true, cancel: false, streaming: "parts", authoritativeHistory: false, childSessions: false,
       approvals: false, questions: false, reasoning: false, todos: false, patches: false, usage: false,
     };
     expect(visibleControls(opencodeCaps)).toEqual(["stop", "approve", "answer", "subagents"]);
-    expect(visibleControls(acpCaps)).toEqual([]); // an engine with no native cancel hides Stop - honestly
+    expect(visibleControls(limitedCaps)).toEqual([]); // an engine with no native cancel hides Stop - honestly
   });
 
   test("artifact, subagent, command, model, and usage events are durable canonical data", () => {
@@ -345,7 +345,6 @@ describe("conformance: the run/step wire contract is a documented, consumable ex
       "chat",
       "daytona",
       "claude-sdk",
-      "acp",
     ]);
     const engine: EngineId = "opencode"; // compiles ONLY because it is in the union
     expect(ENGINE_IDS.includes(engine)).toBe(true);

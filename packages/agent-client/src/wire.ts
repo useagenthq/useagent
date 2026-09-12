@@ -26,8 +26,8 @@ export type MemoryScope = (typeof MEMORY_SCOPES)[number];
  * Which harness executes a run. `mock` is the scripted trace; `chat` is the
  * no-sandbox conversational path; the agent engines (opencode / claude / codex)
  * execute inside the per-thread sandbox. `daytona` / `claude-sdk` are legacy ids
- * kept so pre-consolidation rows still resolve (aliased in the registry); `acp`
- * is the hidden ACP bridge. THE single source of truth for the `EngineId` union —
+ * kept so pre-consolidation rows still resolve (aliased in the registry).
+ * THE single source of truth for the `EngineId` union —
  * `db/schema.ts` and the frontend engine picker both derive from this const.
  */
 export const ENGINE_IDS = [

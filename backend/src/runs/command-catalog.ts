@@ -87,7 +87,7 @@ export async function readLatestEngineCommandCatalog(
       and exists (
         select 1 from runs r where r.id = ce.run_id and r.org_id = ${orgId}
       )
-    order by ce.created_at desc, ce.delivery_seq desc limit 1`)) as unknown as Array<{ body: CommandsUpdatedBody; created_at: string | Date }>;
+    order by ce.delivery_seq desc limit 1`)) as unknown as Array<{ body: CommandsUpdatedBody; created_at: string | Date }>;
   const row = rows[0];
   if (!row?.body) return null;
   return { commands: commandsFromBody(row.body), fetchedAt: new Date(row.created_at) };

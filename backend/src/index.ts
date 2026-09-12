@@ -63,10 +63,8 @@ import { tasksRoutes } from "./tasks/routes";
 import { projectsRoutes } from "./projects/routes";
 import { slackEnabled, slackRoutes, startSlackOutbox, syncSlackWorkspaceBindings } from "./slack";
 import { enforceSingleBackend } from "./db/single-backend";
-import { ensureWarmPool, warmPoolSize } from "./sandboxes/warm-pool";
 import {
   cubeRuntimeWarmPoolSize,
-  cubeWarmPoolSize,
   startCubeWarmPool,
 } from "./sandboxes/cube-warm-pool";
 import { providerGatewaySandboxLabels } from "./provider-gateway/sandbox-config";
@@ -597,45 +595,6 @@ startReconcileLoop();
 // as queued", not "started instantly". FLEET_RECONCILER_AUTOSTART=0 disables the
 // background loop (the unit suite drives admission explicitly).
 if (process.env.FLEET_RECONCILER_AUTOSTART !== "0") startFleetReconciler();
-
-// Daytona warm pool for the OpenCode snapshot (perf plan Phase 3), OFF by
-// default. Only when DAYTONA_WARM_POOL_SIZE is set AND an explicit OpenCode
-// snapshot (DAYTONA_SNAPSHOT) is configured do we provision/reconcile a pool so
-// new-thread creates claim a ready machine instead of building one (gate:
-// sandbox usable p95 <1.5s). Best-effort and fire-and-forget: a pool error never
-// blocks boot or any turn.
-const warmPoolTarget = warmPoolSize();
-const openCodeSnapshot = process.env.DAYTONA_SNAPSHOT?.trim();
-if (sandboxProviderKind() === "daytona" && warmPoolTarget && openCodeSnapshot) {
-  void ensureWarmPool(openCodeSnapshot, warmPoolTarget)
-    .then((pool) =>
-      console.log(
-        `[warm-pool] opencode ${pool.snapshot} target=${pool.target} ready=${pool.ready}/${pool.desired}`,
-      ),
-    )
-    .catch((err) =>
-      console.warn("[warm-pool] ensure failed:", err instanceof Error ? err.message : err),
-    );
-}
-
-const cubePoolTarget = cubeWarmPoolSize();
-const cubeTemplate = process.env.CUBE_TEMPLATE_ID?.trim();
-if (sandboxProviderKind() === "cube" && cubePoolTarget && cubeTemplate) {
-  const apiKey = sandboxProviderApiKey();
-  const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
-  const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);
-  startCubeWarmPool({
-    provider: sandboxProvider(apiKey),
-    size: cubePoolTarget,
-    createOptions: {
-      snapshot: cubeTemplate,
-      labels: providerGatewaySandboxLabels("warm-pool"),
-      autoStopInterval,
-      autoDeleteInterval,
-    },
-  });
-  console.log(`[cube-warm-pool] target=${cubePoolTarget} template=${cubeTemplate}`);
-}
 
 const cubeRuntimePoolTarget = cubeRuntimeWarmPoolSize();
 const cubeRuntimeTemplate = operatorEnv(

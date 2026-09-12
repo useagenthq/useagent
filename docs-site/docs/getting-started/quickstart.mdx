@@ -104,6 +104,6 @@ bun run typecheck        # frontend, backend, and every checked shared package
 
 `bun run typecheck` must pass before any change is considered done. App-specific
 commands live in each package. For example, use `(cd backend && bun run test)`,
-`(cd backend && bun run e2e)`, or `(cd backend && bun run e2e:real)` from the
+`(cd backend && bun run e2e)`, or `(cd backend && bun run soak)` from the
 repository root. See [Verification](/operations/verification) before running a
 live-provider journey.

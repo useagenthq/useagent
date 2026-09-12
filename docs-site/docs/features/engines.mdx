@@ -16,13 +16,12 @@ artifacts, and one UI projection around them.
 | --- | --- | --- |
 | Codex | Native Codex through T3 | Actor-scoped native catalog plus Codex policy |
 | Claude Code | Native Claude Agent SDK through T3 | Engine and Anthropic readiness |
-| OpenCode | Native server, or its native T3 driver when explicitly selected | Engine and selected model-provider readiness |
+| OpenCode | Native OpenCode driver through T3 | Engine and selected model-provider readiness |
 | Pi | Native Pi RPC | Engine and selected model-provider readiness |
 
 The timeline consumes canonical useAgent events from
-`@useagent/agent-harness`. That common UI grammar is not ACP. ACP is reserved
-for a separately registered compatibility engine and is never a fallback for
-the four engines above.
+`@useagent/agent-harness`. That common UI grammar is not ACP, and there is no
+registered generic ACP execution lane.
 
 ## Capability-aware controls
 
