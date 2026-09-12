@@ -24,9 +24,9 @@ export function BotsOnboarding() {
         ))}
       </div>
       <div className="flex flex-col gap-1.5">
-        <h2 className="text-display-sm text-text-primary">Your team of always-on bots</h2>
+        <h2 className="text-display-sm text-text-primary">Bots you name, schedule and mention</h2>
         <p className="max-w-sm text-body-regular text-text-secondary">
-          Each one has a job, its own computer, and a thread that never resets.
+          Each one has a job, an engine of its choice, and a thread that keeps context.
         </p>
       </div>
       <Button variant="primary" size="medium" onClick={() => setCreating(true)}>

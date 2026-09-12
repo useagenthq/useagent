@@ -11,6 +11,7 @@ import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cx } from "@/utils/cx";
 import { AvatarMark, iconFor, toneClass } from "./avatar-mark";
+import { BOT_SUGGESTIONS, type BotSuggestion } from "./suggestions";
 import {
   type ApiBot,
   apiErrorText,
@@ -20,11 +21,6 @@ import {
   engineLabel,
   OFFLINE_MESSAGE,
 } from "./types";
-
-const SUGGESTIONS = [
-  { name: "Night triage", title: "Works overnight and preps your morning digest", icon: "support", tone: "cyan" },
-  { name: "Reviewer", title: "Reads every PR before merge and flags the risky ones", icon: "code", tone: "blue" },
-] as const;
 
 const FOCUS_RING = "ring-2 ring-border-focus-ring ring-offset-2 ring-offset-background-primary-default";
 
@@ -54,9 +50,12 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const [engine, setEngine] = useState<string | null>(null);
   const [tone, setTone] = useState<string>("blue");
   const [icon, setIcon] = useState<string>("robot");
+  // Starter rules travel with a picked suggestion; typing a different name clears them.
+  const [rules, setRules] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const chosenEngine = engine ?? engines[0]?.id ?? null;
+  const pickedSuggestion = BOT_SUGGESTIONS.find((s) => s.name === name && s.rules === rules) ?? null;
 
   const reset = () => {
     setName("");
@@ -65,7 +64,17 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     setEngine(null);
     setTone("blue");
     setIcon("robot");
+    setRules("");
     setError(null);
+  };
+
+  const pick = (suggestion: BotSuggestion) => {
+    setName(suggestion.name);
+    setNameError(null);
+    setTitle(suggestion.title);
+    setIcon(suggestion.icon);
+    setTone(suggestion.tone);
+    setRules(suggestion.rules);
   };
 
   const failName = (message: string) => {
@@ -83,7 +92,7 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       const response = await backendFetch("/api/bots", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), title: title.trim(), engine: chosenEngine, avatarTone: tone, avatarIcon: icon }),
+        body: JSON.stringify({ name: name.trim(), title: title.trim(), rules, engine: chosenEngine, avatarTone: tone, avatarIcon: icon }),
       });
       const data = (await response.json().catch(() => ({}))) as { bot?: ApiBot; field?: string };
       if (!response.ok || !data.bot) {
@@ -167,6 +176,7 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
               onChange={(value) => {
                 setName(value);
                 setNameError(null);
+                if (pickedSuggestion && value !== pickedSuggestion.name) setRules("");
               }}
               isInvalid={nameError !== null}
               hint={nameError ?? undefined}
@@ -196,34 +206,36 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           </div>
 
           <div>
-            <p className="pb-2 text-body-2-regular text-text-tertiary">Suggestions</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {SUGGESTIONS.map((suggestion) => {
-                const Icon = iconFor(suggestion.icon);
+            <div className="flex items-baseline justify-between pb-2">
+              <p className="text-body-2-regular text-text-tertiary">Start from a job</p>
+              <p className="text-caption-1-regular text-text-tertiary">
+                {pickedSuggestion ? "Starter rules included, edit them in Bot details" : "Fills the form with starter rules"}
+              </p>
+            </div>
+            <ul className="-mx-5 flex snap-x snap-mandatory gap-2 overflow-x-auto px-5 pb-1" aria-label="Suggested bots">
+              {BOT_SUGGESTIONS.map((suggestion) => {
+                const picked = pickedSuggestion?.name === suggestion.name;
                 return (
-                  <button
-                    key={suggestion.name}
-                    type="button"
-                    onClick={() => {
-                      setName(suggestion.name);
-                      setNameError(null);
-                      setTitle(suggestion.title);
-                      setIcon(suggestion.icon);
-                      setTone(suggestion.tone);
-                    }}
-                    className="flex items-start gap-3 rounded-2xl border border-border-button-default p-3 text-left transition-colors hover:bg-background-primary-hover"
-                  >
-                    <span className={cx("flex size-10 shrink-0 items-center justify-center rounded-full text-text-white-0", toneClass(suggestion.tone))}>
-                      <Icon className="size-5" aria-hidden />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-body-medium text-text-primary">{suggestion.name}</span>
-                      <span className="line-clamp-2 text-body-2-regular text-text-secondary">{suggestion.title}</span>
-                    </span>
-                  </button>
+                  <li key={suggestion.name} className="w-[200px] shrink-0 snap-start">
+                    <button
+                      type="button"
+                      aria-pressed={picked}
+                      onClick={() => pick(suggestion)}
+                      className={cx(
+                        "flex h-full w-full items-start gap-3 rounded-2xl border p-3 text-left transition-colors",
+                        picked ? "border-border-button-hover bg-background-secondary-default" : "border-border-button-default hover:bg-background-primary-hover",
+                      )}
+                    >
+                      <AvatarMark tone={suggestion.tone} icon={suggestion.icon} size="size-10" className="shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block text-body-medium text-text-primary">{suggestion.name}</span>
+                        <span className="line-clamp-2 text-body-2-regular text-text-secondary">{suggestion.title}</span>
+                      </span>
+                    </button>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           </div>
 
           {error && (
