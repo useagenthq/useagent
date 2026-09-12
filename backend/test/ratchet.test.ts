@@ -67,7 +67,7 @@ function lineCount(text: string): number {
 // out of scope (they grow with fixtures and cases).
 const BACKEND_SIZE_BASELINE: Record<string, number> = {
   "engines/opencode-server.ts":     2069,
-  "engines/acp-server.ts":     1500,
+  "engines/acp-server.ts":     1469,
   "engines/runtime-orchestration.ts": 802,
   // Read-only and windowed thread routes live in runs/read-routes.ts.
   "runs/routes.ts": 1070,
