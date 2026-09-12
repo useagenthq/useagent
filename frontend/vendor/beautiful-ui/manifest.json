@@ -25,11 +25,12 @@
     "file": "LICENSE",
     "sha256": "e273df457a1fb6cedf6690b03f7bf70023dcccd094ff46910ac55a378345b26e"
   },
-  "componentCount": 19,
+  "componentCount": 20,
   "unresolvedUpstreamImports": [
     "glimm",
     "liveline",
     "iconoir-react",
+    "@/components/atoms/Button",
     "@/components/atoms/Shimmer",
     "@/components/atoms/StreamText"
   ],
@@ -266,6 +267,21 @@
         "@/components/atoms/Shimmer",
         "@/components/atoms/StreamText"
       ]
+    },
+    {
+      "slug": "agent-screen",
+      "displayName": "Agent Screen",
+      "description": "Watch an agent's screen: open, take control.",
+      "exportName": "AgentScreen",
+      "intendedFilename": "agent-screen.tsx",
+      "vendoredPath": "sources/agent-screen.tsx.txt",
+      "rscRecordId": "26",
+      "bytes": 14889,
+      "sha256": "84f53af5b565de34741c656914fdd38b9700fc8765e24fcbba41ac2f6b5da002",
+      "imports": ["react", "react-dom", "@/components/atoms/Button"],
+      "fetchedAtUtc": "2026-09-03T18:40:31Z",
+      "nextBuildId": "eS8Jfr3YBDFv3j0c0BvJ9",
+      "vercelDeploymentId": "dpl_CVwfVgydHZLRiF9oumiSan8UBcE3"
     }
   ]
 }

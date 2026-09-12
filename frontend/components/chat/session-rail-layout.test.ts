@@ -12,7 +12,7 @@ describe("session workspace rail expand mode", () => {
     expect(sessionView).toContain("aria-hidden={railExpanded}");
     expect(sessionView).toContain('railExpanded && "hidden"');
     expect(sessionView).toContain("{railOpen ? (");
-    expect(sessionView).toContain("<DesktopPane threadId={rootId} />");
+    expect(sessionView).toContain("<DesktopPane threadId={rootId} live={live} />");
   });
 
   test("offers explicit accessible expand and restore controls for the active tab", () => {

@@ -993,7 +993,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
                     railTab === "desktop" ? "visible" : "pointer-events-none invisible",
                   )}
                 >
-                  <DesktopPane threadId={rootId} />
+                  <DesktopPane threadId={rootId} live={live} />
                 </div>
               ) : null}
               {/* Workspace stays mounted once opened (like Desktop) so switching

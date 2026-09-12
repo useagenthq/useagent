@@ -9,8 +9,8 @@ describe("Beautiful UI lab inventory", () => {
     const manifestSlugs = manifest.components.map(({ slug }) => slug).toSorted();
     const labSlugs = [...BEAUTIFUL_UI_COMPONENTS].toSorted();
 
-    expect(labSlugs).toHaveLength(19);
-    expect(new Set(labSlugs).size).toBe(19);
+    expect(labSlugs).toHaveLength(20);
+    expect(new Set(labSlugs).size).toBe(20);
     expect(labSlugs).toEqual(manifestSlugs);
   });
 });
