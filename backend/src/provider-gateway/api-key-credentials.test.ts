@@ -62,6 +62,17 @@ describe("gateway provider API-key credentials", () => {
     }, { status: "revoked" }))).toBeNull();
   });
 
+  test("rejects invalid timestamps without inventing connection provenance", () => {
+    for (const updated_at of ["invalid", new Date(Number.NaN)]) {
+      expect(() => gatewayComputerApiKeyConnectionFromRow({
+        ...rowFor({ authMethod: "api_key", value: "dtn_key" }),
+        provider: "daytona",
+        metadata: {},
+        updated_at,
+      })).toThrow("Computer credential timestamp is invalid");
+    }
+  });
+
   test("resolves a computer connection whether updated_at arrives as a Date or as text", () => {
     const base = rowFor({ authMethod: "api_key", value: "dtn_key" });
     const asDate = gatewayComputerApiKeyConnectionFromRow({

@@ -36,11 +36,14 @@ export function gatewayComputerApiKeyConnectionFromRow(
   const value = openGatewayProviderApiKeyCredential(row);
   if (!value) return null;
   const updatedAt = row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at);
+  if (Number.isNaN(updatedAt.getTime())) {
+    throw new Error("Computer credential timestamp is invalid");
+  }
   return {
     provider: row.provider,
     value,
     metadata: row.metadata ?? {},
-    updatedAt: (Number.isNaN(updatedAt.getTime()) ? new Date(0) : updatedAt).toISOString(),
+    updatedAt: updatedAt.toISOString(),
   };
 }
 
