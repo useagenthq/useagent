@@ -143,7 +143,7 @@ export function ContextCardStack({
     <div className={cx("flex flex-col gap-2", className)}>
       <div className="flex items-center gap-2 px-0.5">
         <span className="text-body-2-semibold text-text-primary">{label}</span>
-        <Chip color="gray">
+        <Chip variant="caption" color="gray">
           {count}
         </Chip>
       </div>

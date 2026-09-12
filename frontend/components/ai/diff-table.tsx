@@ -33,7 +33,7 @@ const statusMeta: Record<
   added: {
     edge: "var(--color-lime-500)",
     rowTint: "bg-status-lime-background",
-    text: "text-lime-600",
+    text: "text-status-lime-text",
     sign: "+",
   },
   removed: {
@@ -105,7 +105,7 @@ export function DiffTable({ columns, rows, className }: DiffTableProps) {
                       }
                     >
                       {asBadge ? (
-                        <Chip color="yellow">
+                        <Chip variant="caption" color="yellow">
                           {cell}
                         </Chip>
                       ) : (
