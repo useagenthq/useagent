@@ -19,8 +19,8 @@ import { runs, type MemoryScope, type RunStatus } from "../db/schema";
 import { db } from "../db/client";
 import { getRunForOrg } from "../runs/repo";
 import {
-  acceptRunCommand,
-  preflightRunCommandReplay,
+  acceptConnectorRunCommand,
+  preflightConnectorRunCommandReplay,
   RunAdmissionClosedError,
   type RunCommandIntent,
 } from "../commands";
@@ -480,10 +480,11 @@ export async function handleSlackEvent(
   };
   let replay;
   try {
-    replay = await preflightRunCommandReplay({
+    replay = await preflightConnectorRunCommandReplay({
       orgId,
       idempotencyKey: durableKey,
       intent,
+      source: "slack",
     });
   } catch (error) {
     if (!(error instanceof RunAdmissionClosedError)) throw error;
@@ -598,10 +599,11 @@ export async function handleSlackEvent(
   // prior turn.
   let outcome;
   try {
-    outcome = await acceptRunCommand({
+    outcome = await acceptConnectorRunCommand({
       idempotencyKey: durableKey,
       orgId,
       actorId: userId,
+      source: "slack",
       intent,
       run: {
         id: runId,

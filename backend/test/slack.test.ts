@@ -30,6 +30,7 @@ import {
   linkSlackThread,
 } from "../src/slack/repo";
 import {
+  enqueueAddReaction,
   enqueueAppendStream,
   enqueuePostCard,
   enqueueStartStream,
@@ -70,7 +71,7 @@ import {
   upsertSlackWorkspace,
 } from "../src/slack/workspaces";
 import { fetchApi, json, uid, waitFor } from "./helpers";
-import { setRunAdmission } from "../src/commands";
+import { acceptConnectorRunCommand, acceptRunCommand, setRunAdmission } from "../src/commands";
 import { UploadScanError, setUploadScannerForTest } from "../src/uploads/scan";
 
 // This DB-backed integration suite shares the CI Postgres service with the
@@ -379,6 +380,134 @@ describe("slack signature verification", () => {
 });
 
 describe("slack event → run", () => {
+  test("connector provenance rejects source-null replays even with historical Slack receipts", async () => {
+    const channel = `C${uid("source")}`;
+    const ts = `${uid("ts")}.1`;
+    const threadTs = `${uid("thread")}.1`;
+    const rootRunId = crypto.randomUUID();
+    const reservedKey = `slack-event:${TEAM}:${channel}:${ts}`;
+    const command = (
+      id: string,
+      idempotencyKey: string,
+      threadId = id,
+      parentRunId: string | null = null,
+    ) => ({
+      idempotencyKey,
+      orgId: DEV_ORG_ID,
+      actorId: DEV_USER_ID,
+      run: {
+        id,
+        prompt: "source replay",
+        model: "claude-opus-5",
+        engine: "mock" as const,
+        parentRunId,
+        threadId,
+        repos: [],
+        resolvedResources: [],
+        attachmentIds: [],
+        memoryScope: "org" as const,
+        skillId: null,
+        skillVersion: null,
+        skillContentHash: null,
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    });
+
+    expect(await acceptRunCommand(command(crypto.randomUUID(), reservedKey))).toEqual({
+      status: "conflict",
+      reason: "source_mismatch",
+    });
+
+    await createRun({
+      id: rootRunId,
+      prompt: "linked root",
+      model: "claude-opus-5",
+      engine: "mock",
+      orgId: DEV_ORG_ID,
+      userId: DEV_USER_ID,
+      parentRunId: null,
+      threadId: rootRunId,
+    });
+    await linkSlackThread({
+      teamId: TEAM,
+      channel,
+      threadTs,
+      rootRunId,
+      orgId: DEV_ORG_ID,
+    });
+    const original = command(
+      crypto.randomUUID(),
+      uid("legacy-source"),
+      rootRunId,
+      rootRunId,
+    );
+    const created = await acceptRunCommand(original);
+    expect(created.status).toBe("created");
+    await db
+      .update(commands)
+      .set({ idempotencyKey: reservedKey })
+      .where(eq(commands.runId, original.run.id));
+    await finalizeRun(original.run.id, "completed", "web reply", 1);
+    expect(await findSlackRunResponse(original.run.id)).toMatchObject({
+      runId: original.run.id,
+      teamId: TEAM,
+      channel,
+      threadTs,
+    });
+
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel,
+      user: "U-HUMAN",
+      text: `<@${BOT}> source replay`,
+      ts,
+      thread_ts: threadTs,
+    });
+    expect(await persistSlackInboxEvent(envelope)).toBe("created");
+    const replay = () => acceptConnectorRunCommand({
+      ...command(crypto.randomUUID(), reservedKey, rootRunId, rootRunId),
+      source: "slack" as const,
+    });
+    expect(await replay()).toEqual({ status: "conflict", reason: "source_mismatch" });
+    const [stored] = await db
+      .select({ payload: commands.payload })
+      .from(commands)
+      .where(eq(commands.runId, original.run.id));
+    expect(JSON.parse(stored!.payload!).source).toBeNull();
+
+    await enqueueAddReaction({
+      idempotencyKey: `slack-ack:${TEAM}:${channel}:${ts}`,
+      orgId: DEV_ORG_ID,
+      teamId: TEAM,
+      channel,
+      timestamp: ts,
+      name: "eyes",
+    });
+    // Historical Slack and public collisions are indistinguishable once the
+    // old classifier has minted these same receipts, so neither may be adopted.
+    expect(await replay()).toEqual({ status: "conflict", reason: "source_mismatch" });
+    const [stillUntrusted] = await db
+      .select({ payload: commands.payload })
+      .from(commands)
+      .where(eq(commands.runId, original.run.id));
+    expect(JSON.parse(stillUntrusted!.payload!).source).toBeNull();
+
+    expect(await acceptRunCommand(
+      command(crypto.randomUUID(), reservedKey, rootRunId, rootRunId),
+    )).toEqual({
+      status: "conflict",
+      reason: "source_mismatch",
+    });
+    const [unchanged] = await db
+      .select({ payload: commands.payload })
+      .from(commands)
+      .where(eq(commands.runId, original.run.id));
+    expect(JSON.parse(unchanged!.payload!).source).toBeNull();
+  });
+
   test("an unavailable linked GitHub repo blocks the run with actionable guidance", async () => {
     const marker = uid("repo");
     const channel = `C${uid("ch")}`;
@@ -637,10 +766,121 @@ describe("slack event → run", () => {
 
     expect(reply.parent_run_id).toBe(root.id);
     expect(reply.thread_id).toBe(root.id); // shares the root's thread
+    const [command] = await db
+      .select({ payload: commands.payload })
+      .from(commands)
+      .where(and(eq(commands.runId, reply.id), eq(commands.kind, "run.create")))
+      .limit(1);
+    expect(JSON.parse(command!.payload).source).toBe("slack");
+    expect(await getSlackOutbox(`slack-web-user:${TEAM}:${reply.id}`)).toBeNull();
 
     // The whole thread reads back oldest→newest from the run API.
     const thread = await json<{ thread: any[] }>(`/api/runs/${root.id}?thread=1`);
     expect(thread.body.thread.map((r) => r.id)).toEqual([root.id, reply.id]);
+  });
+
+  test("a web reply mirrors its author into the linked Slack thread once without arming mentions", async () => {
+    const rootId = crypto.randomUUID();
+    const channel = `C${uid("web-mirror")}`;
+    const threadTs = `${uid("ts")}.1`;
+    await createRun({
+      id: rootId,
+      prompt: "linked root",
+      model: "claude-opus-5",
+      engine: "mock",
+      orgId: DEV_ORG_ID,
+      userId: DEV_USER_ID,
+      parentRunId: null,
+      threadId: rootId,
+    });
+    await linkSlackThread({ teamId: TEAM, channel, threadTs, rootRunId: rootId, orgId: DEV_ORG_ID });
+    await finalizeRun(rootId, "completed", "root ready", 1);
+
+    const prompt = `web _mirror_ ${uid("prompt")} <!channel>\n\`code * ~ & <tag>\``;
+    const idempotencyKey = uid("web-mirror-key");
+    const body = { prompt, parent_run_id: rootId };
+    const first = await json<{ id: string }>("/api/runs", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body,
+    });
+    const replay = await json<{ id: string }>("/api/runs", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body,
+    });
+    expect(first.status).toBe(201);
+    expect(replay).toEqual({ status: 200, body: { id: first.body.id } });
+
+    const mirror = await waitFor(async () =>
+      rec.messages.find((message) =>
+        message.channel === channel && message.text.includes(" in useAgent:")
+      ) ?? null,
+    );
+    expect(mirror.threadTs).toBe(threadTs);
+    expect(mirror.text).toContain("@\u200bchannel");
+    expect(mirror.text).not.toContain("<!channel>");
+    expect(mirror.text).toContain("\n`code * ~ &amp; &lt;tag&gt;`");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(
+      rec.messages.filter((message) =>
+        message.channel === channel && message.text.includes(" in useAgent:")
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("finalization heals a missing web mirror before its bot result", async () => {
+    const rootId = crypto.randomUUID();
+    const runId = crypto.randomUUID();
+    const channel = `C${uid("web-heal")}`;
+    const threadTs = `${uid("ts")}.1`;
+    await createRun({
+      id: rootId,
+      prompt: "linked root",
+      model: "claude-opus-5",
+      engine: "mock",
+      orgId: DEV_ORG_ID,
+      userId: DEV_USER_ID,
+      parentRunId: null,
+      threadId: rootId,
+    });
+    await linkSlackThread({ teamId: TEAM, channel, threadTs, rootRunId: rootId, orgId: DEV_ORG_ID });
+    const prompt = `healed mirror ${uid("prompt")}`;
+    await acceptRunCommand({
+      idempotencyKey: uid("web-heal-key"),
+      orgId: DEV_ORG_ID,
+      actorId: DEV_USER_ID,
+      run: {
+        id: runId,
+        prompt,
+        model: "claude-opus-5",
+        engine: "mock",
+        parentRunId: rootId,
+        threadId: rootId,
+        repos: [],
+        resolvedResources: [],
+        attachmentIds: [],
+        memoryScope: "org",
+        skillId: null,
+        skillVersion: null,
+        skillContentHash: null,
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    });
+
+    await finalizeRun(runId, "completed", "healed result", 1);
+    await waitFor(async () =>
+      rec.messages.filter((message) => message.channel === channel).length >= 2 ? true : null,
+    );
+    const delivered = rec.messages
+      .filter((message) => message.channel === channel)
+      .map((message) => message.text);
+    expect(delivered[0]).toContain(" in useAgent:");
+    expect(delivered[0]).toContain(prompt);
+    expect(delivered.at(-1)).toContain("healed result");
   });
 
   test("a link-free thread reply reauthorizes a legacy repository before inheriting it", async () => {
@@ -744,10 +984,17 @@ describe("slack event → run", () => {
     // Slack retries reuse the same (channel, ts); envelopes may differ (event_id).
     await postSlack(eventCallback(event));
     await postSlack(eventCallback(event));
-    await waitFor(async () => findRunByPrompt(`once ${marker}`));
+    const run = await waitFor(async () => findRunByPrompt(`once ${marker}`));
 
     const { body } = await json<{ runs: any[] }>("/api/runs?all=1");
     expect(body.runs.filter((r) => r.prompt === `once ${marker}`).length).toBe(1);
+    const [command] = await db
+      .select({ payload: commands.payload })
+      .from(commands)
+      .where(and(eq(commands.runId, run.id), eq(commands.kind, "run.create")))
+      .limit(1);
+    expect(JSON.parse(command!.payload).source).toBe("slack");
+    expect(await getSlackOutbox(`slack-web-user:${TEAM}:${run.id}`)).toBeNull();
   });
 
   test("a non-mention channel message in an unknown thread is ignored", async () => {

@@ -41,6 +41,15 @@ export function slackPlainLabel(text: string): string {
     .replace(/[*_~`]/g, "");
 }
 
+/** Preserve user-authored whitespace and Markdown while making Slack entity
+ * syntax inert. This is for mirrored message bodies, not server chrome. */
+export function slackMessageBody(text: string): string {
+  return neutralizeMassMentions(text)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 /**
  * Convert Markdown to Slack mrkdwn. Code spans and fenced blocks are stashed
  * first and restored last, so nothing inside them is transformed.

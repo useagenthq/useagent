@@ -57,6 +57,8 @@ export async function enqueuePostMessageTx(
     channel: string;
     text: string;
     threadTs?: string;
+    runId?: string;
+    messageRole?: "user_mirror";
   },
 ): Promise<boolean> {
   return enqueue(
@@ -69,6 +71,8 @@ export async function enqueuePostMessageTx(
         channel: entry.channel,
         chunks: chunkSlackText(entry.text),
         threadTs: entry.threadTs,
+        ...(entry.runId ? { runId: entry.runId } : {}),
+        ...(entry.messageRole ? { messageRole: entry.messageRole } : {}),
       },
     },
     exec,
@@ -130,6 +134,7 @@ export async function enqueueStopStreamTx(
     text: string;
     fallbackBlocks?: readonly unknown[];
     fallbackText: string;
+    waitForIdempotencyKey?: string;
   },
 ): Promise<boolean> {
   return enqueue(
@@ -149,6 +154,9 @@ export async function enqueueStopStreamTx(
         text: entry.text,
         ...(entry.fallbackBlocks ? { fallbackBlocks: entry.fallbackBlocks } : {}),
         fallbackChunks: chunkSlackText(entry.fallbackText),
+        ...(entry.waitForIdempotencyKey
+          ? { waitForIdempotencyKey: entry.waitForIdempotencyKey }
+          : {}),
       },
     },
     exec,

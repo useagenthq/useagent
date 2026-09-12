@@ -5,7 +5,7 @@ import { readStagedBytes } from "../upload-staging";
 import { getArtifact } from "../../artifacts/repo";
 import { artifactStorage } from "../../artifacts/storage";
 import { recordProviderEvent } from "../../runs/provider-events";
-import { backfillSlackOutboxOrgScope, claimDue, listPendingSlackReceipts, markDead, markDelivered, markRetry, markSlackReceiptEmitted, resetStuckDelivering, updatePayload, type ClaimedRow } from "./repo";
+import { backfillSlackOutboxOrgScope, claimDue, deferForDependency, getByKey, listPendingSlackReceipts, markDead, markDelivered, markRetry, markSlackReceiptEmitted, resetStuckDelivering, updatePayload, type ClaimedRow } from "./repo";
 import {
   addSlackStreamedChars,
   createSlackRunResponse,
@@ -564,6 +564,56 @@ async function deliverOne(
   row: ClaimedRow,
   resolveTeamClient?: SlackTeamClientResolver,
 ): Promise<SlackDeliveryOutcome> {
+  let waitForIdempotencyKey: string | null = null;
+  let dependencyRunId: string | null = null;
+  try {
+    const payload = JSON.parse(row.payload) as {
+      waitForIdempotencyKey?: unknown;
+      runId?: unknown;
+    };
+    waitForIdempotencyKey = typeof payload.waitForIdempotencyKey === "string"
+      ? payload.waitForIdempotencyKey
+      : null;
+    dependencyRunId = typeof payload.runId === "string" ? payload.runId : null;
+  } catch {
+    // The normal attempt path classifies invalid payloads permanently.
+  }
+  if (waitForIdempotencyKey) {
+    const dependency = await getByKey(waitForIdempotencyKey);
+    if (!dependency) {
+      await deadLetter(row, {
+        errorClass: "permanent",
+        lastError: "user_mirror_dependency_missing",
+      });
+      return { status: "dead", errorClass: "permanent" };
+    }
+    let validDependency = false;
+    try {
+      const payload = JSON.parse(dependency.payload) as {
+        runId?: unknown;
+        messageRole?: unknown;
+      };
+      validDependency =
+        dependency.kind === "post_message" &&
+        payload.messageRole === "user_mirror" &&
+        typeof payload.runId === "string" &&
+        payload.runId === dependencyRunId;
+    } catch {
+      validDependency = false;
+    }
+    if (!validDependency) {
+      await deadLetter(row, {
+        errorClass: "permanent",
+        lastError: "user_mirror_dependency_invalid",
+      });
+      return { status: "dead", errorClass: "permanent" };
+    }
+    if (dependency.state === "pending" || dependency.state === "delivering") {
+      const nextAttemptAt = new Date(Date.now() + 250);
+      await deferForDependency(row.id, nextAttemptAt);
+      return { status: "retry", errorClass: "transient", nextAttemptAt };
+    }
+  }
   const { teamId, orgId } = rowTeamScope(row);
   if (teamId && !orgId) {
     await deadLetter(row, {

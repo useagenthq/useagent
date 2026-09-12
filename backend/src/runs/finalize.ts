@@ -53,6 +53,7 @@ import { listFinishedWorkForRun } from "./finished-work-repo";
 import { finishedWorkEnforcementEnabled, finishedWorkRolloutMode } from "./finished-work-rollout";
 import { lockFinishedWorkRun } from "./finished-work-lock";
 import { getThreadRelationship } from "./thread-relationship-repo";
+import { enqueueSlackUserMirrorForRun } from "../slack/user-mirror";
 
 /** Providers whose runs project native events and/or `steps` into the canonical lane.
  *  OpenCode, Pi, and the ACP engines (acp/claude/codex). Legacy aliases (daytona -> opencode,
@@ -73,6 +74,8 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
   status: RunStatus,
   summary: string,
 ): Promise<boolean> {
+  const userMirror = await enqueueSlackUserMirrorForRun(run.id, tx);
+  let kickSlack = userMirror.status === "ready" && userMirror.created;
   const thread = run.orgId
     ? await findSlackThreadForProductThread(run.orgId, run.threadId, tx)
     : null;
@@ -126,7 +129,7 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
     narration,
   });
 
-  let kickSlack = await enqueueStopStreamTx(tx, {
+  kickSlack = (await enqueueStopStreamTx(tx, {
     idempotencyKey: `slack-reply:${slack.teamId}:${run.id}`,
     orgId: run.orgId,
     teamId: slack.teamId,
@@ -140,7 +143,10 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
     text: finalCard.text,
     fallbackBlocks: finalCard.blocks,
     fallbackText: replyText,
-  });
+    ...(userMirror.status === "ready"
+      ? { waitForIdempotencyKey: userMirror.idempotencyKey }
+      : {}),
+  })) || kickSlack;
   const statusCreated = await enqueueSessionStatusTx(tx, {
     idempotencyKey: `slack-status:final:${slack.teamId}:${run.id}`,
     orgId: run.orgId,

@@ -149,9 +149,14 @@ describe("durable run admission", () => {
       "../src/schedules/fire.ts",
       "../src/skills/routes.ts",
       "../src/runs/child-sessions.ts",
-    ].map((path) => readFile(new URL(path, import.meta.url), "utf8")));
-    for (const source of files) {
-      const gate = source.indexOf("preflightRunCommandReplay(");
+    ].map(async (path) => ({
+      source: await readFile(new URL(path, import.meta.url), "utf8"),
+      gateName: path === "../src/slack/events.ts"
+        ? "preflightConnectorRunCommandReplay("
+        : "preflightRunCommandReplay(",
+    })));
+    for (const { source, gateName } of files) {
+      const gate = source.indexOf(gateName);
       expect(gate).toBeGreaterThan(-1);
       for (const mutation of ["resolveRunIntake(", "stageInboundSlackFiles("]) {
         const index = source.indexOf(mutation);
