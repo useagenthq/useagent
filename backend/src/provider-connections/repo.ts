@@ -123,7 +123,9 @@ export async function upsertProviderConnectionUnlessRevoked(
   return writeProviderConnection(input, true);
 }
 
-export async function setProviderSnapshotIfUnset(
+/** Stamp a platform-baked snapshot on a connection that has none or carries an earlier platform name
+ *  (the exact native-image naming contract); custom names are not replaced. */
+export async function setProviderSnapshotIfManaged(
   scope: ProviderConnectionScope & {
     provider: ProviderConnectionProvider;
     snapshotName: string;
@@ -143,7 +145,7 @@ export async function setProviderSnapshotIfUnset(
       eq(providerConnections.authMethod, "api_key"),
       eq(providerConnections.status, "connected"),
       sql`date_trunc('milliseconds', ${providerConnections.updatedAt}) = ${scope.expectedUpdatedAt}::timestamptz`,
-      sql`coalesce(${providerConnections.metadata}->>'snapshotName', '') = ''`,
+      sql`(coalesce(${providerConnections.metadata}->>'snapshotName', '') = '' or ${providerConnections.metadata}->>'snapshotName' ~ '^useagent-native-[0-9a-f]{7}-[0-9a-f]{10}$' or (${providerConnections.provider} = 'box' and ${providerConnections.metadata}->>'snapshotName' ~ '^useagent-opencode-[0-9]+-[0-9]+-[0-9]+$'))`,
     ))
     .returning();
   return row ?? null;

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
+  buildRuntimeEnvironmentFirstAccessCommand,
   buildRuntimeEnvironmentAuthenticationCommand,
   buildRuntimeEnvironmentRequestCommand,
   buildRuntimeEnvironmentSessionProbeCommand,
@@ -41,7 +42,7 @@ describe("T3 environment client", () => {
     const command = buildRuntimeEnvironmentAuthenticationCommand();
 
     expect(command).toContain(
-      '"/root/.local/share/useagent/native-runtime/524d46b26f5ac85c82cd41e20f6c709d9f08db9b/bin/t3" auth pairing create',
+      '"/root/.local/share/useagent/native-runtime/90dc3ebbb74b0e85f41c4cb3105a9f8994ce0bfa/bin/t3" auth pairing create',
     );
     expect(command).not.toMatch(/(^|\s)t3 auth pairing create/);
     expect(command).toContain('--json >"$PAIRING"');
@@ -57,7 +58,7 @@ describe("T3 environment client", () => {
     const command = buildRuntimeEnvironmentAuthenticationCommand(BOX_LAYOUT);
 
     expect(command).toContain(
-      '"/home/user/.local/share/useagent/native-runtime/524d46b26f5ac85c82cd41e20f6c709d9f08db9b/bin/t3" auth pairing create',
+      '"/home/user/.local/share/useagent/native-runtime/90dc3ebbb74b0e85f41c4cb3105a9f8994ce0bfa/bin/t3" auth pairing create',
     );
     expect(command).not.toContain("/root");
     expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
@@ -143,24 +144,119 @@ describe("T3 environment client", () => {
         new AbortController().signal,
       ),
     ).resolves.toEqual({ projects: [], threads: [] });
-    expect(commands).toHaveLength(5);
+    expect(commands).toHaveLength(2);
     expect(commands).toEqual([
-      buildNativeRuntimeArtifactProbe(ROOT_LAYOUT),
-      buildRuntimeEnvironmentReadinessCommand(),
-      buildRuntimeEnvironmentSessionProbeCommand(),
-      expect.stringContaining("/api/orchestration/shell"),
+      buildRuntimeEnvironmentFirstAccessCommand(
+        { method: "GET", path: "/api/orchestration/shell" },
+        ROOT_LAYOUT,
+      ),
       expect.stringContaining("/api/orchestration/shell"),
     ]);
+    expect(Bun.spawnSync(["bash", "-n", "-c", commands[0]!]).exitCode).toBe(0);
+  });
+
+  test("falls back to the existing auth repair when the coalesced first access is stale", async () => {
+    const commands: string[] = [];
+    const request = { method: "GET", path: "/api/orchestration/shell" } as const;
+    const firstAccess = buildRuntimeEnvironmentFirstAccessCommand(request, ROOT_LAYOUT);
+    const sandbox = {
+      id: "cube-t3-stale-first-access",
+      process: {
+        executeCommand: async (command: string) => {
+          commands.push(command);
+          if (command === firstAccess) return { exitCode: 1, result: "" };
+          if (command === buildNativeRuntimeArtifactProbe(ROOT_LAYOUT)) {
+            return { exitCode: 0, result: "" };
+          }
+          if (command === buildRuntimeEnvironmentReadinessCommand()) {
+            return { exitCode: 0, result: "" };
+          }
+          if (command === buildRuntimeEnvironmentSessionProbeCommand()) {
+            return { exitCode: 1, result: "" };
+          }
+          if (command === buildRuntimeEnvironmentAuthenticationCommand()) {
+            return { exitCode: 0, result: "" };
+          }
+          return {
+            exitCode: 0,
+            result: '{"projects":[],"threads":[]}\n__USEAGENT_T3_HTTP_STATUS__:200',
+          };
+        },
+      },
+    } as unknown as SandboxHandle;
+
+    await expect(requestRuntimeEnvironment(sandbox, request, new AbortController().signal))
+      .resolves.toEqual({ projects: [], threads: [] });
+    expect(commands[0]).toBe(firstAccess);
+    expect(commands).toContain(buildRuntimeEnvironmentAuthenticationCommand());
+    expect(commands.at(-1)).toBe(buildRuntimeEnvironmentRequestCommand(request));
+  });
+
+  test("serializes coalesced first-access repair for concurrent callers", async () => {
+    const commands: string[] = [];
+    const request = { method: "GET", path: "/api/orchestration/shell" } as const;
+    const firstAccess = buildRuntimeEnvironmentFirstAccessCommand(request, ROOT_LAYOUT);
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const sandbox = {
+      id: "cube-t3-concurrent-first-access-repair",
+      process: {
+        executeCommand: async (command: string) => {
+          commands.push(command);
+          if (command === firstAccess) {
+            started.resolve();
+            await release.promise;
+            return { exitCode: 1, result: "" };
+          }
+          if (command === buildNativeRuntimeArtifactProbe(ROOT_LAYOUT)) {
+            return { exitCode: 0, result: "" };
+          }
+          if (command === buildRuntimeEnvironmentReadinessCommand()) {
+            return { exitCode: 0, result: "" };
+          }
+          if (command === buildRuntimeEnvironmentSessionProbeCommand()) {
+            return { exitCode: 1, result: "" };
+          }
+          if (command === buildRuntimeEnvironmentAuthenticationCommand()) {
+            return { exitCode: 0, result: "" };
+          }
+          return {
+            exitCode: 0,
+            result: '{"projects":[],"threads":[]}\n__USEAGENT_T3_HTTP_STATUS__:200',
+          };
+        },
+      },
+    } as unknown as SandboxHandle;
+
+    const first = requestRuntimeEnvironment(sandbox, request, new AbortController().signal);
+    await started.promise;
+    const second = requestRuntimeEnvironment(sandbox, request, new AbortController().signal);
+    release.resolve();
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { projects: [], threads: [] },
+      { projects: [], threads: [] },
+    ]);
+
+    expect(commands.filter((command) => command === firstAccess)).toHaveLength(1);
+    expect(commands.filter((command) => command === buildNativeRuntimeArtifactProbe(ROOT_LAYOUT)))
+      .toHaveLength(1);
+    expect(commands.filter((command) => command === buildRuntimeEnvironmentAuthenticationCommand()))
+      .toHaveLength(1);
+    expect(commands.filter((command) => command === buildRuntimeEnvironmentRequestCommand(request)))
+      .toHaveLength(2);
   });
 
   test("bootstraps Box authentication with the same native runtime launcher", async () => {
     const commands: string[] = [];
+    const request = { method: "GET", path: "/api/orchestration/snapshot" } as const;
+    const firstAccess = buildRuntimeEnvironmentFirstAccessCommand(request, BOX_LAYOUT);
     const sandbox = {
       id: "cube-t3-auth-bootstrap",
       providerKind: "box",
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
+          if (command === firstAccess) return { exitCode: 1, result: "" };
           if (command === buildNativeRuntimeArtifactProbe(BOX_LAYOUT)) {
             return { exitCode: 0, result: "" };
           }
@@ -181,13 +277,14 @@ describe("T3 environment client", () => {
     await expect(
       requestRuntimeEnvironment<{ projects: unknown[] }>(
         sandbox,
-        { method: "GET", path: "/api/orchestration/snapshot" },
+        request,
         new AbortController().signal,
       ),
     ).resolves.toEqual({ projects: [] });
     expect(commands).toContain(buildRuntimeEnvironmentAuthenticationCommand(BOX_LAYOUT));
-    expect(commands).toHaveLength(5);
-    expect(commands[0]).toBe(buildNativeRuntimeArtifactProbe(BOX_LAYOUT));
+    expect(commands).toHaveLength(6);
+    expect(commands[0]).toBe(firstAccess);
+    expect(commands[1]).toBe(buildNativeRuntimeArtifactProbe(BOX_LAYOUT));
   });
 
   test("prewarms private access without making an orchestration request", async () => {
@@ -266,10 +363,10 @@ describe("T3 environment client", () => {
     ).resolves.toEqual({ projects: [], threads: [] });
 
     expect(commands).toEqual([
-      buildNativeRuntimeArtifactProbe(ROOT_LAYOUT),
-      buildRuntimeEnvironmentReadinessCommand(),
-      buildRuntimeEnvironmentSessionProbeCommand(),
-      expect.stringContaining("/api/orchestration/shell"),
+      buildRuntimeEnvironmentFirstAccessCommand(
+        { method: "GET", path: "/api/orchestration/shell" },
+        ROOT_LAYOUT,
+      ),
       expect.stringContaining("/api/orchestration/shell"),
       buildNativeRuntimeArtifactProbe(ROOT_LAYOUT),
       buildRuntimeEnvironmentReadinessCommand(),
@@ -325,10 +422,10 @@ describe("T3 environment client", () => {
       },
     });
     expect(commands).toEqual([
-      buildNativeRuntimeArtifactProbe(ROOT_LAYOUT),
-      buildRuntimeEnvironmentReadinessCommand(),
-      buildRuntimeEnvironmentSessionProbeCommand(),
-      expect.stringContaining("/api/orchestration/threads/thread-missing"),
+      buildRuntimeEnvironmentFirstAccessCommand(
+        { method: "GET", path: "/api/orchestration/threads/thread-missing" },
+        ROOT_LAYOUT,
+      ),
     ]);
   });
 

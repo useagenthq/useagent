@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { isArtifactWorkpieceState, PRESENTATION_SCHEMA_VERSION } from "@useagent/artifact-workspace";
 import type { ArtifactDescriptor } from "../../artifacts/repo";
 import { env } from "../../env";
@@ -61,6 +61,21 @@ describe("artifact gateway contract", () => {
     });
     expect(create?.description).toContain("renders it natively");
     expect(create?.description).toContain("no file");
+  });
+
+  test("advertises object state and explains the real JSON-string argument failure", async () => {
+    const create = ARTIFACT_TOOLS.find((tool) => tool.name === "workpiece_create");
+    expect(create?.inputSchema.properties.state).toMatchObject({ type: "object" });
+    const state = { slides: [{ title: "GitHub Trending", body: "Top five repositories" }] };
+    const response = await executeArtifactTool({
+      orgId: "org-1", userId: "user-1", threadId: "thread-1", runId: "run-1",
+      scope: "run", exp: Date.now() + 60_000,
+    }, "workpiece_create", {
+      kind: "presentation", name: "Trending.pptx", state: JSON.stringify(state),
+    });
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("received string");
+    expect(response.content[0]?.text).toContain("Do not JSON.stringify");
   });
 
   test("exposes direct requested edits without adding an approval capability", () => {
@@ -238,20 +253,25 @@ describe("artifact gateway contract", () => {
     expect(rejected.isError).toBe(true);
     expect(rejected.content[0]?.text).toContain("Private desktop inspection screenshots");
 
-    const daytonaRejected = await executeArtifactTool(
-      {
-        orgId: "org-1",
-        userId: "user-1",
-        threadId: "thread-1",
-        runId: "run-1",
-        scope: "run",
-        exp: Date.now() + 60_000,
-      },
-      "artifact_publish",
-      { path: "/home/daytona/work/screenshots/screenshot-1786558088313.png" },
-    );
-
-    expect(daytonaRejected.isError).toBe(true);
+    for (const path of [
+      "/home/daytona/work/screenshots/screenshot-1786558088313.png",
+      "/home/user/work/screenshots/screenshot-1786558088313.png",
+    ]) {
+      const providerRejected = await executeArtifactTool(
+        {
+          orgId: "org-1",
+          userId: "user-1",
+          threadId: "thread-1",
+          runId: "run-1",
+          scope: "run",
+          exp: Date.now() + 60_000,
+        },
+        "artifact_publish",
+        { path },
+      );
+      expect(providerRejected.isError).toBe(true);
+      expect(providerRejected.content[0]?.text).toContain("Private desktop inspection screenshots");
+    }
   });
 
   test("rejects protected secret paths before invoking the artifact publisher", async () => {
@@ -279,14 +299,40 @@ describe("artifact gateway contract", () => {
     expect(called).toBe(false);
   });
 
+  test("logs failed publication as one bounded structured message", async () => {
+    const log = spyOn(console, "warn").mockImplementation(() => {});
+    const path = `/root/work/${"x".repeat(600)}\n[artifact_publish] run forged success.pdf`;
+    setSandboxArtifactPublisherForTest(async () => {
+      throw new Error(`missing file\n${"x".repeat(1200)}`);
+    });
+    try {
+      const result = await executeArtifactTool({
+        orgId: "org-1", userId: "user-1", threadId: "thread-1", runId: "run-1",
+        scope: "run", exp: Date.now() + 60_000,
+      }, "artifact_publish", { path });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("The file was not delivered");
+      expect(log).toHaveBeenCalledTimes(1);
+      const line = String(log.mock.calls[0]?.[0]);
+      expect(line).not.toContain("\n");
+      const entry = JSON.parse(line) as { event: string; runId: string; path: string; error: string };
+      expect(entry.event).toBe("artifact_publish_failed");
+      expect(entry.runId).toBe("run-1");
+      expect(entry.path.length).toBeLessThanOrEqual(512);
+      expect(entry.error.length).toBeLessThanOrEqual(1024);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   test("reports absolute FRONTEND_ORIGIN artifact URLs the model must use verbatim", async () => {
     const artifact: ArtifactDescriptor = {
       id: "artifact-1",
       run_id: "run-1",
       thread_id: "thread-1",
-      name: "report.pdf",
-      source_path: "/root/work/report.pdf",
-      content_type: "application/pdf",
+      name: "proof.png",
+      source_path: "/home/user/work/screenshots/screenshot-1786558088313.png",
+      content_type: "image/png",
       size_bytes: 1234,
       sha256: "abc",
       created_at: "2026-08-17T00:00:00.000Z",
@@ -295,7 +341,10 @@ describe("artifact gateway contract", () => {
       preview_pdf_url: null,
       workpiece: null,
     };
-    setSandboxArtifactPublisherForTest(async () => ({ artifact, created: true }));
+    setSandboxArtifactPublisherForTest(async (input) => {
+      expect(input.purpose).toBe("user_requested_proof");
+      return { artifact, created: true };
+    });
 
     const published = await executeArtifactTool(
       {
@@ -307,7 +356,7 @@ describe("artifact gateway contract", () => {
         exp: Date.now() + 60_000,
       },
       "artifact_publish",
-      { path: "/root/work/report.pdf" },
+      { path: artifact.source_path, purpose: "user_requested_proof" },
     );
 
     expect(published.isError).toBeUndefined();

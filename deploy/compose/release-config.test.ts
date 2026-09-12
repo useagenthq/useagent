@@ -43,14 +43,14 @@ describe("release configuration", () => {
 		).text();
 		for (const contract of [
 			'USEAGENT_RUNTIME_GENERATION: ""',
-			"ARTIFACT_STORAGE_DIR: /app/backend/.artifacts",
+			"ARTIFACT_STORAGE_DIR: /var/lib/useagent/artifacts",
 			"RUNS_ROOT: /app/backend/.runs",
 			"SLACK_UPLOAD_STAGING_ROOT: /app/backend/.slack-uploads",
 			"SCRATCH_DIR: /var/lib/useagent/scratch/${USEAGENT_RELEASE_COLOR}",
 			"NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt",
 			"SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt",
 			"USEAGENT_HOST_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt",
-			"/var/lib/useagent/artifacts:/app/backend/.artifacts",
+			"/var/lib/useagent/artifacts:/var/lib/useagent/artifacts",
 			"/var/lib/useagent/runs:/app/backend/.runs",
 			"/var/lib/useagent/slack-uploads:/app/backend/.slack-uploads",
 			"/var/lib/useagent/scratch:/var/lib/useagent/scratch",
@@ -65,6 +65,22 @@ describe("release configuration", () => {
 			"USEAGENT_API_ORIGIN: http://127.0.0.1:${USEAGENT_BACKEND_PORT}",
 		);
 		expect(compose).not.toContain(":/var/lib/skynet");
+	});
+
+	test("every service that publishes artifacts mounts the shared artifact directory it is configured with", async () => {
+		const compose = await Bun.file(
+			new URL("../../compose.prod.yaml", import.meta.url),
+		).text();
+		const service = (name: string, next: string) =>
+			compose.slice(compose.indexOf(`  ${name}:`), compose.indexOf(`  ${next}:`));
+		for (const block of [service("backend", "gateway"), service("gateway", "frontend")]) {
+			const configured = block.match(/ARTIFACT_STORAGE_DIR: (\S+)/)?.[1];
+			expect(configured).toBe("/var/lib/useagent/artifacts");
+			// The mount must land exactly where the env points, read-write, on a
+			// container whose root filesystem is otherwise read-only.
+			expect(block).toContain("read_only: true");
+			expect(block).toContain(`- /var/lib/useagent/artifacts:${configured}\n`);
+		}
 	});
 
 	test("preserves the production Compose digest and fixed-port contract", () => {

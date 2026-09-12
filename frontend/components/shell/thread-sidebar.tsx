@@ -1,65 +1,141 @@
-import { RiAddLine, RiBookShelfLine, RiDashboardLine, RiSettings3Line } from "@remixicon/react";
+"use client";
 
-import { BotsNavItem } from "./bots-nav-item";
-import { SearchCommand } from "./search-command";
-import { SidebarBrand } from "./sidebar-brand";
-import { Sidebar, SidebarNavItem } from "./sidebar-nav";
+import {
+  RiAddLine,
+  RiBook3Line,
+  RiBookShelfLine,
+  RiBroadcastLine,
+  RiChat3Line,
+  RiDashboardLine,
+  RiDatabase2Line,
+  RiKey2Line,
+  RiListCheck2,
+  RiRobot2Line,
+} from "@remixicon/react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { runTitle } from "@/components/chat/types";
+import { useRailFolded } from "@/components/shell/rail-folded";
+import {
+  SidebarGroup,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from "@/components/sidebar-kit/sidebar";
+import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
+import { AppSidebarFrame, NavRoutes, type Route } from "./app-sidebar-frame";
 import { SidebarProjects } from "./sidebar-projects";
-import { ThemeToggle } from "./theme-toggle";
-import { UserMenu } from "./user-menu";
+import { useSidebarThreads } from "./sidebar-threads-provider";
 import { WorkingProjectStatus } from "./working-project-status";
 
 export type ThreadSidebarActive = "new" | "dashboard" | "bots" | "library" | "settings";
 
-function ThreadSidebarFooter({ active }: { active?: ThreadSidebarActive }) {
+/** Icon-rail stand-in for the thread tree: the six most recent threads with tooltips. */
+function CollapsedThreads() {
+  const pathname = usePathname();
+  const runs = useSidebarThreads();
   return (
-    <nav aria-label="Workspace utilities" className="p-2">
-      <SidebarNavItem
-        href="/settings"
-        icon={RiSettings3Line}
-        label="Settings"
-        active={active === "settings"}
-      />
-      <div className="mt-2 flex items-center justify-between px-2">
-        <UserMenu />
-        <ThemeToggle />
-      </div>
-    </nav>
+    <SidebarGroup className="items-center p-0 pt-2">
+      <SidebarMenu className="items-center gap-1">
+        {runs.slice(0, 6).map((run) => {
+          const href = `/session/${run.id}`;
+          return (
+            <SidebarMenuItem key={run.id} className="w-8">
+              <SidebarMenuButton
+                className="justify-center rounded-2lg text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary"
+                isActive={pathname === href}
+                render={
+                  <Link
+                    aria-current={pathname === href ? "page" : undefined}
+                    aria-label={runTitle(run.prompt)}
+                    href={href}
+                  />
+                }
+                tooltip={runTitle(run.prompt)}
+              >
+                <RiChat3Line className="size-4" aria-hidden />
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          );
+        })}
+      </SidebarMenu>
+    </SidebarGroup>
   );
 }
 
+/**
+ * The thread rail: the app sidebar frame around the product's own nav rows and
+ * project thread tree. The tree keeps everything the previous rail had -
+ * folders, nested delegated children, status dots, per-project actions and the
+ * "Show N more" disclosures - because it is the same component.
+ */
 export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
+  const { catalog } = useCapabilityCatalog();
+  const isCollapsed = useRailFolded();
+  const pathname = usePathname();
+
+  const routes: Route[] = [
+    {
+      id: "new",
+      title: "New thread",
+      icon: RiAddLine,
+      tone: "primary",
+      href: "/agent/new",
+      active: active === "new",
+    },
+    {
+      id: "dashboard",
+      title: "Dashboard",
+      icon: RiDashboardLine,
+      tone: "purple",
+      href: "/dashboard",
+      active: active === "dashboard",
+      trailing: <WorkingProjectStatus />,
+    },
+    ...(catalog?.bots
+      ? [
+          {
+            id: "bots",
+            title: "Bots",
+            icon: RiRobot2Line,
+            tone: "blue" as const,
+            href: "/bots",
+            active: active === "bots",
+          },
+        ]
+      : []),
+    {
+      id: "customize",
+      title: "Customize",
+      icon: RiBookShelfLine,
+      tone: "green",
+      href: "/skills",
+      active: active === "library",
+    },
+    {
+      id: "library",
+      title: "Library",
+      icon: RiBook3Line,
+      tone: "orange",
+      href: "/artifacts",
+      subs: [
+        {
+          title: "Artifacts",
+          href: "/artifacts",
+          icon: RiBroadcastLine,
+          active: pathname === "/artifacts",
+        },
+        { title: "Tasks", href: "/tasks", icon: RiListCheck2, active: pathname === "/tasks" },
+        { title: "Memory", href: "/memory", icon: RiDatabase2Line, active: pathname === "/memory" },
+        { title: "Secrets", href: "/secrets", icon: RiKey2Line, active: pathname === "/secrets" },
+      ],
+    },
+  ];
+
   return (
-    <Sidebar
-      ariaLabel="Thread navigation"
-      header={<SidebarBrand />}
-      footer={<ThreadSidebarFooter active={active} />}
-    >
-      <SearchCommand />
-      <SidebarNavItem
-        href="/agent/new"
-        icon={RiAddLine}
-        tone="primary"
-        label="New thread"
-        active={active === "new"}
-      />
-      <SidebarNavItem
-        href="/dashboard"
-        icon={RiDashboardLine}
-        tone="purple"
-        label="Dashboard"
-        active={active === "dashboard"}
-        trailing={<WorkingProjectStatus />}
-      />
-      <BotsNavItem active={active === "bots"} />
-      <SidebarNavItem
-        href="/skills"
-        icon={RiBookShelfLine}
-        tone="green"
-        label="Customize"
-        active={active === "library"}
-      />
-      <SidebarProjects />
-    </Sidebar>
+    <AppSidebarFrame>
+      <NavRoutes routes={routes} />
+      {isCollapsed ? <CollapsedThreads /> : <SidebarProjects />}
+    </AppSidebarFrame>
   );
 }

@@ -1,4 +1,7 @@
+"use client";
+
 import {
+  type RemixiconComponentType,
   RiAppsLine,
   RiBook2Line,
   RiBookMarkedLine,
@@ -12,14 +15,12 @@ import {
   RiLightbulbLine,
   RiListCheck2,
   RiPlugLine,
-  RiSettings3Line,
   RiStackLine,
 } from "@remixicon/react";
-import { SearchCommand } from "./search-command";
-import { SidebarBrand } from "./sidebar-brand";
-import { Sidebar, SidebarNavItem, SidebarSectionLabel } from "./sidebar-nav";
-import { ThemeToggle } from "./theme-toggle";
-import { UserMenu } from "./user-menu";
+import { useRailFolded } from "@/components/shell/rail-folded";
+
+import { AppSidebarFrame, NavRoutes, type Route } from "./app-sidebar-frame";
+import { SidebarSectionLabel } from "./sidebar-nav";
 
 export type LibrarySidebarActive =
   | "skills"
@@ -37,7 +38,12 @@ export type LibrarySidebarActive =
   | "secrets"
   | "settings";
 
-const LIBRARY_ITEMS = [
+const LIBRARY_ITEMS: {
+  key: LibrarySidebarActive;
+  href: string;
+  icon: RemixiconComponentType;
+  label: string;
+}[] = [
   { key: "skills", href: "/skills", icon: RiFlashlightLine, label: "Skills" },
   { key: "playbooks", href: "/playbooks", icon: RiBookMarkedLine, label: "Playbooks" },
   {
@@ -56,40 +62,28 @@ const LIBRARY_ITEMS = [
   { key: "plugins", href: "/agent/plugins", icon: RiPlugLine, label: "Plugins" },
   { key: "tasks", href: "/tasks", icon: RiListCheck2, label: "Tasks" },
   { key: "secrets", href: "/secrets", icon: RiKey2Line, label: "Secrets" },
-] as const;
+];
 
+/** The Customize rail, in the same frame as the thread rail. */
 export function LibrarySidebar({ active }: { active?: LibrarySidebarActive }) {
+  const isCollapsed = useRailFolded();
+
+  const back: Route[] = [
+    { id: "all-threads", title: "All threads", icon: RiStackLine, href: "/agent/runs" },
+  ];
+  const items: Route[] = LIBRARY_ITEMS.map((item) => ({
+    id: item.key,
+    title: item.label,
+    icon: item.icon,
+    href: item.href,
+    active: active === item.key,
+  }));
+
   return (
-    <Sidebar
-      ariaLabel="Customize navigation"
-      header={<SidebarBrand label="Customize" />}
-      footer={
-        <nav aria-label="Customize utilities" className="p-3">
-          <SidebarNavItem
-            href="/settings"
-            icon={RiSettings3Line}
-            label="Settings"
-            active={active === "settings"}
-          />
-          <div className="mt-2 flex items-center justify-between px-2">
-            <UserMenu />
-            <ThemeToggle />
-          </div>
-        </nav>
-      }
-    >
-      <SearchCommand />
-      <SidebarNavItem href="/agent/runs" icon={RiStackLine} label="All threads" />
-      <SidebarSectionLabel>Customize</SidebarSectionLabel>
-      {LIBRARY_ITEMS.map((item) => (
-        <SidebarNavItem
-          key={item.key}
-          href={item.href}
-          icon={item.icon}
-          label={item.label}
-          active={active === item.key}
-        />
-      ))}
-    </Sidebar>
+    <AppSidebarFrame label="Customize">
+      <NavRoutes routes={back} />
+      {!isCollapsed && <SidebarSectionLabel>Customize</SidebarSectionLabel>}
+      <NavRoutes routes={items} />
+    </AppSidebarFrame>
   );
 }

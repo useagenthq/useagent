@@ -3,9 +3,9 @@
 ## Source of truth
 
 - Status: Active
-- Last refreshed: 2026-09-01
+- Last refreshed: 2026-09-05
 - Primary product surfaces: session workspace, Agents rail, Settings providers,
-  Apps/plugins, model picker, artifacts.
+  Apps/plugins, model picker, artifacts, and the existing Blume documentation site.
 - Evidence reviewed: `frontend/styles/theme.css`, `frontend/app/globals.css`,
   `frontend/components/shell/theme-menu.tsx`,
   `frontend/components/chat/session-view.tsx`,
@@ -14,6 +14,10 @@
   `frontend/components/application/settings/settings-tools.tsx`, and
   `plans/ux_direction.md` in the product planning workspace, plus the provided
   26.35-second orchestration reference video (789 frames at 30 fps).
+- Documentation evidence: `docs-site/README.md`, `docs-site/blume.config.ts`,
+  `docs-site/theme.css`, `docs-site/components.ts`, existing MDX routes and
+  diagrams, plus the user's request for detailed current-code documentation and
+  a simpler, professional visual treatment.
 
 ## Brand
 
@@ -53,6 +57,9 @@
 - Primary navigation: Threads, Customize, Apps, Artifacts, Settings.
 - Core routes/screens: session workspace, Settings provider connections,
   capability/tools catalog, Apps/plugins, artifact workspace.
+- Documentation: preserve existing URLs; lead navigation with first-run and
+  common-task guides, then concepts/API reference, architecture, and operations.
+  Link to one authoritative explanation instead of repeating protocol tables.
 - Content hierarchy: user task and final result first; active parent/children
   second; details/provenance on selection; raw provider events last. The global
   thread list preserves the same parent/child hierarchy rather than flattening
@@ -89,6 +96,10 @@
   rhythm; no oversized hero cards inside the product.
 - Shape/radius/elevation: reuse existing menu, panel, card, rail, and hairline
   border tokens; elevation only for overlays.
+- Documentation: retain Blume's light/dark modes and existing brand assets.
+  Use a quiet reading surface, comfortable body text and line length, restrained
+  navigation dividers, and code contrast without floating-card treatment around
+  every section. Do not add a second component or theme framework.
 - Motion: restrained expand/collapse and selection transitions; status changes
   must remain readable with reduced motion.
 - Imagery/iconography: existing Remix icons and provider/service marks; never
@@ -149,6 +160,11 @@
 ## Content voice
 
 - Tone: direct, calm, specific, and concise.
+- Documentation voice: begin with what the reader can do, then give prerequisites,
+  steps, expected results, and precise limitations. Keep detailed explanations
+  available without leading every page with infrastructure jargon. Distinguish
+  implemented, deployed, verified, and planned support; do not advertise pending
+  provider certification as complete.
 - Terminology: capability, tool, connected service, child run, native child,
   provider, model, verified, unverified, unavailable.
 - Microcopy rules: explain the concrete reason and remedy; avoid “magic”, vague
@@ -159,6 +175,10 @@
 
 - Framework/styling system: Next.js 16, React 19, Tailwind 4, existing semantic
   theme tokens and base components.
+- Documentation implementation: preserve Blume/Astro, MDX routes, existing slot
+  overrides, search, and diagram assets. Work only in Pro. Build/doctor and
+  light/dark desktop/mobile preview checks precede handoff; publishing and OSS
+  synchronization are separate from this documentation refresh.
 - Design-token constraints: no hardcoded theme palettes or new token layer.
 - Performance constraints: catalog payload is bounded/cacheable; child event
   transcripts load lazily; no eager full-history hydration. Based on the

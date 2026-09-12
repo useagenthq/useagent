@@ -23,6 +23,21 @@ import {
   type ToolGatewayCapabilityDescriptor,
 } from "../knowledge/gateway/descriptor";
 import { sandboxSecretMode, type SandboxSecretMode } from "../secrets/inject";
+import {
+  CANONICAL_SANDBOX_GENERATION_LABEL,
+  CANONICAL_SANDBOX_RUN_LABEL,
+  LEGACY_SANDBOX_GENERATION_LABEL,
+  LEGACY_SANDBOX_RUN_LABEL,
+  readCompatibleSandboxLabel,
+} from "../sandboxes/label-compat";
+export type { CompatibleSandboxLabel } from "../sandboxes/label-compat";
+export {
+  CANONICAL_SANDBOX_GENERATION_LABEL,
+  CANONICAL_SANDBOX_RUN_LABEL,
+  LEGACY_SANDBOX_GENERATION_LABEL,
+  LEGACY_SANDBOX_RUN_LABEL,
+  readCompatibleSandboxLabel,
+} from "../sandboxes/label-compat";
 
 export interface OpenCodeProviderOptions {
   readonly baseURL: string;
@@ -54,7 +69,7 @@ export function mergeOpenCodeProviderConfig(
       ...existingModels,
       [CEREBRAS_QWEN_MODEL.slice("cerebras/".length)]: {
         name: "Qwen 3.8 27B",
-        limit: { context: 65_536, output: 32_768 },
+        limit: { context: 65_536, output: 16_384 },
       },
       // Existing durable Gemma threads may still resume or receive replies.
       [CEREBRAS_GEMMA_MODEL.slice("cerebras/".length)]: {
@@ -73,7 +88,7 @@ export function mergeOpenCodeProviderConfig(
 // from surviving a compatibility -> gateway-only transition.
 export const SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-gateway-only-secrets";
 const COMPATIBILITY_SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-compatibility-secrets";
-export const SANDBOX_GENERATION_LABEL = "skynet-provider-generation";
+export const SANDBOX_GENERATION_LABEL = CANONICAL_SANDBOX_GENERATION_LABEL;
 const SANDBOX_MARKER = "$HOME/.skynet/provider-gateway-generation";
 const OPENAI_TOKEN_FILE = "$HOME/.skynet/provider-openai.token";
 export const CLAUDE_CONFIG_DIR = "/tmp/skynet-claude-config";
@@ -323,7 +338,7 @@ export function providerGatewayWired(): boolean {
  * trust anchor used for warm reuse. */
 export function providerGatewaySandboxLabels(runId: string): Record<string, string> {
   return {
-    "skynet-run": runId,
+    [CANONICAL_SANDBOX_RUN_LABEL]: runId,
     ...(providerGatewayWired()
       ? { [SANDBOX_GENERATION_LABEL]: sandboxGeneration() }
       : {}),
@@ -511,8 +526,13 @@ export async function prepareProviderGatewaySandbox(
 export async function providerGatewaySandboxIsCurrent(sandbox: SandboxHandle): Promise<boolean> {
   if (!providerGatewayWired()) return true;
   const generation = sandboxGeneration();
-  const labels = (sandbox as { labels?: Record<string, string> }).labels;
-  if (labels?.[SANDBOX_GENERATION_LABEL] !== generation) return false;
+  const labels = (sandbox as { labels?: Record<string, string> }).labels ?? {};
+  const labeledGeneration = readCompatibleSandboxLabel(
+    labels,
+    CANONICAL_SANDBOX_GENERATION_LABEL,
+    LEGACY_SANDBOX_GENERATION_LABEL,
+  );
+  if (labeledGeneration.conflict || labeledGeneration.value !== generation) return false;
   const result = await sandbox.process
     .executeCommand(`test \"$(cat ${SANDBOX_MARKER} 2>/dev/null)\" = \"${generation}\"`, undefined, undefined, 10)
     .catch(() => null);

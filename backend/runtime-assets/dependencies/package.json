@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "dependencies": {
-    "t3": "0.0.33"
+    "t3": "0.0.39-nightly.20260906.1293"
   },
   "trustedDependencies": [
     "node-pty"

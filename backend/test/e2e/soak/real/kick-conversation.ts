@@ -23,6 +23,7 @@ import { openSync } from "node:fs";
 import postgres from "postgres";
 import { Recorder } from "../lib/report";
 import { deleteById, listUseAgent } from "../lib/daytona";
+import { readSandboxRunLabel } from "../../../../src/sandboxes/label-compat";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
 const DB = process.env.SOAK_REAL_DB ?? "skynet_soak_real";
@@ -203,9 +204,8 @@ async function threadCycle(t: number): Promise<void> {
     }
   }
 
-  // KILL / RESTART mid-turn. SOAK invariant (sustained crash resilience — NOT the
-  // one-shot reconcile-to-completed proof, which real-full-stack.ts owns by waiting
-  // for opencode to finish server-side before restart): the killed turn must reach
+  // KILL / RESTART mid-turn. SOAK invariant (sustained crash resilience, not a
+  // guarantee that a killed turn completes successfully): the killed turn must reach
   // a TERMINAL state (never stuck), and the conversation must CONTINUE afterward.
   // Whether recovery reconciles-to-completed or honest-fails depends on whether the
   // turn finished server-side within recovery's one-shot ~11s probe — both are
@@ -243,8 +243,8 @@ async function cleanup(): Promise<void> {
   const runIds = new Set((await sql`select id from runs`.catch(() => [])).map((r) => r.id as string));
   try {
     for (const sb of await listUseAgent()) {
-      const label = sb.labels["skynet-run"];
-      if (label && runIds.has(label)) createdSandboxes.add(sb.id);
+      const label = readSandboxRunLabel(sb.labels);
+      if (!label.conflict && label.value && runIds.has(label.value)) createdSandboxes.add(sb.id);
     }
   } catch { /* best-effort */ }
   const ids = [...createdSandboxes];

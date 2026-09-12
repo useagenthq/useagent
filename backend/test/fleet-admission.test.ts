@@ -340,7 +340,7 @@ describe("durable admission — restart + crash recovery", () => {
       create: async () => { throw new Error("unused"); },
       get: async () => { throw new Error("unused"); },
       async *list() {},
-    });
+    }, "cube");
 
     expect(cleared).toBe(1);
     expect((await getRun(runId))?.sandboxId).toBeNull();
@@ -358,10 +358,34 @@ describe("durable admission — restart + crash recovery", () => {
         yield { id: "partial-box" } as never;
         throw new Error("provider unavailable");
       },
-    })).rejects.toThrow("provider unavailable");
+    }, "cube")).rejects.toThrow("provider unavailable");
 
-    expect(await clearMissingRetainedSandboxMappings(new Set(["preserved-box"]))).toBe(0);
+    expect(await clearMissingRetainedSandboxMappings(new Set(["preserved-box"]), "cube")).toBe(0);
     expect((await getRun(runId))?.sandboxId).toBe("preserved-box");
+  });
+
+  test("a deployment provider listing cannot clear another provider's retained workspace", async () => {
+    const orgId = track(`org-${uid("retained-provider-scope")}`);
+    const cubeRun = await accept(orgId);
+    const daytonaRun = await accept(orgId);
+    const personalRun = await accept(orgId);
+    const legacyRun = await accept(orgId);
+    await db.execute(sql`update runs set sandbox_id = 'missing-cube', sandbox_provider = 'cube', sandbox_credential = 'env' where id = ${cubeRun}`);
+    await db.execute(sql`update runs set sandbox_id = 'retained-daytona', sandbox_provider = 'daytona', sandbox_credential = 'env' where id = ${daytonaRun}`);
+    await db.execute(sql`update runs set sandbox_id = 'personal-cube', sandbox_provider = 'cube', sandbox_credential = 'user' where id = ${personalRun}`);
+    await db.execute(sql`update runs set sandbox_id = 'missing-legacy' where id = ${legacyRun}`);
+
+    const cleared = await reconcileRetainedSandboxMappings({
+      create: async () => { throw new Error("unused"); },
+      get: async () => { throw new Error("unused"); },
+      async *list() {},
+    }, "cube");
+
+    expect(cleared).toBe(2);
+    expect((await getRun(cubeRun))?.sandboxId).toBeNull();
+    expect((await getRun(legacyRun))?.sandboxId).toBeNull();
+    expect((await getRun(daytonaRun))?.sandboxId).toBe("retained-daytona");
+    expect((await getRun(personalRun))?.sandboxId).toBe("personal-cube");
   });
 
   test("a follow-up reusing its thread sandbox does not double-count capacity", async () => {

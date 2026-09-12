@@ -1,76 +1,83 @@
 ---
 title: Provider connections and models
-description: Two ways to authenticate an engine, the gateway providers behind them, and the model families served, with the credential never entering a sandbox.
+description: Connect model and computer providers, understand actor-scoped catalogs, and see why a configured model may still be unavailable.
 sidebar:
   order: 2
 ---
 
-An engine needs credentials to run. UseAgent stores them on the trusted backend and
-resolves them at turn time, so a sandbox never holds a reusable secret.
+useAgent resolves credentials on the trusted backend at turn time. The browser
+can write a reusable credential and later read its metadata, but it cannot read
+the secret back. The sandbox receives only the run-bound configuration or
+gateway capability needed for that turn.
 
-## Two authentication methods
+## Connection types
 
-<CardGroup cols={2}>
-  <Card title="Managed account" icon="user-check">
-    A ChatGPT or Codex account connected with an OAuth device flow. The token
-    bundle is stored encrypted and used from the trusted backend.
-  </Card>
-  <Card title="API key" icon="key-round">
-    A provider key stored write-only, encrypted with AES-256-GCM, resolved inside
-    the signed provider gateway.
-  </Card>
-</CardGroup>
-
-Connections belong to the signed-in user within the organization, not to the
-organization as a whole. Every provider-connections route requires an
-authenticated user and returns `403 user_required` otherwise; the org-level dev
-fallback alone is not enough. Reads return metadata for the current user's
-connections only.
-
-The connection lifecycle is driven from [Settings](/product/settings):
-
-| Operation | Endpoint |
-| --- | --- |
-| List the current user's connections | `GET /api/provider-connections` |
-| Managed account OAuth | `POST .../openai/chatgpt-oauth/start`, `GET .../status`, `POST .../cancel`, `POST .../revoke` |
-| Store or update a provider key | `PUT .../:provider/api-key` |
-| Revoke a provider credential | `POST .../:provider/revoke` |
-
-There is no `POST` or `PUT` on the collection root: creation and update happen
-only through the per-provider key route and the OAuth subroutes.
-
-## Gateway providers and models
-
-API-key engines are served through the provider gateway, which fronts three
-upstreams:
-
-| Provider | Endpoint | Models |
+| Kind | Providers | What it controls |
 | --- | --- | --- |
-| Anthropic | `api.anthropic.com` | `claude-*` |
-| OpenAI | `api.openai.com` | `gpt-*` |
-| OpenRouter | `openrouter.ai/api` | Aggregated across providers |
+| Managed account | Codex through ChatGPT/Codex OAuth | The signed-in actor's native Codex session and native model catalog |
+| Model API key | OpenAI, Anthropic, OpenRouter, Cerebras | Which paid model routes the actor can use through the provider gateway |
+| Computer API key | Box, Daytona | Where that actor's thread sandboxes run when personal computers are enabled |
 
-OpenCode runs against its own native models. Which engines and models are
-selectable in the UI is deployment configuration plus proven readiness, not a
-per-organization setting: the `ENABLED_ENGINES` env only adds optional engines
-on top of the base set, and `GET /api/config` filters further to engines whose
-readiness is proven (auth mode established, provider health ready).
+Cube is a deployment-selected sandbox plugin rather than a personal connection
+in the current provider-connection API.
 
-## The Codex subscription relay
+Connections belong to the signed-in user inside the active organization. Every
+provider-connection route requires a real user; the local dev-org fallback is
+not enough.
 
-A managed Codex subscription does not put OAuth state in a sandbox. The Codex
-app-server and the ChatGPT OAuth stay on the trusted backend, and only the Codex
-exec-server runs inside the sandbox, reached over a one-use, run-bound relay. See
-[Engines](/concepts/engines-and-adapters#codex-subscription-relay).
+## Connect an API key
 
-## Connection reconcile
+1. Open **Settings → Connections**.
+2. Choose the model or computer provider.
+3. Paste the key and any required computer metadata, such as a snapshot name.
+4. Save, then wait for the status to report **Connected**.
 
-A provider-connection row heals from broker truth. A revoked row may only be
-reclaimed when the live account email differs from the revoked one, which proves a
-genuinely new login rather than a stale pre-logout snapshot.
+The write uses `PUT /api/provider-connections/:provider/api-key`. Reads from
+`GET /api/provider-connections` return status, dates, and safe metadata only.
+Revoke with `POST /api/provider-connections/:provider/revoke`.
+
+Expected outcome: the connection-change stream refreshes Settings and the
+capability catalog. A stored computer key changes run placement only when the
+deployment enables personal computers.
+
+## Connect Codex
+
+The Codex device flow is managed by the backend. OAuth state and the native
+Codex app-server stay outside the sandbox. After connection, the backend loads a
+bounded native model catalog for the exact org/user actor and intersects it with
+the deployment allowlist.
+
+## Actor-scoped model catalog
+
+`GET /api/capabilities` is the picker contract. For each engine it reports:
+
+- whether the engine is configured and ready;
+- the native runtime kind currently selected;
+- allowed model ids and the engine default;
+- whether each model is policy-allowed and dispatchable;
+- native Codex display names and reasoning efforts when available;
+- a stale or unavailable catalog reason.
+
+The catalog is actor-scoped because connected credentials are actor-scoped. A
+model visible to one member is not evidence that another member can dispatch it.
+
+## Astra policy
+
+`gpt-6-astra` is in the current Codex policy allowlist. It becomes dispatchable
+only when the signed-in actor's native Codex catalog also exposes it and the
+Codex connection is healthy. The UI must keep a native-but-disallowed model
+visible as unavailable rather than implying it can run.
+
+## Why “configured” is not “ready”
+
+An engine may be enabled while its credential is missing, a paid provider is
+unhealthy, or its model fails policy. The backend checks engine readiness and
+the selected model's provider again when admitting a run. A failed check returns
+a typed reason such as `model_not_allowed`, `model_provider_not_ready`, or
+`provider_unhealthy`; it never silently chooses a cheaper or different model.
 
 :::warning
-Only connection metadata is ever visible to the UI. The reusable secret, whether
-an API key or an OAuth token, is write-only and is resolved inside the gateway. It
-does not travel to the browser and it does not travel to a sandbox.
+Provider connection metadata is safe to display. Reusable API keys and OAuth
+tokens are write-only and encrypted at rest. They are not returned to the
+browser, copied into the event log, or exposed as a general sandbox secret.
 :::

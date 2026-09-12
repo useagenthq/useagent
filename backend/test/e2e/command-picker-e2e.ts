@@ -10,10 +10,10 @@
  *
  * Deterministic seam: it boots its OWN backend on a throwaway DB + its OWN frontend (isolated
  * dist dir), settles a `mock` run (no sandbox), relabels the thread's engine to claude/codex,
- * and seeds that engine's command catalog directly (the exact row the ACP relay's
- * available_commands_update writes via cacheAcpCommands). So the browser exercises the real
- * frontend picker + real /api/commands route + real DB, with zero cloud cost and zero flake
- * from whether a specific ACP build advertises commands on a given day.
+ * and seeds that engine's command catalog directly (the durable canonical `commands.updated`
+ * a native session advertises). So the browser exercises the real frontend picker + real
+ * /api/commands route + real DB, with zero cloud cost and zero flake from whether a specific
+ * engine build advertises commands on a given day.
  *
  * Run (from backend/):  bun test/e2e/command-picker-e2e.ts
  * Self-cleaning: kills both procs, drops the DB, restores the isolated dist dir + tsconfig.
@@ -32,7 +32,6 @@ const FE_PORT = 3422;
 const BE = `http://localhost:${BE_PORT}`;
 const FE = `http://localhost:${FE_PORT}`;
 const DIST = ".next-cmd-e2e";
-const DEV_ORG_ID = "org-skynet-dev"; // anonymous (dev-org) requests scope here; the catalog key must match
 const SHOTS = process.env.CMD_E2E_SHOTS ?? "/tmp/cmd-picker-shots/";
 
 const backendDir = new URL("../..", import.meta.url).pathname;
@@ -84,7 +83,7 @@ async function main() {
 
   try {
     // ── 2. boot backend on the throwaway DB (mock engine only, no cloud) ──────
-    const beLog = openSync(`${scratch}/skynet-cmd-e2e-backend.log`, "a");
+    const beLog = openSync(`${scratch}/useagent-cmd-e2e-backend.log`, "a");
     try {
       be = Bun.spawn(["bun", "src/index.ts"], {
         cwd: backendDir,
@@ -108,7 +107,7 @@ async function main() {
     ok("backend booted", await waitHttp(`${BE}/health`, 60_000));
 
     // ── 3. boot the frontend (isolated dist, rewrites -> our backend) ─────────
-    const feLog = openSync(`${scratch}/skynet-cmd-e2e-frontend.log`, "a");
+    const feLog = openSync(`${scratch}/useagent-cmd-e2e-frontend.log`, "a");
     try {
       fe = Bun.spawn(["bun", "run", "dev", "--port", String(FE_PORT)], {
         cwd: frontendDir,
@@ -161,12 +160,13 @@ async function main() {
         await sleep(500);
       }
       await sql`UPDATE runs SET engine = ${engine} WHERE thread_id = ${runId}`;
-      // seed the catalog the ACP relay would have written (cacheAcpCommands -> acp:<org>:<engine>)
-      const key = `acp:${DEV_ORG_ID}:${engine}`;
+      // seed the catalog a native session would have advertised: the durable canonical
+      // `commands.updated` for this run, which /api/commands reads for the org and engine.
       await sql`
-        INSERT INTO commands_catalog (snapshot, commands, fetched_at)
-        VALUES (${key}, ${sql.json(cmds)}, now())
-        ON CONFLICT (snapshot) DO UPDATE SET commands = EXCLUDED.commands, fetched_at = now()`;
+        INSERT INTO canonical_events (event_id, revision, run_id, thread_id, seq, kind, ts, identity, body)
+        VALUES (${`${runId}:commands`}, 0, ${runId}, ${runId}, 0, 'commands.updated', ${Date.now()},
+          ${sql.json({ provider: engine, nativeSessionId: `ses-${runId}` })},
+          ${sql.json({ catalog: cmds, commands: cmds.map((c: { name: string }) => c.name) })})`;
 
       const page: Page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
       const consoleErrors: string[] = [];
@@ -189,7 +189,7 @@ async function main() {
       // textarea would otherwise be matched by a bare `textarea` selector). `:visible`
       // scopes to the mounted composer: on RELOAD the tree double-renders and settles, so a
       // stale hidden copy can briefly coexist - we always drive the visible one.
-      const composer = () => page.locator('textarea[placeholder*="Reply to useAgent"]:visible');
+      const composer = () => page.locator('textarea[placeholder*="Reply to Agent"]:visible');
       await composer().waitFor({ state: "visible", timeout: 60_000 });
 
       // type "/" -> the native-command popover appears with the seeded commands. The picker

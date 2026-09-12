@@ -22,6 +22,7 @@ import { chromium, type Browser, type Page } from "playwright-core";
 import postgres from "postgres";
 import { closeSync, openSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { deleteById, listAll } from "./soak/lib/daytona";
+import { readSandboxRunLabel } from "../../src/sandboxes/label-compat";
 import { DEFAULT_CLAUDE_MODEL, DEFAULT_CODEX_MODEL } from "../../src/runs/model-policy";
 
 type Engine = "opencode" | "claude" | "codex";
@@ -467,7 +468,7 @@ try {
   // clean up ONLY our sandboxes (persisted ids + label match on our run ids)
   const mine = new Set<string>([...sandboxIds].filter(Boolean));
   const myRuns = new Set(myRunIds);
-  try { for (const sb of await listAll()) { const l = sb.labels?.["skynet-run"]; if (l && myRuns.has(l)) mine.add(sb.id); } } catch { /* ignore */ }
+  try { for (const sb of await listAll()) { const l = readSandboxRunLabel(sb.labels ?? {}); if (!l.conflict && l.value && myRuns.has(l.value)) mine.add(sb.id); } } catch { /* ignore */ }
   const ids = [...mine].filter(Boolean);
   if (ids.length) { const r = await deleteById(ids).catch(() => ({ deleted: [], failed: [{ id: "?", error: "x" }] })); rec("sandbox(es) deleted + API-verified", r.failed.length === 0 ? "pass" : "fail", `deleted ${r.deleted.length}`); }
   else rec("sandbox cleanup", daytonaBlocked ? "na" : "pass", "nothing provisioned");

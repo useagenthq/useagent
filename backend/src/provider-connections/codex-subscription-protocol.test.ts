@@ -29,6 +29,19 @@ describe("CodexSubscriptionProtocol", () => {
         },
       })),
     ).rejects.toThrow("model provider is host-owned");
+
+    await expect(
+      protocol.acceptClientFrame(JSON.stringify({
+        id: 3,
+        method: "thread/resume",
+        params: {
+          threadId: "provider-thread-from-old-auth-epoch",
+          cwd: "/root/work",
+          model: "gpt-5.5",
+          config: { model_provider: "attacker" },
+        },
+      })),
+    ).rejects.toThrow("thread config is host-owned");
   });
 
   test("rejects a turn-level workspace override outside the bound remote environment", async () => {
@@ -114,6 +127,75 @@ describe("CodexSubscriptionProtocol", () => {
         result: { thread: { id: "some-other-thread" } },
       })),
     ).rejects.toThrow("Codex resume response changed thread");
+  });
+
+  test("starts a fresh native thread when the current auth epoch has no binding", async () => {
+    let providerThreadId: string | null = null;
+    const bound: string[] = [];
+    const protocol = new CodexSubscriptionProtocol(binding(), {
+      loadThreadBinding: async () => providerThreadId,
+      bindThread: async (value) => {
+        bound.push(value);
+        providerThreadId = value;
+      },
+    });
+    const outbound = await protocol.acceptClientFrame(JSON.stringify({
+      id: 6,
+      method: "thread/resume",
+      params: {
+        threadId: "provider-thread-from-old-auth-epoch",
+        cwd: "/root/work",
+        model: "gpt-5.5",
+        approvalPolicy: "never",
+        sandbox: "danger-full-access",
+      },
+    }));
+
+    expect(JSON.parse(outbound)).toEqual({
+      id: 6,
+      method: "thread/start",
+      params: {
+        cwd: "/root/work",
+        model: "gpt-5.5",
+        approvalPolicy: "never",
+        sandbox: "danger-full-access",
+      },
+    });
+    expect(bound).toEqual([]);
+
+    await observe(protocol, JSON.stringify({
+      id: 6,
+      result: { thread: { id: "provider-thread-from-current-auth-epoch" } },
+    }));
+    expect(bound).toEqual(["provider-thread-from-current-auth-epoch"]);
+
+    const canonicalPrompt = "<prior_thread_context>User: before relogin</prior_thread_context>\n\n" +
+      "<current_user_request>continue</current_user_request>";
+    const turn = JSON.stringify({
+      id: 7,
+      method: "turn/start",
+      params: {
+        threadId: "provider-thread-from-current-auth-epoch",
+        model: "gpt-5.5",
+        input: [{ type: "text", text: canonicalPrompt }],
+        environments: [remoteEnvironment()],
+      },
+    });
+    expect(await protocol.acceptClientFrame(turn)).toBe(turn);
+  });
+
+  test("still rejects a resume that mismatches an existing current-epoch binding", async () => {
+    const protocol = makeProtocol({ providerThreadId: "provider-thread-current" });
+
+    await expect(protocol.acceptClientFrame(JSON.stringify({
+      id: 8,
+      method: "thread/resume",
+      params: {
+        threadId: "provider-thread-stale",
+        cwd: "/root/work",
+        model: "gpt-5.5",
+      },
+    }))).rejects.toThrow("Codex resume thread binding mismatch");
   });
 
   test("a rewritten start still enforces host-owned thread fields", async () => {

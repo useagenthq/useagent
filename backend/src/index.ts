@@ -32,7 +32,6 @@ import { reposRoutes } from "./github/routes";
 import { pullsRoutes } from "./github/pulls-routes";
 import { desktopProxyRoutes } from "./runs/desktop-proxy";
 import { fleetRoutes } from "./runs/fleet-routes";
-import { liveProxyRoutes } from "./runs/live-proxy";
 import { portProxyRoutes } from "./runs/port-proxy";
 import { recoverStaleRuns, startReconcileLoop } from "./runs/recovery";
 import {
@@ -64,14 +63,11 @@ import { tasksRoutes } from "./tasks/routes";
 import { projectsRoutes } from "./projects/routes";
 import { slackEnabled, slackRoutes, startSlackOutbox, syncSlackWorkspaceBindings } from "./slack";
 import { enforceSingleBackend } from "./db/single-backend";
-import { ensureWarmPool, warmPoolSize } from "./sandboxes/warm-pool";
 import {
   cubeRuntimeWarmPoolSize,
-  cubeWarmPoolSize,
   startCubeWarmPool,
 } from "./sandboxes/cube-warm-pool";
 import { providerGatewaySandboxLabels } from "./provider-gateway/sandbox-config";
-import { prewarmOpenCodeRuntime } from "./engines/opencode-server";
 import {
   RUNTIME_CUBE_WARM_POOL_NAME,
   RUNTIME_GENERATION,
@@ -137,12 +133,16 @@ import { threadRelationshipRoutes } from "./runs/thread-relationship-routes";
 import { configureProductChildPump } from "./runs/child-session-pump";
 import { assertThreadRelationshipRolloutConfig, productChildThreadsEnabled, threadRelationshipWriteMode } from "./runs/thread-relationship-rollout";
 import { repairEligiblePublicRootThreadRelationships } from "./runs/thread-relationship-repo";
+import { artifactStorageHealth, assertArtifactStorageWritable } from "./artifacts/storage";
 
 // Acquire the per-database singleton before ANY shared-state mutation. In strict
 // production mode an unavailable/contended lock fails boot closed, so a duplicate
 // process cannot migrate or recover another backend's database first.
 assertThreadRelationshipRolloutConfig();
 const singleBackendHeld = await enforceSingleBackend();
+// Artifact bytes must be writable before any run can publish; a missing mount
+// fails boot here rather than surfacing as EROFS inside a run.
+await assertArtifactStorageWritable();
 
 // A process crash can strand temporary private checkouts on the disk-backed
 // scratch mount. With the single-backend lock held, no live clone belongs to
@@ -299,7 +299,11 @@ app.use("/api/*", async (c, next) => {
   return orgScope(c, next);
 });
 
-app.get("/api/health", (c) => c.json({ status: "ok" }));
+app.get("/api/health", async (c) => {
+  const storage = await artifactStorageHealth();
+  if (!storage.ok) return c.json({ status: "unhealthy", artifact_storage: storage.error }, 503);
+  return c.json({ status: "ok" });
+});
 app.route("/api/internal/artifact-changes", internalArtifactChangeRoutes);
 app.route("/api/internal/automation", internalAutomationRoutes);
 app.route("/api/internal/child-sessions", internalChildSessionRoutes);
@@ -338,7 +342,7 @@ app.get("/api/config", (c) => {
   if (!freeModelRegistryReadEnabled()) void refreshFreeModelLane();
   // Configured engines stay discoverable even while a provider needs attention;
   // the additive readiness map explains why without weakening the fail-closed
-  // POST /api/runs dispatch gate. mock/daytona/claude-sdk/acp remain internal.
+  // POST /api/runs dispatch gate. mock/daytona/claude-sdk remain internal aliases.
   const engines = readyUserFacingEngines();
   const configuredEngines = configuredUserFacingEngines();
   const engineReadiness = configuredEngineReadiness();
@@ -438,7 +442,6 @@ app.route("/api/runs", terminalRoutes);
 // Same-origin bridge to a thread's opencode server for the embedded "Live" tab
 // (frontend/public/opencode-app). Injects the Daytona preview token, streams
 // SSE through untouched.
-app.route("/api/live-proxy", liveProxyRoutes);
 // Same-origin bridge to a thread's noVNC desktop for the "Desktop" tab — proxies
 // noVNC's static app over HTTP and its RFB WebSocket, injecting the Daytona
 // preview token on both (shares the `websocket` handler above).
@@ -501,9 +504,9 @@ app.route("/api/wiki", wikiGenRoutes);
 // correct/delete), the capture outbox (inspect + manual recovery), and the
 // retrieval ledger. Org-scoped; memory transport credentials stay server-side.
 app.route("/api/memory", memoryRoutes);
-// Snapshot-level slash-command catalog (cached from the live-proxy's /command
-// taps) — powers "/" autocomplete on the New Task composer before a sandbox
-// exists.
+// Slash-command catalog for the pre-session picker: the latest catalog a native
+// session of this org advertised for the chosen engine, read from the durable
+// canonical stream. Powers "/" autocomplete on the New Task composer.
 app.route("/api/commands", commandsRoutes);
 
 // Always-on scheduler loop (60s tick). Harmless when no schedule is enabled —
@@ -593,48 +596,6 @@ startReconcileLoop();
 // background loop (the unit suite drives admission explicitly).
 if (process.env.FLEET_RECONCILER_AUTOSTART !== "0") startFleetReconciler();
 
-// Daytona warm pool for the OpenCode snapshot (perf plan Phase 3), OFF by
-// default. Only when DAYTONA_WARM_POOL_SIZE is set AND an explicit OpenCode
-// snapshot (DAYTONA_SNAPSHOT) is configured do we provision/reconcile a pool so
-// new-thread creates claim a ready machine instead of building one (gate:
-// sandbox usable p95 <1.5s). Best-effort and fire-and-forget: a pool error never
-// blocks boot or any turn.
-const warmPoolTarget = warmPoolSize();
-const openCodeSnapshot = process.env.DAYTONA_SNAPSHOT?.trim();
-if (sandboxProviderKind() === "daytona" && warmPoolTarget && openCodeSnapshot) {
-  void ensureWarmPool(openCodeSnapshot, warmPoolTarget)
-    .then((pool) =>
-      console.log(
-        `[warm-pool] opencode ${pool.snapshot} target=${pool.target} ready=${pool.ready}/${pool.desired}`,
-      ),
-    )
-    .catch((err) =>
-      console.warn("[warm-pool] ensure failed:", err instanceof Error ? err.message : err),
-    );
-}
-
-const cubePoolTarget = cubeWarmPoolSize();
-const cubeTemplate = process.env.CUBE_TEMPLATE_ID?.trim();
-if (sandboxProviderKind() === "cube" && cubePoolTarget && cubeTemplate) {
-  const apiKey = sandboxProviderApiKey();
-  const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
-  const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);
-  startCubeWarmPool({
-    provider: sandboxProvider(apiKey),
-    size: cubePoolTarget,
-    createOptions: {
-      snapshot: cubeTemplate,
-      labels: providerGatewaySandboxLabels("warm-pool"),
-      autoStopInterval,
-      autoDeleteInterval,
-    },
-    warmRuntime: async (sandbox, signal) => {
-      await prewarmOpenCodeRuntime(sandbox, signal);
-    },
-  });
-  console.log(`[cube-warm-pool] target=${cubePoolTarget} template=${cubeTemplate}`);
-}
-
 const cubeRuntimePoolTarget = cubeRuntimeWarmPoolSize();
 const cubeRuntimeTemplate = operatorEnv(
   process.env,
@@ -662,10 +623,7 @@ if (sandboxProviderKind() === "cube" && cubeRuntimePoolTarget && cubeRuntimeTemp
     warmRuntime: async (sandbox, signal) => {
       const runtimePrewarmEnv = { ...process.env, RUNTIME_ENVIRONMENT_ENABLED: "true" };
       await prewarmRuntimeProviderBridge(sandbox, runtimePrewarmEnv);
-      await Promise.all([
-        prewarmRuntimeEnvironmentAccess(sandbox, signal),
-        prewarmOpenCodeRuntime(sandbox, signal),
-      ]);
+      await prewarmRuntimeEnvironmentAccess(sandbox, signal);
     },
   });
   console.log(
@@ -709,7 +667,7 @@ export default {
   // Bun WebSocket handler for the terminal bridge (hono/bun upgradeWebSocket).
   websocket,
   // Long-held requests are legitimate here: the Live tab's prompt POST stays
-  // open for a whole engine turn through /api/live-proxy. Bun's 10s default
+  // open for a whole engine turn on the thread stream. Bun's 10s default
   // idle timeout kills them ("Failed to fetch" in opencode's composer); 255s
   // is Bun's maximum. Turns longer than that keep running server-side — only
   // the embed's request errors.

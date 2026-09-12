@@ -46,10 +46,15 @@ import {
   validatedTrustedImageBytes,
   type ValidatedTrustedImageOutput,
 } from "./trusted-output";
+import {
+  requiresScreenshotProofPurpose,
+  resolveAttachedSandboxWorkspaceRoot,
+} from "../sandboxes/workspace";
 
 export const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024;
-export const ARTIFACT_WORKSPACE_ROOT = "/root/work";
-const TRUSTED_OUTPUT_SOURCE_ROOT = "/.skynet/provider-output";
+const LEGACY_TRUSTED_OUTPUT_SOURCE_ROOT = "/.skynet/provider-output";
+const CANONICAL_TRUSTED_OUTPUT_SOURCE_ROOT = "/.useagent/provider-output";
+const TRUSTED_OUTPUT_SOURCE_ROOT = CANONICAL_TRUSTED_OUTPUT_SOURCE_ROOT;
 
 function safeName(sourcePath: string, requested?: string): string {
   const candidate = requested?.trim() || basename(sourcePath.replaceAll("\\", "/")) || "artifact";
@@ -79,6 +84,17 @@ function trustedOutputSourcePath(
   return `${TRUSTED_OUTPUT_SOURCE_ROOT}/${safeProvider}/${identityDigest.digest("hex")}`;
 }
 
+function trustedOutputSourceAliases(sourcePath: string): readonly [string, string] {
+  const legacySourcePath = sourcePath.replace(
+    CANONICAL_TRUSTED_OUTPUT_SOURCE_ROOT,
+    LEGACY_TRUSTED_OUTPUT_SOURCE_ROOT,
+  );
+  return [
+    legacySourcePath,
+    legacySourcePath.replace(LEGACY_TRUSTED_OUTPUT_SOURCE_ROOT, CANONICAL_TRUSTED_OUTPUT_SOURCE_ROOT),
+  ];
+}
+
 type TrustedArtifactEventRecorder = typeof recordProviderEventIfAbsent;
 let trustedArtifactEventRecorder: TrustedArtifactEventRecorder = recordProviderEventIfAbsent;
 
@@ -88,7 +104,7 @@ export function setTrustedArtifactEventRecorderForTest(
   trustedArtifactEventRecorder = recorder ?? recordProviderEventIfAbsent;
 }
 
-function checkedSourcePath(value: string): string {
+function checkedSourcePath(value: string, workspaceRoot: string): string {
   const path = value.trim();
   if (!path || path.length > 4_096 || path.includes("\0")) {
     throw new Error("artifact path must be a non-empty sandbox path under 4096 characters");
@@ -96,9 +112,9 @@ function checkedSourcePath(value: string): string {
   if (
     !posix.isAbsolute(path) ||
     posix.normalize(path) !== path ||
-    (path !== ARTIFACT_WORKSPACE_ROOT && !path.startsWith(`${ARTIFACT_WORKSPACE_ROOT}/`))
+    (path !== workspaceRoot && !path.startsWith(`${workspaceRoot}/`))
   ) {
-    throw new Error(`artifact path must be a canonical path under ${ARTIFACT_WORKSPACE_ROOT}`);
+    throw new Error(`artifact path must be a canonical path under ${workspaceRoot}`);
   }
   if (isProtectedInjectedSecretPath(path)) {
     throw new Error("protected secret paths and dotenv files cannot be published as artifacts");
@@ -106,12 +122,16 @@ function checkedSourcePath(value: string): string {
   return path;
 }
 
-async function resolvePublishablePath(sandboxId: string, value: string): Promise<string> {
-  const requested = checkedSourcePath(value);
+async function resolvePublishablePath(
+  sandboxId: string,
+  value: string,
+  workspaceRoot: string,
+): Promise<string> {
+  const requested = checkedSourcePath(value, workspaceRoot);
   const resolved = await resolveSandboxFilePath(sandboxId, requested);
   if (
     resolved !== requested ||
-    (resolved !== ARTIFACT_WORKSPACE_ROOT && !resolved.startsWith(`${ARTIFACT_WORKSPACE_ROOT}/`))
+    (resolved !== workspaceRoot && !resolved.startsWith(`${workspaceRoot}/`))
   ) {
     throw new Error("artifact path must not traverse or use a symlink outside the workspace");
   }
@@ -288,6 +308,7 @@ export async function publishSandboxArtifact(input: {
   readonly path: string;
   readonly name?: string;
   readonly editablePath?: string;
+  readonly purpose?: "user_requested_proof" | "deliverable";
   /** When set, the new bytes + companion land as a NEW REVISION of this existing
    * artifact (same org + same workpiece kind), not a new artifact. */
   readonly updatesArtifactId?: string;
@@ -297,7 +318,23 @@ export async function publishSandboxArtifact(input: {
     throw new Error("run not found in this thread");
   }
   if (!run.sandboxId) throw new Error("no sandbox is attached to this run");
-  const sourcePath = await resolvePublishablePath(run.sandboxId, input.path);
+  const workspaceRoot = await resolveAttachedSandboxWorkspaceRoot({
+    sandboxId: run.sandboxId,
+    sandboxProvider: run.sandboxProvider,
+  });
+  const sourcePath = await resolvePublishablePath(run.sandboxId, input.path, workspaceRoot);
+  const editablePath = input.editablePath
+    ? await resolvePublishablePath(run.sandboxId, input.editablePath, workspaceRoot)
+    : null;
+  if (
+    (requiresScreenshotProofPurpose(sourcePath)
+      || (editablePath !== null && requiresScreenshotProofPurpose(editablePath)))
+    && input.purpose !== "user_requested_proof"
+  ) {
+    throw new Error(
+      "Private desktop inspection screenshots can only be published when the user explicitly requested durable proof. Retry with purpose=user_requested_proof for the final requested screenshot only.",
+    );
+  }
 
   const redactionValues = await loadInjectedSecretRedactionValues(input.orgId);
   const file = await downloadSandboxFile(run.sandboxId, sourcePath, MAX_ARTIFACT_BYTES);
@@ -306,9 +343,6 @@ export async function publishSandboxArtifact(input: {
   const name = safeName(sourcePath, input.name);
   const contentType = contentTypeForName(name);
   const workpieceKind = inferWorkpieceKind(name, contentType, file.bytes.length);
-  const editablePath = input.editablePath
-    ? await resolvePublishablePath(run.sandboxId, input.editablePath)
-    : null;
   if (editablePath && !workpieceKind) {
     throw new Error("editable_path can only accompany a supported document or spreadsheet");
   }
@@ -531,9 +565,13 @@ export async function publishTrustedArtifact(input: {
   const stored = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${[
       "trusted-artifact-publish",
-      sourcePath,
+      trustedOutputSourceAliases(sourcePath)[0],
     ].join(":")}))`);
-    const existing = await getArtifactForRunSourcePath(run.id, sourcePath, tx);
+    const [legacySourcePath, canonicalSourcePath] = trustedOutputSourceAliases(sourcePath);
+    const legacyMatch = await getArtifactForRunSourcePath(run.id, legacySourcePath, tx);
+    const canonicalMatch = await getArtifactForRunSourcePath(run.id, canonicalSourcePath, tx);
+    if (legacyMatch && canonicalMatch) throw new Error("trusted output identity aliases conflict");
+    const existing = legacyMatch ?? canonicalMatch;
     if (existing) {
       if (
         existing.sha256 !== digest ||

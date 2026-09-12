@@ -13,6 +13,8 @@ import {
   prepareProviderGatewaySandbox,
   codexProviderConfigToml,
   buildClaudeCapabilityWriteCommand,
+  CANONICAL_SANDBOX_GENERATION_LABEL,
+  readCompatibleSandboxLabel,
   SANDBOX_GENERATION,
 } from "./sandbox-config";
 import { verifyProviderToken } from "./token";
@@ -90,6 +92,27 @@ function expectLifetime(
 }
 
 describe("sandbox provider gateway config", () => {
+  test("reads legacy and canonical label aliases only when they agree", () => {
+    expect(readCompatibleSandboxLabel({}, "useagent-key", "skynet-key")).toEqual({
+      value: null,
+      conflict: false,
+    });
+    expect(readCompatibleSandboxLabel({ "skynet-key": "value" }, "useagent-key", "skynet-key"))
+      .toEqual({ value: "value", conflict: false });
+    expect(readCompatibleSandboxLabel({ "useagent-key": "value" }, "useagent-key", "skynet-key"))
+      .toEqual({ value: "value", conflict: false });
+    expect(readCompatibleSandboxLabel(
+      { "useagent-key": "value", "skynet-key": "value" },
+      "useagent-key",
+      "skynet-key",
+    )).toEqual({ value: "value", conflict: false });
+    expect(readCompatibleSandboxLabel(
+      { "useagent-key": "new", "skynet-key": "old" },
+      "useagent-key",
+      "skynet-key",
+    )).toEqual({ value: null, conflict: true });
+  });
+
   test("is inert when no sandbox-reachable gateway exists", () => {
     delete process.env.PROVIDER_GATEWAY_PUBLIC_URL;
     delete process.env.GATEWAY_PUBLIC_URL;
@@ -263,8 +286,8 @@ describe("sandbox provider gateway config", () => {
     expect(verifyProviderToken(options.cerebras?.apiKey)).toMatchObject({ provider: "cerebras" });
     expect(SANDBOX_GENERATION).toBe("provider-gateway-v17-useagent-mcp-gateway-only-secrets");
     expect(providerGatewaySandboxLabels("run-a")).toEqual({
-      "skynet-run": "run-a",
-      "skynet-provider-generation": SANDBOX_GENERATION,
+      "useagent-run": "run-a",
+      "useagent-provider-generation": SANDBOX_GENERATION,
     });
   });
 
@@ -500,10 +523,23 @@ describe("sandbox provider gateway config", () => {
     expect(await providerGatewaySandboxIsCurrent(sandbox)).toBe(false);
     expect(shellChecks).toBe(0);
 
-    (sandbox as unknown as { labels: Record<string, string> }).labels =
-      providerGatewaySandboxLabels("run-a");
+    const currentLabels = providerGatewaySandboxLabels("run-a");
+    (sandbox as unknown as { labels: Record<string, string> }).labels = currentLabels;
     expect(await providerGatewaySandboxIsCurrent(sandbox)).toBe(true);
     expect(shellChecks).toBe(1);
+
+    (sandbox as unknown as { labels: Record<string, string> }).labels = {
+      [CANONICAL_SANDBOX_GENERATION_LABEL]: currentLabels[CANONICAL_SANDBOX_GENERATION_LABEL]!,
+    };
+    expect(await providerGatewaySandboxIsCurrent(sandbox)).toBe(true);
+    expect(shellChecks).toBe(2);
+
+    (sandbox as unknown as { labels: Record<string, string> }).labels = {
+      [CANONICAL_SANDBOX_GENERATION_LABEL]: currentLabels[CANONICAL_SANDBOX_GENERATION_LABEL]!,
+      "skynet-provider-generation": "conflicting-generation",
+    };
+    expect(await providerGatewaySandboxIsCurrent(sandbox)).toBe(false);
+    expect(shellChecks).toBe(2);
   });
 
   test("compatibility sandboxes cannot survive a gateway-only transition", async () => {
@@ -512,7 +548,7 @@ describe("sandbox provider gateway config", () => {
     process.env.NODE_ENV = "development";
     process.env.SANDBOX_SECRET_MODE = "compatibility";
     const compatibilityLabels = providerGatewaySandboxLabels("run-compatibility");
-    expect(compatibilityLabels["skynet-provider-generation"]).toBe(
+    expect(compatibilityLabels[CANONICAL_SANDBOX_GENERATION_LABEL]).toBe(
       "provider-gateway-v17-useagent-mcp-compatibility-secrets",
     );
 
@@ -530,7 +566,7 @@ describe("sandbox provider gateway config", () => {
 
     expect(await providerGatewaySandboxIsCurrent(retained)).toBe(false);
     expect(shellChecks).toBe(0);
-    expect(providerGatewaySandboxLabels("run-gateway")["skynet-provider-generation"]).toBe(
+    expect(providerGatewaySandboxLabels("run-gateway")[CANONICAL_SANDBOX_GENERATION_LABEL]).toBe(
       SANDBOX_GENERATION,
     );
   });

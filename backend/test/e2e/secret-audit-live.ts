@@ -37,6 +37,7 @@ import postgres from "postgres";
 import { openSync, readFileSync } from "node:fs";
 import { Daytona } from "@daytona/sdk";
 import { deleteById, listAll } from "./soak/lib/daytona";
+import { readSandboxRunLabel } from "../../src/sandboxes/label-compat";
 
 const BE_PORT = Number(process.env.SECRET_AUDIT_PORT ?? 3552);
 const BE = `http://localhost:${BE_PORT}`;
@@ -169,7 +170,7 @@ try {
 } finally {
   await sql.end().catch(() => {});
   const mine = new Set<string>([...sandboxIds].filter(Boolean));
-  try { for (const sb of await listAll()) { const l = sb.labels?.["skynet-run"]; if (l && myRunIds.includes(l)) mine.add(sb.id); } } catch { /* */ }
+  try { for (const sb of await listAll()) { const l = readSandboxRunLabel(sb.labels ?? {}); if (!l.conflict && l.value && myRunIds.includes(l.value)) mine.add(sb.id); } } catch { /* */ }
   const ids = [...mine].filter(Boolean);
   if (ids.length) { const r = await deleteById(ids).catch(() => ({ deleted: [], failed: [{ id: "?", error: "x" }] })); rec("sandbox deleted + API-verified", r.failed.length === 0 ? "pass" : "fail", `deleted ${r.deleted.length}`); }
   be?.kill();

@@ -1,0 +1,45 @@
+---
+title: Bots API
+description: Create bot presets, message their durable home threads, process structured mentions, and manage scheduled routines.
+sidebar:
+  order: 3
+---
+
+Bot routes require browser/session auth, are org-scoped, and return `404 bots_disabled` when the feature is off
+for the current org. They use the same run admission, model policy, repository
+authorization, and idempotency behavior as ordinary runs.
+
+Org API keys cannot call `/api/bots/*`. To continue an already known bot child
+thread through the API-key lane, use the allowed `POST /api/runs` route with
+`parent_run_id` set to a run in that child thread.
+
+## Presets and messages
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/bots` | List active bots with home-thread and handoff status. |
+| POST | `/api/bots` | Create a preset: `name`, `title`, `rules`, `engine`, optional `model`, `skillIds`, `repos`, `memoryScope`, `avatarTone`, and `avatarIcon`. |
+| GET | `/api/bots/:id` | Read one preset and its current status. |
+| PATCH | `/api/bots/:id` | Update allowed fields or archive/restore the bot. Execution-preset fields lock after the home thread exists. |
+| POST | `/api/bots/:id/messages` | Send `{"text":"..."}`. The first message creates the home thread; later messages reply to its current head. |
+
+An archived bot stays readable but rejects new messages with `409 bot_archived`.
+Bot names are unique within the org, case-insensitively.
+
+## Routines
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/bots/:id/routines` | List routines attached to the bot. |
+| POST | `/api/bots/:id/routines` | Create a routine from `name`, `cron`, `timezone`, `prompt`, and optional `enabled`. Engine, model, repos, and skill come from the bot preset. |
+| PATCH | `/api/bots/:id/routines/:routineId` | Update name, cron, timezone, prompt, or enabled state. |
+| DELETE | `/api/bots/:id/routines/:routineId` | Delete the routine. Returns `204`. |
+| POST | `/api/bots/:id/routines/:routineId/run-now` | Fire immediately. Returns `202` with `runId` and the updated routine. |
+| GET | `/api/bots/:id/routines/:routineId/history` | List recorded firings. |
+
+## Mention handoffs
+
+Ordinary `POST /api/runs` requests may include `bot_mentions` as an array of bot
+ids. Each accepted mention creates or continues the bot's delegated product
+child thread and returns a handoff receipt linked to the exact child turn. Plain
+`@name` text without a structured bot id does not authorize a handoff.

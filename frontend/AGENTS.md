@@ -16,6 +16,10 @@ Layer map (canonical paths):
   utilities live in `app/globals.css`.
 - **app shell** - `components/shell/**` (AppShell, ThreadSidebar,
   LibrarySidebar, search-command ⌘K, user-menu, theme-toggle).
+  `components/sidebar-kit/**` is the bounded layout exception for the shared
+  collapsible frame, navigation rows and mobile sheet. Its internal primitives
+  use the same semantic tokens. Product controls, avatars and dialogs still
+  compose `components/base/**`; do not grow a second general UI kit.
 - **chat surface** — `components/chat/**` (vendored prompt-kit + composer +
   session panes).
 - **AI kit** — `components/ai/**` (beautiful-ui ports; see its README).

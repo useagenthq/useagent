@@ -1,10 +1,11 @@
 import { eq, sql } from "drizzle-orm";
-import { db } from "../db/client";
+import { db, type Executor } from "../db/client";
 import { providerEvents } from "../db/schema";
 import { makeNativeFrame, publishNativeFrame } from "./native-events";
 import { errorMessage } from "../util/error-message";
 import { executionGraphWriteEnabled } from "./execution-graph-rollout";
 import { shadowWriteExecutionGraph } from "./execution-graph-shadow-writer";
+import { noteCaptureLoss } from "./capture-loss";
 
 export const PROVIDER_PAYLOAD_CAP_BYTES = 32 * 1_024;
 export const CHILD_TRANSCRIPT_PAYLOAD_CAP_BYTES = 512 * 1_024;
@@ -100,6 +101,29 @@ interface RunSequencer {
 
 const runSequencers = new Map<string, RunSequencer>();
 
+/** Delays before the second and third attempt of a failed capture write. A write that
+ *  still fails and was not `required` is a lost frame: see capture-loss.ts for the
+ *  ledger and the seal it degrades. */
+const CAPTURE_RETRY_DELAYS_MS = [100, 400] as const;
+
+async function persistWithRetry(input: ProviderEventInput, seq: RunSequencer, fence?: WriteFence): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await (fence ? persistFencedAndPublish(input, seq, fence) : persistAndPublish(input, seq));
+      return;
+    } catch (err) {
+      if (err instanceof CaptureFenceError) throw err;
+      const delay = CAPTURE_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) throw err;
+      console.warn(
+        `[provider-events] capture attempt ${attempt + 1} failed (${input.eventType}); retrying in ${delay}ms:`,
+        errorMessage(err),
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+}
+
 /**
  * Drain/seal barrier: await every provider-event write CURRENTLY in flight for a run.
  * Captures are fire-and-forget (`void recordProviderEvent`), so at the moment the
@@ -135,8 +159,8 @@ export async function providerEventExists(id: string): Promise<boolean> {
 
 /** Highest seq already persisted for a run (−1 when none) — seeds the counter so
  *  a re-created sequencer continues the sequence instead of colliding. */
-async function highestSeq(runId: string): Promise<number> {
-  const [row] = await db
+async function highestSeq(runId: string, exec: Executor = db): Promise<number> {
+  const [row] = await exec
     .select({ max: sql<number | null>`max(${providerEvents.seq})` })
     .from(providerEvents)
     .where(eq(providerEvents.runId, runId));
@@ -156,11 +180,15 @@ async function highestSeq(runId: string): Promise<number> {
  * earlier one in the run's chain) has persisted or been logged-and-swallowed.
  * `{ required: true }` returns the unswallowed attempt to its authoritative
  * caller while the stored sequencer chain still catches the failure and remains
- * usable for later events.
+ * usable for later events. `fence` makes the write conditional on an ownership check
+ * run inside the write's own transaction (see WriteFence); a fenced write is always
+ * `required`, since the caller must learn that its claim is gone. Persistence failures
+ * get the bounded retry, but a lost fence rejects immediately. A write that still
+ * fails and was neither required nor fenced is counted as a lost frame.
  */
 export function recordProviderEvent(
   input: ProviderEventInput,
-  opts: { critical?: boolean; required?: boolean } = {},
+  opts: { critical?: boolean; required?: boolean; fence?: WriteFence } = {},
 ): Promise<void> {
   let seq = runSequencers.get(input.runId);
   if (!seq) {
@@ -168,14 +196,19 @@ export function recordProviderEvent(
     runSequencers.set(input.runId, seq);
   }
   const entry = seq;
-  const attempt = entry.chain.then(() => persistAndPublish(input, entry));
+  const fence = opts.fence;
+  const attempt = entry.chain.then(() => persistWithRetry(input, entry, fence));
   const done = attempt.catch((err) => {
+      if (err instanceof CaptureFenceError) return; // the fenced caller sees the rejection; nothing was written
       const msg = errorMessage(err);
       // The chain must stay resolved (a rejected link stalls the run's later captures), so
       // failures are logged, not thrown. `critical` raises the level so an authoritative frame
       // (a command catalog) fails VISIBLY instead of being silently dropped.
       if (opts.critical) console.error(`[provider-events] CRITICAL capture failed (${input.eventType}):`, msg);
       else console.warn("[provider-events] capture failed:", msg);
+      // A required capture hands its failure to the caller, who retries or fails the run.
+      // Anything else is a LOST frame: record it so the run seals degraded, never complete.
+      if (!opts.required && !fence) noteCaptureLoss(input, msg);
   });
   entry.chain = done;
   // Idle-evict when this link is the tail and has settled, so the map only holds
@@ -185,7 +218,7 @@ export function recordProviderEvent(
       runSequencers.delete(input.runId);
     }
   });
-  return opts.required ? attempt : done;
+  return opts.required || fence ? attempt : done; // a fenced write is always required
 }
 
 /**
@@ -273,15 +306,72 @@ async function persistAndPublishIfAbsent(
   return true;
 }
 
+/** Thrown by a fenced write whose fence no longer holds: the caller's claim on the run is
+ *  gone, so nothing was written. Propagated to the caller (fenced writes are `required`). */
+export class CaptureFenceError extends Error {
+  constructor(runId: string) {
+    super(`capture fence lost for run ${runId}`);
+  }
+}
+
+/** Ownership predicate a fenced write runs INSIDE its own transaction, before the row is
+ *  written; it should lock what it checks (a `select ... for update` on the claim row) so
+ *  ownership and persistence are one atomic step. */
+export type WriteFence = (tx: Executor) => Promise<boolean>;
+
 async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): Promise<void> {
-  if (seq.nextSeq === null) seq.nextSeq = (await highestSeq(input.runId)) + 1;
+  const { frame, assignedSeq } = await persistFrame(input, seq, db);
+  await writeGraphAfterDurable(input, assignedSeq);
+  publishNativeFrame(input.runId, frame);
+}
+
+/** Graph writes are additive and fail-open, and they publish their own org signal, so
+ *  they run only after the native event is durable and always outside the write's own
+ *  transaction: a graph error can neither roll the native upsert back nor notify a
+ *  subscriber before the commit it describes. */
+async function writeGraphAfterDurable(input: ProviderEventInput, assignedSeq: number): Promise<void> {
+  if (executionGraphWriteEnabled()) {
+    await shadowWriteExecutionGraph(input, assignedSeq);
+  }
+}
+
+/** A write whose durability is conditional on `fence` holding at the moment of the write:
+ *  the fence and the upsert share one transaction, so a competing claim on the fenced row
+ *  either waits behind the lock or has already moved on, and a stale writer cannot land
+ *  anything. The frame is published only after the transaction commits. */
+async function persistFencedAndPublish(
+  input: ProviderEventInput,
+  seq: RunSequencer,
+  fence: WriteFence,
+): Promise<void> {
+  const { frame, assignedSeq } = await db.transaction(async (tx) => {
+    if (!(await fence(tx))) throw new CaptureFenceError(input.runId);
+    return persistFrame(input, seq, tx);
+  });
+  await writeGraphAfterDurable(input, assignedSeq);
+  publishNativeFrame(input.runId, frame);
+}
+
+/** Persist one frame (idempotent upsert by native identity) on `exec` and return the frame
+ *  to publish with its seq. Graph write and live-push happen in the caller AFTER the persist
+ *  has committed, so a subscriber never sees a frame that isn't durable; inside the serial
+ *  chain, so frames go out in ascending seq order (the reconnect cursor's guarantee). */
+async function persistFrame(
+  input: ProviderEventInput,
+  seq: RunSequencer,
+  exec: Executor,
+): Promise<{ frame: ReturnType<typeof makeNativeFrame>; assignedSeq: number }> {
+  // Seeded on the SAME connection as the write: a fenced write holds a pooled connection
+  // and the claim row's lock, so reaching for a second connection here could exhaust the
+  // pool when several first captures overlap.
+  if (seq.nextSeq === null) seq.nextSeq = (await highestSeq(input.runId, exec)) + 1;
   const assignedSeq = seq.nextSeq++;
 
   let payload: string | null = null;
   if (input.payload !== undefined) {
     payload = serializeProviderPayload(input.payload, providerPayloadCapBytes(input));
   }
-  await db
+  await exec
     .insert(providerEvents)
     .values({
       id: input.id,
@@ -317,29 +407,17 @@ async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): 
       setWhere: sql`${providerEvents.seq} < ${assignedSeq}`,
     });
 
-  // Graph writes are additive and fail-open. They happen only after the native
-  // event is durable and before live publication, preserving one observed order.
-  if (executionGraphWriteEnabled()) {
-    await shadowWriteExecutionGraph(input, assignedSeq);
-  }
-
-  // Live-push the versioned native frame to any SSE subscriber (north star
-  // "Canonical Events"). AFTER the persist, so a subscriber never sees a frame
-  // that isn't durable; and inside the serial chain, so frames go out in ascending
-  // seq order — the guarantee the reconnect cursor relies on.
-  publishNativeFrame(
-    input.runId,
-    makeNativeFrame({
-      eventId: input.id,
-      seq: assignedSeq,
-      provider: input.provider,
-      eventType: input.eventType,
-      sessionId: input.nativeSessionId ?? null,
-      parentSessionId: input.nativeParentSessionId ?? null,
-      messageId: input.nativeMessageId ?? null,
-      partId: input.nativePartId ?? null,
-      callId: input.nativeCallId ?? null,
-      payloadText: payload,
-    }),
-  );
+  const frame = makeNativeFrame({
+    eventId: input.id,
+    seq: assignedSeq,
+    provider: input.provider,
+    eventType: input.eventType,
+    sessionId: input.nativeSessionId ?? null,
+    parentSessionId: input.nativeParentSessionId ?? null,
+    messageId: input.nativeMessageId ?? null,
+    partId: input.nativePartId ?? null,
+    callId: input.nativeCallId ?? null,
+    payloadText: payload,
+  });
+  return { frame, assignedSeq };
 }

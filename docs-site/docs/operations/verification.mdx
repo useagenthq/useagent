@@ -1,64 +1,70 @@
 ---
 title: Verification
-description: The test and parity arsenal, from fast isolated-database suites to real engine journeys run against a release candidate.
+description: Prove deterministic contracts first, then certify the exact engine, credential, model, and sandbox combination you intend to claim.
 sidebar:
-  order: 3
+  order: 4
 ---
 
-Verification runs at two altitudes: deterministic suites that never touch a live
-system, and real journeys that exercise sandboxes and engines end to end.
+Verification has two layers. Deterministic suites prove code contracts without
+spending provider resources. Live journeys prove one fully identified runtime
+combination. Passing the first layer does not imply the second.
 
-## Deterministic suites
+## Deterministic checks
 
-- **Backend suite** against an isolated throwaway database, so it never disturbs a
-  live one.
-- **Frontend suite** and the **shared package suites**.
-- **Root typecheck** across every package with `bun run typecheck`.
+```bash
+bun run typecheck
+(cd backend && bun run test)
+(cd frontend && bun test components)
+```
 
-These are fast, stable, and safe to run anywhere.
+The backend suite uses an isolated test database. Shared package suites cover
+the provider-neutral client, harness, sandbox, artifact, CLI, and conformance
+contracts.
 
-## Full-stack and real journeys
+For the documentation site:
 
-| Command | What it exercises |
+```bash
+(cd docs-site && bun install --frozen-lockfile)
+(cd docs-site && bun run doctor)
+(cd docs-site && bun run build)
+(cd docs-site && bunx blume validate)
+```
+
+## Live journey identity
+
+Record all of these fields with a live result:
+
+| Field | Why it matters |
 | --- | --- |
-| `cd backend && bun run e2e` | A mock full-stack pass including Slack and memory outbox delivery, and crash-survival stages. |
-| `cd backend && bun run e2e:real` | Real sandboxes end to end. |
-| `cd backend && bun run soak` | Storm coverage over the durable lanes. |
-| `bun backend/test/e2e/ui-sweep/sweep.ts` | Browser coverage of the rendered surfaces. |
+| Commit and image digest | Prevents reusing evidence across changed code |
+| Engine and native driver | Distinguishes Codex, Claude Code, OpenCode, and Pi paths |
+| Sandbox provider and runtime generation | Prevents Box, Cube, and Daytona results from being conflated |
+| Auth mode and actor | Separates managed accounts, personal keys, and deployment keys |
+| Model | Captures model policy and paid-provider readiness |
+| Journey | Names what was actually tested: cold, resume, child isolation, replay, artifact, desktop, or another capability |
 
-:::warning
-Real journeys create sandboxes. Delete and API-verify them after a run. The
-shared sandbox capacity is a finite, cross-session resource, so leftover
-sandboxes degrade everyone's runs.
-:::
+## Minimum provider journey
 
-## Release parity canaries
+1. Start from a cold or explicitly retained sandbox state.
+2. Dispatch through the public `POST /api/runs` path.
+3. Observe the exact thread over `GET /api/runs/:id/thread-events`.
+4. Verify the native session identity and canonical completion.
+5. For resume, post a follow-up with `parent_run_id` in the same thread.
+6. For product child work, post the follow-up to the child root through the same
+   `/api/runs` route and verify sibling isolation.
+7. Clean up only the sandbox resources created for the test.
 
-Before a candidate can ship, the guarded release runs **real engine journeys**
-against it, not mocks, and it runs them twice:
+Provider-native children need separate evidence. Their appearance in the event
+log does not prove that they accept follow-ups.
 
-1. **Candidate matrix.** The full parity matrix runs on the host against the
-   candidate, before it is publicly advertised.
-2. **Public re-run.** After the candidate is atomically activated, the hard
-   journeys rerun through the authenticated public APIs.
+## Interpret the result
 
-The case matrix covers: `repo-clone`, `github-pr-detail`, `gcs-list`,
-`computer-browser`, `full-desktop`, `desktop-recording`, `artifact-publish`,
-`thread-resume`, `model-switch`, `subagent-fanout`, `web-search`,
-`automation-lifecycle`, `workpiece-deck`,
-`workpiece-sheet`, `workpiece-document`, `workpiece-pdf`,
-`cross-thread-memory`, `knowledge-search`, `skill-playbook`, and
-`inbound-attachment`.
+- A passing cold turn proves only cold execution for that fingerprint.
+- A passing reply proves retained-session resume for that thread.
+- A child transcript proves observation; messageability requires a verified
+  native resume/steer contract or a product child thread.
+- A rebuilt template is not active until the deployment selects it.
+- One provider's result says nothing about another provider's adapter.
 
-`PARITY_CASES` and `PARITY_ENGINES` can narrow one certification run to a
-targeted probe, but scoping never skips the gate itself, and the public re-run
-always executes the full case matrix.
-
-A candidate that fails a parity journey does not ship, and the lane rolls the
-environment back. See [Deployment lanes](/operations/deployment).
-
-:::note
-Parity is proved per engine and per credential mode. A subscription-only Codex
-release proves the connected account and native turn path; an API-key engine
-proves its mapped gateway provider.
-:::
+The current evidence ledger is summarized in
+[Verified support](/operations/verified-support).

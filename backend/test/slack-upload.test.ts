@@ -18,7 +18,8 @@ import { setSandboxDownloaderForTest } from "../src/slack/sandbox-file";
 import { processDue, stopSlackOutboxRelay } from "../src/slack/outbox";
 import { setArtifactStorageForTest } from "../src/artifacts/storage";
 import { executeArtifactTool } from "../src/knowledge/gateway/artifact-tools";
-import { executeSlackTool } from "../src/knowledge/gateway/slack-tools";
+import { executeSlackTool, SLACK_TOOLS } from "../src/knowledge/gateway/slack-tools";
+import type { SandboxProviderKind } from "@useagent/sandbox-contract";
 import { handleMcpMessage } from "../src/knowledge/gateway/mcp";
 import type { SlackClient } from "../src/slack/client";
 import type { ToolTokenClaims } from "../src/knowledge/gateway/token";
@@ -38,12 +39,12 @@ function claimsFor(runId: string): ToolTokenClaims {
 }
 
 /** A Slack-originated run: a run + a sandbox + a thread mapping on its own id. */
-async function slackRunWithSandbox(prompt: string): Promise<{ runId: string; channel: string; ts: string }> {
+async function slackRunWithSandbox(prompt: string, provider: SandboxProviderKind = "daytona"): Promise<{ runId: string; channel: string; ts: string }> {
   const runId = crypto.randomUUID();
   const channel = `C${runId.slice(0, 6)}`;
   const ts = `${runId.slice(0, 6)}.1`;
   await createRun({ id: runId, prompt, model: "claude-opus-5", engine: "mock", orgId: ORG, userId: null, parentRunId: null, threadId: runId });
-  await setRunSandbox(runId, "sb-123");
+  await setRunSandbox(runId, "sb-123", { kind: provider, credential: "env" });
   await linkSlackThread({ teamId: TEAM, channel, threadTs: ts, rootRunId: runId, orgId: ORG });
   return { runId, channel, ts };
 }
@@ -72,6 +73,30 @@ afterAll(() => {
 });
 
 describe("slack_upload tool", () => {
+  test("private screenshots cannot bypass proof publication through Slack", async () => {
+    const { runId } = await slackRunWithSandbox("share requested screenshot proof", "box");
+    const claims = claimsFor(runId);
+    const path = "/home/user/work/screenshots/screenshot-1788624870000.png";
+    let pulls = 0;
+    setSandboxDownloaderForTest(async () => {
+      pulls += 1;
+      return { bytes: Buffer.from("proof"), size: 5 };
+    });
+    const rejected = await executeSlackTool(claims, "slack_upload", { path });
+    expect(rejected.isError).toBe(true);
+    expect(text(rejected)).toContain("Private desktop inspection screenshots");
+    expect(pulls).toBe(0);
+    const published = await executeArtifactTool(claims, "artifact_publish", {
+      path, purpose: "user_requested_proof",
+    });
+    expect(published.isError).toBeFalsy();
+    const artifactId = (published.structuredContent?.artifact as { id: string }).id;
+    const delivery = await executeSlackTool(claims, "slack_upload", { artifactId });
+    expect(delivery.isError).toBeUndefined();
+    expect(pulls).toBe(1);
+    await processDue(recorderClient(() => {}));
+  });
+
   test("refuses a run that is not linked to a Slack thread", async () => {
     const runId = crypto.randomUUID();
     await createRun({ id: runId, prompt: "api run", model: "claude-opus-5", engine: "mock", orgId: ORG, userId: null, parentRunId: null, threadId: runId });
@@ -91,9 +116,10 @@ describe("slack_upload tool", () => {
   });
 
   test("one sandbox pull produces the exact browser and Slack bytes", async () => {
-    const { runId, channel, ts } = await slackRunWithSandbox("make a report");
+    const { runId, channel, ts } = await slackRunWithSandbox("make a report", "box");
+    expect(JSON.stringify(SLACK_TOOLS)).not.toContain("/root/work");
     const res = await executeSlackTool(claimsFor(runId), "slack_upload", {
-      path: "/root/work/outputs/demo.txt",
+      path: "/home/user/work/outputs/demo.txt",
       title: "Demo",
     });
     expect(res.isError).toBeUndefined();
@@ -306,7 +332,7 @@ describe("slack_upload tool", () => {
       parentRunId: null,
       threadId: childId,
     });
-    await setRunSandbox(childId, "sb-child");
+    await setRunSandbox(childId, "sb-child", { kind: "daytona", credential: "env" });
     await insertThreadRelationship({
       orgId: ORG,
       threadId: childId,

@@ -1,12 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { providerEvents } from "../src/db/schema";
 import { acceptRunCommand } from "../src/commands";
+import { settleCommandForRun } from "../src/commands/dispatch";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../src/commands/cancel";
 import {
   INCOMPATIBLE_PROVIDER_SESSION_SUMMARY,
   recoverStaleRuns,
+  runDueReconciles,
   type ReconcileProbe,
 } from "../src/runs/recovery";
 import { finalizeRun } from "../src/runs/finalize";
@@ -24,8 +26,10 @@ import {
 import { providerSessionBinding } from "@useagent/agent-harness/canonical";
 import { providerProtocolIdentity } from "@useagent/agent-harness/control";
 import { t3ProviderDrivers } from "../src/engines/t3-provider-driver";
+import { piProviderDriver } from "../src/engines/pi-provider-driver";
 import type { EngineId, RunStatus } from "../src/db/schema";
 import { waitFor } from "./helpers"; // side-effect: imports src/index → migrate + seed
+import { enqueueReconcile } from "../src/runs/reconcile-queue";
 
 // Boot recovery of the durable command lane, driven with a deterministic fake
 // harness probe. Covers the crash matrix: reconcile an in-flight run, free a
@@ -34,6 +38,17 @@ import { waitFor } from "./helpers"; // side-effect: imports src/index → migra
 // legacy runs with no command.
 
 const ORG = "org-skynet-dev";
+const priorEnabledEngines = process.env.ENABLED_ENGINES;
+const priorPiReadiness = process.env.ENGINE_READINESS_PI;
+process.env.ENABLED_ENGINES = `${process.env.ENABLED_ENGINES ?? ""},pi`;
+process.env.ENGINE_READINESS_PI = "verified";
+
+afterAll(() => {
+  if (priorEnabledEngines === undefined) delete process.env.ENABLED_ENGINES;
+  else process.env.ENABLED_ENGINES = priorEnabledEngines;
+  if (priorPiReadiness === undefined) delete process.env.ENGINE_READINESS_PI;
+  else process.env.ENGINE_READINESS_PI = priorPiReadiness;
+});
 
 /** A finished opencode session reports its answer; anything else is unreachable. */
 const fakeReconcile: ReconcileProbe = async (handle) =>
@@ -61,7 +76,9 @@ async function seed(opts: {
     run: {
       id,
       prompt: "x",
-      model: opts.engine === "codex" ? "gpt-5.6-luna" : "claude-opus-5",
+      model: opts.engine === "codex"
+        ? "gpt-5.6-luna"
+        : opts.engine === "pi" ? "openai/gpt-5.6-luna" : "claude-opus-5",
       engine: opts.engine,
       parentRunId: opts.parentRunId,
       threadId: opts.threadId,
@@ -69,14 +86,22 @@ async function seed(opts: {
   });
   if (opts.runStatus !== "queued") await setRunStatus(id, opts.runStatus);
   if (opts.session && opts.sandbox) {
+    const canonical = opts.engine === "daytona" ? "opencode" : opts.engine;
+    const driver = canonical === "pi"
+      ? piProviderDriver
+      : canonical === "codex" || canonical === "claude" || canonical === "opencode"
+        ? t3ProviderDrivers[canonical]
+        : null;
     await setRunSandbox(id, opts.sandbox);
     await setRunProviderSession(id, providerSessionBinding({
-      provider: opts.engine === "daytona" ? "opencode" : opts.engine,
+      provider: canonical,
       nativeSessionId: opts.session,
-      protocolVersion: opts.engine === "opencode" ? "opencode-server/compat" : "t3-orchestration",
+      protocolVersion: driver
+        ? providerProtocolIdentity(driver.descriptor.protocol)
+        : "t3-orchestration",
       runtime: { kind: "sandbox", id: opts.sandbox },
-      capabilities: {} as never,
-      generation: 1,
+      capabilities: driver?.descriptor.capabilities ?? ({} as never),
+      generation: (driver?.descriptor.sessionGeneration as number | undefined) ?? 1,
     }));
   } else if (opts.session) await setRunEngineSession(id, opts.session);
   if (opts.sandbox && !opts.session) await setRunSandbox(id, opts.sandbox);
@@ -90,6 +115,108 @@ async function seed(opts: {
 const isDone = async (id: string) => ((await getRun(id))?.status === "completed" ? true : null);
 
 describe("command-lane restart recovery", () => {
+  test("cleans an interrupted Pi writer before probing and finalizing", async () => {
+    const runId = crypto.randomUUID();
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "pi",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "/sessions/pi.jsonl",
+      sandbox: "pi-sandbox",
+    });
+    const order: string[] = [];
+
+    await recoverStaleRuns(
+      async () => {
+        order.push("probe");
+        return { status: "failed", summary: "backend restarted" };
+      },
+      async ({ sandboxId }) => {
+        order.push(`cleanup:${sandboxId}`);
+      },
+    );
+
+    expect(order).toEqual(["cleanup:pi-sandbox", "probe"]);
+    expect((await getRun(runId))?.status).toBe("failed");
+  });
+
+  test("a failed Pi restart cleanup keeps the run and command fenced", async () => {
+    const runId = crypto.randomUUID();
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "pi",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "/sessions/pi.jsonl",
+      sandbox: "pi-sandbox",
+    });
+    let probed = false;
+
+    await expect(recoverStaleRuns(
+      async () => {
+        probed = true;
+        return { status: "failed", summary: "must not finalize" };
+      },
+      async () => {
+        throw new Error("remote delete failed");
+      },
+    )).rejects.toThrow("remote delete failed");
+
+    expect(probed).toBe(false);
+    expect((await getRun(runId))?.status).toBe("running");
+    const [command] = (await db.execute(
+      sql`select state from commands where run_id=${runId} and kind='run.create'`,
+    )) as unknown as [{ state: string }];
+    expect(command.state).toBe("dispatched");
+    await finalizeRun(runId, "failed", "test cleanup", 0);
+    await settleCommandForRun(runId);
+  });
+
+  test("a failed Pi background cleanup cannot expire and free the interrupted run", async () => {
+    const runId = crypto.randomUUID();
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "pi",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "/sessions/pi.jsonl",
+      sandbox: "pi-sandbox",
+    });
+    await enqueueReconcile({
+      runId,
+      threadId: runId,
+      sandboxId: "pi-sandbox",
+      sessionId: "/sessions/pi.jsonl",
+      sinceAt: new Date(0),
+      nextAttemptAt: new Date(Date.now() - 1_000),
+      deadline: new Date(Date.now() - 1),
+    });
+    let probed = false;
+
+    const result = await runDueReconciles(
+      async () => {
+        probed = true;
+        return { status: "completed", summary: "must not adopt" };
+      },
+      async () => {
+        throw new Error("remote delete failed");
+      },
+    );
+
+    expect(probed).toBe(false);
+    expect(result.failed).toBe(0);
+    expect((await getRun(runId))?.status).toBe("running");
+    await finalizeRun(runId, "failed", "test cleanup", 0);
+    await settleCommandForRun(runId);
+  });
+
   test("a durable cancel settles the interrupted run and unblocks its queued replacement", async () => {
     const A = crypto.randomUUID();
     await seed({

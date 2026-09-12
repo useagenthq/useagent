@@ -304,6 +304,7 @@ const pdfTextStateSchema = {
 } as const;
 
 export const WORKPIECE_STATE_INPUT_SCHEMA = {
+  type: "object",
   anyOf: [
     documentStateSchema,
     htmlDocumentStateSchema,
@@ -315,7 +316,8 @@ export const WORKPIECE_STATE_INPUT_SCHEMA = {
     pdfTextStateSchema,
   ],
   description:
-    "Full replacement workpiece state. Prefer canonical v2 states: document {document}, " +
+    "Full replacement workpiece state as a JSON object, never a JSON-encoded string. " +
+    "Pass the object directly; do not JSON.stringify it. Prefer canonical v2 states: document {document}, " +
     "spreadsheet {workbook}, presentation {deck}, pdf {pdfText}. Legacy shorthands " +
     "{html}, {text}, {csv}, and {slides} are accepted and upgraded on write.",
 } as const;

@@ -207,6 +207,176 @@ describe("durable slack outbox", () => {
     expect(await enqueue({ kind: "post_message", idempotencyKey: key, payload })).toBe(false);
   });
 
+  test("a user mirror retains its retry cursor and sorts before the same run's result", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    const mirrorKey = uid("user-mirror");
+    const resultKey = uid("mirror-result");
+    await db.transaction(async (tx) => {
+      await enqueue({
+        kind: "stop_stream",
+        idempotencyKey: resultKey,
+        payload: {
+          orgId: ORG,
+          teamId,
+          channel,
+          threadTs,
+          runId,
+          chunks: openingStreamChunks("done"),
+          blocks: [],
+          text: "result",
+          fallbackChunks: ["result"],
+          waitForIdempotencyKey: mirrorKey,
+        },
+      }, tx);
+      await enqueue({
+        kind: "post_message",
+        idempotencyKey: mirrorKey,
+        payload: {
+          orgId: ORG,
+          teamId,
+          channel,
+          threadTs,
+          runId,
+          messageRole: "user_mirror",
+          chunks: ["From User in useAgent:\nrequest"],
+        },
+      }, tx);
+    });
+
+    const ordered = recorder(() => ({ ok: true }));
+    await processDue(ordered.client);
+    expect(ordered.posted.map((message) => message.text)).toEqual([
+      "From User in useAgent:\nrequest",
+      "result",
+    ]);
+    expect(await enqueue({
+      kind: "post_message",
+      idempotencyKey: mirrorKey,
+      payload: {
+        orgId: ORG,
+        teamId,
+        channel,
+        threadTs,
+        runId,
+        messageRole: "user_mirror",
+        chunks: ["From User in useAgent:\nrequest"],
+      },
+    })).toBe(false); // delivered intent cannot be re-enqueued
+  });
+
+  test("a rate-limited user mirror holds its result until the retry succeeds", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    const mirrorKey = uid("user-mirror-429");
+    const resultKey = uid("mirror-result-429");
+    await enqueue({
+      kind: "post_message",
+      idempotencyKey: mirrorKey,
+      payload: { orgId: ORG, teamId, channel, threadTs, runId, messageRole: "user_mirror", chunks: ["request"] },
+    });
+    await enqueue({
+      kind: "stop_stream",
+      idempotencyKey: resultKey,
+      payload: {
+        orgId: ORG, teamId, channel, threadTs, runId,
+        chunks: openingStreamChunks("done"), blocks: [], text: "result",
+        fallbackChunks: ["result"], waitForIdempotencyKey: mirrorKey,
+      },
+    });
+
+    const rateLimited = recorder(() => ({
+      ok: false,
+      class: "rate_limited",
+      retryAfterMs: 30_000,
+      message: "http_429",
+    }));
+    await processDue(rateLimited.client);
+    expect(rateLimited.posted.map((message) => message.text)).toEqual(["request"]);
+    expect(await getSlackOutbox(mirrorKey)).toMatchObject({ state: "pending", attemptCount: 1 });
+    expect(await getSlackOutbox(resultKey)).toMatchObject({
+      state: "pending",
+      attemptCount: 0,
+      lastError: "waiting_for_user_mirror",
+    });
+
+    await forceDue(mirrorKey);
+    await forceDue(resultKey);
+    const retried = recorder(() => ({ ok: true }));
+    await processDue(retried.client);
+    expect(retried.posted.map((message) => message.text)).toEqual(["request", "result"]);
+  });
+
+  test("a permanent user-mirror failure does not strand the bot result", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    const mirrorKey = uid("user-mirror-dead");
+    const resultKey = uid("mirror-result-dead");
+    await enqueue({
+      kind: "post_message",
+      idempotencyKey: mirrorKey,
+      payload: { orgId: ORG, teamId, channel, threadTs, runId, messageRole: "user_mirror", chunks: ["request"] },
+    });
+    await enqueue({
+      kind: "stop_stream",
+      idempotencyKey: resultKey,
+      payload: {
+        orgId: ORG, teamId, channel, threadTs, runId,
+        chunks: openingStreamChunks("done"), blocks: [], text: "result",
+        fallbackChunks: ["result"], waitForIdempotencyKey: mirrorKey,
+      },
+    });
+    let calls = 0;
+    const client = recorder(() =>
+      calls++ === 0
+        ? { ok: false, class: "permanent", message: "message_rejected" }
+        : { ok: true },
+    );
+    await processDue(client.client);
+    expect(await getSlackOutbox(mirrorKey)).toMatchObject({ state: "dead" });
+    expect(await getSlackOutbox(resultKey)).toMatchObject({ state: "delivered" });
+    expect(client.posted.map((message) => message.text)).toEqual(["request", "result"]);
+  });
+
+  test("the dependency fence holds when the user mirror falls beyond the 20-row claim batch", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    const mirrorKey = uid("user-mirror-batch");
+    const resultKey = uid("mirror-result-batch");
+    await enqueue({
+      kind: "post_message",
+      idempotencyKey: mirrorKey,
+      payload: { orgId: ORG, teamId, channel, threadTs, runId, messageRole: "user_mirror", chunks: ["request"] },
+    });
+    await db.execute(sql`
+      update slack_outbox set next_attempt_at = now() + interval '1 hour'
+      where idempotency_key = ${mirrorKey}
+    `);
+    await enqueue({
+      kind: "stop_stream",
+      idempotencyKey: resultKey,
+      payload: {
+        orgId: ORG, teamId, channel, threadTs, runId,
+        chunks: openingStreamChunks("done"), blocks: [], text: "result",
+        fallbackChunks: ["result"], waitForIdempotencyKey: mirrorKey,
+      },
+    });
+    for (let i = 0; i < 19; i++) {
+      await enqueue({
+        kind: "post_message",
+        idempotencyKey: uid(`batch-filler-${i}`),
+        payload: { channel: "C-filler", text: `filler-${i}` },
+      });
+    }
+
+    const firstPass = recorder(() => ({ ok: true }));
+    await processDue(firstPass.client);
+    expect(firstPass.posted.map((message) => message.text)).not.toContain("result");
+    expect(await getSlackOutbox(resultKey)).toMatchObject({ state: "pending", attemptCount: 0 });
+
+    await forceDue(mirrorKey);
+    await forceDue(resultKey);
+    const secondPass = recorder(() => ({ ok: true }));
+    await processDue(secondPass.client);
+    expect(secondPass.posted.map((message) => message.text)).toEqual(["request", "result"]);
+  });
+
   test("429 backs off honoring Retry-After, then delivers on retry", async () => {
     const key = uid("rl");
     await enqueue({ kind: "post_message", idempotencyKey: key, payload: { channel: "C", text: key } });

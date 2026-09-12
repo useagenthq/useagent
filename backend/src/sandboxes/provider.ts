@@ -52,7 +52,11 @@ export function sandboxProviderKind(env: SandboxEnv = process.env): SandboxProvi
 }
 
 export function sandboxProviderApiKey(env: SandboxEnv = process.env): string | undefined {
-  const plugin = sandboxPlugin(sandboxProviderKind(env));
+  return sandboxProviderApiKeyFor(sandboxProviderKind(env), env);
+}
+
+export function sandboxProviderApiKeyFor(kind: SandboxProviderKind, env: SandboxEnv = process.env): string | undefined {
+  const plugin = sandboxPlugin(kind);
   const value = env[plugin.credentialEnv]?.trim();
   // A provider that works without a key (local Cube) still gets an empty string.
   return value || (plugin.credentialRequired ? undefined : "");

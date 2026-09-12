@@ -8,7 +8,7 @@ import {
   type ProviderConnectionRecord,
   type ProviderConnectionScope,
   revokeProviderConnection,
-  setProviderSnapshotIfUnset,
+  setProviderSnapshotIfManaged,
   upsertProviderConnection,
   upsertProviderConnectionUnlessRevoked,
 } from "./repo";
@@ -178,7 +178,7 @@ export async function rememberPreparedProviderSnapshot(
     expectedUpdatedAt: string;
   },
 ): Promise<boolean> {
-  const row = await setProviderSnapshotIfUnset(scope);
+  const row = await setProviderSnapshotIfManaged(scope);
   if (!row) return false;
   publishProviderConnectionChange(row, "updated");
   return true;

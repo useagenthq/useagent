@@ -3,8 +3,10 @@
 // private (the worker/recovery import dispatch directly).
 export {
   acceptRunCommand,
+  acceptConnectorRunCommand,
   acceptUnattendedRunCommand,
   preflightRunCommandReplay,
+  preflightConnectorRunCommandReplay,
   preflightUnattendedRunCommandReplay,
 } from "./service";
 export { RunPromptTooLargeError } from "./prompt-policy";

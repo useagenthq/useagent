@@ -1,142 +1,38 @@
-import { acpAdapter } from "./acp";
-import {
-  makeOpenCodeServerAdapter,
-  opencodeProviderDriver,
-} from "./opencode-server";
-import { opencodeHarness } from "./opencode-harness";
-import {
-  makeRuntimeAdapter,
-  runtimeAdapterEngineSelected,
-  runtimeAdapterSelected,
-} from "./runtime-adapter";
+import { makeRuntimeAdapter } from "./runtime-adapter";
 import { assertRunProviderCredential } from "./provider-credential-gate";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
-import {
-  normalizeNegotiatedCapabilities,
-  type HarnessSession,
-  type ProviderSessionBinding,
-} from "@useagent/agent-harness/canonical";
+import type { HarnessSession, ProviderSessionBinding } from "@useagent/agent-harness/canonical";
 import {
   providerDriverHarnessCapabilities,
   providerDriverUnsupported,
   providerProtocolIdentity,
-  unsupportedProviderDriverOperations,
   type HarnessSessionHandle,
   type ProviderDriver,
-  type ProviderDriverCapability,
 } from "@useagent/agent-harness/control";
-import type { EngineAdapter, EngineRunContext, HarnessAdapter } from "./types";
+import type { EngineRunContext, HarnessAdapter } from "./types";
 import type { RuntimeEngineId } from "./runtime-orchestration";
-import { sessionCapabilities } from "./capabilities";
 import { piAdapter } from "./pi-adapter";
 import { piHarness, piProviderDriver } from "./pi-provider-driver";
 import type { SandboxProviderKind } from "@useagent/sandbox-contract";
 
-// Register the native lifecycle drivers. `mock` is NOT registered here — it
+// Register the native lifecycle drivers. `mock` is NOT registered here; it
 // stays the scripted worker path (worker.ts) and is the default. Every
-// user-facing engine retains its own native protocol regardless of whether its
-// sandbox comes from Cube, Daytona, or Box. Codex and Claude use their resident
-// T3 lifecycle drivers; OpenCode keeps its native server unless its explicit T3
-// cutover is selected; Pi keeps its RPC driver. The generic `acp` id remains an
-// explicit compatibility lane for future engines. `daytona` / `claude-sdk` are
-// legacy aliases so pre-consolidation rows still resolve without changing the
-// canonical engine identity.
-
-function makeEngineAdapterCompatibilityDriver(
-  provider: string,
-  harnessCompatibility?: HarnessAdapter,
-  protocol: { readonly name: string; readonly version?: string } = {
-    name: "engine-adapter-compatibility",
-  },
-  sessionGeneration: number | "runtime" = "runtime",
-): ProviderDriver {
-  const engineCapabilities =
-    provider === "acp"
-      ? normalizeNegotiatedCapabilities({})
-      : sessionCapabilities(provider, { desktop: false, knowledgeTools: false });
-  const control = harnessCompatibility?.capabilities();
-  const lifecycle = [
-    ...(control?.authoritativeHistory ? ["reconcile" as const] : []),
-    ...(control?.cancel ? ["cancel" as const] : []),
-  ];
-  const capabilities = normalizeNegotiatedCapabilities({
-    ...engineCapabilities,
-    resume: false,
-    load: false,
-    stop: lifecycle.includes("cancel"),
-    reconcile: lifecycle.includes("reconcile"),
-    modelSelection: false,
-  });
-  const unavailable = (capability: ProviderDriverCapability) =>
-    providerDriverUnsupported(
-      provider,
-      capability,
-      `${provider} lifecycle is still owned by EngineAdapter compatibility orchestration`,
-    );
-  const harnessHandle = (session: HarnessSession) =>
-    session.runtime.kind === "sandbox"
-      ? {
-          provider: session.provider,
-          sessionId: session.nativeSessionId,
-          sandboxId: session.runtime.id,
-        }
-      : null;
-
-  return {
-    provider,
-    descriptor: {
-      provider,
-      protocol,
-      sessionGeneration,
-      capabilities,
-      lifecycle: { operations: lifecycle, steerInputs: [] },
-      model: { selection: "fixed" },
-      tools: { mode: "useagent_brokered", approval: "useagent" },
-    },
-    async start() {
-      return unavailable("start");
-    },
-    async resume() {
-      return unavailable("resume");
-    },
-    async reconcile(request) {
-      const handle = harnessHandle(request.session);
-      return harnessCompatibility && handle
-        ? harnessCompatibility.reconcile(handle, request.checkpoint)
-        : unavailable("reconcile");
-    },
-    async steer() {
-      return unavailable("steer");
-    },
-    async cancel(session, reason) {
-      const handle = harnessHandle(session);
-      if (!harnessCompatibility || !handle) {
-        return unavailable("cancel");
-      }
-      return harnessCompatibility.cancel(handle, reason);
-    },
-  };
-}
+// user-facing engine keeps its own native protocol regardless of whether its
+// sandbox comes from Cube, Daytona, or Box. Codex, Claude and OpenCode run on
+// their resident runtime lifecycle drivers; Pi keeps its RPC driver.
+// `daytona` / `claude-sdk` are legacy aliases so pre-consolidation rows still
+// resolve without changing the canonical engine identity.
 
 export interface ProviderRegistration {
   readonly driver: ProviderDriver;
-  readonly execution:
-    | {
-        readonly kind: "provider";
-        readonly run: (ctx: EngineRunContext, driver: ProviderDriver) => Promise<void>;
-      }
-    | {
-        readonly kind: "acp_compatibility";
-        readonly adapter: EngineAdapter;
-      };
+  readonly execution: {
+    readonly kind: "provider";
+    readonly run: (ctx: EngineRunContext, driver: ProviderDriver) => Promise<void>;
+  };
   /** Recovery/stop view for callers that still consume HarnessAdapter. */
   readonly harnessAdapterCompatibility?: HarnessAdapter;
 }
 
-const acpRegistration: ProviderRegistration = {
-  driver: makeEngineAdapterCompatibilityDriver("acp"),
-  execution: { kind: "acp_compatibility", adapter: acpAdapter },
-};
 const claudeRegistration: ProviderRegistration = {
   driver: t3ProviderDrivers.claude,
   execution: {
@@ -152,12 +48,11 @@ const codexRegistration: ProviderRegistration = {
   },
 };
 const opencodeRegistration: ProviderRegistration = {
-  driver: opencodeProviderDriver,
+  driver: t3ProviderDrivers.opencode,
   execution: {
     kind: "provider",
-    run: (ctx, driver) => makeOpenCodeServerAdapter(driver).run(ctx),
+    run: (ctx, driver) => makeRuntimeAdapter("opencode", driver).run(ctx),
   },
-  harnessAdapterCompatibility: opencodeHarness,
 };
 const piRegistration: ProviderRegistration = {
   driver: piProviderDriver,
@@ -171,7 +66,6 @@ const piRegistration: ProviderRegistration = {
 /** The production provider registry. Legacy ids point to the same registration,
  * so selection always resolves a ProviderDriver before exposing compatibility views. */
 const providerRegistry: Readonly<Record<string, ProviderRegistration>> = {
-  acp: acpRegistration,
   claude: claudeRegistration,
   "claude-sdk": claudeRegistration,
   codex: codexRegistration,
@@ -188,20 +82,16 @@ export function resolveProviderRegistration(provider: string): ProviderRegistrat
   return providerRegistry[provider];
 }
 
+/** The one driver for a provider. The extra parameters are kept for callers that
+ *  still pass run context, environment and sandbox kind; none of them changes the
+ *  answer any more. */
 export function resolveProviderDriver(
   provider: string,
-  ctx?: Pick<EngineRunContext, "runId" | "threadId">,
-  env: Readonly<Record<string, string | undefined>> = process.env,
+  _ctx?: Pick<EngineRunContext, "runId" | "threadId">,
+  _env: Readonly<Record<string, string | undefined>> = process.env,
   _sandboxKind?: SandboxProviderKind,
 ): ProviderDriver | undefined {
-  const registration = resolveProviderRegistration(provider);
-  if (!registration) return undefined;
-  const canonicalProvider = registration.driver.provider;
-  return ctx && canonicalProvider === "opencode" &&
-    runtimeAdapterEngineSelected(canonicalProvider, env) &&
-    runtimeAdapterSelected(ctx, env)
-    ? t3ProviderDrivers.opencode
-    : registration.driver;
+  return resolveProviderRegistration(provider)?.driver;
 }
 
 /** Resolve only when the complete persisted protocol/generation authority
@@ -218,22 +108,16 @@ export function resolveProviderDriverForSession(
     session.provider !== registration.driver.provider ||
     session.authEpoch !== currentAuthEpoch
   ) return undefined;
-  const candidates: readonly ProviderDriver[] = [
-    registration.driver,
-    ...(isRuntimeEngineId(registration.driver.provider)
-      ? [t3ProviderDrivers[registration.driver.provider]]
-      : []),
-  ];
-  return candidates.find((driver) =>
-    providerProtocolIdentity(driver.descriptor.protocol) === session.protocol &&
+  const driver = registration.driver;
+  return providerProtocolIdentity(driver.descriptor.protocol) === session.protocol &&
     typeof driver.descriptor.sessionGeneration === "number" &&
     driver.descriptor.sessionGeneration === session.generation
-  );
+    ? driver
+    : undefined;
 }
 
-/** Authoritative production turn dispatch. Provider-native resident turns
- * receive their lifecycle driver; explicit adapter registrations retain their
- * own native grammar. ACP is reachable only through the explicit `acp` id. */
+/** Authoritative production turn dispatch: every registered provider runs
+ * through its lifecycle driver. */
 export async function runProviderTurn(
   provider: string,
   ctx: EngineRunContext,
@@ -252,16 +136,12 @@ export async function runProviderTurn(
     return true;
   }
 
-  if (registration.execution.kind === "provider") {
-    await registration.execution.run(ctx, driver);
-    return true;
-  }
-  await registration.execution.adapter.run(ctx);
+  await registration.execution.run(ctx, driver);
   return true;
 }
 
 /** Resolve the control adapter for a provider/engine id, or undefined if none is
- *  registered (e.g. the legacy generic `acp` or `mock`). */
+ *  registered (e.g. `mock`). */
 export function resolveHarness(provider: string): HarnessAdapter | undefined {
   const registration = providerRegistry[provider];
   const legacyHarness = registration?.harnessAdapterCompatibility;

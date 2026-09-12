@@ -8,10 +8,18 @@
 // selectors live in the backend and implement these interfaces; the conformance
 // harness runs there against live providers.
 //
-// Keep this file a pure leaf: types only, zero imports, no runtime dependencies, so any
+// Keep this file a pure leaf with zero imports or external runtime dependencies, so any
 // runtime can depend on the contract without pulling server code.
 
 export type SandboxProviderKind = "daytona" | "cube" | "box";
+
+/** A provider's top-level metadata lookup proved that the sandbox itself is absent. */
+export class SandboxNotFoundError extends Error {
+  constructor(cause?: unknown) {
+    super("The sandbox does not exist", { cause });
+    this.name = "SandboxNotFoundError";
+  }
+}
 
 export interface SandboxExecuteResult {
   result?: string;
@@ -19,11 +27,14 @@ export interface SandboxExecuteResult {
 }
 
 export interface SandboxSession {
-  commands: Array<{ id: string }>;
+  sessionId?: string;
+  commands: Array<{ id: string; exitCode?: number }>;
 }
 
 export interface SandboxPtyHandle {
   waitForConnection(): Promise<void>;
+  /** Resolves when the PTY process or its transport closes. This does not imply model success. */
+  waitForTermination(): Promise<{ exitCode?: number; error?: string }>;
   sendInput(data: string | Uint8Array): Promise<void>;
   resize(cols: number, rows: number): Promise<unknown>;
   disconnect(): Promise<void>;
@@ -40,6 +51,8 @@ export interface SandboxProcess {
   createSession(sessionId: string): Promise<unknown>;
   deleteSession(sessionId: string): Promise<unknown>;
   getSession(sessionId: string): Promise<SandboxSession>;
+  /** Optional authoritative status for one process-session command. */
+  getSessionCommand?(sessionId: string, commandId: string): Promise<{ id: string; exitCode?: number }>;
   executeSessionCommand(
     sessionId: string,
     request: { command: string; runAsync?: boolean; suppressInputEcho?: boolean },
@@ -49,6 +62,20 @@ export interface SandboxProcess {
     sessionId: string,
     commandId: string,
   ): Promise<{ output?: string; stdout?: string; stderr?: string }>;
+  /** Optional live-only log callback. Callers must not assume reconnect replay,
+   * byte offsets, or durable recovery semantics. */
+  followSessionCommandLogs?(
+    sessionId: string,
+    commandId: string,
+    onStdout: (chunk: string) => void,
+    onStderr: (chunk: string) => void,
+  ): Promise<void>;
+  /** Optional interactive process-session input. Providers without it continue
+   * to use the PTY transport. */
+  sendSessionCommandInput?(sessionId: string, commandId: string, data: string): Promise<void>;
+  listSessions?(): Promise<Array<SandboxSession & { sessionId: string }>>;
+  listPtySessions?(): Promise<Array<{ id: string }>>;
+  killPtySession?(sessionId: string): Promise<void>;
   createPty(options: {
     id: string;
     cols: number;
@@ -226,6 +253,8 @@ export interface SandboxProvider {
     sourceSandboxId: string,
     name: string,
   ): Promise<SandboxTemplateStatus>;
+  /** Remove a named template so its name can be saved again; an absent name is not an error. */
+  deleteTemplate?(name: string): Promise<void>;
   /**
    * OPTIONAL capacity/inventory telemetry. Providers that can observe node-level
    * headroom (multi-node Cube) implement this; single-node or telemetry-less

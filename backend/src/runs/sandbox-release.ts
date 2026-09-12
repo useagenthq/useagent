@@ -1,6 +1,4 @@
 import { type SandboxProvider } from "../sandboxes/provider";
-import { forgetAcpThreadRelays } from "../engines/acp-server";
-import { forgetOpenCodeThreadServer } from "../engines/opencode-runtime";
 import { forgetLiveThreadSandbox } from "../engines/sandbox-runtime";
 import { piBridgeManager } from "../engines/pi-rpc-bridge";
 import {
@@ -11,7 +9,10 @@ import {
 } from "./repo";
 import { withThreadLifecycleLock } from "./thread-lifecycle-lock";
 import { parseProviderSessionBinding } from "@useagent/agent-harness/canonical";
-import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
+import {
+  PersonalSandboxConnectionUnavailableError,
+  resolveSandboxBindingForSandbox,
+} from "../sandboxes/binding";
 
 export type SandboxReleaseResult =
   | { ok: true; released: false; reason: "no_sandbox" }
@@ -52,7 +53,10 @@ export async function releaseRunSandbox(
     let provider: SandboxProvider;
     try {
       provider = deps.provider ?? (await resolveSandboxBindingForSandbox(sandboxId)).provider;
-    } catch {
+    } catch (error) {
+      if (!(error instanceof PersonalSandboxConnectionUnavailableError)) {
+        return { ok: false as const, reason: "provider_error" as const };
+      }
       // The personal connection that created it is gone: nothing can delete it, but the
       // thread must not stay pinned to an unreachable sandbox.
       const cleared = await clearThreadSandbox(orgId, lockedRun.threadId, sandboxId, tx);
@@ -87,8 +91,6 @@ export async function releaseRunSandbox(
 
   if (released.ok && released.released) {
     forgetLiveThreadSandbox(released.threadId, released.sandboxId);
-    forgetOpenCodeThreadServer(released.threadId);
-    forgetAcpThreadRelays(released.threadId);
     const binding = parseProviderSessionBinding(released.providerSession);
     const piSessionId = binding?.provider === "pi"
       ? binding.nativeSessionId

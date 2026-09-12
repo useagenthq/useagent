@@ -4,5 +4,5 @@ export default defineMeta({
   title: "Operations",
   icon: "server",
   order: 7,
-  pages: ["index", "deployment", "verification", "invariants", "backups"],
+  pages: ["index", "verified-support", "deployment", "verification", "invariants", "backups"],
 });

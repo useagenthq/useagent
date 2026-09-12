@@ -38,11 +38,11 @@ describe("decodeFrame: non-object payloads are malformed, never dereferenced", (
 describe("decodeFrame: canonical-complete thread validation", () => {
   test("valid complete (no threadId on the record) -> ok", () => {
     expect(decodeFrame("canonical-complete", JSON.stringify({ threadId: "t1", complete: { runId: "r1" } })))
-      .toEqual({ kind: "canonical-complete", complete: { runId: "r1" } });
+      .toEqual({ kind: "canonical-complete", complete: { runId: "r1", degraded: false, lostFrames: 0 } });
   });
   test("complete carrying a MATCHING threadId -> ok", () => {
     expect(decodeFrame("canonical-complete", JSON.stringify({ threadId: "t1", complete: { runId: "r1", threadId: "t1" } })))
-      .toEqual({ kind: "canonical-complete", complete: { runId: "r1" } });
+      .toEqual({ kind: "canonical-complete", complete: { runId: "r1", degraded: false, lostFrames: 0 } });
   });
   test("complete carrying a MISMATCHED threadId -> malformed (never cross-thread)", () => {
     expect(decodeFrame("canonical-complete", JSON.stringify({ threadId: "t1", complete: { runId: "r1", threadId: "OTHER" } })))
@@ -55,7 +55,13 @@ describe("decodeFrame: canonical-complete thread validation", () => {
   test("validateCanonicalComplete is exported + total on junk input", () => {
     expect(validateCanonicalComplete(null)).toBeNull();
     expect(validateCanonicalComplete(5)).toBeNull();
-    expect(validateCanonicalComplete({ runId: "r1" })).toEqual({ runId: "r1" });
+    expect(validateCanonicalComplete({ runId: "r1" })).toEqual({ runId: "r1", degraded: false, lostFrames: 0 });
+  });
+  test("a degraded completion carries its lost-frame count; junk values default to a clean completion", () => {
+    expect(validateCanonicalComplete({ runId: "r1", degraded: true, lostFrames: 3 }))
+      .toEqual({ runId: "r1", degraded: true, lostFrames: 3 });
+    expect(validateCanonicalComplete({ runId: "r1", degraded: "yes", lostFrames: -1 }))
+      .toEqual({ runId: "r1", degraded: false, lostFrames: 0 });
   });
 });
 

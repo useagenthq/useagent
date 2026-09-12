@@ -3,6 +3,11 @@ import { sandboxPlugin } from "../sandboxes/plugins";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { runs } from "../db/schema";
+import {
+  CANONICAL_SANDBOX_RUN_LABEL,
+  LEGACY_SANDBOX_RUN_LABEL,
+  readCompatibleSandboxLabel,
+} from "../sandboxes/label-compat";
 
 // ---------------------------------------------------------------------------
 // Fleet limits — the REAL numbers behind the /agent/workspace "Limits" card.
@@ -126,9 +131,13 @@ async function refreshInventory(): Promise<void> {
   const boxes: SandboxRow[] = [];
   for await (const sb of provider.list()) {
     const labels = (sb as { labels?: Record<string, string> }).labels ?? {};
-    const runId = labels["skynet-run"];
-    if (!runId) continue; // only sandboxes this platform provisioned
-    boxes.push({ runId, state: String((sb as { state?: string }).state ?? "unknown") });
+    const runLabel = readCompatibleSandboxLabel(
+      labels,
+      CANONICAL_SANDBOX_RUN_LABEL,
+      LEGACY_SANDBOX_RUN_LABEL,
+    );
+    if (runLabel.conflict || !runLabel.value) continue; // only unambiguous platform sandboxes
+    boxes.push({ runId: runLabel.value, state: String((sb as { state?: string }).state ?? "unknown") });
   }
   inventoryCache = { at: Date.now(), boxes };
 }
@@ -154,7 +163,7 @@ const STOPPED_STATES = new Set(["stopped", "archived", "paused"]);
  * The org's live sandbox footprint: how many of its sandboxes are running
  * (`active`) vs idle-but-retained (`idle`), and how many distinct conversation
  * threads are backed by a running box. Org scope is enforced by joining each
- * sandbox's `skynet-run` label (a runId) to this org's runs — a box whose run
+ * sandbox's compatible run label (a runId) to this org's runs — a box whose run
  * isn't ours is invisible here.
  */
 export async function getMachineStats(orgId: string): Promise<MachineStats> {

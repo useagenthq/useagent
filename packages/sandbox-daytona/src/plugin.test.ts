@@ -7,8 +7,7 @@ describe("Daytona plugin", () => {
     expect(daytonaPlugin.template({ DAYTONA_SNAPSHOT: " custom-v1 " })).toBe("custom-v1");
     expect(daytonaPlugin.template({ DAYTONA_SNAPSHOT: "  " })).toBe(DAYTONA_SNAPSHOT_DEFAULTS.DAYTONA_SNAPSHOT ?? "");
     expect(daytonaPlugin.template({})).toBe("skynet-agent-v17");
-    expect(daytonaPlugin.template({ DAYTONA_SNAPSHOT: "root-image" }, "DAYTONA_ACP_SNAPSHOT")).toBe("skynet-acp-v3");
-    expect(daytonaPlugin.template({ DAYTONA_ACP_SNAPSHOT: "acp-custom" }, "DAYTONA_ACP_SNAPSHOT")).toBe("acp-custom");
+    expect(daytonaPlugin.template({ DAYTONA_OTHER_SNAPSHOT: "other-custom" }, "DAYTONA_OTHER_SNAPSHOT")).toBe("other-custom");
     expect(() => daytonaPlugin.template({}, "DAYTONA_OTHER_SNAPSHOT")).toThrow(/no default snapshot for DAYTONA_OTHER_SNAPSHOT/);
     // The default image is far below the product target, so a fallback there is refused unless the target says so.
     expect(daytonaPlugin.baseImageResources).toEqual({ cpu: 1, memory: 1 });
@@ -19,11 +18,13 @@ describe("Daytona plugin", () => {
       apiKey: "key",
       apiUrl: "https://app.daytona.io/api",
       target: "us",
+      requestTimeoutMs: 15_000,
     });
     expect(daytonaPlugin.configFromEnv("key", { DAYTONA_API_URL: " https://daytona.example/api ", DAYTONA_TARGET: "eu" })).toEqual({
       apiKey: "key",
       apiUrl: "https://daytona.example/api",
       target: "eu",
+      requestTimeoutMs: 15_000,
     });
   });
 

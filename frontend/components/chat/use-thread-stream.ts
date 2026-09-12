@@ -97,7 +97,7 @@ export function applyDecodedFrame(store: ThreadStore, frame: DecodedFrame): void
     case "canonical-complete":
       // H2: mark a run's canonical projection trustworthy. Until this arrives the render
       // path stays on the legacy native lane even if provisional canonical rows exist.
-      store.markCanonicalComplete(frame.complete.runId);
+      store.markCanonicalComplete(frame.complete.runId, frame.complete.degraded);
       return;
     case "raw": {
       const p = frame.payload;

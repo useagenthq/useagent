@@ -91,12 +91,11 @@ export function allowedModelsForEngine(
     case "chat":
       return chatModelCatalog(env).models.map((model) => model.value);
     case "mock":
-    case "acp":
       return [];
   }
 }
 
-/** Engine-owned default. ACP engines never inherit OpenCode's default model. */
+/** Engine-owned default. */
 export function defaultModelForEngine(
   engine: EngineId,
   env: Record<string, string | undefined> = process.env,
@@ -113,7 +112,6 @@ export function defaultModelForEngine(
     case "mock":
     case "claude":
     case "claude-sdk":
-    case "acp":
       return DEFAULT_CLAUDE_MODEL;
   }
 }
@@ -140,8 +138,6 @@ export function isModelAllowedForEngine(
       return codexModels(env).has(model);
     case "chat":
       return chatModelCatalog(env).models.some((candidate) => candidate.value === model);
-    case "acp":
-      return false;
   }
 }
 

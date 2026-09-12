@@ -1,9 +1,11 @@
 import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 import { fleetCapacityConfig } from "../env";
 import type { SandboxProvider } from "../sandboxes/provider";
+import type { SandboxProviderKind } from "@useagent/sandbox-contract";
 import {
   sandboxProvider,
   sandboxProviderApiKey,
+  sandboxProviderKind,
 } from "../sandboxes/provider";
 import { clearThreadSandbox, getRun } from "../runs/repo";
 import { releaseRunSandbox } from "../runs/sandbox-release";
@@ -81,10 +83,11 @@ export interface FleetReconcileSummary {
  */
 export async function reconcileRetainedSandboxMappings(
   provider: SandboxProvider,
+  deploymentProviderKind: SandboxProviderKind,
 ): Promise<number> {
   const liveSandboxIds = new Set<string>();
   for await (const sandbox of provider.list()) liveSandboxIds.add(sandbox.id);
-  return clearMissingRetainedSandboxMappings(liveSandboxIds);
+  return clearMissingRetainedSandboxMappings(liveSandboxIds, deploymentProviderKind);
 }
 
 type ReleaseRetainedSandbox = (
@@ -180,7 +183,7 @@ async function reconcileRetainedMappingsIfDue(force = false): Promise<number> {
   try {
     const apiKey = sandboxProviderApiKey();
     if (apiKey === undefined) return 0;
-    return await reconcileRetainedSandboxMappings(sandboxProvider(apiKey));
+    return await reconcileRetainedSandboxMappings(sandboxProvider(apiKey), sandboxProviderKind());
   } catch (error) {
     console.warn(
       "[fleet] retained sandbox reconciliation skipped:",

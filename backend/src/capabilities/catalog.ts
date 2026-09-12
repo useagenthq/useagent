@@ -3,11 +3,7 @@ import { normalizeNegotiatedCapabilities } from "@useagent/agent-harness/canonic
 import type { EngineId } from "../db/schema";
 import { resolveProviderRegistration } from "../engines";
 import { sessionCapabilities } from "../engines/capabilities";
-import {
-  runtimeAdapterEnabled,
-  runtimeAdapterEngineSelected,
-  runtimeAdapterMode,
-} from "../engines/runtime-adapter";
+import { t3ProviderDrivers } from "../engines/t3-provider-driver";
 import {
   gatewayToolCatalogDescriptors,
   gatewayToolRequiresApproval,
@@ -21,7 +17,6 @@ import {
   type UserFacingEngineId,
 } from "../runs/engine-readiness";
 import { allowedModelsForEngine, defaultModelForEngine } from "../runs/model-policy";
-import { t3ProviderDrivers } from "../engines/t3-provider-driver";
 import type { NativeCodexModelCatalog } from "../provider-connections/codex-model-catalog";
 import { engineAuthMode } from "../runs/engine-auth-mode";
 
@@ -68,7 +63,7 @@ export interface CapabilityCatalogEngine {
     readonly error?: string;
   };
   readonly runtime: {
-    readonly kind: "t3" | "native" | "acp_compat" | "direct";
+    readonly kind: "t3" | "native" | "direct";
     readonly label: string;
   };
   readonly session: {
@@ -93,15 +88,7 @@ function engineRuntime(
     return "native Pi harness · cloud sandbox";
   })();
   if (engine === "chat") return { kind: "direct", label };
-  if (engine === "codex" || engine === "claude") {
-    return { kind: "t3", label };
-  }
-  if (
-    engine === "opencode" &&
-    runtimeAdapterEnabled(env) &&
-    runtimeAdapterEngineSelected(engine, env) &&
-    runtimeAdapterMode(env) === "all"
-  ) {
+  if (engine === "codex" || engine === "claude" || engine === "opencode") {
     return { kind: "t3", label };
   }
   return { kind: "native", label };
@@ -140,12 +127,7 @@ function declaredSessionCapabilities(
   env: Record<string, string | undefined>,
 ): NegotiatedCapabilities {
   if (engine === "chat") return normalizeNegotiatedCapabilities({ streamingText: true });
-  if (
-    engine === "opencode" &&
-    runtimeAdapterEnabled(env) &&
-    runtimeAdapterEngineSelected(engine, env) &&
-    runtimeAdapterMode(env) === "all"
-  ) {
+  if (engine === "codex" || engine === "claude" || engine === "opencode") {
     return t3ProviderDrivers[engine].descriptor.capabilities;
   }
   return (

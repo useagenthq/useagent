@@ -1,15 +1,69 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LocalArtifactStorage } from "./storage";
+import { assertArtifactStorageWritable, LocalArtifactStorage } from "./storage";
 
 const roots = new Set<string>();
 
 afterEach(async () => {
   await Promise.all([...roots].map((root) => rm(root, { recursive: true, force: true })));
   roots.clear();
+});
+
+describe("assertArtifactStorageWritable", () => {
+  test.skipIf(process.platform === "win32")("rejects a store that cannot accept non-empty files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "useagent-artifacts-limit-"));
+    roots.add(root);
+    const script = `
+      process.on("SIGXFSZ", () => {});
+      const { assertArtifactStorageWritable } = await import(${JSON.stringify(new URL("./storage.ts", import.meta.url).href)});
+      try {
+        await assertArtifactStorageWritable(${JSON.stringify(root)});
+        console.log(JSON.stringify({ ok: true }));
+      } catch (error) {
+        console.log(JSON.stringify({ ok: false, error: error.message }));
+      }
+    `;
+    // Empty files still work with a zero file-size limit; real artifact bytes do not.
+    const child = Bun.spawn([
+      "/bin/sh", "-c", 'ulimit -f 0; exec "$@"', "probe", process.execPath, "-e", script,
+    ], {
+      env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = await new Response(child.stdout).text();
+    expect(await child.exited).toBe(0);
+    const result = JSON.parse(output) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("artifact storage is not writable");
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  test("creates a missing root and leaves no probe behind", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "useagent-artifacts-boot-"));
+    roots.add(parent);
+    const root = join(parent, "artifacts");
+
+    await assertArtifactStorageWritable(root);
+
+    expect((await stat(root)).isDirectory()).toBe(true);
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  test("names the path and the env var when the root cannot be written", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "useagent-artifacts-boot-"));
+    roots.add(parent);
+    // A regular file where the directory should be: mkdir and the probe both fail.
+    const blocked = join(parent, "not-a-directory");
+    await writeFile(blocked, "");
+
+    await expect(assertArtifactStorageWritable(blocked)).rejects.toThrow(
+      /artifact storage is not writable \((EEXIST|ENOTDIR)\) at .*not-a-directory: mount a writable directory there or point ARTIFACT_STORAGE_DIR at one/,
+    );
+  });
 });
 
 describe("LocalArtifactStorage", () => {

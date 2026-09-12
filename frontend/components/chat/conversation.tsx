@@ -52,6 +52,7 @@ import {
   withTransientLiveReasoning,
 } from "@/components/chat/turn-trace-model";
 import { TurnWindow } from "@/components/chat/turn-window";
+import { CaptureDegradedNote, FailedNote } from "@/components/chat/turn-notices";
 
 export { AgentAnswer } from "@/components/chat/agent-answer";
 export {
@@ -109,6 +110,10 @@ export type Turn = {
    *  canonical lane drives the UI ONLY when true - otherwise the legacy native lane does,
    *  so a still-provisional (partial, retrying) snapshot never renders. */
   canonicalComplete?: boolean;
+  /** The completion record was `complete_degraded`: at least one provider frame was lost
+   *  at capture, so the recorded history is shorter than what the provider emitted. The
+   *  lane is trusted the same way; the turn says so to the user. */
+  canonicalDegraded?: boolean;
   /** Present ONLY on a not-yet-loaded outline stub (windowed initial loading):
    *  the cheap skeleton that sizes this turn's placeholder row. The turn window
    *  never materializes a stub; the full run (island fetch or SSE snapshot)
@@ -116,19 +121,10 @@ export type Turn = {
   pendingOutline?: { readonly stepCount: number; readonly hasSummary: boolean };
 };
 
-/** Terminal note for a run that failed before writing a summary. */
-function FailedNote() {
-  return (
-    <p className="text-body-2-regular text-text-error-primary">
-      This run failed before producing a summary.
-    </p>
-  );
-}
-
 export function UserBubble({ children }: { children: string }) {
   return (
-    <div className="flex justify-end" data-testid="user-message">
-      <div className="bg-background-secondary-default text-text-primary text-body-2-regular max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2.5">
+    <div className="flex min-w-0 justify-end" data-testid="user-message">
+      <div className="bg-background-secondary-default text-text-primary text-body-2-regular min-w-0 max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-3.5 py-2.5">
         {children}
       </div>
     </div>
@@ -328,6 +324,8 @@ const TurnBlock = memo(function TurnBlock({
           !answerStarted &&
           !timelineOwnsReasoning &&
           liveReasoning && <LiveThinking text={liveReasoning} />}
+
+        {turn.canonicalDegraded && <CaptureDegradedNote />}
 
         {timeline ? (
           /* Native turn: the interleaved timeline IS the turn — narration bursts

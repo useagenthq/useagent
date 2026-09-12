@@ -18,7 +18,8 @@ import { withThreadLifecycleLock } from "../runs/thread-lifecycle-lock";
 import { assertRunAdmissionOpen } from "./admission";
 import { assertRunPromptLimit } from "./prompt-policy";
 import { and, desc, eq } from "drizzle-orm";
-import { runs } from "../db/schema";
+import { commands, runs } from "../db/schema";
+import { db, type Executor } from "../db/client";
 
 // ---------------------------------------------------------------------------
 // Command acceptance orchestration (north star "Durable Commands"). Decides,
@@ -30,6 +31,7 @@ import { runs } from "../db/schema";
 /** Bounded audit copy of the accepted request. */
 const PAYLOAD_CAP = 8_192;
 const textEncoder = new TextEncoder();
+type ConnectorRunSource = "slack";
 
 function payloadBytes(value: string): number {
   return textEncoder.encode(value).byteLength;
@@ -39,8 +41,10 @@ function serializeRunCommandPayload(
   input: RunCommandInput,
   intent: RunCommandIntent,
   fingerprint: string,
+  source: ConnectorRunSource | null,
 ): string {
   const full = {
+    source,
     botHandoff: input.botHandoff ?? null,
     prompt: input.run.prompt,
     model: input.run.model,
@@ -71,6 +75,7 @@ function serializeRunCommandPayload(
 
   const promptBytes = payloadBytes(input.run.prompt);
   return JSON.stringify({
+    source,
     botHandoff: input.botHandoff ?? null,
     model: input.run.model,
     engine: input.run.engine,
@@ -92,18 +97,41 @@ export class StaleThreadHeadError extends Error {
 
 /** Classify a keyed submission against an existing command: same fingerprint →
  *  idempotent replay of its run; different fingerprint → ambiguous reuse. */
+function connectorSourceFromKey(key: string | null): ConnectorRunSource | null {
+  return key?.startsWith("slack-event:") ? "slack" : null;
+}
+
+function storedCommandSource(existing: CommandRecord): ConnectorRunSource | null {
+  try {
+    const parsed = existing.payload
+      ? JSON.parse(existing.payload) as { source?: unknown }
+      : null;
+    return parsed?.source === "slack" ? "slack" : null;
+  } catch {
+    return null;
+  }
+}
+
 function classifyReplay(
   existing: CommandRecord,
   fingerprint: string,
   origin: TrustedRunOrigin | null,
+  source: ConnectorRunSource | null,
 ): RunCommandOutcome {
   if (existing.runOrigin !== origin) {
     return { status: "conflict", reason: "origin_mismatch" };
   }
-  if (existing.payloadFingerprint === fingerprint && existing.runId) {
-    return { status: "replayed", runId: existing.runId };
+  if (existing.payloadFingerprint !== fingerprint || !existing.runId) {
+    return { status: "conflict", reason: "payload_mismatch" };
   }
-  return { status: "conflict", reason: "payload_mismatch" };
+  const storedSource = storedCommandSource(existing);
+  if (storedSource !== source) {
+    // Historical source-null rows cannot be attributed safely: the old public
+    // key collision path could mint the same Slack receipts. Leave them intact
+    // and require a fresh Slack message instead of upgrading their authority.
+    return { status: "conflict", reason: "source_mismatch" };
+  }
+  return { status: "replayed", runId: existing.runId };
 }
 
 function acceptedFingerprint(
@@ -133,12 +161,18 @@ async function preflightRunCommandReplayWithOrigin(input: {
   readonly idempotencyKey: string | null;
   readonly intent: RunCommandIntent;
   readonly origin: TrustedRunOrigin | null;
+  readonly source: ConnectorRunSource | null;
   readonly threadRelationship?: RunCommandInput["threadRelationship"];
 }): Promise<RunCommandOutcome | null> {
   if (input.idempotencyKey) {
     const existing = await findCommandByKey(input.orgId, input.idempotencyKey);
     if (existing) {
-      return classifyReplay(existing, acceptedFingerprint(input.intent, input.threadRelationship), input.origin);
+      return classifyReplay(
+        existing,
+        acceptedFingerprint(input.intent, input.threadRelationship),
+        input.origin,
+        input.source,
+      );
     }
   }
   await assertRunAdmissionOpen();
@@ -151,6 +185,15 @@ export function preflightRunCommandReplay(input: {
   readonly intent: RunCommandIntent;
   readonly threadRelationship?: RunCommandInput["threadRelationship"];
 }): Promise<RunCommandOutcome | null> {
+  if (connectorSourceFromKey(input.idempotencyKey)) {
+    return Promise.resolve({ status: "conflict", reason: "source_mismatch" });
+  }
+  return preflightRunCommandReplayWithOrigin({ ...input, origin: null, source: null });
+}
+
+export function preflightConnectorRunCommandReplay(
+  input: Parameters<typeof preflightRunCommandReplay>[0] & { readonly source: ConnectorRunSource },
+): Promise<RunCommandOutcome | null> {
   return preflightRunCommandReplayWithOrigin({ ...input, origin: null });
 }
 
@@ -162,7 +205,7 @@ export function preflightInternalRunCommandReplay(input: {
   readonly threadRelationship?: RunCommandInput["threadRelationship"];
 }): Promise<RunCommandOutcome | null> {
   assertInternalRunOrigin(input.origin);
-  return preflightRunCommandReplayWithOrigin(input);
+  return preflightRunCommandReplayWithOrigin({ ...input, source: null });
 }
 
 export function preflightUnattendedRunCommandReplay(input: {
@@ -173,7 +216,7 @@ export function preflightUnattendedRunCommandReplay(input: {
   readonly threadRelationship?: RunCommandInput["threadRelationship"];
 }): Promise<RunCommandOutcome | null> {
   assertUnattendedRunOrigin(input.origin);
-  return preflightRunCommandReplayWithOrigin(input);
+  return preflightRunCommandReplayWithOrigin({ ...input, source: null });
 }
 
 /**
@@ -190,10 +233,11 @@ async function acceptRunCommandWithOrigin(
   input: RunCommandInput,
   origin: TrustedRunOrigin | null,
   priority = 0,
+  source: ConnectorRunSource | null = null,
 ): Promise<RunCommandOutcome> {
   const intent = input.intent ?? runIntentFromAcceptedRun(input.run);
   const fingerprint = acceptedFingerprint(intent, input.threadRelationship);
-  const payload = serializeRunCommandPayload(input, intent, fingerprint);
+  const payload = serializeRunCommandPayload(input, intent, fingerprint, source);
   const commandId = crypto.randomUUID();
 
   let outcome: RunCommandOutcome | null;
@@ -205,7 +249,7 @@ async function acceptRunCommandWithOrigin(
         // Fast path: a keyed replay short-circuits before a doomed insert.
         if (input.idempotencyKey) {
           const existing = await findCommandByKey(input.orgId, input.idempotencyKey, tx);
-          if (existing) return classifyReplay(existing, fingerprint, origin);
+          if (existing) return classifyReplay(existing, fingerprint, origin, source);
         }
         if (input.expectedThreadHeadRunId) {
           const [head] = await tx.select({ id: runs.id }).from(runs).where(and(
@@ -269,7 +313,7 @@ async function acceptRunCommandWithOrigin(
     // winner only AFTER withThreadLifecycleLock rolls it back.
     if (input.idempotencyKey && isUniqueViolation(err)) {
       const existing = await findCommandByKey(input.orgId, input.idempotencyKey);
-      if (existing) return classifyReplay(existing, fingerprint, origin);
+      if (existing) return classifyReplay(existing, fingerprint, origin, source);
     }
     throw err;
   }
@@ -295,7 +339,20 @@ async function acceptRunCommandWithOrigin(
 
 /** Public product acceptance. Origin is always null and is not caller-settable. */
 export function acceptRunCommand(input: RunCommandInput): Promise<RunCommandOutcome> {
+  if (connectorSourceFromKey(input.idempotencyKey)) {
+    return Promise.resolve({ status: "conflict", reason: "source_mismatch" });
+  }
   return acceptRunCommandWithOrigin(input, null, 0);
+}
+
+export function acceptConnectorRunCommand(
+  input: RunCommandInput & { readonly source: ConnectorRunSource },
+): Promise<RunCommandOutcome> {
+  const { source, ...command } = input;
+  if (connectorSourceFromKey(command.idempotencyKey) !== source) {
+    return Promise.resolve({ status: "conflict", reason: "source_mismatch" });
+  }
+  return acceptRunCommandWithOrigin(command, null, 0, source);
 }
 
 /** Server-only acceptance for trusted canaries and inherited internal children. */

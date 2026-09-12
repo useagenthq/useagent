@@ -20,7 +20,14 @@ import { useSession } from "@/lib/auth";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cx } from "@/utils/cx";
 import { relativeTimeShort } from "@/utils/format";
-import { SidebarSectionLabel } from "./sidebar-nav";
+import { SidebarSectionToggle } from "./sidebar-nav";
+import {
+  foldedSectionsForUser,
+  readFoldedSections,
+  writeFoldedSections,
+  type FoldedSections,
+  type SidebarSection,
+} from "./sidebar-section-fold";
 import {
   dedupeProjectRepos,
   groupThreadsByProject,
@@ -97,13 +104,46 @@ export function SidebarProjects() {
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const [showEmptyProjects, setShowEmptyProjects] = useState(false);
   const [showAllThreads, setShowAllThreads] = useState(false);
+  const [loadedFolded, setLoadedFolded] = useState<{
+    userId: string | null;
+    value: FoldedSections;
+  } | null>(null);
 
   const userId = session?.user.id ?? null;
+  const folded = foldedSectionsForUser(loadedFolded, userId);
 
   useEffect(() => {
     if (sessionLoading) return;
     setOverrides(readExpanded(userId));
+    setLoadedFolded({
+      userId,
+      value: readFoldedSections(
+        () => typeof window === "undefined" ? null : window.localStorage,
+        userId,
+      ),
+    });
   }, [sessionLoading, userId]);
+
+  // Folding a section from its heading also drops its "Show N more" expansion,
+  // so it reopens short instead of as the long list that was just closed.
+  const foldSection = (section: SidebarSection) => {
+    if (!folded) return;
+    setLoadedFolded((prev) => {
+      const current = foldedSectionsForUser(prev, userId);
+      if (!current) return prev;
+      const next = { ...current, [section]: !current[section] };
+      writeFoldedSections(
+        () => typeof window === "undefined" ? null : window.localStorage,
+        userId,
+        next,
+      );
+      return { userId, value: next };
+    });
+    if (!folded[section]) {
+      if (section === "projects") setShowEmptyProjects(false);
+      else setShowAllThreads(false);
+    }
+  };
 
   const loadProjects = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -264,18 +304,28 @@ export function SidebarProjects() {
     <>
       {displayedProjects.length > 0 && (
         <>
-          <SidebarSectionLabel>Projects</SidebarSectionLabel>
-          <ProjectThreadTree
-            groups={toTree(displayedProjects)}
-            isExpanded={isExpanded}
-            onToggle={toggle}
-            threadHref={(thread) => `/session/${thread.id}`}
-            renderMenu={renderMenu}
-          />
+          <SidebarSectionToggle
+            open={folded !== null && !folded.projects}
+            onToggle={() => foldSection("projects")}
+            controls="sidebar-projects-section"
+          >
+            Projects
+          </SidebarSectionToggle>
+          {folded !== null && !folded.projects && (
+            <div id="sidebar-projects-section">
+              <ProjectThreadTree
+                groups={toTree(displayedProjects)}
+                isExpanded={isExpanded}
+                onToggle={toggle}
+                threadHref={(thread) => `/session/${thread.id}`}
+                renderMenu={renderMenu}
+              />
+            </div>
+          )}
         </>
       )}
 
-      {emptyProjectVisibility.hiddenCount > 0 || showEmptyProjects ? (
+      {folded !== null && !folded.projects && (emptyProjectVisibility.hiddenCount > 0 || showEmptyProjects) ? (
         <button
           type="button"
           onClick={() => setShowEmptyProjects((value) => !value)}
@@ -288,31 +338,41 @@ export function SidebarProjects() {
 
       {independentThreads.length > 0 && (
         <>
-          <SidebarSectionLabel>Threads</SidebarSectionLabel>
-          <ProjectThreadList
-            ariaLabel="Threads without a project"
-            threads={toTree([{
-              key: UNATTACHED_KEY,
-              name: "No project",
-              fullName: null,
-              threads: visibleThreads,
-            }])[0]?.threads ?? []}
-            threadHref={(thread) => `/session/${thread.id}`}
-          />
-          <ul className="flex flex-col">
-            {threadOverflow > 0 || showAllThreads ? (
-              <li>
-                <button
-                  type="button"
-                  onClick={() => setShowAllThreads((value) => !value)}
-                  className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-secondary transition-colors hover:bg-background-secondary-hover hover:text-text-primary"
-                >
-                  <RiArrowDownSLine aria-hidden className={cx("size-3.5 shrink-0", showAllThreads && "rotate-180")} />
-                  {showAllThreads ? "Show fewer" : `Show ${threadOverflow} more`}
-                </button>
-              </li>
-            ) : null}
-          </ul>
+          <SidebarSectionToggle
+            open={folded !== null && !folded.threads}
+            onToggle={() => foldSection("threads")}
+            controls="sidebar-threads-section"
+          >
+            Threads
+          </SidebarSectionToggle>
+          {folded !== null && !folded.threads && (
+            <div id="sidebar-threads-section">
+              <ProjectThreadList
+                ariaLabel="Threads without a project"
+                threads={toTree([{
+                  key: UNATTACHED_KEY,
+                  name: "No project",
+                  fullName: null,
+                  threads: visibleThreads,
+                }])[0]?.threads ?? []}
+                threadHref={(thread) => `/session/${thread.id}`}
+              />
+              <ul className="flex flex-col">
+                {threadOverflow > 0 || showAllThreads ? (
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllThreads((value) => !value)}
+                      className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-secondary transition-colors hover:bg-background-secondary-hover hover:text-text-primary"
+                    >
+                      <RiArrowDownSLine aria-hidden className={cx("size-3.5 shrink-0", showAllThreads && "rotate-180")} />
+                      {showAllThreads ? "Show fewer" : `Show ${threadOverflow} more`}
+                    </button>
+                  </li>
+                ) : null}
+              </ul>
+            </div>
+          )}
         </>
       )}
     </>

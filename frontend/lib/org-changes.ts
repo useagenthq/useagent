@@ -3,9 +3,11 @@ import { decodeOrgChange, type OrgChange } from "@useagent/agent-client/org-chan
 export type { OrgChange };
 
 type Listener = (change: OrgChange) => void;
+type OpenListener = () => void;
 export const parseOrgChange = decodeOrgChange;
 
 const listeners = new Set<Listener>();
+const openListeners = new Set<OpenListener>();
 const pending = new Map<string, OrgChange>();
 let source: EventSource | null = null;
 let flushScheduled = false;
@@ -30,16 +32,16 @@ function enqueue(change: OrgChange): void {
     change.type === "execution_graph"
       ? `execution_graph:${change.runId}`
       : change.type === "thread_relationship"
-      ? `thread_relationship:${change.familyThreadId}:${change.threadId}`
-      : change.type === "run"
-      ? `run:${change.runId}`
-      : change.type === "artifact"
-        ? `artifact:${change.artifactId}`
-        : change.type === "automation"
-          ? `automation:${change.automationId}`
-          : change.type === "integration_connection"
-            ? `integration_connection:${change.connectionId}`
-            : `provider_connection:${change.provider}:${change.authMethod}`;
+        ? `thread_relationship:${change.familyThreadId}:${change.threadId}`
+        : change.type === "run"
+          ? `run:${change.runId}`
+          : change.type === "artifact"
+            ? `artifact:${change.artifactId}`
+            : change.type === "automation"
+              ? `automation:${change.automationId}`
+              : change.type === "integration_connection"
+                ? `integration_connection:${change.connectionId}`
+                : `provider_connection:${change.provider}:${change.authMethod}`;
   pending.set(key, change);
   if (flushScheduled) return;
   flushScheduled = true;
@@ -49,6 +51,15 @@ function enqueue(change: OrgChange): void {
 function connect(): void {
   if (source || typeof window === "undefined") return;
   source = new EventSource("/api/runs/changes");
+  source.addEventListener("open", () => {
+    for (const listener of openListeners) {
+      try {
+        listener();
+      } catch (error) {
+        console.error("[org-changes] open listener failed:", error);
+      }
+    }
+  });
   source.addEventListener("change", (event) => {
     if (!(event instanceof MessageEvent) || typeof event.data !== "string") return;
     try {
@@ -62,18 +73,21 @@ function connect(): void {
 
 /**
  * Subscribe to the page-wide org invalidation stream. All mounted product
- * surfaces share one EventSource; the browser handles reconnect and each view
- * retains its low-frequency snapshot poll as the durable recovery path.
+ * surfaces share one EventSource; open callbacks let authoritative snapshots
+ * repair any invalidations missed while the browser reconnects.
  */
-export function subscribeOrgChanges(listener: Listener): () => void {
+export function subscribeOrgChanges(listener: Listener, onOpen?: OpenListener): () => void {
   listeners.add(listener);
+  if (onOpen) openListeners.add(onOpen);
   connect();
   return () => {
     listeners.delete(listener);
+    if (onOpen) openListeners.delete(onOpen);
     if (listeners.size !== 0) return;
     source?.close();
     source = null;
     pending.clear();
     flushScheduled = false;
+    openListeners.clear();
   };
 }

@@ -58,6 +58,7 @@ import {
   type NativeFrame,
 } from "./native-events";
 import {
+  admitCanonicalComplete,
   loadCanonicalThread,
   subscribeCanonicalThread,
   subscribeCanonicalizationComplete,
@@ -82,6 +83,8 @@ import { UploadClaimError } from "../uploads/repo";
 import { registerRunReadRoutes } from "./read-routes.js";
 import { registerExecutionGraphRoutes } from "./execution-graph-routes.js";
 import { registerProviderSessionRoutes } from "./provider-session-routes.js";
+import { enqueueSlackUserMirrorForRun } from "../slack/user-mirror";
+import { kickSlackOutbox } from "../slack/outbox";
 import { boundedRunPrompt, runAttachmentIds, runCreateBodyLimit, type RunCreateBody } from "./run-create-policy";
 import { acceptExistingThreadFollowup, ThreadFollowupTargetError } from "./thread-followups";
 export type { RunCreateBody } from "./run-create-policy";
@@ -330,14 +333,15 @@ export async function handleRunCreate(
     throw error;
   }
   if (replay?.status === "replayed") {
+    const mirror = await enqueueSlackUserMirrorForRun(replay.runId);
+    if (mirror.status === "ready" && mirror.created) kickSlackOutbox();
     return c.json({ id: replay.runId }, 200);
   }
   if (replay?.status === "conflict") {
     return c.json({ error: "idempotency_key_reused", reason: replay.reason }, 409);
   }
 
-  // Everything below is mutable authorization/readiness state and therefore
-  // applies only to first acceptance. Matching durable replays returned above.
+  // Mutable authorization/readiness checks apply only to first acceptance.
   if (parentEngine && requestedEngine && requestedEngine !== parentEngine) {
     return c.json({ error: "reply_engine_mismatch", engine: parentEngine }, 400);
   }
@@ -461,14 +465,12 @@ export async function handleRunCreate(
     throw error;
   }
 
-  // Translate the acceptance outcome to the HTTP response (exhaustive — a new
-  // outcome variant is a compile error here).
+  // Translate acceptance exhaustively; new outcome variants must be handled.
   switch (accepted.status) {
     case "created": {
-      // Pump the mailbox: dispatches now if the thread is idle AND capacity is
-      // free, else the run stays queued (survives a restart; the reconciler
-      // admits it later). ADDITIVE response: `id` + `status` + `queue`, plus
-      // `handoffs` when @mentioned bots each got a delegated child thread.
+      // Mirror accepted context before dispatch; busy threads remain durably queued.
+      const mirror = await enqueueSlackUserMirrorForRun(accepted.runId);
+      if (mirror.status === "ready" && mirror.created) kickSlackOutbox();
       await pumpThread(threadId);
       const handoffs = await acceptedRunHandoffs({ orgId: c.get("orgId"), actorId: c.get("userId"), runId: accepted.runId, threadId, text: prompt, botIds: botMentions.ids });
       const queue = await runQueueView(accepted.runId);
@@ -476,8 +478,7 @@ export async function handleRunCreate(
       return c.json({ id: accepted.runId, status, queue, ...handoffs }, 201);
     }
     case "replayed":
-      // The original run's worker is already running (or finished) — return its
-      // id, do NOT re-dispatch.
+      // Return the existing run without redispatching it.
       return c.json({ id: accepted.runId }, 200);
     case "conflict":
       return c.json(
@@ -903,10 +904,9 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
       };
       // Canonicalization-complete (H2): the per-run signal that its canonical projection
       // is trustworthy. Deduped per run so replay + live never re-announce a run.
-      const canonicalCompleteSeen = new Set<string>();
+      const canonicalCompleteSeen = new Map<string, boolean>(); // runId -> degraded (see admitCanonicalComplete)
       const sendCanonicalComplete = (complete: CanonicalizationComplete): void => {
-        if (canonicalCompleteSeen.has(complete.runId)) return;
-        canonicalCompleteSeen.add(complete.runId);
+        if (!admitCanonicalComplete(canonicalCompleteSeen, complete)) return;
         sendFrame("canonical-complete", { threadId, complete });
       };
 

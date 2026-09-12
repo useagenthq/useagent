@@ -39,9 +39,7 @@ type DesktopReadiness = (
 ) => Promise<SandboxDesktop>;
 
 const NAME_RE = /^[A-Za-z0-9._-]+$/;
-const RECORDING_ID_RE = /^[A-Za-z0-9._-]{1,200}$/;
 const PATH_MARKER = "__USEAGENT_RECORDING_PATH__=";
-const DAYTONA_RECORDING_STATE = "/home/daytona/.skynet/active-recording-id";
 
 const result = (text: string, structuredContent?: Record<string, unknown>): ToolResult => ({
   content: [{ type: "text", text }],
@@ -75,24 +73,6 @@ export async function startRecordingInSandbox(
   ensureDesktop: DesktopReadiness = ensureSandboxDesktopView,
 ): Promise<string> {
   const recordingName = checkedName(name);
-  if (sandbox.computerUse) {
-    await sandbox.computerUse.start();
-    const recording = await sandbox.computerUse.recording.start(recordingName);
-    if (!RECORDING_ID_RE.test(recording.id) || !recording.filePath.endsWith(".mp4")) {
-      throw new Error("Daytona returned invalid recording metadata");
-    }
-    const encodedId = Buffer.from(recording.id, "utf8").toString("base64");
-    const persisted = await sandbox.process.executeCommand(
-      `install -d '/home/daytona/.skynet' && printf '%s' '${encodedId}' | base64 -d > '${DAYTONA_RECORDING_STATE}'`,
-      undefined,
-      undefined,
-      30,
-    );
-    if ((persisted.exitCode ?? 1) !== 0) {
-      throw new Error((persisted.result ?? "could not persist Daytona recording state").trim());
-    }
-    return recording.filePath;
-  }
   const desktop = await ensureDesktop(sandbox, signal);
   if (!desktop.available) {
     throw new Error(desktop.reason ?? "desktop failed readiness");
@@ -100,7 +80,7 @@ export async function startRecordingInSandbox(
   const started = await sandbox.process.executeCommand(
     `skynet-record-start '${recordingName}'`,
     undefined,
-    undefined,
+    { DISPLAY: sandbox.desktop?.display ?? ":1" },
     60,
   );
   const path = (started.result ?? "").trim().split("\n").at(-1)?.trim() ?? "";
@@ -113,45 +93,6 @@ export async function startRecordingInSandbox(
 export async function stopRecordingInSandbox(
   sandbox: SandboxHandle,
 ): Promise<RecordingMetadata> {
-  if (sandbox.computerUse) {
-    const state = await sandbox.process.executeCommand(
-      `test -f '${DAYTONA_RECORDING_STATE}' && cat '${DAYTONA_RECORDING_STATE}'`,
-      undefined,
-      undefined,
-      30,
-    );
-    const recordingId = (state.result ?? "").trim();
-    if ((state.exitCode ?? 1) !== 0 || !RECORDING_ID_RE.test(recordingId)) {
-      throw new Error("no active Daytona recording was found");
-    }
-    const stopped = await sandbox.computerUse.recording.stop(recordingId);
-    const durationSeconds = stopped.durationSeconds ?? 0;
-    const details = await sandbox.fs.getFileDetails(stopped.filePath);
-    const displays = (await sandbox.computerUse.display.getInfo()).displays ?? [];
-    const activeDisplay = displays.find((display) => display.isActive) ?? displays[0];
-    const width = activeDisplay?.width ?? 0;
-    const height = activeDisplay?.height ?? 0;
-    if (
-      !stopped.filePath.endsWith(".mp4") ||
-      !Number.isFinite(durationSeconds) ||
-      durationSeconds <= 0 ||
-      !Number.isInteger(width) ||
-      width <= 0 ||
-      !Number.isInteger(height) ||
-      height <= 0 ||
-      !Number.isFinite(details.size) ||
-      (details.size ?? 0) <= 0
-    ) {
-      throw new Error("finished Daytona recording failed metadata validation");
-    }
-    await sandbox.process.executeCommand(
-      `rm -f '${DAYTONA_RECORDING_STATE}'`,
-      undefined,
-      undefined,
-      30,
-    );
-    return { path: stopped.filePath, codec: "h264", width, height, durationSeconds };
-  }
   const stopped = await sandbox.process.executeCommand(
     "path=$(skynet-record-stop) || exit $?; " +
       `printf '${PATH_MARKER}%s\\n' \"$path\"; ` +
@@ -230,8 +171,7 @@ export const RECORDING_TOOLS = [
     name: "desktop_recording_start",
     aliases: ["record_start"],
     description:
-      "Start recording the sandbox desktop. Daytona uses its native Computer Use recorder; Cube " +
-      "uses its preinstalled FFmpeg/X11 recorder. Use it before computer actions " +
+      "Start recording the canonical sandbox desktop with its preinstalled FFmpeg/X11 recorder. Use it before computer actions " +
       "when the user asks for a video.",
     inputSchema: {
       type: "object",
@@ -248,7 +188,7 @@ export const RECORDING_TOOLS = [
     name: "desktop_recording_stop",
     aliases: ["record_stop"],
     description:
-      "Stop the active provider-native desktop recording, validate the MP4, and publish it as " +
+      "Stop the active canonical desktop recording, validate the MP4, and publish it as " +
       "a durable authenticated useAgent artifact. Returns working preview and download URLs.",
     inputSchema: {
       type: "object",

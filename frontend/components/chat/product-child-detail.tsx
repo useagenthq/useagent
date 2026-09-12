@@ -8,6 +8,7 @@ import { LoadingState } from "@/components/ai/loading-state";
 import { childKindLabel } from "@/components/chat/child-labels";
 import { RUN_STATUS_LABEL } from "@/components/chat/gateway-children";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
+import { Markdown } from "@/components/prompt-kit/markdown";
 import type { ApiRun } from "@/components/chat/types";
 import { useRunStream } from "@/components/chat/use-run-stream";
 import { StatusDot } from "@/components/shared/status-dot";
@@ -84,9 +85,9 @@ export function ProductChildDetailBody({
             <p className="text-mono-label text-text-tertiary mb-1">
               {live ? "Working" : status === "failed" ? "Error" : "Answer"}
             </p>
-            <p className="text-body-2-regular text-text-primary whitespace-pre-wrap break-words">
+            <Markdown className="text-body-2-regular text-text-primary break-words">
               {summary ?? liveText}
-            </p>
+            </Markdown>
           </section>
         ) : null}
 

@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import { artifactStorageHealth } from "./artifacts/storage";
 import { knowledgeMcpRoutes } from "./knowledge/gateway/mcp";
 import { providerGatewayRoutes } from "./provider-gateway/routes";
 import { currentReleaseFingerprint } from "./release";
@@ -10,9 +11,15 @@ import { currentReleaseFingerprint } from "./release";
  */
 export function createGatewayApp(): Hono {
   const app = new Hono();
-  const health = (c: Context) => {
+  // Health includes the artifact store: the gateway is the process every
+  // harness publishes through, so "listening" without a writable store is down.
+  const health = async (c: Context) => {
     const release = currentReleaseFingerprint();
     c.header("x-useagent-release-fingerprint", release.fingerprint);
+    const storage = await artifactStorageHealth();
+    if (!storage.ok) {
+      return c.json({ status: "unhealthy", surface: "gateway", artifact_storage: storage.error }, 503);
+    }
     return c.json({ status: "ok", surface: "gateway" });
   };
   app.get("/health", health);

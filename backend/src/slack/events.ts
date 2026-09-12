@@ -19,8 +19,8 @@ import { runs, type MemoryScope, type RunStatus } from "../db/schema";
 import { db } from "../db/client";
 import { getRunForOrg } from "../runs/repo";
 import {
-  acceptRunCommand,
-  preflightRunCommandReplay,
+  acceptConnectorRunCommand,
+  preflightConnectorRunCommandReplay,
   RunAdmissionClosedError,
   type RunCommandIntent,
 } from "../commands";
@@ -480,10 +480,11 @@ export async function handleSlackEvent(
   };
   let replay;
   try {
-    replay = await preflightRunCommandReplay({
+    replay = await preflightConnectorRunCommandReplay({
       orgId,
       idempotencyKey: durableKey,
       intent,
+      source: "slack",
     });
   } catch (error) {
     if (!(error instanceof RunAdmissionClosedError)) throw error;
@@ -532,6 +533,25 @@ export async function handleSlackEvent(
   ) {
     await options.checkpointStagedAttachmentIds(attachmentIds);
   }
+  const skippedAttachmentCount = files.length - attachmentIds.length;
+  if (skippedAttachmentCount > 0) {
+    const label = skippedAttachmentCount === 1
+      ? "the attached file"
+      : `${skippedAttachmentCount} attached files`;
+    await enqueuePostMessage({
+      idempotencyKey: `slack-attachment-guidance:${teamId}:${channel}:${ts}`,
+      orgId,
+      teamId,
+      channel,
+      threadTs: slackThreadTs,
+      text: attachmentIds.length === 0
+        ? `I couldn't safely process ${label}. No run was started. Please re-upload and try again.`
+        : `I couldn't safely process ${label}. I sent the remaining attachments to the agent.`,
+    });
+    if (attachmentIds.length === 0) {
+      return { status: "permanent_noop", reason: "attachments_unavailable" };
+    }
+  }
 
   let resources: readonly RunResource[];
   let boundRepos: string[];
@@ -579,10 +599,11 @@ export async function handleSlackEvent(
   // prior turn.
   let outcome;
   try {
-    outcome = await acceptRunCommand({
+    outcome = await acceptConnectorRunCommand({
       idempotencyKey: durableKey,
       orgId,
       actorId: userId,
+      source: "slack",
       intent,
       run: {
         id: runId,

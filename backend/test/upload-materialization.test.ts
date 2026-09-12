@@ -34,7 +34,7 @@ describe("sandbox input materialization", () => {
           },
         },
       },
-      [
+      { inputFiles: [
         {
           id: "input-id",
           name: "report (final).txt",
@@ -44,7 +44,7 @@ describe("sandbox input materialization", () => {
           storageKey: sha256,
           sandboxPath: path,
         },
-      ],
+      ], inputContext: "" },
       { uid: 1000, gid: 1000 },
     );
 
@@ -75,7 +75,7 @@ describe("sandbox input materialization", () => {
             },
           },
         },
-        [
+        { inputFiles: [
           {
             id: "input-id",
             name: "report.txt",
@@ -85,7 +85,7 @@ describe("sandbox input materialization", () => {
             storageKey,
             sandboxPath: sandboxInputPath("input-id", "report.txt"),
           },
-        ],
+        ], inputContext: "" },
       ),
     ).rejects.toThrow("upload digest mismatch");
     expect(uploadCalled).toBe(false);

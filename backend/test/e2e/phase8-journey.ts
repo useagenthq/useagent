@@ -28,6 +28,7 @@ import { openSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { Daytona } from "@daytona/sdk";
 import { deleteById, listAll } from "./soak/lib/daytona";
+import { readSandboxRunLabel } from "../../src/sandboxes/label-compat";
 import { DEFAULT_CODEX_MODEL } from "../../src/runs/model-policy";
 import { shq } from "../../src/engines/repo-prep";
 import { SANDBOX_GENERATION } from "../../src/provider-gateway/sandbox-config";
@@ -509,8 +510,8 @@ try {
   const myRuns = new Set(myRunIds);
   try {
     for (const sb of await listAll()) {
-      const label = sb.labels?.["skynet-run"];
-      if (label && myRuns.has(label)) mine.add(sb.id);
+      const label = readSandboxRunLabel(sb.labels ?? {});
+      if (!label.conflict && label.value && myRuns.has(label.value)) mine.add(sb.id);
     }
   } catch (err) {
     console.warn(`[cleanup] label scan failed: ${String(err)}`);

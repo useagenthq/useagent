@@ -17,6 +17,7 @@ import {
 } from "../secrets/inject";
 import { createSecretRedactor } from "../secrets/redact";
 import { resolveRuntimeWorkspaceRoot } from "./runtime-environment";
+import { buildRootTraversalAccessCommand } from "./runtime-user-permissions";
 
 export interface SandboxTurnPreparationOptions<T> {
   readonly snapshot: string;
@@ -28,6 +29,12 @@ export interface SandboxTurnPreparationOptions<T> {
   /** Providers that establish a lower-privilege runtime user must run after
    * repository/input materialization so ownership cannot race those writes. */
   readonly providerAfterResources?: boolean;
+  /** Provider-specific retained-sandbox fencing that must complete before any
+   * repository or input mutation begins. */
+  readonly prepareSandbox?: (
+    sandbox: SandboxHandle,
+    binding: SandboxBinding,
+  ) => Promise<void>;
   /** One-time provider installation for a fresh sandbox. This phase may write
    * stable runtime settings, but must not mint a run-bound capability or lease. */
   readonly prepareStableProvider?: (
@@ -48,6 +55,7 @@ export interface SandboxTurnPreparationOptions<T> {
     sandbox: SandboxHandle,
     workdir: string,
     binding: SandboxBinding,
+    preparation: { readonly stableProviderPrepared: boolean },
   ) => Promise<T>;
   readonly closeProvider?: (state: T) => Promise<void>;
 }
@@ -107,6 +115,9 @@ export async function prepareSandboxTurn<T>(
         end?.();
       }
     };
+    if (options.prepareSandbox) {
+      await stage("sandbox_fence", () => options.prepareSandbox!(sandbox, lease.binding));
+    }
     const runtimeLayout = sandboxRuntimeLayout(lease.binding.kind);
     const workdir = await stage("workspace_root", () =>
       resolveRuntimeWorkspaceRoot(sandbox, runtimeLayout)
@@ -115,10 +126,17 @@ export async function prepareSandboxTurn<T>(
       ? options.resourceUser(lease.binding)
       : options.resourceUser;
     if (resourceUser) {
+      const rootAccess = buildRootTraversalAccessCommand({
+        paths: ["/root"],
+        uid: resourceUser.uid,
+        gid: resourceUser.gid,
+      });
       const owned = await stage("workspace_owner", () => sandbox.process.executeCommand(
-        `command -v setfacl >/dev/null && ` +
-          `setfacl -m u:${resourceUser.uid}:x /root && ` +
-          `chown root:root ${shq(workdir)} && chmod 1777 ${shq(workdir)}`,
+        `set -eu\n${rootAccess}\n` +
+          `test -d ${shq(workdir)} && test ! -L ${shq(workdir)} && ` +
+          `test "$(realpath -e -- ${shq(workdir)})" = ${shq(workdir)} && ` +
+          `chown root:root -- ${shq(workdir)} && chmod 1777 -- ${shq(workdir)} && ` +
+          `test "$(stat -c '%u:%g:%a' -- ${shq(workdir)})" = "0:0:1777"`,
         undefined,
         undefined,
         10,
@@ -134,10 +152,12 @@ export async function prepareSandboxTurn<T>(
       ),
     );
     const prepareStableProvider = options.prepareStableProvider;
+    let stableProviderPrepared = false;
     if (!lease.reused && prepareStableProvider) {
       await stage("provider_bootstrap", () =>
         prepareStableProvider(sandbox, workdir, lease.binding)
       );
+      stableProviderPrepared = true;
       ctx.signal.throwIfAborted();
     }
     const prepareResources = async () => {
@@ -153,7 +173,7 @@ export async function prepareSandboxTurn<T>(
           );
           return [...new Set([...changed, ...pullRequests])];
         }),
-        stage("inputs", () => materializeRunInputs(sandbox, ctx.inputFiles, resourceUser)),
+        stage("inputs", () => materializeRunInputs(sandbox, ctx, resourceUser)),
       ]);
       if (resourceUser && changedRepoPaths.length > 0) {
         const markers = changedRepoPaths.map((path) => {
@@ -174,7 +194,9 @@ export async function prepareSandboxTurn<T>(
       }
     };
     const prepareProvider = () => stage("provider_bridge", async () => {
-      const state = await options.prepareProvider(sandbox, workdir, lease.binding);
+      const state = await options.prepareProvider(sandbox, workdir, lease.binding, {
+        stableProviderPrepared,
+      });
       providerState = state;
       providerPrepared = true;
       return state;

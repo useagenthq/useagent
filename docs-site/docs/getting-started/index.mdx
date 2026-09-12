@@ -1,6 +1,6 @@
 ---
 title: Getting started
-description: What the platform is made of, and the shortest path from a clone to a running stack.
+description: Understand the frontend, backend, shared packages, and durable command flow before starting a local useAgent stack.
 sidebar:
   label: Overview
   order: 1
@@ -35,8 +35,10 @@ Everything a user sees is a rendering of the backend's durable event log.
 <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "12px", margin: "16px 0 8px" }}>
   <img
     src="/diagrams/command-lane-round-trip.svg"
-    alt="The command-lane round trip: Web UI, Slack, or an automation becomes a durable command, a run worker spawns a one-shot engine in a sandbox, native frames are canonicalized into the Postgres event log, and a thread-scoped SSE stream renders the session timeline."
+    alt="The command-lane round trip: Web UI, Slack, or an automation becomes a durable command, a worker steers a native engine session in a sandbox, native frames are canonicalized into the Postgres event log, and a thread-scoped SSE stream renders the session timeline."
     style={{ display: "block", width: "100%", height: "auto" }}
+    width="980"
+    height="540"
   />
 </div>
 
@@ -45,11 +47,12 @@ Everything a user sees is a rendering of the backend's durable event log.
 <Steps>
   <Step title="A command enters the lane">
     A prompt from the web app, Slack, or a scheduled automation becomes a durable
-    command with an idempotency key, so retries never duplicate work.
+    command. When the caller supplies an idempotency key, an exact retry returns
+    the original acceptance instead of duplicating work.
   </Step>
   <Step title="A run executes in a sandbox">
-    The backend claims a sandbox, spawns the engine one-shot, and streams its
-    output into the event log as canonical steps.
+    The backend claims a sandbox, steers the thread's native engine session, and
+    streams its output into the provider and canonical event lanes.
   </Step>
   <Step title="The UI renders the log">
     The session view subscribes to a thread-scoped stream and reduces events into
@@ -62,7 +65,7 @@ Read [Quickstart](/getting-started/quickstart) to run it locally, then
 [Concepts](/concepts) section defines every term used above.
 
 :::tip
-The runtime is **Bun** everywhere. The two apps and the five `packages/*` each
+The runtime is **Bun** everywhere. The two apps and the `packages/*` modules each
 carry their own lockfile: install inside `frontend/` and `backend/` to run the
 dev servers, and inside each package before `bun run typecheck`.
 :::

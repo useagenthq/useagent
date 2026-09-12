@@ -1,7 +1,6 @@
 import {
   resolveHarness,
   resolveProviderDriverForSession,
-  resolveProviderRegistration,
 } from "../engines";
 import type {
   HarnessCheckpoint,
@@ -9,9 +8,11 @@ import type {
   HarnessReconciliation,
   HarnessSessionHandle,
 } from "../engines/types";
-import { getLastStepAt, getRun, setRunProviderSession, STALE_SUMMARY } from "./repo";
+import { getLastStepAt, getRun, STALE_SUMMARY } from "./repo";
 import { finalizeRun, resolveDurableFinalizationOutcome } from "./finalize";
 import {
+  CaptureFenceError,
+  type WriteFence,
   providerEventExists,
   recordProviderEvent,
   scopedProviderEventId,
@@ -20,6 +21,7 @@ import { orgSecretRedactor } from "../secrets/store";
 import {
   bumpReconcile,
   claimDueReconciles,
+  reconcileClaimHeldForUpdate,
   deleteReconcile,
   enqueueReconcile,
   nextReconcileAction,
@@ -38,17 +40,16 @@ import { assertNever } from "../util/exhaustive";
 import { CANCEL_SUMMARY, hasRunCancelIntent } from "../commands/cancel";
 import {
   parseProviderSessionBinding,
-  providerSessionBinding,
   type ProviderSessionBinding,
 } from "@useagent/agent-harness/canonical";
 import {
-  providerDriverSupports,
   providerProtocolIdentity,
 } from "@useagent/agent-harness/control";
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/client";
-import { providerEvents } from "../db/schema";
 import { providerSessionAuthIsCurrent } from "../engines/provider-session-authority";
+import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
+import { piBridgeManager } from "../engines/pi-rpc-bridge";
 
 /** The event type for the durable "reconciling after restart" marker. Distinct
  *  from the terminal events so the timeline can show a run is being re-probed. */
@@ -97,6 +98,19 @@ const defaultReconcile: ReconcileProbe = (handle, checkpoint) => {
     : Promise.resolve({ status: "unreachable" } as HarnessReconciliation);
 };
 
+export type RestartTransportCleanup = (input: {
+  readonly engine: string;
+  readonly sandboxId: string | null;
+}) => Promise<void>;
+
+const defaultRestartTransportCleanup: RestartTransportCleanup = async (input) => {
+  if (input.engine !== "pi") return;
+  if (!input.sandboxId) throw new Error("Pi restart cleanup has no sandbox identity");
+  const binding = await resolveSandboxBindingForSandbox(input.sandboxId);
+  const sandbox = await binding.provider.get(input.sandboxId);
+  await piBridgeManager.prepare(sandbox);
+};
+
 export interface RecoveryResult {
   readonly reconciled: number;
   readonly failed: number;
@@ -108,13 +122,14 @@ export interface RecoveryResult {
 
 export async function recoverStaleRuns(
   reconcile: ReconcileProbe = defaultReconcile,
+  cleanup: RestartTransportCleanup = defaultRestartTransportCleanup,
 ): Promise<RecoveryResult> {
   const active = await listActiveCommands();
 
   // Phase 1 — resolve in-flight commands (concurrent; different threads are
   // independent, and a thread has at most one dispatched command).
   const dispatched = active.filter((c) => c.state === "dispatched");
-  const resolutions = await Promise.all(dispatched.map((c) => resolveDispatched(c, reconcile)));
+  const resolutions = await Promise.all(dispatched.map((c) => resolveDispatched(c, reconcile, cleanup)));
   const reconciled = resolutions.filter((r) => r === "reconciled").length;
   const parked = resolutions.filter((r) => r === "parked").length;
   let failed = resolutions.filter((r) => r === "failed").length;
@@ -140,7 +155,11 @@ type DispatchedResolution = "reconciled" | "failed" | "parked" | "settled";
 async function resolveDispatched(
   cmd: ActiveCommand,
   reconcile: ReconcileProbe,
+  cleanup: RestartTransportCleanup,
 ): Promise<DispatchedResolution> {
+  if (cmd.engine === "pi") {
+    await cleanup({ engine: cmd.engine, sandboxId: cmd.sandboxId });
+  }
   let outcome: DispatchedResolution = "settled";
   if (cmd.runStatus === "running") {
     outcome = await recoverRunningRun(cmd, reconcile);
@@ -161,10 +180,7 @@ async function recoverRunningRun(
     const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
     return durable?.status === "completed" ? "reconciled" : "failed";
   }
-  const legacyBinding = !cmd.providerSession
-    ? await legacyRecoveryBinding(cmd)
-    : null;
-  const binding = cmd.providerSession ?? legacyBinding;
+  const binding = cmd.providerSession;
   const authCurrent = binding
     ? await providerSessionAuthIsCurrent({
         binding,
@@ -196,9 +212,6 @@ async function recoverRunningRun(
     const finalized = await finalizeRun(cmd.runId, "failed", STALE_SUMMARY, 0);
     const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
     return durable?.status === "completed" ? "reconciled" : "failed";
-  }
-  if (legacyBinding) {
-    await setRunProviderSession(cmd.runId, legacyBinding);
   }
 
   const lastStepAt = await getLastStepAt(cmd.runId);
@@ -287,52 +300,12 @@ async function parkRunningRun(
     deadline: new Date(now + RECONCILE_PARK_BUDGET_MS),
   });
   if (newlyParked) {
-    recordReconcilingMarker(cmd.runId, cmd.threadId, {
+    void recordReconcilingMarker(cmd.runId, cmd.threadId, {
       reason: "boot-restart",
       sinceMs: (lastStepAt ?? new Date(now)).getTime(),
       deadlineMs: now + RECONCILE_PARK_BUDGET_MS,
     });
   }
-}
-
-/** Transitional resolver for rows created before provider_session existed.
- * It derives authority only from trusted engine/runtime columns plus the
- * currently selected driver contract. Session-id prefixes never participate;
- * dynamic-generation and non-reconciling drivers remain fail-closed. */
-async function legacyRecoveryBinding(cmd: ActiveCommand): Promise<ProviderSessionBinding | null> {
-  if (
-    !cmd.engineSessionId ||
-    !cmd.sandboxId ||
-    (cmd.engine !== "opencode" && cmd.engine !== "daytona")
-  ) return null;
-  const [evidence] = await db
-    .select({ id: providerEvents.id })
-    .from(providerEvents)
-    .where(and(
-      eq(providerEvents.runId, cmd.runId),
-      eq(providerEvents.provider, "opencode"),
-      eq(providerEvents.eventType, "session.started"),
-      eq(providerEvents.nativeSessionId, cmd.engineSessionId),
-    ))
-    .limit(1);
-  if (!evidence) return null;
-  const driver = resolveProviderRegistration("opencode")?.driver;
-  if (
-    !driver ||
-    !providerDriverSupports(driver, "reconcile") ||
-    typeof driver.descriptor.sessionGeneration !== "number" ||
-    providerProtocolIdentity(driver.descriptor.protocol) !== "opencode-server/compat"
-  ) {
-    return null;
-  }
-  return providerSessionBinding({
-    provider: "opencode",
-    nativeSessionId: cmd.engineSessionId,
-    runtime: { kind: "sandbox", id: cmd.sandboxId },
-    protocolVersion: providerProtocolIdentity(driver.descriptor.protocol),
-    capabilities: driver.descriptor.capabilities,
-    generation: driver.descriptor.sessionGeneration,
-  });
 }
 
 /** Payload of the durable "reconciling after restart" marker. `reason` is
@@ -353,15 +326,21 @@ interface ReconcilingMarkerPayload {
  *  marker that keeps advancing (each upsert mints a fresh seq → SSE subscribers
  *  see a live heartbeat) instead of a frozen frame or a pile of duplicate rows.
  *  Fire-and-forget; never throws. */
-function recordReconcilingMarker(runId: string, threadId: string, payload: ReconcilingMarkerPayload): void {
-  void recordProviderEvent({
+function recordReconcilingMarker(
+  runId: string,
+  threadId: string,
+  payload: ReconcilingMarkerPayload,
+  fence?: WriteFence,
+): Promise<void> {
+  // A heartbeat from a tick that lost its claim is fenced out like any other write.
+  return recordProviderEvent({
     id: `reconciling_${runId}`,
     runId,
     threadId,
     provider: "skynet",
     eventType: RUN_RECONCILING,
     payload,
-  }).catch(() => {});
+  }, fence ? { fence, required: true } : {}).catch(() => {});
 }
 
 /** Append native events a reconciliation surfaced to the canonical run, so SSE
@@ -372,11 +351,12 @@ function recordReconcilingMarker(runId: string, threadId: string, payload: Recon
  *  with another run. Payloads are redacted like the live lane. Returns the
  *  number durably present after this probe; strict terminal ingestion throws so
  *  the caller retains the run for retry instead of sealing incomplete history. */
-async function ingestReconciliationEvents(
+export async function ingestReconciliationEvents(
   entry: Pick<ReconcileEntry, "runId" | "threadId">,
   redact: Awaited<ReturnType<typeof orgSecretRedactor>>,
   events: readonly HarnessInterimEvent[],
   strict = false,
+  fence?: WriteFence,
 ): Promise<number> {
   let recovered = 0;
   for (const ev of events) {
@@ -398,11 +378,13 @@ async function ingestReconciliationEvents(
           nativeCallId: ev.callId ?? null,
           payload: redact.unknown(ev.payload),
         },
-        { critical: strict, required: strict },
+        // A fenced write is required so the fence loss reaches this loop instead of the log.
+        { critical: strict, required: strict || fence !== undefined, fence },
       );
       if (await providerEventExists(eventId)) recovered++;
       else if (strict) throw new Error(`Recovered event ${eventId} was not durable`);
     } catch (error) {
+      if (error instanceof CaptureFenceError) throw new LostClaimError(entry.runId, recovered);
       if (strict) throw error;
       /* a single malformed event must never abort the probe */
     }
@@ -413,22 +395,92 @@ async function ingestReconciliationEvents(
 // ---------------------------------------------------------------------------
 // Adaptive background reconcile loop (#63). Re-probes parked runs on a short
 // backoff within their budget: adopt the finished session, honest-fail after the
-// deadline, else reschedule. Single-flight (one tick at a time) — single-replica
-// scope, so no row locking. Never throws; a tick error is logged.
+// deadline, else reschedule. Single-flight with a watchdog; because the watchdog can
+// resurrect a tick over one that is merely slow, every claim is a leased row lock
+// (reconcile-queue.ts), so two ticks in flight never probe the same run. Never throws;
+// a tick error is logged.
 // ---------------------------------------------------------------------------
+
+/** Parked runs one tick processes at most. */
+const RECONCILE_BATCH = 20;
+
+// Every row write for a claimed entry is fenced on the lease the claim holds. The probe
+// race is bounded (RECONCILE_BUDGET_MS) but the reads and the finalize around it are not,
+// so a tick can outlive its lease; once the watchdog has resurrected a replacement and it
+// has re-claimed the row, the stale tick learns it here and leaves the row alone. Its
+// probe was wasted, nothing else: finalization is first-writer-wins on its own.
+function lostClaim(entry: ReconcileEntry): void {
+  console.warn(
+    `[reconcile] entry ${entry.runId} outlived its lease and was re-claimed by another tick; leaving the row to it`,
+  );
+}
+async function settleEntry(entry: ReconcileEntry): Promise<boolean> {
+  const held = await deleteReconcile(entry.runId, entry.leaseUntil);
+  if (!held) lostClaim(entry);
+  return held;
+}
+async function rescheduleEntry(entry: ReconcileEntry): Promise<boolean> {
+  const next = reconcileBackoffAt(Date.now(), entry.attempts);
+  const held = await bumpReconcile(entry.runId, next, entry.leaseUntil);
+  if (!held) lostClaim(entry);
+  return held;
+}
+/** The fence every write this tick makes for the run carries: its claim row, locked. */
+const claimFence = (entry: ReconcileEntry): WriteFence =>
+  (tx) => reconcileClaimHeldForUpdate(entry.runId, entry.leaseUntil, tx);
+
+/** Thrown when a tick finds, while writing recovered events, that its claim is gone.
+ *  Carries how many events of the batch were durable before that, so the count survives. */
+class LostClaimError extends Error {
+  constructor(runId: string, readonly recovered = 0) {
+    super(`reconcile claim lost for run ${runId}`);
+  }
+}
+
+/** Finalize a parked run only while this tick still owns its row. The fenced delete of
+ *  the parked row IS the ownership guard and runs inside the finalization transaction
+ *  (finalizeRun `claim`), so both commit together: a tick whose row was re-claimed by its
+ *  replacement writes nothing, and a crash can never leave a settled run parked. Returns
+ *  the durable outcome, or null when the claim was lost. */
+async function finalizeOwned(
+  entry: ReconcileEntry,
+  status: "completed" | "failed",
+  summary: string,
+): Promise<Awaited<ReturnType<typeof resolveDurableFinalizationOutcome>> | null> {
+  let held = false;
+  const finalized = await finalizeRun(entry.runId, status, summary, 0, {
+    claim: async (tx) => {
+      held = await deleteReconcile(entry.runId, entry.leaseUntil, tx);
+      return held;
+    },
+  });
+  if (!held) {
+    lostClaim(entry);
+    return null;
+  }
+  const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
+  await settleAndPump(entry.runId, entry.threadId);
+  return durable;
+}
 
 /** One reconcile tick: process every DUE parked run. Returns counts for
  *  tests/telemetry. The probe is injectable (tests). Never throws. */
 export async function runDueReconciles(
   reconcile: ReconcileProbe = defaultReconcile,
-): Promise<{ adopted: number; failed: number; retried: number; dropped: number; eventsRecovered: number }> {
-  const due = await claimDueReconciles();
+  cleanup: RestartTransportCleanup = defaultRestartTransportCleanup,
+): Promise<{ adopted: number; failed: number; retried: number; dropped: number; lost: number; eventsRecovered: number }> {
   let adopted = 0;
   let failed = 0;
   let retried = 0;
   let dropped = 0;
+  let lost = 0;
   let eventsRecovered = 0;
-  for (const entry of due) {
+  // Claim ONE leased row at a time: the lease then covers exactly the entry being probed,
+  // so a batch that outlives one lease never re-exposes a row it has yet to reach, and a
+  // tick running alongside this one claims disjoint rows.
+  for (let claimed = 0; claimed < RECONCILE_BATCH; claimed++) {
+    const [entry] = await claimDueReconciles(1);
+    if (!entry) break;
    // PER-ENTRY ISOLATION: a throw on ONE entry (a stuck finalize, a DB error)
    // must not abort the whole batch and leave every other parked run stranded.
    // Combined with the tick watchdog in startReconcileLoop, a single wedged
@@ -440,16 +492,17 @@ export async function runDueReconciles(
     // worker took the thread, a cancel, a prior tick), just drop the parked row.
     const run = await getRun(entry.runId);
     if (!run || run.status !== "running") {
-      await deleteReconcile(entry.runId);
-      dropped++;
+      if (await settleEntry(entry)) dropped++;
+      else lost++;
       continue;
     }
+    if (run.engine === "pi") {
+      await cleanup({ engine: run.engine, sandboxId: run.sandboxId });
+    }
     if (run.orgId && await hasRunCancelIntent(run.orgId, run.id)) {
-      const finalized = await finalizeRun(entry.runId, "failed", CANCEL_SUMMARY, 0);
-      const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
-      await settleAndPump(entry.runId, entry.threadId);
-      await deleteReconcile(entry.runId);
-      if (durable?.status === "completed") adopted++;
+      const durable = await finalizeOwned(entry, "failed", CANCEL_SUMMARY);
+      if (!durable) lost++;
+      else if (durable.status === "completed") adopted++;
       else failed++;
       continue;
     }
@@ -470,80 +523,77 @@ export async function runDueReconciles(
       : undefined;
     let recovered = 0;
     try {
+      // Recovered events are upserts on stable ids, so a tick that stalled and lost its
+      // claim must not write them over its replacement's newer payloads: every write is
+      // fenced on the locked claim row inside its own transaction.
       recovered = recoveredEvents?.length
-        ? await ingestReconciliationEvents(entry, redact, recoveredEvents, result.status !== "in_progress")
+        ? await ingestReconciliationEvents(entry, redact, recoveredEvents, result.status !== "in_progress", claimFence(entry))
         : 0;
     } catch (error) {
+      if (error instanceof LostClaimError) {
+        eventsRecovered += error.recovered; // what landed before the claim was lost stays counted
+        lostClaim(entry);
+        lost++;
+        continue;
+      }
       console.error(`[reconcile] terminal event backfill for run ${entry.runId} failed; retained for retry:`, error);
       if (nextReconcileAction(false, Date.now(), entry.deadlineMs) === "fail") {
-        const finalized = await finalizeRun(entry.runId, "failed", STALE_SUMMARY, 0);
-        const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
-        await settleAndPump(entry.runId, entry.threadId);
-        await deleteReconcile(entry.runId);
-        if (durable?.status === "completed") adopted++;
+        const durable = await finalizeOwned(entry, "failed", STALE_SUMMARY);
+        if (!durable) lost++;
+        else if (durable.status === "completed") adopted++;
         else failed++;
         continue;
       }
-      await bumpReconcile(entry.runId, reconcileBackoffAt(Date.now(), entry.attempts));
-      retried++;
+      if (await rescheduleEntry(entry)) retried++;
+      else lost++;
       continue;
     }
     eventsRecovered += recovered;
     if (result.status === "failed") {
-      const finalized = await finalizeRun(entry.runId, "failed", result.summary, 0);
-      const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
-      await settleAndPump(entry.runId, entry.threadId);
-      await deleteReconcile(entry.runId);
-      if (durable?.status === "completed") adopted++;
+      const durable = await finalizeOwned(entry, "failed", result.summary);
+      if (!durable) lost++;
+      else if (durable.status === "completed") adopted++;
       else failed++;
       continue;
     }
     const action = nextReconcileAction(result.status === "completed", Date.now(), entry.deadlineMs);
     if (action === "adopt") {
-      const finalized = await finalizeRun(
-        entry.runId,
-        "completed",
-        (result as { summary: string }).summary,
-        0,
-      );
-      const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
-      await settleAndPump(entry.runId, entry.threadId);
-      await deleteReconcile(entry.runId);
-      if (durable?.status === "completed") adopted++;
+      const durable = await finalizeOwned(entry, "completed", (result as { summary: string }).summary);
+      if (!durable) lost++;
+      else if (durable.status === "completed") adopted++;
       else failed++;
     } else if (action === "fail") {
-      const finalized = await finalizeRun(entry.runId, "failed", STALE_SUMMARY, 0);
-      const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
-      await settleAndPump(entry.runId, entry.threadId);
-      await deleteReconcile(entry.runId);
-      if (durable?.status === "completed") adopted++;
+      const durable = await finalizeOwned(entry, "failed", STALE_SUMMARY);
+      if (!durable) lost++;
+      else if (durable.status === "completed") adopted++;
       else failed++;
     } else {
       // Retry: heartbeat the reconciling marker so the row shows liveness — but
       // ONLY when we actually reached the session (in_progress / no_change). An
       // unreachable probe learns nothing, so it must not fake a heartbeat.
       if (result.status === "in_progress" || result.status === "no_change") {
-        recordReconcilingMarker(entry.runId, entry.threadId, {
+        // Awaited: the fenced heartbeat must land while this tick's lease is still the
+        // row's, which the reschedule below replaces.
+        await recordReconcilingMarker(entry.runId, entry.threadId, {
           reason: "reprobe",
           sinceMs: entry.sinceMs,
           deadlineMs: entry.deadlineMs,
           lastProbeAt: Date.now(),
           eventsRecovered: recovered,
-        });
+        }, claimFence(entry));
       }
-      await bumpReconcile(entry.runId, reconcileBackoffAt(Date.now(), entry.attempts));
-      retried++;
+      if (await rescheduleEntry(entry)) retried++;
+      else lost++;
     }
    } catch (err) {
      // Bump this entry's next attempt so a persistently failing one backs off
      // instead of hot-looping, and move on to the rest of the batch.
      console.error(`[reconcile] entry ${entry.runId} failed, skipping:`, err);
-     await bumpReconcile(entry.runId, reconcileBackoffAt(Date.now(), entry.attempts)).catch(
-       () => {},
-     );
+     if (await rescheduleEntry(entry).catch(() => false)) retried++;
+     else lost++;
    }
   }
-  return { adopted, failed, retried, dropped, eventsRecovered };
+  return { adopted, failed, retried, dropped, lost, eventsRecovered };
 }
 
 /** Bounded native-session re-probe for one parked entry. Never throws. */
@@ -597,39 +647,57 @@ async function settleAndPump(runId: string, threadId: string): Promise<void> {
 }
 
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
-let reconcileTicking = false;
-let reconcileTickStartedAt = 0;
+
+export interface TickStart { readonly generation: number; readonly resurrected: boolean }
+
+/** Single-flight guard with a watchdog and tick OWNERSHIP. `start` hands out a generation
+ *  when a tick may run: nothing is in flight, or the in-flight tick is past the watchdog
+ *  and is treated as lost. `settle` frees the guard only for the generation that holds
+ *  it, so a lost tick that finally settles cannot free the guard from under its
+ *  replacement (which would let the next interval start a third tick over the second).
+ *  Pure, so it is tested without timers. */
+export function createTickGuard(watchdogMs: number) {
+  let generation = 0;
+  let inFlight: { generation: number; startedAt: number } | null = null;
+  return {
+    start(now: number): TickStart | null {
+      if (inFlight && now - inFlight.startedAt < watchdogMs) return null;
+      const resurrected = inFlight !== null;
+      inFlight = { generation: ++generation, startedAt: now };
+      return { generation: inFlight.generation, resurrected };
+    },
+    settle(gen: number): void {
+      if (inFlight?.generation === gen) inFlight = null;
+    },
+  };
+}
 
 /** Start the adaptive reconcile loop (idempotent). Single-flight: a slow tick is
  *  never overlapped by the next. `RECONCILE_TICK_MS` overrides the interval
  *  (tests go fast). Best-effort — a tick failure is logged, never thrown.
  *
  *  WATCHDOG: single-flight used to be permanent - if a tick's promise never
- *  settled (an unbounded DB await wedged), `reconcileTicking` stayed true and
- *  every later interval early-returned, killing the reconciler for good (the
- *  2026-08-20 25-minute idle). Now a tick still in flight past the watchdog
- *  window is treated as lost: the flag is cleared and the next interval runs a
- *  fresh tick. `runDueReconciles` is idempotent (it re-claims due rows), so an
- *  overlapping resurrected tick is safe. */
+ *  settled (an unbounded DB await wedged), the flag stayed set and every later
+ *  interval early-returned, killing the reconciler for good (the 2026-08-20
+ *  25-minute idle). A tick still in flight past the watchdog window is treated as
+ *  lost and a fresh tick starts. The guard tracks which tick owns the flag, so the
+ *  lost tick settling late does not free it, and the leased claims in
+ *  reconcile-queue.ts keep the two ticks off the same rows in the meantime. */
 export function startReconcileLoop(
   intervalMs = Number(process.env.RECONCILE_TICK_MS ?? 15_000),
 ): void {
   if (reconcileTimer) return;
   const watchdogMs = Math.max(intervalMs * 8, 120_000);
+  const guard = createTickGuard(watchdogMs);
   reconcileTimer = setInterval(() => {
-    if (reconcileTicking) {
-      if (Date.now() - reconcileTickStartedAt < watchdogMs) return;
-      console.error(
-        `[reconcile] tick exceeded ${watchdogMs}ms watchdog; resetting single-flight`,
-      );
+    const tick = guard.start(Date.now());
+    if (!tick) return;
+    if (tick.resurrected) {
+      console.error(`[reconcile] tick exceeded ${watchdogMs}ms watchdog; starting a fresh tick`);
     }
-    reconcileTicking = true;
-    reconcileTickStartedAt = Date.now();
     void runDueReconciles()
       .catch((err) => console.error("[reconcile] tick failed:", err))
-      .finally(() => {
-        reconcileTicking = false;
-      });
+      .finally(() => guard.settle(tick.generation));
   }, intervalMs);
   if (typeof reconcileTimer.unref === "function") reconcileTimer.unref();
 }

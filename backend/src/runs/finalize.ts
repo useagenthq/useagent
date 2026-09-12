@@ -53,9 +53,11 @@ import { listFinishedWorkForRun } from "./finished-work-repo";
 import { finishedWorkEnforcementEnabled, finishedWorkRolloutMode } from "./finished-work-rollout";
 import { lockFinishedWorkRun } from "./finished-work-lock";
 import { getThreadRelationship } from "./thread-relationship-repo";
+import { enqueueSlackUserMirrorForRun } from "../slack/user-mirror";
 
 /** Providers whose runs project native events and/or `steps` into the canonical lane.
- *  OpenCode, Pi, and the ACP engines (acp/claude/codex). Legacy aliases (daytona -> opencode,
+ *  Native engines plus historical ACP rows, which can still finish canonicalization
+ *  without registering a new ACP execution lane. Legacy aliases (daytona -> opencode,
  *  claude-sdk -> claude) run the same adapter, so they normalize into this set via
  *  {@link canonicalEngine} and are NOT left silently outside the lane. Only `mock`
  *  (scripted) has no provider source to translate. */
@@ -73,6 +75,8 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
   status: RunStatus,
   summary: string,
 ): Promise<boolean> {
+  const userMirror = await enqueueSlackUserMirrorForRun(run.id, tx);
+  let kickSlack = userMirror.status === "ready" && userMirror.created;
   const thread = run.orgId
     ? await findSlackThreadForProductThread(run.orgId, run.threadId, tx)
     : null;
@@ -126,7 +130,7 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
     narration,
   });
 
-  let kickSlack = await enqueueStopStreamTx(tx, {
+  kickSlack = (await enqueueStopStreamTx(tx, {
     idempotencyKey: `slack-reply:${slack.teamId}:${run.id}`,
     orgId: run.orgId,
     teamId: slack.teamId,
@@ -140,7 +144,10 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
     text: finalCard.text,
     fallbackBlocks: finalCard.blocks,
     fallbackText: replyText,
-  });
+    ...(userMirror.status === "ready"
+      ? { waitForIdempotencyKey: userMirror.idempotencyKey }
+      : {}),
+  })) || kickSlack;
   const statusCreated = await enqueueSessionStatusTx(tx, {
     idempotencyKey: `slack-status:final:${slack.teamId}:${run.id}`,
     orgId: run.orgId,
@@ -290,11 +297,22 @@ export async function resolveDurableFinalizationOutcome(
   return { status: winner.status, summary: winner.summary ?? "" };
 }
 
+export interface FinalizeRunOptions {
+  /** Ownership guard evaluated INSIDE the finalization transaction, after the run row is
+   *  read and before anything is written. When it returns false the transaction writes
+   *  nothing and the result is `applied: false`. The reconciler passes its fenced
+   *  parked-row delete here, so a tick that lost its claim cannot commit a terminal
+   *  status over its replacement's work, and a crash can never leave a settled run
+   *  with a parked row. */
+  readonly claim?: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<boolean>;
+}
+
 export async function finalizeRun(
   runId: string,
   status: RunStatus,
   summary: string,
   durationMs: number,
+  options: FinalizeRunOptions = {},
 ): Promise<FinalizeRunResult> {
   const executionGraphMode = executionGraphRolloutMode();
   const finishedWorkMode = finishedWorkRolloutMode();
@@ -315,6 +333,7 @@ export async function finalizeRun(
     if (finishedWorkMode !== "off") await lockFinishedWorkRun(runId, tx);
     const [run] = await tx.select().from(runs).where(eq(runs.id, runId)).limit(1);
     if (!run) return; // deleted mid-flight — nothing to finalize
+    if (options.claim && !(await options.claim(tx))) return; // the caller no longer owns this settlement
     settledThreadId = run.threadId;
     settledOrgId = run.orgId;
     settledUserId = run.userId;

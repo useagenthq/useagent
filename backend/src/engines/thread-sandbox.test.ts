@@ -1,9 +1,21 @@
 import { describe, expect, test } from "bun:test";
+import {
+  DaytonaAuthenticationError,
+  DaytonaForbiddenError,
+  DaytonaNotFoundError,
+  DaytonaRateLimitError,
+  DaytonaServiceUnavailableError,
+} from "@daytona/sdk";
+import { BoxApiError } from "@useagent/sandbox-box";
+import { SandboxNotFoundError } from "@useagent/sandbox-contract";
 import { readFileSync } from "node:fs";
 import { resolveRetainedSandbox, reviveRetainedSandbox, RetainedSandboxRuntimeMismatchError, sandboxHasRequiredLabels } from "./thread-sandbox";
 import type { EngineRunContext } from "./types";
 import type { SandboxHandle } from "../sandboxes/provider";
-import type { SandboxBinding } from "../sandboxes/binding";
+import {
+  PersonalSandboxConnectionUnavailableError,
+  type SandboxBinding,
+} from "../sandboxes/binding";
 
 describe("shared thread sandbox lease", () => {
   test("persists the run mapping before returning a sandbox to an engine", () => {
@@ -39,6 +51,85 @@ describe("shared thread sandbox lease", () => {
     expect(deleted).toBe(0);
     expect(forgotten).toBe(0);
     expect(files.get("draft.txt")).toBe("unpublished work");
+  });
+
+  test("preserves retained mappings for revoked credentials, auth failures, and unknown errors", async () => {
+    for (const error of [
+      new PersonalSandboxConnectionUnavailableError("the personal connection was revoked"),
+      new DaytonaAuthenticationError("authentication failed", 401),
+      new DaytonaForbiddenError("access forbidden", 403),
+      new BoxApiError(401, "unauthorized", "invalid credential"),
+      new DaytonaRateLimitError("provider busy", 429),
+      new DaytonaServiceUnavailableError("provider unavailable", 503),
+      new Error("unknown transport failure"),
+      // A typed 404 from credential validation is not proof that the physical sandbox is absent.
+      new DaytonaNotFoundError("credential validation endpoint missing", 404),
+    ]) {
+      let forgotten = 0;
+      await expect(resolveRetainedSandbox(
+        { threadId: "thread-preserved" } as EngineRunContext,
+        { snapshot: "native", chip: "runtime:codex" },
+        {
+          getSandboxId: async () => "retained-sandbox",
+          revive: async () => { throw error; },
+          forget: () => { forgotten += 1; },
+        },
+      )).rejects.toBe(error);
+      expect(forgotten).toBe(0);
+    }
+  });
+
+  test("forgets a retained mapping only after the provider proves physical absence", async () => {
+    let forgotten = 0;
+    await expect(resolveRetainedSandbox(
+      { threadId: "thread-physical-missing", orgId: "org-1" } as EngineRunContext,
+      { snapshot: "native", chip: "runtime:codex" },
+      {
+        getSandboxId: async () => "retained-sandbox",
+        revive: async () => { throw new SandboxNotFoundError(); },
+        forget: () => { forgotten += 1; },
+      },
+    )).resolves.toBeNull();
+    expect(forgotten).toBe(1);
+  });
+
+  test("does not treat typed 404s from resume or credential probes as physical absence", async () => {
+    for (const failurePoint of ["start", "credentials"] as const) {
+      let forgotten = 0;
+      const error = new DaytonaNotFoundError(`${failurePoint} probe file missing`, 404);
+      const sandbox = {
+        id: "retained-sandbox",
+        state: failurePoint === "start" ? "stopped" : "started",
+        start: async () => {
+          if (failurePoint === "start") throw error;
+        },
+      } as unknown as SandboxHandle;
+      const binding = {
+        kind: "daytona",
+        provider: { get: async () => sandbox },
+      } as unknown as SandboxBinding;
+      await expect(resolveRetainedSandbox(
+        {
+          threadId: "thread-probe-404",
+          orgId: "org-1",
+          emit: async () => undefined,
+        } as unknown as EngineRunContext,
+        { snapshot: "native", chip: "runtime:codex" },
+        {
+          getSandboxId: async () => sandbox.id,
+          revive: (ctx, id, options) => reviveRetainedSandbox(ctx, id, options, {
+            threadBinding: async () => binding,
+            sandboxBinding: async () => binding,
+            credentialsCurrent: async () => {
+              if (failurePoint === "credentials") throw error;
+              return true;
+            },
+          }),
+          forget: () => { forgotten += 1; },
+        },
+      )).rejects.toBe(error);
+      expect(forgotten).toBe(0);
+    }
   });
 
   test("does not discard a retained workspace to satisfy a larger resource target", async () => {

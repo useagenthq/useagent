@@ -44,6 +44,7 @@ function sandboxWithResult(result: string, exitCode = 0): SandboxHandle {
       getSessionCommandLogs: async () => ({ output: "", stdout: "", stderr: "" }),
       createPty: async () => ({
         waitForConnection: async () => {},
+        waitForTermination: async () => new Promise(() => {}),
         sendInput: async () => {},
         resize: async () => {},
         disconnect: async () => {},
@@ -89,11 +90,25 @@ describe("recording gateway tools", () => {
     expect(JSON.stringify(stopped.result)).toContain("Could not stop recording: stop proof");
   });
 
-  test("starts only after the desktop is ready and returns the sandbox path", async () => {
+  test.each([
+    ["default", undefined, ":1"],
+    ["Box", ":0", ":0"],
+  ] as const)("starts the %s desktop recorder with its declared display", async (_kind, display, expectedDisplay) => {
     const commands: string[] = [];
+    const environments: Array<Record<string, string> | undefined> = [];
     const sandbox = sandboxWithResult("/root/work/recordings/proof.mp4\n");
-    sandbox.process.executeCommand = async (command) => {
+    if (display) {
+      Object.defineProperty(sandbox, "desktop", { value: {
+        display,
+        home: "/home/user",
+        workdir: "/home/user/work",
+        browserExecutable: null,
+        start: async () => {},
+      } });
+    }
+    sandbox.process.executeCommand = async (command, _cwd, env) => {
       commands.push(command);
+      environments.push(env);
       return { exitCode: 0, result: "/root/work/recordings/proof.mp4\n" };
     };
 
@@ -112,6 +127,7 @@ describe("recording gateway tools", () => {
 
     expect(path).toBe("/root/work/recordings/proof.mp4");
     expect(commands).toEqual(["skynet-record-start 'proof'"]);
+    expect(environments).toEqual([{ DISPLAY: expectedDisplay }]);
   });
 
   test("refuses to start when desktop readiness cannot be established", async () => {
@@ -133,38 +149,44 @@ describe("recording gateway tools", () => {
     ).rejects.toThrow("display failed readiness");
   });
 
-  test("uses Daytona native recording and persists its active recording id", async () => {
+  test("uses the canonical desktop recorder when native computer use is present", async () => {
     const commands: string[] = [];
     const sandbox = sandboxWithResult("");
     sandbox.process.executeCommand = async (command) => {
       commands.push(command);
-      return { exitCode: 0, result: "" };
+      return { exitCode: 0, result: "/root/work/recordings/proof.mp4\n" };
     };
     Object.defineProperty(sandbox, "computerUse", { value: {
-      start: async () => ({ message: "started" }),
+      start: async () => {
+        throw new Error("native computer use must not start");
+      },
       recording: {
-        start: async () => ({
-          id: "recording-1",
-          fileName: "proof.mp4",
-          filePath: "/home/daytona/.daytona/recordings/proof.mp4",
-          startTime: "2026-08-12T00:00:00Z",
-          status: "recording",
-        }),
+        start: async () => {
+          throw new Error("native recording must not start");
+        },
       },
     } as unknown as SandboxHandle["computerUse"] });
+    let readinessCalls = 0;
 
     const path = await startRecordingInSandbox(
       sandbox,
       "proof",
       AbortSignal.timeout(1_000),
       async () => {
-        throw new Error("Cube readiness must not run for Daytona");
+        readinessCalls += 1;
+        return {
+          available: true,
+          browserTools: true,
+          home: "/root",
+          workdir: "/root/work",
+          browserExecutable: "/usr/bin/chromium",
+        };
       },
     );
 
-    expect(path).toBe("/home/daytona/.daytona/recordings/proof.mp4");
-    expect(commands).toHaveLength(1);
-    expect(commands[0]).toContain("active-recording-id");
+    expect(path).toBe("/root/work/recordings/proof.mp4");
+    expect(readinessCalls).toBe(1);
+    expect(commands).toEqual(["skynet-record-start 'proof'"]);
   });
 
   test("stops and validates a real H.264 recording before publishing", async () => {
@@ -181,40 +203,33 @@ describe("recording gateway tools", () => {
     });
   });
 
-  test("stops Daytona native recording and validates provider metadata", async () => {
+  test("stops the canonical desktop recorder when native computer use is present", async () => {
     const commands: string[] = [];
-    const sandbox = sandboxWithResult("recording-1\n");
+    const sandbox = sandboxWithResult("");
     sandbox.process.executeCommand = async (command) => {
       commands.push(command);
-      return { exitCode: 0, result: command.includes("cat") ? "recording-1\n" : "" };
+      return {
+        exitCode: 0,
+        result: "__USEAGENT_RECORDING_PATH__=/root/work/recordings/proof.mp4\ncodec_name=h264\nwidth=1440\nheight=900\nduration=2.200000\n",
+      };
     };
-    sandbox.fs.getFileDetails = async () => ({ size: 1_024 });
     Object.defineProperty(sandbox, "computerUse", { value: {
       recording: {
-        stop: async (id: string) => ({
-          id,
-          fileName: "proof.mp4",
-          filePath: "/home/daytona/.daytona/recordings/proof.mp4",
-          startTime: "2026-08-12T00:00:00Z",
-          endTime: "2026-08-12T00:00:02Z",
-          durationSeconds: 2.2,
-          sizeBytes: 1_024,
-          status: "completed",
-        }),
-      },
-      display: {
-        getInfo: async () => ({ displays: [{ width: 1440, height: 900, isActive: true }] }),
+        stop: async () => {
+          throw new Error("native recording must not stop");
+        },
       },
     } as unknown as SandboxHandle["computerUse"] });
 
     await expect(stopRecordingInSandbox(sandbox)).resolves.toEqual({
-      path: "/home/daytona/.daytona/recordings/proof.mp4",
+      path: "/root/work/recordings/proof.mp4",
       codec: "h264",
       width: 1440,
       height: 900,
       durationSeconds: 2.2,
     });
-    expect(commands.at(-1)).toContain("rm -f");
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toContain("skynet-record-stop");
   });
 
   test("returns a durable authenticated artifact reference from stop", async () => {

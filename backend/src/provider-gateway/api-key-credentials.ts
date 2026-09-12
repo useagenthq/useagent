@@ -14,11 +14,12 @@ export interface GatewayProviderApiKeyCredentialRow {
   readonly tag: string;
 }
 
-interface GatewayComputerApiKeyCredentialRow
+export interface GatewayComputerApiKeyCredentialRow
   extends GatewayProviderApiKeyCredentialRow {
   readonly provider: ProviderConnectionProvider;
-  readonly metadata: ProviderConnectionMetadata;
-  readonly updated_at: Date;
+  readonly metadata: ProviderConnectionMetadata | null;
+  /** A Date from the driver, or the ISO/SQL text the restricted view yields. */
+  readonly updated_at: Date | string;
 }
 
 export interface GatewayComputerApiKeyConnection {
@@ -26,6 +27,24 @@ export interface GatewayComputerApiKeyConnection {
   readonly value: string;
   readonly metadata: ProviderConnectionMetadata;
   readonly updatedAt: string;
+}
+
+/** The connection a computer row resolves to; null when the credential is not an open API key. */
+export function gatewayComputerApiKeyConnectionFromRow(
+  row: GatewayComputerApiKeyCredentialRow,
+): GatewayComputerApiKeyConnection | null {
+  const value = openGatewayProviderApiKeyCredential(row);
+  if (!value) return null;
+  const updatedAt = row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at);
+  if (Number.isNaN(updatedAt.getTime())) {
+    throw new Error("Computer credential timestamp is invalid");
+  }
+  return {
+    provider: row.provider,
+    value,
+    metadata: row.metadata ?? {},
+    updatedAt: updatedAt.toISOString(),
+  };
 }
 
 export function openGatewayProviderApiKeyCredential(
@@ -98,9 +117,5 @@ export async function resolveGatewayComputerApiKeyConnection(input: {
     LIMIT 1
   `;
   const row = rows[0];
-  if (!row) return null;
-  const value = openGatewayProviderApiKeyCredential(row);
-  return value
-    ? { provider: row.provider, value, metadata: row.metadata ?? {}, updatedAt: row.updated_at.toISOString() }
-    : null;
+  return row ? gatewayComputerApiKeyConnectionFromRow(row) : null;
 }

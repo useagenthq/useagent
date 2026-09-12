@@ -156,6 +156,60 @@ describe("agents rail rows", () => {
     expect(html).not.toContain("No activity recorded");
   });
 
+  test("selected native child renders its returned answer as safe markdown", () => {
+    const markdown = [
+      "**Checkout healthy**",
+      "",
+      "| Check | Result |",
+      "| --- | --- |",
+      "| Build | Pass |",
+      "",
+      "[Report](https://example.com/report)",
+      "[Unsafe](javascript:alert(1))",
+      "",
+      "<script>alert('raw html')</script>",
+    ].join("\n");
+    const card: SubagentCard = {
+      id: "card-markdown",
+      title: "Verify release",
+      childSessionId: "markdown-child",
+      callId: "call-markdown",
+      aliases: ["markdown-child"],
+      status: "Completed",
+      startedAt: Date.parse("2026-09-01T10:00:00Z"),
+      lastActivityAt: Date.parse("2026-09-01T10:00:01Z"),
+    };
+    const fidelity = {
+      resultText: markdown,
+      recentActivity: [],
+    };
+    const node = projectChildTree({
+      cards: [card],
+      fidelity: new Map([["markdown-child", fidelity]]),
+      gatewayChildren: [],
+      runLive: false,
+    })[0];
+    if (!node) throw new Error("expected projected child");
+
+    const html = renderToStaticMarkup(createElement(AgentDetail, {
+      node,
+      card,
+      fidelity,
+      steps: [],
+      ownerByStep: new Map(),
+      spawnStepId: card.id,
+      canonicalEvents: [],
+      historyLoading: false,
+      onBack: () => {},
+    }));
+
+    expect(html).toContain("<strong>Checkout healthy</strong>");
+    expect(html).toContain("<table");
+    expect(html).toContain('<a href="https://example.com/report" target="_blank" rel="noreferrer">Report</a>');
+    expect(html).not.toContain('href="javascript:');
+    expect(html).not.toContain("<script>");
+  });
+
   test("selected settled detail names an honestly absent transcript/result", () => {
     const card: SubagentCard = {
       id: "card-empty",

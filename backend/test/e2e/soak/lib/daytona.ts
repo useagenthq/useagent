@@ -1,6 +1,6 @@
 /**
  * Daytona cleanup helper for the soak suite. The soak's real-depth batches
- * create cloud sandboxes (label `skynet-run` → runId, per src/engines/sandbox.ts).
+ * create cloud sandboxes (compatible run label → runId).
  * The user's hard rule: KEEP DAYTONA CLEAN — every sandbox a batch creates must
  * be deleted and its deletion VERIFIED via the API when the batch ends.
  *
@@ -14,6 +14,7 @@
  */
 import { Daytona, type Sandbox } from "@daytona/sdk";
 import postgres from "postgres";
+import { readSandboxRunLabel } from "../../../../src/sandboxes/label-compat";
 
 export interface SandboxInfo {
   id: string;
@@ -29,12 +30,39 @@ function client(): Daytona {
 }
 
 /** Every sandbox visible to this org (read-only). Optionally filter by label. */
-export async function listUseAgent(labelKey = "skynet-run"): Promise<SandboxInfo[]> {
+export function includeSandboxInInventory(
+  labels: Readonly<Record<string, string>>,
+  labelKey: string | undefined,
+): boolean {
+  if (labelKey === "") return true;
+  if (labelKey !== undefined) return labelKey in labels;
+  const runLabel = readSandboxRunLabel(labels);
+  return runLabel.conflict || runLabel.value !== null;
+}
+
+export function classifySandboxForSweep(
+  sandbox: SandboxInfo,
+  existingRuns: ReadonlySet<string>,
+  keepIds: ReadonlySet<string>,
+): { run: string; state: string; targeted: boolean; reason: string } {
+  const runLabel = readSandboxRunLabel(sandbox.labels);
+  const run = runLabel.value ?? "";
+  const state = sandbox.state ?? "unknown";
+  if (keepIds.has(sandbox.id)) return { run, state, targeted: false, reason: "keep-listed (agent active)" };
+  if (runLabel.conflict) return { run, state, targeted: false, reason: "conflicting run labels" };
+  if (!run || !existingRuns.has(run)) return { run, state, targeted: true, reason: "orphan (runId absent from skynet.runs)" };
+  if (new Set(["stopped", "archived", "paused"]).has(state)) {
+    return { run, state, targeted: true, reason: `stopped (${state})` };
+  }
+  return { run, state, targeted: false, reason: "active (runId present, started)" };
+}
+
+export async function listUseAgent(labelKey?: string): Promise<SandboxInfo[]> {
   const daytona = client();
   const out: SandboxInfo[] = [];
   for await (const sb of daytona.list()) {
     const labels = (sb as Sandbox).labels ?? {};
-    if (labelKey && !(labelKey in labels)) continue;
+    if (!includeSandboxInInventory(labels, labelKey)) continue;
     out.push({
       id: sb.id,
       state: (sb as { state?: string }).state,
@@ -83,10 +111,10 @@ export async function deleteById(
 }
 
 /**
- * Orphan sweep (lead-authorized). Deletes skynet-run sandboxes that are safe to
+ * Orphan sweep (lead-authorized). Deletes platform-labeled sandboxes that are safe to
  * reap, VERIFYING each deletion, and NEVER touching a box that belongs to live
  * work. A sandbox is deleted iff:
- *   (1) ORPHAN — its `skynet-run` label runId is NOT a row in the shared `useagent`
+ *   (1) ORPHAN — its compatible run-label runId is NOT a row in the shared `useagent`
  *       runs table (a run whose sandbox outlived its (throwaway) DB), OR
  *   (2) STOPPED — its state is stopped/archived/paused (idle leftover).
  * `keepIds` (e.g. ids an agent reports active) are always spared. `dryRun` reports
@@ -112,18 +140,13 @@ export async function sweepOrphans(opts: { dryRun?: boolean; keepIds?: Set<strin
   }
   const boxes = await listUseAgent();
   const keep = opts.keepIds ?? new Set<string>();
-  const STOPPED = new Set(["stopped", "archived", "paused"]);
   const spared: Array<{ id: string; run: string; state: string; reason: string }> = [];
   const targeted: Array<{ id: string; run: string; state: string; reason: string }> = [];
   for (const b of boxes) {
-    const run = b.labels["skynet-run"] ?? "";
-    const state = b.state ?? "unknown";
-    if (keep.has(b.id)) { spared.push({ id: b.id, run, state, reason: "keep-listed (agent active)" }); continue; }
-    const isOrphan = !run || !existing.has(run);
-    const isStopped = STOPPED.has(state);
-    if (isOrphan) targeted.push({ id: b.id, run, state, reason: "orphan (runId absent from skynet.runs)" });
-    else if (isStopped) targeted.push({ id: b.id, run, state, reason: `stopped (${state})` });
-    else spared.push({ id: b.id, run, state, reason: "active (runId present, started)" });
+    const decision = classifySandboxForSweep(b, existing, keep);
+    const entry = { id: b.id, run: decision.run, state: decision.state, reason: decision.reason };
+    if (decision.targeted) targeted.push(entry);
+    else spared.push(entry);
   }
   let deleted: string[] = [];
   let failed: { id: string; error: string }[] = [];
@@ -157,7 +180,7 @@ if (import.meta.main) {
       `DAYTONA_INVENTORY=${JSON.stringify({
         total: all.length,
         skynetLabeled: skynet.length,
-        skynet: skynet.map((s) => ({ id: s.id.slice(0, 12), state: s.state, run: s.labels["skynet-run"]?.slice(0, 8), createdAt: s.createdAt })),
+        skynet: skynet.map((s) => ({ id: s.id.slice(0, 12), state: s.state, run: readSandboxRunLabel(s.labels).value?.slice(0, 8), createdAt: s.createdAt })),
       })}`,
     );
   } else if (mode === "delete") {

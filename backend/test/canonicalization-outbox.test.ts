@@ -28,6 +28,22 @@ import {
   type CanonicalizationComplete,
   type DeliveredCanonicalEvent,
 } from "../src/runs/canonical-events";
+import {
+  announceRetryTimersForTest,
+  announcementGenerationForTest,
+  announcementOwedForTest,
+  captureLossForRun,
+  captureLossLock,
+  flushCaptureLoss,
+  holdAnnouncementForTest,
+  lastAnnouncementReadOfTest,
+  pendingCaptureLossForTest,
+  resetCaptureLossMemoryForTest,
+  setCaptureLossRetryDelayForTest,
+  simulateAnnouncementFailureForTest,
+  simulateFlushFailureBeforeCommitForTest,
+  simulateLostFlushAcknowledgementForTest,
+} from "../src/runs/capture-loss";
 import { drainProviderEvents, recordProviderEvent } from "../src/runs/provider-events";
 import { updateStepCode } from "../src/runs/repo";
 import { waitFor } from "./helpers"; // side-effect: imports src/index -> migrate
@@ -61,6 +77,11 @@ const outboxRow = async (runId: string) => {
     sql`select state, source_frame_max, source_step_count, attempt_count from canonicalization_outbox where run_id = ${runId}`,
   )) as unknown as Array<{ state: string; source_frame_max: number | null; source_step_count: number | null; attempt_count: number }>;
   return row;
+};
+/** Poll a condition for up to two seconds, then assert it. */
+const until = async (ok: () => boolean) => {
+  for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));
+  expect(ok()).toBe(true);
 };
 const canonCount = async (runId: string) => {
   const [row] = (await db.execute(
@@ -197,9 +218,383 @@ describe("canonicalization outbox: complete signal (H2 - durable + live)", () =>
     expect(mine).toBeDefined();
     expect(mine!.sourceFrameMax).toBe(2);
     expect(mine!.sourceStepCount).toBe(1);
+    expect(mine!.degraded).toBe(false);
     // Replay: a reconnecting stream learns the run is complete from the durable table.
     const replay = (await completeCanonicalRuns(THREAD)).find((r) => r.runId === RUN);
-    expect(replay).toEqual({ runId: RUN, sourceFrameMax: 2, sourceStepCount: 1 });
+    expect(replay).toEqual({ runId: RUN, sourceFrameMax: 2, sourceStepCount: 1, degraded: false, lostFrames: 0 });
+  });
+});
+
+describe("canonicalization outbox: a lost capture seals complete_degraded, never complete (#4)", () => {
+  test("one dropped write with no later duplicate, then finalize: degraded seal live and on replay, surviving a process restart", async () => {
+    const { RUN, THREAD } = await seedRun("cob_degraded");
+    // A capture the database refuses (event_type is NOT NULL): every retry fails, the frame
+    // is lost, and nothing re-adds it later.
+    const frameMaxBefore = (await sourceWatermark(RUN)).frameMax;
+    await recordProviderEvent({
+      id: `${RUN}-lost`, runId: RUN, threadId: THREAD, provider: "opencode",
+      eventType: null as never, nativeMessageId: "m1", nativePartId: "plost", payload: { text: "gone" },
+    });
+    await drainProviderEvents(RUN);
+    expect((await sourceWatermark(RUN)).frameMax).toBe(frameMaxBefore); // the frame never landed
+    expect(await captureLossForRun(RUN)).toEqual({ lostFrames: 1, lastError: expect.any(String) });
+
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    try {
+      await enqueueCanonicalization(RUN, THREAD);
+      for (let i = 0; i < 30 && !(await outboxRow(RUN))?.state.startsWith("complete"); i++) {
+        await runCanonicalizationOutboxOnce();
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    } finally {
+      off();
+    }
+    expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+    expect(await canonCount(RUN)).toBeGreaterThan(0); // complete AS RECORDED: final rows exist and are trusted
+    const live = seen.find((e) => e.runId === RUN);
+    expect(live?.degraded).toBe(true);
+    expect(live?.lostFrames).toBe(1);
+    const replay = (await completeCanonicalRuns(THREAD)).find((r) => r.runId === RUN);
+    expect(replay).toEqual({ runId: RUN, sourceFrameMax: frameMaxBefore, sourceStepCount: 1, degraded: true, lostFrames: 1 });
+
+    // A process restart forgets the in-memory ledger; the durable row still marks the run,
+    // and a re-armed canonicalization can never promote it to a clean `complete`.
+    resetCaptureLossMemoryForTest();
+    expect(await captureLossForRun(RUN)).toEqual({ lostFrames: 1, lastError: expect.any(String) });
+    await db.execute(sql`update canonicalization_outbox set state = 'pending', next_attempt_at = now() where run_id = ${RUN}`);
+    for (let i = 0; i < 30 && (await outboxRow(RUN))?.state === "pending"; i++) {
+      await runCanonicalizationOutboxOnce();
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+  });
+
+  test("a loss that arrives after a clean seal corrects it to complete_degraded and re-announces", async () => {
+    const { RUN, THREAD } = await seedRun("cob_late_loss");
+    await enqueueCanonicalization(RUN, THREAD);
+    for (let i = 0; i < 30 && (await outboxRow(RUN))?.state !== "complete"; i++) {
+      await runCanonicalizationOutboxOnce();
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect((await outboxRow(RUN))?.state).toBe("complete");
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    try {
+      // A post-finalize producer (follow-up suggestions run after the seal) loses its frame.
+      await recordProviderEvent({
+        id: `folup_${RUN}`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never,
+      });
+      await drainProviderEvents(RUN);
+      await flushCaptureLoss(RUN);
+    } finally {
+      off();
+    }
+    expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+    const corrected = seen.find((e) => e.runId === RUN);
+    expect(corrected?.degraded).toBe(true);
+    expect(corrected?.lostFrames).toBe(1);
+    expect((await completeCanonicalRuns(THREAD)).find((r) => r.runId === RUN)?.degraded).toBe(true);
+  });
+
+  test("landing a loss is idempotent per event id: a retried flush never double counts", async () => {
+    const { RUN, THREAD } = await seedRun("cob_idempotent_loss");
+    await recordProviderEvent({ id: `${RUN}-lost-once`, runId: RUN, threadId: THREAD, provider: "opencode", eventType: null as never });
+    await drainProviderEvents(RUN);
+    await flushCaptureLoss(RUN);
+    // The same frame fails again (a re-probe re-ingesting it): still one lost frame.
+    await recordProviderEvent({ id: `${RUN}-lost-once`, runId: RUN, threadId: THREAD, provider: "opencode", eventType: null as never });
+    await drainProviderEvents(RUN);
+    await flushCaptureLoss(RUN);
+    expect(await captureLossForRun(RUN)).toEqual({ lostFrames: 1, lastError: expect.any(String) });
+  });
+
+  test("a flush whose commit is acknowledged late keeps the frame pending, counts it once while retries keep failing, and lands it once", async () => {
+    const { RUN, THREAD } = await seedRun("cob_lost_ack");
+    simulateLostFlushAcknowledgementForTest(RUN, 2);
+    await recordProviderEvent({ id: `${RUN}-ack`, runId: RUN, threadId: THREAD, provider: "opencode", eventType: null as never });
+    await drainProviderEvents(RUN);
+    await expect(flushCaptureLoss(RUN)).rejects.toThrow("simulated lost acknowledgement");
+    // The row committed, the frame is still pending in memory. The read retries the flush
+    // (which fails once more) and must count the frame once, not durable plus pending.
+    const durable = (await db.execute(sql`select count(*)::int as n from run_capture_loss where run_id = ${RUN}`)) as unknown as Array<{ n: number }>;
+    expect(Number(durable[0]!.n)).toBe(1);
+    expect(await captureLossForRun(RUN)).toEqual({ lostFrames: 1, lastError: expect.any(String) });
+    expect(pendingCaptureLossForTest(RUN)).toBe(1); // still pending: the second retry failed too
+    // The next flush succeeds: idempotent landing, tail empty, still one row.
+    await flushCaptureLoss(RUN);
+    expect(pendingCaptureLossForTest(RUN)).toBe(0);
+    const again = (await db.execute(sql`select count(*)::int as n from run_capture_loss where run_id = ${RUN}`)) as unknown as Array<{ n: number }>;
+    expect(Number(again[0]!.n)).toBe(1);
+  });
+
+  test("the retry timer lands a pending loss on its own", async () => {
+    const { RUN, THREAD } = await seedRun("cob_timer");
+    setCaptureLossRetryDelayForTest(20);
+    try {
+      simulateLostFlushAcknowledgementForTest(RUN);
+      await recordProviderEvent({ id: `${RUN}-timer`, runId: RUN, threadId: THREAD, provider: "opencode", eventType: null as never });
+      await drainProviderEvents(RUN); // the automatic flush fails; nothing else calls the ledger
+      expect(pendingCaptureLossForTest(RUN)).toBe(1);
+      await new Promise((r) => setTimeout(r, 150));
+      expect(pendingCaptureLossForTest(RUN)).toBe(0);
+    } finally {
+      setCaptureLossRetryDelayForTest(5_000);
+    }
+  });
+
+  test("an announcement that fails after its correction committed is retried on its own", async () => {
+    const { RUN, THREAD } = await seedRun("cob_announce_retry");
+    await enqueueCanonicalization(RUN, THREAD);
+    for (let i = 0; i < 30 && (await outboxRow(RUN))?.state !== "complete"; i++) {
+      await runCanonicalizationOutboxOnce();
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    setCaptureLossRetryDelayForTest(20);
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    try {
+      simulateAnnouncementFailureForTest(RUN);
+      await recordProviderEvent({ id: `${RUN}-late`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await drainProviderEvents(RUN);
+      await flushCaptureLoss(RUN); // the rows are down; the failed announcement is not the flush's failure
+      expect((await outboxRow(RUN))?.state).toBe("complete_degraded"); // the correction committed
+      expect(seen.some((e) => e.runId === RUN)).toBe(false); // but nobody heard yet
+      await new Promise((r) => setTimeout(r, 150));
+      expect(seen.find((e) => e.runId === RUN)?.degraded).toBe(true); // the timer announced it
+    } finally {
+      off();
+      setCaptureLossRetryDelayForTest(5_000);
+    }
+  });
+
+  test("a committed correction is announced even while a later batch keeps failing", async () => {
+    const { RUN, THREAD } = await seedRun("cob_owed_announce");
+    await enqueueCanonicalization(RUN, THREAD);
+    for (let i = 0; i < 30 && (await outboxRow(RUN))?.state !== "complete"; i++) {
+      await runCanonicalizationOutboxOnce();
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    try {
+      // Batch A lands and is acknowledged; its correction commits but its announcement fails,
+      // so the announcement is owed and its retry timer is 5 s away.
+      simulateAnnouncementFailureForTest(RUN, 1);
+      await recordProviderEvent({ id: `${RUN}-owed-a`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await drainProviderEvents(RUN);
+      await flushCaptureLoss(RUN);
+      expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+      expect(announcementOwedForTest(RUN)).toBe(true);
+      expect(seen.some((e) => e.runId === RUN)).toBe(false);
+      // A distinct batch B keeps failing (every commit loses its acknowledgement). That must
+      // not hold back the announcement A already owes.
+      simulateLostFlushAcknowledgementForTest(RUN, 5);
+      await recordProviderEvent({ id: `${RUN}-owed-b`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await drainProviderEvents(RUN);
+      await expect(flushCaptureLoss(RUN)).rejects.toThrow("simulated lost acknowledgement");
+      expect(pendingCaptureLossForTest(RUN)).toBe(1); // B is still pending
+      await new Promise((r) => setTimeout(r, 50));
+      expect(seen.find((e) => e.runId === RUN)?.degraded).toBe(true); // A's announcement went out anyway
+      expect(announcementOwedForTest(RUN)).toBe(false);
+    } finally {
+      off();
+      resetCaptureLossMemoryForTest();
+    }
+  });
+
+  test("overlapping announcement attempts share one in-flight attempt and arm one retry timer", async () => {
+    const { RUN, THREAD } = await seedRun("cob_one_timer");
+    await enqueueCanonicalization(RUN, THREAD);
+    for (let i = 0; i < 30 && (await outboxRow(RUN))?.state !== "complete"; i++) {
+      await runCanonicalizationOutboxOnce();
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    try {
+      // The correction lands; its announcement fails twice in a row.
+      simulateAnnouncementFailureForTest(RUN, 2);
+      await recordProviderEvent({ id: `${RUN}-overlap`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await drainProviderEvents(RUN);
+      await new Promise((r) => setTimeout(r, 30));
+      expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+      expect(announceRetryTimersForTest(RUN)).toBe(1); // first failure: one timer
+      // Three overlapping callers while attempts still fail: they share one attempt, which
+      // consumes one failure, and exactly one timer is armed between them.
+      await Promise.all([flushCaptureLoss(RUN), flushCaptureLoss(RUN), flushCaptureLoss(RUN)]);
+      expect(announceRetryTimersForTest(RUN)).toBe(1);
+      expect(announcementOwedForTest(RUN)).toBe(true);
+      // A held attempt is joined, not duplicated, by a loss that lands while it is open: the
+      // newer obligation bumps the generation and the same attempt runs once more.
+      const hold = holdAnnouncementForTest(RUN);
+      const held = flushCaptureLoss(RUN); // attempt 3 clears the timer, reads the seal, then waits
+      await new Promise((r) => setTimeout(r, 60));
+      expect(announceRetryTimersForTest(RUN)).toBe(0);
+      await recordProviderEvent({ id: `${RUN}-overlap-late`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await drainProviderEvents(RUN); // its flush lands and joins the held attempt
+      await new Promise((r) => setTimeout(r, 60));
+      expect(seen.some((e) => e.runId === RUN)).toBe(false); // nothing published while held
+      hold.stop();
+      await held;
+      await new Promise((r) => setTimeout(r, 60));
+      expect(announceRetryTimersForTest(RUN)).toBe(0);
+      expect(announcementOwedForTest(RUN)).toBe(false);
+      expect(seen.filter((e) => e.runId === RUN && e.degraded).length).toBeGreaterThanOrEqual(1);
+    } finally {
+      off();
+      setCaptureLossRetryDelayForTest(5_000);
+    }
+  });
+
+  test("an attempt that read a clean seal cannot clear an obligation that arrived during it", async () => {
+    const { RUN, THREAD } = await seedRun("cob_generation");
+    await enqueueCanonicalization(RUN, THREAD);
+    for (let i = 0; i < 30 && (await outboxRow(RUN))?.state !== "complete"; i++) {
+      await runCanonicalizationOutboxOnce();
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    try {
+      // The first batch fails BEFORE it commits: the seal stays clean, the batch stays pending,
+      // and the possibly-committed rule still owes an announcement. Its attempt is held open
+      // right after it read the still-clean seal.
+      simulateFlushFailureBeforeCommitForTest(RUN, 1);
+      const hold = holdAnnouncementForTest(RUN);
+      await recordProviderEvent({ id: `${RUN}-gen-a`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await drainProviderEvents(RUN);
+      await new Promise((r) => setTimeout(r, 60));
+      expect((await outboxRow(RUN))?.state).toBe("complete");
+      expect(lastAnnouncementReadOfTest(RUN)).toBe("clean"); // the held attempt saw no degraded row
+      expect(pendingCaptureLossForTest(RUN)).toBe(1);
+      // The pending batch lands for real now: the correction commits and a newer obligation
+      // arrives while the held attempt is still in flight and joins it.
+      const landed = flushCaptureLoss(RUN);
+      await new Promise((r) => setTimeout(r, 60));
+      expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+      expect(seen.some((e) => e.runId === RUN)).toBe(false);
+      hold.step(); // release pass 1; the bumped generation makes the same attempt run pass 2
+      await until(() => lastAnnouncementReadOfTest(RUN) === "degraded"); // pass 2 read the corrected seal
+      hold.stop();
+      await landed;
+      await until(() => seen.some((e) => e.runId === RUN && e.degraded));
+      expect(announcementOwedForTest(RUN)).toBe(false);
+      expect(announceRetryTimersForTest(RUN)).toBe(0);
+    } finally {
+      off();
+      resetCaptureLossMemoryForTest();
+    }
+  });
+
+  test("a steady stream of losses cannot starve the caller: an attempt hands a still-moving obligation to a fresh one", async () => {
+    const { RUN, THREAD } = await seedRun("cob_stream");
+    await enqueueCanonicalization(RUN, THREAD);
+    for (let i = 0; i < 30 && (await outboxRow(RUN))?.state !== "complete"; i++) {
+      await runCanonicalizationOutboxOnce();
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    const hold = holdAnnouncementForTest(RUN);
+    try {
+      await recordProviderEvent({ id: `${RUN}-stream-0`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await drainProviderEvents(RUN);
+      await until(() => lastAnnouncementReadOfTest(RUN) !== null); // the first attempt is held on pass 1
+      const caller = flushCaptureLoss(RUN); // joins that attempt
+      let callerSettled = false;
+      void caller.then(() => { callerSettled = true; });
+      // A new loss lands during every held pass, so the generation moves before each step.
+      const land = async (n: number) => {
+        const before = announcementGenerationForTest(RUN);
+        await recordProviderEvent({ id: `${RUN}-stream-${n}`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+        await drainProviderEvents(RUN);
+        await until(() => announcementGenerationForTest(RUN) > before); // its flush committed and owed anew
+      };
+      for (let n = 1; n <= 3; n++) {
+        await land(n);
+        expect(callerSettled).toBe(false); // still inside the first attempt's pass bound
+        hold.step();
+        await new Promise((r) => setTimeout(r, 30));
+      }
+      // Three passes were made while the obligation kept moving: the first attempt handed
+      // off and its caller was released before the stream stopped.
+      await until(() => callerSettled);
+      expect(announcementOwedForTest(RUN)).toBe(true);
+      await land(4);
+      hold.stop();
+      await until(() => !announcementOwedForTest(RUN));
+      expect(seen.some((e) => e.runId === RUN && e.degraded)).toBe(true);
+      expect(await captureLossForRun(RUN)).toEqual({ lostFrames: 5, lastError: expect.any(String) });
+    } finally {
+      off();
+      resetCaptureLossMemoryForTest();
+    }
+  });
+
+  test("the real seal and a concurrent late loss agree on a degraded, announced seal in either order", async () => {
+    const { RUN, THREAD } = await seedRun("cob_real_race");
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    try {
+      await enqueueCanonicalization(RUN, THREAD);
+      await Promise.all([
+        runCanonicalizationOutboxOnce(),
+        (async () => {
+          await recordProviderEvent({ id: `${RUN}-concurrent`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+          await drainProviderEvents(RUN);
+          await flushCaptureLoss(RUN);
+        })(),
+      ]);
+      for (let i = 0; i < 30 && !(await outboxRow(RUN))?.state.startsWith("complete"); i++) {
+        await runCanonicalizationOutboxOnce();
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    } finally {
+      off();
+    }
+    expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+    expect(seen.some((e) => e.runId === RUN && e.degraded)).toBe(true);
+  });
+
+  test("a loss landing while the seal transaction is open waits for it and then corrects the seal", async () => {
+    const { RUN, THREAD } = await seedRun("cob_seal_race");
+    await db.execute(sql`insert into canonicalization_outbox (run_id, thread_id, state) values (${RUN}, ${THREAD}, 'translating')`);
+    let releaseSeal!: () => void;
+    let sealLocked!: () => void;
+    const sealHeld = new Promise<void>((r) => { releaseSeal = r; });
+    const sealStarted = new Promise<void>((r) => { sealLocked = r; });
+    // A worker mid-seal: it read the ledger (empty) and holds the lock until it commits clean.
+    const seal = db.transaction(async (tx) => {
+      await tx.execute(captureLossLock(RUN));
+      sealLocked();
+      await sealHeld;
+      await tx.execute(sql`update canonicalization_outbox set state = 'complete', source_frame_max = 2, source_step_count = 1 where run_id = ${RUN}`);
+    });
+    await sealStarted;
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    try {
+      await recordProviderEvent({ id: `${RUN}-race`, runId: RUN, threadId: THREAD, provider: "opencode", eventType: null as never });
+      await drainProviderEvents(RUN);
+      const flushed = flushCaptureLoss(RUN); // blocked behind the seal's lock
+      await new Promise((r) => setTimeout(r, 150));
+      expect((await outboxRow(RUN))?.state).toBe("translating"); // the flush could not run ahead of the seal
+      releaseSeal();
+      await seal;
+      await flushed;
+    } finally {
+      off();
+    }
+    expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+    expect(seen.find((e) => e.runId === RUN)?.degraded).toBe(true);
+  });
+
+  test("re-enqueueing a degraded run never regresses its seal", async () => {
+    const { RUN, THREAD } = await seedRun("cob_degraded_keep");
+    await db.execute(sql`insert into canonicalization_outbox (run_id, thread_id, state) values (${RUN}, ${THREAD}, 'complete_degraded')`);
+    await enqueueCanonicalization(RUN, THREAD);
+    expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { taskChildSessionId } from "./opencode-server";
+import { taskChildSessionId } from "./opencode-child-identity";
 
 // Child-session identity resolution for opencode task subagents. The SubtaskPart
 // carries NO child-session field (its `sessionID` is the PARENT session the part

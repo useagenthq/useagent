@@ -19,6 +19,7 @@ import {
   t3TaskDisplayTitle,
 } from "@useagent/agent-harness";
 import { toolServerDisplayName } from "@useagent/agent-harness/canonical";
+export { buildRuntimeSessionStopCommand } from "./runtime-session-stop";
 export type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
 export type RuntimeMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
 export interface RuntimeMessage {
@@ -787,6 +788,9 @@ export function runtimeTurnSettled(snapshot: RuntimeThreadSnapshot): boolean {
 }
 
 export function runtimeTurnError(snapshot: RuntimeThreadSnapshot): string | null {
+  if (snapshot.thread.latestTurn?.state === "interrupted") {
+    return snapshot.thread.session?.lastError ?? "The provider turn was interrupted";
+  }
   if (snapshot.thread.latestTurn?.state !== "error") return null;
   return snapshot.thread.session?.lastError ?? "The provider turn failed";
 }

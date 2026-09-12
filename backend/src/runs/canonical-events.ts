@@ -42,6 +42,13 @@ export interface CanonicalizationComplete {
   readonly threadId: string;
   readonly sourceFrameMax: number;
   readonly sourceStepCount: number;
+  /** True when the run sealed as `complete_degraded`: at least one provider frame was
+   *  lost at capture, so the canonical history is complete AS RECORDED but shorter than
+   *  what the provider emitted. Readers trust the lane exactly as for `complete` and
+   *  may tell the user part of the run's activity is missing. */
+  readonly degraded: boolean;
+  /** Frames the capture ledger counted as lost for this run (0 unless degraded). */
+  readonly lostFrames: number;
 }
 
 /** Subscribe to a THREAD's live canonical events (all runs, incl. later ones). */
@@ -70,6 +77,16 @@ export function subscribeCanonicalizationComplete(
  *  reconnecting client converge on the same truth. */
 export function publishCanonicalizationComplete(e: CanonicalizationComplete): void {
   bus.emit(canonicalCompleteChannel(e.threadId), e);
+}
+
+/** Per-connection dedupe of completion records (`seen`: runId -> degraded). A run is
+ *  announced once; the one repeat admitted is the clean-to-degraded correction, since a
+ *  seal only ever moves in that direction. Mutates `seen` when it admits. */
+export function admitCanonicalComplete(seen: Map<string, boolean>, e: CanonicalizationComplete): boolean {
+  const prior = seen.get(e.runId);
+  if (prior !== undefined && (prior || !e.degraded)) return false;
+  seen.set(e.runId, e.degraded);
+  return true;
 }
 
 type SelectRow = typeof canonicalEvents.$inferSelect;

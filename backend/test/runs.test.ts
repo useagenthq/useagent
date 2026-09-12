@@ -244,6 +244,22 @@ describe("runs", () => {
     expect(list.body.runs[0]).not.toHaveProperty("engine_session_id");
   });
 
+  test("exact lifecycle view stays compact and carries durable cancel truth", async () => {
+    const session = await createOrgSession("run-lifecycle");
+    const completed = await runToCompletion({ prompt: "lifecycle projection" }, session.cookies);
+    const lifecycle = await json<Record<string, unknown>>(
+      `/api/runs/${completed.id}?view=lifecycle`,
+      { cookies: session.cookies },
+    );
+    expect(lifecycle.status).toBe(200);
+    expect(lifecycle.body).toEqual({
+      id: completed.id,
+      thread_id: completed.id,
+      status: "completed",
+      cancelled: false,
+    });
+  });
+
   test("summary view projects the latest public turn per tenant with deterministic ordering", async () => {
     const mine = await createOrgSession("summary-latest-turn");
     const other = await createOrgSession("summary-latest-turn-other");

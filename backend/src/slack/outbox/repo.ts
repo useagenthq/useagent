@@ -48,6 +48,11 @@ function sameString(left: Record<string, unknown>, right: Record<string, unknown
 function semanticClaimOrder(left: ClaimedRow, right: ClaimedRow): number {
   const leftPayload = payloadRecord(left);
   const rightPayload = payloadRecord(right);
+  if (sameString(leftPayload, rightPayload, "runId")) {
+    const leftUserMirror = left.kind === "post_message" && leftPayload.messageRole === "user_mirror";
+    const rightUserMirror = right.kind === "post_message" && rightPayload.messageRole === "user_mirror";
+    if (leftUserMirror !== rightUserMirror) return leftUserMirror ? -1 : 1;
+  }
   if (
     left.kind === "set_thread_status" && right.kind === "set_thread_status" &&
     ["teamId", "channel", "threadTs", "runId"].every((key) =>
@@ -213,6 +218,21 @@ export async function markRetry(
       nextAttemptAt: info.nextAttemptAt,
       errorClass: info.errorClass,
       lastError: info.lastError.slice(0, 500),
+      updatedAt: new Date(),
+    })
+    .where(eq(slackOutbox.id, id));
+}
+
+/** Return a claimed result row to pending without consuming a delivery attempt
+ * while its same-run user mirror is still in flight. */
+export async function deferForDependency(id: string, nextAttemptAt: Date): Promise<void> {
+  await db
+    .update(slackOutbox)
+    .set({
+      state: "pending",
+      nextAttemptAt,
+      lastError: "waiting_for_user_mirror",
+      errorClass: null,
       updatedAt: new Date(),
     })
     .where(eq(slackOutbox.id, id));

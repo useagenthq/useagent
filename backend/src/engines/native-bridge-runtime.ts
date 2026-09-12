@@ -77,6 +77,7 @@ export async function runNativeBridgeTurn(
   const durableDeltas = new NativeBridgeDeltaAccumulator();
   let summary = "";
   let authoritativeSummary: string | null = null;
+  let terminalObserved = false;
   let childTranscriptDeadline: number | null = null;
   const childTranscriptDrainBudgetMs = options.childTranscriptDrainBudgetMs ??
     CHILD_TRANSCRIPT_DRAIN_BUDGET_MS;
@@ -130,7 +131,12 @@ export async function runNativeBridgeTurn(
   // unhandled rejection.
   void settled.catch(() => {});
   const unsubscribe = bridge.subscribe((raw) => {
-    const bodies = options.mapFrame(raw);
+    const bodies: readonly NativeBridgeFrameBody[] = options.mapFrame(raw).filter((body) => {
+      if (!nativeBridgeSettlement(body)) return true;
+      if (terminalObserved) return false;
+      terminalObserved = true;
+      return true;
+    });
     for (const body of bodies) observeBody(body);
     const reconciliation = bridge.reconcileCompletedChild?.(raw);
     if (reconciliation) {

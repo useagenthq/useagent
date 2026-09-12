@@ -7,10 +7,15 @@ import {
   type RuntimeEnvironmentRequest,
   type requestRuntimeEnvironment,
 } from "./runtime-environment-client";
-import { makeT3ProviderDriver, t3ProviderDrivers } from "./t3-provider-driver";
+import {
+  makeT3ProviderDriver,
+  T3_SESSION_GENERATION,
+  t3ProviderDrivers,
+} from "./t3-provider-driver";
 import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
 import { RUNTIME_GENERATION } from "./runtime-environment";
 import { createSecretRedactor } from "../secrets/redact";
+import { PersonalSandboxConnectionUnavailableError } from "../sandboxes/binding";
 
 function sessionFor(driver: ReturnType<typeof makeT3ProviderDriver>): HarnessSession {
   return {
@@ -55,6 +60,74 @@ describe("T3 provider drivers", () => {
       code: "invalid_start_metadata",
       message: "The provider runtime start requires workspaceRoot, runtimeMode, and createdAt metadata",
     });
+  });
+
+  test("preserves safe personal-connection failures without exposing unknown resolution errors", async () => {
+    const request = {
+      runId: "run-1",
+      threadId: "thread-1",
+      runtime: { kind: "sandbox" as const, id: "personal-sandbox" },
+      metadata: {
+        workspaceRoot: "/home/user/work",
+        runtimeMode: "full-access",
+        createdAt: "2026-09-05T00:00:00.000Z",
+      },
+    };
+    const revoked = makeT3ProviderDriver("codex", {
+      resolveRuntime: async () => {
+        throw new PersonalSandboxConnectionUnavailableError(
+          "the box connection that created this sandbox has been revoked",
+        );
+      },
+      requestEnvironment: async () => { throw new Error("unreachable"); },
+    });
+    await expect(revoked.start(request)).resolves.toEqual({
+      status: "error",
+      code: "session_create_failed",
+      message: "the box connection that created this sandbox has been revoked",
+    });
+
+    const secret = "Bearer secret-request-header";
+    const unknown = makeT3ProviderDriver("codex", {
+      resolveRuntime: async () => { throw new Error(secret); },
+      requestEnvironment: async () => { throw new Error("unreachable"); },
+    });
+    const unknownResult = await unknown.start(request);
+    expect(unknownResult).toEqual({
+      status: "error",
+      code: "session_create_failed",
+      message: "The provider runtime sandbox could not be resolved",
+    });
+    expect(JSON.stringify(unknownResult)).not.toContain(secret);
+
+    const absent = makeT3ProviderDriver("codex", {
+      resolveRuntime: async () => null,
+      requestEnvironment: async () => { throw new Error("unreachable"); },
+    });
+    await expect(absent.start(request)).resolves.toEqual({
+      status: "error",
+      code: "runtime_unreachable",
+      message: "The provider runtime sandbox is unreachable",
+    });
+  });
+
+  test("rejects a stale session generation before resolving its sandbox", async () => {
+    let resolutions = 0;
+    const driver = makeT3ProviderDriver("codex", {
+      resolveRuntime: async () => {
+        resolutions += 1;
+        return null;
+      },
+      requestEnvironment: async () => { throw new Error("unreachable"); },
+    });
+    const stale = { ...sessionFor(driver), generation: T3_SESSION_GENERATION - 1 };
+
+    await expect(driver.resume({ session: stale })).resolves.toEqual({
+      status: "error",
+      code: "stale_session",
+      message: "Provider runtime session protocol or generation is stale",
+    });
+    expect(resolutions).toBe(0);
   });
 
   test("classifies only a missing native T3 thread as session_invalid", async () => {

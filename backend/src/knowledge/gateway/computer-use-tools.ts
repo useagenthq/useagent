@@ -1,7 +1,6 @@
 import { ensureSandboxDesktopView } from "../../engines/desktop";
 import { getRunForOrg } from "../../runs/repo";
-import { sandboxPlugin } from "../../sandboxes/plugins";
-import { type SandboxHandle, sandboxProviderKind } from "../../sandboxes/provider";
+import { type SandboxHandle, sandboxProviderKind, sandboxRuntimeLayout } from "../../sandboxes/provider";
 import { executeArtifactTool, type ToolResult } from "./artifact-tools";
 import { compressScreenshotForModel } from "./screenshot-compression";
 import type { ToolTokenClaims } from "./token";
@@ -334,10 +333,6 @@ async function computerSandbox(claims: ToolTokenClaims): Promise<SandboxHandle> 
 
 async function readySandbox(claims: ToolTokenClaims): Promise<SandboxHandle> {
   const sandbox = await computerSandbox(claims);
-  if (sandbox.computerUse) {
-    await sandbox.computerUse.start();
-    return sandbox;
-  }
   const desktop = await ensureSandboxDesktopView(sandbox, AbortSignal.timeout(60_000));
   if (!desktop.available) throw new Error(desktop.reason ?? "desktop failed readiness");
   return sandbox;
@@ -393,43 +388,6 @@ export function buildCubeSequenceCommand(
   return actions.map(cubeSequenceCommand).join(" && ");
 }
 
-async function executeNativeSequenceAction(
-  sandbox: SandboxHandle,
-  action: ComputerSequenceAction,
-): Promise<void> {
-  const computerUse = sandbox.computerUse;
-  if (!computerUse) {
-    throw new Error(
-      "native computer use is unavailable in this sandbox; retry the run, and report it if the task requires the desktop",
-    );
-  }
-  switch (action.action) {
-    case "click":
-      await computerUse.mouse.click(action.x, action.y, action.button, action.double);
-      return;
-    case "move":
-      await computerUse.mouse.move(action.x, action.y);
-      return;
-    case "drag":
-      await computerUse.mouse.drag(action.startX, action.startY, action.endX, action.endY);
-      return;
-    case "type":
-      await computerUse.keyboard.type(action.text, action.delayMs);
-      return;
-    case "key":
-      await computerUse.keyboard.press(action.key, [...action.modifiers]);
-      return;
-    case "hotkey":
-      await computerUse.keyboard.hotkey(action.keys);
-      return;
-    case "scroll":
-      await computerUse.mouse.scroll(action.x, action.y, action.direction, action.amount);
-      return;
-    case "wait":
-      await Bun.sleep(action.ms);
-  }
-}
-
 function buttonNumber(button: Button): number {
   switch (button) {
     case "left":
@@ -442,30 +400,17 @@ function buttonNumber(button: Button): number {
 }
 
 export async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<ComputerToolResult> {
-  const plugin = sandboxPlugin(sandbox.providerKind ?? sandboxProviderKind());
-  const base = sandbox.computerUse ? "/home/daytona" : plugin.runsAsRoot ? "/root" : plugin.home;
-  const path = `${base}/work/screenshots/screenshot-${Date.now()}.png`;
-  let file: Buffer;
-  if (sandbox.computerUse) {
-    const captured = await sandbox.computerUse.screenshot.takeFullScreen(true);
-    const data = (captured.screenshot ?? "").replace(/^data:image\/png;base64,/, "");
-    if (!data) throw new Error("Daytona returned an empty screenshot");
-    file = Buffer.from(data, "base64");
-    await cubeCommand(
-      sandbox,
-      `mkdir -p "$(dirname '${path}')"; printf '%s' '${data}' | base64 -d > '${path}'`,
-    );
-  } else {
-    const display = sandbox.desktop?.display ?? DEFAULT_DISPLAY;
-    await cubeCommand(
-      sandbox,
-      `mkdir -p "$(dirname '${path}')"; ` +
-        `size=$(xdpyinfo -display ${display} | awk '/dimensions:/{print $2; exit}'); ` +
-        `ffmpeg -hide_banner -loglevel error -f x11grab -video_size "$size" -i ${display} ` +
-        `-frames:v 1 -y '${path}'`,
-    );
-    file = await sandbox.fs.downloadFile(path);
-  }
+  const workspaceRoot = sandboxRuntimeLayout(sandbox.providerKind ?? sandboxProviderKind()).workdir;
+  const path = `${workspaceRoot}/screenshots/screenshot-${Date.now()}.png`;
+  const display = sandbox.desktop?.display ?? DEFAULT_DISPLAY;
+  await cubeCommand(
+    sandbox,
+    `mkdir -p "$(dirname '${path}')"; ` +
+      `size=$(xdpyinfo -display ${display} | awk '/dimensions:/{print $2; exit}'); ` +
+      `ffmpeg -hide_banner -loglevel error -f x11grab -video_size "$size" -i ${display} ` +
+      `-frames:v 1 -y '${path}'`,
+  );
+  const file = await sandbox.fs.downloadFile(path);
   const modelScreenshot = await compressScreenshotForModel(file);
   return {
     content: [
@@ -487,56 +432,40 @@ const productionService: ComputerUseService = {
   screenshot,
   async sequence(claims, actions, captureScreenshot) {
     const sandbox = await readySandbox(claims);
-    if (sandbox.computerUse) {
-      for (const action of actions) await executeNativeSequenceAction(sandbox, action);
-    } else {
-      await cubeCommand(sandbox, buildCubeSequenceCommand(actions));
-    }
+    await cubeCommand(sandbox, buildCubeSequenceCommand(actions));
     return captureScreenshot ? await captureSandboxScreenshot(sandbox) : null;
   },
   async click(claims, x, y, button, double) {
     const sandbox = await readySandbox(claims);
-    if (sandbox.computerUse) {
-      await sandbox.computerUse.mouse.click(x, y, button, double);
-      return;
-    }
     await cubeCommand(sandbox, `xdotool mousemove ${x} ${y} click ${double ? "--repeat 2 --delay 100 " : ""}${buttonNumber(button)}`);
   },
   async move(claims, x, y) {
     const sandbox = await readySandbox(claims);
-    if (sandbox.computerUse) await sandbox.computerUse.mouse.move(x, y);
-    else await cubeCommand(sandbox, `xdotool mousemove ${x} ${y}`);
+    await cubeCommand(sandbox, `xdotool mousemove ${x} ${y}`);
   },
   async drag(claims, startX, startY, endX, endY) {
     const sandbox = await readySandbox(claims);
-    if (sandbox.computerUse) await sandbox.computerUse.mouse.drag(startX, startY, endX, endY);
-    else await cubeCommand(sandbox, `xdotool mousemove ${startX} ${startY} mousedown 1 mousemove --sync ${endX} ${endY} mouseup 1`);
+    await cubeCommand(sandbox, `xdotool mousemove ${startX} ${startY} mousedown 1 mousemove --sync ${endX} ${endY} mouseup 1`);
   },
   async type(claims, text, delayMs) {
     const sandbox = await readySandbox(claims);
-    if (sandbox.computerUse) await sandbox.computerUse.keyboard.type(text, delayMs);
-    else {
-      const encoded = Buffer.from(text, "utf8").toString("base64");
-      await cubeCommand(sandbox, `printf '%s' '${encoded}' | base64 -d | xdotool type --clearmodifiers --delay ${delayMs} --file -`);
-    }
+    const encoded = Buffer.from(text, "utf8").toString("base64");
+    await cubeCommand(sandbox, `printf '%s' '${encoded}' | base64 -d | xdotool type --clearmodifiers --delay ${delayMs} --file -`);
   },
   async key(claims, key, modifiers) {
     const sandbox = await readySandbox(claims);
-    if (sandbox.computerUse) await sandbox.computerUse.keyboard.press(key, modifiers);
-    else await cubeCommand(
+    await cubeCommand(
       sandbox,
       x11KeyCommand(key, modifiers),
     );
   },
   async hotkey(claims, keys) {
     const sandbox = await readySandbox(claims);
-    if (sandbox.computerUse) await sandbox.computerUse.keyboard.hotkey(keys);
-    else await cubeCommand(sandbox, x11HotkeyCommand(keys));
+    await cubeCommand(sandbox, x11HotkeyCommand(keys));
   },
   async scroll(claims, x, y, direction, amount) {
     const sandbox = await readySandbox(claims);
-    if (sandbox.computerUse) await sandbox.computerUse.mouse.scroll(x, y, direction, amount);
-    else await cubeCommand(sandbox, `xdotool mousemove ${x} ${y} click --repeat ${amount} --delay 40 ${direction === "up" ? 4 : 5}`);
+    await cubeCommand(sandbox, `xdotool mousemove ${x} ${y} click --repeat ${amount} --delay 40 ${direction === "up" ? 4 : 5}`);
   },
 };
 

@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import PptxGenJS from "pptxgenjs";
 import * as artifactFormats from "@useagent/artifact-formats";
+import type { SandboxProviderKind } from "@useagent/sandbox-contract";
+import { eq } from "drizzle-orm";
 import {
   csvToWorkbook,
   migrateHtmlToDocument,
@@ -10,6 +12,7 @@ import {
 } from "@useagent/artifact-workspace";
 import { createArtifactRecord, getArtifact, type ArtifactDescriptor } from "../src/artifacts/repo";
 import {
+  publishSandboxArtifact,
   publishTrustedArtifact,
   setTrustedArtifactEventRecorderForTest,
 } from "../src/artifacts/publish";
@@ -18,6 +21,7 @@ import { setArtifactStorageForTest } from "../src/artifacts/storage";
 import { setOfficePreviewConverterForTest } from "../src/artifacts/office-preview";
 import { executeArtifactTool } from "../src/knowledge/gateway/artifact-tools";
 import { createRun, setRunSandbox } from "../src/runs/repo";
+import { resolveAttachedSandboxWorkspaceRoot } from "../src/sandboxes/workspace";
 import {
   providerEventExists,
   recordProviderEventIfAbsent,
@@ -31,6 +35,8 @@ import {
 import { deleteSecret, upsertSecret } from "../src/secrets/store";
 import { createOrgSession, fetchApi, json, type OrgSession } from "./helpers";
 import { InMemoryArtifactStorage } from "./in-memory-artifact-storage";
+import { db } from "../src/db/client";
+import { artifacts, providerEvents } from "../src/db/schema";
 
 let sandboxBytes = new TextEncoder().encode("sandbox-to-browser\nexact bytes\n");
 const SOURCE_BYTES = sandboxBytes;
@@ -42,7 +48,10 @@ const storage = new InMemoryArtifactStorage();
 let owner: OrgSession;
 let outsider: OrgSession;
 
-async function createSandboxRun(session: OrgSession): Promise<string> {
+async function createSandboxRun(
+  session: OrgSession,
+  sandboxProvider: SandboxProviderKind = "daytona",
+): Promise<string> {
   const runId = crypto.randomUUID();
   await createRun({
     id: runId,
@@ -54,7 +63,10 @@ async function createSandboxRun(session: OrgSession): Promise<string> {
     parentRunId: null,
     threadId: runId,
   });
-  await setRunSandbox(runId, `sandbox-${runId}`);
+  await setRunSandbox(runId, `sandbox-${runId}`, {
+    kind: sandboxProvider,
+    credential: "env",
+  });
   return runId;
 }
 
@@ -131,6 +143,10 @@ describe("durable artifacts", () => {
       sourceKey: TRUSTED_SOURCE_KEY,
       output,
     });
+    expect(first.record.sourcePath).toStartWith("/.useagent/provider-output/");
+    await db.update(artifacts)
+      .set({ sourcePath: first.record.sourcePath.replace("/.useagent/", "/.skynet/") })
+      .where(eq(artifacts.id, first.record.id));
     const duplicate = await publishTrustedArtifact({
       orgId: owner.orgId,
       userId: owner.email,
@@ -149,6 +165,24 @@ describe("durable artifacts", () => {
     expect(record?.name).toBe("generated.png");
     expect(record?.sourcePath).not.toContain("/host/");
     expect(record?.sourcePath).not.toContain("generated");
+    expect(await db.select().from(artifacts).where(eq(artifacts.runId, runId))).toHaveLength(1);
+    expect(await db.select().from(providerEvents).where(eq(providerEvents.runId, runId)))
+      .toHaveLength(1);
+
+    const changed = await readTrustedImageOutput({
+      kind: "trusted_bytes",
+      bytes: new Uint8Array([...bytes, 0x02]),
+      name: "changed.png",
+    }, 1024);
+    await expect(publishTrustedArtifact({
+      orgId: owner.orgId,
+      userId: owner.email,
+      runId,
+      provider: "codex",
+      sourceKey: TRUSTED_SOURCE_KEY,
+      output: changed,
+    })).rejects.toThrow("trusted output identity conflict");
+    expect(await db.select().from(artifacts).where(eq(artifacts.runId, runId))).toHaveLength(1);
   });
 
   test("keeps one artifact per stable identity and repairs a failed created event on retry", async () => {
@@ -373,6 +407,31 @@ describe("durable artifacts", () => {
     ).rejects.toThrow("Protected secret paths and dotenv files");
   });
 
+  test("accepts only the recorded provider workspace root", async () => {
+    await expect(resolveAttachedSandboxWorkspaceRoot({
+      sandboxId: "retired-sandbox",
+      sandboxProvider: "retired-provider" as SandboxProviderKind,
+    })).rejects.toThrow("recorded sandbox provider retired-provider is unsupported");
+    const cases: readonly {
+      provider: SandboxProviderKind;
+      root: string;
+      wrongRoot: string;
+    }[] = [
+      { provider: "daytona", root: "/root/work", wrongRoot: "/home/user/work" },
+      { provider: "cube", root: "/root/work", wrongRoot: "/home/user/work" },
+      { provider: "box", root: "/home/user/work", wrongRoot: "/root/work" },
+    ];
+
+    for (const { provider, root, wrongRoot } of cases) {
+      const runId = await createSandboxRun(owner, provider);
+      const valid = await publish(owner, runId, `${root}/output/${provider}.txt`);
+      expect(valid.artifact.name).toBe(`${provider}.txt`);
+      await expect(
+        publish(owner, runId, `${wrongRoot}/output/${provider}.txt`),
+      ).rejects.toThrow(`canonical path under ${root}`);
+    }
+  });
+
   test("rejects relative paths, traversal, and workspace symlinks before download", async () => {
     const runId = await createSandboxRun(owner);
     const downloaded: string[] = [];
@@ -579,6 +638,62 @@ describe("durable artifacts", () => {
 
     const normalScreenshot = await publish(owner, runId, "/root/work/output/final-screen.png");
     expect(normalScreenshot.artifact.name).toBe("final-screen.png");
+  });
+
+  test("publisher requires explicit proof purpose for private screenshots on every provider", async () => {
+    const cases: readonly { provider: SandboxProviderKind; root: string }[] = [
+      { provider: "daytona", root: "/root/work" },
+      { provider: "cube", root: "/root/work" },
+      { provider: "box", root: "/home/user/work" },
+    ];
+    const downloaded: string[] = [];
+    setSandboxDownloaderForTest(async (_sandboxId, path, maxBytes) => {
+      downloaded.push(path);
+      if (SOURCE_BYTES.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
+      return { bytes: Buffer.from(SOURCE_BYTES), size: SOURCE_BYTES.byteLength };
+    });
+
+    try {
+      for (const [index, { provider, root }] of cases.entries()) {
+        const runId = await createSandboxRun(owner, provider);
+        const path = `${root}/screenshots/screenshot-${1786558088313 + index}.png`;
+        const input = {
+          orgId: owner.orgId,
+          userId: owner.email,
+          runId,
+          threadId: runId,
+          path,
+        } as const;
+
+        await expect(publishSandboxArtifact(input)).rejects.toThrow(
+          "Private desktop inspection screenshots",
+        );
+        const published = await publishSandboxArtifact({
+          ...input,
+          purpose: "user_requested_proof",
+        });
+        expect(published.created).toBe(true);
+      }
+
+      const boxRunId = await createSandboxRun(owner, "box");
+      await expect(publishSandboxArtifact({
+        orgId: owner.orgId,
+        userId: owner.email,
+        runId: boxRunId,
+        threadId: boxRunId,
+        path: "/home/user/work/brief.docx",
+        editablePath: "/home/user/work/screenshots/screenshot-1786558088399.png",
+      })).rejects.toThrow("Private desktop inspection screenshots");
+
+      expect(downloaded).toEqual(cases.map(
+        ({ root }, index) => `${root}/screenshots/screenshot-${1786558088313 + index}.png`,
+      ));
+    } finally {
+      setSandboxDownloaderForTest(async (_sandboxId, _path, maxBytes) => {
+        if (sandboxBytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
+        return { bytes: Buffer.from(sandboxBytes), size: sandboxBytes.byteLength };
+      });
+    }
   });
 
   test("fails closed across organizations and for missing sandbox ownership", async () => {
@@ -908,6 +1023,46 @@ describe("durable artifacts", () => {
       });
       expect(conflictingDoc.isError).toBe(true);
       expect(conflictingDoc.content[0]?.text).toContain("editable companion conflicts");
+    } finally {
+      setSandboxDownloaderForTest(async (_sandboxId, _path, maxBytes) => {
+        if (sandboxBytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
+        return { bytes: Buffer.from(sandboxBytes), size: sandboxBytes.byteLength };
+      });
+    }
+  });
+
+  test("accepts an editable companion under the Box workspace root", async () => {
+    const runId = await createSandboxRun(owner, "box");
+    const source = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+    const html = new TextEncoder().encode("<h1>Box brief</h1><p>Ready to edit</p>");
+    const downloaded: string[] = [];
+    setSandboxDownloaderForTest(async (_sandboxId, path, maxBytes) => {
+      downloaded.push(path);
+      const bytes = path.endsWith(".html") ? html : source;
+      if (bytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
+      return { bytes: Buffer.from(bytes), size: bytes.byteLength };
+    });
+    try {
+      const result = await executeArtifactTool(
+        {
+          orgId: owner.orgId,
+          userId: owner.email,
+          threadId: runId,
+          runId,
+          exp: Date.now() + 60_000,
+        },
+        "artifact_publish",
+        {
+          path: "/home/user/work/brief.docx",
+          editable_path: "/home/user/work/brief.html",
+        },
+      );
+
+      expect(result.isError).toBeFalsy();
+      expect(downloaded).toEqual([
+        "/home/user/work/brief.docx",
+        "/home/user/work/brief.html",
+      ]);
     } finally {
       setSandboxDownloaderForTest(async (_sandboxId, _path, maxBytes) => {
         if (sandboxBytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");

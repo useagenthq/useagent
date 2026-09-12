@@ -25,8 +25,8 @@ delete process.env.OPENAI_API_KEY;
 delete process.env.WIKI_GEN_STRUCTURE_RETRIES;
 
 // Strip GitHub creds so the unit suite is hermetic — no live GitHub calls (repo
-// listing / installation-token mint) leak in from backend/.env. The e2e:real
-// suite runs as a standalone script (no [test] preload), so it keeps them.
+// listing / installation-token mint) leak in from backend/.env. Standalone live
+// verification scripts have no [test] preload and manage their own credentials.
 for (const k of [
   "GITHUB_TOKEN",
   "GH_TOKEN",
@@ -113,4 +113,7 @@ process.env.SLACK_DEFAULT_ENGINE = process.env.SLACK_DEFAULT_ENGINE ?? "mock";
 // far out so it never races a test's explicit processDue(); tiny backoff base so
 // any live-timed retry is fast.
 process.env.SLACK_OUTBOX_TICK_MS = process.env.SLACK_OUTBOX_TICK_MS ?? "3600000";
+// Memory tests drain explicitly. A background delivery would race their
+// process-global fetch fixtures and attribute another run's writes to this test.
+process.env.MEMORY_OUTBOX_TICK_MS = process.env.MEMORY_OUTBOX_TICK_MS ?? "3600000";
 process.env.SLACK_OUTBOX_BASE_MS = process.env.SLACK_OUTBOX_BASE_MS ?? "20";

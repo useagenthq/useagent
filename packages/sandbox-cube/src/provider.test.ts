@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { Sandbox as E2BSandbox, type SandboxInfo } from "e2b";
+import {
+  Sandbox as E2BSandbox,
+  SandboxNotFoundError as E2BSandboxNotFoundError,
+  type SandboxInfo,
+} from "e2b";
+import { SandboxNotFoundError } from "@useagent/sandbox-contract";
 import {
   classifyCubeReadinessProbe,
   cubeReadinessProbeCommand,
@@ -35,6 +40,7 @@ function fakeSandbox(options: {
   kill?: (pid: number) => Promise<boolean>;
   list?: () => Promise<Array<{ pid: number; envs: Record<string, string> }>>;
   ptySendInput?: (pid: number, data: Uint8Array) => Promise<void>;
+  ptyWait?: () => Promise<{ exitCode: number; error?: string; stdout: string; stderr: string }>;
   run?: (command: string, options?: unknown) => Promise<unknown>;
   write?: (path: string, data: string) => Promise<unknown>;
 } = {}): E2BSandbox {
@@ -53,8 +59,11 @@ function fakeSandbox(options: {
     pty: {
       create: async () => ({
         disconnect: async () => {},
+        exitCode: undefined,
+        error: undefined,
         kill: async () => true,
         pid: 42,
+        wait: options.ptyWait ?? (async () => ({ exitCode: 0, stdout: "", stderr: "" })),
         sendStdin: async () => {
           throw new Error("CommandHandle.sendStdin must not be used for a PTY");
         },
@@ -68,6 +77,31 @@ function fakeSandbox(options: {
 }
 
 describe("Cube sandbox provider", () => {
+  test("translates only missing top-level metadata into the neutral absence error", async () => {
+    const getInfo = spyOn(E2BSandbox, "getInfo").mockRejectedValue(
+      new E2BSandboxNotFoundError("sandbox missing"),
+    );
+
+    await expect(cubeSandboxProvider("", ready).get("cube-missing")).rejects
+      .toBeInstanceOf(SandboxNotFoundError);
+
+    getInfo.mockRestore();
+  });
+
+  test("does not translate an envd not-found after metadata lookup succeeds", async () => {
+    process.env.CUBE_IDENTITY_PROBE_ATTEMPTS = "1";
+    const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
+    const vendorError = new E2BSandboxNotFoundError("envd unavailable");
+    const connect = spyOn(E2BSandbox, "connect").mockRejectedValue(vendorError);
+
+    const error = await cubeSandboxProvider("", ready).get("cube-1").catch((cause) => cause);
+    expect(error).toBe(vendorError);
+    expect(error).not.toBeInstanceOf(SandboxNotFoundError);
+
+    getInfo.mockRestore();
+    connect.mockRestore();
+  });
+
   test("maps useAgent create options onto the E2B-compatible Cube API", async () => {
     process.env.CUBE_API_URL = "http://127.0.0.1:3000";
     process.env.CUBE_PROXY_SCHEME = "https";
@@ -150,7 +184,7 @@ describe("Cube sandbox provider", () => {
       exitCode: 7,
       result: "outerr",
     });
-    expect(commandOptions).toEqual({ cwd: "/work", envs: { A: "1" }, timeoutMs: 12_000 });
+    expect(commandOptions).toEqual({ cwd: "/work", envs: { A: "1" }, timeoutMs: 12_000, user: "root" });
     expect(await handle.getPreviewLink(4096)).toEqual({
       token: "traffic-token",
       headers: { "cube-traffic-access-token": "traffic-token", "e2b-traffic-access-token": "traffic-token" },
@@ -209,6 +243,30 @@ describe("Cube sandbox provider", () => {
     await pty.sendInput("printf 'CUBE_PTY_OK\\n'\n");
 
     expect(writes).toEqual([{ pid: 42, text: "printf 'CUBE_PTY_OK\\n'\n" }]);
+    expect(await pty.waitForTermination()).toEqual({ exitCode: 0 });
+
+    create.mockRestore();
+    getInfo.mockRestore();
+  });
+
+  test("settles Cube PTY termination for a non-zero process exit", async () => {
+    process.env.CUBE_PROXY_SCHEME = "https";
+    const sandbox = fakeSandbox({
+      ptyWait: async () => {
+        throw { exitCode: 23, error: "provider detail", stdout: "", stderr: "failed" };
+      },
+    });
+    const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
+    const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
+    const handle = await cubeSandboxProvider("", ready).create({ snapshot: "agent-template" });
+    const pty = await handle.process.createPty({
+      id: "terminal-1",
+      cols: 80,
+      rows: 24,
+      onData: () => {},
+    });
+
+    expect(await pty.waitForTermination()).toEqual({ exitCode: 23 });
 
     create.mockRestore();
     getInfo.mockRestore();
@@ -274,7 +332,7 @@ describe("Cube sandbox provider", () => {
     kill.mockRestore();
   });
 
-  test("deletes a retained uid-1000 sandbox before returning its handle", async () => {
+  test("preserves a retained sandbox when its runtime identity is incompatible", async () => {
     const sandbox = fakeSandbox({
       run: async (command) => ({
         exitCode: command.includes('test "$(id -u)" = "0"') ? 1 : 0,
@@ -290,7 +348,7 @@ describe("Cube sandbox provider", () => {
       "did not reach root identity/workspace",
     );
     expect(connect).toHaveBeenCalledWith("cube-1", expect.any(Object));
-    expect(kill).toHaveBeenCalledWith("cube-1", expect.any(Object));
+    expect(kill).not.toHaveBeenCalled();
 
     getInfo.mockRestore();
     connect.mockRestore();
@@ -355,6 +413,7 @@ describe("Cube sandbox provider", () => {
     expect(writes[0]?.data).toBe("exec opencode serve");
     expect(calls.at(-1)?.command).toMatch(/^nohup setsid sh .* <\/dev\/null >.* 2>&1 &$/);
     expect(calls.at(-1)?.options).toEqual({
+      user: "root",
       envs: {
         USEAGENT_COMMAND_ID: result.cmdId,
         USEAGENT_SESSION_ID: "resident",

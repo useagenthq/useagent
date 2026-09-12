@@ -9,6 +9,12 @@ if (process.env.GATEWAY_DATABASE_URL?.trim()) {
 assertGatewayRuntimeConfiguration();
 
 const { createGatewayApp } = await import("./gateway-app");
+const { assertArtifactStorageWritable, artifactStorageRoot } = await import("./artifacts/storage");
+
+// The gateway publishes sandbox artifacts itself, so it needs the same writable
+// storage as the backend. Fail boot, not the agent's publish call, when it is missing.
+await assertArtifactStorageWritable();
+console.log(`[useagent] gateway artifact storage at ${artifactStorageRoot()}`);
 
 const app = createGatewayApp();
 const port = Number(process.env.GATEWAY_PORT ?? 3202);

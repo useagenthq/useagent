@@ -1,10 +1,6 @@
 import { parseProviderSessionBinding } from "@useagent/agent-harness/canonical";
 import type { Hono } from "hono";
 import { resolveProviderDriverForSession } from "../engines";
-import {
-  OpenCodeQuestionError,
-  replyToOpenCodeQuestion,
-} from "../engines/opencode-question";
 import { providerSessionAuthIsCurrent } from "../engines/provider-session-authority";
 import { replyToRuntimeApproval, RuntimeApprovalError } from "../engines/runtime-approval";
 import { replyToRuntimeQuestion } from "../engines/runtime-question";
@@ -26,11 +22,7 @@ export function registerProviderSessionRoutes(routes: Hono<AppEnv>): void {
       ? resolveProviderDriverForSession(run.engine, binding, binding.authEpoch)
       : undefined;
     const runtimeSession = boundDriver?.descriptor.protocol.name === "t3-orchestration";
-    const opencodeSession = binding
-      ? boundDriver?.provider === "opencode" &&
-        boundDriver.descriptor.protocol.name === "opencode-server"
-      : run.engine === "opencode";
-    if (!runtimeSession && !opencodeSession) {
+    if (!runtimeSession) {
       return c.json({ error: "questions_not_supported", engine: run.engine }, 409);
     }
     const sessionId = binding?.nativeSessionId ?? run.engineSessionId;
@@ -47,9 +39,8 @@ export function registerProviderSessionRoutes(routes: Hono<AppEnv>): void {
       return c.json({ error: "question replies cannot add run resources" }, 400);
     }
     try {
-      const reply = runtimeSession ? replyToRuntimeQuestion : replyToOpenCodeQuestion;
       const redact = await strictOrgSecretRedactor(run.orgId);
-      const result = await reply({
+      const result = await replyToRuntimeQuestion({
         runId: run.id,
         threadId: run.threadId,
         sessionId,
@@ -60,9 +51,6 @@ export function registerProviderSessionRoutes(routes: Hono<AppEnv>): void {
       });
       return c.json({ ok: true, already_answered: result.alreadyAnswered });
     } catch (error) {
-      if (error instanceof OpenCodeQuestionError) {
-        return c.json({ error: error.code, message: error.message }, error.status);
-      }
       console.error(`[question] reply failed for run ${run.id}:`, error);
       return c.json({ error: "question_reply_failed" }, 502);
     }

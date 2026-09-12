@@ -26,7 +26,7 @@ async function createSandboxRun(session: OrgSession): Promise<string> {
     parentRunId: null,
     threadId: runId,
   });
-  await setRunSandbox(runId, `sandbox-${runId}`);
+  await setRunSandbox(runId, `sandbox-${runId}`, { kind: "daytona", credential: "env" });
   return runId;
 }
 

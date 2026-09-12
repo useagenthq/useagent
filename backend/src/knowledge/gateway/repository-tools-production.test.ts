@@ -40,7 +40,19 @@ mock.module("../../engines/repo-prep", () => ({
 mock.module("../../sandboxes/provider", () => ({
   ...sandboxProviderModule,
   sandboxProviderApiKey: () => "sandbox-key",
+  sandboxProviderApiKeyFor: () => "sandbox-key",
   sandboxProviderKind: () => "box",
+  sandboxProviderFor: (kind: Parameters<typeof sandboxProviderModule.sandboxProviderFor>[0], apiKey: string) => {
+    if (kind === "box" && apiKey === "sandbox-key") {
+      return {
+        get: async (sandboxId: string): Promise<SandboxHandle> => {
+          expect(sandboxId).toBe("sandbox-1");
+          return sandboxHandle();
+        },
+      };
+    }
+    return sandboxProviderModule.sandboxProviderFor(kind, apiKey);
+  },
   sandboxProvider: (apiKey: string) => {
     if (apiKey === "sandbox-key") {
       return {
@@ -146,6 +158,7 @@ function sandboxHandle(): SandboxHandle {
       getSessionCommandLogs: async () => ({}),
       createPty: async () => ({
         waitForConnection: async () => undefined,
+        waitForTermination: async () => new Promise(() => {}),
         sendInput: async () => undefined,
         resize: async () => undefined,
         disconnect: async () => undefined,

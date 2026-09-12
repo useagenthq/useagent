@@ -103,20 +103,6 @@ export function isEngineEnabled(engine: string): boolean {
   return enabledEngines().has(engine as EngineId);
 }
 
-/**
- * DEV-ONLY escape hatch to auto-approve ACP permission requests (yolo). Default
- * OFF (fail CLOSED): production forbids auto-approving tool permissions
- * in a team/SaaS deployment. The real fix is a trusted-backend approval policy
- * evaluated outside the sandbox (Phase 3); until then ACP permission requests are
- * DENIED unless an operator explicitly sets ACP_YOLO_APPROVE=1 for a local run.
- */
-export function acpAutoApprove(): boolean {
-  // Require VERIFIED development mode: in production (NODE_ENV=production /
-  // USEAGENT_DEV_MODE=false) this is always false no matter what ACP_YOLO_APPROVE
-  // is set to, so the escape hatch can never be flipped on for a real deployment.
-  if (!devModeEnabled()) return false;
-  return process.env.ACP_YOLO_APPROVE === "1" || process.env.ACP_YOLO_APPROVE === "true";
-}
 
 /** Resolve the auth secret. Production (dev mode off) must supply its own. */
 function resolveAuthSecret(): string {

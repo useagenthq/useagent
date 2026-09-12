@@ -3,14 +3,17 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SandboxHandle } from "../sandboxes/provider";
+import { buildSandboxBunProbeCommand } from "./sandbox-bun";
 import {
   awaitRuntimeProviderReady,
+  buildCodexInstallIdentityProbeCommand,
   buildClaudeInstallIdentityProbeCommand,
   buildOpenCodeInstallIdentityProbeCommand,
   buildRuntimeProviderReadyProbeCommand,
   buildRuntimeProviderBootstrapCommand,
   claudeProviderReadiness,
   codexBridgeAuthPath,
+  openCodeModelLimitsChanged,
   prepareRuntimeProviderBridge,
   prepareStableRuntimeProvider,
   prewarmRuntimeProviderBridge,
@@ -174,6 +177,170 @@ afterEach(() => {
 });
 
 describe("T3 provider bridge", () => {
+  test("detects only selected-model static limit changes", () => {
+    const config = (output: number, token: string) => ({
+      provider: {
+        cerebras: {
+          models: {
+            "qwen-3.8-27b": {
+              limit: { context: 65_536, input: 49_152, output },
+            },
+            "gemma-4-31b": {
+              limit: { context: 131_072, output: 40_960 },
+            },
+          },
+          options: { apiKey: token },
+        },
+      },
+      mcp: { knowledge: { headers: { Authorization: token } } },
+    });
+
+    expect(openCodeModelLimitsChanged(
+      config(32_768, "old-token"),
+      config(16_384, "new-token"),
+      "cerebras/qwen-3.8-27b",
+    )).toBe(true);
+    expect(openCodeModelLimitsChanged(
+      config(16_384, "old-token"),
+      config(16_384, "new-token"),
+      "cerebras/qwen-3.8-27b",
+    )).toBe(false);
+    expect(openCodeModelLimitsChanged(
+      config(32_768, "old-token"),
+      config(16_384, "new-token"),
+      "cerebras/gemma-4-31b",
+    )).toBe(false);
+    expect(openCodeModelLimitsChanged(
+      {},
+      config(16_384, "new-token"),
+      "cerebras/qwen-3.8-27b",
+    )).toBe(true);
+  });
+
+  test("retains the limit reload revision across a post-config crash until acknowledged", async () => {
+    let config = JSON.stringify({
+      provider: {
+        cerebras: {
+          models: {
+            "qwen-3.8-27b": { limit: { context: 65_536, output: 32_768 } },
+            "gemma-4-31b": { limit: { context: 131_072, output: 40_960 } },
+          },
+        },
+      },
+    });
+    let desired = "";
+    let acknowledged = "";
+    let failMarker = false;
+    const sandbox = {
+      id: "opencode-limit-change",
+      process: {
+        executeCommand: async (command: string) => {
+          if (command.startsWith("cat ~/.config/opencode/opencode.json")) {
+            return { exitCode: 0, result: config };
+          }
+          if (command.includes("opencode-model-limits") && command.includes("printf '\\n'")) {
+            return { exitCode: 0, result: `${desired}\n${acknowledged}` };
+          }
+          if (command.includes("opencode-model-limits") && command.includes("mv -f --")) {
+            const encoded = command.match(/printf %s (".*") > "\$TMP"/)?.[1];
+            expect(encoded).toBeDefined();
+            const value = JSON.parse(encoded!) as string;
+            if (command.includes("/model-")) desired = value;
+            else acknowledged = value;
+            return { exitCode: 0, result: "" };
+          }
+          if (command.includes("base64 -d > ~/.config/opencode/opencode.json")) {
+            const encoded = command.match(/printf %s '([^']+)' \| base64 -d/)?.[1];
+            expect(encoded).toBeDefined();
+            config = Buffer.from(encoded!, "base64").toString("utf8");
+            return { exitCode: 0, result: "" };
+          }
+          if (command.includes("provider-gateway-generation") && failMarker) {
+            failMarker = false;
+            return { exitCode: 1, result: "" };
+          }
+          return { exitCode: 0, result: "" };
+        },
+      },
+    } as unknown as SandboxHandle;
+    const context = {
+      runId: "run-opencode-limit-change",
+      threadId: "thread-opencode-limit-change",
+      prompt: "work",
+      bootstrapContext: "",
+      turnContext: "",
+      workdir: "/root/work",
+      orgId: "org-a",
+      userId: "user-a",
+      model: "cerebras/qwen-3.8-27b",
+      signal: new AbortController().signal,
+      emit: async () => undefined,
+      setSummary: () => undefined,
+    } as const;
+
+    const openAiLease = await prepareRuntimeProviderBridge(
+      sandbox,
+      { ...context, runId: "run-openai-first", model: "openai/gpt-5.6-luna" },
+      "opencode",
+      "/root/work",
+    );
+    expect(openAiLease.modelLimitsChanged).toBe(false);
+    const pendingAfterOpenAiTurn = JSON.parse(desired) as {
+      fingerprint: string;
+      revision: string;
+      createdAt: string;
+    };
+    const qwenAfterOpenAi = await prepareRuntimeProviderBridge(
+      sandbox, context, "opencode", "/root/work"
+    );
+    expect(qwenAfterOpenAi.modelLimitsChanged).toBe(true);
+    expect(qwenAfterOpenAi.modelLimitsRevision).toBe(pendingAfterOpenAiTurn.revision);
+
+    const staleAgain = JSON.parse(config) as {
+      provider: { cerebras: { models: { "qwen-3.8-27b": { limit: { output: number } } } } };
+    };
+    staleAgain.provider.cerebras.models["qwen-3.8-27b"].limit.output = 32_768;
+    config = JSON.stringify(staleAgain);
+    failMarker = true;
+    await expect(prepareRuntimeProviderBridge(
+      sandbox, context, "opencode", "/root/work"
+    )).rejects.toThrow("failed to configure provider gateway");
+    const pendingAfterCrash = JSON.parse(desired) as {
+      fingerprint: string;
+      revision: string;
+      createdAt: string;
+    };
+    expect(pendingAfterCrash.revision).toBe(pendingAfterOpenAiTurn.revision);
+
+    const lease = await prepareRuntimeProviderBridge(
+      sandbox, context, "opencode", "/root/work"
+    );
+
+    expect(lease.modelLimitsChanged).toBe(true);
+    expect(lease.modelLimitsRevision).toBe(pendingAfterCrash.revision);
+    expect(lease.modelLimitsChangedAt).toBe(pendingAfterCrash.createdAt);
+    expect(lease.readiness).toBeNull();
+    expect(acknowledged).toBe("");
+
+    await lease.ackModelLimitsReload();
+    expect(acknowledged).toBe(pendingAfterCrash.revision);
+    const settled = await prepareRuntimeProviderBridge(
+      sandbox, context, "opencode", "/root/work"
+    );
+    expect(settled.modelLimitsChanged).toBe(false);
+
+    const rolledBack = JSON.parse(config) as {
+      provider: { cerebras: { models: { "qwen-3.8-27b": { limit: { output: number } } } } };
+    };
+    rolledBack.provider.cerebras.models["qwen-3.8-27b"].limit.output = 32_768;
+    config = JSON.stringify(rolledBack);
+    const repeatedLimit = await prepareRuntimeProviderBridge(
+      sandbox, context, "opencode", "/root/work"
+    );
+    expect(repeatedLimit.modelLimitsChanged).toBe(true);
+    expect(repeatedLimit.modelLimitsRevision).not.toBe(pendingAfterCrash.revision);
+  });
+
   test("routes Codex credentials without silently weakening subscription mode", () => {
     expect(codexBridgeAuthPath(true, { ENGINE_AUTH_MODE_CODEX: "subscription" }))
       .toBe("subscription");
@@ -210,10 +377,23 @@ describe("T3 provider bridge", () => {
     expect(wrapper).toContain('--mcp-config "/tmp/useagent-claude-capability/useagent-mcp.json"');
     expect(wrapper).toContain('test "$(id -u user)" = "$CLAUDE_UID"');
     expect(command).toContain('"$CLAUDE_ACCESS_HELPER" "/root/work"');
-    expect(accessHelper).toContain('setfacl -m "u:$CLAUDE_UID:x" /root');
-    expect(accessHelper).toContain('chown root:root "$CLAUDE_WORKDIR"');
-    expect(accessHelper).toContain('chmod 1777 "$CLAUDE_WORKDIR"');
+    expect(accessHelper).toContain('test "$(id -u user)" = "1000"');
+    expect(accessHelper).toContain('test "$(id -g user)" = "1000"');
+    expect(accessHelper).toContain('if LC_ALL=C setfacl -m "u:1000:x"');
+    expect(accessHelper).toContain('elif acl_failure_is_only_unsupported "$ACL_ERROR"');
+    expect(accessHelper).toContain('chown root:1000 -- "$ACCESS_PATH"');
+    expect(accessHelper).toContain('chmod 0710 -- "$ACCESS_PATH"');
+    expect(accessHelper).toContain('test ! -L "$ACCESS_PATH"');
+    expect(accessHelper).toContain('test "$(realpath -e -- "$ACCESS_PATH")" = "$ACCESS_PATH"');
+    expect(accessHelper).toContain('chown root:root -- "$CLAUDE_WORKDIR"');
+    expect(accessHelper).toContain('chmod 1777 -- "$CLAUDE_WORKDIR"');
+    expect(accessHelper).toContain('test ! -L "$ATTACHMENTS_ROOT"');
+    expect(accessHelper).toContain('find -P "$ATTACHMENTS_ROOT" -xdev -type d -exec chmod 2770');
+    expect(accessHelper).toContain('find -P "$ATTACHMENTS_ROOT" -xdev -type f -exec chmod g+rw,o-rwx');
+    expect(accessHelper).not.toContain('chmod 0755');
+    expect(accessHelper).not.toContain('chmod 0711');
     expect(accessHelper).not.toContain('chown -R "$CLAUDE_UID:$CLAUDE_GID" "$CLAUDE_WORKDIR"');
+    expect(Bun.spawnSync(["bash", "-n", "-c", accessHelper]).exitCode).toBe(0);
     expect(accessHelper).not.toContain("nonroot-access-v1");
     expect(wrapper).toContain(
       'setpriv --reuid="$CLAUDE_UID" --regid="$CLAUDE_GID" --clear-groups --no-new-privs',
@@ -387,8 +567,34 @@ describe("T3 provider bridge", () => {
           await Bun.$`chmod 700 ${packageBin}`;
           await symlink(packageBin, join(bin, engine.binary));
         } else {
-          await Bun.write(join(bin, engine.binary), `#!/bin/sh\necho '${engine.version}'\n`);
-          await Bun.$`chmod 700 ${join(bin, engine.binary)}`;
+          const packageDir = join(
+            home,
+            ".local/share/useagent/native-engines/node_modules/@openai/codex",
+          );
+          const packageBin = join(packageDir, "bin/codex.js");
+          const platform = process.arch === "arm64"
+            ? { alias: "codex-linux-arm64", suffix: "linux-arm64", triple: "aarch64-unknown-linux-musl" }
+            : { alias: "codex-linux-x64", suffix: "linux-x64", triple: "x86_64-unknown-linux-musl" };
+          const platformDir = join(
+            home,
+            `.local/share/useagent/native-engines/node_modules/@openai/${platform.alias}`,
+          );
+          const nativeBin = join(platformDir, `vendor/${platform.triple}/bin/codex`);
+          await mkdir(join(packageDir, "bin"), { recursive: true });
+          await mkdir(join(platformDir, `vendor/${platform.triple}/bin`), { recursive: true });
+          await Bun.write(packageBin, `#!/bin/sh\necho '${engine.version}'\n`);
+          await Bun.write(join(packageDir, "package.json"), JSON.stringify({
+            name: "@openai/codex",
+            version: "0.153.3",
+            bin: { codex: "bin/codex.js" },
+          }));
+          await Bun.write(nativeBin, "native fixture");
+          await Bun.write(join(platformDir, "package.json"), JSON.stringify({
+            name: "@openai/codex",
+            version: `0.153.3-${platform.suffix}`,
+          }));
+          await Bun.$`chmod 700 ${packageBin} ${nativeBin}`;
+          await symlink(packageBin, join(bin, engine.binary));
         }
         const untouched = { enabled: true, binaryPath: "/keep/me" };
         await Bun.write(settingsPath, JSON.stringify({
@@ -757,12 +963,116 @@ exit 17
     expect(commands.some((command) => command.includes("codex-relay"))).toBe(false);
   });
 
+  test("batches retained Codex Bun and package identity validation and repairs tampering", async () => {
+    const commands: string[] = [];
+    let identityValid = true;
+    let bootstraps = 0;
+    const layout = {
+      home: "/home/user",
+      workdir: "/home/user/work",
+      runsAsRoot: false,
+      bunExecutable: "/usr/local/bin/bun",
+    } as const;
+    const identityCommand = buildCodexInstallIdentityProbeCommand(layout);
+    const sandbox = {
+      id: "box-cached-codex-identity",
+      providerKind: "box",
+      process: {
+        executeCommand: async (command: string) => {
+          commands.push(command);
+          if (command.includes('NATIVE_PACKAGE="@openai/codex@0.153.3"')) {
+            bootstraps += 1;
+            identityValid = true;
+            return { exitCode: 0, result: "" };
+          }
+          if (command.includes(identityCommand)) {
+            expect(command).toContain(buildSandboxBunProbeCommand(layout));
+            return { exitCode: identityValid ? 0 : 1, result: "" };
+          }
+          return { exitCode: 0, result: "" };
+        },
+      },
+    } as unknown as SandboxHandle;
+    const context = {
+      runId: "run-box-codex-identity",
+      threadId: "thread-box-codex-identity",
+      prompt: "work",
+      bootstrapContext: "",
+      turnContext: "",
+      workdir: "/home/user/work",
+      orgId: "org-a",
+      userId: "user-a",
+      model: "gpt-5.6-luna",
+      signal: new AbortController().signal,
+      emit: async () => undefined,
+      setSummary: () => undefined,
+    } as const;
+
+    await prepareStableRuntimeProvider(sandbox, context, "codex");
+    const afterCold = commands.length;
+    await prepareStableRuntimeProvider(sandbox, context, "codex");
+    expect(commands.slice(afterCold)).toHaveLength(1);
+    expect(bootstraps).toBe(1);
+
+    identityValid = false;
+    await prepareStableRuntimeProvider(sandbox, context, "codex");
+    expect(bootstraps).toBe(2);
+  });
+
+  test("does not repeat stable bootstrap inside the same fresh turn preparation", async () => {
+    const commands: string[] = [];
+    const sandbox = {
+      id: "fresh-opencode-one-bootstrap",
+      providerKind: "box",
+      process: {
+        executeCommand: async (command: string) => {
+          commands.push(command);
+          return { exitCode: 0, result: "" };
+        },
+      },
+    } as unknown as SandboxHandle;
+    const context = {
+      runId: "run-fresh-one-bootstrap",
+      threadId: "thread-fresh-one-bootstrap",
+      prompt: "work",
+      bootstrapContext: "",
+      turnContext: "",
+      workdir: "/home/user/work",
+      orgId: "org-a",
+      userId: "user-a",
+      model: "openai/gpt-5.6-luna",
+      signal: new AbortController().signal,
+      emit: async () => undefined,
+      setSummary: () => undefined,
+    } as const;
+
+    await prepareStableRuntimeProvider(sandbox, context, "opencode");
+    await prepareRuntimeProviderBridge(
+      sandbox,
+      context,
+      "opencode",
+      "/home/user/work",
+      true,
+    );
+
+    expect(commands.filter((command) => command.includes('NATIVE_PACKAGE="opencode-ai@1.18.7"')))
+      .toHaveLength(1);
+    expect(commands.filter((command) =>
+      command.includes(buildOpenCodeInstallIdentityProbeCommand({
+        home: "/home/user",
+        workdir: "/home/user/work",
+        runsAsRoot: false,
+      }))
+    )).toHaveLength(1);
+  });
+
   test.each(["claude", "opencode"] as const)("revalidates cached %s identity and repairs only after mutation", async (engine) => {
     let identityValid = true;
     let bootstrapSucceeds = true;
     let fullBootstraps = 0;
     let identityProbes = 0;
     let fenceGeneration = 0;
+    let capabilityRefreshes = 0;
     const identityCommand = (engine === "claude"
       ? buildClaudeInstallIdentityProbeCommand
       : buildOpenCodeInstallIdentityProbeCommand)({
@@ -785,9 +1095,18 @@ exit 17
             fenceGeneration += 1;
             return { exitCode: 0, result: "" };
           }
-          if (command === identityCommand) {
+          if (command.includes(identityCommand)) {
             identityProbes += 1;
+            expect(command).toContain(buildSandboxBunProbeCommand({
+              home: "/home/user",
+              workdir: "/home/user/work",
+              runsAsRoot: false,
+              bunExecutable: "/usr/local/bin/bun",
+            }));
             return { exitCode: identityValid ? 0 : 1, result: "" };
+          }
+          if (command.includes("provider-gateway-generation")) {
+            capabilityRefreshes += 1;
           }
           return { exitCode: 0, result: "" };
         },
@@ -843,6 +1162,7 @@ exit 17
       prepareRuntimeProviderBridge(sandbox, context, engine, "/home/user/work"),
     ).rejects.toThrow(`native ${engine} runtime bootstrap failed`);
     expect(fenceGeneration).toBe(2);
+    expect(capabilityRefreshes).toBe(4);
   });
 
   test("reasserts the Claude access boundary after resources on every retained turn", async () => {

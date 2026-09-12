@@ -19,7 +19,6 @@ export function providerForEngine(engine: EngineId, model: string): ProviderId |
     case "chat":
       return "openrouter";
     case "mock":
-    case "acp":
       return null;
   }
 }

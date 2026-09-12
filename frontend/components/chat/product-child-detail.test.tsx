@@ -78,3 +78,31 @@ test("a bot thread is named after its bot", () => {
   expect(html).toContain("Completed · Nova · bot thread · Codex · gpt-5.6-luna");
   expect(html).toContain('aria-label="Open bot thread: Research NVIDIA and Google"');
 });
+
+test("renders child answer markdown without enabling unsafe URLs or raw HTML", () => {
+  const markdown = [
+    "**Prices ready**",
+    "",
+    "| Symbol | Price |",
+    "| --- | --- |",
+    "| NVDA | $100 |",
+    "",
+    "[Source](https://example.com/prices)",
+    "[Unsafe](javascript:alert(1))",
+    "",
+    "<script>alert('raw html')</script>",
+  ].join("\n");
+  const html = renderToStaticMarkup(
+    <ProductChildDetailBody
+      initialRun={{ ...run, summary: markdown }}
+      relationship={{ ...relationship, latestSummary: markdown }}
+      onBack={() => {}}
+    />,
+  );
+
+  expect(html).toContain("<strong>Prices ready</strong>");
+  expect(html).toContain("<table");
+  expect(html).toContain('<a href="https://example.com/prices" target="_blank" rel="noreferrer">Source</a>');
+  expect(html).not.toContain('href="javascript:');
+  expect(html).not.toContain("<script>");
+});

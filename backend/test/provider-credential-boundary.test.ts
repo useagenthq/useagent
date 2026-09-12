@@ -2,9 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 const agentTurnFiles = [
-  "src/engines/acp-server.ts",
-  "src/engines/opencode-server.ts",
-  "src/engines/sandbox.ts",
   "src/engines/runtime-adapter.ts",
   "src/engines/pi-adapter.ts",
 ] as const;

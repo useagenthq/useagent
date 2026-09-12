@@ -29,9 +29,9 @@ export interface ThinkingProps {
 /**
  * Collapsible "Thinking" disclosure: one rounded pill reading the label, a
  * muted detail and, at its end, the chevron, over the steps region behind a
- * hairline connector. A fixed leading status slot holds the pixel loader while
- * the agent is working and stays reserved once settled, so the label never
- * shifts when the loader disappears. The settled chevron remains at the end.
+ * hairline connector. The leading status slot holds the pixel loader only
+ * while the agent is working. Settled labels have no empty loader slot;
+ * the chevron remains at the end.
  * No star or sparkle in any state. The
  * region mounts only while expanded, so a long trace never hits the DOM behind
  * a closed header. Ported from the beautiful-ui Thinking demo onto our
@@ -74,13 +74,17 @@ export function Thinking({
           hasSteps ? "cursor-pointer hover:bg-background-secondary-hover" : "cursor-default",
         )}
       >
-        <span
-          aria-hidden
-          data-testid="thinking-status-slot"
-          className="flex size-4 shrink-0 items-center justify-center"
-        >
-          {active && <PixelLoader className="text-text-secondary" />}
-        </span>
+        {/* The loader slot exists only while live; folded, an empty slot plus the
+            gap read as a lopsided left margin on the chip. */}
+        {active && (
+          <span
+            aria-hidden
+            data-testid="thinking-status-slot"
+            className="flex size-4 shrink-0 items-center justify-center"
+          >
+            <PixelLoader className="text-text-secondary" />
+          </span>
+        )}
         {active ? (
           <span className="agent-progress-loading-text shrink-0 text-body-2-medium">{label}</span>
         ) : (

@@ -271,50 +271,8 @@ function browserArgs(workdir: string): string[] {
   ];
 }
 
-/** Both ACP engines attach to one sandbox-resident MCP process. The browser
- * transport therefore survives agent/relay restarts instead of making Chrome
- * a transitive child of Claude, Codex, or OpenCode. */
-export function acpBrowserMcpServer(): Record<string, unknown> {
-  return {
-    type: "http",
-    name: BROWSER_MCP_SERVER_NAME,
-    url: BROWSER_MCP_URL,
-  };
-}
 
-/** OpenCode consumes the same loopback-only resident MCP endpoint. */
-export function opencodeBrowserMcpConfig(): Record<string, unknown> {
-  return {
-    type: "remote",
-    url: BROWSER_MCP_URL,
-    enabled: true,
-  };
-}
 
-/** claude-agent-acp currently accepts session-scoped MCP descriptors without
- * reliably exposing them to Claude (upstream issue #883). Register the same
- * loopback endpoint in Claude Code's private user scope before the ACP session
- * is created. `alwaysLoad` turns a silent model-visible omission into a bounded
- * startup connection gate; the endpoint has no credentials and is reachable
- * only inside this thread's sandbox. */
-export async function registerClaudeBrowserMcp(sandbox: SandboxHandle): Promise<boolean> {
-  const config = JSON.stringify({
-    type: "http",
-    url: BROWSER_MCP_URL,
-    alwaysLoad: true,
-  });
-  const command = [
-    'export PATH="$HOME/.local/bin:$PATH"',
-    `claude mcp remove ${LEGACY_BROWSER_MCP_SERVER_NAME} --scope user >/dev/null 2>&1 || true`,
-    `if claude mcp get ${BROWSER_MCP_SERVER_NAME} 2>/dev/null | grep -Fq "URL: ${BROWSER_MCP_URL}"; then exit 0; fi`,
-    `claude mcp remove ${BROWSER_MCP_SERVER_NAME} --scope user >/dev/null 2>&1 || true`,
-    `claude mcp add-json --scope user ${BROWSER_MCP_SERVER_NAME} '${config}'`,
-  ].join("; ");
-  const result = await sandbox.process
-    .executeCommand(command, undefined, undefined, 30)
-    .catch(() => null);
-  return result?.exitCode === 0;
-}
 
 function browserMcpLaunchCommand(workdir: string): string {
   return [

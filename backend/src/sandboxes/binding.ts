@@ -1,17 +1,18 @@
 import type { SandboxProvider, SandboxProviderKind } from "@useagent/sandbox-contract";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { runs } from "../db/schema";
 import { listProviderConnections } from "../provider-connections/repo";
 import { getTrustedProviderCredential } from "../provider-connections/service";
 import { resolveGatewayComputerApiKeyConnection } from "../provider-gateway/api-key-credentials";
 import {
-  sandboxProvider,
   sandboxProviderFor,
   sandboxProviderApiKey,
+  sandboxProviderApiKeyFor,
   sandboxProviderKind,
   sandboxTemplate,
 } from "./provider";
+import { isSandboxProviderKind } from "./plugins";
 
 /**
  * Which computer a run's sandbox lives on. The server's env provider is the
@@ -24,6 +25,13 @@ import {
 export type SandboxCredentialSource = "env" | "user";
 export const COMPUTER_PROVIDER_KINDS = ["daytona", "box"] as const;
 export type ComputerProviderKind = (typeof COMPUTER_PROVIDER_KINDS)[number];
+
+export class PersonalSandboxConnectionUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PersonalSandboxConnectionUnavailableError";
+  }
+}
 
 export interface SandboxBinding {
   readonly kind: SandboxProviderKind;
@@ -58,15 +66,26 @@ function isComputerKind(value: unknown): value is ComputerProviderKind {
 
 /** The server's own provider from env; null when no credential is configured. */
 export function envSandboxBinding(env: Readonly<Record<string, string | undefined>> = process.env): SandboxBinding | null {
+  const kind = sandboxProviderKind(env);
   const apiKey = sandboxProviderApiKey(env);
   if (apiKey === undefined) return null;
-  return { kind: sandboxProviderKind(env), provider: sandboxProvider(apiKey), snapshot: null, credential: "env", userId: null };
+  return { kind, provider: sandboxProviderFor(kind, apiKey, env), snapshot: null, credential: "env", userId: null };
 }
 
 function requireEnvBinding(deps: SandboxBindingDeps): SandboxBinding {
   const binding = (deps.envProvider ?? (() => envSandboxBinding(deps.env)))();
   if (!binding) throw new Error("sandbox provider credentials are unavailable");
   return binding;
+}
+
+function requireRecordedEnvBinding(kind: SandboxProviderKind, deps: SandboxBindingDeps): SandboxBinding {
+  const env = deps.env ?? process.env;
+  const apiKey = sandboxProviderApiKeyFor(kind, env);
+  if (apiKey === undefined) {
+    throw new Error(`sandbox provider credentials are unavailable for recorded ${kind} sandbox`);
+  }
+  const build = deps.providers?.[kind] ?? ((key: string) => sandboxProviderFor(kind, key, env));
+  return { kind, provider: build(apiKey), snapshot: null, credential: "env", userId: null };
 }
 
 async function userSandboxBinding(
@@ -137,20 +156,58 @@ export async function resolveSandboxBindingForRun(
 interface RecordedSandbox {
   readonly userId: string | null;
   readonly orgId: string | null;
-  readonly sandboxProvider: string | null;
-  readonly sandboxCredential: string | null;
+  readonly sandboxProvider: SandboxProviderKind | null;
+  readonly sandboxCredential: SandboxCredentialSource | null;
+}
+
+const recordedSandboxColumns = {
+  sandboxId: runs.sandboxId,
+  userId: runs.userId,
+  orgId: runs.orgId,
+  sandboxProvider: runs.sandboxProvider,
+  sandboxCredential: runs.sandboxCredential,
+};
+
+/** A run's actor may differ from the owner of the retained personal sandbox. */
+async function sandboxOwnerRecord(sandboxId: string, recorded: RecordedSandbox): Promise<RecordedSandbox> {
+  const [owner] = await db
+    .select(recordedSandboxColumns)
+    .from(runs)
+    .where(and(
+      eq(runs.sandboxId, sandboxId),
+      recorded.orgId === null ? isNull(runs.orgId) : eq(runs.orgId, recorded.orgId),
+      recorded.sandboxProvider === null
+        ? isNull(runs.sandboxProvider)
+        : eq(runs.sandboxProvider, recorded.sandboxProvider),
+      recorded.sandboxCredential === null
+        ? isNull(runs.sandboxCredential)
+        : eq(runs.sandboxCredential, recorded.sandboxCredential),
+    ))
+    .orderBy(asc(runs.createdAt), asc(runs.id))
+    .limit(1);
+  return owner ?? recorded;
 }
 
 async function bindingForRecorded(recorded: RecordedSandbox | null, deps: SandboxBindingDeps): Promise<SandboxBinding> {
   if (recorded?.sandboxCredential === "user") {
     if (!recorded.orgId || !recorded.userId || !isComputerKind(recorded.sandboxProvider)) {
-      throw new Error("this sandbox was created on a personal computer whose owner can no longer be resolved");
+      throw new Error(
+        "this sandbox was created on a personal computer whose owner can no longer be resolved",
+      );
     }
     const user = await userSandboxBinding({ orgId: recorded.orgId, userId: recorded.userId }, recorded.sandboxProvider, deps);
     if (!user) {
-      throw new Error(`the ${recorded.sandboxProvider} connection that created this sandbox has been revoked`);
+      throw new PersonalSandboxConnectionUnavailableError(
+        `the ${recorded.sandboxProvider} connection that created this sandbox has been revoked`,
+      );
     }
     return user;
+  }
+  if (recorded?.sandboxProvider !== null && recorded?.sandboxProvider !== undefined) {
+    if (!isSandboxProviderKind(recorded.sandboxProvider)) {
+      throw new Error(`recorded sandbox provider ${recorded.sandboxProvider} is unsupported`);
+    }
+    return requireRecordedEnvBinding(recorded.sandboxProvider, deps);
   }
   return requireEnvBinding(deps);
 }
@@ -162,23 +219,37 @@ export async function resolveSandboxBindingForThread(
   deps: SandboxBindingDeps = {},
 ): Promise<SandboxBinding> {
   const [recorded] = await db
-    .select({ userId: runs.userId, orgId: runs.orgId, sandboxProvider: runs.sandboxProvider, sandboxCredential: runs.sandboxCredential })
+    .select(recordedSandboxColumns)
     .from(runs)
     .where(and(eq(runs.orgId, orgId), eq(runs.threadId, threadId), isNotNull(runs.sandboxId)))
     .orderBy(desc(runs.createdAt), desc(runs.id))
     .limit(1);
-  return bindingForRecorded(recorded ?? null, deps);
+  return bindingForRecorded(recorded?.sandboxId ? await sandboxOwnerRecord(recorded.sandboxId, recorded) : null, deps);
 }
 
 /** The provider that created a sandbox, by sandbox id (for callers that hold only the id). */
 export async function resolveSandboxBindingForSandbox(sandboxId: string, deps: SandboxBindingDeps = {}): Promise<SandboxBinding> {
-  const [recorded] = await db
-    .select({ userId: runs.userId, orgId: runs.orgId, sandboxProvider: runs.sandboxProvider, sandboxCredential: runs.sandboxCredential })
+  const orgs = await db
+    .select({ orgId: runs.orgId })
     .from(runs)
     .where(eq(runs.sandboxId, sandboxId))
+    .groupBy(runs.orgId)
+    .limit(2);
+  if (orgs.length > 1) {
+    throw new Error("sandbox owner cannot be resolved from an id shared by multiple organizations");
+  }
+  const orgId = orgs[0]?.orgId;
+  if (orgId === undefined) return bindingForRecorded(null, deps);
+  const [recorded] = await db
+    .select(recordedSandboxColumns)
+    .from(runs)
+    .where(and(
+      eq(runs.sandboxId, sandboxId),
+      orgId === null ? isNull(runs.orgId) : eq(runs.orgId, orgId),
+    ))
     .orderBy(desc(runs.createdAt), desc(runs.id))
     .limit(1);
-  return bindingForRecorded(recorded ?? null, deps);
+  return bindingForRecorded(recorded ? await sandboxOwnerRecord(sandboxId, recorded) : null, deps);
 }
 
 /** The snapshot a binding creates from: the user's own, or the server's template for the lane. */

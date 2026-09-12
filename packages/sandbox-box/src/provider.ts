@@ -14,7 +14,11 @@ import type {
   SandboxSession,
   SandboxTemplateStatus,
 } from "@useagent/sandbox-contract";
-import { SandboxTerminalUnavailableError, memorySandboxLabelStore } from "@useagent/sandbox-contract";
+import {
+  SandboxNotFoundError,
+  SandboxTerminalUnavailableError,
+  memorySandboxLabelStore,
+} from "@useagent/sandbox-contract";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -297,6 +301,16 @@ export function boxPtyHandle(
     terminalClosed = true;
     terminal.close();
   };
+  const termination = subprocess.exited.then(
+    (exitCode) => {
+      closeTerminal();
+      return { exitCode };
+    },
+    () => {
+      closeTerminal();
+      return { error: "Box PTY termination failed" };
+    },
+  );
   const stop = async (): Promise<void> => {
     if (subprocess.exitCode === null && !subprocess.killed) subprocess.kill();
     closeTerminal();
@@ -309,6 +323,7 @@ export function boxPtyHandle(
   }).catch(() => {});
   return {
     waitForConnection: () => ready,
+    waitForTermination: () => termination,
     sendInput: async (data) => {
       terminal.write(data);
     },
@@ -414,11 +429,20 @@ class BoxApi {
       stderr?: string;
       exitCode?: number | null;
       timedOut?: boolean;
+      stdoutTruncated?: boolean;
+      stderrTruncated?: boolean;
     }>("POST", `/boxes/${encodeURIComponent(id)}/commands`, {
       command,
       timeoutSeconds: Math.min(Math.max(1, Math.round(timeoutSeconds)), SYNC_COMMAND_CAP_SECONDS),
       detached: false,
     });
+    if (payload.stdoutTruncated === true || payload.stderrTruncated === true) {
+      throw new BoxApiError(
+        502,
+        "command_output_truncated",
+        "Box command output was truncated",
+      );
+    }
     return {
       stdout: payload.stdout ?? "",
       stderr: payload.stderr ?? "",
@@ -564,7 +588,7 @@ class BoxProcess implements SandboxProcess {
         }
         await this.api.sleep(LONG_POLL_MS);
       }
-      const log = await this.api.readFile(this.boxId, logPath).catch(() => Buffer.alloc(0));
+      const log = await this.api.readFile(this.boxId, logPath);
       return { exitCode: exitCode ?? 124, result: log.toString("utf8") };
     } finally {
       if (launchAttempted && !completed) {
@@ -860,6 +884,30 @@ class BoxProvider implements SandboxProvider {
     return new BoxSandboxHandle(this.api, this.labels, ready, labels);
   }
 
+  /** A named snapshot's state by lookup only: Box snapshots never park, so nothing is activated. */
+  async ensureTemplate(name: string): Promise<SandboxTemplateStatus> {
+    let snapshot: BoxNamedSnapshot;
+    try {
+      snapshot = await this.api.namedSnapshot(name);
+    } catch (error) {
+      if (error instanceof BoxApiError && error.status === 404) return { name, state: "absent" };
+      throw error;
+    }
+    if (snapshot.status === "ready") return { name, state: "active" };
+    if (snapshot.status === "saving") return { name, state: "activating", detail: "saving" };
+    return { name, state: "error", detail: snapshot.error ?? snapshot.status };
+  }
+
+  /** Remove a named snapshot so the same name can be saved again. Absent is success. */
+  async deleteTemplate(name: string): Promise<void> {
+    try {
+      await this.api.request("DELETE", `/named-snapshots/${encodeURIComponent(name)}`, undefined, { "X-Ascii-Confirm-Delete": name });
+    } catch (error) {
+      if (error instanceof BoxApiError && error.status === 404) return;
+      throw error;
+    }
+  }
+
   async saveTemplate(sourceSandboxId: string, name: string): Promise<SandboxTemplateStatus> {
     let snapshot: BoxNamedSnapshot | null = null;
     try {
@@ -884,7 +932,15 @@ class BoxProvider implements SandboxProvider {
   }
 
   async get(sandboxId: string): Promise<SandboxHandle> {
-    const record = await this.api.box(sandboxId);
+    let record: BoxRecord;
+    try {
+      record = await this.api.box(sandboxId);
+    } catch (error) {
+      if (error instanceof BoxApiError && error.status === 404 && error.code === "not_found") {
+        throw new SandboxNotFoundError(error);
+      }
+      throw error;
+    }
     const labels = (await this.labels.read([record.id])).get(record.id) ?? {};
     return new BoxSandboxHandle(this.api, this.labels, record, labels);
   }

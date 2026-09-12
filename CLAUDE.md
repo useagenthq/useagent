@@ -30,13 +30,18 @@ Architecture references: `README.md`, `backend/README.md`, `frontend/README.md`,
 - NATIVE HARNESS INVARIANT: Codex, Claude Code, OpenCode, and Pi keep their
   provider-native driver, protocol, session identity, lifecycle, and event
   grammar on Cube, Daytona, and Box. Sandbox selection changes only the
-  execution substrate. ACP is reserved for an explicitly registered future
-  compatibility engine and must never be a fallback for these four. If a
-  provider cannot host a native runtime, mark that engine/provider pair
-  unsupported and stop rather than changing its protocol or lifecycle.
+  execution substrate. There is no compatibility transport. If a provider
+  cannot host a native runtime, mark that engine/provider pair unsupported
+  and stop rather than changing its protocol or lifecycle.
 - RETAINED WORKSPACES: a runtime generation mismatch, upgrade, or rollback must
   not delete a thread's sandbox/files. Upgrade in place when compatible, or
   preserve the workspace and fail closed until a safe migration exists.
+- WORKSPACE PATHS: execution, uploads, screenshots, artifact publication, and
+  delivery use the provider layout of the sandbox already attached to the run.
+  Do not hardcode a universal `/root/work`, copy into another home, or use the
+  current default provider to reinterpret retained files. Keep canonical-path,
+  symlink and secret protections intact. Files on sandbox disk are not delivered
+  until publication returns a durable artifact reference.
 - Drizzle migration trap: the boot migrator applies only entries with journal
   `when` GREATER than the last applied - always stamp strictly above the
   journal tail.

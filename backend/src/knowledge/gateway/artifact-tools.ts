@@ -5,6 +5,7 @@ import { publishSandboxArtifact } from "../../artifacts/publish";
 import { acceptWorkpieceProposal, proposeWorkpieceEdit } from "../../artifacts/proposals";
 import { toArtifactDescriptor, type ArtifactDescriptor } from "../../artifacts/repo";
 import { isProtectedInjectedSecretPath } from "../../secrets/inject";
+import { requiresScreenshotProofPurpose } from "../../sandboxes/workspace";
 import {
   absoluteArtifactPreviewUrl,
   absoluteArtifactUrl,
@@ -28,13 +29,6 @@ const failure = (text: string): ToolResult => ({
   content: [{ type: "text", text }],
   isError: true,
 });
-
-const INSPECTION_SCREENSHOT_PATH =
-  /^(?:\/root|\/home\/daytona)\/work\/screenshots\/screenshot-\d+\.png$/;
-
-function requiresUserProofPurpose(path: string): boolean {
-  return INSPECTION_SCREENSHOT_PATH.test(path);
-}
 
 export const ARTIFACT_TOOLS = [
   {
@@ -74,7 +68,7 @@ export const ARTIFACT_TOOLS = [
       properties: {
         path: {
           type: "string",
-          description: "Path to the completed file inside your sandbox.",
+          description: "Canonical absolute path to the completed file beneath the workspace reported by your sandbox runtime. Do not copy it to another home directory.",
         },
         name: {
           type: "string",
@@ -259,7 +253,7 @@ export async function executeArtifactTool(
   ) {
     return failure("Protected secret paths and dotenv files cannot be published as artifacts.");
   }
-  if (requiresUserProofPurpose(path) && args.purpose !== "user_requested_proof") {
+  if (requiresScreenshotProofPurpose(path) && args.purpose !== "user_requested_proof") {
     return failure(
       "Private desktop inspection screenshots can only be published when the user explicitly requested durable proof. Retry artifact_publish with purpose=user_requested_proof for the final requested screenshot only.",
     );
@@ -275,6 +269,9 @@ export async function executeArtifactTool(
       runId: claims.runId,
       threadId: claims.threadId,
       path,
+      ...(args.purpose === "user_requested_proof" || args.purpose === "deliverable"
+        ? { purpose: args.purpose }
+        : {}),
       ...(typeof args.name === "string" && args.name.trim() ? { name: args.name.trim() } : {}),
       ...(editablePath ? { editablePath } : {}),
       ...(updatesArtifactId ? { updatesArtifactId } : {}),
@@ -294,7 +291,18 @@ export async function executeArtifactTool(
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "artifact publish failed";
-    return failure(`Could not publish ${path}: ${message}`);
+    // Failed publication includes caller errors as well as storage failures.
+    // Bound and escape untrusted fields so one failure stays one log record.
+    console.warn(JSON.stringify({
+      event: "artifact_publish_failed",
+      runId: claims.runId,
+      path: path.slice(0, 512),
+      error: message.slice(0, 1024),
+    }));
+    return failure(
+      `Could not publish ${path}: ${message}. The file was not delivered: tell the user, ` +
+        "and do not present a preview or download link for it.",
+    );
   }
 }
 
@@ -447,8 +455,11 @@ async function workpieceCreateTool(
   const name = typeof args.name === "string" && args.name.trim() ? args.name.trim() : "";
   if (!name) return failure("workpiece_create requires a `name` for the workpiece.");
   if (!args.state || typeof args.state !== "object" || Array.isArray(args.state)) {
+    const received = args.state === null ? "null" : Array.isArray(args.state) ? "array" : typeof args.state;
     return failure(
-      `workpiece_create requires a \`state\` object matching the kind (${
+      `workpiece_create expected state to be a JSON object; received ${received}. ` +
+      `Pass the object directly as the state argument. Do not JSON.stringify or quote the whole state. ` +
+      `Use the ${kind} shape (${
         WORKPIECE_STATE_SHAPES[kind] ?? "the kind's documented shape"
       }).`,
     );

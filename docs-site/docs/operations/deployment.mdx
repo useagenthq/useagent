@@ -1,116 +1,101 @@
 ---
-title: Deployment lanes
-description: Two lanes with different jobs. A full certification and a source-convergence bootstrap, both ending in the same atomic frontend swap.
+title: Compose deployment
+description: Build immutable images, configure one backend per database, and promote a candidate without changing engine or sandbox contracts.
 sidebar:
-  order: 2
+  order: 3
 ---
 
-UseAgent ships through explicit lanes, each with a different guarantee. Releases
-run from an **immutable checkout of the committed HEAD**: the lane refuses to
-deploy uncommitted tracked changes, materializes the commit's tree into a
-temporary directory, and verifies the checkout's tree hash against the commit
-before anything is synchronized.
+The repository ships separate backend, gateway, and frontend images. Compose is
+the current vendor-neutral application boundary: the same image contracts can
+run locally or on a single application host without making a sandbox provider
+part of the application stack.
 
-## Before any host mutation
+## Prerequisites
 
-Every lane runs the same protective preamble before it touches the host:
+- A Postgres 16 database with pgvector and the gateway database role.
+- An HTTPS gateway origin reachable from the selected sandbox provider.
+- Immutable backend, gateway, and frontend image references.
+- Backend, gateway, auth, encryption, and provider secrets stored outside the
+  Compose file.
+- One selected sandbox provider configuration: Box, Cube, or Daytona.
+- A compatible prebuilt runtime template for that engine/provider pair, or the
+  runtime prerequisites needed to prepare it: Bun for useAgent and Pi setup,
+  Node/npm tooling for the OpenCode fallback install, and the native engine
+  binary or package/build tools required by the pinned driver version.
 
-<Steps>
-  <Step title="Take the host deploy lock">
-    Deploys serialize behind a host-side mutex, so exactly one lane mutates the
-    host at a time. A second concurrent lane fails fast with a clear message
-    instead of racing a live deploy.
-  </Step>
-  <Step title="Close run admission and drain">
-    Durable run admission closes, then the lane waits a bounded time (180
-    seconds by default) for in-flight runs to settle. A timeout fails closed;
-    proceeding anyway requires an explicit audited force triple naming the
-    actor and the reason.
-  </Step>
-  <Step title="Users see an honest pause">
-    While admission is closed, a Slack message that would start a run is
-    answered with "New runs are temporarily paused for a deployment. Retry
-    this message shortly." instead of failing silently.
-  </Step>
-  <Step title="Reopen when healthy">
-    Admission reopens only after the restarted services answer their health
-    checks.
-  </Step>
-</Steps>
+## Local parity stack
 
-## Guarded release
+Copy the example environment, replace every placeholder, and build from the
+exact commit:
 
-The full certification, run with `bun run release:hosted`. Eight fail-closed
-gates cover the candidate end to end:
+```bash
+cp deploy/compose/env.example .env.compose
+docker compose --env-file .env.compose -f compose.local.yaml up --build
+```
 
-1. Preserve the exact live environment and build a rollback-bound candidate
-   environment.
-2. Activate the candidate source and Caddyfile, then run the preflight canary:
-   upload rejection, wiki generation and retrieval.
-3. Prove readiness for each selected credential path, failing fast when one is
-   unavailable.
-4. Prove the complete candidate parity matrix without public advertisement.
-5. Derive readiness into the offline candidate environment.
-6. Atomically activate the fully evidenced candidate.
-7. Rerun all hard journeys through the authenticated public APIs.
-8. Run the hosted canaries: editable workpieces, live timing, noVNC, focus
-   isolation, and the cutover canary.
+The local project starts Postgres, backend, gateway, and frontend. Set
+`GATEWAY_PUBLIC_URL` to a real sandbox-reachable HTTPS origin; a Docker service
+name is not reachable from an external sandbox.
 
-Any failure triggers automatic rollback of source, environment, Caddy
-configuration, and services. The Caddyfile is installed only after the live
-configuration is backed up; the candidate is validated and reloaded, and the
-prior file is restored on failure.
+Expected outcome: Postgres becomes healthy, then the backend, gateway, and
+frontend health checks pass. Open `http://localhost:3400` and confirm
+`GET /api/config` reports the selected release and provider.
 
-When promoting a newly built Cube runtime, the gate validates the template id,
-activates it only inside the rollback-bound candidate environment, and restores
-the exact previous environment if any preflight or parity journey fails.
+## Production image contract
 
-## Provider-connection bootstrap
+`compose.prod.yaml` accepts caller-supplied image references. Pass registry
+digests, not mutable tags:
 
-Run with `bun run release:provider-connection-bootstrap`. It converges
-production onto a verified commit between certifications and proves the
-account-lifecycle surface **without** claiming runtime parity:
+```text
+registry.example/useagent-backend@sha256:...
+registry.example/useagent-gateway@sha256:...
+registry.example/useagent-frontend@sha256:...
+```
 
-- Validates the authenticated release identity before changing the host.
-- Closes admission and drains, then snapshots the live source tree before
-  synchronizing the immutable checkout.
-- Restarts every application service (which includes the frontend swap below),
-  then proves the provider-connection account surface with a dedicated canary.
-- On failure, restores the source snapshot and restarts services.
-- Finishes by stating explicitly: "Provider execution readiness was not
-  promoted by this bootstrap."
+The backend and gateway need the same product feature flags and a consistent
+gateway origin, but they do not share an undifferentiated environment file. The
+gateway receives gateway-owned credentials only. Configure only the active
+sandbox provider credential; do not place several provider control keys in the
+same production environment as a fallback matrix.
 
-## The frontend swap inside every restart
+## Single backend per database
 
-There is no separate frontend lane. Both lanes above end in the same service
-restart script, and every restart finishes by swapping the UI atomically:
+Exactly one backend process may serve a database. Canonical sealing and SSE
+fan-out are process-local. Production must keep `REQUIRE_SINGLE_BACKEND=true`.
 
-- The candidate UI builds **beside** the live tree, into an isolated
-  `.next-release-<id>` directory, so a failed compilation never corrupts the
-  served build.
-- The build must carry a `BUILD_ID` equal to the release commit, or it never
-  activates.
-- The frontend stops, the prior build is parked as
-  `.next-build.previous-<id>`, and the candidate moves into place.
-- The new build must start and answer its local health check. On failure, the
-  bad build is kept as `.next-build.failed-<id>` for diagnosis and the previous
-  build is restored automatically.
+This means a backend cutover is serialized:
 
-<CardGroup cols={3}>
-  <Card title="Guarded release" icon="shield-check">
-    Full certification with rollback. Ship path for engine-affecting changes.
-  </Card>
-  <Card title="Bootstrap" icon="git-pull-request">
-    Converge source onto a verified commit. No parity claim.
-  </Card>
-  <Card title="Frontend swap" icon="repeat">
-    Not a lane. Runs inside every restart, build-id checked, with a parked
-    rollback.
-  </Card>
-</CardGroup>
+1. Build and health-check the candidate images without advertising them.
+2. Close run admission and drain current work.
+3. Stop the active backend.
+4. Start the candidate backend and run migrations, health, fingerprint, and
+   bounded smoke checks.
+5. Switch the reverse-proxy upstream and reopen admission.
+6. Keep the prior image and environment available for rollback.
 
-:::warning
-A release is never run from a live working tree. The lane materializes the
-committed HEAD into an immutable checkout, refuses uncommitted tracked changes,
-and verifies the checkout's tree hash against the commit.
-:::
+Frontend and gateway candidates may overlap where their contracts allow it.
+Two backends against one database may not.
+
+## Sandbox providers remain plugins
+
+Box, Cube, and Daytona implement `@useagent/sandbox-contract` in separate
+packages. Compose selects one provider through configuration; it does not
+change the engine protocol. Cube infrastructure, Box infrastructure, Daytona,
+host Postgres, and the reverse proxy remain outside the application Compose
+project.
+
+A template counts as ready only after a cold fork boots the native runtime with
+the expected user, home, workspace, binary versions, preview/DNS trust, and
+gateway reachability. Building a compatible template does not activate it;
+deployment configuration must select its exact id or snapshot name.
+
+## Promotion and rollback evidence
+
+A promotion should record the release commit, image digests, configuration
+fingerprint, migration result, health checks, and the engine/provider journeys
+actually run. Rollback stops the candidate backend, starts the prior image,
+verifies health, restores the upstream, and reopens admission.
+
+Do not describe a dark deployment as certified until the exact engine,
+credential mode, model, and sandbox-provider journeys pass. See
+[Verified support](/operations/verified-support).

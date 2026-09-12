@@ -4,6 +4,7 @@ import {
   assistantText,
   hasOpenRuntimeToolCall,
   buildRuntimeProjectCreateCommand,
+  buildRuntimeSessionStopCommand,
   buildRuntimeThreadCreateCommand,
   buildRuntimeTurnStartCommand,
   runtimeActivityProviderEvent,
@@ -27,6 +28,21 @@ const context = { runId: "run/unsafe", threadId: "thread unsafe", model: "gpt-5.
 const baselineRedactor = createSecretRedactor([]);
 
 describe("T3 orchestration projection", () => {
+  test("builds the native retained-session stop command", () => {
+    expect(buildRuntimeSessionStopCommand(
+      "thread-1",
+      "2026-09-05T00:00:00.000Z",
+      "revision-1",
+    ))
+      .toMatchObject({
+        type: "thread.session.stop",
+        commandId: "skynet-session-stop-revision-1-thread-1",
+        threadId: "thread-1",
+        onlyIfSettled: true,
+        createdAt: "2026-09-05T00:00:00.000Z",
+      });
+  });
+
   test("derives stable transport-safe project and thread ids", () => {
     expect(runtimeProjectId(context)).toBe("skynet-project-thread-unsafe");
     expect(runtimeThreadId(context)).toBe("skynet-thread-thread-unsafe");
@@ -718,6 +734,26 @@ describe("T3 orchestration projection", () => {
     };
 
     expect(assistantText(snapshot)).toBe(exactOutput);
+  });
+
+  test("classifies an externally interrupted live turn as failed", () => {
+    const snapshot = {
+      snapshotSequence: 12,
+      thread: {
+        id: "skynet-thread-thread-1",
+        latestTurn: {
+          turnId: "turn-interrupted",
+          state: "interrupted",
+          assistantMessageId: null,
+        },
+        messages: [],
+        activities: [],
+        session: { status: "ready", lastError: null },
+      },
+    } satisfies RuntimeThreadSnapshot;
+
+    expect(runtimeTurnSettled(snapshot)).toBe(true);
+    expect(runtimeTurnError(snapshot)).toBe("The provider turn was interrupted");
   });
 
   test("never republishes a prior assistant answer while a resumed turn is starting", () => {

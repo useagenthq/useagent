@@ -20,11 +20,14 @@ inside its thread's sandbox.
 ## Sandbox provider
 
 A vendor-specific implementation selected behind a provider-neutral sandbox
-contract. **Daytona**, **Cube** and **Box** expose the same required process, filesystem,
-PTY, preview, and lifecycle boundary, then keep provider-specific behavior and
-tests for native capabilities (Box has no PTY or desktop yet). Each provider is
-a plugin package under `packages/sandbox-*`. Code above the contract does not
-branch on the provider.
+contract. **Daytona**, **Cube** and **Box** implement the required process,
+filesystem, preview, and lifecycle boundary and may declare optional PTY,
+desktop, recording, and inventory capabilities. Box implements its native
+desktop API and an interactive terminal through the Box CLI's `box ssh`; the
+terminal is available only when the `box` CLI is installed on the useAgent
+backend. The user supplies only the Box API key in Settings; useAgent keeps it
+server-side and creates the temporary SSH setup automatically. Each provider is
+a plugin package under `packages/sandbox-*`.
 
 ## Warm pool
 
@@ -34,20 +37,21 @@ turn-start latency effort.
 
 ## Desktop
 
-The visible XFCE and Chromium workstation shown through noVNC. Readiness is
-strict: it requires the noVNC page, RFB, XFCE, browser CDP, and both CDP relays.
-Daytona can drive the desktop natively, while Cube uses trusted X11 controls. An
-engine controls it through the desktop computer-use tools, and desktop recording
-publishes a real MP4 artifact.
+When the configured provider and engine advertise desktop support, the session
+can show its workstation through the authenticated desktop proxy. Provider
+readiness is explicit: Box uses its native desktop endpoint, Daytona can expose
+native computer use, and Cube uses trusted X11 controls. Recording is available
+only when the selected provider/runtime capability is ready; a successful
+recording can be published as an MP4 artifact.
 
 ## Restart reconciliation
 
-Because the sandbox runs independently of the backend, a backend restart does not
-kill a live run:
+Because the sandbox runs independently of the backend, a backend restart need not
+kill a live run when that exact engine/provider session supports reconciliation:
 
 <Steps>
   <Step title="The sandbox keeps executing">
-    The engine process inside the sandbox is unaffected by a backend bounce.
+    The retained engine process inside the sandbox is unaffected by a backend bounce.
   </Step>
   <Step title="A recovery loop re-probes">
     On restart, a background loop finds the in-flight session and streams the
@@ -59,22 +63,25 @@ kill a live run:
   </Step>
 </Steps>
 
-<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "16px", margin: "1.5rem 0" }}>
+<figure>
+<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "16px" }}>
   <img
     src="/diagrams/run-survives-backend-restart.svg"
     alt="Two lanes over time: the sandbox keeps executing through a backend crash while boot recovery and the adaptive reconcile loop adopt the finished result"
     style={{ width: "100%", height: "auto", display: "block" }}
+    width="940"
+    height="512"
   />
-  <p style={{ margin: "12px 4px 0", fontSize: "13px", color: "#737373" }}>
-    The sandbox lane never stops: the one-shot boot pass (runs/recovery.ts:41-58)
-    settles the commands mailbox, then the adaptive loop (recovery.ts:288,
-    index.ts:348) re-probes every 15s with run.reconciling heartbeats until it
-    adopts the real result or fails honestly at the bounded deadline.
-  </p>
 </div>
+<figcaption>
+  For a session that supports reconciliation, boot recovery settles the command
+  mailbox and the adaptive loop re-probes with visible heartbeats until it adopts
+  the result or reaches a bounded failure.
+</figcaption>
+</figure>
 
 :::warning
-The sandbox provider interface does not expose explicit pause, checkpoint, or
-snapshot operations yet. Recovery re-probes and adopts; it does not resume from a
-saved snapshot.
+Recovery support is a driver capability, not a universal promise. Verify the
+exact engine, provider, runtime generation, and credential mode before relying
+on it. See [Verified support](/operations/verified-support).
 :::

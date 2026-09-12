@@ -243,7 +243,7 @@ export class SshSystemdAdoptionEffects implements SystemdAdoptionEffects {
 		const mounts = [
 			{
 				host: "/var/lib/useagent/artifacts",
-				container: "/app/backend/.artifacts",
+				container: "/var/lib/useagent/artifacts",
 			},
 			{ host: "/var/lib/useagent/runs", container: "/app/backend/.runs" },
 			{

@@ -40,6 +40,7 @@ describe("Pi provider driver", () => {
           return bridge;
         },
         get: () => bridge,
+        awaitTeardown: async () => {},
         remove: async () => {},
       },
     });
@@ -81,7 +82,12 @@ describe("Pi provider driver", () => {
     };
     const driver = makePiProviderDriver({
       resolveRuntime: async () => null,
-      bridges: { ensure: async () => bridge, get: () => bridge, remove: async () => {} },
+      bridges: {
+        ensure: async () => bridge,
+        get: () => bridge,
+        awaitTeardown: async () => {},
+        remove: async () => {},
+      },
     });
     expect(await driver.cancel(harnessSession(), "user stopped")).toEqual({ status: "ok" });
     expect(commands).toEqual([{ kind: "cancel", reason: "user stopped" }]);
@@ -103,6 +109,7 @@ describe("Pi provider driver", () => {
       bridges: {
         ensure: async () => bridge,
         get: () => bridge,
+        awaitTeardown: async () => {},
         remove: async (sessionFile) => { removed.push(sessionFile); },
       },
     });

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { providerSessionBinding } from "@useagent/agent-harness/canonical";
-import { eq } from "drizzle-orm";
+import { providerProtocolIdentity } from "@useagent/agent-harness/control";
+import { t3ProviderDrivers } from "../engines/t3-provider-driver";
+import { eq, sql } from "drizzle-orm";
 import { acceptRunCommand } from "../commands";
 import { db } from "../db/client";
 import { commands, runs } from "../db/schema";
@@ -90,10 +92,10 @@ describe("explicit sandbox release", () => {
     await setRunProviderSession(fixture.runId, providerSessionBinding({
       provider: "opencode",
       nativeSessionId: "session-1",
-      protocolVersion: "opencode-server/compat",
+      protocolVersion: providerProtocolIdentity(t3ProviderDrivers.opencode.descriptor.protocol),
       runtime: { kind: "sandbox", id: fixture.sandboxId },
       capabilities: {} as never,
-      generation: 1,
+      generation: t3ProviderDrivers.opencode.descriptor.sessionGeneration as number,
     }));
     const live = new Set([fixture.sandboxId, "unrelated-sandbox"]);
     const { provider, deleted } = fakeProvider(live);
@@ -223,5 +225,48 @@ describe("explicit sandbox release", () => {
     const result = await releaseRunSandbox(orgId, runId);
     expect(result).toEqual({ ok: true, released: false, reason: "connection_revoked", sandboxId });
     expect(await getThreadSandbox(runId)).toBeNull();
+  });
+
+  test("keeps a recorded env-provider mapping when that provider's credentials are unavailable", async () => {
+    const { orgId, runId, sandboxId } = await runFixture("completed");
+    await setRunSandbox(runId, sandboxId, { kind: "daytona", credential: "env" });
+    const previousProvider = process.env.SANDBOX_PROVIDER;
+    const previousDaytonaKey = process.env.DAYTONA_API_KEY;
+    process.env.SANDBOX_PROVIDER = "cube";
+    delete process.env.DAYTONA_API_KEY;
+    try {
+      expect(await releaseRunSandbox(orgId, runId)).toEqual({
+        ok: false,
+        reason: "provider_error",
+      });
+      expect(await getThreadSandbox(runId)).toBe(sandboxId);
+    } finally {
+      if (previousProvider === undefined) delete process.env.SANDBOX_PROVIDER;
+      else process.env.SANDBOX_PROVIDER = previousProvider;
+      if (previousDaytonaKey === undefined) delete process.env.DAYTONA_API_KEY;
+      else process.env.DAYTONA_API_KEY = previousDaytonaKey;
+    }
+  });
+
+  test("keeps a recorded mapping when its provider kind is unsupported", async () => {
+    const { orgId, runId, sandboxId } = await runFixture("completed");
+    await setRunSandbox(runId, sandboxId, { kind: "cube", credential: "env" });
+    await db
+      .update(runs)
+      .set({ sandboxProvider: sql`'retired-provider'` })
+      .where(eq(runs.id, runId));
+
+    expect(await releaseRunSandbox(orgId, runId)).toEqual({
+      ok: false,
+      reason: "provider_error",
+    });
+    expect(await getThreadSandbox(runId)).toBe(sandboxId);
+
+    await db.update(runs).set({ sandboxCredential: "user" }).where(eq(runs.id, runId));
+    expect(await releaseRunSandbox(orgId, runId)).toEqual({
+      ok: false,
+      reason: "provider_error",
+    });
+    expect(await getThreadSandbox(runId)).toBe(sandboxId);
   });
 });

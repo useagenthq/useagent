@@ -3,7 +3,6 @@ import {
   CubeWarmPool,
   claimCubeWarmSandbox,
   cubeRuntimeWarmPoolSize,
-  cubeWarmPoolSize,
   resetCubeWarmPoolForTest,
   startCubeWarmPool,
 } from "./cube-warm-pool";
@@ -48,6 +47,7 @@ function sandbox(id: string): SandboxHandle & { deleted: boolean } {
       getSessionCommandLogs: async () => ({ output: "", stdout: "", stderr: "" }),
       createPty: async () => ({
         waitForConnection: async () => undefined,
+        waitForTermination: async () => new Promise(() => {}),
         sendInput: async () => undefined,
         resize: async () => undefined,
         disconnect: async () => undefined,
@@ -110,21 +110,7 @@ afterEach(() => {
   resetCubeWarmPoolForTest();
 });
 
-describe("cubeWarmPoolSize gating", () => {
-  test("unset / empty / invalid / non-positive all disable the feature", () => {
-    expect(cubeWarmPoolSize({})).toBeNull();
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "" })).toBeNull();
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "no" })).toBeNull();
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "0" })).toBeNull();
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "-1" })).toBeNull();
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "1.5" })).toBeNull();
-  });
-
-  test("a positive integer enables the pool", () => {
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "1" })).toBe(1);
-    expect(cubeWarmPoolSize({ CUBE_WARM_POOL_SIZE: " 3 " })).toBe(3);
-  });
-
+describe("runtime warm-pool size gating", () => {
   test("the T3 pool uses an independent default-off size gate", () => {
     expect(cubeRuntimeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "3" })).toBeNull();
     expect(cubeRuntimeWarmPoolSize({ CUBE_T3_WARM_POOL_SIZE: "2" })).toBe(2);
@@ -897,12 +883,24 @@ describe("CubeWarmPool", () => {
 
   test("ignores retained thread sandboxes with non-pool run labels", async () => {
     const retained = sandbox("cube-retained-thread");
+    const conflicted = sandbox("cube-conflicted-labels");
+    const templateConflict = sandbox("cube-conflicted-template");
     const warm = sandbox("cube-warm");
-    const fakeProvider = provider([], [retained, warm]);
+    const fakeProvider = provider([], [retained, conflicted, templateConflict, warm]);
     retained.labels = { "skynet-run": "run-123" };
-    warm.labels = {
+    conflicted.labels = {
       "skynet-run": "warm-pool",
-      "cube.master.appsnapshot.template.id": "tpl-opencode",
+      "useagent-run": "run-conflict",
+      "useagent-warm-pool-template": "tpl-opencode",
+    };
+    templateConflict.labels = {
+      "useagent-run": "warm-pool",
+      "skynet-warm-pool-template": "tpl-old",
+      "useagent-warm-pool-template": "tpl-opencode",
+    };
+    warm.labels = {
+      "useagent-run": "warm-pool",
+      "useagent-warm-pool-template": "tpl-opencode",
     };
 
     const pool = new CubeWarmPool({
@@ -926,6 +924,8 @@ describe("CubeWarmPool", () => {
     pool.start();
     await waitFor(() => pool.status().ready, 1);
     expect(retained.deleted).toBe(false);
+    expect(conflicted.deleted).toBe(false);
+    expect(templateConflict.deleted).toBe(false);
     expect((await pool.claim())?.id).toBe("cube-warm");
   });
 

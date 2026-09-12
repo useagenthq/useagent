@@ -90,12 +90,12 @@ export function ThreadErrorBanner({
     <div
       data-session-ui="thread-error-banner"
       role="alert"
-      className="border-border-error-default/60 bg-background-secondary-default flex items-start gap-2 rounded-lg border-l-2 py-2 pl-3 pr-2"
+      className="border-border-error-default/60 bg-background-secondary-default flex items-start gap-2.5 rounded-lg border px-3 py-2.5"
     >
-      <RiErrorWarningLine className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <RiErrorWarningLine className="text-text-error-primary mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="text-caption-1-regular text-text-secondary whitespace-pre-wrap break-words">
-          <span className="text-text-error-primary">Run failed</span>
+        <p className="text-body-2-regular text-text-secondary whitespace-pre-wrap break-words">
+          <span className="text-body-2-medium text-text-error-primary">Run failed</span>
           <span className="text-text-tertiary"> - </span>
           {error}
         </p>

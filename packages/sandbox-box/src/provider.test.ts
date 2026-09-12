@@ -22,7 +22,11 @@ import {
   composeBoxCommand,
 } from "./provider";
 import { sandboxProviderConformance } from "@useagent/sandbox-contract/conformance";
-import { isSandboxTerminalUnavailableError, memorySandboxLabelStore } from "@useagent/sandbox-contract";
+import {
+  SandboxNotFoundError,
+  isSandboxTerminalUnavailableError,
+  memorySandboxLabelStore,
+} from "@useagent/sandbox-contract";
 
 const config: BoxApiConfig = {
   apiKey: "box_test_key",
@@ -48,6 +52,7 @@ function fakeBoxApi(
     desktopProvisioningPolls?: number;
     failDetached?: boolean;
     failWriteSuffix?: string;
+    missingDetachedLog?: boolean;
   } = {},
 ) {
   const boxes = new Map(initial.map((box) => [box.id, { ...box }]));
@@ -56,7 +61,14 @@ function fakeBoxApi(
   let created = 0;
   let archivingPolls = options.archivingPolls ?? 0;
   let desktopProvisioningPolls = options.desktopProvisioningPolls ?? 0;
-  const commandResults = new Map<string, { stdout?: string; stderr?: string; exitCode?: number | null; timedOut?: boolean }>();
+  const commandResults = new Map<string, {
+    stdout?: string;
+    stderr?: string;
+    exitCode?: number | null;
+    timedOut?: boolean;
+    stdoutTruncated?: boolean;
+    stderrTruncated?: boolean;
+  }>();
   const commands: string[] = [];
   const namedSnapshots = new Map<string, { name: string; status: "saving" | "ready"; sourceBoxId: string }>();
 
@@ -171,7 +183,8 @@ function fakeBoxApi(
     }
     if (method === "GET" && sub === "files") {
       const filePath = url.searchParams.get("path") ?? "";
-      const content = files.get(`${box.id}:${filePath}`);
+      const content = files.get(`${box.id}:${filePath}`) ??
+        (!options.missingDetachedLog && filePath.endsWith("/log") ? Buffer.alloc(0) : undefined);
       if (!content) return json(400, { ok: false, code: "invalid_path", message: "missing" });
       return json(200, { ok: true, type: "file", content: content.toString("base64"), encoding: "base64", size: content.length });
     }
@@ -209,6 +222,12 @@ function provider(
 }
 
 describe("Box sandbox provider", () => {
+  test("translates only a missing top-level box record into the neutral absence error", async () => {
+    const api = fakeBoxApi([]);
+    await expect(provider(api).provider.get("bx_missing")).rejects
+      .toBeInstanceOf(SandboxNotFoundError);
+  });
+
   sandboxProviderConformance("Box", () => {
     const api = fakeBoxApi([{ id: "bx_existing", state: "archived", vcpu: 2, memoryGB: 4, subdomain: "old" }]);
     return {
@@ -325,6 +344,41 @@ describe("Box sandbox provider", () => {
     expect(await long).toEqual({ exitCode: 0, result: "built\n" });
     expect(api.commands).toContain(`rm -rf '${dir}'`);
     expect(api.commands.some((command) => command.includes("kill -TERM"))).toBe(false);
+  });
+
+  test("sync command truncation is an explicit failure and is never returned as partial success", async () => {
+    const api = fakeBoxApi([{ id: "bx_truncated", state: "ready", vcpu: 4, memoryGB: 8, subdomain: "truncated" }]);
+    const sandbox = await provider(api).provider.get("bx_truncated");
+    for (const stream of ["stdout", "stderr"] as const) {
+      const command = `large ${stream}`;
+      api.commandResults.set(`(${command})`, {
+        stdout: stream === "stdout" ? "partial" : "",
+        stderr: stream === "stderr" ? "partial" : "",
+        exitCode: 0,
+        ...(stream === "stdout" ? { stdoutTruncated: true } : { stderrTruncated: true }),
+      });
+      await expect(sandbox.process.executeCommand(command, undefined, undefined, 10))
+        .rejects.toMatchObject({ code: "command_output_truncated" });
+      expect(api.commands.filter((candidate) => candidate === `(${command})`)).toHaveLength(1);
+    }
+  });
+
+  test("a completed detached command with an unreadable log fails instead of becoming empty success", async () => {
+    const api = fakeBoxApi(
+      [{ id: "bx_missing_log", state: "ready", vcpu: 4, memoryGB: 8, subdomain: "missing-log" }],
+      { missingDetachedLog: true },
+    );
+    const sandbox = await provider(api).provider.get("bx_missing_log");
+    const pending = sandbox.process.executeCommand("build output", undefined, undefined, 300);
+    let runScript = [...api.files.keys()].find((key) => key.endsWith("/run.sh"));
+    for (let attempt = 0; !runScript && attempt < 100; attempt += 1) {
+      await Bun.sleep(1);
+      runScript = [...api.files.keys()].find((key) => key.endsWith("/run.sh"));
+    }
+    const dir = runScript!.replace("bx_missing_log:", "").replace(/\/run\.sh$/, "");
+    api.files.set(`bx_missing_log:${dir}/exit`, Buffer.from("0\n"));
+
+    await expect(pending).rejects.toMatchObject({ code: "invalid_path" });
   });
 
   test("long command timeout stops its process group before cleanup", async () => {
@@ -548,13 +602,47 @@ describe("Box sandbox provider", () => {
     await waiting;
     await handle.sendInput("pwd\r");
     await handle.resize(120, 40);
+    const termination = handle.waitForTermination();
+    expect(handle.waitForTermination()).toBe(termination);
     await handle.disconnect();
+    expect(await termination).toEqual({ exitCode: 143 });
     await handle.kill();
     expect(writes).toEqual(["pwd\r"]);
     expect(sizes).toEqual([[120, 40]]);
     expect(kills).toBe(1);
     expect(closes).toBe(1);
     expect(cleanups).toBe(1);
+  });
+
+  test("PTY termination does not wait for or expose eager cleanup failures", async () => {
+    for (const cleanup of [
+      async () => {
+        throw new Error("cleanup failed");
+      },
+      () => new Promise<void>(() => {}),
+    ]) {
+      const exited = Promise.withResolvers<number>();
+      const handle = boxPtyHandle(
+        {
+          write: () => 0,
+          resize: () => {},
+          close: () => {},
+        },
+        {
+          exited: exited.promise,
+          exitCode: null,
+          killed: false,
+          kill: () => {},
+        },
+        cleanup,
+      );
+      const termination = handle.waitForTermination();
+
+      exited.resolve(0);
+
+      expect(await termination).toEqual({ exitCode: 0 });
+      await Bun.sleep(0);
+    }
   });
 
   test("PTY readiness suppresses first-connection key output and split markers", async () => {

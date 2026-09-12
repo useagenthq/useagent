@@ -1,4 +1,5 @@
 import { backendFetch } from "./backend-fetch";
+import { taskSounds } from "./task-sounds-player";
 
 const TRANSIENT_RUN_CREATE_STATUSES = new Set([502, 503, 504]);
 
@@ -36,8 +37,21 @@ async function postAcceptedCommand(path: string, body: unknown, idempotencyKey: 
   return backendFetch(path, init);
 }
 
+/** Work the person just started rings "sent" once the backend has accepted it. */
+async function sounded(request: Promise<Response>, identity: string): Promise<Response> {
+  const response = await request;
+  if (response.ok) {
+    try {
+      void taskSounds.moment("sent", `run:${identity}:sent`).catch(() => {});
+    } catch {
+      // Optional feedback can never turn an accepted command into a failed submit.
+    }
+  }
+  return response;
+}
+
 export async function createRun(body: unknown, idempotencyKey = crypto.randomUUID()) {
-  return postAcceptedCommand("/api/runs", body, idempotencyKey);
+  return sounded(postAcceptedCommand("/api/runs", body, idempotencyKey), idempotencyKey);
 }
 
 export async function createThreadMessage(
@@ -45,9 +59,12 @@ export async function createThreadMessage(
   body: { readonly text: string; readonly attachments?: readonly string[] },
   idempotencyKey = crypto.randomUUID(),
 ) {
-  return postAcceptedCommand(
-    `/api/threads/${encodeURIComponent(threadId)}/messages`,
-    body,
+  return sounded(
+    postAcceptedCommand(
+      `/api/threads/${encodeURIComponent(threadId)}/messages`,
+      body,
+      idempotencyKey,
+    ),
     idempotencyKey,
   );
 }

@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: The settled architecture and why each property is load-bearing.
+description: Understand the trusted control plane, durable event model, native engine drivers, isolated thread actors, and their boundaries.
 sidebar:
   label: Overview
   order: 1
@@ -26,8 +26,9 @@ isolated actor.
     of an ordered, durable event sequence, so runs replay and survive restarts.
   </Card>
   <Card title="Replaceable-engine" icon="plug">
-    The inner loop is rented behind a neutral adapter. Codex, Claude, and OpenCode
-    are interchangeable at the contract boundary.
+    The inner loop is rented behind native drivers. Codex, Claude Code,
+    OpenCode, and Pi keep their provider protocol while sharing a product event
+    boundary.
   </Card>
   <Card title="Actors" icon="box">
     Each thread is an isolated actor with its own sandbox and working directory,
@@ -46,20 +47,23 @@ log, never a live process.
 <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "12px" }}>
   <img
     src="/diagrams/system-architecture.svg"
-    alt="System architecture: the Next 16 browser UI reaches the Bun + Hono backend through the /api rewrite; runs/routes.ts accepts the run, worker.ts appends runs and steps to Postgres (the source of truth) and dispatches the turn to the thread's engine session in a Daytona sandbox; engine output flows back as provider events and SSE streams the event log to the browser."
+    alt="System architecture: the browser reaches the Bun and Hono backend through the API rewrite; the backend appends runs and events to Postgres and dispatches the turn to a native engine session in the selected sandbox provider; engine output returns as provider events and SSE streams the event log to the browser."
     style={{ width: "100%", display: "block" }}
+    width="960"
+    height="528"
   />
 </div>
 
 *One turn end to end: the harness (routes, worker, SSE fan-out, Postgres) stays on
 the trusted side of the dashed line; only the engine and its work run inside the
-Daytona sandbox.*
+selected Box, Cube, or Daytona sandbox.*
 
 The consequences are concrete:
 
-- A run **survives a backend restart**, because its truth is the log, not a
-  process' memory.
-- Three different engines render through **one UI contract**, because their
+- A reconciliation-capable run can **survive a backend restart** because its
+  durable truth is outside process memory and its native session can be
+  re-probed.
+- Four native engines render through **one UI contract**, because their
   native output is durably stored first, then translated into one
   provider-neutral canonical schema by a post-finalize outbox worker, and
   canonical events are persisted before they are published to subscribers.

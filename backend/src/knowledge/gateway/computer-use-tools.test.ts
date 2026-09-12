@@ -131,6 +131,36 @@ async function desktopPng(): Promise<Buffer> {
 }
 
 describe("computer-use gateway tools", () => {
+  test.each([
+    ["daytona", "/root/work"],
+    ["cube", "/root/work"],
+    ["box", "/home/user/work"],
+  ] as const)("captures %s screenshots beneath its declared workspace", async (kind, root) => {
+    const commands: string[] = [];
+    const png = await sharp({ create: { width: 2, height: 2, channels: 3, background: "red" } }).png().toBuffer();
+    const sandbox = {
+      id: `screenshot-${kind}`, providerKind: kind, cpu: 2, memory: 4,
+      process: { executeCommand: async (command: string) => { commands.push(command); return { exitCode: 0, result: "" }; } },
+      fs: { downloadFile: async () => png },
+      ...(kind === "daytona" ? {
+        computerUse: {
+          screenshot: {
+            takeFullScreen: async () => {
+              throw new Error("native screenshot must not capture a different desktop");
+            },
+          },
+        },
+      } : {}),
+    } as unknown as SandboxHandle;
+    const response = await captureSandboxScreenshot(sandbox);
+    const path = String(response.structuredContent?.path);
+    expect(path.startsWith(`${root}/screenshots/screenshot-`)).toBe(true);
+    expect(path.endsWith(".png")).toBe(true);
+    expect(commands.join("\n")).toContain(path);
+    if (kind !== "box") expect(commands.join("\n")).toContain("export DISPLAY=:1");
+    expect(response.isError).toBeUndefined();
+  });
+
   test("keeps the full desktop PNG while returning a bounded model JPEG", async () => {
     const commands: string[] = [];
     let downloaded = "";
@@ -310,6 +340,7 @@ describe("computer-use gateway tools", () => {
       runId: "run-1",
       threadId: "thread-1",
       path: "/root/work/screenshots/proof.png",
+      purpose: "user_requested_proof",
     }]);
     expect(textAt(response.content, 0)).toContain("Computer sequence completed. Executed actions: wait.");
     expect(textAt(response.content, 0)).toContain("Published proof.png (1234 bytes) as artifact artifact-proof-1.");
