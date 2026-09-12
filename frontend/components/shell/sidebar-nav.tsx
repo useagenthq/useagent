@@ -1,3 +1,4 @@
+import { RiArrowDownSLine } from "@remixicon/react";
 import Link from "next/link";
 import type { ComponentType, ReactNode } from "react";
 
@@ -47,6 +48,39 @@ export function Sidebar({
 
 export function SidebarSectionLabel({ children }: { children: ReactNode }) {
   return <p className="text-mono-label px-2.5 pb-1 pt-3 text-text-tertiary">{children}</p>;
+}
+
+/**
+ * A section label that folds its section: the whole heading is the control, so
+ * a list expanded with "Show N more" closes from the top without scrolling back
+ * to its foot. Same type and spacing as the plain label, plus a chevron.
+ */
+export function SidebarSectionToggle({
+  children,
+  open,
+  onToggle,
+  controls,
+}: {
+  children: ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  controls?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-controls={controls}
+      onClick={onToggle}
+      className="text-mono-label flex w-full items-center gap-1 rounded-lg px-2.5 pb-1 pt-3 text-left text-text-tertiary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+    >
+      <span className="min-w-0 flex-1">{children}</span>
+      <RiArrowDownSLine
+        aria-hidden
+        className={cx("size-3.5 shrink-0 transition-transform", !open && "-rotate-90")}
+      />
+    </button>
+  );
 }
 
 export type NavIconTone = "blue" | "purple" | "green" | "orange" | "primary";
