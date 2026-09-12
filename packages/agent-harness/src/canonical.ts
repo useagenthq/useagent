@@ -17,7 +17,10 @@
 export const CANONICAL_SCHEMA_VERSION = 1 as const;
 
 const TOOL_SERVER_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  useagent: "useAgent",
+  "useagent-browser": "useAgent Browser",
   "skynet-knowledge": "useAgent",
+  "skynet-browser": "useAgent Browser",
 };
 
 /** Keep transport server ids stable while removing internal ids from UI labels. */

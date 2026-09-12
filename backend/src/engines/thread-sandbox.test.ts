@@ -18,9 +18,9 @@ describe("shared thread sandbox lease", () => {
   });
 
   test("rejects retained sandboxes from an older runtime generation", () => {
-    const required = { "useagent.runtime": "useagent-runtime-v4" };
+    const required = { "useagent.runtime": "useagent-runtime-v8" };
     expect(sandboxHasRequiredLabels({
-      labels: { "skynet.runtime": "t3-v3" },
+      labels: { "useagent.runtime": "useagent-runtime-v7" },
     }, required)).toBe(false);
     expect(sandboxHasRequiredLabels({ labels: required }, required)).toBe(true);
 

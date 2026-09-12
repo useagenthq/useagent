@@ -7,6 +7,7 @@ import {
   prepareOpencodeSandboxConfig,
 } from "./opencode-server";
 import { verifyToolToken } from "../knowledge/gateway/token";
+import { LEGACY_TOOL_GATEWAY_SERVER_NAME, TOOL_GATEWAY_SERVER_NAME } from "../knowledge/gateway/descriptor";
 
 const original = { ...process.env };
 
@@ -73,7 +74,8 @@ describe("OpenCode generated config placement", () => {
       string,
       { headers: { Authorization: string } }
     >;
-    const token = mcp["skynet-knowledge"]!.headers.Authorization.replace(/^Bearer /, "");
+    const token = mcp[TOOL_GATEWAY_SERVER_NAME]!.headers.Authorization.replace(/^Bearer /, "");
+    expect(mcp[LEGACY_TOOL_GATEWAY_SERVER_NAME]).toBeUndefined();
     const claims = verifyToolToken(token, before);
 
     expect(claims).not.toBeNull();

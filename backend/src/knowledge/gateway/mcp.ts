@@ -12,6 +12,7 @@ import {
   isGatewayMetaToolName,
 } from "./operation-registry";
 import { resolveToolRunIdentity } from "./run-authorization";
+import { TOOL_GATEWAY_SERVER_NAME } from "./descriptor";
 import { type ToolTokenClaims, verifyToolToken } from "./token";
 
 // ---------------------------------------------------------------------------
@@ -39,7 +40,7 @@ import { type ToolTokenClaims, verifyToolToken } from "./token";
 // A conservative, widely-supported protocol version. We echo the client's
 // requested version when present so negotiation is a no-op for any supported peer.
 const DEFAULT_PROTOCOL_VERSION = "2025-06-18";
-const SERVER_INFO = { name: "skynet-knowledge", version: "1.0.0" } as const;
+const SERVER_INFO = { name: TOOL_GATEWAY_SERVER_NAME, version: "1.0.0" } as const;
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const MAX_BATCH_MESSAGES = 16;
 

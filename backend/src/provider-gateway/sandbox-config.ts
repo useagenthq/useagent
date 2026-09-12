@@ -14,6 +14,7 @@ import { toolGatewayConfig } from "../knowledge/gateway/config";
 import {
   buildToolGatewayCapabilityDescriptor,
   describeToolGatewayCapabilityDescriptor,
+  TOOL_GATEWAY_SERVER_NAME,
   toCodexToolGatewayConfig,
   type ToolGatewayCapabilityDescriptor,
 } from "../knowledge/gateway/descriptor";
@@ -24,14 +25,13 @@ export interface OpenCodeProviderOptions {
   readonly apiKey: string;
 }
 
-// v16 replaces retained sandboxes created before Claude's provider capability
-// moved into its uid-1000 config boundary. In particular, an older v15
-// sandbox may have been created in compatibility mode while carrying the same
-// label as gateway-only. Separate generations also prevent a resident process
-// with inherited raw secrets from surviving a compatibility -> gateway-only
-// transition; replacing only files and rc hooks would not clear process env.
-export const SANDBOX_GENERATION = "provider-gateway-v16-gateway-only-secrets";
-const COMPATIBILITY_SANDBOX_GENERATION = "provider-gateway-v16-compatibility-secrets";
+// v17 replaces retained sandboxes whose resident harnesses still expose the
+// retired MCP server ids. A generation boundary makes both forward deployment
+// and rollback converge on one config instead of accumulating duplicate tools.
+// Separate variants still prevent a resident process with inherited raw secrets
+// from surviving a compatibility -> gateway-only transition.
+export const SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-gateway-only-secrets";
+const COMPATIBILITY_SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-compatibility-secrets";
 export const SANDBOX_GENERATION_LABEL = "skynet-provider-generation";
 const SANDBOX_MARKER = "$HOME/.skynet/provider-gateway-generation";
 const OPENAI_TOKEN_FILE = "$HOME/.skynet/provider-openai.token";
@@ -316,7 +316,7 @@ export function codexProviderConfigToml(
     "",
     ...(toolGateway
       ? [
-          "[mcp_servers.skynet-knowledge]",
+          `[mcp_servers.${TOOL_GATEWAY_SERVER_NAME}]`,
           `url = ${JSON.stringify(toolGateway.url)}`,
           `http_headers = { Authorization = ${JSON.stringify(`Bearer ${toolGateway.bearerToken}`)} }`,
           "enabled = true",

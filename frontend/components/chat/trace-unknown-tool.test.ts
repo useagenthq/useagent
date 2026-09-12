@@ -59,24 +59,20 @@ describe("deriveTrace — uncatalogued tool", () => {
   });
 
   test("shows the gateway provider as its product name, not the wire id", () => {
-    // Gateway tools are tagged server "useAgent-knowledge" (the coupled wire name);
-    // the attribution label reads as "useAgent" while the wire value stays put.
     const trace = deriveTrace(
-      commandStep("mcp__skynet-knowledge__skill_activate", { name: "fast-installs" }, "skynet-knowledge"),
+      commandStep("mcp__useagent__skill_activate", { name: "fast-installs" }, "useagent"),
     );
     expect(trace.verb).toBe("Skill activate");
     expect(trace.target).toBe("useAgent");
   });
 
   test("a flattened gateway tool id drops the internal server prefix and credits the product", () => {
-    // OpenCode names MCP tools `<server>_<tool>`; the wire server id is not a
-    // product term, so it is attribution, never part of the verb.
-    const trace = deriveTrace(
-      commandStep("skynet-knowledge_child_session_create_many", { tasks: [] }),
-    );
+    // OpenCode names MCP tools `<server>_<tool>`; useAgent is attribution,
+    // never part of the verb.
+    const trace = deriveTrace(commandStep("useagent_child_session_create_many", { tasks: [] }));
     expect(trace.verb).toBe("Child session create many");
     expect(trace.target).toBe("useAgent");
-    expect(deriveTrace(commandStep("skynet-knowledge_child_session_gather", {})).verb).toBe(
+    expect(deriveTrace(commandStep("useagent_child_session_gather", {})).verb).toBe(
       "Child session gather",
     );
     // A hyphenated name that is not a known gateway keeps its full spelling.
@@ -84,9 +80,7 @@ describe("deriveTrace — uncatalogued tool", () => {
   });
 
   test("a genuine MCP server is attributed as-is", () => {
-    const trace = deriveTrace(
-      commandStep("mcp__github__create_issue", { title: "x" }, "github"),
-    );
+    const trace = deriveTrace(commandStep("mcp__github__create_issue", { title: "x" }, "github"));
     expect(trace.verb).toBe("Create issue");
     expect(trace.target).toBe("github");
   });

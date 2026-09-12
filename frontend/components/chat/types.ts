@@ -6,9 +6,9 @@
 // frontend-only and stay local.
 
 import {
-  decodeApiRun,
   type ApiRun,
   type ApiStep,
+  decodeApiRun,
   type EngineId,
   type MemoryScope,
   type RunStatus,
@@ -17,15 +17,7 @@ import {
 } from "@useagent/agent-client/wire";
 import { providerDisplayName } from "./provider-display";
 
-export type {
-  ApiRun,
-  ApiStep,
-  EngineId,
-  MemoryScope,
-  RunStatus,
-  RunUpload,
-  StepKind,
-};
+export type { ApiRun, ApiStep, EngineId, MemoryScope, RunStatus, RunUpload, StepKind };
 
 /** `GET /api/runs/:id?thread=1` → the whole conversation, oldest → newest. */
 export interface ThreadResponse {
@@ -680,10 +672,10 @@ export function deriveTrace(step: ApiStep): StepTrace {
 
 /** OpenCode flattens an MCP tool id to `<server>_<tool>`; when the server is one
  *  of useAgent's own gateways (a wire id with a product display name) the tool
- *  half is the label and the gateway is the attribution, never a "Skynet
- *  knowledge child session ..." verb. Other servers pass through untouched. */
+ *  half is the label and the gateway is the attribution. Other servers pass
+ *  through untouched. */
 function splitGatewayTool(tool: string): { leaf: string; server: string | null } {
-  const match = /^([a-z0-9]+-[a-z0-9-]+)_(.+)$/i.exec(tool);
+  const match = /^([a-z0-9][a-z0-9-]*)_(.+)$/i.exec(tool);
   if (match?.[1] && match[2] && providerDisplayName(match[1]) !== match[1]) {
     return { leaf: match[2], server: match[1] };
   }

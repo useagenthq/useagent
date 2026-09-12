@@ -67,7 +67,10 @@ const base = (kind: CanonicalEventKind) => ({
 
 describe("canonical event vocabulary", () => {
   test("keeps protocol ids internal while presenting the product name", () => {
+    expect(toolServerDisplayName("useagent")).toBe("useAgent");
+    expect(toolServerDisplayName("useagent-browser")).toBe("useAgent Browser");
     expect(toolServerDisplayName("skynet-knowledge")).toBe("useAgent");
+    expect(toolServerDisplayName("skynet-browser")).toBe("useAgent Browser");
     expect(toolServerDisplayName("github")).toBe("github");
   });
 

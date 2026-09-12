@@ -42,6 +42,7 @@ describe("release configuration", () => {
 			new URL("../../compose.prod.yaml", import.meta.url),
 		).text();
 		for (const contract of [
+			'USEAGENT_RUNTIME_GENERATION: ""',
 			"ARTIFACT_STORAGE_DIR: /app/backend/.artifacts",
 			"RUNS_ROOT: /app/backend/.runs",
 			"SLACK_UPLOAD_STAGING_ROOT: /app/backend/.slack-uploads",

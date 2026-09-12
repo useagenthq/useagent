@@ -11,6 +11,10 @@
  * Permission-skipping CLI flags remain restricted to verified development mode.
  */
 import { acpAutoApprove } from "../env";
+import {
+  LEGACY_TOOL_GATEWAY_SERVER_NAME,
+  TOOL_GATEWAY_SERVER_NAME,
+} from "../knowledge/gateway/descriptor";
 import { isRegisteredGatewayToolName } from "../knowledge/gateway/operation-registry";
 
 /** A permission option as advertised by an ACP `session/request_permission`. */
@@ -113,8 +117,10 @@ const TRUSTED_SANDBOX_NATIVE_TOOLS: ReadonlySet<string> = new Set([
 const TRUSTED_SANDBOX_NATIVE_KINDS: ReadonlySet<string> = new Set(["execute"]);
 
 const GATEWAY_TOOL_PREFIXES = [
-  "mcp.skynet-knowledge.",
-  "mcp__skynet-knowledge__",
+  `mcp.${TOOL_GATEWAY_SERVER_NAME}.`,
+  `mcp__${TOOL_GATEWAY_SERVER_NAME}__`,
+  `mcp.${LEGACY_TOOL_GATEWAY_SERVER_NAME}.`,
+  `mcp__${LEGACY_TOOL_GATEWAY_SERVER_NAME}__`,
 ] as const;
 
 function registeredGatewayToolFromTitle(title: string): string | null {

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { recordProviderEvent } from "../../runs/provider-events";
 import { embeddingsEnabled, embedOne } from "../embed";
 import { getRecord, searchRecords, type SearchHit } from "../store";
-import type { ToolCallResult } from "./descriptor";
+import { TOOL_GATEWAY_SERVER_NAME, type ToolCallResult } from "./descriptor";
 import { resolveAuthorizedToolRun } from "./run-authorization";
 import type { ToolTokenClaims } from "./token";
 
@@ -120,7 +120,7 @@ export async function recordKnowledgeRetrieval(
     id: `kbret_${target.id}_${randomBytes(5).toString("hex")}`,
     runId: target.id,
     threadId: target.threadId,
-    provider: "skynet-knowledge",
+    provider: TOOL_GATEWAY_SERVER_NAME,
     eventType: KNOWLEDGE_RETRIEVED,
     payload: {
       source: "knowledge",

@@ -303,8 +303,8 @@ describe("typed provider control routing", () => {
   test("rejects stale T3 protocol and generation bindings", async () => {
     for (const authority of [
       { protocolVersion: "t3-orchestration/useagent-runtime-v6", generation: 2, authEpoch: null },
-      { protocolVersion: "t3-orchestration/useagent-runtime-v7", generation: 1, authEpoch: null },
-      { protocolVersion: "t3-orchestration/useagent-runtime-v7", generation: 2, authEpoch: "revoked-epoch" },
+      { protocolVersion: "t3-orchestration/useagent-runtime-v8", generation: 1, authEpoch: null },
+      { protocolVersion: "t3-orchestration/useagent-runtime-v8", generation: 2, authEpoch: "revoked-epoch" },
     ]) {
       const runId = crypto.randomUUID();
       await createRun({

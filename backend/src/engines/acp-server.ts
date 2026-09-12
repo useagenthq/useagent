@@ -33,10 +33,7 @@ import {
 import { sendSessionCancel } from "./acp-cancel";
 import { answerAcpPermissionRequest, type AcpPermissionRequest } from "./permission-policy";
 import { toolGatewayConfig, type ToolGatewayConfig } from "../knowledge/gateway/config";
-import {
-  buildToolGatewayCapabilityDescriptor,
-  toAcpKnowledgeMcpServer,
-} from "../knowledge/gateway/descriptor";
+import { buildToolGatewayCapabilityDescriptor, TOOL_GATEWAY_SERVER_NAME, toAcpKnowledgeMcpServer } from "../knowledge/gateway/descriptor";
 import {
   composeSecretEnv,
   materializeSecretInjection,
@@ -1265,7 +1262,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           if (modeSelection) await request(modeSelection.method, modeSelection.params);
           if (cfg.id === "codex" && configuredGatewayDescriptor && knowledgeMcpServers.length > 0) {
             await awaitAcpMcpServerTools({
-              serverName: "skynet-knowledge",
+              serverName: TOOL_GATEWAY_SERVER_NAME,
               readStatus: async () => {
                 const capture = { text: "" };
                 mcpStatusCapture = capture;

@@ -52,7 +52,7 @@ describe("T3 Cube environment", () => {
   });
 
   test("uses the operator runtime generation as the single source of truth", () => {
-    expect(runtimeGeneration({})).toBe("useagent-runtime-v7");
+    expect(runtimeGeneration({})).toBe("useagent-runtime-v8");
     expect(runtimeGeneration({ USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v9" }))
       .toBe("useagent-runtime-v9");
     expect(() => runtimeGeneration({ USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v8-candidate" }))
@@ -118,7 +118,8 @@ describe("T3 Cube environment", () => {
     expect(command).toContain('export T3CODE_HOME="$HOME/.skynet/t3"');
     expect(command).toContain("export T3CODE_HOST=0.0.0.0");
     expect(command).toContain(`export T3CODE_PORT=${RUNTIME_ENVIRONMENT_PORT}`);
-    expect(command).toContain("export T3_CODEX_REQUIRED_MCP_SERVERS=skynet-knowledge");
+    expect(command).toContain("export T3_CODEX_REQUIRED_MCP_SERVERS=useagent");
+    expect(command).toContain('printf \'%s\\n\' "useagent" > "$HOME/.skynet/t3/.useagent-required-mcp"');
     expect(command).toContain("export RUNTIME_CODEX_CHILD_EVENT_FORWARDING=true");
     expect(command).toContain("export T3_CODEX_CHILD_EVENT_FORWARDING=true");
     expect(command).toContain("export T3CODE_NO_BROWSER=true");
@@ -141,6 +142,8 @@ describe("T3 Cube environment", () => {
   test("uses a loopback readiness probe", () => {
     const command = buildRuntimeEnvironmentReadinessCommand();
 
+    expect(command).toContain(".useagent-required-mcp");
+    expect(command).toContain('= "useagent"');
     expect(command).toContain(`http://127.0.0.1:${RUNTIME_ENVIRONMENT_PORT}/api/auth/session`);
     expect(command).not.toContain("0.0.0.0");
   });

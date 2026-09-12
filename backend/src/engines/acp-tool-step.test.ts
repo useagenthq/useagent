@@ -71,7 +71,7 @@ describe("buildAcpToolStep", () => {
     const step = buildAcpToolStep(
       {
         kind: "other",
-        title: "mcp__skynet-browser__browser_navigate",
+        title: "mcp__useagent-browser__browser_navigate",
         rawInput: { url: "https://example.com" },
       },
       "navigated",
@@ -79,8 +79,8 @@ describe("buildAcpToolStep", () => {
     );
 
     expect(step.code_json).toMatchObject({
-      tool: "mcp__skynet-browser__browser_navigate",
-      title: "mcp__skynet-browser__browser_navigate",
+      tool: "mcp__useagent-browser__browser_navigate",
+      title: "mcp__useagent-browser__browser_navigate",
     });
     expect(step.chip).toBe("mcp");
   });
