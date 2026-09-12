@@ -722,7 +722,7 @@ export class SshPromotionEffects implements PromotionEffects {
 				composePromotionCommand(
 					this.#config,
 					record,
-					`up -d --no-deps --wait --wait-timeout ${seconds} backend`,
+					"up -d --no-deps backend",
 				),
 		);
 	}
