@@ -7,9 +7,21 @@ import { resolvePreviewSandbox } from "./preview-proxy";
 import { errorMessage } from "../util/error-message";
 import { createTerminalChunkDecoder } from "./terminal-decode";
 import { isSandboxTerminalUnavailableError } from "@useagent/sandbox-contract";
+import { PersonalSandboxConnectionUnavailableError } from "../sandboxes/binding";
 
 /** The notice line the pane recognizes as a declared capability gap (no reconnect loop). */
 export const TERMINAL_UNAVAILABLE_NOTICE = "[useAgent] terminal unavailable:";
+
+export function terminalFailureNotice(error: unknown): string {
+  const message = errorMessage(error);
+  if (error instanceof PersonalSandboxConnectionUnavailableError || isSandboxTerminalUnavailableError(error)) {
+    return `\r\n\x1b[2m${TERMINAL_UNAVAILABLE_NOTICE} ${message}\x1b[0m\r\n`;
+  }
+  if (/not found|no live sandbox/i.test(message)) {
+    return "\r\n\x1b[2m[useAgent] no live sandbox yet\x1b[0m\r\n";
+  }
+  return `\r\n\x1b[31m[useAgent] ${message}\x1b[0m\r\n`;
+}
 
 // ---------------------------------------------------------------------------
 // Interactive terminal — a WebSocket bridge from the browser's xterm.js into
@@ -93,20 +105,9 @@ terminalRoutes.get(
             send("\x1b[2m[useAgent] connected to sandbox " + sandboxId.slice(0, 8) + "\x1b[0m\r\n");
             await pty.sendInput("cd ~/work 2>/dev/null || cd ~; printf '\\033[2J\\033[H'\n");
           } catch (err) {
-            const message = errorMessage(err);
-            // A reaped/absent sandbox is the NORMAL idle state between runs,
-            // not a fault: send the dim "no live sandbox" notice (the client
-            // filters that phrase into one calm waiting line) instead of a red
-            // error that repeats on every reconnect.
-            if (/not found|no live sandbox/i.test(message)) {
-              send("\r\n\x1b[2m[useAgent] no live sandbox yet\x1b[0m\r\n");
-            } else if (isSandboxTerminalUnavailableError(err)) {
-              // A declared capability gap (Box without its CLI on this server):
-              // one calm line the pane keeps, and no reconnect loop.
-              send(`\r\n\x1b[2m${TERMINAL_UNAVAILABLE_NOTICE} ${message}\x1b[0m\r\n`);
-            } else {
-              send(`\r\n\x1b[31m[useAgent] ${message}\x1b[0m\r\n`);
-            }
+            // Missing sandboxes may wake on a later run. Revoked credentials
+            // and unavailable capabilities need operator action, not retries.
+            send(terminalFailureNotice(err));
             try {
               ws.close();
             } catch {

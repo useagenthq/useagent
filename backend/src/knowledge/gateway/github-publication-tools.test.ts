@@ -113,6 +113,7 @@ function dependencies(overrides: Partial<PublicationToolDependencies> = {}): Pub
       threadId: claims.threadId,
       projectId: null,
       sandboxId: "sandbox-a",
+      sandboxProvider: "daytona",
       resolvedResources: [resource],
     }) as never,
     resolveToken: async () => "server-secret",
@@ -181,6 +182,28 @@ async function reconcilePullCandidate(candidate: Record<string, unknown>) {
 }
 
 describe("GitHub publication gateway workflow", () => {
+  test.each([
+    ["daytona", "/root/work"],
+    ["cube", "/root/work"],
+    ["box", "/home/user/work"],
+  ] as const)("prepare uses the attached %s workspace, never a tool-supplied root", async (kind, root) => {
+    const base = dependencies();
+    const reads: Array<[string, string, string]> = [];
+    const execute = createGithubPublicationToolExecutor(dependencies({
+      getRun: async (...args) => ({ ...(await base.getRun(...args))!, sandboxProvider: kind }),
+      readSandboxBundle: async (...args) => {
+        reads.push(args);
+        return base.readSandboxBundle(...args);
+      },
+    }));
+    const result = await execute(claims, "github_changeset_prepare", {
+      repository: "acme/widget", targetBranch: "main",
+      bundlePath: `${root}/bundle.json`, workspaceRoot: "/tmp/untrusted",
+    });
+    expect(result.isError).not.toBe(true);
+    expect(reads).toEqual([["sandbox-a", `${root}/bundle.json`, root]]);
+  });
+
   test("prepare freezes server-resolved base SHA and content-addressed payload for the live binding", async () => {
     const frozenInputs: Array<Parameters<PublicationToolDependencies["freeze"]>[0]> = [];
     const stored: Array<{ key: string; bytes: Uint8Array }> = [];

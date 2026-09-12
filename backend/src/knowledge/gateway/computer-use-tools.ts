@@ -1,7 +1,6 @@
 import { ensureSandboxDesktopView } from "../../engines/desktop";
 import { getRunForOrg } from "../../runs/repo";
-import { sandboxPlugin } from "../../sandboxes/plugins";
-import { type SandboxHandle, sandboxProviderKind } from "../../sandboxes/provider";
+import { type SandboxHandle, sandboxProviderKind, sandboxRuntimeLayout } from "../../sandboxes/provider";
 import { executeArtifactTool, type ToolResult } from "./artifact-tools";
 import { compressScreenshotForModel } from "./screenshot-compression";
 import type { ToolTokenClaims } from "./token";
@@ -442,9 +441,8 @@ function buttonNumber(button: Button): number {
 }
 
 export async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<ComputerToolResult> {
-  const plugin = sandboxPlugin(sandbox.providerKind ?? sandboxProviderKind());
-  const base = sandbox.computerUse ? "/home/daytona" : plugin.runsAsRoot ? "/root" : plugin.home;
-  const path = `${base}/work/screenshots/screenshot-${Date.now()}.png`;
+  const workspaceRoot = sandboxRuntimeLayout(sandbox.providerKind ?? sandboxProviderKind()).workdir;
+  const path = `${workspaceRoot}/screenshots/screenshot-${Date.now()}.png`;
   let file: Buffer;
   if (sandbox.computerUse) {
     const captured = await sandbox.computerUse.screenshot.takeFullScreen(true);

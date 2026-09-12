@@ -110,6 +110,7 @@ export interface TerminalGrid {
  * the terminal buffer so reconnect backoff cannot turn one idle state into an
  * ever-growing wall of wrapped status text. */
 export function isIdleTerminalNotice(text: string): boolean {
+  if (isTerminalUnavailableNotice(text)) return false;
   return (
     text.includes("no live sandbox") ||
     /\[(?:skynet|useAgent)\][^\n]*\bno-sandbox\b/i.test(text) ||

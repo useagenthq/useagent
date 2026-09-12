@@ -30,6 +30,7 @@ import {
   type FrozenGitHubPayload,
 } from "../../github/publisher";
 import { getRunForOrg } from "../../runs/repo";
+import { resolveAttachedSandboxWorkspaceRoot } from "../../sandboxes/workspace";
 import type { GatewayToolDescriptor } from "./descriptor";
 import { hasGitHubRepositoryCheckoutIntent } from "../../resources/public-github";
 import { isProtectedInjectedSecretPath } from "../../secrets/inject";
@@ -62,7 +63,7 @@ export const GITHUB_PUBLICATION_TOOLS: readonly GatewayToolDescriptor[] = [
         bundlePath: {
           type: "string",
           description:
-            "Canonical /root/work path to a JSON bundle shaped as {version:1,changes:[{path,action,contentBase64?,mode?,previousPath?}]} in the live sandbox. The trusted backend streams and bounds this file directly; large file bytes never cross the public MCP request body.",
+            "Canonical absolute path beneath the current sandbox workspace to a JSON bundle shaped as {version:1,changes:[{path,action,contentBase64?,mode?,previousPath?}]}. The trusted backend streams and bounds this file directly; large file bytes never cross the public MCP request body.",
         },
         title: { type: "string" },
         summary: { type: "string" },
@@ -120,7 +121,7 @@ export interface PublicationToolDependencies {
   readonly resolveToken: typeof resolveGithubPublicationToken;
   readonly fetch: PublicationFetch;
   readonly putPayload: (key: string, bytes: Uint8Array) => Promise<void>;
-  readonly readSandboxBundle: (sandboxId: string, path: string) => Promise<Uint8Array>;
+  readonly readSandboxBundle: (sandboxId: string, path: string, workspaceRoot: string) => Promise<Uint8Array>;
   readonly readPayload: (key: string) => Promise<Uint8Array>;
   readonly freeze: typeof freezeGitHubChangeSet;
   readonly getChangeSet: typeof getGitHubChangeSetForOrg;
@@ -142,20 +143,20 @@ const productionDependencies: PublicationToolDependencies = {
   resolveToken: resolveGithubPublicationToken,
   fetch,
   putPayload: (key, bytes) => artifactStorage().put(key, bytes),
-  readSandboxBundle: async (sandboxId, path) => {
+  readSandboxBundle: async (sandboxId, path, workspaceRoot) => {
     const requested = path.trim();
     if (
       !requested ||
       !posix.isAbsolute(requested) ||
       posix.normalize(requested) !== requested ||
-      !requested.startsWith("/root/work/") ||
+      !requested.startsWith(`${workspaceRoot}/`) ||
       isProtectedInjectedSecretPath(requested)
     ) {
-      throw new Error("bundlePath must be a canonical non-secret path under /root/work");
+      throw new Error(`bundlePath must be a canonical non-secret path under ${workspaceRoot}`);
     }
     const resolved = await resolveSandboxFilePath(sandboxId, requested);
-    if (resolved !== requested || !resolved.startsWith("/root/work/") || isProtectedInjectedSecretPath(resolved)) {
-      throw new Error("bundlePath must not traverse or use a symlink outside /root/work");
+    if (resolved !== requested || !resolved.startsWith(`${workspaceRoot}/`) || isProtectedInjectedSecretPath(resolved)) {
+      throw new Error(`bundlePath must not traverse or use a symlink outside ${workspaceRoot}`);
     }
     return (await downloadSandboxFile(sandboxId, resolved, MAX_BUNDLE_BYTES)).bytes;
   },
@@ -407,6 +408,7 @@ async function prepare(
   const bundleBytes = await deps.readSandboxBundle(
     run.sandboxId,
     requiredString(args.bundlePath, "bundlePath"),
+    await resolveAttachedSandboxWorkspaceRoot({ sandboxId: run.sandboxId, sandboxProvider: run.sandboxProvider }),
   );
   let bundle: unknown;
   try {

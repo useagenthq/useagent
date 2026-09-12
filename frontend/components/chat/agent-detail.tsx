@@ -20,6 +20,7 @@ import {
 import type { SubagentCard } from "@/components/chat/subagents";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
 import { type ApiStep, deriveTrace } from "@/components/chat/types";
+import { Markdown } from "@/components/prompt-kit/markdown";
 import { formatDuration } from "@/utils/format";
 import {
   formatSubagentCostUsd,
@@ -173,14 +174,14 @@ export function AgentDetail({
             <p className="text-mono-label text-text-tertiary mb-1">
               {status === "failed" ? "Error" : "Answer"}
             </p>
-            <p
+            <Markdown
               className={cn(
-                "text-body-2-regular whitespace-pre-wrap break-words",
+                "text-body-2-regular break-words",
                 status === "failed" ? "text-text-error-primary" : "text-text-primary",
               )}
             >
               {fidelity.resultText}
-            </p>
+            </Markdown>
           </div>
         )}
 

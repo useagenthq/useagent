@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Ghostty } from "ghostty-web";
 
 import {
   TERMINAL_FALLBACK_FONTS,
@@ -10,6 +11,24 @@ import {
   isIdleTerminalNotice,
   isTerminalUnavailableNotice,
 } from "./terminal-surface";
+
+test("fresh parser instances do not inherit disposed terminal cells", async () => {
+  const wasm = new URL("../../node_modules/ghostty-web/ghostty-vt.wasm", import.meta.url);
+  const old = (await Ghostty.load(wasm.pathname)).createTerminal(80, 24);
+  old.write("PRIVATE_OLD_SCREEN 한글 漢字 👩‍💻 🇺🇸\r\n");
+  old.free();
+  const next = (await Ghostty.load(wasm.pathname)).createTerminal(80, 24);
+  try {
+    expect(next.getViewport().filter((cell) => cell.codepoint > 32)).toHaveLength(0);
+    next.write("NEW_SESSION_OK");
+    const line = next.getLine(0);
+    if (!line) throw new Error("new terminal has no first row");
+    expect(String.fromCodePoint(...line.map((cell) => cell.codepoint || 32)).trim())
+      .toBe("NEW_SESSION_OK");
+  } finally {
+    next.free();
+  }
+});
 
 describe("quoteTerminalFontFamilies", () => {
   test("quotes names that are not plain idents", () => {
@@ -137,7 +156,15 @@ describe("isIdleTerminalNotice", () => {
 });
 
 describe("isTerminalUnavailableNotice", () => {
+  test("a missing personal connection is permanent, not an idle sandbox", () => {
+    const notice = "\r\n\x1b[2m[useAgent] terminal unavailable: the recorded personal connection was not found\x1b[0m\r\n";
+    expect(isTerminalUnavailableNotice(notice)).toBe(true);
+    expect(isIdleTerminalNotice(notice)).toBe(false);
+  });
   test("recognizes the backend's declared capability gap and nothing else", () => {
+    expect(isTerminalUnavailableNotice(
+      "\r\n\x1b[2m[useAgent] terminal unavailable: the daytona connection that created this sandbox has been revoked\x1b[0m\r\n",
+    )).toBe(true);
     expect(
       isTerminalUnavailableNotice(
         "\r\n\x1b[2m[useAgent] terminal unavailable: Box terminals need the Box CLI (box) installed on the useAgent server\x1b[0m\r\n",

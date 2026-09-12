@@ -5,6 +5,7 @@ import { publishSandboxArtifact } from "../../artifacts/publish";
 import { acceptWorkpieceProposal, proposeWorkpieceEdit } from "../../artifacts/proposals";
 import { toArtifactDescriptor, type ArtifactDescriptor } from "../../artifacts/repo";
 import { isProtectedInjectedSecretPath } from "../../secrets/inject";
+import { requiresScreenshotProofPurpose } from "../../sandboxes/workspace";
 import {
   absoluteArtifactPreviewUrl,
   absoluteArtifactUrl,
@@ -28,13 +29,6 @@ const failure = (text: string): ToolResult => ({
   content: [{ type: "text", text }],
   isError: true,
 });
-
-const INSPECTION_SCREENSHOT_PATH =
-  /^(?:\/root|\/home\/daytona)\/work\/screenshots\/screenshot-\d+\.png$/;
-
-function requiresUserProofPurpose(path: string): boolean {
-  return INSPECTION_SCREENSHOT_PATH.test(path);
-}
 
 export const ARTIFACT_TOOLS = [
   {
@@ -74,7 +68,7 @@ export const ARTIFACT_TOOLS = [
       properties: {
         path: {
           type: "string",
-          description: "Path to the completed file inside your sandbox.",
+          description: "Canonical absolute path to the completed file beneath the workspace reported by your sandbox runtime. Do not copy it to another home directory.",
         },
         name: {
           type: "string",
@@ -259,7 +253,7 @@ export async function executeArtifactTool(
   ) {
     return failure("Protected secret paths and dotenv files cannot be published as artifacts.");
   }
-  if (requiresUserProofPurpose(path) && args.purpose !== "user_requested_proof") {
+  if (requiresScreenshotProofPurpose(path) && args.purpose !== "user_requested_proof") {
     return failure(
       "Private desktop inspection screenshots can only be published when the user explicitly requested durable proof. Retry artifact_publish with purpose=user_requested_proof for the final requested screenshot only.",
     );
@@ -275,6 +269,9 @@ export async function executeArtifactTool(
       runId: claims.runId,
       threadId: claims.threadId,
       path,
+      ...(args.purpose === "user_requested_proof" || args.purpose === "deliverable"
+        ? { purpose: args.purpose }
+        : {}),
       ...(typeof args.name === "string" && args.name.trim() ? { name: args.name.trim() } : {}),
       ...(editablePath ? { editablePath } : {}),
       ...(updatesArtifactId ? { updatesArtifactId } : {}),
