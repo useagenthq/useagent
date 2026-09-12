@@ -4,6 +4,37 @@ import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Orb, ORB_DARK_INK, ORB_TONES } from "./orb";
 
+type Rgb = readonly [number, number, number];
+
+function luminance(rgb: Rgb): number {
+  const channel = (value: number) => {
+    const normalized = value / 255;
+    return normalized <= 0.04045
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+}
+
+function contrast(a: Rgb, b: Rgb): number {
+  const [lighter, darker] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return ((lighter ?? 0) + 0.05) / ((darker ?? 0) + 0.05);
+}
+
+function rgbVariable(block: string, name: string): Rgb {
+  const match = new RegExp(`--${name}: rgb\\((\\d+) (\\d+) (\\d+)\\)`).exec(block);
+  if (!match) throw new Error(`missing ${name} RGB variable`);
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function whiteSheen(rgb: Rgb, alpha: number): Rgb {
+  return [
+    Math.round(rgb[0] * (1 - alpha) + 255 * alpha),
+    Math.round(rgb[1] * (1 - alpha) + 255 * alpha),
+    Math.round(rgb[2] * (1 - alpha) + 255 * alpha),
+  ];
+}
+
 describe("Orb", () => {
   test("every tone is stamped on the element and carries no raw color in markup", () => {
     for (const tone of ORB_TONES) {
@@ -92,9 +123,26 @@ describe("the orb recipe in globals.css", () => {
   });
 
   test("ink is white by default, black when the component says so, with a shadow only under white", () => {
-    expect(block(".orb")).toContain("color: hsl(var(--static-white))");
-    expect(block('.orb[data-ink="dark"]')).toContain("color: hsl(var(--static-black))");
+    expect(block(".orb")).toContain("color: rgb(255 255 255)");
+    expect(block('.orb[data-ink="dark"]')).toContain("color: rgb(0 0 0)");
     expect(block('.orb[data-ink="light"] > svg')).toContain("drop-shadow(");
+  });
+
+  test("the palette keeps glyph contrast above 3:1 after the center sheen", () => {
+    const white: Rgb = [255, 255, 255];
+    const black: Rgb = [0, 0, 0];
+    for (const tone of ORB_TONES) {
+      const pair = block(`.orb[data-tone="${tone}"]`);
+      const light = rgbVariable(pair, "orb-light");
+      const deep = rgbVariable(pair, "orb-deep");
+      const foreground = ORB_DARK_INK.has(tone) ? black : white;
+      const centerWithSheen = whiteSheen(light, 0.15);
+      const worstBackground = ORB_DARK_INK.has(tone) ? deep : centerWithSheen;
+      expect(contrast(foreground, worstBackground)).toBeGreaterThanOrEqual(3);
+      if (tone === "fuchsia" || tone === "slate") {
+        expect(contrast(foreground, whiteSheen(light, 0.2))).toBeGreaterThanOrEqual(3.2);
+      }
+    }
   });
 
   test("the prism variant is a pastel conic sweep with a dark ring on the wrapper", () => {

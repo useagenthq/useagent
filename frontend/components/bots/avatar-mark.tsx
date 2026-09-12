@@ -10,7 +10,7 @@ import {
   RiUserSearchLine,
 } from "@remixicon/react";
 import { Badge } from "@/components/base/badges/badge";
-import { Orb, type OrbProps, type OrbTone } from "@/components/base/orb/orb";
+import { Orb, type OrbProps, type OrbTone, ORB_TONES } from "@/components/base/orb/orb";
 import { cx } from "@/utils/cx";
 import { stateLabel } from "./roster-model";
 import type { BotState } from "./types";
@@ -20,7 +20,7 @@ import type { BotState } from "./types";
  * same in every theme, so a bot is recognizable wherever it appears. `prism`
  * is the iridescent ball.
  */
-const TONES: ReadonlySet<string> = new Set<OrbTone>(["blue", "violet", "emerald", "amber", "rose", "cyan", "fuchsia", "slate"]);
+const TONES: ReadonlySet<string> = new Set<OrbTone>(ORB_TONES);
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   robot: RiRobot2Line,
@@ -62,8 +62,8 @@ export function StateBadge({ state }: { state: BotState }) {
 /**
  * A glossy orb in the bot's tone with its role glyph centered on it - the one
  * avatar language for every place a bot appears. The glyph's ink (white on a
- * deep ball, black on a bright one) is the orb's own, decided per theme from
- * the tone it resolves to. State is one small dot in the theme's
+ * deep ball, black on a bright one) is fixed per identity tone. State is one
+ * small dot in the theme's
  * success/warning color, paired with the StateBadge wherever the name is shown.
  */
 export function AvatarMark({

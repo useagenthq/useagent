@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { RiFileLine } from "@remixicon/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MentionRowMark } from "@/components/chat/mention-row-mark";
+import { ORB_TONES } from "@/components/base/orb/orb";
 import { AvatarMark, botOrb } from "./avatar-mark";
 import { BOT_AVATAR_TONES } from "./types";
 
@@ -17,6 +18,9 @@ describe("AvatarMark", () => {
 
   test("the picker offers the prism ball and it renders as the prism variant", () => {
     expect(BOT_AVATAR_TONES).toContain("prism");
+    expect(new Set(BOT_AVATAR_TONES.filter((tone) => tone !== "prism"))).toEqual(
+      new Set(ORB_TONES),
+    );
     expect(botOrb("prism")).toEqual({ variant: "prism" });
     expect(renderToStaticMarkup(<AvatarMark tone="prism" icon="compass" />)).toContain('data-variant="prism"');
   });

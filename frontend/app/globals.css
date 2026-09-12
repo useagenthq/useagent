@@ -3723,11 +3723,11 @@ html {
  * drop shadow. The component stamps `data-ink` from the same list.
  * ------------------------------------------------------------------------- */
 .orb {
-  color: hsl(var(--static-white));
+  color: rgb(255 255 255);
 }
 
 .orb[data-ink="dark"] {
-  color: hsl(var(--static-black));
+  color: rgb(0 0 0);
 }
 
 .orb[data-tone="blue"] {
@@ -3755,11 +3755,11 @@ html {
   --orb-deep: rgb(0 119 182);
 }
 .orb[data-tone="fuchsia"] {
-  --orb-light: rgb(217 70 239);
+  --orb-light: rgb(198 52 218);
   --orb-deep: rgb(162 0 190);
 }
 .orb[data-tone="slate"] {
-  --orb-light: rgb(120 134 160);
+  --orb-light: rgb(96 112 142);
   --orb-deep: rgb(52 64 88);
 }
 
