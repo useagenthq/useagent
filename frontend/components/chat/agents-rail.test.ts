@@ -2,13 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createCanonicalThreadStore, type CanonicalThreadEvent } from "@useagent/agent-client";
-import {
-  AgentDetail,
-  AgentsRail,
-  childElapsedMs,
-  childStatusLabel,
-  focusNodeIdFor,
-} from "./agents-rail";
+import { AgentDetail } from "./agent-detail";
+import { childElapsedMs, childStatusLabel } from "./agent-status";
+import { AgentsRail, focusNodeIdFor } from "./agents-rail";
 import { projectChildTree } from "./child-tree-projector";
 import type { CanonicalChildEventLike } from "./canonical-children";
 import type { GatewayChildSession } from "./gateway-children";

@@ -298,7 +298,7 @@ describe("unified shell contract", () => {
 
   test("gives the reply composer drafting room without a second boxed wrapper", () => {
     const composer = readFromFrontend("components/chat/composer.tsx");
-    const conversation = readFromFrontend("components/chat/conversation.tsx");
+    const conversation = readFromFrontend("components/chat/reply-composer.tsx");
     const promptInput = readFromFrontend("components/prompt-kit/prompt-input.tsx");
 
     expect(composer).toContain("maxHeight={180}");

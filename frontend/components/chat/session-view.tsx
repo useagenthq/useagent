@@ -13,6 +13,7 @@ import {
   RiTerminalBoxLine,
 } from "@remixicon/react";
 import type { RunResourceSelection } from "@useagent/agent-client/wire";
+import { replyRunBody } from "@/components/chat/reply-run-body";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentsRail } from "@/components/chat/agents-rail";
 import { deriveThreadGatewayChildren } from "@/components/chat/gateway-children";
@@ -394,29 +395,10 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
                 text,
                 ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}),
               }, idempotencyKey)
-          : await createRun({
-            prompt: text,
-            engine,
-            // Only engines with negotiated selection receive a model override.
-            ...(modelSelection ? { model } : {}),
-            parent_run_id: newest.id,
-            // Explicitly preserve the composer's chosen memory scope.
-            memory_scope: memoryScope,
-            ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}),
-            ...(resources.length > 0 ? { resources } : {}),
-            ...(botMentions.length > 0 ? { bot_mentions: botMentions } : {}),
-            // Catalog commands carry the exact provider session and revision so stale intent fails closed.
-            ...(command
-              ? {
-                  command: {
-                    ...command,
-                    provider: engine,
-                    sessionId: engineSessionId ?? undefined,
-                    catalogRevision: commandCatalogRevision ?? undefined,
-                  },
-                }
-              : {}),
-          }, idempotencyKey);
+          : await createRun(replyRunBody({
+            text, engine, model: modelSelection ? model : null, parentRunId: newest.id, memoryScope,
+            attachmentIds, resources, botMentions, command, engineSessionId, commandCatalogRevision,
+          }), idempotencyKey);
         if (!res.ok) throw new Error(await runCreateFailureMessage(res, `backend ${res.status}`));
         // Keep the accepted run visible until SSE/reconcile observes its durable id.
         const body = (await res.json().catch(() => ({}))) as { id?: unknown };
