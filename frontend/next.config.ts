@@ -58,6 +58,11 @@ export default function nextConfig(phase: string): NextConfig {
     // We maintain AGENTS.md by hand — stop Next 16 from regenerating it.
     agentRules: false,
     allowedDevOrigins: ["127.0.0.1"],
+    // The port bridge (/api/port-proxy/<thread>/<port>/) needs its trailing
+    // slash so a served app's relative links stay inside the bridge; Next's
+    // default redirect strips it and loops against the backend's own redirect.
+    // proxy.ts keeps the page redirect for every non-API path.
+    skipTrailingSlashRedirect: true,
     async rewrites() {
       // Same override lib/backend-fetch.ts honors, so one env var retargets both
       // the server-side fetches and this client-side rewrite (e.g. :3501 locally).

@@ -31,4 +31,11 @@ describe("authentication proxy", () => {
       expect(response.headers.get("x-middleware-next")).toBe("1");
     },
   );
+  test("keeps pages on their canonical no-slash path now that Next no longer redirects", () => {
+    const response = proxy(new NextRequest("https://useagent.example.com/agent/new/?skill=fix"));
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe("https://useagent.example.com/agent/new?skill=fix");
+    expect(proxy(new NextRequest("https://useagent.example.com/")).status).not.toBe(308);
+  });
 });

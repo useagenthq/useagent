@@ -33,6 +33,7 @@ import { pullsRoutes } from "./github/pulls-routes";
 import { desktopProxyRoutes } from "./runs/desktop-proxy";
 import { fleetRoutes } from "./runs/fleet-routes";
 import { liveProxyRoutes } from "./runs/live-proxy";
+import { portProxyRoutes } from "./runs/port-proxy";
 import { recoverStaleRuns, startReconcileLoop } from "./runs/recovery";
 import {
   reconcileFleetOnBoot,
@@ -423,6 +424,7 @@ app.route("/api/live-proxy", liveProxyRoutes);
 // noVNC's static app over HTTP and its RFB WebSocket, injecting the Daytona
 // preview token on both (shares the `websocket` handler above).
 app.route("/api/desktop-proxy", desktopProxyRoutes);
+app.route("/api/port-proxy", portProxyRoutes);
 // Real GitHub repository list for the New Task composer's repo picker. The
 // backend-held token stays server-side; unconfigured → {configured:false}.
 app.route("/api/repos", reposRoutes);
