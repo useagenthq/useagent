@@ -29,7 +29,12 @@ export async function acceptResolvedThreadFollowup(input: {
   if (input.requireRelationship && !await getThreadRelationship(input.orgId, input.command.run.threadId)) {
     return { status: "not_found" };
   }
-  const [parent] = await db.select({ id: runs.id, origin: runs.origin }).from(runs).where(and(
+  const [parent] = await db.select({
+    id: runs.id,
+    origin: runs.origin,
+    engine: runs.engine,
+    model: runs.model,
+  }).from(runs).where(and(
     eq(runs.orgId, input.orgId),
     eq(runs.threadId, input.command.run.threadId),
     eq(runs.id, input.expectedParentRunId),
@@ -41,9 +46,14 @@ export async function acceptResolvedThreadFollowup(input: {
     )).orderBy(desc(runs.createdAt), desc(runs.id)).limit(1);
     if (latest?.id !== input.expectedParentRunId) return { status: "stale_parent" };
   }
-  const command = input.requireCurrentHead
-    ? { ...input.command, expectedThreadHeadRunId: input.expectedParentRunId }
+  const inheritsParentModel =
+    input.command.run.engine === parent.engine && input.command.run.model === parent.model;
+  const authorizedCommand = inheritsParentModel
+    ? { ...input.command, acceptedModelPolicy: "persisted" as const }
     : input.command;
+  const command = input.requireCurrentHead
+    ? { ...authorizedCommand, expectedThreadHeadRunId: input.expectedParentRunId }
+    : authorizedCommand;
   try {
     if (input.origin) {
       return await acceptUnattendedRunCommand({ ...command, origin: input.origin });

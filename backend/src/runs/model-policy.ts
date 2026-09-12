@@ -8,6 +8,8 @@ export const DEEPSEEK_V4_FLASH_MODEL = "deepseek/deepseek-v4-flash";
 export const GEMINI_FLASH_MODEL = "google/gemini-3.7-flash";
 export const FAST_OPENCODE_MODEL = "openai/gpt-5.6-luna";
 export const FAST_CODEX_MODEL = "gpt-5.6-luna";
+export const CEREBRAS_QWEN_MODEL = "cerebras/qwen-3.8-27b";
+/** Kept for durable runs created before the picker moved to Qwen 3.8. */
 export const CEREBRAS_GEMMA_MODEL = "cerebras/gemma-4-31b";
 export const CODEX_ALLOWED_MODELS = [
   FAST_CODEX_MODEL,
@@ -33,7 +35,7 @@ export const OPENCODE_ALLOWED_MODELS = {
     DEEPSEEK_V4_FLASH_MODEL,
     GEMINI_FLASH_MODEL,
   ],
-  cerebras: [CEREBRAS_GEMMA_MODEL],
+  cerebras: [CEREBRAS_QWEN_MODEL],
 } as const;
 
 // The Free lane (OpenRouter ":free" variants, OpenCode only) is DYNAMIC. The
@@ -54,6 +56,7 @@ const OPENCODE_MODELS = new Set<string>([
 ]);
 const SHARED_SANDBOX_MODEL_SET = new Set<string>(SHARED_SANDBOX_MODELS);
 const CLAUDE_MODELS = new Set<string>(OPENCODE_ALLOWED_MODELS.anthropic);
+const PERSISTED_OPENCODE_MODELS = new Set<string>([CEREBRAS_GEMMA_MODEL]);
 export const DEFAULT_OPENCODE_MODEL = FAST_OPENCODE_MODEL;
 export const DEFAULT_CLAUDE_MODEL = "claude-opus-5";
 export const DEFAULT_CODEX_MODEL = FAST_CODEX_MODEL;
@@ -151,6 +154,7 @@ export function isPersistedModelAllowedForEngine(
   model: string,
   env: Record<string, string | undefined> = process.env,
 ): boolean {
+  if (engine === "opencode" && PERSISTED_OPENCODE_MODELS.has(model)) return true;
   if (engine === "opencode" && model.includes("/") && model.endsWith(":free")) {
     return true;
   }
@@ -158,7 +162,8 @@ export function isPersistedModelAllowedForEngine(
 }
 
 /** A reply may inherit its durable parent's accepted model after a restart;
- * explicit switches must still be present in the current catalog. */
+ * explicit switches must still be present in the current catalog. Persisted
+ * policy also keeps retired curated models replayable after a catalog rotation. */
 export function isReplyModelAllowedForEngine(
   engine: EngineId,
   model: string,

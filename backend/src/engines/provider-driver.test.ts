@@ -159,7 +159,7 @@ describe("OpenCode provider driver", () => {
       runId: "run-1",
       threadId: "thread-1",
       session: sessionFor(driver),
-      input: { kind: "prompt", text: "hello", model: "cerebras/gemma-4-31b" },
+      input: { kind: "prompt", text: "hello", model: "cerebras/qwen-3.8-27b" },
     })).resolves.toEqual({ status: "ok" });
     expect(calls).toBe(2);
   });

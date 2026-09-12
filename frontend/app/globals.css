@@ -3845,6 +3845,10 @@ html {
     0 0 0 2px rgb(0 0 0 / 0.35),
     0 0 0 3px hsl(var(--stroke-soft-200));
 }
+.orb[data-variant="prism"] > .orb-face > span {
+  background: rgb(0 0 0);
+  box-shadow: 0 1px 1.5px rgb(255 255 255 / 0.45);
+}
 
 /* ---------------------------------------------------------------------------
  * Theme-picker swatches - a fixed per-theme preview dot (canvas + accent split)

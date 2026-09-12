@@ -68,11 +68,13 @@ describe("Orb", () => {
     expect(html).toContain('aria-hidden="true"');
   });
 
-  test("the face variant draws two eyes above the ball", () => {
-    const html = renderToStaticMarkup(<Orb tone="emerald" face />);
-    const face = html.indexOf('class="orb-face"');
-    expect(face).toBeGreaterThan(html.lastIndexOf('data-layer="bounce"'));
-    expect(html.slice(face).match(/<span><\/span>/g)).toHaveLength(2);
+  test("the face variant draws two eyes above the ball at every supported size", () => {
+    for (const size of ["size-5", "size-6", "size-8", "size-10", "size-14", "size-16"]) {
+      const html = renderToStaticMarkup(<Orb tone="emerald" size={size} face />);
+      const face = html.indexOf('class="orb-face"');
+      expect(face).toBeGreaterThan(html.lastIndexOf('data-layer="bounce"'));
+      expect(html.slice(face).match(/<span><\/span>/g)).toHaveLength(2);
+    }
   });
 
   test("the prism variant carries no tone", () => {
@@ -145,5 +147,8 @@ describe("the orb recipe in globals.css", () => {
   test("the prism variant is a pastel conic sweep with a dark ring on the wrapper", () => {
     expect(block('.orb[data-variant="prism"] > .orb-ball')).toContain("conic-gradient(");
     expect(block('.orb[data-variant="prism"]')).toContain("0 0 0 2px rgb(0 0 0 / 0.35)");
+    const eye = block('.orb[data-variant="prism"] > .orb-face > span');
+    expect(eye).toContain("background: rgb(0 0 0)");
+    expect(eye).toContain("rgb(255 255 255 / 0.45)");
   });
 });

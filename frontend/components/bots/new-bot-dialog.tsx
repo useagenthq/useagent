@@ -32,9 +32,9 @@ function engineNote(engine: string): string {
 }
 
 /**
- * The reference's creation screen: one big avatar, a row of colors, a row of
- * shapes, a name, one button. Each swatch row is one radio group (one tab
- * stop, arrows move), and focus opens on the name. The job, rules and model
+ * The reference's creation screen: one big avatar, a row of colors, a name,
+ * one button. The color row is one radio group (one tab stop, arrows move),
+ * and focus opens on the name. The job, rules and model
  * live in the bot's details after creation; the engine is the one thing a bot
  * cannot change later, so it always shows here (a read-only line when only
  * one is ready).

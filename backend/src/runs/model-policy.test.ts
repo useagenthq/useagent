@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   CEREBRAS_GEMMA_MODEL,
+  CEREBRAS_QWEN_MODEL,
   CODEX_ALLOWED_MODELS,
   DEFAULT_CODEX_MODEL,
   DEFAULT_OPENCODE_MODEL,
@@ -35,7 +36,7 @@ describe("paid model policy", () => {
 
   test("allows only the curated OpenCode and Claude catalogs", () => {
     expect(DEEPSEEK_V4_FLASH_MODEL).toBe("deepseek/deepseek-v4-flash");
-    expect(CEREBRAS_GEMMA_MODEL).toBe("cerebras/gemma-4-31b");
+    expect(CEREBRAS_QWEN_MODEL).toBe("cerebras/qwen-3.8-27b");
     for (const model of Object.values(OPENCODE_ALLOWED_MODELS).flat()) {
       expect(isModelAllowedForEngine("opencode", model)).toBe(true);
     }
@@ -72,6 +73,15 @@ describe("paid model policy", () => {
   });
 
   test("durable OpenCode replay accepts only provider-qualified free variants beyond the live lane", () => {
+    expect(isModelAllowedForEngine("opencode", CEREBRAS_GEMMA_MODEL)).toBe(false);
+    expect(isPersistedModelAllowedForEngine("opencode", CEREBRAS_GEMMA_MODEL)).toBe(true);
+    expect(
+      isReplyModelAllowedForEngine(
+        "opencode",
+        CEREBRAS_GEMMA_MODEL,
+        CEREBRAS_GEMMA_MODEL,
+      ),
+    ).toBe(true);
     expect(isModelAllowedForEngine("opencode", "rotated/model:free")).toBe(false);
     expect(isPersistedModelAllowedForEngine("opencode", "rotated/model:free")).toBe(true);
     expect(isPersistedModelAllowedForEngine("opencode", "not-qualified:free")).toBe(false);

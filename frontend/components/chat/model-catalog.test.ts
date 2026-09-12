@@ -77,10 +77,13 @@ describe("engine model catalog", () => {
       "google/gemini-3.7-flash",
     );
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
+      "cerebras/qwen-3.8-27b",
+    );
+    expect(selectableModelsForEngine("opencode").map((m) => m.value)).not.toContain(
       "cerebras/gemma-4-31b",
     );
-    expect(modelLabel("cerebras/gemma-4-31b", "opencode")).toBe(
-      "Gemma 4 31B · Cerebras",
+    expect(modelLabel("cerebras/qwen-3.8-27b", "opencode")).toBe(
+      "Qwen 3.8 27B · Cerebras",
     );
   });
 

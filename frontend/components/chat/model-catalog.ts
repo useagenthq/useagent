@@ -32,7 +32,7 @@ export const MODELS: { value: string; label: string; tint: string }[] = [
 ];
 
 export const CEREBRAS_MODELS: ModelOption[] = [
-  { value: "cerebras/gemma-4-31b", label: "Gemma 4 31B · Cerebras", tint: "text-amber-500" },
+  { value: "cerebras/qwen-3.8-27b", label: "Qwen 3.8 27B · Cerebras", tint: "text-amber-500" },
 ];
 
 /** The Free lane SEED: curated labels for the backend's fallback lane and the
