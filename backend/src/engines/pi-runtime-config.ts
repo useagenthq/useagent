@@ -8,7 +8,7 @@ import {
   piToolGatewayDescriptor,
 } from "../provider-gateway/sandbox-config";
 import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
-import { ensureSandboxBun } from "./sandbox-bun";
+import { buildSandboxBunProbeCommand, ensureSandboxBun } from "./sandbox-bun";
 import type { EngineRunContext } from "./types";
 import { PI_BROKER_PORT, startPiCredentialBroker } from "./pi-credential-broker";
 
@@ -233,16 +233,32 @@ export async function preparePiRuntime(
       `chmod 711 /root && install -d -o ${PI_RUNTIME_USER} -g ${PI_RUNTIME_USER} -m 700 ` +
       `${shellQuote(agentDir)} ${shellQuote(workdir)} && ` +
       `chown -R ${PI_RUNTIME_USER}:${PI_RUNTIME_USER} ${shellQuote(workdir)} && ` +
+      `install -d -o root -g root -m 700 ${shellQuote(brokerRoot)} && ` +
       `install -d -m 755 ${shellQuote(runtimeManifestDir)}`
-    : `install -d -m 700 ${shellQuote(agentDir)} ${shellQuote(workdir)} && ` +
+    : `install -d -m 700 ${shellQuote(agentDir)} ${shellQuote(workdir)} ${shellQuote(brokerRoot)} && ` +
       `install -d -m 755 ${shellQuote(runtimeManifestDir)}`;
+  const setupCommand = layout.bunExecutable
+    ? `pi_directory_status=0; pi_bun_probe_status=0; ` +
+      `timeout --signal=TERM --kill-after=1s 20s sh -c ${shellQuote(directoriesCommand)} ` +
+      `& pi_directory_pid=$!; ` +
+      `timeout --signal=TERM --kill-after=1s 15s sh -c ` +
+      `${shellQuote(buildSandboxBunProbeCommand(layout))} & pi_bun_probe_pid=$!; ` +
+      `wait "$pi_directory_pid" || pi_directory_status=$?; ` +
+      `wait "$pi_bun_probe_pid" || pi_bun_probe_status=$?; ` +
+      `test "$pi_directory_status" -eq 0 || exit 30; ` +
+      `test "$pi_bun_probe_status" -eq 0 || exit 31`
+    : `(${directoriesCommand}) || exit 30`;
   const directories = await sandbox.process.executeCommand(
-    directoriesCommand,
+    setupCommand,
     undefined,
     undefined,
-    20,
+    layout.bunExecutable ? 30 : 20,
   );
-  if ((directories.exitCode ?? 1) !== 0) throw new Error("failed to prepare Pi config directories");
+  if (directories.exitCode === 31 && layout.bunExecutable) {
+    await ensureSandboxBun(sandbox, layout, ctx.signal);
+  } else if ((directories.exitCode ?? 1) !== 0) {
+    throw new Error("failed to prepare Pi config directories");
+  }
   const [runtimePackageJson, runtimeLockJson] = await runtimeFiles;
   await Promise.all([
     uploadPiFile(sandbox, modelsPath, modelJson),
@@ -250,9 +266,7 @@ export async function preparePiRuntime(
     uploadPiFile(sandbox, runtimePackagePath, runtimePackageJson),
     uploadPiFile(sandbox, runtimeLockPath, runtimeLockJson),
   ]);
-  if (layout.bunExecutable) {
-    await ensureSandboxBun(sandbox, layout, ctx.signal);
-  }
+  if (layout.bunExecutable) ctx.signal.throwIfAborted();
   const bunExecutable = layout.bunExecutable ?? `${runtimeRoot}/current/node_modules/.bin/bun`;
   const executable = `${runtimeRoot}/current/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`;
   await ensurePiRuntimeInstalled({
