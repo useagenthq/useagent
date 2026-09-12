@@ -198,6 +198,9 @@ describe("subagents fold (inline conversation group)", () => {
       />,
     );
     expect(html).toContain('data-testid="product-child-results"');
+    const resultsClass = html.match(/<li class="([^"]*)" data-testid="product-child-results"/)?.[1];
+    expect(resultsClass).toBeDefined();
+    expect(resultsClass).not.toMatch(/\b(?:border|bg-|shadow|rounded)/);
     expect(html).toContain("Combined results");
     expect(html).toContain("Paris line two.");
     expect(html).toContain("Rome line two.");
