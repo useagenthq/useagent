@@ -64,12 +64,26 @@ const CLAUDE_INSTALL_IDENTITY_SCRIPT = [
   'try{const packageRoot=fs.realpathSync(packageDirectory);const manifest=JSON.parse(fs.readFileSync(path.join(packageRoot,"package.json"),"utf8"));const binEntry=typeof manifest.bin==="string"?manifest.bin:manifest.bin?.claude;const binaryReal=fs.realpathSync(binary);const nodeModulesRoot=path.resolve(packageRoot,"../..");const isPlatformPackage=name=>name.startsWith("@anthropic-ai/claude-code-darwin-")||name.startsWith("@anthropic-ai/claude-code-linux-")||name.startsWith("@anthropic-ai/claude-code-win32-");const allowedRoots=[packageRoot,...Object.entries(manifest.optionalDependencies??{}).filter(([name,version])=>isPlatformPackage(name)&&version===expectedVersion).flatMap(([name])=>{try{const root=fs.realpathSync(path.join(nodeModulesRoot,name));const dependency=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));return dependency.name===name&&dependency.version===expectedVersion?[root]:[]}catch{return []}})];const contained=allowedRoots.some(root=>{const relative=path.relative(root,binaryReal);return relative!==""&&!relative.startsWith(".."+path.sep)&&!path.isAbsolute(relative)});fs.accessSync(binary,fs.constants.X_OK);if(manifest.name!=="@anthropic-ai/claude-code"||manifest.version!==expectedVersion||binEntry!=="bin/claude.exe"||!contained)throw new Error("identity_mismatch");process.exit(0)}catch{if(diagnostic)console.error("useagent-native-version-probe: install_identity_mismatch expected="+expectedVersion);process.exit(1)}',
 ].join(";");
 
+const OPENCODE_INSTALL_IDENTITY_SCRIPT = [
+  'const fs=require("node:fs"),path=require("node:path")',
+  'const binary=process.argv[1],packageDirectory=process.argv[2],expectedVersion=process.argv[3],diagnostic=process.argv[4]==="diagnostic"',
+  'try{const packageRoot=fs.realpathSync(packageDirectory);const manifest=JSON.parse(fs.readFileSync(path.join(packageRoot,"package.json"),"utf8"));const binEntry=typeof manifest.bin==="string"?manifest.bin:manifest.bin?.opencode;const binaryReal=fs.realpathSync(binary);const relative=path.relative(packageRoot,binaryReal);const contained=relative!==""&&!relative.startsWith(".."+path.sep)&&!path.isAbsolute(relative);fs.accessSync(binary,fs.constants.X_OK);if(manifest.name!=="opencode-ai"||manifest.version!==expectedVersion||binEntry!=="./bin/opencode.exe"||!contained||binaryReal!==fs.realpathSync(path.resolve(packageRoot,binEntry))||!fs.statSync(binaryReal).isFile())throw new Error("identity_mismatch");const fd=fs.openSync(binaryReal,"r"),magic=Buffer.alloc(4);try{if(fs.readSync(fd,magic,0,4,0)!==4||!magic.equals(Buffer.from([127,69,76,70])))throw new Error("not_native_elf")}finally{fs.closeSync(fd)}process.exit(0)}catch{if(diagnostic)console.error("useagent-native-version-probe: install_identity_mismatch expected="+expectedVersion);process.exit(1)}',
+].join(";");
+
 export function buildClaudeInstallIdentityProbeCommand(
   layout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT,
   diagnostic = false,
 ): string {
   const prefix = layout.runsAsRoot ? "/usr/local" : `${layout.home}/.local`;
   return `node -e ${JSON.stringify(CLAUDE_INSTALL_IDENTITY_SCRIPT)} ${JSON.stringify(`${prefix}/bin/claude`)} ${JSON.stringify(`${prefix}/share/useagent/native-engines/node_modules/@anthropic-ai/claude-code`)} ${JSON.stringify(CLAUDE_CODE_VERSION)} ${diagnostic ? "diagnostic" : "quiet"}`;
+}
+
+export function buildOpenCodeInstallIdentityProbeCommand(
+  layout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT,
+  diagnostic = false,
+): string {
+  const prefix = layout.runsAsRoot ? "/usr/local" : `${layout.home}/.local`;
+  return `node -e ${JSON.stringify(OPENCODE_INSTALL_IDENTITY_SCRIPT)} ${JSON.stringify(`${prefix}/bin/opencode`)} ${JSON.stringify(`${prefix}/share/useagent/native-engines/node_modules/opencode-ai`)} ${JSON.stringify(OPENCODE_VERSION)} ${diagnostic ? "diagnostic" : "quiet"}`;
 }
 
 function runtimeBridgeLayout(sandbox: Pick<SandboxHandle, "providerKind">): SandboxRuntimeLayout {
@@ -221,6 +235,22 @@ export function buildRuntimeProviderBootstrapCommand(
     "  trap - EXIT HUP INT TERM",
     "fi",
     buildClaudeInstallIdentityProbeCommand(layout, true),
+  ] : engine === "opencode" ? [
+    `NATIVE_PREFIX=${JSON.stringify(prefix)}`,
+    `NATIVE_BINARY=${JSON.stringify(nativeBinary)}`,
+    `NATIVE_GLOBAL_DIR=${JSON.stringify(nativeGlobalDirectory)}`,
+    `NATIVE_PACKAGE=${JSON.stringify(nativePackage)}`,
+    `BUN_EXECUTABLE=${JSON.stringify(bunExecutable)}`,
+    `if ! ${buildOpenCodeInstallIdentityProbeCommand(layout)}; then`,
+    '  test -x "$BUN_EXECUTABLE" || command -v "$BUN_EXECUTABLE" >/dev/null 2>&1',
+    `  BUN_CACHE="$(mktemp -d "\${TMPDIR:-/tmp}/useagent-${engine}-bun.XXXXXX")"`,
+    '  cleanup_native_bun() { rm -rf -- "$BUN_CACHE"; }',
+    "  trap cleanup_native_bun EXIT HUP INT TERM",
+    '  BUN_INSTALL_CACHE_DIR="$BUN_CACHE" BUN_INSTALL_GLOBAL_DIR="$NATIVE_GLOBAL_DIR" BUN_INSTALL_BIN="$NATIVE_PREFIX/bin" "$BUN_EXECUTABLE" add --global --exact --no-progress "$NATIVE_PACKAGE"',
+    "  cleanup_native_bun",
+    "  trap - EXIT HUP INT TERM",
+    "fi",
+    buildOpenCodeInstallIdentityProbeCommand(layout, true),
   ] : [
     `NATIVE_PREFIX=${JSON.stringify(prefix)}`,
     `NATIVE_BINARY=${JSON.stringify(nativeBinary)}`,
@@ -447,15 +477,19 @@ async function ensureRuntimeProviderBootstrap(
   const current = sandboxStates.get(command);
   if (current) {
     await current;
-    if (engine !== "claude") return;
+    if (engine === "codex") return;
+    const identityCommand = engine === "claude"
+      ? buildClaudeInstallIdentityProbeCommand(layout)
+      : buildOpenCodeInstallIdentityProbeCommand(layout);
     const identity = await sandbox.process
-      .executeCommand(buildClaudeInstallIdentityProbeCommand(layout), undefined, undefined, 10)
+      .executeCommand(identityCommand, undefined, undefined, 10)
       .catch(() => null);
     if (identity?.exitCode === 0) return;
 
     // The sandbox or retained filesystem changed after bootstrap. Evict only
     // this command's completed memo so the full exact Bun repair runs and
-    // writes a new health freshness fence before any provider dispatch.
+    // revalidates the install before native startup (and refreshes Claude's
+    // health fence) before any provider dispatch.
     const latest = sandboxStates.get(command);
     if (latest !== current) {
       if (latest) return await latest;

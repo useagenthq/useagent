@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
   awaitRuntimeProviderReady,
   buildClaudeInstallIdentityProbeCommand,
+  buildOpenCodeInstallIdentityProbeCommand,
   buildRuntimeProviderReadyProbeCommand,
   buildRuntimeProviderBootstrapCommand,
   claudeProviderReadiness,
@@ -22,6 +23,21 @@ const claudeEnvironment = {
 
 const previousGatewayUrl = process.env.PROVIDER_GATEWAY_PUBLIC_URL;
 const previousGatewaySecret = process.env.PROVIDER_GATEWAY_SECRET;
+
+// This is a header fixture for install validation, not a runnable native server.
+// Actual startup/session readiness belongs to the native adapter boundary.
+const nativeElfHeaderFixture = Buffer.from("\x7fELF\ninstall identity fixture\n");
+const openCodePostinstallPlaceholder = `echo "Error: opencode-ai's postinstall script was not run." >&2
+echo "" >&2
+echo "This occurs when using --ignore-scripts during installation, or when using a" >&2
+echo "package manager like pnpm that does not run postinstall scripts by default." >&2
+echo "" >&2
+echo "To fix this, run the postinstall script manually:" >&2
+echo "  cd node_modules/opencode-ai && node postinstall.mjs" >&2
+echo "" >&2
+echo "Or reinstall opencode-ai without the --ignore-scripts flag." >&2
+exit 1
+`;
 
 async function runColdClaudeBootstrap(
   binaryScript: (home: string) => string,
@@ -70,6 +86,51 @@ async function runColdClaudeBootstrap(
       env: { ...process.env, HOME: home, PATH: `${fakeTools}:${process.env.PATH}` },
     }),
     versionCountPath,
+  };
+}
+
+async function runColdOpenCodeBootstrap(
+  packageVersion = "1.18.7",
+  installedBinary: Uint8Array = nativeElfHeaderFixture,
+): Promise<{
+  home: string;
+  result: ReturnType<typeof Bun.spawnSync>;
+  launchMarker: string;
+}> {
+  const home = await mkdtemp(join(tmpdir(), "useagent-cold-opencode-bootstrap-"));
+  const fakeTools = join(home, "fake-tools");
+  const launchMarker = join(home, "opencode-launched");
+  await mkdir(fakeTools, { recursive: true });
+  const encodedBinary = Buffer.from(installedBinary).toString("base64");
+  const encodedManifest = Buffer.from(JSON.stringify({
+    name: "opencode-ai",
+    version: packageVersion,
+    bin: { opencode: "./bin/opencode.exe" },
+  }), "utf8").toString("base64");
+  await Bun.write(join(fakeTools, "bun"), [
+    "#!/bin/sh",
+    "set -eu",
+    'PACKAGE_DIR="$BUN_INSTALL_GLOBAL_DIR/node_modules/opencode-ai"',
+    'mkdir -p "$BUN_INSTALL_BIN" "$PACKAGE_DIR/bin"',
+    `printf %s '${encodedBinary}' | base64 -d > "$PACKAGE_DIR/bin/opencode.exe"`,
+    `printf %s '${encodedManifest}' | base64 -d > "$PACKAGE_DIR/package.json"`,
+    'chmod 700 "$PACKAGE_DIR/bin/opencode.exe"',
+    'ln -sf "$PACKAGE_DIR/bin/opencode.exe" "$BUN_INSTALL_BIN/opencode"',
+    "",
+  ].join("\n"));
+  await Bun.$`chmod 700 ${join(fakeTools, "bun")}`;
+  const command = buildRuntimeProviderBootstrapCommand("opencode", {}, {
+    home,
+    workdir: join(home, "work"),
+    runsAsRoot: false,
+    bunExecutable: join(fakeTools, "bun"),
+  });
+  return {
+    home,
+    result: Bun.spawnSync(["/bin/sh", "-c", command], {
+      env: { ...process.env, HOME: home, PATH: `${fakeTools}:${process.env.PATH}` },
+    }),
+    launchMarker,
   };
 }
 
@@ -309,8 +370,25 @@ describe("T3 provider bridge", () => {
         const settingsPath = join(home, ".skynet/t3/userdata/settings.json");
         await mkdir(bin, { recursive: true });
         await mkdir(join(home, ".skynet/t3/userdata"), { recursive: true });
-        await Bun.write(join(bin, engine.binary), `#!/bin/sh\necho '${engine.version}'\n`);
-        await Bun.$`chmod 700 ${join(bin, engine.binary)}`;
+        if (engine.id === "opencode") {
+          const packageDir = join(
+            home,
+            ".local/share/useagent/native-engines/node_modules/opencode-ai",
+          );
+          const packageBin = join(packageDir, "bin/opencode.exe");
+          await mkdir(join(packageDir, "bin"), { recursive: true });
+          await Bun.write(packageBin, nativeElfHeaderFixture);
+          await Bun.write(join(packageDir, "package.json"), JSON.stringify({
+            name: "opencode-ai",
+            version: "1.18.7",
+            bin: { opencode: "./bin/opencode.exe" },
+          }));
+          await Bun.$`chmod 700 ${packageBin}`;
+          await symlink(packageBin, join(bin, engine.binary));
+        } else {
+          await Bun.write(join(bin, engine.binary), `#!/bin/sh\necho '${engine.version}'\n`);
+          await Bun.$`chmod 700 ${join(bin, engine.binary)}`;
+        }
         const untouched = { enabled: true, binaryPath: "/keep/me" };
         await Bun.write(settingsPath, JSON.stringify({
           providers: { claudeAgent: untouched },
@@ -389,6 +467,76 @@ exit 17
     try {
       expect(run.result.exitCode).toBe(0);
       expect(await Bun.file(run.versionCountPath).exists()).toBe(false);
+    } finally {
+      await rm(run.home, { recursive: true, force: true });
+    }
+  });
+
+  test("verifies the installed OpenCode package identity without launching the CLI", async () => {
+    const run = await runColdOpenCodeBootstrap();
+    try {
+      expect(run.result.exitCode).toBe(0);
+      expect(await Bun.file(run.launchMarker).exists()).toBe(false);
+      expect(buildOpenCodeInstallIdentityProbeCommand({
+        home: run.home,
+        workdir: join(run.home, "work"),
+        runsAsRoot: false,
+      })).not.toContain("--version");
+    } finally {
+      await rm(run.home, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a post-install OpenCode package with the wrong exact version", async () => {
+    const run = await runColdOpenCodeBootstrap("1.18.6");
+    try {
+      expect(run.result.exitCode).toBe(1);
+      const output = `${run.result.stdout?.toString() ?? ""}${run.result.stderr?.toString() ?? ""}`;
+      expect(output).toContain(
+        "useagent-native-version-probe: install_identity_mismatch expected=1.18.7",
+      );
+      expect(output.length).toBeLessThan(160);
+    } finally {
+      await rm(run.home, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects the executable placeholder shipped before OpenCode postinstall", async () => {
+    const run = await runColdOpenCodeBootstrap("1.18.7", Buffer.from(openCodePostinstallPlaceholder));
+    try {
+      expect(Buffer.byteLength(openCodePostinstallPlaceholder)).toBe(479);
+      expect(run.result.exitCode).toBe(1);
+      expect(run.result.stderr?.toString() ?? "").toContain("install_identity_mismatch expected=1.18.7");
+      expect(await Bun.file(run.launchMarker).exists()).toBe(false);
+    } finally {
+      await rm(run.home, { recursive: true, force: true });
+    }
+  });
+
+  test.each(["placeholder", "wrong-target"] as const)("repairs an OpenCode %s mutation before startup", async (mutation) => {
+    const run = await runColdOpenCodeBootstrap();
+    try {
+      expect(run.result.exitCode).toBe(0);
+      const packageDir = join(run.home, ".local/share/useagent/native-engines/node_modules/opencode-ai");
+      const launcher = join(run.home, ".local/bin/opencode");
+      if (mutation === "placeholder") {
+        await Bun.write(join(packageDir, "bin/opencode.exe"), openCodePostinstallPlaceholder);
+      } else {
+        const other = join(packageDir, "bin/not-opencode");
+        await Bun.write(other, nativeElfHeaderFixture);
+        await Bun.$`chmod 700 ${other}`;
+        await unlink(launcher);
+        await symlink(other, launcher);
+      }
+      const layout = {
+        home: run.home, workdir: join(run.home, "work"), runsAsRoot: false,
+        bunExecutable: join(run.home, "fake-tools/bun"),
+      };
+      const probe = buildOpenCodeInstallIdentityProbeCommand(layout, true);
+      expect(Bun.spawnSync(["/bin/sh", "-c", probe]).exitCode).toBe(1);
+      const repair = buildRuntimeProviderBootstrapCommand("opencode", {}, layout);
+      expect(Bun.spawnSync(["/bin/sh", "-c", repair]).exitCode).toBe(0);
+      expect(Bun.spawnSync(["/bin/sh", "-c", probe]).exitCode).toBe(0);
     } finally {
       await rm(run.home, { recursive: true, force: true });
     }
@@ -569,23 +717,28 @@ exit 17
     expect(bootstraps[2]).toContain("opencode-ai@1.18.7");
   });
 
-  test("revalidates cached Claude identity and repairs only after mutation", async () => {
+  test.each(["claude", "opencode"] as const)("revalidates cached %s identity and repairs only after mutation", async (engine) => {
     let identityValid = true;
     let bootstrapSucceeds = true;
     let fullBootstraps = 0;
     let identityProbes = 0;
     let fenceGeneration = 0;
-    const identityCommand = buildClaudeInstallIdentityProbeCommand({
+    const identityCommand = (engine === "claude"
+      ? buildClaudeInstallIdentityProbeCommand
+      : buildOpenCodeInstallIdentityProbeCommand)({
       home: "/home/user",
       workdir: "/home/user/work",
       runsAsRoot: false,
     });
     const sandbox = {
-      id: "box-cached-claude-identity",
+      id: `box-cached-${engine}-identity`,
       providerKind: "box",
       process: {
         executeCommand: async (command: string) => {
-          if (command.includes('NATIVE_PACKAGE="@anthropic-ai/claude-code@2.1.226"')) {
+          const nativePackage = engine === "claude"
+            ? '@anthropic-ai/claude-code@2.1.226'
+            : 'opencode-ai@1.18.7';
+          if (command.includes(`NATIVE_PACKAGE="${nativePackage}"`)) {
             fullBootstraps += 1;
             if (!bootstrapSucceeds) return { exitCode: 1, result: "" };
             identityValid = true;
@@ -609,20 +762,20 @@ exit 17
       workdir: "/home/user/work",
       orgId: "org-a",
       userId: "user-a",
-      model: "claude-fable-5",
+      model: engine === "claude" ? "claude-fable-5" : "openai/gpt-5.6-luna",
       signal: new AbortController().signal,
       emit: async () => undefined,
       setSummary: () => undefined,
     } as const;
 
-    await prepareRuntimeProviderBridge(sandbox, context, "claude", "/home/user/work");
+    await prepareRuntimeProviderBridge(sandbox, context, engine, "/home/user/work");
     expect({ fullBootstraps, identityProbes, fenceGeneration }).toEqual({
       fullBootstraps: 1,
       identityProbes: 0,
       fenceGeneration: 1,
     });
 
-    await prepareRuntimeProviderBridge(sandbox, context, "claude", "/home/user/work");
+    await prepareRuntimeProviderBridge(sandbox, context, engine, "/home/user/work");
     expect({ fullBootstraps, identityProbes, fenceGeneration }).toEqual({
       fullBootstraps: 1,
       identityProbes: 1,
@@ -630,14 +783,14 @@ exit 17
     });
 
     identityValid = false;
-    await prepareRuntimeProviderBridge(sandbox, context, "claude", "/home/user/work");
+    await prepareRuntimeProviderBridge(sandbox, context, engine, "/home/user/work");
     expect({ fullBootstraps, identityProbes, fenceGeneration }).toEqual({
       fullBootstraps: 2,
       identityProbes: 2,
       fenceGeneration: 2,
     });
 
-    await prepareRuntimeProviderBridge(sandbox, context, "claude", "/home/user/work");
+    await prepareRuntimeProviderBridge(sandbox, context, engine, "/home/user/work");
     expect({ fullBootstraps, identityProbes, fenceGeneration }).toEqual({
       fullBootstraps: 2,
       identityProbes: 3,
@@ -647,8 +800,8 @@ exit 17
     identityValid = false;
     bootstrapSucceeds = false;
     await expect(
-      prepareRuntimeProviderBridge(sandbox, context, "claude", "/home/user/work"),
-    ).rejects.toThrow("native claude runtime bootstrap failed");
+      prepareRuntimeProviderBridge(sandbox, context, engine, "/home/user/work"),
+    ).rejects.toThrow(`native ${engine} runtime bootstrap failed`);
     expect(fenceGeneration).toBe(2);
   });
 
