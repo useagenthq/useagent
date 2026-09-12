@@ -9,17 +9,22 @@ function sandboxWithBracketedPastePrefix(
     readonly largeTranscript?: boolean;
     readonly splitTranscriptUtf8?: boolean;
     readonly malformedChunk?: boolean;
-    readonly missingResponseId?: boolean;
     readonly hangChildTranscript?: boolean;
     readonly resetChildAOnce?: boolean;
     readonly negotiatedVersion?: number;
-    readonly control?: { emit?: (data: string) => Promise<void>; sent?: string[] };
+    readonly readyOnPtyAttempt?: number;
+    readonly control?: {
+      emit?: (data: string) => Promise<void>;
+      sent?: string[];
+      lifecycle?: string[];
+    };
     readonly failRequestType?: string;
   } = {},
 ): SandboxHandle {
   const encoder = new TextEncoder();
   let nonCanonicalInput = false;
   let childAReset = false;
+  let ptyAttempt = 0;
   return {
     id: "cube-box",
     cpu: 2,
@@ -27,6 +32,9 @@ function sandboxWithBracketedPastePrefix(
     state: "started",
     process: {
       async createPty({ onData }: Parameters<SandboxProcess["createPty"]>[0]) {
+        ptyAttempt += 1;
+        const thisAttempt = ptyAttempt;
+        options.control?.lifecycle?.push(`create-${thisAttempt}`);
         if (options.control) {
           options.control.emit = async (data) => onData(encoder.encode(data));
         }
@@ -36,6 +44,7 @@ function sandboxWithBracketedPastePrefix(
             const text = typeof input === "string" ? input : new TextDecoder().decode(input);
             options.control?.sent?.push(text);
             if (text.startsWith("stty ")) {
+              if (thisAttempt < (options.readyOnPtyAttempt ?? 1)) return;
               nonCanonicalInput = text.includes(" -icanon min 1 time 0");
               await onData(encoder.encode("\u001b[?2004hroot@box:/work# "));
               await onData(encoder.encode(text.trimEnd()));
@@ -111,11 +120,6 @@ function sandboxWithBracketedPastePrefix(
               }) + "\n"));
               return;
             }
-            if (request.type === "get_subagent_messages" && options.missingResponseId) {
-              const { id: _id, ...withoutId } = responseFrame;
-              await onData(encoder.encode(JSON.stringify(withoutId) + "\n"));
-              return;
-            }
             if (request.type === "get_subagent_messages" && options.largeTranscript) {
               const rpcEncoder = new RpcFrameEncoder();
               rpcEncoder.setProtocolVersion(2);
@@ -134,8 +138,12 @@ function sandboxWithBracketedPastePrefix(
             }
           },
           async resize() {},
-          async disconnect() {},
-          async kill() {},
+          async disconnect() {
+            options.control?.lifecycle?.push(`disconnect-${thisAttempt}`);
+          },
+          async kill() {
+            options.control?.lifecycle?.push(`kill-${thisAttempt}`);
+          },
         };
       },
     } as unknown as SandboxHandle["process"],
@@ -202,6 +210,35 @@ describe("Pi RPC frame parsing", () => {
     expect(sent[0]).not.toContain("/root");
     await session.dispose();
   }, 2_000);
+
+  test("retries one readiness timeout after disposing the first PTY", async () => {
+    const lifecycle: string[] = [];
+    const manager = new DefaultPiBridgeManager(5);
+    const session = await manager.ensure({
+      sandbox: sandboxWithBracketedPastePrefix([], {
+        readyOnPtyAttempt: 2,
+        control: { lifecycle },
+      }),
+      workdir: "/work",
+      runtime: {
+        model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+        fingerprint: "runtime",
+        knowledgeTools: false,
+        executable: "/opt/useagent/pi-runtime/cli.js",
+        bunExecutable: "/opt/useagent/pi-runtime/bun",
+        runAsUser: "useagent-pi",
+        home: "/home/useagent-pi",
+      },
+    });
+
+    expect(lifecycle.slice(0, 4)).toEqual([
+      "create-1",
+      "kill-1",
+      "disconnect-1",
+      "create-2",
+    ]);
+    await session.dispose();
+  });
 
   test("delivers prompt frames larger than Linux MAX_CANON intact", async () => {
     const manager = new DefaultPiBridgeManager();
@@ -348,10 +385,11 @@ describe("Pi RPC frame parsing", () => {
       .rejects.toThrow("Pi RPC session is disposed");
   });
 
-  test("rejects a response without a request id and disposes the session", async () => {
+  test("an id-less response rejects concurrent matching commands without guessing", async () => {
+    const control: { emit?: (data: string) => Promise<void> } = {};
     const manager = new DefaultPiBridgeManager();
     const session = await manager.ensure({
-      sandbox: sandboxWithBracketedPastePrefix([], { missingResponseId: true }),
+      sandbox: sandboxWithBracketedPastePrefix([], { hangChildTranscript: true, control }),
       workdir: "/work",
       runtime: {
         model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
@@ -363,10 +401,63 @@ describe("Pi RPC frame parsing", () => {
         home: "/home/useagent-pi",
       },
     });
-    await expect(session.readSubagentMessages?.({ subagentId: "child-a", fromByte: 0 }))
-      .rejects.toThrow("missing its request id");
-    await expect(session.readSubagentMessages?.({ subagentId: "child-a", fromByte: 0 }))
+    const first = session.readSubagentMessages?.({ subagentId: "child-a", fromByte: 0 });
+    const second = session.readSubagentMessages?.({ subagentId: "child-b", fromByte: 0 });
+    if (!first || !second || !control.emit) throw new Error("expected concurrent requests");
+    const settled = Promise.allSettled([first, second]);
+    await control.emit(JSON.stringify({
+      type: "response",
+      command: "get_subagent_messages",
+      success: true,
+      data: {
+        sessionFile: "/sessions/child.jsonl",
+        fromByte: 0,
+        nextByte: 10,
+        reset: false,
+        entries: [],
+        messages: [],
+      },
+    }) + "\n");
+    const outcomes = await settled;
+    expect(outcomes).toHaveLength(2);
+    for (const outcome of outcomes) {
+      expect(outcome.status).toBe("rejected");
+      expect(outcome.status === "rejected" ? String(outcome.reason) : "")
+        .toContain("Pi RPC get_subagent_messages response is missing its request id");
+    }
+    await expect(session.command({ kind: "steer", text: "session is poisoned" }))
       .rejects.toThrow("Pi RPC session is disposed");
+  });
+
+  test("isolates a throwing frame listener from the PTY and pending requests", async () => {
+    const control: { emit?: (data: string) => Promise<void> } = {};
+    const manager = new DefaultPiBridgeManager();
+    const session = await manager.ensure({
+      sandbox: sandboxWithBracketedPastePrefix([], { control }),
+      workdir: "/work",
+      runtime: {
+        model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+        fingerprint: "runtime",
+        knowledgeTools: false,
+        executable: "/opt/useagent/pi-runtime/cli.js",
+        bunExecutable: "/opt/useagent/pi-runtime/bun",
+        runAsUser: "useagent-pi",
+        home: "/home/useagent-pi",
+      },
+    });
+    session.subscribe(() => {
+      throw new Error("listener failed");
+    });
+    const received: unknown[] = [];
+    session.subscribe((frame) => received.push(frame));
+    if (!control.emit) throw new Error("expected PTY control");
+    await expect(control.emit(JSON.stringify({
+      type: "available_commands_update",
+      commands: [],
+    }) + "\n")).resolves.toBeUndefined();
+    expect(received).toContainEqual({ type: "available_commands_update", commands: [] });
+    await expect(session.command({ kind: "steer", text: "still alive" })).resolves.toBeUndefined();
+    await session.dispose();
   });
 
   test("dispose rejects an in-flight child transcript read", async () => {

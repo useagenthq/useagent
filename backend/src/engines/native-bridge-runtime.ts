@@ -124,6 +124,11 @@ export async function runNativeBridgeTurn(
     }
   };
   const { promise: settled, resolve: resolveSettled, reject: rejectSettled } = Promise.withResolvers<void>();
+  // Provider terminal evidence can arrive before driver.steer() returns. Mark
+  // the promise handled immediately, then still await it below so the turn
+  // receives the same failure without escalating it to a process-level
+  // unhandled rejection.
+  void settled.catch(() => {});
   const unsubscribe = bridge.subscribe((raw) => {
     const bodies = options.mapFrame(raw);
     for (const body of bodies) observeBody(body);
