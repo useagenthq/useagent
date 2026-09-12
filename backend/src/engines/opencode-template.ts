@@ -2,7 +2,7 @@ import type { SandboxBinding } from "../sandboxes/binding";
 import { rememberPreparedProviderSnapshot } from "../provider-connections/service";
 import { OPENCODE_VERSION } from "./opencode-serve";
 
-const TEMPLATE_NAME = `useagent-opencode-${OPENCODE_VERSION.replaceAll(".", "-")}`;
+export const OPENCODE_TEMPLATE_NAME = `useagent-opencode-${OPENCODE_VERSION.replaceAll(".", "-")}`;
 const preparations = new Map<string, Promise<void>>();
 
 async function prepareTemplate(
@@ -10,7 +10,7 @@ async function prepareTemplate(
   binding: SandboxBinding,
 ): Promise<void> {
   const source = await binding.provider.create({
-    labels: { "useagent.template": TEMPLATE_NAME },
+    labels: { "useagent.template": OPENCODE_TEMPLATE_NAME },
     autoDeleteInterval: 60,
   });
   try {
@@ -27,14 +27,14 @@ async function prepareTemplate(
     if ((installed.exitCode ?? 1) !== 0) {
       throw new Error("OpenCode template runtime installation failed");
     }
-    const status = await binding.provider.saveTemplate!(source.id, TEMPLATE_NAME);
+    const status = await binding.provider.saveTemplate!(source.id, OPENCODE_TEMPLATE_NAME);
     if (status.state !== "active") {
       throw new Error(status.detail ?? "OpenCode template did not become ready");
     }
     await rememberPreparedProviderSnapshot({
       ...scope,
       provider: "box",
-      snapshotName: TEMPLATE_NAME,
+      snapshotName: OPENCODE_TEMPLATE_NAME,
       expectedUpdatedAt: binding.connectionUpdatedAt!,
     });
   } finally {

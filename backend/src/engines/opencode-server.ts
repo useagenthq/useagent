@@ -116,7 +116,10 @@ import {
   SERVE_PORT,
   stopServerForConfigReload,
 } from "./opencode-serve";
-import { scheduleOpenCodeTemplatePreparation } from "./opencode-template";
+import {
+  OPENCODE_TEMPLATE_NAME,
+  scheduleOpenCodeTemplatePreparation,
+} from "./opencode-template";
 export { prewarmOpenCodeRuntime } from "./opencode-serve";
 import {
   assertSandboxResources,
@@ -951,7 +954,10 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       if (!sandbox) throw new Error("Sandbox provider returned no sandbox");
       const box = sandbox;
       const resources = assertSandboxResources(box, resourceTarget);
-      const launcher = opencodeLauncherFor(box, ctx, { baseImage });
+      const launcher = opencodeLauncherFor(box, ctx, {
+        baseImage,
+        prebaked: snapshot === OPENCODE_TEMPLATE_NAME,
+      });
       if (provisionedFresh) {
         await ctx.emit({
           kind: "task",

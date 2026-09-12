@@ -129,7 +129,12 @@ export async function listQueuedCapacityAdmissions(
       order by priority desc, queued_at asc, run_id asc
       limit ${limit}
     ), reserved as (
-      select * from sandbox_leases where state in ('active', 'reclaiming')
+      select lease.*,
+        case when run.sandbox_credential = 'user' then 0 else lease.reserved_cpu_millicores end as capacity_cpu,
+        case when run.sandbox_credential = 'user' then 0 else lease.reserved_memory_mib end as capacity_mem
+      from sandbox_leases lease
+      left join runs run on run.id = lease.run_id and run.org_id = lease.org_id
+      where lease.state in ('active', 'reclaiming')
     ), latest_thread_sandbox as (
       select distinct on (r.org_id, r.thread_id)
         r.sandbox_id, r.org_id, r.thread_id
@@ -162,9 +167,9 @@ export async function listQueuedCapacityAdmissions(
     ), global_inventory as (
       select
         ((select count(*) from reserved) + (select count(*) from retained))::int as global_count,
-        ((select coalesce(sum(reserved_cpu_millicores), 0) from reserved) +
+        ((select coalesce(sum(capacity_cpu), 0) from reserved) +
          (select coalesce(sum(cpu), 0) from retained))::int as global_cpu,
-        ((select coalesce(sum(reserved_memory_mib), 0) from reserved) +
+        ((select coalesce(sum(capacity_mem), 0) from reserved) +
          (select coalesce(sum(mem), 0) from retained))::int as global_mem
     ), org_inventory as (
       select org_id, count(*)::int as org_count

@@ -73,14 +73,16 @@ export async function probeOpencodeLauncher(
 export function opencodeLauncherFor(
   sandbox: Pick<SandboxHandle, "process">,
   ctx: Pick<EngineRunContext, "emit">,
-  options: { readonly baseImage: boolean },
+  options: { readonly baseImage: boolean; readonly prebaked?: boolean },
 ): () => Promise<OpencodeLauncher> {
   let decided: Promise<OpencodeLauncher> | null = null;
   return () =>
     (decided ??= (async () => {
-      const launcher: OpencodeLauncher = options.baseImage
-        ? { npx: true, reason: "the sandbox started from the provider's base image" }
-        : await probeOpencodeLauncher(sandbox);
+      const launcher: OpencodeLauncher = options.prebaked
+        ? { npx: false, reason: null }
+        : options.baseImage
+          ? { npx: true, reason: "the sandbox started from the provider's base image" }
+          : await probeOpencodeLauncher(sandbox);
       if (launcher.npx) {
         await ctx.emit({
           kind: "task",

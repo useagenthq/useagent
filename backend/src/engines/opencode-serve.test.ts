@@ -122,6 +122,17 @@ describe("opencode launcher probe", () => {
     expect(sandbox.commands).toEqual([]);
     expect(steps[0]?.label).toContain("the sandbox started from the provider's base image");
   });
+
+  test("a prepared runtime template bypasses the broken base-image launcher probe", async () => {
+    const sandbox = fakeSandbox({ probe: "HUNG" });
+    const launcher = opencodeLauncherFor(
+      sandbox,
+      { emit: async () => undefined },
+      { baseImage: false, prebaked: true },
+    );
+    expect(await launcher()).toEqual({ npx: false, reason: null });
+    expect(sandbox.commands).toEqual([]);
+  });
 });
 
 describe("ensureServer", () => {

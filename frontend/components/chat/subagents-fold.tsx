@@ -217,10 +217,10 @@ function ProductChildRow({
 }
 
 function ProductChildResults({ children }: { children: readonly ThreadRelationship[] }) {
-  const completed = children.filter(
-    (child) => child.status === "completed" && child.latestSummary?.trim(),
+  const settled = children.filter(
+    (child) => !isChildActive(PRODUCT_CHILD_STATUS[child.status]) && child.latestSummary?.trim(),
   );
-  if (children.length < 2 || completed.length !== children.length) return null;
+  if (children.length < 2 || settled.length !== children.length) return null;
 
   return (
     <li
@@ -229,9 +229,12 @@ function ProductChildResults({ children }: { children: readonly ThreadRelationsh
     >
       <p className="text-caption-1-medium text-text-secondary">Combined results</p>
       <div className="mt-2 space-y-3">
-        {completed.map((child) => (
+        {settled.map((child) => (
           <div key={child.threadId}>
-            <p className="text-body-2-medium text-text-primary">{child.title}</p>
+            <p className="text-body-2-medium text-text-primary">
+              {child.title}
+              {child.status === "completed" ? "" : ` · ${childStatusLabel(PRODUCT_CHILD_STATUS[child.status])}`}
+            </p>
             <p className="text-body-2-regular text-text-secondary mt-0.5 whitespace-pre-wrap">
               {child.latestSummary}
             </p>

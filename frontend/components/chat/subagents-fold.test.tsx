@@ -191,6 +191,7 @@ describe("subagents fold (inline conversation group)", () => {
           productChild({
             threadId: "child-2",
             title: "Poem: Rome",
+            status: "failed",
             latestSummary: "Rome line one.\nRome line two.",
           }),
         ]}
@@ -200,6 +201,7 @@ describe("subagents fold (inline conversation group)", () => {
     expect(html).toContain("Combined results");
     expect(html).toContain("Paris line two.");
     expect(html).toContain("Rome line two.");
+    expect(html).toContain("Poem: Rome · Failed");
   });
 
   test("a bot's thread is named after the bot and counted apart from subagents", () => {
