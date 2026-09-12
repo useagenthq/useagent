@@ -22,6 +22,45 @@ const claudeEnvironment = {
 const previousGatewayUrl = process.env.PROVIDER_GATEWAY_PUBLIC_URL;
 const previousGatewaySecret = process.env.PROVIDER_GATEWAY_SECRET;
 
+async function runColdClaudeBootstrap(
+  binaryScript: (home: string) => string,
+): Promise<{
+  home: string;
+  result: ReturnType<typeof Bun.spawnSync>;
+  versionCountPath: string;
+}> {
+  const home = await mkdtemp(join(tmpdir(), "useagent-cold-claude-bootstrap-"));
+  const fakeTools = join(home, "fake-tools");
+  const versionCountPath = join(home, "version-count");
+  await mkdir(fakeTools, { recursive: true });
+  await mkdir(join(home, "work"), { recursive: true });
+  const encodedBinary = Buffer.from(binaryScript(home), "utf8").toString("base64");
+  await Bun.write(join(fakeTools, "bun"), [
+    "#!/bin/sh",
+    "set -eu",
+    'mkdir -p "$BUN_INSTALL_BIN"',
+    `printf %s '${encodedBinary}' | base64 -d > "$BUN_INSTALL_BIN/claude"`,
+    'chmod 700 "$BUN_INSTALL_BIN/claude"',
+    "",
+  ].join("\n"));
+  await Bun.$`chmod 700 ${join(fakeTools, "bun")}`;
+  const command = buildRuntimeProviderBootstrapCommand("claude", {
+    ANTHROPIC_BASE_URL: "https://gateway.example.test/provider/anthropic",
+    CLAUDE_CONFIG_DIR: join(home, "claude-config"),
+  }, {
+    home,
+    workdir: join(home, "work"),
+    runsAsRoot: false,
+  });
+  return {
+    home,
+    result: Bun.spawnSync(["/bin/sh", "-c", command], {
+      env: { ...process.env, HOME: home, PATH: `${fakeTools}:${process.env.PATH}` },
+    }),
+    versionCountPath,
+  };
+}
+
 beforeEach(() => {
   resetRuntimeProviderBridgeCacheForTest();
   process.env.PROVIDER_GATEWAY_PUBLIC_URL = "https://gateway.example.test";
@@ -300,6 +339,73 @@ describe("T3 provider bridge", () => {
     }
   });
 
+  test("retries only the post-install version probe when the binary is briefly not ready", async () => {
+    const run = await runColdClaudeBootstrap((home) => `#!/bin/sh
+set -eu
+COUNT_FILE=${JSON.stringify(join(home, "version-count"))}
+count=0
+if [ -f "$COUNT_FILE" ]; then count="$(cat "$COUNT_FILE")"; fi
+count=$((count + 1))
+printf '%s' "$count" > "$COUNT_FILE"
+if [ "$count" -eq 1 ]; then exit 1; fi
+echo '2.1.226 (Claude Code)'
+`);
+    try {
+      expect(run.result.exitCode).toBe(0);
+      expect(await readFile(run.versionCountPath, "utf8")).toBe("2");
+    } finally {
+      await rm(run.home, { recursive: true, force: true });
+    }
+  });
+
+  test("bounds failed post-install probes and emits only a controlled diagnostic", async () => {
+    const secret = "gateway-capability-must-not-escape";
+    const run = await runColdClaudeBootstrap((home) => `#!/bin/sh
+set -eu
+COUNT_FILE=${JSON.stringify(join(home, "version-count"))}
+count=0
+if [ -f "$COUNT_FILE" ]; then count="$(cat "$COUNT_FILE")"; fi
+count=$((count + 1))
+printf '%s' "$count" > "$COUNT_FILE"
+echo ${JSON.stringify(secret)} >&2
+exit 7
+`);
+    try {
+      expect(run.result.exitCode).toBe(1);
+      expect(await readFile(run.versionCountPath, "utf8")).toBe("3");
+      const output = `${run.result.stdout?.toString() ?? ""}${run.result.stderr?.toString() ?? ""}`;
+      expect(output).toContain(
+        "useagent-native-version-probe: probe_failed attempts=3 last_status=7 error=none",
+      );
+      expect(output).not.toContain(secret);
+      expect(output.length).toBeLessThan(160);
+    } finally {
+      await rm(run.home, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a clearly observed wrong post-install version without retrying", async () => {
+    const run = await runColdClaudeBootstrap((home) => `#!/bin/sh
+set -eu
+COUNT_FILE=${JSON.stringify(join(home, "version-count"))}
+count=0
+if [ -f "$COUNT_FILE" ]; then count="$(cat "$COUNT_FILE")"; fi
+count=$((count + 1))
+printf '%s' "$count" > "$COUNT_FILE"
+echo '2.1.225 (Claude Code)'
+`);
+    try {
+      expect(run.result.exitCode).toBe(1);
+      expect(await readFile(run.versionCountPath, "utf8")).toBe("1");
+      const output = `${run.result.stdout?.toString() ?? ""}${run.result.stderr?.toString() ?? ""}`;
+      expect(output).toContain(
+        "useagent-native-version-probe: version_mismatch expected=2.1.226",
+      );
+    } finally {
+      await rm(run.home, { recursive: true, force: true });
+    }
+  });
+
   test("accepts only T3's current reconciled Claude gateway instance marker", async () => {
     const home = await mkdtemp(join(tmpdir(), "skynet-t3-claude-ready-"));
     try {
@@ -527,6 +633,34 @@ describe("T3 provider bridge", () => {
       prewarmRuntimeProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" }),
     ).resolves.toBeUndefined();
     expect(attempts).toBe(4);
+  });
+
+  test("surfaces only an allowlisted bounded bootstrap diagnostic", async () => {
+    const secret = "signed-gateway-capability";
+    const sandbox = {
+      id: "t3-provider-safe-diagnostic",
+      process: {
+        executeCommand: async () => ({
+          exitCode: 1,
+          result: `${secret.repeat(100)}\nuseagent-native-version-probe: probe_failed attempts=3 last_status=7 error=none\n${secret}`,
+        }),
+      },
+    } as unknown as SandboxHandle;
+
+    let failure: unknown;
+    try {
+      await prewarmRuntimeProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(Error);
+    const message = (failure as Error).message;
+    expect(message).toContain(
+      "useagent-native-version-probe: probe_failed attempts=3 last_status=7 error=none",
+    );
+    expect(message).not.toContain(secret);
+    expect(message.length).toBeLessThan(160);
   });
 
   test("does not materialize ChatGPT OAuth through sandbox bootstrap", () => {

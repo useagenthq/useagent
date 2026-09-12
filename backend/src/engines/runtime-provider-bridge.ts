@@ -41,6 +41,9 @@ const RUNTIME_CLAUDE_ACCESS_HELPER = `${RUNTIME_BIN_DIRECTORY}/prepare-claude-ac
 const RUNTIME_CLAUDE_WRAPPER_PLACEHOLDER = "__USEAGENT_T3_CLAUDE_WRAPPER__";
 const CLAUDE_STATUS_CACHE_PATH = `${RUNTIME_ENVIRONMENT_HOME}/caches/claudeAgent.json`;
 const CLAUDE_READY_POLL_MS = 150;
+const NATIVE_VERSION_PROBE_ATTEMPTS = 3;
+const NATIVE_VERSION_PROBE_DELAYS_MS = [250, 500] as const;
+const NATIVE_VERSION_PROBE_DIAGNOSTIC_PREFIX = "useagent-native-version-probe:";
 const CODEX_VERSION = "0.153.3";
 const CLAUDE_CODE_VERSION = "2.1.226";
 const OPENCODE_VERSION = "1.18.7";
@@ -157,10 +160,14 @@ export function buildRuntimeProviderBootstrapCommand(
   const versionMatcher = engine === "claude" ? "prefix" : "exact";
   const verifyScript = [
     'const {spawnSync}=require("node:child_process")',
-    'const r=spawnSync(process.argv[1],["--version"],{encoding:"utf8",timeout:8000})',
-    'const out=`${r.stdout??""}${r.stderr??""}`.trim()',
-    'const ok=process.argv[3]==="prefix"?out===process.argv[2]||out.startsWith(process.argv[2]+" "):out===process.argv[2]',
-    'process.exit(!r.error&&r.status===0&&ok?0:1)',
+    'const sleep=ms=>Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,ms)',
+    'const binary=process.argv[1],expected=process.argv[2],matcher=process.argv[3]',
+    'const attempts=Number(process.argv[4]),diagnostic=process.argv[5]==="diagnostic"',
+    `const delays=${JSON.stringify(NATIVE_VERSION_PROBE_DELAYS_MS)}`,
+    'let last',
+    'for(let attempt=0;attempt<attempts;attempt++){last=spawnSync(binary,["--version"],{encoding:"utf8",timeout:8000});const out=`${last.stdout??""}${last.stderr??""}`.trim();const ok=matcher==="prefix"?out===expected||out.startsWith(expected+" "):out===expected;if(!last.error&&last.status===0&&ok)process.exit(0);if(!last.error&&last.status===0&&out){if(diagnostic)console.error("useagent-native-version-probe: version_mismatch expected="+expected);process.exit(1)}if(attempt+1<attempts)sleep(delays[attempt]??delays.at(-1))}',
+    'if(diagnostic){const status=Number.isInteger(last?.status)?last.status:"none";const code=String(last?.error?.code??"none").replace(/[^A-Za-z0-9._-]/g,"_").slice(0,40);console.error(`useagent-native-version-probe: probe_failed attempts=${attempts} last_status=${status} error=${code}`)}',
+    'process.exit(1)',
   ].join(";");
 
   const providerConfig = engine === "codex"
@@ -190,8 +197,8 @@ export function buildRuntimeProviderBootstrapCommand(
     `BUN_EXECUTABLE=${JSON.stringify(bunExecutable)}`,
     `EXPECTED_VERSION=${JSON.stringify(expectedVersion)}`,
     `VERSION_MATCHER=${JSON.stringify(versionMatcher)}`,
-    `verify_native_binary() { test -x "$NATIVE_BINARY" && node -e '${verifyScript}' "$NATIVE_BINARY" "$EXPECTED_VERSION" "$VERSION_MATCHER"; }`,
-    "if ! verify_native_binary; then",
+    `verify_native_binary() { test -x "$NATIVE_BINARY" && node -e '${verifyScript}' "$NATIVE_BINARY" "$EXPECTED_VERSION" "$VERSION_MATCHER" "$1" "$2"; }`,
+    "if ! verify_native_binary 1 quiet; then",
     '  test -x "$BUN_EXECUTABLE" || command -v "$BUN_EXECUTABLE" >/dev/null 2>&1',
     `  BUN_CACHE="$(mktemp -d "\${TMPDIR:-/tmp}/useagent-${engine}-bun.XXXXXX")"`,
     '  cleanup_native_bun() { rm -rf -- "$BUN_CACHE"; }',
@@ -200,7 +207,7 @@ export function buildRuntimeProviderBootstrapCommand(
     "  cleanup_native_bun",
     "  trap - EXIT HUP INT TERM",
     "fi",
-    "verify_native_binary",
+    `verify_native_binary ${NATIVE_VERSION_PROBE_ATTEMPTS} diagnostic`,
   ];
 
   if (engine !== "claude") {
@@ -405,7 +412,15 @@ async function ensureRuntimeProviderBootstrap(
   const operation = (async () => {
     const result = await sandbox.process.executeCommand(command, undefined, undefined, 180);
     if ((result.exitCode ?? 1) !== 0) {
-      throw new Error(`the native ${engine} runtime bootstrap failed`);
+      const diagnostic = (result.result ?? "")
+        .split(/\r?\n/)
+        .find((line) => line.startsWith(NATIVE_VERSION_PROBE_DIAGNOSTIC_PREFIX));
+      const safeDiagnostic = diagnostic?.match(
+        /^useagent-native-version-probe: (?:version_mismatch expected=[A-Za-z0-9 .+_-]{1,80}|probe_failed attempts=3 last_status=(?:-?\d+|none) error=[A-Za-z0-9._-]{1,40})$/,
+      )?.[0];
+      throw new Error(
+        `the native ${engine} runtime bootstrap failed${safeDiagnostic ? `: ${safeDiagnostic}` : ""}`,
+      );
     }
   })();
   sandboxStates.set(command, operation);
