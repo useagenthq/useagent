@@ -5,23 +5,20 @@
 // the ONLY source, normalized here through the existing deriveTrace step grammar.
 //
 // Field mapping (chosen for upstream's icon + preview precedence):
+// - The heading (`label`) and the collapsed one-line `preview` come from the tool
+//   summarizer (components/chat/tool-summary.ts), so a row title is always a human
+//   line and never a raw payload.
 // - `requestKind` (upstream's own field, checked first for icons) carries read/edit/run
-//   intent from our trace glyphs; the target rides in `command` so the collapsed
-//   preview shows the path/command while the icon stays eye/square-pen/terminal.
+//   intent from our trace glyphs; the target rides in `command` for the expanded body
+//   while the icon stays eye/square-pen/terminal.
 // - Uncatalogued/MCP tools ("task" glyph with a real verb) become dynamic_tool_call
-//   rows; output rides in `detail` (preview + expanded body), never `command`, so the
-//   icon resolves to the hammer, not the terminal.
+//   rows; output rides in `detail` (expanded body), never `command`, so the icon
+//   resolves to the hammer, not the terminal.
 
 import { type ChildUsage } from "@/components/chat/child-usage";
 import { type TimelineNode } from "@/components/chat/timeline";
-import {
-  type ApiStep,
-  asRecord,
-  deriveTrace,
-  parseFileEntries,
-  parseStepCode,
-  parseTodos,
-} from "@/components/chat/types";
+import { summarizeToolStep } from "@/components/chat/tool-summary";
+import { deriveTrace, parseFileEntries, parseTodos } from "@/components/chat/types";
 import { type ChangedFile } from "./changed-files";
 import { type ContextWindowUsage } from "./context-window-meter";
 import {
@@ -31,23 +28,10 @@ import {
 
 export type RowState = "running" | "done";
 
-/** Every T3 work entry MUST carry a non-empty heading; a blank one renders as a
- *  bare chevron+status row (user-reported on child-session fan-out turns). When
- *  the trace grammar yields no verb for a step (child-session/task tool receipts,
- *  steps with no friendly label), derive one from the step itself: the raw tool
- *  name, the child task's own naming fields, then the step kind. */
-function stepLabelFallback(step: ApiStep): string {
-  const code = asRecord(parseStepCode(step));
-  const input = asRecord(code?.input);
-  const candidates = [code?.tool, input?.name, input?.agent, input?.description, input?.prompt];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.trim().length > 0) return candidate;
-  }
-  return step.kind;
-}
-
 /** One canonical timeline node -> one T3 work entry, or null for node kinds this
- *  slice does not render as work rows (text bursts, markers, files, artifacts). */
+ *  slice does not render as work rows (text bursts, markers, files, artifacts).
+ *  The heading and the collapsed preview come from the tool summarizer (never a
+ *  raw payload); `command`/`detail` keep the full payload for the expanded body. */
 export function workEntryFromTimelineNode(
   node: TimelineNode,
   state: RowState,
@@ -63,11 +47,13 @@ export function workEntryFromTimelineNode(
   if (node.kind !== "tool") return null;
 
   const trace = deriveTrace(node.step);
+  const summary = summarizeToolStep(node.step);
   const target = trace.target || undefined;
   const output = trace.detail ?? undefined;
   const entry: WorkEntry = {
     id: node.key,
-    label: trace.verb.trim().length > 0 ? trace.verb : stepLabelFallback(node.step),
+    label: summary.label,
+    preview: summary.detail ?? undefined,
     tone: trace.isError ? "error" : "tool",
     toolLifecycleStatus: trace.isError
       ? "failed"
@@ -75,6 +61,11 @@ export function workEntryFromTimelineNode(
         ? "inProgress"
         : "completed",
   };
+
+  // A shell step is a command row whatever the engine called its tool.
+  if (summary.command) {
+    return { ...entry, requestKind: "command", command: summary.command, detail: output };
+  }
 
   switch (trace.glyph) {
     case "run":

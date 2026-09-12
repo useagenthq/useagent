@@ -22,6 +22,8 @@ import { memo, useMemo, useState } from "react";
 import { PlanChecklist } from "@/components/agent-ui/plan-checklist";
 import { Thinking } from "@/components/ai/thinking";
 import { formatArtifactSize } from "@/components/artifacts/model";
+import { botWorkLabel, splitBotTurn } from "@/components/chat/bot-turn-model";
+import { BotWorkFold } from "@/components/chat/bot-work-fold";
 import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { FollowUpRows } from "@/components/chat/follow-up-rows";
 import { SourceChip } from "@/components/chat/source-chip";
@@ -360,19 +362,64 @@ function TimelineFollowups({ suggestions }: { suggestions: readonly string[] }) 
   return <FollowUpRows suggestions={suggestions} onPick={prefill} />;
 }
 
-export function Timeline({
-  nodes,
-  live,
-  workingSince,
-  showFollowups = false,
-}: {
+interface TimelineProps {
   nodes: TimelineNode[];
   live: boolean;
   workingSince?: string;
   /** Render this turn's follow-up suggestions (the LATEST turn only - stale
    *  suggestions under scrolled-back history are noise). */
   showFollowups?: boolean;
-}) {
+}
+
+/** A bot thread's turn context: the thread (its fold preference is remembered
+ *  per thread) and the settled run's duration for the "Worked for" label. */
+export interface BotTurnContext {
+  readonly threadId: string;
+  readonly durationMs: number | null;
+}
+
+/**
+ * One turn's timeline. A plain thread renders the interleaved flow; a bot
+ * thread (`bot` set) reads like chat instead: the reply is the block and every
+ * step in between folds behind one line (see ./bot-turn-model).
+ */
+export function Timeline({ bot, ...props }: TimelineProps & { bot?: BotTurnContext }) {
+  return bot ? <BotTurn {...props} bot={bot} /> : <TimelineFlow {...props} />;
+}
+
+function BotTurn({
+  nodes,
+  live,
+  workingSince,
+  showFollowups = false,
+  bot,
+}: TimelineProps & { bot: BotTurnContext }) {
+  const { work, reply, tail } = useMemo(() => splitBotTurn(nodes, live), [nodes, live]);
+  const label = useMemo(
+    () => botWorkLabel({ live, work, durationMs: bot.durationMs }),
+    [live, work, bot.durationMs],
+  );
+  return (
+    <div className="space-y-3" data-testid="bot-turn">
+      {work.length > 0 && (
+        <BotWorkFold threadId={bot.threadId} label={label} live={live}>
+          <TimelineFlow nodes={work} live={live} workingSince={workingSince} />
+        </BotWorkFold>
+      )}
+      {reply && (
+        <div data-testid="bot-reply">
+          <TextBurst text={reply} />
+        </div>
+      )}
+      {live && work.length === 0 && !reply && (
+        <WorkingIndicator createdAt={workingSince ?? null} />
+      )}
+      {tail.length > 0 && <TimelineFlow nodes={tail} live={false} showFollowups={showFollowups} />}
+    </div>
+  );
+}
+
+function TimelineFlow({ nodes, live, workingSince, showFollowups = false }: TimelineProps) {
   const { segments, workingLabel } = useMemo(() => segmentTimeline(nodes, live), [nodes, live]);
   // Artifacts are deliverables, not narration: they render AFTER the prose and
   // tool activity so an answer never appears below its own attachment.
