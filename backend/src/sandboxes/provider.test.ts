@@ -32,6 +32,7 @@ describe("sandbox provider selection", () => {
     expect(sandboxRuntimeLayout("cube")).toEqual({
       home: "/root",
       workdir: "/root/work",
+      bunExecutable: "/usr/local/bin/bun",
       runsAsRoot: true,
     });
     expect(sandboxRuntimeLayout("box")).toEqual({
