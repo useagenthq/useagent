@@ -33,6 +33,7 @@ import {
   prepareCodexSubscription,
   type CodexSubscriptionLease,
 } from "./codex-subscription-runtime";
+import { ensureSandboxBun, sandboxBunExecutable } from "./sandbox-bun";
 
 const RUNTIME_SETTINGS_PATH = `${RUNTIME_ENVIRONMENT_HOME}/userdata/settings.json`;
 const RUNTIME_BIN_DIRECTORY = `${RUNTIME_ENVIRONMENT_HOME}/skynet-bin`;
@@ -151,7 +152,7 @@ export function buildRuntimeProviderBootstrapCommand(
   const nativeBinaryName = engine === "claude" ? "claude" : engine;
   const nativeBinary = `${prefix}/bin/${nativeBinaryName}`;
   const nativeGlobalDirectory = `${prefix}/share/useagent/native-engines`;
-  const bunExecutable = layout.bunExecutable ?? "bun";
+  const bunExecutable = sandboxBunExecutable(layout);
   const expectedVersion = engine === "codex"
     ? `codex-cli ${CODEX_VERSION}`
     : engine === "claude"
@@ -501,6 +502,7 @@ export async function prepareRuntimeProviderBridge(
   workdir: string,
 ): Promise<RuntimeProviderBridgeLease> {
   const layout = runtimeBridgeLayout(sandbox);
+  await ensureSandboxBun(sandbox, layout, ctx.signal);
   const claudeEnvironment = engine === "claude" ? providerGatewayEnv(ctx, "claude") : {};
   const command = buildRuntimeProviderBootstrapCommand(
     engine,
@@ -556,6 +558,7 @@ export async function prewarmRuntimeProviderBridge(
 ): Promise<void> {
   if (!runtimeEnvironmentEnabled(env)) return;
   const layout = runtimeBridgeLayout(sandbox);
+  await ensureSandboxBun(sandbox, layout, AbortSignal.timeout(180_000));
   for (const engine of ["codex", "claude", "opencode"] as const) {
     const command = buildRuntimeProviderBootstrapCommand(
       engine,

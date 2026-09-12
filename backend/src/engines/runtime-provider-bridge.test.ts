@@ -51,6 +51,7 @@ async function runColdClaudeBootstrap(
     home,
     workdir: join(home, "work"),
     runsAsRoot: false,
+    bunExecutable: join(fakeTools, "bun"),
   });
   return {
     home,
@@ -324,6 +325,7 @@ describe("T3 provider bridge", () => {
         home,
         workdir: join(home, "work"),
         runsAsRoot: false,
+        bunExecutable: join(fakeTools, "bun"),
       });
 
       const result = Bun.spawnSync(["/bin/sh", "-c", command], {
@@ -522,10 +524,11 @@ echo '2.1.225 (Claude Code)'
     await prewarmRuntimeProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" });
     await prewarmRuntimeProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" });
 
-    expect(commands).toHaveLength(3);
-    expect(commands[0]).toContain("@openai/codex@0.153.3");
-    expect(commands[1]).toContain("@anthropic-ai/claude-code@2.1.226");
-    expect(commands[2]).toContain("opencode-ai@1.18.7");
+    const bootstraps = commands.filter((command) => command.includes("NATIVE_PACKAGE="));
+    expect(bootstraps).toHaveLength(3);
+    expect(bootstraps[0]).toContain("@openai/codex@0.153.3");
+    expect(bootstraps[1]).toContain("@anthropic-ai/claude-code@2.1.226");
+    expect(bootstraps[2]).toContain("opencode-ai@1.18.7");
   });
 
   test("reasserts the Claude access boundary after resources on every retained turn", async () => {
@@ -619,7 +622,8 @@ echo '2.1.225 (Claude Code)'
     const sandbox = {
       id: "t3-provider-retry-sandbox",
       process: {
-        executeCommand: async () => {
+        executeCommand: async (command: string) => {
+          if (command.includes("--version)\" = '1.3.14'")) return { exitCode: 0, result: "" };
           attempts += 1;
           return { exitCode: attempts === 1 ? 1 : 0, result: "" };
         },
@@ -640,10 +644,12 @@ echo '2.1.225 (Claude Code)'
     const sandbox = {
       id: "t3-provider-safe-diagnostic",
       process: {
-        executeCommand: async () => ({
+        executeCommand: async (command: string) => command.includes("--version)\" = '1.3.14'")
+          ? { exitCode: 0, result: "" }
+          : ({
           exitCode: 1,
           result: `${secret.repeat(100)}\nuseagent-native-version-probe: probe_failed attempts=3 last_status=7 error=none\n${secret}`,
-        }),
+          }),
       },
     } as unknown as SandboxHandle;
 

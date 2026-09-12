@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import manifest from "../../runtime-assets/manifest.json";
 import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
+import { ensureSandboxBun, sandboxBunExecutable } from "./sandbox-bun";
 
 export const NATIVE_RUNTIME_ARTIFACT = manifest;
 const CHUNK_BYTES = 3 * 1024 * 1024;
@@ -82,7 +83,7 @@ export function buildNativeRuntimeInstallCommand(
     // only. Its public dist is never executed; the verified fork replaces it.
     `cd ${q(`${staging}/dependencies`)}`,
     `printf '%s  %s\\n' ${q(manifest.dependencyLockSha256)} bun.lock | sha256sum -c - >/dev/null`,
-    `BUN_INSTALL_CACHE_DIR=${q(`${staging}/cache`)} ${q(layout.bunExecutable ?? "bun")} install --frozen-lockfile --no-progress`,
+    `BUN_INSTALL_CACHE_DIR=${q(`${staging}/cache`)} ${q(sandboxBunExecutable(layout))} install --frozen-lockfile --no-progress`,
     `test -d ${q(`${packageRoot}/dist`)}`,
     `mv ${q(`${packageRoot}/dist`)} ${q(`${staging}/public-dist`)}`,
     `mkdir ${q(`${packageRoot}/dist`)}`,
@@ -136,6 +137,7 @@ export async function ensureNativeRuntimeArtifact(
   );
   if (node.exitCode !== 0)
     throw new Error("Native runtime requires Node 22.16+, 23.11+, or 24.10+ in the sandbox");
+  await ensureSandboxBun(sandbox, layout, signal);
   const bytes = await loadPackagedArchive();
   const lock = await readFile(
     new URL("../../runtime-assets/dependencies/bun.lock", import.meta.url),
