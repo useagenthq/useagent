@@ -471,6 +471,36 @@ describe("overlapping ticks", () => {
     for (const r of runs) await finalizeRun(r.runId, "failed", "test teardown", 0);
   });
 
+  test("a tick that stalls past its lease is replaced; when it resumes it cannot inflate attempts or overwrite the replacement's schedule", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId);
+    let releaseA!: () => void;
+    let aProbing!: () => void;
+    const aReleased = new Promise<void>((r) => { releaseA = r; });
+    const aStarted = new Promise<void>((r) => { aProbing = r; });
+    const tickA = runDueReconciles(async () => {
+      aProbing();
+      await aReleased;
+      return { status: "unreachable" };
+    });
+    await aStarted;
+    // A's lease expires while it is stalled: the row is due again, and a resurrected tick B
+    // claims it and finishes its own probe.
+    await db.update(reconcileQueue).set({ nextAttemptAt: new Date(Date.now() - 1_000) }).where(eq(reconcileQueue.runId, runId));
+    const b = await runDueReconciles(transientProbe);
+    expect(b.retried).toBe(1);
+    const afterB = await getReconcile(runId);
+    expect(afterB?.attempts).toBe(1);
+
+    releaseA();
+    const a = await tickA;
+    expect(a.retried).toBe(1); // A finished its own work
+    const afterA = await getReconcile(runId);
+    expect(afterA?.attempts).toBe(1); // but its row write was fenced: no second attempt
+    expect(afterA!.nextAttemptAt.getTime()).toBe(afterB!.nextAttemptAt.getTime()); // B's schedule stands
+    await finalizeRun(runId, "failed", "test teardown", 0);
+  });
+
   test("tick guard: a lost tick that settles late cannot free the guard from under its replacement", () => {
     const guard = createTickGuard(1_000);
     const a = guard.start(0);

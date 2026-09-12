@@ -392,6 +392,24 @@ async function ingestReconciliationEvents(
 /** Parked runs one tick processes at most. */
 const RECONCILE_BATCH = 20;
 
+// Every row write for a claimed entry is fenced on the lease the claim holds. The probe
+// race is bounded (RECONCILE_BUDGET_MS) but the reads and the finalize around it are not,
+// so a tick can outlive its lease; once the watchdog has resurrected a replacement and it
+// has re-claimed the row, the stale tick learns it here and leaves the row alone. Its
+// probe was wasted, nothing else: finalization is first-writer-wins on its own.
+function lostClaim(entry: ReconcileEntry): void {
+  console.warn(
+    `[reconcile] entry ${entry.runId} outlived its lease and was re-claimed by another tick; leaving the row to it`,
+  );
+}
+async function settleEntry(entry: ReconcileEntry): Promise<void> {
+  if (!(await deleteReconcile(entry.runId, entry.leaseUntil))) lostClaim(entry);
+}
+async function rescheduleEntry(entry: ReconcileEntry): Promise<void> {
+  const next = reconcileBackoffAt(Date.now(), entry.attempts);
+  if (!(await bumpReconcile(entry.runId, next, entry.leaseUntil))) lostClaim(entry);
+}
+
 /** One reconcile tick: process every DUE parked run. Returns counts for
  *  tests/telemetry. The probe is injectable (tests). Never throws. */
 export async function runDueReconciles(
@@ -420,7 +438,7 @@ export async function runDueReconciles(
     // worker took the thread, a cancel, a prior tick), just drop the parked row.
     const run = await getRun(entry.runId);
     if (!run || run.status !== "running") {
-      await deleteReconcile(entry.runId);
+      await settleEntry(entry);
       dropped++;
       continue;
     }
@@ -431,7 +449,7 @@ export async function runDueReconciles(
       const finalized = await finalizeRun(entry.runId, "failed", CANCEL_SUMMARY, 0);
       const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
       await settleAndPump(entry.runId, entry.threadId);
-      await deleteReconcile(entry.runId);
+      await settleEntry(entry);
       if (durable?.status === "completed") adopted++;
       else failed++;
       continue;
@@ -462,12 +480,12 @@ export async function runDueReconciles(
         const finalized = await finalizeRun(entry.runId, "failed", STALE_SUMMARY, 0);
         const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
         await settleAndPump(entry.runId, entry.threadId);
-        await deleteReconcile(entry.runId);
+        await settleEntry(entry);
         if (durable?.status === "completed") adopted++;
         else failed++;
         continue;
       }
-      await bumpReconcile(entry.runId, reconcileBackoffAt(Date.now(), entry.attempts));
+      await rescheduleEntry(entry);
       retried++;
       continue;
     }
@@ -476,7 +494,7 @@ export async function runDueReconciles(
       const finalized = await finalizeRun(entry.runId, "failed", result.summary, 0);
       const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
       await settleAndPump(entry.runId, entry.threadId);
-      await deleteReconcile(entry.runId);
+      await settleEntry(entry);
       if (durable?.status === "completed") adopted++;
       else failed++;
       continue;
@@ -491,14 +509,14 @@ export async function runDueReconciles(
       );
       const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
       await settleAndPump(entry.runId, entry.threadId);
-      await deleteReconcile(entry.runId);
+      await settleEntry(entry);
       if (durable?.status === "completed") adopted++;
       else failed++;
     } else if (action === "fail") {
       const finalized = await finalizeRun(entry.runId, "failed", STALE_SUMMARY, 0);
       const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
       await settleAndPump(entry.runId, entry.threadId);
-      await deleteReconcile(entry.runId);
+      await settleEntry(entry);
       if (durable?.status === "completed") adopted++;
       else failed++;
     } else {
@@ -514,16 +532,14 @@ export async function runDueReconciles(
           eventsRecovered: recovered,
         });
       }
-      await bumpReconcile(entry.runId, reconcileBackoffAt(Date.now(), entry.attempts));
+      await rescheduleEntry(entry);
       retried++;
     }
    } catch (err) {
      // Bump this entry's next attempt so a persistently failing one backs off
      // instead of hot-looping, and move on to the rest of the batch.
      console.error(`[reconcile] entry ${entry.runId} failed, skipping:`, err);
-     await bumpReconcile(entry.runId, reconcileBackoffAt(Date.now(), entry.attempts)).catch(
-       () => {},
-     );
+     await rescheduleEntry(entry).catch(() => {});
    }
   }
   return { adopted, failed, retried, dropped, eventsRecovered };

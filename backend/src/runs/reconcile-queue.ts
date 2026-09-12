@@ -1,4 +1,4 @@
-import { asc, eq, lte, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { reconcileQueue } from "../db/schema";
 
@@ -45,6 +45,10 @@ export interface ReconcileEntry {
   readonly sinceMs: number;
   readonly attempts: number;
   readonly deadlineMs: number;
+  /** The lease this claim holds: the exact next_attempt_at the claim wrote. Every row write
+   *  the tick makes is fenced on it, so a tick that outlived its lease and was replaced
+   *  cannot reschedule, inflate or delete the row its replacement now owns. */
+  readonly leaseUntil: Date;
 }
 
 /**
@@ -84,14 +88,17 @@ export async function enqueueReconcile(input: {
 export const RECONCILE_CLAIM_LEASE_MS = 60_000;
 
 /** Claim due parked rows (next_attempt_at <= now), oldest first, up to `limit`, and LEASE
- *  them: the same statement pushes next_attempt_at past the lease, so an overlapping tick
+ *  them: the same statement pushes next_attempt_at to the lease, so an overlapping tick
  *  (the watchdog can resurrect one) cannot claim a row that is already being probed. The
  *  select locks its rows with SKIP LOCKED, so two claims running at once split the due set
- *  instead of sharing it. Due is checked against the DB clock, like the outbox primitive. */
+ *  instead of sharing it. Due is checked against the DB clock, like the outbox primitive;
+ *  the lease timestamp is minted here at millisecond precision so it doubles as the fence
+ *  token every later write for the row is compared against. */
 export async function claimDueReconciles(
   limit = 20,
   leaseMs = RECONCILE_CLAIM_LEASE_MS,
 ): Promise<ReconcileEntry[]> {
+  const leaseUntil = new Date(Date.now() + leaseMs);
   const rows = (await db.execute(sql`
     with due as (
       select run_id, next_attempt_at as due_at from reconcile_queue
@@ -101,7 +108,7 @@ export async function claimDueReconciles(
       for update skip locked
     )
     update reconcile_queue q
-    set next_attempt_at = now() + (${leaseMs}::int * interval '1 millisecond')
+    set next_attempt_at = ${leaseUntil.toISOString()}::timestamptz
     from due where q.run_id = due.run_id
     returning q.run_id, q.thread_id, q.sandbox_id, q.session_id, q.since_at, q.attempts, q.deadline, due.due_at`)) as unknown as Array<{
     run_id: string; thread_id: string; sandbox_id: string; session_id: string;
@@ -117,20 +124,35 @@ export async function claimDueReconciles(
       sinceMs: new Date(r.since_at).getTime(),
       attempts: Number(r.attempts),
       deadlineMs: new Date(r.deadline).getTime(),
+      leaseUntil,
     }));
 }
 
-/** Schedule the next re-probe (attempts += 1, next_attempt_at = backoff). */
-export async function bumpReconcile(runId: string, nextAttemptAt: Date): Promise<void> {
-  await db
+/** The row filter for a fenced write: the run, and (when a lease is given) only while the
+ *  row still carries exactly that lease. A tick whose lease expired and whose row was
+ *  re-claimed then matches nothing, so it cannot touch its replacement's work. */
+const claimedRow = (runId: string, lease?: Date) =>
+  lease ? and(eq(reconcileQueue.runId, runId), eq(reconcileQueue.nextAttemptAt, lease)) : eq(reconcileQueue.runId, runId);
+
+/** Schedule the next re-probe (attempts += 1, next_attempt_at = backoff), fenced on the
+ *  claim's lease when given. Returns whether the row was written. */
+export async function bumpReconcile(runId: string, nextAttemptAt: Date, lease?: Date): Promise<boolean> {
+  const rows = await db
     .update(reconcileQueue)
     .set({ attempts: sql`${reconcileQueue.attempts} + 1`, nextAttemptAt })
-    .where(eq(reconcileQueue.runId, runId));
+    .where(claimedRow(runId, lease))
+    .returning({ runId: reconcileQueue.runId });
+  return rows.length > 0;
 }
 
-/** Remove a parked row once its run has settled (adopted / failed / stolen). */
-export async function deleteReconcile(runId: string): Promise<void> {
-  await db.delete(reconcileQueue).where(eq(reconcileQueue.runId, runId));
+/** Remove a parked row once its run has settled (adopted / failed / stolen), fenced on the
+ *  claim's lease when given. Returns whether the row was removed. */
+export async function deleteReconcile(runId: string, lease?: Date): Promise<boolean> {
+  const rows = await db
+    .delete(reconcileQueue)
+    .where(claimedRow(runId, lease))
+    .returning({ runId: reconcileQueue.runId });
+  return rows.length > 0;
 }
 
 /** Ops/test read helper. */
