@@ -46,8 +46,8 @@ export function resolveSandboxResourceTarget(
 
 /**
  * Daytona's production API does not expose the SDK's hot-resize endpoint on
- * every account. Keep this check side-effect free: callers can discard a stale
- * retained box or reject a fresh provision before starting the agent.
+ * every account. Keep this check side-effect free: preserve incompatible retained
+ * workspaces for migration, and reject a fresh provision before starting the agent.
  */
 export function sandboxMeetsResourceTarget(
   sandbox: SandboxHandle,

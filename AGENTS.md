@@ -16,3 +16,7 @@ does not have a native driver. It is never a fallback for the four native
 engines above. If a sandbox provider cannot host an engine's native runtime,
 report that engine/provider pair as unsupported and stop. Do not silently
 substitute ACP, another engine, or a reduced lifecycle.
+
+Runtime generation is not workspace lifetime. Never delete or silently replace
+a retained sandbox because a release, runtime label, or rollback is incompatible.
+Preserve the workspace and upgrade safely or fail closed with a clear explanation.

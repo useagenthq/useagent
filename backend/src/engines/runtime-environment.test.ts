@@ -63,7 +63,7 @@ describe("T3 Cube environment", () => {
   });
 
   test("uses the operator runtime generation as the single source of truth", () => {
-    expect(runtimeGeneration({})).toBe("useagent-runtime-v9");
+    expect(runtimeGeneration({})).toBe("useagent-runtime-v8");
     expect(runtimeGeneration({ USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v9" }))
       .toBe("useagent-runtime-v9");
     expect(() => runtimeGeneration({ USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v8-candidate" }))

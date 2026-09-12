@@ -9,6 +9,8 @@ import {
 } from "./runtime-environment-client";
 import { makeT3ProviderDriver, t3ProviderDrivers } from "./t3-provider-driver";
 import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
+import { RUNTIME_GENERATION } from "./runtime-environment";
+import { createSecretRedactor } from "../secrets/redact";
 
 function sessionFor(driver: ReturnType<typeof makeT3ProviderDriver>): HarnessSession {
   return {
@@ -38,7 +40,7 @@ describe("T3 provider drivers", () => {
       expect(driver.provider).toBe(provider);
       expect(driver.descriptor.protocol).toEqual({
         name: "t3-orchestration",
-        version: "useagent-runtime-v9",
+        version: RUNTIME_GENERATION,
       });
     }
   });
@@ -157,15 +159,26 @@ describe("T3 provider drivers", () => {
         latestTurn: {
           turnId: "turn-1",
           state: "completed",
+          requestedAt: "2026-09-05T00:00:00.000Z",
           assistantMessageId: "assistant-1",
         },
-        messages: [{
-          id: "assistant-1",
-          role: "assistant",
-          text: "Recovered summary",
-          turnId: "turn-1",
-          streaming: false,
-        }],
+        messages: [
+          {
+            id: "skynet-message-run-1",
+            role: "user",
+            text: "Current request",
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-09-05T00:00:00.000Z",
+          },
+          {
+            id: "assistant-1",
+            role: "assistant",
+            text: "Recovered summary",
+            turnId: "turn-1",
+            streaming: false,
+          },
+        ],
         activities: [],
         session: { status: "ready", lastError: null },
       },
@@ -187,9 +200,20 @@ describe("T3 provider drivers", () => {
     await expect(driver.cancel(session, "user stop")).resolves.toEqual({ status: "ok" });
     expect(driver.reconcile).toBeFunction();
     if (!driver.reconcile) throw new Error("T3 driver must own recovery");
-    await expect(driver.reconcile({ session, checkpoint: { sinceMs: 10 } })).resolves.toEqual({
+    await expect(driver.reconcile({
+      session,
+      checkpoint: {
+        sinceMs: 10,
+        eventContext: {
+          runId: "run-1",
+          threadId: "thread-1",
+          redact: createSecretRedactor([]),
+        },
+      },
+    })).resolves.toEqual({
       status: "completed",
       summary: "Recovered summary",
+      events: [],
     });
     expect(requests.map(({ method, path }) => ({ method, path }))).toEqual([
       { method: "GET", path: "/api/orchestration/threads/skynet-thread-thread-1" },
@@ -201,5 +225,259 @@ describe("T3 provider drivers", () => {
       threadId: "skynet-thread-thread-1",
       turnId: "turn-1",
     });
+  });
+
+  test("reconciles only the latest turn through the live activity mapper", async () => {
+    const secret = "sk-recovery-secret-1234567890";
+    const snapshot: RuntimeThreadSnapshot = {
+      snapshotSequence: 9,
+      thread: {
+        id: "skynet-thread-thread-1",
+        latestTurn: {
+          turnId: "turn-2",
+          state: "completed",
+          requestedAt: "2026-09-05T00:01:00.000Z",
+          assistantMessageId: "assistant-2",
+        },
+        messages: [
+          {
+            id: "skynet-message-run-2",
+            role: "user",
+            text: "Current request",
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-09-05T00:01:00.000Z",
+          },
+          {
+            id: "assistant-2",
+            role: "assistant",
+            text: `Recovered with tail activity ${secret}`,
+            turnId: "turn-2",
+            streaming: false,
+          },
+        ],
+        activities: [
+          {
+            id: "prior-tool",
+            tone: "tool",
+            kind: "tool.completed",
+            summary: "Prior turn tool",
+            payload: { toolCallId: "prior-call" },
+            turnId: "turn-1",
+          },
+          {
+            id: "child-terminal",
+            tone: "tool",
+            kind: "task.completed",
+            summary: "Child complete",
+            payload: {
+              agentKind: "agent",
+              taskId: "child-session-1",
+              parentAgentId: "parent-session-1",
+              status: "completed",
+              summary: `safe ${secret}`,
+            },
+            turnId: "turn-2",
+          },
+        ],
+        session: { status: "ready", lastError: null },
+      },
+    };
+    const driver = makeT3ProviderDriver("codex", {
+      resolveRuntime: async () => ({ id: "cube-t3-resume" }) as SandboxHandle,
+      requestEnvironment: async <T>() => snapshot as T,
+    });
+    const session = sessionFor(driver);
+    const request = {
+      session,
+      checkpoint: {
+        sinceMs: 10,
+        eventContext: {
+          runId: "run-2",
+          threadId: "thread-1",
+          redact: createSecretRedactor([secret]),
+        },
+      },
+    };
+    if (!driver.reconcile) throw new Error("T3 driver must own recovery");
+
+    const first = await driver.reconcile(request);
+    const second = await driver.reconcile(request);
+    expect(second).toEqual(first);
+    expect(first).toMatchObject({
+      status: "completed",
+      summary: "Recovered with tail activity <redacted>",
+      events: [{
+        id: "pe_run-2_t3_child-terminal",
+        runScopedId: true,
+        provider: "t3",
+        eventType: "t3.activity.task.completed",
+        sessionId: "child-session-1",
+        parentSessionId: "parent-session-1",
+        partId: "child-terminal",
+        callId: "child-session-1",
+      }],
+    });
+    expect(JSON.stringify(first)).not.toContain("prior-tool");
+    expect(JSON.stringify(first)).not.toContain(secret);
+    expect(JSON.stringify(first)).toContain("<redacted>");
+  });
+
+  test("a running latest turn exposes its current mapped activities", async () => {
+    const snapshot: RuntimeThreadSnapshot = {
+      snapshotSequence: 3,
+      thread: {
+        id: "skynet-thread-thread-1",
+        latestTurn: {
+          turnId: "turn-live",
+          state: "running",
+          requestedAt: "2026-09-05T00:02:00.000Z",
+          assistantMessageId: null,
+        },
+        messages: [{
+          id: "skynet-message-run-live",
+          role: "user",
+          text: "Current request",
+          turnId: "turn-live",
+          streaming: false,
+          createdAt: "2026-09-05T00:02:00.000Z",
+        }],
+        activities: [{
+          id: "tool-live",
+          tone: "tool",
+          kind: "tool.started",
+          summary: "Running tool",
+          payload: { toolCallId: "call-live", tool: "bash" },
+          turnId: "turn-live",
+        }],
+        session: { status: "busy", lastError: null },
+      },
+    };
+    const driver = makeT3ProviderDriver("codex", {
+      resolveRuntime: async () => ({ id: "cube-t3-resume" }) as SandboxHandle,
+      requestEnvironment: async <T>() => snapshot as T,
+    });
+    if (!driver.reconcile) throw new Error("T3 driver must own recovery");
+    await expect(driver.reconcile({
+      session: sessionFor(driver),
+      checkpoint: {
+        eventContext: {
+          runId: "run-live",
+          threadId: "thread-live",
+          redact: createSecretRedactor([]),
+        },
+      },
+    })).resolves.toMatchObject({
+      status: "in_progress",
+      events: [{
+        id: "pe_run-live_t3_tool-live",
+        callId: "call-live",
+      }],
+    });
+  });
+
+  test("does not adopt a previous completed turn before the current run was dispatched", async () => {
+    const snapshot: RuntimeThreadSnapshot = {
+      snapshotSequence: 4,
+      thread: {
+        id: "skynet-thread-thread-1",
+        latestTurn: {
+          turnId: "turn-previous",
+          state: "completed",
+          requestedAt: "2026-09-05T00:00:00.000Z",
+          assistantMessageId: "assistant-previous",
+        },
+        messages: [
+          {
+            id: "skynet-message-previous-run",
+            role: "user",
+            text: "Previous request",
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-09-05T00:00:00.000Z",
+          },
+          {
+            id: "assistant-previous",
+            role: "assistant",
+            text: "Previous answer",
+            turnId: "turn-previous",
+            streaming: false,
+          },
+        ],
+        activities: [],
+        session: { status: "ready", lastError: null },
+      },
+    };
+    const driver = makeT3ProviderDriver("codex", {
+      resolveRuntime: async () => ({ id: "cube-t3-resume" }) as SandboxHandle,
+      requestEnvironment: async <T>() => snapshot as T,
+    });
+    if (!driver.reconcile) throw new Error("T3 driver must own recovery");
+
+    await expect(driver.reconcile({
+      session: sessionFor(driver),
+      checkpoint: {
+        eventContext: {
+          runId: "new-run",
+          threadId: "thread-1",
+          redact: createSecretRedactor([]),
+        },
+      },
+    })).resolves.toEqual({ status: "no_change" });
+  });
+
+  test("returns redacted error and interruption reasons with their terminal events", async () => {
+    const secret = "sk-failed-turn-secret-1234567890";
+    for (const state of ["error", "interrupted"] as const) {
+      const runId = `run-${state}`;
+      const turnId = `turn-${state}`;
+      const at = `2026-09-05T00:0${state === "error" ? "3" : "4"}:00.000Z`;
+      const snapshot: RuntimeThreadSnapshot = {
+        snapshotSequence: 5,
+        thread: {
+          id: "skynet-thread-thread-1",
+          latestTurn: { turnId, state, requestedAt: at, assistantMessageId: null },
+          messages: [{
+            id: `skynet-message-${runId}`,
+            role: "user",
+            text: "Current request",
+            turnId: null,
+            streaming: false,
+            createdAt: at,
+          }],
+          activities: [{
+            id: `terminal-${state}`,
+            tone: "error",
+            kind: "runtime.warning",
+            summary: `${state} activity`,
+            payload: { detail: secret },
+            turnId,
+          }],
+          session: { status: state, lastError: `Provider ${state}: ${secret}` },
+        },
+      };
+      const driver = makeT3ProviderDriver("codex", {
+        resolveRuntime: async () => ({ id: "cube-t3-resume" }) as SandboxHandle,
+        requestEnvironment: async <T>() => snapshot as T,
+      });
+      if (!driver.reconcile) throw new Error("T3 driver must own recovery");
+      const result = await driver.reconcile({
+        session: sessionFor(driver),
+        checkpoint: {
+          eventContext: {
+            runId,
+            threadId: "thread-1",
+            redact: createSecretRedactor([secret]),
+          },
+        },
+      });
+
+      expect(result).toMatchObject({
+        status: "failed",
+        summary: `Provider ${state}: <redacted>`,
+        events: [{ id: `pe_${runId}_t3_terminal-${state}` }],
+      });
+      expect(JSON.stringify(result)).not.toContain(secret);
+    }
   });
 });

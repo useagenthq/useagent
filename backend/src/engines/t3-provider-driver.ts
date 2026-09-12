@@ -3,8 +3,10 @@ import {
   providerProtocolIdentity,
   providerDriverUnsupported,
   providerSessionMatchesDriver,
+  type HarnessInterimEvent,
   type HarnessOperationResult,
   type ProviderDriver,
+  type ProviderReconcileRequest,
   type ProviderStartRequest,
 } from "@useagent/agent-harness/control";
 import { type SandboxHandle } from "../sandboxes/provider";
@@ -22,6 +24,8 @@ import {
   buildRuntimeTurnStartCommand,
   runtimeProjectId,
   runtimeThreadId,
+  runtimeActivityProviderEvent,
+  runtimeUserMessageId,
   type RuntimeEngineId,
   type RuntimeMode,
   type RuntimeThreadSnapshot,
@@ -145,6 +149,55 @@ async function readThreadSnapshot(
     signal,
   );
   return { sandbox, snapshot };
+}
+
+function snapshotMatchesAcceptedRun(
+  snapshot: RuntimeThreadSnapshot,
+  runId: string,
+): boolean {
+  const latestTurn = snapshot.thread.latestTurn;
+  if (!latestTurn) return false;
+  const accepted = snapshot.thread.messages.find(
+    (message) => message.role === "user" && message.id === runtimeUserMessageId(runId),
+  );
+  if (!accepted) return false;
+  if (accepted.turnId !== null) return accepted.turnId === latestTurn.turnId;
+  if (!accepted.createdAt || !latestTurn.requestedAt) return false;
+  const acceptedAt = Date.parse(accepted.createdAt);
+  const requestedAt = Date.parse(latestTurn.requestedAt);
+  return Number.isFinite(acceptedAt) && acceptedAt === requestedAt;
+}
+
+function reconciledRuntimeEvents(
+  snapshot: RuntimeThreadSnapshot,
+  currentSession: HarnessSession,
+  checkpoint: ProviderReconcileRequest["checkpoint"],
+): HarnessInterimEvent[] | undefined {
+  const latestTurnId = snapshot.thread.latestTurn?.turnId;
+  const context = checkpoint?.eventContext;
+  if (!latestTurnId || !context) return undefined;
+  return snapshot.thread.activities
+    .filter((activity) => activity.turnId === latestTurnId)
+    .map((activity) => {
+      const event = runtimeActivityProviderEvent(
+        { runId: context.runId, threadId: context.threadId },
+        currentSession.nativeSessionId,
+        activity,
+        context.redact,
+      );
+      return {
+        id: event.id,
+        runScopedId: true,
+        provider: event.provider,
+        eventType: event.eventType,
+        sessionId: event.nativeSessionId,
+        parentSessionId: event.nativeParentSessionId,
+        messageId: event.nativeMessageId,
+        partId: event.nativePartId,
+        callId: event.nativeCallId,
+        payload: event.payload,
+      };
+    });
 }
 
 export function makeT3ProviderDriver(
@@ -280,12 +333,28 @@ export function makeT3ProviderDriver(
         );
         if (!result) return { status: "unreachable" };
         const { snapshot } = result;
+        const context = request.checkpoint?.eventContext;
+        if (!context || !snapshotMatchesAcceptedRun(snapshot, context.runId)) {
+          return { status: "no_change" };
+        }
         const state = snapshot.thread.latestTurn?.state;
-        if (state === "running") return { status: "in_progress" };
+        const events = reconciledRuntimeEvents(snapshot, request.session, request.checkpoint);
+        if (state === "running") return { status: "in_progress", events };
         if (state === "completed") {
           return {
             status: "completed",
-            summary: assistantText(snapshot).trim() || "Run completed",
+            summary: context.redact.text(assistantText(snapshot)).trim() || "Run completed",
+            events,
+          };
+        }
+        if (state === "error" || state === "interrupted") {
+          const fallback = state === "error"
+            ? "The provider runtime turn failed"
+            : "The provider runtime turn was interrupted";
+          return {
+            status: "failed",
+            summary: context.redact.text(snapshot.thread.session?.lastError?.trim() || fallback),
+            events,
           };
         }
         return { status: "no_change" };

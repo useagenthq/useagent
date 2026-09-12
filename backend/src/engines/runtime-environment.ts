@@ -15,10 +15,11 @@ import {
 
 export const RUNTIME_ENVIRONMENT_PORT = 37_733;
 export const RUNTIME_GENERATION_LABEL = "useagent.runtime";
-// Bump this identity whenever the embedded provider runtime changes. It is
-// stamped on retained/warm sandboxes and doubles as the pool name, so a new
-// release cannot accidentally resume a thread against an older runtime binary.
-const DEFAULT_RUNTIME_GENERATION = "useagent-runtime-v9";
+// Native wire/session compatibility, not the application release number. The
+// pinned fork is the same v8 runtime already deployed; exact distribution bytes
+// are verified separately. A future incompatible generation needs an explicit
+// workspace-preserving upgrade, never delete-and-recreate of retained threads.
+const DEFAULT_RUNTIME_GENERATION = "useagent-runtime-v8";
 
 export function runtimeGeneration(
   env: Readonly<Record<string, string | undefined>> = process.env,

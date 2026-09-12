@@ -120,14 +120,14 @@ proof.
 |---|---|---|---|---|
 | Commands | Yes | Yes | Yes | Box runs sync commands under a 600 s cap and longer ones detached with an exit marker. |
 | Persistent command sessions | Yes | Yes | Yes | Box sessions are pid-file process groups under `/home/user/.useagent`. |
-| PTY | Yes | Yes | No | The frontend terminal uses this path; Box has no PTY API yet. |
+| PTY | Yes | Yes | Yes | The frontend terminal uses this path; Box uses its managed interactive SSH transport. |
 | File upload and download | Yes | Yes | Yes | Used for repo materialization and artifacts. |
 | Preview links | Yes | Yes | Yes | Auth headers come from the plugin: token headers for Daytona and Cube, a port-auth cookie for Box. |
 | Native computer use API | Yes | No | No | |
 | Desktop workstation | Yes | Yes | No | Cube drives the workstation through the trusted gateway. |
 | Recording | Yes | Yes | No | Daytona uses native recording. Cube uses the X11 and FFmpeg path. |
 | Resume after timeout | Yes | Yes | Yes | Box archives on its absolute TTL and resumes on the next start. |
-| Runs as root | Yes | Yes | No | Box runs as `user`; the T3 runtime lane needs root, so engines use the CLI lane there. |
+| Runs as root | Yes | Yes | No | Box runs as `user`; all providers retain the same native engine drivers under their declared home/workspace layout. |
 | Labels | Native | Native | Control plane | Box labels live in `sandbox_labels`; the box cannot rewrite them. |
 | Pause, checkpoint, snapshot primitives in the shared interface | No | No | No | This is still a bounded roadmap item. |
 

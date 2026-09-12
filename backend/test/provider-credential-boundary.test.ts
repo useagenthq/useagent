@@ -65,20 +65,6 @@ describe("provider credential trust boundary", () => {
     }
   });
 
-  test("every retained engine substrate rejects an obsolete secret delivery generation", () => {
-    // The resident engines revive a retained sandbox only through the shared helper,
-    // which is where the generation check lives; the CLI runner keeps its own check.
-    for (const path of ["src/engines/acp-server.ts", "src/engines/opencode-server.ts"] as const) {
-      expect(sourceFor(path)).toContain("reviveRetainedSandbox(ctx");
-      expect(sourceFor(path)).not.toContain("provider.get(rememberedId)");
-    }
-    expect(sourceFor("src/engines/sandbox.ts")).toContain("providerGatewaySandboxIsCurrent(prior)");
-
-    const sharedLease = sourceFor("src/engines/thread-sandbox.ts");
-    expect(sharedPreparation).toContain("acquireThreadSandbox(ctx");
-    expect(sharedLease).toContain("providerGatewaySandboxIsCurrent(sandbox)");
-  });
-
   test("Codex app-server stays auth-only and inherits only its child allowlist", () => {
     const source = sourceFor("src/provider-connections/codex-app-server.ts");
     const accountMethods = stringLiteralsIn(

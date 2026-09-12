@@ -107,7 +107,7 @@ import {
   forgetLiveThreadSandbox,
   rememberLiveThreadSandbox,
 } from "./sandbox-runtime";
-import { reviveRetainedSandbox } from "./thread-sandbox";
+import { reviveRetainedSandbox, RetainedSandboxRuntimeMismatchError } from "./thread-sandbox";
 import { provisionSandbox } from "./sandbox-provision";
 import { noteLostWorkspace } from "./workspace-continuity";
 import {
@@ -849,6 +849,15 @@ export function makeOpenCodeProviderDriver(
 
 export const opencodeProviderDriver = makeOpenCodeProviderDriver();
 
+export async function closeOpenCodeTurnSandbox(input: {
+  sandbox: Pick<SandboxHandle, "delete"> | null;
+  retained: boolean; persisted: boolean; threadId?: string | null;
+}): Promise<void> {
+  if (input.sandbox && !input.retained && (!input.threadId || !input.persisted)) {
+    await input.sandbox.delete().catch(() => {});
+  }
+}
+
 export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter {
   return {
     id: "opencode",
@@ -895,7 +904,8 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
           sandbox = revived.sandbox;
           retainForThread = true;
           effectiveBinding = revived.binding;
-        } catch {
+        } catch (error) {
+          if (error instanceof RetainedSandboxRuntimeMismatchError) throw error;
           if (ctx.threadId) {
             forgetOpenCodeThreadServer(ctx.threadId);
             forgetLiveThreadSandbox(ctx.threadId, rememberedId);
@@ -904,19 +914,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         }
       }
       if (sandbox && !sandboxMeetsResourceTarget(sandbox, resourceTarget)) {
-        const staleId = sandbox.id;
-        await sandbox.delete().catch(() => {});
-        if (ctx.threadId) {
-          forgetOpenCodeThreadServer(ctx.threadId);
-          forgetLiveThreadSandbox(ctx.threadId, staleId);
-        }
-        sandbox = null;
-        retainForThread = false;
-        await ctx.emit({
-          kind: "task",
-          label: "Replacing an undersized retained sandbox…",
-          chip: "opencode",
-        });
+        throw new RetainedSandboxRuntimeMismatchError("resource");
       }
 
       // Stop quickly (a stopped sandbox keeps its disk at ~zero cost and
@@ -1867,12 +1865,9 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const finalTexts = replyTexts.length > 0 ? replyTexts : [...textParts.values()].filter((t) => t.trim());
       await emitOpenCodeFinalReply(ctx, finalTexts, redact, Date.now() - startedAt);
     } finally {
-      // A thread's sandbox is the conversation's world (workspace + resident
-      // server + sessions) — a failed TURN must not destroy it. Only runs
-      // without a thread clean up their box.
-      if (sandbox && (!ctx.threadId || !persistedForThread)) {
-        await sandbox.delete().catch(() => {});
-      }
+      // A retained workspace survives even failures before this turn persists.
+      await closeOpenCodeTurnSandbox({ sandbox, retained: retainForThread,
+        persisted: persistedForThread, threadId: ctx.threadId });
     }
     },
   };
