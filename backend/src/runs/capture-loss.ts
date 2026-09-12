@@ -49,9 +49,13 @@ interface CaptureLossEntry {
 }
 
 const captureLosses = new Map<string, CaptureLossEntry>();
-/** Runs whose degraded seal still has to be announced (the correction committed, the
- *  announcement did not go out yet). Independent of the pending ledger rows. */
+/** Runs whose degraded seal still has to be announced (a correction may have committed,
+ *  the announcement did not go out yet). Independent of the pending ledger rows: a run is
+ *  registered after every batch that committed or may have committed, so a later batch
+ *  that keeps failing cannot strand an announcement. */
 const pendingAnnouncements = new Set<string>();
+/** One announcement in flight per run; overlapping callers share it. */
+const announcing = new Map<string, Promise<void>>();
 const announceRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export interface CaptureLoss {
@@ -89,7 +93,8 @@ export function noteCaptureLoss(
  *  run. A frame leaves the pending set only after its transaction is known to have
  *  committed, so a failure or a lost acknowledgement keeps it for the timed retry, and
  *  the idempotent insert makes that retry harmless. Once the rows are down, the degraded
- *  seal is announced; with nothing pending, a call only retries an unsent announcement. */
+ *  seal is announced; an announcement failure is retried on its own and never fails the
+ *  flush. With nothing pending, a call only retries an unsent announcement. */
 export function flushCaptureLoss(runId: string): Promise<void> {
   const entry = captureLosses.get(runId);
   if (!entry || entry.pending.size === 0) {
@@ -103,25 +108,32 @@ export function flushCaptureLoss(runId: string): Promise<void> {
   const flush = (async () => {
     while (entry.pending.size > 0) {
       const batch = [...entry.pending.values()];
-      await db.transaction(async (tx) => {
-        await tx.execute(captureLossLock(runId));
-        await tx.execute(sql`
-          insert into run_capture_loss (run_id, event_id, thread_id, event_type, error)
-          select ${runId}, e.event_id, ${entry.threadId}, e.event_type, e.error
-          from json_to_recordset(${JSON.stringify(batch.map((f) => ({
-            event_id: f.eventId, event_type: f.eventType, error: f.error.slice(0, 500),
-          })))}::json) as e(event_id text, event_type text, error text)
-          on conflict (run_id, event_id) do nothing`);
-        await tx.execute(sql`
-          update canonicalization_outbox set state = 'complete_degraded', updated_at = now()
-          where run_id = ${runId} and state = 'complete'`);
-      });
-      if (consumeSimulatedFailure(lostAcknowledgementsForTest, runId)) throw new Error("simulated lost acknowledgement");
+      try {
+        await db.transaction(async (tx) => {
+          await tx.execute(captureLossLock(runId));
+          await tx.execute(sql`
+            insert into run_capture_loss (run_id, event_id, thread_id, event_type, error)
+            select ${runId}, e.event_id, ${entry.threadId}, e.event_type, e.error
+            from json_to_recordset(${JSON.stringify(batch.map((f) => ({
+              event_id: f.eventId, event_type: f.eventType, error: f.error.slice(0, 500),
+            })))}::json) as e(event_id text, event_type text, error text)
+            on conflict (run_id, event_id) do nothing`);
+          await tx.execute(sql`
+            update canonicalization_outbox set state = 'complete_degraded', updated_at = now()
+            where run_id = ${runId} and state = 'complete'`);
+        });
+        if (consumeSimulatedFailure(lostAcknowledgementsForTest, runId)) throw new Error("simulated lost acknowledgement");
+      } finally {
+        // Committed, or possibly committed: the seal may be degraded now, so the
+        // announcement is owed whatever happens to the rest of the flush.
+        pendingAnnouncements.add(runId);
+      }
       for (const f of batch) entry.pending.delete(f.eventId);
     }
     captureLosses.delete(runId);
-    pendingAnnouncements.add(runId);
-    await announceDegradedSeal(runId);
+    // The rows are down: the flush has done its job. The announcement has its own retry,
+    // so its failure is not the flush's failure.
+    await announceDegradedSeal(runId).catch(() => {});
   })()
     .catch((err) => {
       if (entry.pending.size > 0) {
@@ -131,6 +143,8 @@ export function flushCaptureLoss(runId: string): Promise<void> {
         }, retryMs);
         entry.retryTimer.unref?.();
       }
+      // The failed batch must not hold back an announcement an earlier batch already owes.
+      if (pendingAnnouncements.has(runId)) void announceDegradedSeal(runId).catch(() => {});
       throw err;
     })
     .finally(() => {
@@ -163,12 +177,14 @@ export async function captureLossForRun(runId: string): Promise<CaptureLoss | nu
  *  and publishes the seal it writes). A failure keeps the announcement pending and
  *  retries it on the timer. */
 function announceDegradedSeal(runId: string): Promise<void> {
+  const inFlight = announcing.get(runId);
+  if (inFlight) return inFlight;
   const timer = announceRetryTimers.get(runId);
   if (timer) {
     clearTimeout(timer);
     announceRetryTimers.delete(runId);
   }
-  return (async () => {
+  const attempt = (async () => {
     if (consumeSimulatedFailure(announcementFailuresForTest, runId)) throw new Error("simulated announcement failure");
     const [row] = (await db.execute(sql`
       select thread_id, source_frame_max, source_step_count from canonicalization_outbox
@@ -188,15 +204,21 @@ function announceDegradedSeal(runId: string): Promise<void> {
       });
     }
     pendingAnnouncements.delete(runId);
-  })().catch((err) => {
-    const retry = setTimeout(() => {
-      announceRetryTimers.delete(runId);
-      void announceDegradedSeal(runId).catch(() => {});
-    }, retryMs);
-    retry.unref?.();
-    announceRetryTimers.set(runId, retry);
-    throw err;
-  });
+  })()
+    .catch((err) => {
+      const retry = setTimeout(() => {
+        announceRetryTimers.delete(runId);
+        void announceDegradedSeal(runId).catch(() => {});
+      }, retryMs);
+      retry.unref?.();
+      announceRetryTimers.set(runId, retry);
+      throw err;
+    })
+    .finally(() => {
+      announcing.delete(runId);
+    });
+  announcing.set(runId, attempt);
+  return attempt;
 }
 
 // ── Test hooks ───────────────────────────────────────────────────────────────
@@ -235,6 +257,11 @@ export function pendingCaptureLossForTest(runId: string): number {
   return captureLosses.get(runId)?.pending.size ?? 0;
 }
 
+/** Tests only: announcement retry timers currently armed for the run (0 or 1). */
+export function announceRetryTimersForTest(runId: string): number {
+  return announceRetryTimers.has(runId) ? 1 : 0;
+}
+
 /** Tests only: forget the in-memory ledger, as a process restart would. */
 export function resetCaptureLossMemoryForTest(): void {
   for (const entry of captureLosses.values()) {
@@ -243,6 +270,7 @@ export function resetCaptureLossMemoryForTest(): void {
   for (const timer of announceRetryTimers.values()) clearTimeout(timer);
   captureLosses.clear();
   pendingAnnouncements.clear();
+  announcing.clear();
   announceRetryTimers.clear();
   lostAcknowledgementsForTest.clear();
   announcementFailuresForTest.clear();

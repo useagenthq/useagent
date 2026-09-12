@@ -29,6 +29,7 @@ import {
   type DeliveredCanonicalEvent,
 } from "../src/runs/canonical-events";
 import {
+  announceRetryTimersForTest,
   captureLossForRun,
   captureLossLock,
   flushCaptureLoss,
@@ -346,11 +347,67 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
       simulateAnnouncementFailureForTest(RUN);
       await recordProviderEvent({ id: `${RUN}-late`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
       await drainProviderEvents(RUN);
-      await expect(flushCaptureLoss(RUN)).rejects.toThrow("simulated announcement failure");
+      await flushCaptureLoss(RUN); // the rows are down; the failed announcement is not the flush's failure
       expect((await outboxRow(RUN))?.state).toBe("complete_degraded"); // the correction committed
       expect(seen.some((e) => e.runId === RUN)).toBe(false); // but nobody heard yet
       await new Promise((r) => setTimeout(r, 150));
       expect(seen.find((e) => e.runId === RUN)?.degraded).toBe(true); // the timer announced it
+    } finally {
+      off();
+      setCaptureLossRetryDelayForTest(5_000);
+    }
+  });
+
+  test("a committed correction is announced even while a later batch keeps failing", async () => {
+    const { RUN, THREAD } = await seedRun("cob_owed_announce");
+    await enqueueCanonicalization(RUN, THREAD);
+    for (let i = 0; i < 30 && (await outboxRow(RUN))?.state !== "complete"; i++) {
+      await runCanonicalizationOutboxOnce();
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    try {
+      // Every batch commits but its acknowledgement is lost, so the flush keeps failing;
+      // the first batch already corrected the seal and that announcement is owed now.
+      simulateLostFlushAcknowledgementForTest(RUN, 5);
+      await recordProviderEvent({ id: `${RUN}-owed`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await drainProviderEvents(RUN);
+      await expect(flushCaptureLoss(RUN)).rejects.toThrow("simulated lost acknowledgement");
+      expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+      expect(pendingCaptureLossForTest(RUN)).toBe(1); // the batch is still pending
+      await new Promise((r) => setTimeout(r, 50));
+      expect(seen.find((e) => e.runId === RUN)?.degraded).toBe(true); // announced regardless
+    } finally {
+      off();
+      resetCaptureLossMemoryForTest();
+    }
+  });
+
+  test("overlapping announcement attempts share one in-flight attempt and arm one retry timer", async () => {
+    const { RUN, THREAD } = await seedRun("cob_one_timer");
+    await enqueueCanonicalization(RUN, THREAD);
+    for (let i = 0; i < 30 && (await outboxRow(RUN))?.state !== "complete"; i++) {
+      await runCanonicalizationOutboxOnce();
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    // The default retry delay keeps the armed timer observable below.
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    try {
+      simulateAnnouncementFailureForTest(RUN, 1);
+      await recordProviderEvent({ id: `${RUN}-overlap`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await drainProviderEvents(RUN); // the automatic flush lands the rows; its announcement fails once
+      await new Promise((r) => setTimeout(r, 30));
+      expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+      expect(pendingCaptureLossForTest(RUN)).toBe(0);
+      expect(announceRetryTimersForTest(RUN)).toBe(1); // one owed announcement, one timer
+      // Three callers at once with nothing pending: one announcement in flight, shared.
+      await Promise.all([flushCaptureLoss(RUN), flushCaptureLoss(RUN), flushCaptureLoss(RUN)]);
+      expect(announceRetryTimersForTest(RUN)).toBe(0);
+      expect(seen.filter((e) => e.runId === RUN && e.degraded).length).toBe(1);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(seen.filter((e) => e.runId === RUN && e.degraded).length).toBe(1); // the old timer did not fire again
     } finally {
       off();
       setCaptureLossRetryDelayForTest(5_000);
