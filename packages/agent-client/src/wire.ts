@@ -230,6 +230,14 @@ export interface ApiRun {
   steps: ApiStep[];
 }
 
+/** Minimal exact-run lifecycle projection used to reconcile missed invalidations. */
+export interface ApiRunLifecycle {
+  readonly id: string;
+  readonly thread_id: string;
+  readonly status: RunStatus;
+  readonly cancelled: boolean;
+}
+
 type ApiRunSummaryBase = Pick<
   ApiRun,
   | "id"
@@ -281,6 +289,8 @@ export interface ApiNativeChildSummary {
 export type ApiRunSummary = ApiRunSummaryBase & {
   latest_run_id: string;
   latest_status: RunStatus;
+  /** Durable run.cancel intent for latest_run_id. */
+  latest_cancelled?: boolean;
   latest_created_at: string;
   latest_updated_at: string;
   /** Bounded, newest-first ENGINE-NATIVE child executions across the thread
@@ -551,6 +561,7 @@ export function decodeApiRunSummary(value: unknown): ApiRunSummary | null {
   const hasLatestProjection =
     record.latest_run_id !== undefined ||
     record.latest_status !== undefined ||
+    record.latest_cancelled !== undefined ||
     record.latest_created_at !== undefined ||
     record.latest_updated_at !== undefined;
   if (!hasLatestProjection) {
@@ -569,7 +580,8 @@ export function decodeApiRunSummary(value: unknown): ApiRunSummary | null {
     typeof record.latest_status !== "string" ||
     !RUN_STATUS_SET.has(record.latest_status) ||
     typeof record.latest_created_at !== "string" ||
-    typeof record.latest_updated_at !== "string"
+    typeof record.latest_updated_at !== "string" ||
+    !(record.latest_cancelled === undefined || typeof record.latest_cancelled === "boolean")
   ) {
     return null;
   }
@@ -578,6 +590,9 @@ export function decodeApiRunSummary(value: unknown): ApiRunSummary | null {
     ...nativeChildren,
     latest_run_id: record.latest_run_id,
     latest_status: record.latest_status as RunStatus,
+    ...(typeof record.latest_cancelled === "boolean"
+      ? { latest_cancelled: record.latest_cancelled }
+      : {}),
     latest_created_at: record.latest_created_at,
     latest_updated_at: record.latest_updated_at,
   };
@@ -652,6 +667,24 @@ export function decodeApiRun(value: unknown): ApiRun | null {
     skill_content_hash: record.skill_content_hash,
     uploads: uploads as RunUpload[],
     steps: steps as ApiStep[],
+  };
+}
+
+export function decodeApiRunLifecycle(value: unknown): ApiRunLifecycle | null {
+  const record = asRecord(value);
+  if (
+    !record ||
+    typeof record.id !== "string" ||
+    typeof record.thread_id !== "string" ||
+    typeof record.status !== "string" ||
+    !RUN_STATUS_SET.has(record.status) ||
+    typeof record.cancelled !== "boolean"
+  ) return null;
+  return {
+    id: record.id,
+    thread_id: record.thread_id,
+    status: record.status as RunStatus,
+    cancelled: record.cancelled,
   };
 }
 

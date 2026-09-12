@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+  continueNativeChildAsSession,
   createRun,
   createThreadMessage,
-  continueNativeChildAsSession,
   runCreateFailureMessage,
   selectRunCreateAttempt,
 } from "./create-run";
+import { taskSounds } from "./task-sounds-player";
 
 interface FetchCall {
   input: RequestInfo | URL;
@@ -13,6 +14,7 @@ interface FetchCall {
 }
 
 const originalFetch = globalThis.fetch;
+const originalTaskSoundMoment = taskSounds.moment;
 const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
 let calls: FetchCall[] = [];
 let responses: Response[] = [];
@@ -31,6 +33,7 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  taskSounds.moment = originalTaskSoundMoment;
   if (windowDescriptor) Object.defineProperty(globalThis, "window", windowDescriptor);
   else Reflect.deleteProperty(globalThis, "window");
 });
@@ -58,6 +61,22 @@ describe("createRun", () => {
 
     expect(response.status).toBe(503);
     expect(calls).toHaveLength(2);
+  });
+
+  test("returns accepted HTTP responses when optional audio throws or rejects", async () => {
+    responses.push(
+      Response.json({ id: "run-sync" }, { status: 201 }),
+      Response.json({ id: "run-async" }, { status: 201 }),
+    );
+    taskSounds.moment = (() => {
+      throw new Error("audio unavailable");
+    }) as typeof taskSounds.moment;
+    expect((await createRun({ prompt: "sync" }, "run-sync-key")).status).toBe(201);
+
+    taskSounds.moment = (() =>
+      Promise.reject(new Error("audio rejected"))) as typeof taskSounds.moment;
+    expect((await createRun({ prompt: "async" }, "run-async-key")).status).toBe(201);
+    await Promise.resolve();
   });
 });
 
@@ -100,8 +119,10 @@ describe("continueNativeChildAsSession", () => {
 
 describe("selectRunCreateAttempt", () => {
   test("keeps the key for a manual retry of the same effective payload", () => {
-    const first = selectRunCreateAttempt({ prompt: "Retry me", engine: "opencode" }, null, () =>
-      "run-key-1"
+    const first = selectRunCreateAttempt(
+      { prompt: "Retry me", engine: "opencode" },
+      null,
+      () => "run-key-1",
     );
 
     const retry = selectRunCreateAttempt(
@@ -128,16 +149,22 @@ describe("selectRunCreateAttempt", () => {
 
 describe("runCreateFailureMessage", () => {
   test("surfaces an actionable backend provider error", async () => {
-    expect(await runCreateFailureMessage(Response.json({
-      error: "model_provider_not_ready",
-      message: "Anthropic reports insufficient credits. Add credits in Settings.",
-    }, { status: 403 }))).toBe(
-      "Anthropic reports insufficient credits. Add credits in Settings.",
-    );
+    expect(
+      await runCreateFailureMessage(
+        Response.json(
+          {
+            error: "model_provider_not_ready",
+            message: "Anthropic reports insufficient credits. Add credits in Settings.",
+          },
+          { status: 403 },
+        ),
+      ),
+    ).toBe("Anthropic reports insufficient credits. Add credits in Settings.");
   });
 
   test("uses the fallback for an unstructured response", async () => {
-    expect(await runCreateFailureMessage(new Response(null, { status: 503 }), "backend 503"))
-      .toBe("backend 503");
+    expect(await runCreateFailureMessage(new Response(null, { status: 503 }), "backend 503")).toBe(
+      "backend 503",
+    );
   });
 });

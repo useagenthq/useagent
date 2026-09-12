@@ -33,7 +33,7 @@ export function TaskSoundToggle() {
       onClick={() => {
         const next = !enabled;
         taskSoundsPreference.set(next);
-        if (next) taskSounds.moment("done-here");
+        if (next) void taskSounds.moment("done-here", `toggle:${crypto.randomUUID()}`);
       }}
     >
       <Icon className="size-5" aria-hidden />

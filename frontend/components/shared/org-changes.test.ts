@@ -20,16 +20,22 @@ class FakeEventSource extends EventTarget {
   emitChange(change: OrgChange): void {
     this.dispatchEvent(new MessageEvent("change", { data: JSON.stringify(change) }));
   }
+
+  emitOpen(): void {
+    this.dispatchEvent(new Event("open"));
+  }
 }
 
 describe("org change protocol", () => {
   test("accepts IDs-only product invalidations", () => {
-    expect(parseOrgChange({
-      type: "execution_graph",
-      runId: "run-1",
-      threadId: "thread-1",
-      graphCursor: 9,
-    })).toEqual({
+    expect(
+      parseOrgChange({
+        type: "execution_graph",
+        runId: "run-1",
+        threadId: "thread-1",
+        graphCursor: 9,
+      }),
+    ).toEqual({
       type: "execution_graph",
       runId: "run-1",
       threadId: "thread-1",
@@ -168,13 +174,25 @@ describe("org change protocol", () => {
 
     const first: OrgChange[] = [];
     const second: OrgChange[] = [];
-    const unsubscribeFirst = subscribeOrgChanges((change) => first.push(change));
-    const unsubscribeSecond = subscribeOrgChanges((change) => second.push(change));
+    let firstOpens = 0;
+    let secondOpens = 0;
+    const unsubscribeFirst = subscribeOrgChanges(
+      (change) => first.push(change),
+      () => firstOpens++,
+    );
+    const unsubscribeSecond = subscribeOrgChanges(
+      (change) => second.push(change),
+      () => secondOpens++,
+    );
 
     try {
       expect(FakeEventSource.instances).toHaveLength(1);
       const source = FakeEventSource.instances[0];
       if (!source) throw new Error("expected the shared EventSource to connect");
+      source.emitOpen();
+      source.emitOpen();
+      expect(firstOpens).toBe(2);
+      expect(secondOpens).toBe(2);
       const change = {
         type: "automation",
         action: "updated",

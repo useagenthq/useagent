@@ -3,6 +3,7 @@ import type { AppEnv } from "../http.js";
 import { listUploadsForRuns } from "../uploads/repo.js";
 import {
   getCustomerRunForOrg,
+  getCustomerRunLifecycle,
   getCustomerRunWithSteps,
   getThreadForRun,
   getThreadOutlineForRun,
@@ -44,6 +45,10 @@ export function registerRunReadRoutes(routes: Hono<AppEnv>): void {
   routes.get("/:id", async (c) => {
     const orgId = c.get("orgId");
     const id = c.req.param("id");
+    if (c.req.query("view") === "lifecycle") {
+      const lifecycle = await getCustomerRunLifecycle(orgId, id);
+      return lifecycle ? c.json(lifecycle) : c.json({ error: "run not found" }, 404);
+    }
     if (c.req.query("thread") === "1") {
       const thread = await getThreadForRun(orgId, id);
       if (!thread) return c.json({ error: "run not found" }, 404);

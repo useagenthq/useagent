@@ -38,14 +38,20 @@ async function postAcceptedCommand(path: string, body: unknown, idempotencyKey: 
 }
 
 /** Work the person just started rings "sent" once the backend has accepted it. */
-async function sounded(request: Promise<Response>): Promise<Response> {
+async function sounded(request: Promise<Response>, identity: string): Promise<Response> {
   const response = await request;
-  if (response.ok) taskSounds.moment("sent");
+  if (response.ok) {
+    try {
+      void taskSounds.moment("sent", `run:${identity}:sent`).catch(() => {});
+    } catch {
+      // Optional feedback can never turn an accepted command into a failed submit.
+    }
+  }
   return response;
 }
 
 export async function createRun(body: unknown, idempotencyKey = crypto.randomUUID()) {
-  return sounded(postAcceptedCommand("/api/runs", body, idempotencyKey));
+  return sounded(postAcceptedCommand("/api/runs", body, idempotencyKey), idempotencyKey);
 }
 
 export async function createThreadMessage(
@@ -59,6 +65,7 @@ export async function createThreadMessage(
       body,
       idempotencyKey,
     ),
+    idempotencyKey,
   );
 }
 

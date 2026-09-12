@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import {
   decodeApiRun,
+  decodeApiRunLifecycle,
   decodeApiRunSummary,
   decodeApiStep,
   type ApiRun,
+  type ApiRunLifecycle,
   type ApiRunSummary,
   type ApiStep,
   RUN_STATUSES,
@@ -38,6 +40,7 @@ const summary = {
   updated_at: "2026-08-24T00:00:00.000Z",
   latest_run_id: "run-2",
   latest_status: "running",
+  latest_cancelled: false,
   latest_created_at: "2026-08-24T00:01:00.000Z",
   latest_updated_at: "2026-08-24T00:02:00.000Z",
 } satisfies ApiRunSummary;
@@ -84,10 +87,22 @@ describe("run/step wire boundary decoders", () => {
     expect(decodeApiStep(step)).toEqual(step);
   });
 
+  test("decodes the exact durable lifecycle projection", () => {
+    const lifecycle = {
+      id: "run-1",
+      thread_id: "thread-1",
+      status: "failed",
+      cancelled: true,
+    } satisfies ApiRunLifecycle;
+    expect(decodeApiRunLifecycle(lifecycle)).toEqual(lifecycle);
+    expect(decodeApiRunLifecycle({ ...lifecycle, cancelled: undefined })).toBeNull();
+  });
+
   test("synthesizes latest projection fields for legacy compact run rows", () => {
     const {
       latest_run_id: _latestRunId,
       latest_status: _latestStatus,
+      latest_cancelled: _latestCancelled,
       latest_created_at: _latestCreatedAt,
       latest_updated_at: _latestUpdatedAt,
       ...legacySummary
@@ -104,6 +119,7 @@ describe("run/step wire boundary decoders", () => {
 
   test("rejects partial latest projection fields", () => {
     expect(decodeApiRunSummary({ ...summary, latest_updated_at: undefined })).toBeNull();
+    expect(decodeApiRunSummary({ ...summary, latest_cancelled: "no" })).toBeNull();
   });
 
   test("rejects unknown statuses and step kinds instead of typing them", () => {
