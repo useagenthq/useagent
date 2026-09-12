@@ -749,7 +749,7 @@ export interface SessionCommandCatalog {
 
 // ── Bots (named presets over durable home threads) ──────────────────────────
 
-/** Avatar fills map onto the theme's state ramp on the client, never raw colors. */
+/** Stable bot identity tones; the client owns their theme-independent palette. */
 export const BOT_AVATAR_TONES = [
   "blue",
   "violet",

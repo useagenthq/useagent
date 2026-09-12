@@ -21,7 +21,7 @@ describe("bot identity for threads", () => {
     expect(identity.name).toBe("Nova");
     const avatar = renderToStaticMarkup(<>{identity.avatar}</>);
     expect(avatar).toContain("size-5");
-    expect(avatar).toContain("--orb-tone:hsl(var(--primary-base))");
+    expect(avatar).toContain('data-tone="blue"');
   });
 
   test("an archived bot locks the composer with a way back; an active one does not", () => {
