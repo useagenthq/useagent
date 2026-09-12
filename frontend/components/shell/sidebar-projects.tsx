@@ -1,22 +1,30 @@
 "use client";
 
+import { RiArrowDownSLine } from "@remixicon/react";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { sidebarNativeAgentRows } from "@/components/session-ui/native-agent-rows";
+import { runTitle } from "@/components/chat/types";
 import {
   type ProjectMenuControl,
+  ProjectThreadList,
   ProjectThreadTree,
+  type ProjectThread,
   type ProjectGroup as TreeProjectGroup,
 } from "@/components/session-ui/project-thread-tree";
-import { ThreadRow, threadRowTimestamp } from "@/components/session-ui/thread-row";
+import { threadRowTimestamp } from "@/components/session-ui/thread-row";
+import type { ThreadRelationship } from "@useagent/agent-client";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { useSession } from "@/lib/auth";
 import { backendFetch } from "@/lib/backend-fetch";
+import { cx } from "@/utils/cx";
 import { relativeTimeShort } from "@/utils/format";
 import { SidebarSectionLabel } from "./sidebar-nav";
 import {
   dedupeProjectRepos,
   groupThreadsByProject,
+  projectSidebarThreadFamilies,
   type ProjectGroup,
   type ProjectRepo,
   runPrimaryRepo,
@@ -25,10 +33,12 @@ import {
 } from "./sidebar-project-groups";
 import { SidebarProjectMenu } from "./sidebar-project-menu";
 import { useSidebarThreads } from "./sidebar-threads-provider";
+import { useSidebarThreadRelationships } from "./sidebar-threads-provider";
 import { effectiveThreadStatus } from "./thread-discovery";
 
 const PROJECT_POLL_MS = 30_000;
 const MAX_PROJECTS = 48;
+
 const VISIBLE_PROJECTS = 5;
 // Recent threads stay visible; the rest sit behind a "Show N more" disclosure so
 // a long history never floods the rail (same cap as the previous rail).
@@ -83,6 +93,7 @@ export function SidebarProjects() {
   const { session, loading: sessionLoading } = useSession();
   const [projects, setProjects] = useState<ProjectRepo[]>([]);
   const runs = useSidebarThreads();
+  const relationships = useSidebarThreadRelationships();
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const [showEmptyProjects, setShowEmptyProjects] = useState(false);
   const [showAllThreads, setShowAllThreads] = useState(false);
@@ -135,17 +146,30 @@ export function SidebarProjects() {
     };
   }, [loadProjects]);
 
-  const groups = useMemo(() => groupThreadsByProject(runs, projects), [runs, projects]);
+  const families = useMemo(
+    () => projectSidebarThreadFamilies(runs, relationships),
+    [runs, relationships],
+  );
+  const groups = useMemo(
+    () => groupThreadsByProject(families.roots, projects),
+    [families.roots, projects],
+  );
 
   // Default-open the active thread's project plus the most recent one; explicit
   // user toggles (stored) win over the default.
   const defaultExpanded = useMemo(() => {
     const set = new Set<string>();
     if (groups[0]) set.add(groups[0].key);
-    const activeRun = runs.find((run) => pathname === `/session/${run.id}`);
+    const activeId = pathname.startsWith("/session/") ? pathname.slice("/session/".length) : null;
+    const activeRelationship = activeId
+      ? relationships.find((relationship) => relationship.threadId === activeId)
+      : null;
+    const activeRun = runs.find((run) =>
+      run.id === (activeRelationship?.familyThreadId ?? activeId),
+    );
     if (activeRun) set.add(runPrimaryRepo(activeRun) ?? UNATTACHED_KEY);
     return set;
-  }, [groups, runs, pathname]);
+  }, [groups, runs, relationships, pathname]);
 
   const isExpanded = (key: string) =>
     key in overrides ? overrides[key] : defaultExpanded.has(key);
@@ -160,22 +184,41 @@ export function SidebarProjects() {
 
   // Fold a data group into the native tree view model: a title, the clean repo
   // name for the actions menu, and each thread's label + real relative-time chip
-  // + active-state from the current route.
+  // + active-state from the current route. Delegated children (a bot's thread
+  // under the turn that handed it work) nest under their parent row.
   const toTree = useCallback(
-    (list: readonly ProjectGroup[]): TreeProjectGroup[] =>
-      list.map((group) => ({
+    (list: readonly ProjectGroup[]): TreeProjectGroup[] => {
+      const childRows = (parentId: string): ProjectThread[] =>
+        (families.childrenByParent.get(parentId) ?? []).map((child: ThreadRelationship) => ({
+          id: child.threadId,
+          label: child.title,
+          time: relativeTimeShort(child.latestActivityAt),
+          status: child.status,
+          engine: child.engine,
+          model: child.model,
+          isSelected: pathname === `/session/${child.threadId}`,
+          children: childRows(child.threadId),
+        }));
+      return list.map((group) => ({
         key: group.key,
         label: group.name,
         fullName: group.fullName,
-        threads: group.threads.map((run) => ({
-          id: run.id,
-          label: run.prompt || "Untitled run",
-          time: relativeTimeShort(threadRowTimestamp(run)),
-          status: effectiveThreadStatus(run),
-          isSelected: pathname === `/session/${run.id}`,
-        })),
-      })),
-    [pathname],
+        threads: group.threads.map((run): ProjectThread => {
+          return {
+            id: run.id,
+            label: runTitle(run.prompt),
+            time: relativeTimeShort(threadRowTimestamp(run)),
+            status: effectiveThreadStatus(run),
+            engine: run.engine,
+            model: run.model,
+            isSelected: pathname === `/session/${run.id}`,
+            children: childRows(run.id),
+            nativeChildren: sidebarNativeAgentRows(run),
+          };
+        }),
+      }));
+    },
+    [families.childrenByParent, pathname],
   );
 
   // Projects with active threads stay in view; the long tail of empty repos sits
@@ -236,8 +279,9 @@ export function SidebarProjects() {
         <button
           type="button"
           onClick={() => setShowEmptyProjects((value) => !value)}
-          className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
+          className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-secondary transition-colors hover:bg-background-secondary-hover hover:text-text-primary"
         >
+          <RiArrowDownSLine aria-hidden className={cx("size-3.5 shrink-0", showEmptyProjects && "rotate-180")} />
           {showEmptyProjects ? "Show fewer" : `Show ${emptyProjectVisibility.hiddenCount} more`}
         </button>
       ) : null}
@@ -245,22 +289,25 @@ export function SidebarProjects() {
       {independentThreads.length > 0 && (
         <>
           <SidebarSectionLabel>Threads</SidebarSectionLabel>
-          <ul aria-label="Threads without a project" className="flex flex-col">
-            {visibleThreads.map((run) => {
-              const href = `/session/${run.id}`;
-              return (
-                <li key={run.id}>
-                  <ThreadRow run={run} href={href} active={pathname === href} />
-                </li>
-              );
-            })}
+          <ProjectThreadList
+            ariaLabel="Threads without a project"
+            threads={toTree([{
+              key: UNATTACHED_KEY,
+              name: "No project",
+              fullName: null,
+              threads: visibleThreads,
+            }])[0]?.threads ?? []}
+            threadHref={(thread) => `/session/${thread.id}`}
+          />
+          <ul className="flex flex-col">
             {threadOverflow > 0 || showAllThreads ? (
               <li>
                 <button
                   type="button"
                   onClick={() => setShowAllThreads((value) => !value)}
-                  className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
+                  className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-secondary transition-colors hover:bg-background-secondary-hover hover:text-text-primary"
                 >
+                  <RiArrowDownSLine aria-hidden className={cx("size-3.5 shrink-0", showAllThreads && "rotate-180")} />
                   {showAllThreads ? "Show fewer" : `Show ${threadOverflow} more`}
                 </button>
               </li>

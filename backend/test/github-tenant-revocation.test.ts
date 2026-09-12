@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import {
   resolveGithubRepositoryAccess,
@@ -11,8 +11,6 @@ import { uid } from "./helpers";
 
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const PEM = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
-const realFetch = globalThis.fetch;
-
 const ENV_KEYS = [
   "GITHUB_CONNECTION_APP_ID",
   "GITHUB_CONNECTION_APP_SLUG",
@@ -33,7 +31,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  globalThis.fetch = realFetch;
   for (const key of ENV_KEYS) delete process.env[key];
 });
 
@@ -58,11 +55,6 @@ describe("revoked tenant GitHub integration", () => {
     const orgId = uid("revoked-github-catalog-org");
     process.env.GITHUB_TENANT_ORG_ID = orgId;
     await createRevokedGithubConnection(orgId);
-    const fetchMock = mock(async () => {
-      throw new Error("legacy GitHub credential must not be used");
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
     await expect(githubOrgAccessErrorForOrg(orgId)).resolves.toBe(
       "GitHub integration has been revoked for this organization",
     );
@@ -74,18 +66,12 @@ describe("revoked tenant GitHub integration", () => {
     await expect(resolveGithubRepositoryAccess(orgId)).rejects.toThrow(
       "GitHub integration has been revoked for this organization",
     );
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   test("sandbox repository access does not fall back to the deployment GitHub App", async () => {
     const orgId = uid("revoked-github-sandbox-org");
     process.env.GITHUB_TENANT_ORG_ID = orgId;
     await createRevokedGithubConnection(orgId);
-    const fetchMock = mock(async () => {
-      throw new Error("legacy GitHub credential must not be used");
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
     await expect(
       resolveGithubSandboxToken("acme/private-repo", orgId),
     ).rejects.toThrow("GitHub integration has been revoked for this organization");

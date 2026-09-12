@@ -52,14 +52,15 @@ empty/error — with zero fabricated strings. `cleanup.ts` deletes every fixture
     name/content fields with no fabricated "saved" claim before submit.
 14. **Wiki** — asserts the honest empty branch iff zero published docs, then
     creates + publishes a real document and asserts its **title + body** render.
-15. **Schedules** — creates a schedule through the **New schedule** modal, asserts
-    the new row lands in the list with its cron + **Disabled** status (created
+15. **Automations** (`/agent/automations`; `/agent/schedules` redirects there) -
+    creates one through the **New automation** modal (label-bound fields), asserts
+    the new row lands in the list with its cron + **Paused** status (created
     off), and that it persisted server-side `enabled=false`.
-16. **Workspace** — the **Limits** card reflects real `/api/fleet` (per-model
-    burn + `tokens today`, or the honest "No model runs yet today."), and fleet
-    run rows link to **`/session/{id}`** (a real run id; never the dead
-    `/agent/runs/`).
-17. **Live Artifacts** (`/agent/artifacts`, the real one — `/artifacts` is a
+16. **Dashboard** (`/dashboard`; `/agent/workspace` redirects there) - the
+    **Limits** card reflects real `/api/fleet` (per-model **Token burn · today**,
+    or the honest "No model runs yet today."), and fleet run rows link to
+    **`/session/{id}`** (a real run id; never the dead `/agent/runs/`).
+17. **Artifacts** (`/agent/artifacts`, the real one - `/artifacts` is a
     placeholder gallery, not tested) — each card links to `/session/{runId}` for
     a real run, or the honest "No artifacts yet" empty state with the Start-a-run
     CTA.
@@ -70,11 +71,18 @@ Requires an **isolated stack** (never touch shared dev servers):
 
 ```bash
 # backend on :3513 against the real `useAgent` DB, memory disabled to avoid
-# polluting shared team memory:
-cd backend && PORT=3513 MEMORY_API_URL="" FRONTEND_ORIGIN="http://localhost:3200" bun src/index.ts
+# polluting shared team memory (ALLOW_DEV_ORG=1 so the anonymous sweep lands in
+# the dev org; the sandbox-free scenarios 9 and 12 to 17 need nothing else):
+cd backend && PORT=3513 MEMORY_API_URL="" ALLOW_DEV_ORG=1 FRONTEND_ORIGIN="http://localhost:3200" bun src/index.ts
 
-# frontend on :3413 proxying /api to :3513:
-cd frontend && USEAGENT_API_ORIGIN="http://localhost:3513" ./node_modules/.bin/next dev -p 3413
+# frontend on :3413 proxying /api to :3513. USEAGENT_PREVIEW_OPEN=1 keeps the
+# anonymous sweep off the /login redirect. A second `next dev` from a tree that
+# already runs one refuses to start unless USEAGENT_BUILD_DIST names its own
+# dist directory (for example USEAGENT_BUILD_DIST=.next-sweep):
+cd frontend && USEAGENT_PREVIEW_OPEN=1 USEAGENT_API_ORIGIN="http://localhost:3513" ./node_modules/.bin/next dev -p 3413
+
+# then, from backend/, point the sweep at that stack:
+FE_ORIGIN=http://localhost:3413 BE_ORIGIN=http://localhost:3513 SCENARIOS=9,12,13,14,15,16,17 bun test/e2e/ui-sweep/sweep.ts
 
 # playwright-core (system Chrome) is a declared backend devDependency, so
 # `cd backend && bun install` restores it (bun resolves node_modules upward from

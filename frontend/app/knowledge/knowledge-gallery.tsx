@@ -19,9 +19,10 @@ import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { AddKnowledgeModal } from "./add-knowledge-modal";
 import { ContextCardStack } from "./context-card";
 import { KnowledgeRow } from "./knowledge-rows";
+import { KnowledgeUploadDrop } from "./knowledge-upload";
 import {
   deleteKnowledge,
-  fetchKnowledgeItems,
+  fetchKnowledge,
   searchKnowledge,
   setKnowledgePinned,
 } from "./knowledge-api";
@@ -50,14 +51,18 @@ function RowList({ children }: { children: ReactNode }) {
 
 export function KnowledgeGallery({
   initialItems,
+  initialSearchNote = null,
   initialLive,
   initialError,
 }: {
   initialItems: KnowledgeItem[];
+  /** Backend note when search is keyword-only (no embeddings); null when hybrid. */
+  initialSearchNote?: string | null;
   initialLive: boolean;
   initialError: boolean;
 }) {
   const [items, setItems] = useState<KnowledgeItem[]>(initialItems);
+  const [searchNote, setSearchNote] = useState<string | null>(initialSearchNote);
   const [live, setLive] = useState(initialLive);
   const [error, setError] = useState(initialError);
   const [query, setQuery] = useState("");
@@ -71,8 +76,9 @@ export function KnowledgeGallery({
 
   const refetch = useCallback(async () => {
     try {
-      const fresh = await fetchKnowledgeItems();
-      setItems(fresh);
+      const fresh = await fetchKnowledge();
+      setItems(fresh.items);
+      setSearchNote(fresh.searchNote);
       setLive(true);
       setError(false);
     } catch {
@@ -221,8 +227,16 @@ export function KnowledgeGallery({
         <AddKnowledgeModal folders={folderOptions} onIngested={refetch} />
       </div>
 
-      {/* Search */}
+      {/* Document upload: lands in the folder being viewed, or the first one. */}
       <div className="mt-6">
+        <KnowledgeUploadDrop
+          folder={folderFilter === "all" ? (folderOptions[0] ?? "Global") : folderFilter}
+          onIngested={refetch}
+        />
+      </div>
+
+      {/* Search */}
+      <div className="mt-4">
         <Input
           aria-label="Search knowledge"
           placeholder="Search knowledge..."
@@ -230,6 +244,9 @@ export function KnowledgeGallery({
           value={query}
           onChange={setQuery}
         />
+        {searchNote && (
+          <p className="mt-1.5 text-caption-1-regular text-text-tertiary">{searchNote}</p>
+        )}
       </div>
 
       {/* Folder filter — page-level, applies to both sections below. */}

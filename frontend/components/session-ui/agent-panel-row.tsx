@@ -26,8 +26,15 @@
 // - Dot = the shared StatusDot primitive (components/shared/status-dot), pulsing
 //   while active, instead of a parallel dot implementation.
 
-import { RiArrowRightSLine, RiCheckLine, RiErrorWarningLine } from "@remixicon/react";
+import {
+  RiArrowDownSLine,
+  RiArrowRightSLine,
+  RiCheckLine,
+  RiErrorWarningLine,
+} from "@remixicon/react";
 import Link from "next/link";
+import type { KeyboardEventHandler } from "react";
+import { type ChildKind, childKindLabel } from "@/components/chat/child-labels";
 import type { ChildUsage } from "@/components/chat/child-usage";
 import type { ChildStatus } from "@/components/chat/native-events";
 import { type EngineId, engineLabel } from "@/components/chat/types";
@@ -41,6 +48,7 @@ export interface AgentPanelRowModel {
   /** Engine that runs this child (gateway children); null for native children
    *  whose engine is the parent's. Rendered in the meta caption. */
   readonly engine: EngineId | null;
+  readonly provider?: string | null;
   readonly model: string | null;
   readonly status: ChildStatus;
   /** Human status word for `status` (sr-only text + activity fallback). */
@@ -55,6 +63,13 @@ export interface AgentPanelRowModel {
   readonly usage: ChildUsage | null;
   /** Preformatted elapsed ("34s"); null when no honest wall clock exists. */
   readonly elapsed: string | null;
+  readonly lane?: "product" | "native" | "gateway";
+  readonly childCount?: number;
+  /** What this row IS for people: a subagent, a bot thread, a child thread, a
+   *  spawned session. Names the row caption and its accessible label. */
+  readonly kind: ChildKind;
+  /** The bot a bot thread belongs to (its caption reads "Nova · bot thread"). */
+  readonly botName?: string | null;
 }
 
 /** In-flight states all present as one steady working state (T3 rule: detail
@@ -109,6 +124,22 @@ export function formatSubagentModelLabel(
   return effort ? `${compact} · ${effort}` : compact;
 }
 
+/**
+ * The ONE engine/model caption shared by the inline fold, the rail row and the
+ * rail detail ("OpenCode · opus-5"); null when neither is known. Pair it with
+ * CHILD_META_CLASS so the three surfaces read identically.
+ */
+export function formatChildEngineModel(
+  engine: EngineId | null | undefined,
+  model: string | null | undefined,
+): string | null {
+  const parts = [engine ? engineLabel(engine) : null, formatSubagentModelLabel(model ?? null, null)]
+    .filter((value): value is string => value !== null);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+export const CHILD_META_CLASS = "text-caption-1-medium text-text-tertiary tabular-nums";
+
 export function formatSubagentTokenCount(totalTokens: number): string {
   if (totalTokens < 1000) {
     return `${totalTokens}`;
@@ -128,10 +159,10 @@ export function formatSubagentCostUsd(costUsd: number): string {
  *  warning when it ended badly, nothing while live (the pulsing dot carries it). */
 function AgentStateGlyph({ status }: { status: ChildStatus }) {
   if (status === "completed") {
-    return <RiCheckLine aria-hidden className="text-lime-600 size-3.5 shrink-0" />;
+    return <RiCheckLine aria-hidden className="text-success-base size-3.5 shrink-0" />;
   }
   if (status === "failed" || status === "cancelled" || status === "interrupted") {
-    return <RiErrorWarningLine aria-hidden className="text-red-500 size-3.5 shrink-0" />;
+    return <RiErrorWarningLine aria-hidden className="text-text-error-primary size-3.5 shrink-0" />;
   }
   return null;
 }
@@ -152,30 +183,56 @@ export function AgentPanelRow({
   agent,
   onOpen,
   href,
+  treeItem,
 }: {
   agent: AgentPanelRowModel;
   onOpen?: () => void;
   href?: string;
+  treeItem?: {
+    readonly id: string;
+    readonly level: number;
+    readonly position: number;
+    readonly setSize: number;
+    readonly expanded?: boolean;
+    readonly tabIndex: number;
+    readonly onKeyDown: KeyboardEventHandler<HTMLElement>;
+    readonly onFocus: () => void;
+  };
 }) {
   const live = isActiveStatus(agent.status);
-  // Second line only when there is real content: the activity/result text, else
-  // the status word - EXCEPT a completed row, whose check glyph already says it
-  // (so a settled card with nothing to add stays a single tidy line).
-  const caption =
+  // Second line: what this row IS ("Nova · bot thread", "subagent") and then the
+  // activity/result text, else the status word - EXCEPT a completed row, whose
+  // check glyph already says it. The kind lives here, not beside the title, so a
+  // 360px rail never squeezes the title down to a letter.
+  const activity =
     agentPanelActivityText(agent) ?? (agent.status === "completed" ? null : agent.statusLabel);
+  const caption = [childKindLabel(agent.kind, agent.botName), activity]
+    .filter((value): value is string => value !== null)
+    .join(" · ");
   const role =
     agent.role?.trim().toLocaleLowerCase() === agent.title.trim().toLocaleLowerCase()
       ? null
       : agent.role;
   const meta = [
-    agent.engine ? engineLabel(agent.engine) : null,
-    formatSubagentModelLabel(agent.model, null),
+    agent.engine
+      ? formatChildEngineModel(agent.engine, agent.model)
+      : [agent.provider ?? null, formatSubagentModelLabel(agent.model, null)]
+          .filter((value): value is string => value !== null)
+          .join(" · ") || null,
     agent.usage ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok` : null,
     agent.usage?.costUsd !== undefined ? formatSubagentCostUsd(agent.usage.costUsd) : null,
   ].filter((value): value is string => value !== null);
+  const openLabel = `Open ${childKindLabel(agent.kind)}: ${agent.title}`;
 
-  const className =
-    "bg-background-secondary-default border-border-button-default hover:bg-background-tertiary-hover block w-full rounded-xl border px-3 py-2 text-left transition-colors";
+  const depthClass = treeItem
+    ? ["", "ml-3 w-[calc(100%-0.75rem)]", "ml-6 w-[calc(100%-1.5rem)]", "ml-9 w-[calc(100%-2.25rem)]"][
+        Math.min(3, Math.max(0, treeItem.level - 1))
+      ]
+    : "";
+  const className = cn(
+    "bg-background-secondary-default border-border-button-default hover:bg-background-tertiary-hover block w-full rounded-xl border px-3 py-2 text-left transition-colors",
+    depthClass,
+  );
   const body = (
     <>
       <div className="flex items-center gap-2">
@@ -184,55 +241,102 @@ export function AgentPanelRow({
           {agent.title}
         </span>
         {role ? (
-          <span className="border-border-button-default text-text-tertiary max-w-24 shrink-0 truncate rounded-sm border px-1 font-mono text-[.65rem]">
+          <span className="border-border-button-default text-text-tertiary max-w-24 shrink-0 truncate rounded-full border px-1.5 text-caption-2-medium">
             {role}
           </span>
         ) : null}
         {meta.length > 0 ? (
-          <span className="text-text-tertiary shrink-0 truncate font-mono text-caption-1-medium tabular-nums">
-            {meta.join(" · ")}
-          </span>
+          <span className={cn(CHILD_META_CLASS, "shrink-0 truncate")}>{meta.join(" · ")}</span>
         ) : null}
         {agent.elapsed ? (
           <span className="text-text-tertiary shrink-0 font-mono text-caption-1-medium tabular-nums">
             {agent.elapsed}
           </span>
         ) : null}
+        {agent.childCount ? (
+          <span className="text-text-tertiary shrink-0 font-mono text-caption-1-medium tabular-nums">
+            {agent.childCount} {agent.childCount === 1 ? "child" : "children"}
+          </span>
+        ) : null}
         <AgentStateGlyph status={agent.status} />
-        <RiArrowRightSLine className="text-text-tertiary size-4 shrink-0" aria-hidden />
+        {treeItem && agent.childCount ? (
+          treeItem.expanded ? (
+            <RiArrowDownSLine className="text-text-tertiary size-4 shrink-0" aria-hidden />
+          ) : (
+            <RiArrowRightSLine className="text-text-tertiary size-4 shrink-0" aria-hidden />
+          )
+        ) : (
+          <RiArrowRightSLine className="text-text-tertiary size-4 shrink-0" aria-hidden />
+        )}
       </div>
-      {caption ? (
-        <p
-          className={cn(
-            "mt-0.5 truncate pl-[1.25rem] text-caption-1-regular",
-            agent.status === "failed" ? "text-text-error-primary" : "text-text-secondary",
-            live && "agent-progress-loading-text",
-          )}
-        >
-          {caption}
-        </p>
-      ) : null}
+      <p
+        className={cn(
+          "mt-0.5 truncate pl-[1.25rem] text-caption-1-regular",
+          agent.status === "failed" ? "text-text-error-primary" : "text-text-secondary",
+          live && activity !== null && "agent-progress-loading-text",
+        )}
+      >
+        {caption}
+      </p>
       <span className="sr-only">{agent.statusLabel}</span>
     </>
   );
 
-  return href ? (
+  if (href) return (
     <Link
       href={href}
+      role={treeItem ? "treeitem" : undefined}
+      aria-level={treeItem?.level}
+      aria-posinset={treeItem?.position}
+      aria-setsize={treeItem?.setSize}
+      aria-expanded={treeItem?.expanded}
+      tabIndex={treeItem?.tabIndex}
+      onKeyDown={treeItem?.onKeyDown}
+      onFocus={treeItem?.onFocus}
+      data-child-tree-id={treeItem?.id}
+      data-child-lane={agent.lane}
       data-testid="subagent-card"
       data-session-ui="agent-panel-row"
-      aria-label={`Open subagent: ${agent.title}`}
+      aria-label={openLabel}
       className={className}
     >
       {body}
     </Link>
-  ) : (
+  );
+  if (treeItem) return (
+    <div
+      role="treeitem"
+      aria-level={treeItem.level}
+      aria-posinset={treeItem.position}
+      aria-setsize={treeItem.setSize}
+      aria-expanded={treeItem.expanded}
+      tabIndex={treeItem.tabIndex}
+      onClick={onOpen}
+      onFocus={treeItem.onFocus}
+      onKeyDown={(event) => {
+        treeItem.onKeyDown(event);
+        if (event.defaultPrevented || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        onOpen?.();
+      }}
+      data-child-tree-id={treeItem.id}
+      data-child-lane={agent.lane}
+      data-testid="subagent-card"
+      data-session-ui="agent-panel-row"
+      aria-label={openLabel}
+      className={cn(className, "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring")}
+    >
+      {body}
+    </div>
+  );
+  return (
     <button
       type="button"
       onClick={onOpen}
+      data-child-lane={agent.lane}
       data-testid="subagent-card"
       data-session-ui="agent-panel-row"
-      aria-label={`Open subagent: ${agent.title}`}
+      aria-label={openLabel}
       className={className}
     >
       {body}

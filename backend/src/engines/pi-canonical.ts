@@ -20,6 +20,26 @@ function preview(value: unknown): string | undefined {
   return raw && raw !== "{}" ? raw.slice(0, 4_000) : undefined;
 }
 
+/** A Pi tool result is a content-block list (`[{type:"text",text}]`, or an
+ * object wrapping one). The terminal log and the tool row want the text a
+ * customer would read, not the JSON envelope; anything else keeps the preview. */
+function toolOutput(value: unknown): string | undefined {
+  if (typeof value === "string") return value ? value.slice(0, 4_000) : undefined;
+  const blocks = Array.isArray(value)
+    ? value
+    : Array.isArray(record(value)?.content)
+      ? (record(value)?.content as unknown[])
+      : null;
+  if (blocks) {
+    const texts = blocks.flatMap((item) => {
+      const block = record(item);
+      return typeof block?.text === "string" ? [block.text] : [];
+    });
+    if (texts.length > 0) return texts.join("\n").slice(0, 4_000);
+  }
+  return preview(value);
+}
+
 function messageId(frame: Record<string, unknown>, fallback: string): string {
   const message = record(frame.message);
   return text(message?.id) ?? (number(message?.timestamp) !== undefined
@@ -85,7 +105,7 @@ function toolResult(message: Record<string, unknown>): NativeBridgeFrameBody | n
   const toolCallId = text(message.toolCallId);
   if (!toolCallId) return null;
   const errored = message.isError === true;
-  const output = preview(message.content);
+  const output = toolOutput(message.content);
   return {
     kind: "tool.completed",
     toolCallId,
@@ -102,12 +122,42 @@ function toolResult(message: Record<string, unknown>): NativeBridgeFrameBody | n
 interface PiFrameState {
   readonly fallbackMessageId: string;
   readonly messageIdsByTimestamp: Map<number, string>;
+  /** Input by tool call id, from the start frame until the call completes. */
+  readonly toolInputs: Map<string, unknown>;
   activeMessageId: string;
   messageStarted: boolean;
   messageIndex: number;
 }
 
 const MAX_TRACKED_MESSAGE_IDS = 2_048;
+const MAX_TRACKED_TOOL_INPUTS = 512;
+
+/** Pi reports a tool's input only when the call starts; every later frame for
+ * the same call (the execution end AND the toolResult message that follows it)
+ * upserts the same durable row, so carry the input onto each of them or the
+ * surviving row loses the command and the path. Inputs stay for the turn,
+ * bounded, because the last completion is the one that persists. */
+function carryToolInputs(
+  bodies: readonly NativeBridgeFrameBody[],
+  state: PiFrameState,
+): readonly NativeBridgeFrameBody[] {
+  return bodies.map((body) => {
+    if (body.kind === "tool.started") {
+      if (body.input !== undefined && !state.toolInputs.has(body.toolCallId)) {
+        state.toolInputs.set(body.toolCallId, body.input);
+        while (state.toolInputs.size > MAX_TRACKED_TOOL_INPUTS) {
+          const oldest = state.toolInputs.keys().next();
+          if (oldest.done) break;
+          state.toolInputs.delete(oldest.value);
+        }
+      }
+      return body;
+    }
+    if (body.kind !== "tool.progress" && body.kind !== "tool.completed") return body;
+    const input = state.toolInputs.get(body.toolCallId);
+    return input === undefined || body.input !== undefined ? body : { ...body, input };
+  });
+}
 
 function resolvedMessageId(
   frame: Record<string, unknown>,
@@ -251,7 +301,7 @@ function mapPiRpcFrame(frame: unknown, state: PiFrameState): readonly NativeBrid
         kind: "tool.progress",
         toolCallId: text(value.toolCallId) ?? "pi-tool",
         name: text(value.toolName),
-        preview: preview(value.partialResult),
+        preview: toolOutput(value.partialResult),
       }];
     case "tool_execution_end":
       return [{
@@ -259,8 +309,8 @@ function mapPiRpcFrame(frame: unknown, state: PiFrameState): readonly NativeBrid
         toolCallId: text(value.toolCallId) ?? "pi-tool",
         name: text(value.toolName),
         status: value.isError === true ? "error" : "ok",
-        preview: preview(value.result),
-        ...(value.isError === true ? { error: preview(value.result) } : {}),
+        preview: toolOutput(value.result),
+        ...(value.isError === true ? { error: toolOutput(value.result) } : {}),
       }];
     case "todo_reminder": {
       const todos = Array.isArray(value.todos) ? value.todos : [];
@@ -358,6 +408,7 @@ export function createPiRpcFrameMapper(fallbackMessageId: string) {
   const state: PiFrameState = {
     fallbackMessageId,
     messageIdsByTimestamp: new Map(),
+    toolInputs: new Map(),
     activeMessageId: fallbackMessageId,
     messageStarted: false,
     messageIndex: 0,
@@ -373,19 +424,20 @@ export function createPiRpcFrameMapper(fallbackMessageId: string) {
       const childState = childStates.get(childId) ?? {
         fallbackMessageId: `${fallbackMessageId}-child-${childId}`,
         messageIdsByTimestamp: new Map(),
+        toolInputs: new Map(),
         activeMessageId: `${fallbackMessageId}-child-${childId}`,
         messageStarted: false,
         messageIndex: 0,
       };
       childStates.set(childId, childState);
-      const bodies = mapPiRpcFrame(childFrame, childState).flatMap((body) => {
+      const bodies = carryToolInputs(mapPiRpcFrame(childFrame, childState), childState).flatMap((body) => {
         const owned = childOwnedBody(childId, body);
         return owned ? [owned] : [];
       });
       completeMessageFrame(childState, childFrame);
       return bodies;
     }
-    const bodies = mapPiRpcFrame(frame, state);
+    const bodies = carryToolInputs(mapPiRpcFrame(frame, state), state);
     if (value) completeMessageFrame(state, value);
     return bodies;
   };

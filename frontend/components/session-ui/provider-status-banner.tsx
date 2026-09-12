@@ -12,10 +12,9 @@
 //   Our manifest now keeps configured engines visible and carries a separate
 //   readiness map. This component consumes that already-fetched state (no new
 //   request) and shows the backend's actionable provider detail.
-// - Presentation rides the BoardUI base Notification card (semantic
-//   notification-* tokens, so it follows every theme) instead of the original
-//   raw yellow ramp; BoardUI ships no warning status, so the advisory uses
-//   `information`.
+// - Presentation rides the BoardUI base Notification card (semantic tokens, so
+//   it follows every theme) in its warning status: the engine is degraded, not
+//   merely newsworthy.
 
 import { Notification } from "@/components/base/notification/notification";
 import type { EngineReadinessCatalog } from "@/components/chat/engine-picker";
@@ -34,7 +33,12 @@ export function unavailableEngineLabel(
 ): string | null {
   if (!readinessKnown) return null;
   if (enabledEngines.includes(engine) && readiness[engine]?.ready !== false) return null;
-  return ENGINES.find((e) => e.id === engine)?.label ?? engine;
+  return engineDisplayLabel(engine);
+}
+
+/** The engine's catalog label, or "This engine" - never a raw id in a sentence. */
+export function engineDisplayLabel(engine: EngineId): string {
+  return ENGINES.find((e) => e.id === engine)?.label ?? "This engine";
 }
 
 /**
@@ -54,7 +58,7 @@ export function ProviderStatusBanner({
     <div data-session-ui="provider-status-banner">
       <Notification
         role="alert"
-        status="information"
+        status="warning"
         title={`${engineLabel} is unavailable`}
         description={description ?? `${engineLabel} is currently unavailable on this server. Replies that use this engine may fail until it returns.`}
         dismissible={Boolean(onDismiss)}

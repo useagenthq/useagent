@@ -43,6 +43,9 @@ export interface WorkEntry {
   id: string;
   label: string;
   tone: WorkEntryTone;
+  /** Port addition: the collapsed one-line preview when the raw `command`/`detail`
+   *  must not be shown inline (a tool result's first readable line, never its JSON). */
+  preview?: string;
   detail?: string;
   command?: string;
   rawCommand?: string;
@@ -184,9 +187,12 @@ export function toolWorkEntryHeading(entry: WorkEntry): string {
   // normalization can strip a label to "" - a heading-less row renders as a bare
   // chevron+status glyph (user-reported). Every heading is therefore total:
   // toolTitle, then label, then the structural fallback.
+  // A shell row's title IS its command line, which must keep its own case.
+  const verbatim = entry.requestKind === "command";
   for (const source of [entry.toolTitle, entry.label]) {
     if (!source) continue;
-    const heading = capitalizePhrase(normalizeCompactToolLabel(source));
+    const compact = normalizeCompactToolLabel(source);
+    const heading = verbatim ? compact : capitalizePhrase(compact);
     if (heading.trim().length > 0) return heading;
   }
   return structuralWorkEntryHeading(entry);
@@ -206,9 +212,10 @@ export function formatWorkspaceRelativePath(
 }
 
 export function workEntryPreview(
-  entry: Pick<WorkEntry, "detail" | "command" | "changedFiles">,
+  entry: Pick<WorkEntry, "preview" | "detail" | "command" | "changedFiles">,
   workspaceRoot: string | undefined,
 ): string | null {
+  if (entry.preview) return entry.preview;
   if (entry.command) return entry.command;
   if (entry.detail) return entry.detail;
   if ((entry.changedFiles?.length ?? 0) === 0) return null;
@@ -254,6 +261,19 @@ export function buildToolCallExpandedBody(
     );
   }
   return blocks.length > 0 ? blocks.join("\n\n") : null;
+}
+
+/** Port addition: whether buildToolCallExpandedBody would render anything,
+ *  decided without building it (a row settles its expandability per render;
+ *  the body itself is built only once the row is opened). */
+export function workEntryHasExpandedBody(entry: WorkEntry): boolean {
+  return Boolean(
+    (entry.itemType === "mcp_tool_call" && entry.toolData !== undefined) ||
+      entry.rawCommand?.trim() ||
+      entry.command?.trim() ||
+      entry.detail?.trim() ||
+      (entry.changedFiles?.length ?? 0) > 0,
+  );
 }
 
 // ── Icon grammar (MessagesTimeline.tsx) ─────────────────────────────────────

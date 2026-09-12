@@ -39,6 +39,37 @@ const PromptInputContext = createContext<PromptInputContextType>({
   textareaRef: React.createRef<HTMLTextAreaElement>(),
 });
 
+type ResizeObserverLike = Pick<ResizeObserver, "disconnect" | "observe">;
+
+export function resizeTextareaToContent(
+  el: HTMLTextAreaElement,
+  maxHeight: number | string,
+): void {
+  el.style.height = "0px";
+  if (typeof maxHeight === "number") {
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+  } else {
+    el.style.height = `min(${el.scrollHeight}px, ${maxHeight})`;
+  }
+}
+
+export function observeTextareaWidth(
+  el: HTMLTextAreaElement,
+  onWidthChange: () => void,
+  createObserver: (callback: ResizeObserverCallback) => ResizeObserverLike = (callback) =>
+    new ResizeObserver(callback),
+): () => void {
+  let lastWidth = el.getBoundingClientRect().width;
+  const observer = createObserver((entries) => {
+    const width = entries.at(-1)?.contentRect.width ?? lastWidth;
+    if (width === lastWidth) return;
+    lastWidth = width;
+    onWidthChange();
+  });
+  observer.observe(el);
+  return () => observer.disconnect();
+}
+
 function usePromptInput() {
   return useContext(PromptInputContext);
 }
@@ -130,12 +161,7 @@ function PromptInputTextarea({
     // stretched grid/flex track while the session rail is booting, turning the
     // textarea's used height into its next scrollHeight and freezing a tall
     // empty composer until another state change remeasures it.
-    el.style.height = "0px";
-    if (typeof maxHeight === "number") {
-      el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
-    } else {
-      el.style.height = `min(${el.scrollHeight}px, ${maxHeight})`;
-    }
+    resizeTextareaToContent(el, maxHeight);
   };
 
   const handleRef = (el: HTMLTextAreaElement | null) => {
@@ -145,15 +171,22 @@ function PromptInputTextarea({
 
   useLayoutEffect(() => {
     if (!textareaRef.current || disableAutosize) return;
-    const el = textareaRef.current;
-    el.style.height = "0px";
-    if (typeof maxHeight === "number") {
-      el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
-    } else {
-      el.style.height = `min(${el.scrollHeight}px, ${maxHeight})`;
-    }
+    adjustHeight(textareaRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, maxHeight, disableAutosize]);
+
+  // The measured height goes stale whenever the textarea's width changes
+  // under it (a rail drag, the sidebar folding, a window resize, a pane that
+  // was display:none at first measure): the wrapped line count changes but
+  // nothing above re-runs the value effect, so an empty composer can sit at
+  // a tall frozen height until the next keystroke. Re-measure on every size
+  // change of the element itself.
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el || disableAutosize || typeof ResizeObserver === "undefined") return;
+    return observeTextareaWidth(el, () => adjustHeight(el));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disableAutosize, maxHeight]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     adjustHeight(e.target);

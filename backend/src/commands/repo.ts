@@ -1,10 +1,13 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
-import { commands, runs, type CommandState } from "../db/schema";
+import { bots, commands, runs, type CommandState } from "../db/schema";
 import { createRun } from "../runs/repo";
 import type { RunCommandInput } from "./types";
 import { claimUploadsForRun, UploadClaimError } from "../uploads/repo";
 import { recordAdmissionOnAccept } from "../fleet/intake";
+import { ensureRootThreadRelationship, insertThreadRelationship } from "../runs/thread-relationship-repo";
+import { threadRelationshipWriteMode } from "../runs/thread-relationship-rollout";
+import { enqueueProductChildStartedTx } from "../slack/product-child";
 
 // ---------------------------------------------------------------------------
 // Command persistence — pure data access, no decisions. The service layer
@@ -36,6 +39,17 @@ export interface NewRunCommand {
   readonly origin: string | null;
   /** Server-owned fleet priority. Public run acceptance always supplies 0. */
   readonly priority: number;
+  readonly threadRelationship?: RunCommandInput["threadRelationship"];
+  readonly botHome?: RunCommandInput["botHome"];
+}
+
+/** Another first message opened the bot's home thread first; the losing
+ *  acceptance rolled back, so no stray root exists for it. */
+export class BotHomeThreadTakenError extends Error {
+  readonly code = "home_thread_already_created" as const;
+  constructor() {
+    super("bot home thread already created");
+  }
 }
 
 /** Look up a prior command by its per-tenant idempotency key. */
@@ -90,6 +104,41 @@ export async function insertCommandWithRun(
       },
       tx,
     );
+    if (cmd.botHome) {
+      const stamped = await tx
+        .update(bots)
+        .set({ homeThreadId: cmd.run.id, updatedAt: new Date() })
+        .where(and(eq(bots.orgId, cmd.orgId), eq(bots.id, cmd.botHome.botId), isNull(bots.homeThreadId)))
+        .returning({ id: bots.id });
+      if (stamped.length === 0) throw new BotHomeThreadTakenError();
+    }
+    if (cmd.threadRelationship) {
+      await insertThreadRelationship({
+        orgId: cmd.orgId,
+        threadId: cmd.run.threadId,
+        ...cmd.threadRelationship,
+      }, tx);
+      if (cmd.threadRelationship.parentThreadId) {
+        await enqueueProductChildStartedTx({
+          exec: tx,
+          orgId: cmd.orgId,
+          threadId: cmd.run.threadId,
+          runId: cmd.run.id,
+          title: cmd.threadRelationship.title,
+        });
+      }
+    } else if (
+      cmd.origin === null &&
+      cmd.run.parentRunId === null &&
+      cmd.run.threadId === cmd.run.id &&
+      threadRelationshipWriteMode() !== "off"
+    ) {
+      await ensureRootThreadRelationship({
+        orgId: cmd.orgId,
+        threadId: cmd.run.threadId,
+        title: cmd.run.prompt.slice(0, 160) || "Untitled thread",
+      }, tx);
+    }
     const attachmentIds = cmd.run.attachmentIds ?? [];
     if (attachmentIds.length > 0) {
       if (!cmd.actorId) throw new UploadClaimError();

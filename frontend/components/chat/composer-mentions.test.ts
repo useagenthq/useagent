@@ -1,17 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import {
+  botMention,
+  botToken,
   detectMentionTrigger,
   fileMention,
   insertMentionToken,
   type Mention,
+  mentionedBotIds,
   mentionKey,
   mentionsReducer,
   mentionsToRunResources,
+  mentionsToRunResources as toRunResources,
+  parseDraftMentions,
   prMention,
   removeMentionToken,
   shortThreadId,
   skillMention,
   threadMention,
+  unlinkedBotTokens,
 } from "./composer-mentions";
 import { repoTreeUrl } from "./composer-mentions-ui";
 
@@ -151,5 +157,92 @@ describe("identity + short id helpers", () => {
     expect(mentionKey(prMention("o/r", 9, "t"))).toBe("pr:o/r#9");
     expect(mentionKey(fileMention("o/r", "a/b.ts", null))).toBe("file:o/r:a/b.ts");
     expect(mentionKey(threadMention("abcd1234ef", "t"))).toBe("thread:abcd1234ef");
+  });
+});
+
+describe("bot mentions", () => {
+  test("a bot chip is a handoff, not a resource: token names it, the id rides separately", () => {
+    const nova = botMention(
+      "11111111-1111-4111-8111-111111111111",
+      "Nova",
+      "prism",
+      "research",
+    );
+    expect(nova.token).toBe("@bot/nova");
+    expect(nova.name).toBe("Nova");
+    expect(nova).toMatchObject({ avatarTone: "prism", avatarIcon: "research" });
+    expect(toRunResources([nova, skillMention("s1", "review-pr")])).toEqual([]);
+    expect(mentionedBotIds([nova, nova, skillMention("s1", "review-pr")])).toEqual(["11111111-1111-4111-8111-111111111111"]);
+    expect(mentionedBotIds([])).toEqual([]);
+  });
+
+  test("a name with spaces becomes one whitespace-free token; the chip keeps the name", () => {
+    expect(botToken("Night triage")).toBe("@bot/night-triage");
+    expect(botToken("Chief of staff")).toBe("@bot/chief-of-staff");
+    expect(botToken("  Q&A  bot ")).toBe("@bot/q-a-bot");
+    const triage = botMention("bot-triage", "Night triage");
+    expect(triage.name).toBe("Night triage");
+    // Inserted from the picker, the token stays intact and the caret lands after it.
+    const inserted = insertMentionToken("ask @nig", 4, 8, triage.token);
+    expect(inserted.text).toBe("ask @bot/night-triage ");
+    expect(inserted.caret).toBe(inserted.text.length);
+    expect(removeMentionToken(inserted.text, triage.token)).toBe("ask ");
+  });
+});
+
+describe("unlinkedBotTokens - a typed @bot/ token with no chip behind it", () => {
+  test("flags tokens no bot chip backs and ignores linked ones", () => {
+    const nova = botMention("bot-nova", "Nova");
+    expect(unlinkedBotTokens("@bot/nova compare the tiers", [nova])).toEqual([]);
+    expect(unlinkedBotTokens("@bot/Nova compare the tiers", [nova])).toEqual([]);
+    expect(unlinkedBotTokens("@bot/Atlas compare the tiers", [nova])).toEqual(["@bot/Atlas"]);
+    expect(unlinkedBotTokens("ask @bot/Atlas and @bot/Atlas again", [])).toEqual(["@bot/Atlas"]);
+  });
+
+  test("a multi-word bot's handle scans as one linked token", () => {
+    const triage = botMention("bot-triage", "Night triage");
+    expect(unlinkedBotTokens("@bot/night-triage name a second color", [triage])).toEqual([]);
+    expect(unlinkedBotTokens("@bot/Night-Triage name a second color", [triage])).toEqual([]);
+    expect(unlinkedBotTokens("@bot/night-triage and @bot/chief-of-staff", [triage])).toEqual(["@bot/chief-of-staff"]);
+  });
+
+  test("an email-like or mid-word @bot/ is not a token", () => {
+    expect(unlinkedBotTokens("mail x@bot/ops now", [])).toEqual([]);
+    expect(unlinkedBotTokens("nothing here", [])).toEqual([]);
+  });
+});
+
+describe("parseDraftMentions - chips restored with the draft", () => {
+  test("round-trips every mention kind and drops malformed entries", () => {
+    const saved = [
+      botMention("bot-nova", "Nova"),
+      skillMention("s1", "review"),
+      { kind: "thread", id: "t1", shortId: "t1short", title: "Old thread", token: "@thread/t1short" },
+      { kind: "pr", repo: "acme/api", number: 7, title: "Fix auth", token: "@acme/api#7" },
+      { kind: "file", repo: "acme/api", path: "src/a.ts", revision: null, token: "@acme/api:src/a.ts" },
+      { kind: "bot", id: 12 },
+      { kind: "nope", token: "x" },
+      "junk",
+    ];
+    const parsed = parseDraftMentions(JSON.stringify(saved));
+    expect(parsed).toHaveLength(5);
+    expect(mentionedBotIds(parsed)).toEqual(["bot-nova"]);
+    expect(parsed[0]).toMatchObject({ avatarTone: "blue", avatarIcon: "robot" });
+  });
+
+  test("preserves bot appearance and upgrades older drafts with safe defaults", () => {
+    const saved = botMention("bot-nova", "Nova", "prism", "research");
+    expect(parseDraftMentions(JSON.stringify([saved]))).toEqual([saved]);
+    expect(
+      parseDraftMentions(
+        JSON.stringify([{ kind: "bot", id: "bot-old", name: "Old bot", token: "@bot/old-bot" }]),
+      ),
+    ).toEqual([botMention("bot-old", "Old bot")]);
+  });
+
+  test("nothing saved, or unreadable storage, means no chips", () => {
+    expect(parseDraftMentions(null)).toEqual([]);
+    expect(parseDraftMentions("{not json")).toEqual([]);
+    expect(parseDraftMentions('{"kind":"bot"}')).toEqual([]);
   });
 });

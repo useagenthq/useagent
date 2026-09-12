@@ -106,6 +106,19 @@ export function safeCodexChatGptStatus(value: unknown): CodexChatGptStatus | nul
   };
 }
 
+/** GET /api/config `providers`: which model providers the deployment serves
+ *  from its own keys. Unknown or malformed input reads as "none". */
+export function safeDeploymentProviders(
+  value: unknown,
+): Partial<Record<ProviderConnectionProvider, boolean>> {
+  if (!isRecord(value)) return {};
+  const out: Partial<Record<ProviderConnectionProvider, boolean>> = {};
+  for (const provider of MODEL_PROVIDER_CONNECTION_PROVIDERS) {
+    if (value[provider] === true) out[provider] = true;
+  }
+  return out;
+}
+
 export function safeEnabledSandboxEngines(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.filter((engine): engine is string => typeof engine === "string"))];
@@ -133,11 +146,23 @@ export const PROVIDER_LABELS: Record<
     keyHint: "OpenRouter API key",
     keyPlaceholder: "sk-or-v1-...",
   },
+  cerebras: {
+    name: "Cerebras",
+    scope: "Cerebras inference models in OpenCode",
+    keyHint: "Cerebras API key",
+    keyPlaceholder: "csk-...",
+  },
   daytona: {
     name: "Daytona",
     scope: "Personal cloud sandbox runtime",
     keyHint: "Daytona API key",
     keyPlaceholder: "Daytona API key",
+  },
+  box: {
+    name: "Box",
+    scope: "Personal cloud computers (box.ascii.dev)",
+    keyHint: "Box API key",
+    keyPlaceholder: "Box API key",
   },
 };
 
@@ -181,6 +206,24 @@ export function statusLabel(connection: ProviderConnectionMeta | null): string {
   return "Revoked";
 }
 
+/** Footer line under a computer provider form: whether a stored key changes
+ *  where this user's threads run on this server. */
+export function computerFooterCopy(
+  name: string,
+  userComputers: boolean | null,
+  connected: boolean,
+): string {
+  if (userComputers === null) {
+    return "Checking whether personal computers run your work on this server...";
+  }
+  if (!userComputers) {
+    return "Stored for now. Runs stay on the server's computer until USER_COMPUTERS=on is set.";
+  }
+  return connected
+    ? `Connected. ${name} runs your threads on your own account.`
+    : `Once a key is stored, ${name} runs your threads on your own account instead of the server's computer.`;
+}
+
 /** Quiet, consistent tone for a status chip. "Connected" is the only positive
  *  (green) state; "Reauth required" keeps a subdued attention tone; every other
  *  state - "Not connected" (a normal, expected state) and "Revoked" (a quiet
@@ -222,6 +265,17 @@ export function safeDaytonaMetadata(input: {
   return { snapshotName };
 }
 
+/** Daytona needs a snapshot; Box may start from its base image. */
+export function safeComputerMetadata(
+  provider: "daytona" | "box",
+  input: { snapshotName: string },
+): { snapshotName?: string } | null {
+  if (provider === "daytona") return safeDaytonaMetadata(input);
+  const snapshotName = input.snapshotName.trim();
+  if (!snapshotName) return {};
+  return safeDaytonaMetadata({ snapshotName });
+}
+
 export function safeExternalAuthUrl(value: string): string | null {
   try {
     const url = new URL(value);
@@ -256,9 +310,9 @@ export function codexAuthStatusLabel(
   if (connection?.status === "connected" || status?.account?.authMode === "chatgpt") {
     return "Connected";
   }
-  if (connection?.status === "reauth_required" || status?.requiresOpenaiAuth) {
-    return "Reauth required";
-  }
+  // "Reauth required" is a state of a STORED connection; with nothing stored,
+  // the server's "needs OpenAI auth" flag just means not connected yet.
+  if (connection?.status === "reauth_required") return "Reauth required";
   if (connection?.status === "revoked") return "Revoked";
   return "Not connected";
 }
@@ -270,6 +324,6 @@ export function codexAuthBadgeStatus(
   connection: ProviderConnectionMeta | null,
 ): ConnectionBadgeStatus {
   if (isActiveConnection(connection) || status?.account?.authMode === "chatgpt") return "completed";
-  if (connection?.status === "reauth_required" || status?.requiresOpenaiAuth) return "pending";
+  if (connection?.status === "reauth_required") return "pending";
   return "disabled";
 }

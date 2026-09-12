@@ -5,6 +5,7 @@ import { acquireThreadSandbox } from "./thread-sandbox";
 import {
   awaitRuntimeProviderReady,
   prepareRuntimeProviderBridge,
+  prepareStableRuntimeProvider,
   type RuntimeProviderReadiness,
   type RuntimeProviderBridgeLease,
 } from "./runtime-provider-bridge";
@@ -37,6 +38,7 @@ import {
   sandboxProviderKind,
   type SandboxHandle,
 } from "../sandboxes/provider";
+import { sandboxPlugin } from "../sandboxes/plugins";
 import { recordProviderEvent } from "../runs/provider-events";
 import type { ProviderDriver } from "@useagent/agent-harness/control";
 import { sessionCapabilities } from "./capabilities";
@@ -72,8 +74,11 @@ export const RUNTIME_EMPTY_TERMINAL_OUTPUT_ERROR = "provider completed without a
 // steering; if it does not land in time, fall back to a deterministic restart.
 const CODEX_BARRIER_DEADLINE_MS = 5_000;
 const CODEX_VERIFY_DEADLINE_MS = 8_000;
-const CLAUDE_BARRIER_DEADLINE_MS = 5_000;
-const CLAUDE_VERIFY_DEADLINE_MS = 8_000;
+// T3's authoritative Claude health check includes a 4s CLI version probe and
+// a prompt-free SDK initialization bounded at 25s. Leave scheduling margin
+// without adding a second CLI retry loop in Pro.
+const CLAUDE_BARRIER_DEADLINE_MS = 35_000;
+const CLAUDE_VERIFY_DEADLINE_MS = 35_000;
 
 interface RuntimeProviderBarrierDependencies {
   readonly awaitReady: typeof awaitRuntimeProviderReady;
@@ -202,6 +207,9 @@ export function runtimeRunSnapshot(
       );
     }
     return template;
+  }
+  if (sandboxProviderKind(env) === "box") {
+    return env.BOX_SNAPSHOT?.trim() || "";
   }
   return (
     operatorEnv(env, "RUNTIME_DAYTONA_SNAPSHOT", "T3_DAYTONA_SNAPSHOT")?.trim() ||
@@ -535,11 +543,21 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         warmPool: RUNTIME_CUBE_WARM_POOL_NAME,
         labels: { [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION },
         requiredLabels: { [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION },
+        providerAfterResources: engine === "claude",
+        resourceUser: engine === "claude"
+          ? (binding) => sandboxPlugin(binding.kind).runsAsRoot
+            ? { uid: 1000, gid: 1000, home: "/home/user" }
+            : undefined
+          : undefined,
         // Frozen timing prefix: hosted cutover canaries read these values.
         timingPrefix: "t3",
+        prepareStableProvider(sandbox) {
+          return prepareStableRuntimeProvider(sandbox, ctx, engine);
+        },
         async prepareProvider(sandbox, workdir) {
           return await prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir);
         },
+        closeProvider: (state) => state.close(),
       });
       const { sandbox, workdir, redact } = prepared;
       const providerBridgeLease: RuntimeProviderBridgeLease = prepared.providerState;
@@ -715,8 +733,7 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
           }
         }
       } finally {
-        await providerBridgeLease?.close().catch(() => {});
-        await prepared.close();
+        await prepared.close().catch(() => {});
       }
     },
   };

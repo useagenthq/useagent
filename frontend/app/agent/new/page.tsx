@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { runTitle } from "@/components/chat/types";
 import { type DotTone, StatusDot } from "@/components/shared/status-dot";
 import { AppShell } from "@/components/shell/app-shell";
+import { threadActivityTimestamp } from "@/components/shell/thread-discovery";
 import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import { backendFetch } from "@/lib/backend-fetch";
 import { relativeTimeShort } from "@/utils/format";
@@ -17,7 +19,10 @@ interface RecentRun {
   id: string;
   prompt: string;
   status: string;
-  created_at: string | number;
+  created_at: string;
+  updated_at: string;
+  latest_created_at?: string;
+  latest_updated_at?: string;
 }
 
 /** Three most-recent real runs for the "Recent tasks" list. Empty on any
@@ -58,10 +63,10 @@ function RecentTasks({ runs }: { runs: RecentRun[] }) {
           >
             <StatusDot tone={STATUS_DOT[run.status] ?? "info"} />
             <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-primary">
-              {run.prompt}
+              {runTitle(run.prompt)}
             </span>
             <span className="shrink-0 text-caption-1-regular tabular-nums text-text-tertiary">
-              {relativeTimeShort(run.created_at)}
+              {relativeTimeShort(threadActivityTimestamp(run))}
             </span>
           </Link>
         ))}

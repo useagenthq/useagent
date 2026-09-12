@@ -129,3 +129,27 @@ export function effectiveStatus(
   if (resolution.phase === "resolved") return resolution.status;
   return record;
 }
+
+// ── Placement ───────────────────────────────────────────────────────────────
+
+/** Each approval renders under the turn whose run raised it; one whose run is
+ *  not a rendered turn (a folded child session) is an orphan for the lane below
+ *  the thread, so it is never lost. Order within a run is preserved. */
+export function groupApprovalsByRun<T extends { readonly runId: string }>(
+  approvals: readonly T[],
+  renderedRunIds: Iterable<string>,
+): { readonly byRun: ReadonlyMap<string, readonly T[]>; readonly orphans: readonly T[] } {
+  const rendered = new Set(renderedRunIds);
+  const byRun = new Map<string, T[]>();
+  const orphans: T[] = [];
+  for (const approval of approvals) {
+    if (!rendered.has(approval.runId)) {
+      orphans.push(approval);
+      continue;
+    }
+    const list = byRun.get(approval.runId);
+    if (list) list.push(approval);
+    else byRun.set(approval.runId, [approval]);
+  }
+  return { byRun, orphans };
+}

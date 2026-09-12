@@ -36,12 +36,15 @@ type NativeBridgeFramePayload =
       readonly kind: "tool.progress";
       readonly toolCallId: string;
       readonly name?: string;
+      /** The call's input, carried forward so a revision never erases it. */
+      readonly input?: unknown;
       readonly preview?: string;
     }
   | {
       readonly kind: "tool.completed";
       readonly toolCallId: string;
       readonly name?: string;
+      readonly input?: unknown;
       readonly status: "ok" | "error";
       readonly preview?: string;
       readonly error?: string;

@@ -7,7 +7,7 @@
  */
 import { and, eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
-import { slackRunResponses, slackThreads } from "../db/schema";
+import { slackRunResponses, slackThreads, threadRelationships } from "../db/schema";
 import type { SlackStreamTaskDisplayMode } from "./streaming";
 
 export interface SlackThreadLink {
@@ -134,6 +134,22 @@ export async function findSlackThreadByRoot(
     )
     .limit(2);
   return rows.length === 1 ? rows[0]! : null;
+}
+
+/** Resolve the Slack destination inherited by an ordinary product child thread.
+ * Relationship metadata is tenant-scoped and contains no connector credential;
+ * the durable Slack binding remains owned by the family root. */
+export async function findSlackThreadForProductThread(
+  orgId: string,
+  threadId: string,
+  exec: Executor = db,
+): Promise<SlackThreadTarget | null> {
+  const [relationship] = await exec
+    .select({ familyThreadId: threadRelationships.familyThreadId })
+    .from(threadRelationships)
+    .where(and(eq(threadRelationships.orgId, orgId), eq(threadRelationships.threadId, threadId)))
+    .limit(1);
+  return findSlackThreadByRoot(relationship?.familyThreadId ?? threadId, exec, orgId);
 }
 
 /** Link a Slack thread to the run that rooted it. Idempotent: a duplicate

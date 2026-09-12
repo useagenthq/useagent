@@ -61,6 +61,16 @@ export interface HarnessSessionHandle {
  *  the adapter only reports a completion strictly newer than what we have. */
 export interface HarnessCheckpoint {
   sinceMs?: number;
+  /** In-process product context for projecting recovered native activity through
+   *  the same mapper and redactor as the live lane. Never sent to a provider. */
+  eventContext?: {
+    runId: string;
+    threadId: string;
+    redact: {
+      text(value: string): string;
+      unknown<T>(value: T): T;
+    };
+  };
 }
 
 /** Returned instead of throwing when a capability is not supported by this
@@ -85,9 +95,12 @@ export type HarnessOperationResult =
  *  it, so a re-probe and the live lane never create a duplicate row. */
 export interface HarnessInterimEvent {
   id: string;
+  /** The event id already includes product run identity and must be persisted as-is. */
+  runScopedId?: boolean;
   provider: string;
   eventType: string;
   sessionId?: string | null;
+  parentSessionId?: string | null;
   messageId?: string | null;
   partId?: string | null;
   callId?: string | null;
@@ -95,12 +108,13 @@ export interface HarnessInterimEvent {
 }
 
 /** Result of a reconcile probe - the provider-neutral projection of what the
- *  native session's history shows after an interruption. `in_progress` may carry
- *  the interim events seen since the checkpoint so the caller can keep the
- *  timeline alive while it re-probes; a provider that cannot surface them just
- *  omits the field (graceful degrade, no faked progress). */
+ *  native session's history shows after an interruption. `in_progress` and
+ *  `completed` may carry events seen since the checkpoint so the caller can keep
+ *  the timeline alive and durably backfill the terminal tail before finalizing;
+ *  a provider that cannot surface them omits the field. */
 export type HarnessReconciliation =
-  | { status: "completed"; summary: string }
+  | { status: "completed"; summary: string; events?: readonly HarnessInterimEvent[] }
+  | { status: "failed"; summary: string; events?: readonly HarnessInterimEvent[] }
   | { status: "in_progress"; events?: readonly HarnessInterimEvent[] }
   | { status: "no_change" }
   | { status: "unreachable" }
@@ -179,8 +193,8 @@ export interface ProviderToolDescriptor {
 
 export interface ProviderToolCapabilityDescriptor {
   /** No gateway, provider-native tools, or useAgent-brokered tools. */
-  mode: "none" | "provider_native" | "skynet_brokered";
-  approval: "none" | "provider" | "skynet";
+  mode: "none" | "provider_native" | "useagent_brokered" | "skynet_brokered";
+  approval: "none" | "provider" | "useagent" | "skynet";
   tools?: readonly ProviderToolDescriptor[];
 }
 
@@ -363,8 +377,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const MODEL_SELECTION_MODES = new Set(["fixed", "per_turn"]);
-const TOOL_MODES = new Set(["none", "provider_native", "skynet_brokered"]);
-const TOOL_APPROVAL_MODES = new Set(["none", "provider", "skynet"]);
+const TOOL_MODES = new Set(["none", "provider_native", "useagent_brokered", "skynet_brokered"]);
+const TOOL_APPROVAL_MODES = new Set(["none", "provider", "useagent", "skynet"]);
 const PROVIDER_OPERATION_SET = new Set<string>(PROVIDER_DRIVER_OPERATIONS);
 
 function isNonEmptyString(value: unknown): value is string {

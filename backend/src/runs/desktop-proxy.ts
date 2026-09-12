@@ -10,6 +10,7 @@ import {
   resolvePreviewEndpoint,
   resolvePreviewSandbox,
   type PreviewEndpoint,
+  isStalePreviewResponse,
 } from "./preview-proxy";
 import { ensureSandboxDesktopView } from "../engines/desktop";
 import { sandboxPreviewHeaders } from "../sandboxes/provider";
@@ -46,6 +47,25 @@ const desktopReadyUntil = new Map<string, number>();
 
 function invalidateDesktopPreview(threadId: string): void {
   desktopReadyUntil.delete(threadId);
+}
+
+/** Reflect provider-issued noVNC client values into the authenticated
+ * same-origin iframe URL. Upstream bearer tokens remain server-side headers;
+ * only values the browser client itself must read (currently the VNC password)
+ * are redirected. */
+export function desktopClientQueryRedirect(
+  url: URL,
+  clientQuery: Readonly<Record<string, string>> | undefined,
+): string | null {
+  if (!clientQuery) return null;
+  const redirected = new URL(url);
+  let changed = false;
+  for (const [key, value] of Object.entries(clientQuery)) {
+    if (redirected.searchParams.get(key) === value) continue;
+    redirected.searchParams.set(key, value);
+    changed = true;
+  }
+  return changed ? `${redirected.pathname}${redirected.search}` : null;
 }
 
 /** Old retained sandboxes may predate desktop provisioning, and a stopped box
@@ -98,7 +118,7 @@ desktopProxyRoutes.get(
             // Bun's WebSocket client takes custom headers (browsers can't) — this
             // is how the Daytona preview token rides the upstream socket.
             const sock = new WebSocket(wsUrl, {
-              headers: sandboxPreviewHeaders(ep.token),
+              headers: { ...ep.headers },
               protocols: ["binary"],
             });
             sock.binaryType = "arraybuffer";
@@ -221,7 +241,7 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
   const forward = async (ep: PreviewEndpoint): Promise<Response> =>
     fetch(`${ep.baseUrl}${subpath}${url.search}`, {
       method,
-      headers: buildForwardHeaders(c.req.raw.headers, ep.token),
+      headers: buildForwardHeaders(c.req.raw.headers, ep.headers),
       body,
       redirect: "manual",
       signal: c.req.raw.signal,
@@ -229,6 +249,10 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
 
   try {
     let ep = await resolvePreviewEndpoint(threadId, DESKTOP_PORT);
+    if (subpath === "/vnc.html") {
+      const redirect = desktopClientQueryRedirect(url, ep.clientQuery);
+      if (redirect) return c.redirect(redirect, 302);
+    }
     let upstream: Response;
     try {
       upstream = await forward(ep);
@@ -236,12 +260,17 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
       upstream = new Response(null, { status: 502 });
     }
     // A stale preview link (sandbox stopped/rotated since we cached it) surfaces
-    // as a transport failure or a 5xx — re-resolve once (wakes the box) and retry.
-    if (upstream.status === 502 || upstream.status === 503) {
+    // as a transport failure or a 5xx, a stale credential (expired Box port
+    // cookie) as a 401/403 — re-resolve once (wakes the box, fresh auth) and retry.
+    if (isStalePreviewResponse(upstream)) {
       invalidateDesktopPreview(threadId);
       await ensureDesktopPreview(threadId);
       invalidatePreviewEndpoint(threadId, DESKTOP_PORT);
       ep = await resolvePreviewEndpoint(threadId, DESKTOP_PORT, true);
+      if (subpath === "/vnc.html") {
+        const redirect = desktopClientQueryRedirect(url, ep.clientQuery);
+        if (redirect) return c.redirect(redirect, 302);
+      }
       upstream = await forward(ep);
     }
     return buildProxyResponse(upstream);

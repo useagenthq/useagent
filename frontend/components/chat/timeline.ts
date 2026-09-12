@@ -60,6 +60,16 @@ export type TimelineMarker =
       readonly failed: boolean;
       /** remember only: true when the write was an idempotent no-op replay. */
       readonly reconciled: boolean;
+    }
+  | {
+      /** A gateway approval request (provider useAgent-gateway): the moment it
+       *  was raised, then the moment a person resolved it. Ordered by seq so
+       *  each row sits where it happened among the turn's tool calls. */
+      readonly kind: "approval";
+      readonly state: "requested" | "resolved";
+      readonly toolName: string;
+      readonly status: "pending" | "approved" | "denied" | "expired";
+      readonly resolvedBy: string | null;
     };
 
 export interface TimelineArtifact {
@@ -163,7 +173,14 @@ export type TimelineNode =
   | { kind: "artifact"; key: string; artifact: TimelineArtifact }
   | { kind: "file"; key: string; file: TimelineFileChange }
   | { kind: "plan"; key: string; entries: readonly TimelinePlanEntry[] }
-  | { kind: "tool"; key: string; step: ApiStep }
+  | {
+      kind: "tool";
+      key: string;
+      step: ApiStep;
+      /** The run's failure cut this command short before it recorded an outcome
+       *  of its own (./command-failed-with-run); the row renders as failed. */
+      failedWithRun?: true;
+    }
   | { kind: "followups"; key: string; suggestions: readonly string[] };
 
 /** One distinct web source a turn actually fetched: the display domain + the
@@ -282,6 +299,19 @@ export function parseMarker(eventType: string, payload: unknown): TimelineMarker
             : "memory",
       itemCount: typeof p.itemCount === "number" ? p.itemCount : 0,
       query: typeof p.query === "string" ? p.query : null,
+    };
+  }
+  // Gateway approval lane (approval-requests.ts emitApprovalEvent): the request
+  // row and its resolution, each a durable provider event on the run.
+  if (eventType === "gateway.approval.requested" || eventType === "gateway.approval.resolved") {
+    const status = p.status;
+    return {
+      kind: "approval",
+      state: eventType === "gateway.approval.resolved" ? "resolved" : "requested",
+      toolName: typeof p.toolName === "string" && p.toolName ? p.toolName : "tool",
+      status:
+        status === "approved" || status === "denied" || status === "expired" ? status : "pending",
+      resolvedBy: typeof p.resolvedBy === "string" && p.resolvedBy ? p.resolvedBy : null,
     };
   }
   // Adaptive-reconcile park marker (frozen contract, recovery.ts
@@ -433,21 +463,25 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
   // Canonical context markers (useAgent lane): skill.loaded + context.retrieved.
   // Emitted at run START (lowest seqs), so they LEAD the turn (k0 below the boot
   // sentinel of -1) — "Loaded skill X · Recalled N memories" as the turn's header.
-  // Rendered as typed rows in this shared grammar (MarkerRow), never a parallel
+  // Rendered as step lines of the turn trace (turn-trace-model), never a parallel
   // context pane. Reconnect replays them from the durable native lane like any
   // other frame. An unknown useAgent eventType parses to null → rendered as nothing.
   for (const f of nativeFrames) {
     if (
       f.provider !== "skynet" &&
       f.provider !== "skynet-knowledge" &&
-      f.provider !== "skynet-memory"
+      f.provider !== "skynet-memory" &&
+      f.provider !== "skynet-gateway" &&
+      f.provider !== "useagent"
     )
       continue;
     const marker = parseMarker(f.eventType, f.payload);
     if (!marker) continue;
     ranked.push({
       node: { kind: "marker", key: f.eventId, marker },
-      k0: -2,
+      // Approval rows happen mid-turn (raised by a tool call, decided by a
+      // person later), so they keep their seq position like reasoning bursts.
+      k0: marker.kind === "approval" ? f.seq : -2,
       k1: 0,
       k2: f.seq, // skill.loaded (seq 0) before context.retrieved (seq 1)
     });

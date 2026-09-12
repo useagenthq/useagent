@@ -195,6 +195,7 @@ export function Carousel({
           the component stays self-contained. */}
       <div
         ref={trackRef}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: focusable scroll track, see above.
         tabIndex={0}
         className={cx(
           "relative flex w-full overflow-x-auto overscroll-x-contain outline-none",

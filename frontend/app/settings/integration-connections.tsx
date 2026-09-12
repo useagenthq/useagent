@@ -8,7 +8,12 @@ import { Button } from "@/components/base/buttons/button";
 import { dedupeIntegrations } from "@/components/integrations/dedupe-integrations";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { cx } from "@/utils/cx";
-import { type IntegrationSummary, integrationAccountLabel } from "./integration-connections-data";
+import {
+  type IntegrationSummary,
+  integrationAccountLabel,
+  integrationAuthLabel,
+  integrationPermissionLabels,
+} from "./integration-connections-data";
 import { useIntegrations } from "./use-integrations";
 
 function Status({ integration }: { integration: IntegrationSummary }) {
@@ -21,6 +26,13 @@ function Status({ integration }: { integration: IntegrationSummary }) {
     );
   }
   if (integration.managed) {
+    return (
+      <Chip variant="caption" color="soft">
+        Unavailable
+      </Chip>
+    );
+  }
+  if (!integration.configured) {
     return (
       <Chip variant="caption" color="soft">
         Unavailable
@@ -72,6 +84,8 @@ function IntegrationRow({
   const accountLabel = integrationAccountLabel(integration);
   const connected = integration.connection?.status === "connected";
   const connectionId = connected ? integration.connection.id : null;
+  const authLabel = integrationAuthLabel(integration);
+  const permissionLabels = integrationPermissionLabels(integration);
 
   return (
     <li className="flex items-center gap-3 py-3">
@@ -83,9 +97,30 @@ function IntegrationRow({
           <p className="text-body-2-medium text-text-primary">{integration.displayName}</p>
           <Status integration={integration} />
         </div>
-        <p className="truncate text-body-2-regular text-text-secondary">
+        <p className="text-body-2-regular text-text-secondary">
           {accountLabel ?? integration.description}
         </p>
+        {integration.degradationReason ? (
+          <p className="text-caption-1-regular text-status-yellow-text">
+            {integration.degradationReason}
+          </p>
+        ) : null}
+        {connected && (authLabel || permissionLabels.length > 0) ? (
+          <p className="text-caption-1-regular text-text-tertiary">
+            {[authLabel, ...permissionLabels].filter(Boolean).join(" · ")}
+          </p>
+        ) : null}
+        {connected && integration.permissions.scopes.length > 0 ? (
+          <p
+            className="truncate text-caption-1-regular text-text-tertiary"
+            title={integration.permissions.scopes.join(", ")}
+          >
+            {integration.permissions.scopes.slice(0, 3).join(", ")}
+            {integration.permissions.scopes.length > 3
+              ? ` +${integration.permissions.scopes.length - 3} more`
+              : ""}
+          </p>
+        ) : null}
       </div>
       {integration.connectAvailable && !connected ? (
         <Button

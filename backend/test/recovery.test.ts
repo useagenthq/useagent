@@ -1,10 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
+import { providerEvents } from "../src/db/schema";
 import { acceptRunCommand } from "../src/commands";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../src/commands/cancel";
-import { recoverStaleRuns, type ReconcileProbe } from "../src/runs/recovery";
+import {
+  INCOMPATIBLE_PROVIDER_SESSION_SUMMARY,
+  recoverStaleRuns,
+  type ReconcileProbe,
+} from "../src/runs/recovery";
 import { finalizeRun } from "../src/runs/finalize";
+import { recordProviderEvent } from "../src/runs/provider-events";
 import {
   createRun,
   getRun,
@@ -16,6 +22,8 @@ import {
   STALE_SUMMARY,
 } from "../src/runs/repo";
 import { providerSessionBinding } from "@useagent/agent-harness/canonical";
+import { providerProtocolIdentity } from "@useagent/agent-harness/control";
+import { t3ProviderDrivers } from "../src/engines/t3-provider-driver";
 import type { EngineId, RunStatus } from "../src/db/schema";
 import { waitFor } from "./helpers"; // side-effect: imports src/index → migrate + seed
 
@@ -128,6 +136,133 @@ describe("command-lane restart recovery", () => {
 
     // B re-dispatched → executes (mock) → completes. (Order: only after A settled.)
     await waitFor(() => isDone(B));
+  });
+
+  test("persists recovered terminal activity before finalizing the run", async () => {
+    const runId = crypto.randomUUID();
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "opencode",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "ses_terminal_tail",
+      sandbox: "sb",
+      withStep: true,
+    });
+    const result = await recoverStaleRuns(async (_handle, checkpoint) => {
+      if (checkpoint.eventContext?.runId !== runId) return { status: "unreachable" };
+      return {
+        status: "completed",
+        summary: "answer with durable tail",
+        events: [{
+          id: `pe_${runId}_t3_child-terminal`,
+          runScopedId: true,
+          provider: "t3",
+          eventType: "t3.activity.task.completed",
+          sessionId: "child-session",
+          parentSessionId: "parent-session",
+          partId: "child-terminal",
+          callId: "child-session",
+          payload: { status: "completed" },
+        }],
+      };
+    });
+
+    expect(result.reconciled).toBeGreaterThanOrEqual(1);
+    const run = await getRun(runId);
+    expect(run?.status).toBe("completed");
+    const [event] = await db
+      .select()
+      .from(providerEvents)
+      .where(and(eq(providerEvents.runId, runId), eq(providerEvents.nativePartId, "child-terminal")));
+    expect(event?.id).toBe(`pe_${runId}_t3_child-terminal`);
+    expect(event?.nativeParentSessionId).toBe("parent-session");
+    expect(event?.createdAt.getTime()).toBeLessThanOrEqual(run!.settledAt!.getTime());
+  });
+
+  test("persists recovered failure activity before finalizing with its reason", async () => {
+    const runId = crypto.randomUUID();
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "opencode",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "ses_failed_tail",
+      sandbox: "sb",
+      withStep: true,
+    });
+    const eventId = `pe_${runId}_t3_failed-tail`;
+    const result = await recoverStaleRuns(async (_handle, checkpoint) =>
+      checkpoint.eventContext?.runId === runId
+        ? {
+            status: "failed",
+            summary: "Provider turn interrupted",
+            events: [{
+              id: eventId,
+              runScopedId: true,
+              provider: "t3",
+              eventType: "t3.activity.runtime.warning",
+              partId: "failed-tail",
+            }],
+          }
+        : { status: "unreachable" }
+    );
+
+    expect(result.failed).toBeGreaterThanOrEqual(1);
+    const run = await getRun(runId);
+    expect(run?.status).toBe("failed");
+    expect(run?.summary).toBe("Provider turn interrupted");
+    const [event] = await db.select().from(providerEvents).where(eq(providerEvents.id, eventId));
+    expect(event?.createdAt.getTime()).toBeLessThanOrEqual(run!.settledAt!.getTime());
+  });
+
+  test("parks when a required completed-event update fails despite an older row", async () => {
+    const runId = crypto.randomUUID();
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "opencode",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "ses_terminal_retry",
+      sandbox: "sb",
+      withStep: true,
+    });
+    const eventId = `pe_${runId}_t3_stable-tool`;
+    await recordProviderEvent({
+      id: eventId,
+      runId,
+      threadId: runId,
+      provider: "t3",
+      eventType: "t3.activity.tool.started",
+      nativePartId: "stable-tool",
+    }, { required: true });
+
+    const result = await recoverStaleRuns(async (_handle, checkpoint) =>
+      checkpoint.eventContext?.runId === runId
+        ? {
+            status: "completed",
+            summary: "must wait for the tail",
+            events: [{
+              id: eventId,
+              runScopedId: true,
+              provider: "t3",
+              eventType: null as never,
+              partId: "stable-tool",
+            }],
+          }
+        : { status: "unreachable" }
+    );
+
+    expect(result.parked).toBeGreaterThanOrEqual(1);
+    expect((await getRun(runId))?.status).toBe("running");
+    const [event] = await db.select().from(providerEvents).where(eq(providerEvents.id, eventId));
+    expect(event?.eventType).toBe("t3.activity.tool.started");
   });
 
   test("a recovery finalizer loser reports the durable first-writer status", async () => {
@@ -254,7 +389,7 @@ describe("command-lane restart recovery", () => {
     await setRunProviderSession(runId, providerSessionBinding({
       provider: "codex",
       nativeSessionId: "auth-session",
-      protocolVersion: "t3-orchestration/useagent-runtime-v7",
+      protocolVersion: "t3-orchestration/useagent-runtime-v8",
       runtime: { kind: "sandbox", id: "auth-sandbox" },
       capabilities: {} as never,
       generation: 2,
@@ -269,5 +404,79 @@ describe("command-lane restart recovery", () => {
 
     expect(probed).toBe(false);
     expect((await getRun(runId))?.status).toBe("failed");
+  });
+
+  test("settles an old ACP session before reconcile and immediately releases its queued turn", async () => {
+    const runId = crypto.randomUUID();
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "codex",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "legacy-acp-session",
+      sandbox: "legacy-acp-sandbox",
+    });
+    await setRunProviderSession(runId, providerSessionBinding({
+      provider: "codex",
+      nativeSessionId: "legacy-acp-session",
+      protocolVersion: "acp/1",
+      runtime: { kind: "sandbox", id: "legacy-acp-sandbox" },
+      capabilities: {} as never,
+      generation: 1,
+    }));
+    const queued = await seed({
+      threadId: runId,
+      parentRunId: runId,
+      engine: "mock",
+      runStatus: "queued",
+      commandState: "queued",
+    });
+    let probed = false;
+
+    const result = await recoverStaleRuns(async () => {
+      probed = true;
+      return { status: "unreachable" };
+    });
+
+    expect(probed).toBe(false);
+    expect(result.parked).toBe(0);
+    expect((await getRun(runId))?.status).toBe("failed");
+    expect((await getRun(runId))?.summary).toBe(INCOMPATIBLE_PROVIDER_SESSION_SUMMARY);
+    await waitFor(() => isDone(queued));
+  });
+
+  test("keeps a valid native session parked during a transient provider outage", async () => {
+    const runId = crypto.randomUUID();
+    const driver = t3ProviderDrivers.codex;
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "codex",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "native-t3-session",
+      sandbox: "native-t3-sandbox",
+    });
+    await setRunProviderSession(runId, providerSessionBinding({
+      provider: "codex",
+      nativeSessionId: "native-t3-session",
+      protocolVersion: providerProtocolIdentity(driver.descriptor.protocol),
+      runtime: { kind: "sandbox", id: "native-t3-sandbox" },
+      capabilities: driver.descriptor.capabilities,
+      generation: driver.descriptor.sessionGeneration as number,
+    }));
+    let probes = 0;
+
+    const result = await recoverStaleRuns(async () => {
+      probes += 1;
+      return { status: "unreachable" };
+    });
+
+    expect(probes).toBe(1);
+    expect(result.parked).toBeGreaterThanOrEqual(1);
+    expect((await getRun(runId))?.status).toBe("running");
   });
 });

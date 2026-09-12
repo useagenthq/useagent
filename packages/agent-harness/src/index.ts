@@ -1,7 +1,7 @@
 /**
  * @useagent/agent-harness - server-side agent harness contracts.
  *
- * Translates native harnesses (OpenCode, Claude ACP, Codex ACP, future) into ONE
+ * Translates native harnesses (OpenCode, Claude Code, Codex, Pi) into ONE
  * provider-neutral canonical event vocabulary and exposes a typed control seam.
  * It knows provider protocols but nothing about the useAgent backend, database,
  * Daytona, or the React UI. The browser-facing `@useagent/agent-client` may import

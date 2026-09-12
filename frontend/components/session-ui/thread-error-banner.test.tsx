@@ -4,6 +4,7 @@ import {
   dismissThreadErrorBannerForSession,
   getThreadErrorBannerKey,
   isThreadErrorBannerDismissedForSession,
+  latestTurnFailure,
   shouldShowThreadErrorBanner,
   ThreadErrorBanner,
 } from "./thread-error-banner";
@@ -75,6 +76,18 @@ test("renders the real run summary as a prominent dismissible alert", () => {
   expect(html).toContain('aria-label="Dismiss error"');
 });
 
+test("shows the whole reason, never clamped, with a copy affordance", () => {
+  // The banner must not hide any of the supplied reason behind a line clamp.
+  const reason =
+    "error: synthetic engine relay stopped during startup after the child process exited before signaling readiness. Diagnostic output remains visible in full so operators can copy the complete failure context.";
+  const html = renderToStaticMarkup(<ThreadErrorBanner error={reason} onDismiss={() => {}} />);
+  expect(html).toContain(reason.replaceAll("'", "&#x27;"));
+  expect(html).not.toContain("line-clamp");
+  expect(html).toContain("whitespace-pre-wrap");
+  expect(html).toContain('data-session-ui="message-copy-button"');
+  expect(html).toContain('aria-label="Copy error"');
+});
+
 test("omits the Retry button when no retry action exists (the current product state)", () => {
   const html = renderToStaticMarkup(<ThreadErrorBanner error="Aborted" onDismiss={() => {}} />);
   expect(html).not.toContain("Retry");
@@ -87,4 +100,18 @@ test("renders Retry only for a real supplied handler", () => {
 
 test("renders nothing for a null error", () => {
   expect(renderToStaticMarkup(<ThreadErrorBanner error={null} />)).toBe("");
+});
+
+test("the banner belongs to the latest turn only", () => {
+  const failed = {
+    status: "failed",
+    summary: "error: opencode prompt failed (error): The operation was aborted.",
+  };
+  const completed = { status: "completed", summary: "Denied the change and explained why." };
+  expect(latestTurnFailure([completed, failed])).toBe(failed);
+  // A newer successful turn buries the earlier failure: no banner under it.
+  expect(latestTurnFailure([failed, completed])).toBeUndefined();
+  expect(latestTurnFailure([failed, { status: "queued", summary: null }])).toBeUndefined();
+  expect(latestTurnFailure([{ status: "failed", summary: null }])).toBeUndefined();
+  expect(latestTurnFailure([])).toBeUndefined();
 });

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { chmod, lstat, mkdir, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export interface ArtifactByteRange {
@@ -17,9 +17,41 @@ export interface ArtifactStorage {
 
 const STORAGE_KEY = /^[a-f0-9]{64}$/;
 const STORAGE_PREFIX = /^[a-f0-9]{2}$/;
+const RECLAIMED_KEY = /^([a-f0-9]{64})\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.reclaim$/;
+
+export interface ArtifactReclaimWarning {
+  readonly code: "permission_denied";
+  readonly operation: "lstat" | "readdir" | "stat" | "rename" | "link" | "unlink";
+  readonly path: string;
+  readonly storageKey?: string;
+}
+
+export interface ArtifactReclaimResult {
+  readonly scanned: number;
+  readonly removed: string[];
+  readonly retained: string[];
+  readonly warnings: ArtifactReclaimWarning[];
+}
 
 function missing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === "ENOENT";
+}
+
+function permissionDenied(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === "EACCES" || code === "EPERM";
+}
+
+function alreadyExists(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === "EEXIST";
+}
+
+async function restoreQuarantinedBytes(quarantined: string, canonical: string): Promise<void> {
+  try {
+    await link(quarantined, canonical);
+  } catch (error) {
+    if (!alreadyExists(error)) throw error;
+  }
 }
 
 function checkedKey(storageKey: string): string {
@@ -89,17 +121,26 @@ export class LocalArtifactStorage implements ArtifactStorage {
     readonly minAgeMs?: number;
     readonly dryRun?: boolean;
     readonly now?: Date;
-  }): Promise<{ scanned: number; removed: string[]; retained: string[] }> {
+  }): Promise<ArtifactReclaimResult> {
     const cutoffMs = (input.now ?? new Date()).getTime() - (input.minAgeMs ?? 24 * 60 * 60 * 1000);
     const removed: string[] = [];
     const retained: string[] = [];
+    const warnings: ArtifactReclaimWarning[] = [];
     let scanned = 0;
+
+    const warnPermission = (
+      operation: ArtifactReclaimWarning["operation"],
+      path: string,
+      storageKey?: string,
+    ) => warnings.push(storageKey
+      ? { code: "permission_denied", operation, path, storageKey }
+      : { code: "permission_denied", operation, path });
 
     let prefixes: string[];
     try {
       prefixes = await readdir(this.root);
     } catch (error) {
-      if (missing(error)) return { scanned, removed, retained };
+      if (missing(error)) return { scanned, removed, retained, warnings };
       throw error;
     }
 
@@ -111,6 +152,10 @@ export class LocalArtifactStorage implements ArtifactStorage {
         directoryInfo = await lstat(directory);
       } catch (error) {
         if (missing(error)) continue;
+        if (permissionDenied(error)) {
+          warnPermission("lstat", directory);
+          continue;
+        }
         throw error;
       }
       if (!directoryInfo.isDirectory()) continue;
@@ -119,10 +164,49 @@ export class LocalArtifactStorage implements ArtifactStorage {
         keys = await readdir(directory);
       } catch (error) {
         if (missing(error)) continue;
+        if (permissionDenied(error)) {
+          warnPermission("readdir", directory);
+          continue;
+        }
         throw error;
       }
-      for (const key of keys.toSorted()) {
-        if (!STORAGE_KEY.test(key) || !key.startsWith(prefix)) continue;
+
+      const candidates = new Set<string>();
+      for (const entry of keys.toSorted()) {
+        const reclaimed = RECLAIMED_KEY.exec(entry);
+        if (!reclaimed) {
+          if (STORAGE_KEY.test(entry)) candidates.add(entry);
+          continue;
+        }
+        const key = reclaimed[1]!;
+        if (!key.startsWith(prefix)) continue;
+        const path = join(directory, key);
+        const quarantined = join(directory, entry);
+        try {
+          await restoreQuarantinedBytes(quarantined, path);
+          candidates.add(key);
+        } catch (error) {
+          if (missing(error)) continue;
+          if (permissionDenied(error)) {
+            warnPermission("link", quarantined, key);
+            continue;
+          }
+          throw error;
+        }
+        try {
+          await unlink(quarantined);
+        } catch (error) {
+          if (missing(error)) continue;
+          if (permissionDenied(error)) {
+            warnPermission("unlink", quarantined, key);
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      for (const key of [...candidates].toSorted()) {
+        if (!key.startsWith(prefix)) continue;
         scanned += 1;
         if (input.referencedKeys.has(key)) {
           retained.push(key);
@@ -134,6 +218,11 @@ export class LocalArtifactStorage implements ArtifactStorage {
           info = await stat(path);
         } catch (error) {
           if (missing(error)) continue;
+          if (permissionDenied(error)) {
+            retained.push(key);
+            warnPermission("stat", path, key);
+            continue;
+          }
           throw error;
         }
         if (info.mtimeMs > cutoffMs) {
@@ -156,22 +245,40 @@ export class LocalArtifactStorage implements ArtifactStorage {
           await rename(path, quarantined);
         } catch (error) {
           if (missing(error)) continue;
+          if (permissionDenied(error)) {
+            retained.push(key);
+            warnPermission("rename", path, key);
+            continue;
+          }
           throw error;
         }
-        if (await input.isReferenced?.(key)) {
-          if (await Bun.file(path).exists()) await unlink(quarantined);
-          else await rename(quarantined, path);
-          retained.push(key);
-        } else {
-          await unlink(quarantined).catch((error) => {
-            if (!missing(error)) throw error;
-          });
-          removed.push(key);
+        try {
+          if (await input.isReferenced?.(key)) {
+            await restoreQuarantinedBytes(quarantined, path);
+            await unlink(quarantined);
+            retained.push(key);
+          } else {
+            await unlink(quarantined).catch((error) => {
+              if (!missing(error)) throw error;
+            });
+            removed.push(key);
+          }
+        } catch (error) {
+          try {
+            await restoreQuarantinedBytes(quarantined, path);
+          } catch (restoreError) {
+            throw new AggregateError(
+              [error, restoreError],
+              `artifact reclaim failed and could not restore ${key}`,
+            );
+          }
+          await unlink(quarantined).catch(() => {});
+          throw error;
         }
       }
     }
 
-    return { scanned, removed, retained };
+    return { scanned, removed, retained, warnings };
   }
 }
 

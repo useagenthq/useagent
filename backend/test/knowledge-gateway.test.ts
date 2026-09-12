@@ -420,7 +420,7 @@ describe("knowledge MCP gateway", () => {
     expect(r.status).toBe(200);
     expect(r.body.result.protocolVersion).toBe("2025-06-18");
     expect(r.body.result.capabilities.tools).toBeDefined();
-    expect(r.body.result.serverInfo.name).toBe("skynet-knowledge");
+    expect(r.body.result.serverInfo.name).toBe("useagent");
     expect(r.body.result.instructions).toContain("Call tools/list before use");
     // Repo-access truthfulness: the always-in-context gateway instructions route
     // "what can I access" to the connected inventory, not the sandbox filesystem.
@@ -1054,7 +1054,7 @@ describe("knowledge MCP gateway", () => {
     expect(payload.scope.actorUserId).toBe("user-A");
     expect(payload.itemCount).toBeGreaterThanOrEqual(1);
     expect(payload.items[0].citation).toBeTruthy();
-    expect(nonEmptyFrame!.provider).toBe("skynet-knowledge");
+    expect(nonEmptyFrame!.provider).toBe("useagent");
   });
 
   test("unknown tool → JSON-RPC method error", async () => {

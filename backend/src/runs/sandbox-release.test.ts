@@ -215,4 +215,13 @@ describe("explicit sandbox release", () => {
     expect(deleted).toEqual([fixture.sandboxId]);
     expect(await getThreadSandbox(fixture.runId)).toBeNull();
   });
+
+  test("a sandbox whose personal connection is gone is unpinned instead of throwing", async () => {
+    const { orgId, runId, sandboxId } = await runFixture("completed");
+    // Created on a user's own computer, but that user has no connection any more.
+    await setRunSandbox(runId, sandboxId, { kind: "box", credential: "user" });
+    const result = await releaseRunSandbox(orgId, runId);
+    expect(result).toEqual({ ok: true, released: false, reason: "connection_revoked", sandboxId });
+    expect(await getThreadSandbox(runId)).toBeNull();
+  });
 });

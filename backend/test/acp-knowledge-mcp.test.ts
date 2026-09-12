@@ -9,6 +9,7 @@ import {
   refreshAcpRelayConfigurationIfNeeded,
 } from "../src/engines/acp-server";
 import { toolGatewayConfig } from "../src/knowledge/gateway/config";
+import { TOOL_GATEWAY_SERVER_NAME } from "../src/knowledge/gateway/descriptor";
 import { verifyToolToken } from "../src/knowledge/gateway/token";
 import type { EngineRunContext } from "../src/engines/types";
 
@@ -35,10 +36,19 @@ function ctx(over: Partial<EngineRunContext> = {}): EngineRunContext {
   };
 }
 
+// Restore what the suite booted with: engine readiness now includes the gateway
+// wiring, so a bare delete here would leave every later test file unwired.
+const priorGatewayEnv = {
+  GATEWAY_PUBLIC_URL: process.env.GATEWAY_PUBLIC_URL,
+  TOOL_GATEWAY_PUBLIC_URL: process.env.TOOL_GATEWAY_PUBLIC_URL,
+  TOOL_GATEWAY_SECRET: process.env.TOOL_GATEWAY_SECRET,
+};
+
 afterEach(() => {
-  delete process.env.GATEWAY_PUBLIC_URL;
-  delete process.env.TOOL_GATEWAY_PUBLIC_URL;
-  delete process.env.TOOL_GATEWAY_SECRET;
+  for (const [name, value] of Object.entries(priorGatewayEnv)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
 });
 
 describe("ACP knowledge MCP parity", () => {
@@ -46,25 +56,25 @@ describe("ACP knowledge MCP parity", () => {
     const status = [
       "Configured MCP servers:",
       "- unrelated: 3 tools, 0 resources, auth=not_required",
-      "- skynet-knowledge: 17 tools, 0 resources, auth=not_required",
-      "- skynet-knowledge",
+      `- ${TOOL_GATEWAY_SERVER_NAME}: 17 tools, 0 resources, auth=not_required`,
+      `- ${TOOL_GATEWAY_SERVER_NAME}`,
     ].join("\n");
 
-    expect(acpMcpServerToolCount(status, "skynet-knowledge")).toBe(17);
+    expect(acpMcpServerToolCount(status, TOOL_GATEWAY_SERVER_NAME)).toBe(17);
     expect(acpMcpServerToolCount(status, "unrelated")).toBe(3);
     expect(acpMcpServerToolCount(status, "missing")).toBeNull();
   });
 
   test("waits for Codex's asynchronous MCP startup before the first real prompt", async () => {
     const statuses = [
-      "Configured MCP servers:\n- skynet-knowledge: 0 tools, 0 resources, auth=not_required",
-      "Configured MCP servers:\n- skynet-knowledge",
-      "Configured MCP servers:\n- skynet-knowledge: 21 tools, 0 resources, auth=not_required",
+      `Configured MCP servers:\n- ${TOOL_GATEWAY_SERVER_NAME}: 0 tools, 0 resources, auth=not_required`,
+      `Configured MCP servers:\n- ${TOOL_GATEWAY_SERVER_NAME}`,
+      `Configured MCP servers:\n- ${TOOL_GATEWAY_SERVER_NAME}: 21 tools, 0 resources, auth=not_required`,
     ];
     const waits: number[] = [];
 
     const count = await awaitAcpMcpServerTools({
-      serverName: "skynet-knowledge",
+      serverName: TOOL_GATEWAY_SERVER_NAME,
       attempts: 3,
       intervalMs: 25,
       readStatus: async () => statuses.shift() ?? "",
@@ -80,14 +90,14 @@ describe("ACP knowledge MCP parity", () => {
   test("fails closed when Codex never reports a usable MCP tool catalog", async () => {
     await expect(
       awaitAcpMcpServerTools({
-        serverName: "skynet-knowledge",
+        serverName: TOOL_GATEWAY_SERVER_NAME,
         attempts: 2,
         intervalMs: 1,
         readStatus: async () =>
-          "Configured MCP servers:\n- skynet-knowledge: 0 tools, 0 resources, auth=not_required",
+          `Configured MCP servers:\n- ${TOOL_GATEWAY_SERVER_NAME}: 0 tools, 0 resources, auth=not_required`,
         wait: async () => {},
       }),
-    ).rejects.toThrow("skynet-knowledge MCP tools did not become ready");
+    ).rejects.toThrow(`${TOOL_GATEWAY_SERVER_NAME} MCP tools did not become ready`);
   });
 
   test("gateway UNWIRED → no MCP servers (ACP behavior unchanged)", () => {
@@ -96,6 +106,7 @@ describe("ACP knowledge MCP parity", () => {
   });
 
   test("legacy full-backend tunnel variable is ignored", () => {
+    delete process.env.GATEWAY_PUBLIC_URL;
     process.env.TOOL_GATEWAY_PUBLIC_URL = "https://full-backend.example.test";
     expect(acpKnowledgeMcpServers(ctx())).toEqual([]);
   });
@@ -115,7 +126,7 @@ describe("ACP knowledge MCP parity", () => {
     };
     // Same URL the opencode path targets.
     expect(s.type).toBe("http");
-    expect(s.name).toBe("skynet-knowledge");
+    expect(s.name).toBe(TOOL_GATEWAY_SERVER_NAME);
     expect(s.url).toBe(toolGatewayConfig()!.mcpUrl);
 
     // The ONLY secret in the sandbox is a bearer token for this org/thread. ACP

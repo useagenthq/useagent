@@ -4,12 +4,16 @@ import { Chip } from "@/components/base/badges/chip";
 import { AppShell } from "@/components/shell/app-shell";
 import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import { ApiKeysCard } from "./api-keys-card";
-import { DaytonaConnectionCard } from "./daytona-connection-card";
+import { ComputerConnectionsCard } from "./computer-connections-card";
 import { GeneralCard } from "./general-card";
 import { IntegrationConnections } from "./integration-connections";
 import { ProviderConnectionsCard } from "./provider-connections-card";
 import { SecretsCard } from "./secrets-card";
 import { SettingsRail } from "./settings-rail";
+import {
+  SETTINGS_ACTIVATION_RATIO,
+  SETTINGS_SCROLL_TAIL_RATIO,
+} from "./settings-rail-active";
 import { SettingsCard, SettingsRow } from "./settings-rows";
 import { TeamCard } from "./team-card";
 import { UsageMeters } from "./usage-meters";
@@ -36,7 +40,10 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="scroll-mt-6">
+    <section
+      id={id}
+      style={{ scrollMarginTop: `${SETTINGS_ACTIVATION_RATIO * 100}vh` }}
+    >
       <div className="rounded-2xl border border-border-button-default bg-background-primary-default p-5 shadow-sm">
         <div className="mb-4 flex flex-col gap-0.5">
           <h2 className="text-headline-medium text-text-primary">{title}</h2>
@@ -58,7 +65,12 @@ export default function SettingsPage() {
   return (
     <AppShell sidebar={<ThreadSidebar active="settings" />}>
       <div className="w-full min-w-0 px-6 py-8 lg:px-10">
-        <h1 className="text-display-4-medium text-text-primary">Settings</h1>
+        <h1 className="text-display-sm text-text-primary">Settings</h1>
+
+        {/* Below lg the section rail becomes a scrolling row above the cards */}
+        <div className="mt-6 overflow-x-auto lg:hidden">
+          <SettingsRail className="flex-row gap-1" />
+        </div>
 
         <div className="mt-8 flex gap-8">
           {/* Sticky section rail */}
@@ -70,7 +82,10 @@ export default function SettingsPage() {
 
           {/* Sections */}
           <ProviderConnectionsProvider>
-            <div className="flex min-w-0 flex-1 flex-col gap-8">
+            <div
+              className="flex min-w-0 flex-1 flex-col gap-8"
+              style={{ paddingBottom: `${SETTINGS_SCROLL_TAIL_RATIO * 100}vh` }}
+            >
               {/* General */}
               <Section
                 id="general"
@@ -125,7 +140,7 @@ export default function SettingsPage() {
                 title="Infrastructure"
                 description="View the managed runtime and connect optional sandbox accounts."
               >
-                <DaytonaConnectionCard />
+                <ComputerConnectionsCard />
               </Section>
 
               {/* Secrets */}

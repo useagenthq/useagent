@@ -24,6 +24,9 @@ export type IntegrationActionEffect = (typeof INTEGRATION_ACTION_EFFECTS)[number
 export const INTEGRATION_ACTION_APPROVALS = ["none", "interactive", "disabled"] as const;
 export type IntegrationActionApproval = (typeof INTEGRATION_ACTION_APPROVALS)[number];
 
+export const INTEGRATION_AUTH_METHODS = ["oauth2", "api_key", "custom_credential"] as const;
+export type IntegrationAuthMethod = (typeof INTEGRATION_AUTH_METHODS)[number];
+
 export type ConnectionOwner =
   | { readonly type: "org" }
   | { readonly type: "user"; readonly userId: string };
@@ -283,12 +286,23 @@ export interface IntegrationSummary {
   readonly displayName: string;
   readonly description: string;
   readonly backend: IntegrationBackend;
+  readonly authMethod: IntegrationAuthMethod | null;
   readonly managed: boolean;
+  readonly configured: boolean;
   readonly connectAvailable: boolean;
   readonly disconnectAvailable: boolean;
   readonly status: IntegrationConnectionStatus | "unavailable";
+  readonly degradationReason: string | null;
+  readonly permissions: IntegrationPermissionSummary;
   readonly account?: IntegrationConnectionAccount;
   readonly connection: ConnectionProjection | null;
+}
+
+export interface IntegrationPermissionSummary {
+  readonly scopes: readonly string[];
+  readonly actionCount: number;
+  readonly effects: readonly IntegrationActionEffect[];
+  readonly approvals: readonly IntegrationActionApproval[];
 }
 
 function isIntegrationBackend(value: unknown): value is IntegrationBackend {
@@ -305,17 +319,53 @@ function isIntegrationSummaryStatus(value: unknown): value is IntegrationSummary
   );
 }
 
+function isIntegrationAuthMethod(value: unknown): value is IntegrationAuthMethod {
+  return (
+    typeof value === "string" &&
+    (INTEGRATION_AUTH_METHODS as readonly string[]).includes(value)
+  );
+}
+
+function decodeIntegrationPermissionSummary(value: unknown): IntegrationPermissionSummary | null {
+  if (!isRecord(value) || !Array.isArray(value.scopes) || value.scopes.length > 32) return null;
+  const scopes = value.scopes.map(nonEmptyString);
+  if (
+    scopes.some((scope) => scope === null || scope.length > 128) ||
+    !Number.isSafeInteger(value.actionCount) ||
+    (value.actionCount as number) < 0 ||
+    (value.actionCount as number) > 10_000 ||
+    !Array.isArray(value.effects) ||
+    !value.effects.every(isIntegrationActionEffect) ||
+    !Array.isArray(value.approvals) ||
+    !value.approvals.every(isIntegrationActionApproval)
+  ) {
+    return null;
+  }
+  return {
+    scopes: scopes as string[],
+    actionCount: value.actionCount as number,
+    effects: [...new Set(value.effects as IntegrationActionEffect[])],
+    approvals: [...new Set(value.approvals as IntegrationActionApproval[])],
+  };
+}
+
 export function decodeIntegrationSummary(value: unknown): IntegrationSummary | null {
   if (!isRecord(value)) return null;
   const provider = nonEmptyString(value.provider);
   const displayName = nonEmptyString(value.displayName);
   const description = nonEmptyString(value.description);
+  const authMethod = value.authMethod === null ? null : value.authMethod;
+  const degradationReason = nullableString(value.degradationReason);
+  const permissions = decodeIntegrationPermissionSummary(value.permissions);
   if (
     !provider ||
     !displayName ||
     !description ||
     !isIntegrationBackend(value.backend) ||
-    !isIntegrationSummaryStatus(value.status)
+    !isIntegrationSummaryStatus(value.status) ||
+    (authMethod !== null && !isIntegrationAuthMethod(authMethod)) ||
+    degradationReason === undefined ||
+    !permissions
   ) {
     return null;
   }
@@ -327,11 +377,15 @@ export function decodeIntegrationSummary(value: unknown): IntegrationSummary | n
     displayName,
     description,
     backend: value.backend,
+    authMethod,
     managed: value.managed === true,
+    configured: value.configured === true,
     // Capability flags fail closed. The UI never invents a lifecycle action.
     connectAvailable: value.connectAvailable === true,
     disconnectAvailable: value.disconnectAvailable === true,
     status: value.status,
+    degradationReason,
+    permissions,
     ...(isRecord(value.account)
       ? { account: decodeIntegrationConnectionAccount(value.account) }
       : {}),

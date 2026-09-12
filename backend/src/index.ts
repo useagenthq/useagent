@@ -21,6 +21,7 @@ import {
 import { isPublicApiPath, orgScope } from "./middleware/org";
 import { bearerAuth } from "./middleware/bearer";
 import { chatRoutes } from "./chat/routes";
+import { botsRoutes } from "./bots/routes";
 import { toolGatewayConfig } from "./knowledge/gateway/config";
 import { knowledgeRoutes } from "./knowledge/routes";
 import { knowledgeDraftRoutes, skillProposalRoutes } from "./learning/routes";
@@ -32,6 +33,7 @@ import { pullsRoutes } from "./github/pulls-routes";
 import { desktopProxyRoutes } from "./runs/desktop-proxy";
 import { fleetRoutes } from "./runs/fleet-routes";
 import { liveProxyRoutes } from "./runs/live-proxy";
+import { portProxyRoutes } from "./runs/port-proxy";
 import { recoverStaleRuns, startReconcileLoop } from "./runs/recovery";
 import {
   reconcileFleetOnBoot,
@@ -45,6 +47,8 @@ import { startScheduler } from "./schedules/scheduler";
 import { startCaptureDelivery } from "./memory/capture-outbox";
 import { resetStuckLearning, startLearningOutbox } from "./learning/learning-outbox";
 import { sandboxProvider, sandboxProviderApiKey, sandboxProviderKind } from "./sandboxes/provider";
+import { userComputersEnabled } from "./sandboxes/binding";
+import { botsEnabled } from "./bots/rollout";
 import {
   resetStuckCanonicalization,
   startCanonicalizationOutbox,
@@ -80,6 +84,7 @@ import { providerConnectionsRoutes } from "./provider-connections/routes";
 import { integrationRoutes } from "./integrations/routes";
 import { codexSubscriptionRelayRoutes } from "./provider-connections/codex-subscription-relay";
 import { wikiGenRoutes } from "./wiki-gen/routes";
+import { cleanupRepositoryScratch } from "./wiki-gen/clone";
 import {
   configuredEngineReadiness,
   configuredUserFacingEngines,
@@ -105,8 +110,13 @@ import {
 } from "./runs/free-model-qualification-driver";
 import { acceptInternalRunCommand } from "./commands/service";
 import { acceptRunCancel } from "./commands/cancel";
-import { getRunAdmission } from "./commands/admission";
+import {
+  deploymentInflightSnapshot,
+  getRunAdmission,
+  setRunAdmission,
+} from "./commands/admission";
 import { getRunWithSteps } from "./runs/repo";
+import { deploymentProvidedProviders } from "./provider-gateway/provider";
 import { uploadRoutes } from "./uploads/routes";
 import { startUploadCleanup } from "./uploads/cleanup";
 import { internalAutomationRoutes } from "./schedules/internal-routes";
@@ -122,17 +132,39 @@ import { currentReleaseFingerprint, isClientReleaseCompatible } from "./release"
 import { dashboardRoutes } from "./dashboard/routes";
 import { fleetBatchRoutes } from "./fleet/batch-routes";
 import { assertCanonicalExecutionTranscriptIndexForBoot } from "./db/online-indexes/canonical-execution-transcript";
+import { capabilityCatalogRoutes } from "./capabilities/routes";
+import { threadRelationshipRoutes } from "./runs/thread-relationship-routes";
+import { configureProductChildPump } from "./runs/child-session-pump";
+import { assertThreadRelationshipRolloutConfig, productChildThreadsEnabled, threadRelationshipWriteMode } from "./runs/thread-relationship-rollout";
+import { repairEligiblePublicRootThreadRelationships } from "./runs/thread-relationship-repo";
 
 // Acquire the per-database singleton before ANY shared-state mutation. In strict
 // production mode an unavailable/contended lock fails boot closed, so a duplicate
 // process cannot migrate or recover another backend's database first.
-await enforceSingleBackend();
+assertThreadRelationshipRolloutConfig();
+const singleBackendHeld = await enforceSingleBackend();
+
+// A process crash can strand temporary private checkouts on the disk-backed
+// scratch mount. With the single-backend lock held, no live clone belongs to
+// another backend, so startup can safely remove only our exact temp prefixes.
+if (singleBackendHeld) {
+  const scratchCleanup = await cleanupRepositoryScratch();
+  if (scratchCleanup.removed > 0) {
+    console.log(`[boot] repository scratch cleanup — ${scratchCleanup.removed} stale directories removed`);
+  }
+  for (const failure of scratchCleanup.failures) {
+    console.error(`[boot] repository scratch cleanup failed: ${failure}`);
+  }
+}
 
 // Apply committed Drizzle migrations BEFORE anything reads or seeds the schema,
 // so a fresh clone (or a fresh database) boots with the tables in place. The
 // migrator is idempotent — already-applied migrations are skipped. Path is
 // resolved from this module so cwd doesn't matter.
 await migrate(db, { migrationsFolder: `${import.meta.dir}/../drizzle` });
+if (threadRelationshipWriteMode() !== "off") {
+  await repairEligiblePublicRootThreadRelationships();
+}
 
 // READ serves child transcripts from the canonical execution identity lookup.
 // The large online index is managed separately from transactional migrations;
@@ -143,6 +175,7 @@ await assertCanonicalExecutionTranscriptIndexForBoot();
 // cache from the last atomically published DB generation before serving config.
 await hydrateFreeModelLaneFromRegistry();
 startFreeModelRegistryHydrator();
+configureProductChildPump(pumpThread);
 
 // Reconcile the restricted gateway role's grants on EVERY boot: a migration
 // that adds a gateway-written table ships its grant in the same commit (see
@@ -152,8 +185,8 @@ startFreeModelRegistryHydrator();
 // otherwise the first boot permanently skips that capability.
 const { ready: prepareKnowledgeSchema } = await import("./knowledge/store");
 await prepareKnowledgeSchema();
-const { applyGatewayGrants, gatewayDatabaseRoleRequired } = await import("./db/gateway-grants");
-await applyGatewayGrants(client, { strict: gatewayDatabaseRoleRequired() });
+const { applyGatewayGrants } = await import("./db/gateway-grants");
+await applyGatewayGrants(client, { strict: process.env.NODE_ENV === "production" });
 
 // Idempotent boot seeding: dev org/user/member only. No demo content — the
 // Knowledge and Skills surfaces start empty and fill with real records.
@@ -274,12 +307,16 @@ app.route("/api/internal/gateway-approval/consume", internalGatewayApprovalRoute
 app.route("/api/internal/gateway-approval-requests", internalApprovalRequestRoutes);
 app.route("/api/internal/github-operations", internalGithubRoutes);
 app.route("/api/internal/codex-relay", codexSubscriptionRelayRoutes);
+app.route("/api/threads", threadRelationshipRoutes);
 // Loopback-only operator dispatch bridge (see runs/operator-routes.ts): lets
 // the release-lane parity canary run turns IN THIS PROCESS so the codex relay
 // rendezvous works. Secret-authenticated; proxied requests are rejected.
 app.route(
   "/api/internal/operator",
   createOperatorRoutes({
+    getAdmission: getRunAdmission,
+    setAdmission: setRunAdmission,
+    deploymentInflight: deploymentInflightSnapshot,
     pump: pumpThread,
     cancel: signalCancel,
     approveGatewayRequest: approveApprovalRequestAsRunOwner,
@@ -316,7 +353,13 @@ app.get("/api/config", (c) => {
     engineReadiness,
     models,
     configuredModels,
-    sandbox: { provider: sandboxProviderKind() },
+    sandbox: { provider: sandboxProviderKind(), userComputers: userComputersEnabled() },
+    // Per model provider: served from this deployment's own key (a name, never a value).
+    providers: deploymentProvidedProviders(),
+    // The product tool families a gateway process advertises follow this
+    // answer, so a gateway booted with different flags cannot silently drop
+    // child-session or bot-handoff tools (knowledge/gateway/product-flags).
+    product: { childThreads: productChildThreadsEnabled(), bots: botsEnabled(null) },
     capabilities: {
       github: githubConfigured(),
       slack: slackConfig() !== null,
@@ -379,6 +422,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 app.route("/api/chat", chatRoutes);
 
 app.route("/api/runs", runsRoutes);
+app.route("/api/capabilities", capabilityCatalogRoutes);
 // Session-authenticated human approval minting. This stays on the product API;
 // the sandbox-reachable gateway can only consume the resulting exact capability.
 app.route("/api/gateway/approvals", gatewayApprovalRoutes);
@@ -399,6 +443,7 @@ app.route("/api/live-proxy", liveProxyRoutes);
 // noVNC's static app over HTTP and its RFB WebSocket, injecting the Daytona
 // preview token on both (shares the `websocket` handler above).
 app.route("/api/desktop-proxy", desktopProxyRoutes);
+app.route("/api/port-proxy", portProxyRoutes);
 // Real GitHub repository list for the New Task composer's repo picker. The
 // backend-held token stays server-side; unconfigured → {configured:false}.
 app.route("/api/repos", reposRoutes);
@@ -427,6 +472,7 @@ app.route("/api/automations", schedulesRoutes);
 // Backward-compatible alias for sessions and frontend bundles created before
 // the product surface was renamed to Automations.
 app.route("/api/schedules", schedulesRoutes);
+app.route("/api/bots", botsRoutes);
 // Org Secrets — encrypted named secrets injected as env vars into the per-thread
 // sandbox at boot. Org-scoped; values are write-only at this boundary (set/delete
 // only, never returned). See src/secrets/*.

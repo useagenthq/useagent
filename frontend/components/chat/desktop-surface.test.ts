@@ -1,15 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import type { DesktopFocusGuardDoc } from "./desktop-pane";
 import {
   buildDesktopFrameSrc,
   DESKTOP_PROBE_MAX_DELAY,
   DESKTOP_PROBE_MIN_DELAY,
+  desktopProbeStatus,
   guardDesktopFocusSteal,
   nextDesktopProbeDelay,
   shouldReleaseStolenFocus,
   watchDesktopFocusSteal,
 } from "./desktop-pane";
-import type { DesktopFocusGuardDoc } from "./desktop-pane";
 
 describe("Desktop product surface", () => {
   const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -21,7 +22,11 @@ describe("Desktop product surface", () => {
     expect(sessionView).toContain('isSelected={railTab === "desktop"}');
     expect(sessionView).toContain('onSelect={() => setRailTabOverride("desktop")}');
     expect(sessionView).not.toContain("{hasDesktop && (");
-    expect(sessionView).toContain("<DesktopPane threadId={rootId} />");
+    expect(sessionView).toContain("<DesktopPane");
+    expect(sessionView).toContain(
+      'const desktopActive = railTab === "desktop" && (!surfacesSheet || sheetSurfacesOpen)',
+    );
+    expect(sessionView).toContain("active={desktopActive}");
     expect(sessionView).toContain("desktopEverOpened ? (");
     expect(sessionView).toContain('if (railTab === "desktop") setDesktopEverOpened(true)');
     expect(sessionView).toContain(
@@ -113,7 +118,11 @@ describe("Desktop product surface", () => {
 
     expect(desktopPane).toContain("tabIndex={-1}");
     expect(desktopPane).toContain('data-testid="desktop-frame"');
-    expect(desktopPane).toContain('pointerEvents: loaded && inputCaptured ? "auto" : "none"');
+    // Pointer input reaches the frame only once loaded and after the explicit
+    // take-control gesture (desktopFrameInteractive), card or viewer alike.
+    expect(desktopPane).toContain("desktopFrameInteractive({ loaded, captured: inputCaptured })");
+    expect(desktopPane).toContain('pointerEvents: frameInteractive ? "auto" : "none"');
+    expect(desktopPane).toContain("interactive={frameInteractive}");
     expect(desktopPane).toContain('aria-label="Control sandbox desktop"');
     expect(desktopPane).toContain('window.addEventListener("focusin", releaseDesktopInput, true)');
     expect(desktopPane).toContain(
@@ -131,17 +140,71 @@ describe("Desktop product surface", () => {
     expect(desktopPane).toContain("frameRef.current?.contentDocument ?? null");
     expect(desktopPane).toContain("isCaptured: () => inputCapturedRef.current");
     // Stolen focus returns to the last legitimate outer element (the composer).
-    expect(desktopPane).toContain(
-      'window.addEventListener("focusin", rememberOuterFocus, true)',
-    );
+    expect(desktopPane).toContain('window.addEventListener("focusin", rememberOuterFocus, true)');
     expect(desktopPane).toContain("lastOuterFocusRef.current = target");
     expect(desktopPane).toContain("previous.focus()");
-    // The ONLY programmatic focus into the frame is the explicit capture click.
-    const focusCalls = desktopPane.split("contentWindow?.focus()").length - 1;
-    expect(focusCalls).toBe(1);
+    // Enabling control never strands keyboard focus in the cross-origin frame.
+    expect(desktopPane).not.toContain("contentWindow?.focus()");
     expect(desktopPane).toContain("inputCapturedRef.current = true;");
     // Release resets the synchronous mirror too, so the guard resumes bouncing.
     expect(desktopPane).toContain("inputCapturedRef.current = false;");
+  });
+
+  test("the pill, Open and Take control wait for the RFB session, not just the vnc.html load", () => {
+    const desktopPane = read("./desktop-pane.tsx");
+
+    // The iframe's onLoad fires about 2.5s before noVNC connects (sweep m9), so
+    // load alone never counts as connected: the pane polls the same-origin
+    // frame document for noVNC's connected marker and stops once it appears.
+    expect(desktopPane).not.toContain("const connected = ready && loaded;");
+    expect(desktopPane).toContain("const connected = ready && loaded && frameConnected;");
+    expect(desktopPane).toContain("watchDesktopFrameConnected({");
+    expect(desktopPane).toContain(
+      "isDesktopFrameConnected(frameRef.current?.contentDocument ?? null)",
+    );
+    expect(desktopPane).toContain("window.setInterval(tick, DESKTOP_CONNECT_POLL_INTERVAL)");
+    // A thread switch starts over from Loading.
+    expect(desktopPane).toContain("setFrameConnected(false);");
+    // Everything the sweep saw lift early keys off that connected flag.
+    expect(desktopPane).toContain("loading={!connected}");
+    expect(desktopPane).toContain("disabled={!connected}");
+    expect(desktopPane).toContain("status={desktopScreenStatus({ connected, live })}");
+  });
+
+  test("bot home, delegated and plain threads share the SessionView rail and its Agent Screen card", () => {
+    const desktopPane = read("./desktop-pane.tsx");
+    const botThreadPane = read("../bots/bot-thread-pane.tsx");
+    const threadPage = read("../../app/session/(thread)/[id]/page.tsx");
+    const botsWorkspace = read("../bots/bots-workspace.tsx");
+
+    // The card is the pane's only presentation: whoever renders SessionView gets it.
+    expect(desktopPane).toContain("<AgentScreen");
+    expect(desktopPane).not.toContain("Click to control desktop");
+    // A bot's home thread (/bots/[id]) and a delegated thread (/session/[id]
+    // resolved through botForThread) both render the real SessionView.
+    expect(botsWorkspace).toContain("<BotThreadPane bot={selected} thread={thread} />");
+    expect(botThreadPane).toContain("<SessionView");
+    expect(threadPage).toContain("botForThread(bots, id)");
+    expect(threadPage).toContain("<SessionView");
+  });
+
+  test("the take-control toggle is the only way into the frame; control survives collapse, leaving the surface releases it", () => {
+    const desktopPane = read("./desktop-pane.tsx");
+    const agentScreen = read("../ai/agent-screen.tsx");
+
+    expect(desktopPane).toContain("aria-pressed={inputCaptured}");
+    expect(desktopPane).toContain('{inputCaptured ? "Release control" : "Take control"}');
+    expect(desktopPane).toContain("onClick={inputCaptured ? releaseCapture : captureInput}");
+    expect(desktopPane).not.toContain("if (!open) releaseCapture();");
+    expect(desktopPane).toContain("if (active) return;");
+    expect(desktopPane).toContain("setViewerOpen(false);");
+    // The one toggle lives in the card's status row while collapsed and in the
+    // viewer's title bar while open; no click-to-control overlay anywhere.
+    expect(agentScreen).toContain("{!open && controls}");
+    expect(agentScreen).toContain("ref={surfaceRef}");
+    expect(agentScreen).toContain("ref={openButtonRef}");
+    expect(desktopPane).toContain("surfaceRef={surfaceRef}");
+    expect(desktopPane).not.toContain("Click to control desktop");
   });
 
   test("the focus-steal guard bounces only while input is not captured", () => {
@@ -281,8 +344,38 @@ describe("Desktop product surface", () => {
     expect(desktopPane).toContain("window.setInterval(tick, DESKTOP_FOCUS_WATCHDOG_INTERVAL)");
     expect(desktopPane).toContain('window.addEventListener("focusin", tick, true)');
     expect(desktopPane).toContain('window.addEventListener("blur", tick, true)');
-    expect(desktopPane).toContain(
-      "restoreOuterFocus(lastOuterFocusRef.current, frameRef.current)",
+    expect(desktopPane).toContain("restoreOuterFocus(lastOuterFocusRef.current, frameRef.current)");
+  });
+});
+
+describe("Desktop probe copy", () => {
+  test("names the binaries a sandbox image lacks instead of waiting forever", () => {
+    expect(
+      desktopProbeStatus(502, "desktop proxy failed: missing desktop binaries: xfce4-clipman"),
+    ).toBe(
+      "Browser is unavailable on this sandbox image: it is missing xfce4-clipman. Rebuild the image with those packages to enable it.",
     );
+    expect(
+      desktopProbeStatus(
+        502,
+        "desktop proxy failed: missing desktop binaries: xdotool xfce4-clipman",
+      ),
+    ).toContain("missing xdotool, xfce4-clipman");
+  });
+
+  test("keeps the waiting and no-sandbox states for every other answer", () => {
+    expect(desktopProbeStatus(409, "no live sandbox for this conversation yet")).toBe(
+      "No active sandbox. Send a message to start one.",
+    );
+    expect(desktopProbeStatus(502, "desktop proxy failed: connect ECONNREFUSED")).toBe(
+      "Starting sandbox desktop…",
+    );
+    expect(desktopProbeStatus(500, null)).toBe("Starting sandbox desktop…");
+  });
+
+  test("the pane reads the probe body so the copy can be honest", () => {
+    const desktopPane = readFileSync(new URL("./desktop-pane.tsx", import.meta.url), "utf8");
+    expect(desktopPane).toContain("desktopProbeStatus(");
+    expect(desktopPane).toContain("await response.json().catch(() => null)");
   });
 });

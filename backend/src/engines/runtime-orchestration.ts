@@ -1,5 +1,9 @@
 import type { EngineId } from "../db/schema";
-import { DEFAULT_CODEX_MODEL, DEFAULT_OPENCODE_MODEL } from "../runs/model-policy";
+import {
+  DEFAULT_CODEX_MODEL,
+  DEFAULT_OPENCODE_MODEL,
+  openCodeRuntimeModelId,
+} from "../runs/model-policy";
 import type { EmitStep, EngineRunContext } from "./types";
 import type { ProviderEventInput } from "../runs/provider-events";
 import type { SecretRedactor } from "../secrets/redact";
@@ -15,7 +19,6 @@ import {
   t3TaskDisplayTitle,
 } from "@useagent/agent-harness";
 import { toolServerDisplayName } from "@useagent/agent-harness/canonical";
-
 export type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
 export type RuntimeMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
 export interface RuntimeMessage {
@@ -24,6 +27,7 @@ export interface RuntimeMessage {
   readonly text: string;
   readonly turnId: string | null;
   readonly streaming: boolean;
+  readonly createdAt?: string;
 }
 export interface RuntimeActivity {
   readonly id: string;
@@ -34,7 +38,6 @@ export interface RuntimeActivity {
   readonly turnId: string | null;
   readonly sequence?: number;
 }
-
 /**
  * T3 keeps several activity rows (notably task.progress) under a stable id and
  * replaces their payload as the provider reports newer state. The adapter must
@@ -232,6 +235,7 @@ export function shouldProjectRuntimeActivity(
   if (payload?.timelineBypass === true && !activity.kind.startsWith("task.")) return false;
   if (!activity.kind.startsWith("tool.")) return true;
   const itemType = typeof payload?.itemType === "string" ? payload.itemType : null;
+  if (itemType === "collab_agent_tool_call" && activity.kind !== "tool.completed" && activity.kind !== "tool.denied" && runtimeChildSessionId(activity) === null) return false;
   if (
     (itemType === "dynamic_tool_call" || itemType === "mcp_tool_call") &&
     !runtimeToolProjection(activity).tool
@@ -282,7 +286,6 @@ export function shouldProjectRuntimeActivity(
     return childSessionId !== null && candidatePayload?.toolUseId === toolCallId;
   });
 }
-
 export interface RuntimeThreadSnapshot {
   readonly snapshotSequence: number;
   readonly thread: {
@@ -290,6 +293,9 @@ export interface RuntimeThreadSnapshot {
     readonly latestTurn: null | {
       readonly turnId: string;
       readonly state: "running" | "interrupted" | "completed" | "error";
+      readonly requestedAt?: string;
+      readonly startedAt?: string | null;
+      readonly completedAt?: string | null;
       readonly assistantMessageId: string | null;
     };
     readonly messages: readonly RuntimeMessage[];
@@ -300,7 +306,6 @@ export interface RuntimeThreadSnapshot {
     };
   };
 }
-
 const PROVIDER_INSTANCE: Record<RuntimeEngineId, string> = {
   codex: "codex",
   claude: "claudeAgent",
@@ -313,23 +318,9 @@ const DEFAULT_MODEL: Record<RuntimeEngineId, string> = {
   opencode: DEFAULT_OPENCODE_MODEL,
 };
 
-/**
- * useAgent stores OpenCode models in its product-facing catalog without an
- * OpenCode provider-instance prefix for Anthropic and most OpenRouter ids.
- * OpenAI-native ids keep their `openai/` provider prefix so T3 can spend a
- * connected OpenAI key instead of routing through OpenRouter.
- */
 export function runtimeModelId(engine: RuntimeEngineId, requested?: string): string {
   const selected = requested?.trim() || DEFAULT_MODEL[engine];
-  if (engine !== "opencode") return selected;
-  if (
-    selected.startsWith("anthropic/") ||
-    selected.startsWith("openai/") ||
-    selected.startsWith("openrouter/")
-  ) {
-    return selected;
-  }
-  return selected.includes("/") ? `openrouter/${selected}` : `anthropic/${selected}`;
+  return engine === "opencode" ? openCodeRuntimeModelId(selected) : selected;
 }
 
 function stableId(prefix: string, value: string): string {
@@ -351,11 +342,10 @@ function runtimePlanTodos(value: unknown): ReadonlyArray<Readonly<Record<string,
 export function runtimeProjectId(ctx: Pick<EngineRunContext, "threadId" | "runId">): string {
   return stableId("skynet-project", ctx.threadId ?? ctx.runId);
 }
-
 export function runtimeThreadId(ctx: Pick<EngineRunContext, "threadId" | "runId">): string {
   return stableId("skynet-thread", ctx.threadId ?? ctx.runId);
 }
-
+export const runtimeUserMessageId = (runId: string): string => stableId("skynet-message", runId);
 export function buildRuntimeProjectCreateCommand(
   ctx: Pick<EngineRunContext, "threadId" | "runId">,
   workspaceRoot: string,
@@ -418,7 +408,7 @@ export function buildRuntimeTurnStartCommand(
     commandId: stableId("skynet-turn", ctx.runId),
     threadId,
     message: {
-      messageId: stableId("skynet-message", ctx.runId),
+      messageId: runtimeUserMessageId(ctx.runId),
       role: "user",
       text: prompt,
       attachments: [],

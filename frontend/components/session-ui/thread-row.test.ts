@@ -6,17 +6,19 @@ import { resolveThreadRowClassName, resolveThreadRowPill, threadRowTimestamp } f
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 describe("thread status pill", () => {
-  test("running threads read Running with a pulsing green dot", () => {
+  test("running threads use the compact spinner without visible status text", () => {
     const pill = resolveThreadRowPill({ status: "running" });
     expect(pill?.label).toBe("Running");
-    expect(pill?.dot.tone).toBe("success");
-    expect(pill?.dot.pulse).toBe(true);
+    expect(pill?.visual).toBe("spinner");
+    expect(pill?.showLabel).toBe(false);
   });
 
   test("queued threads carry an outlined amber dot and visible label", () => {
     const pill = resolveThreadRowPill({ status: "queued" });
     expect(pill?.label).toBe("Queued");
     expect(pill?.dot).toMatchObject({ tone: "away", hollow: true });
+    expect(pill?.visual).toBe("dot");
+    expect(pill?.showLabel).toBe(true);
   });
 
   test("failed threads read Failed with a steady error dot", () => {
@@ -25,6 +27,8 @@ describe("thread status pill", () => {
     expect(pill?.dot.tone).toBe("error");
     expect(pill?.dot.pulse).toBeUndefined();
     expect(pill?.textClass).toBe("text-text-error-primary");
+    expect(pill?.visual).toBe("dot");
+    expect(pill?.showLabel).toBe(false);
   });
 
   test("completed threads have no status dot", () => {

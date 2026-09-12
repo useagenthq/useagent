@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CEREBRAS_GEMMA_MODEL,
+  CEREBRAS_QWEN_MODEL,
   CODEX_ALLOWED_MODELS,
   DEFAULT_CODEX_MODEL,
   DEFAULT_OPENCODE_MODEL,
@@ -34,6 +36,7 @@ describe("paid model policy", () => {
 
   test("allows only the curated OpenCode and Claude catalogs", () => {
     expect(DEEPSEEK_V4_FLASH_MODEL).toBe("deepseek/deepseek-v4-flash");
+    expect(CEREBRAS_QWEN_MODEL).toBe("cerebras/qwen-3.8-27b");
     for (const model of Object.values(OPENCODE_ALLOWED_MODELS).flat()) {
       expect(isModelAllowedForEngine("opencode", model)).toBe(true);
     }
@@ -70,6 +73,15 @@ describe("paid model policy", () => {
   });
 
   test("durable OpenCode replay accepts only provider-qualified free variants beyond the live lane", () => {
+    expect(isModelAllowedForEngine("opencode", CEREBRAS_GEMMA_MODEL)).toBe(false);
+    expect(isPersistedModelAllowedForEngine("opencode", CEREBRAS_GEMMA_MODEL)).toBe(true);
+    expect(
+      isReplyModelAllowedForEngine(
+        "opencode",
+        CEREBRAS_GEMMA_MODEL,
+        CEREBRAS_GEMMA_MODEL,
+      ),
+    ).toBe(true);
     expect(isModelAllowedForEngine("opencode", "rotated/model:free")).toBe(false);
     expect(isPersistedModelAllowedForEngine("opencode", "rotated/model:free")).toBe(true);
     expect(isPersistedModelAllowedForEngine("opencode", "not-qualified:free")).toBe(false);
@@ -95,6 +107,7 @@ describe("paid model policy", () => {
     expect(isModelAllowedForEngine("codex", "gpt-5.6-sol", {})).toBe(true);
     expect(isModelAllowedForEngine("codex", "gpt-5.6-terra", {})).toBe(true);
     expect(isModelAllowedForEngine("codex", "gpt-5.6-luna", {})).toBe(true);
+    expect(isModelAllowedForEngine("codex", "gpt-6-astra", {})).toBe(true);
     expect(isModelAllowedForEngine("codex", "openai/gpt-5.6-sol", {})).toBe(false);
     expect(isModelAllowedForEngine("codex", "gpt-5", {})).toBe(false);
     expect(isModelAllowedForEngine("codex", "gpt-unlisted", {})).toBe(false);
@@ -110,6 +123,7 @@ describe("paid model policy", () => {
       "gpt-5.6-luna",
       "gpt-5.6-terra",
       "gpt-5.6-sol",
+      "gpt-6-astra",
     ]);
     expect(allowedModelsForEngine("codex", {})).toEqual(CODEX_ALLOWED_MODELS);
     expect(
@@ -125,7 +139,11 @@ describe("paid model policy", () => {
       ...FREE_MODEL_LANE_SEED,
     ]);
     expect(allowedModelsForEngine("pi", {})).toEqual(
-      Object.values(OPENCODE_ALLOWED_MODELS).flat(),
+      [
+        ...OPENCODE_ALLOWED_MODELS.anthropic,
+        ...OPENCODE_ALLOWED_MODELS.openai,
+        ...OPENCODE_ALLOWED_MODELS.openrouter,
+      ],
     );
     expect(allowedModelsForEngine("acp", {})).toEqual([]);
   });

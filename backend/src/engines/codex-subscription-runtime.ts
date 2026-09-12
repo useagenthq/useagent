@@ -1,6 +1,7 @@
-import type { SandboxHandle } from "../sandboxes/provider";
+import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
+import { sandboxPlugin } from "../sandboxes/plugins";
 import {
-  sandboxPreviewHeaders,
+  previewLinkBase,
   sandboxProviderKind,
 } from "../sandboxes/provider";
 import { openCodexExecServerBridge } from "../provider-connections/codex-exec-server-bridge";
@@ -15,7 +16,12 @@ import {
   markProviderGatewaySandboxCurrent,
 } from "../provider-gateway/sandbox-config";
 import type { EngineRunContext } from "./types";
-import { RUNTIME_ENVIRONMENT_HOME, RUNTIME_GENERATION } from "./runtime-environment";
+import {
+  RUNTIME_ENVIRONMENT_HOME,
+  RUNTIME_ENVIRONMENT_WORKDIR,
+  RUNTIME_GENERATION,
+  RUNTIME_SANDBOX_HOME,
+} from "./runtime-environment";
 
 const CODEX_EXEC_SERVER_PORT = 37_734;
 const CODEX_EXEC_SERVER_SESSION = "skynet-codex-exec-server";
@@ -27,6 +33,22 @@ const RUNTIME_SETTINGS_PATH = `${RUNTIME_ENVIRONMENT_HOME}/userdata/settings.jso
 export const CODEX_SUBSCRIPTION_DISPLAY_NAME = "Codex subscription";
 const CODEX_STATUS_CACHE_PATH = `${RUNTIME_ENVIRONMENT_HOME}/caches/codex.json`;
 const CODEX_READY_POLL_MS = 150;
+const ROOT_RUNTIME_LAYOUT: SandboxRuntimeLayout = {
+  home: RUNTIME_SANDBOX_HOME,
+  workdir: RUNTIME_ENVIRONMENT_WORKDIR,
+  runsAsRoot: true,
+};
+
+function codexRuntimeLayout(sandbox: Pick<SandboxHandle, "providerKind">): SandboxRuntimeLayout {
+  if (!sandbox.providerKind) return ROOT_RUNTIME_LAYOUT;
+  const plugin = sandboxPlugin(sandbox.providerKind);
+  return { ...plugin.runtime, runsAsRoot: plugin.runsAsRoot };
+}
+
+function codexExecutable(layout: SandboxRuntimeLayout): string {
+  const prefix = layout.runsAsRoot ? "/usr/local" : `${layout.home}/.local`;
+  return `${prefix}/bin/codex`;
+}
 
 export interface CodexSubscriptionLease {
   readonly authEpoch: string | null;
@@ -55,25 +77,26 @@ export async function prepareCodexSubscription(input: {
   const orgId = requiredIdentity(ctx.orgId, "organization");
   const userId = requiredIdentity(ctx.userId, "user");
   const environmentId = codexExecutionEnvironmentId(ctx.runId, sandbox.id);
+  const layout = codexRuntimeLayout(sandbox);
   let execBridge: ReturnType<typeof openCodexExecServerBridge> | undefined;
   let relay: ReturnType<typeof issueCodexSubscriptionRelayCapability> | undefined;
 
   await sandbox.process.deleteSession(CODEX_EXEC_SERVER_SESSION).catch(() => {});
-  await sandbox.process.createSession(CODEX_EXEC_SERVER_SESSION);
-  const launch = await sandbox.process.executeSessionCommand(
-    CODEX_EXEC_SERVER_SESSION,
-    {
-      command: buildCodexExecServerCommand(environmentId),
-      runAsync: true,
-      suppressInputEcho: true,
-    },
-    30,
-  );
-  if ((launch.exitCode ?? 0) !== 0) {
-    throw new Error("Codex exec-server failed to start");
-  }
-
   try {
+    await sandbox.process.createSession(CODEX_EXEC_SERVER_SESSION);
+    const launch = await sandbox.process.executeSessionCommand(
+      CODEX_EXEC_SERVER_SESSION,
+      {
+        command: buildCodexExecServerCommand(environmentId, layout),
+        runAsync: true,
+        suppressInputEcho: true,
+      },
+      30,
+    );
+    if ((launch.exitCode ?? 0) !== 0) {
+      throw new Error("Codex exec-server failed to start");
+    }
+
     const readiness = await sandbox.process.executeCommand(
       buildCodexExecServerReadinessCommand(),
       undefined,
@@ -85,11 +108,12 @@ export async function prepareCodexSubscription(input: {
     }
 
     const preview = await sandbox.getPreviewLink(CODEX_EXEC_SERVER_PORT);
-    const upstreamUrl = previewWebSocketUrl(preview.url, sandboxProviderKind());
+    const sandboxKind = sandbox.providerKind ?? sandboxProviderKind();
+    const upstreamUrl = previewWebSocketUrl(preview.url, sandboxKind);
     execBridge = dependencies.openExecBridge({
       upstreamUrl,
       expectedUpstreamHost: new URL(upstreamUrl).host,
-      headers: sandboxPreviewHeaders(preview.token ?? "", sandboxProviderKind()),
+      headers: { ...previewLinkBase(preview).headers },
     });
     const binding: CodexSubscriptionRelayBinding = {
       orgId,
@@ -114,7 +138,7 @@ export async function prepareCodexSubscription(input: {
       relayUrl: relay.url,
       environmentId,
       workdir,
-    });
+    }, layout);
     // Retained-sandbox validation requires both the immutable control-plane
     // generation label and this on-disk marker. Subscription-backed Codex does
     // not materialize the provider-gateway model config, so it must stamp the
@@ -141,11 +165,14 @@ export async function prepareCodexSubscription(input: {
   };
 }
 
-export function buildCodexExecServerCommand(environmentId: string): string {
+export function buildCodexExecServerCommand(
+  environmentId: string,
+  layout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT,
+): string {
   assertSafeEnvironmentId(environmentId);
   return [
     "set -eu",
-    `exec codex exec-server --listen ws://0.0.0.0:${CODEX_EXEC_SERVER_PORT} --environment-id ${environmentId}`,
+    `exec ${JSON.stringify(codexExecutable(layout))} exec-server --listen ws://0.0.0.0:${CODEX_EXEC_SERVER_PORT} --environment-id ${environmentId}`,
   ].join("\n");
 }
 
@@ -167,7 +194,7 @@ export function buildCodexProviderInstanceCommand(input: {
   readonly relayUrl: string;
   readonly environmentId: string;
   readonly workdir: string;
-}): string {
+}, layout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT): string {
   const providerInstance = {
     driver: "codex",
     displayName: CODEX_SUBSCRIPTION_DISPLAY_NAME,
@@ -188,7 +215,7 @@ export function buildCodexProviderInstanceCommand(input: {
     ],
     config: {
       enabled: true,
-      binaryPath: "codex",
+      binaryPath: codexExecutable(layout),
       homePath: "~/.codex",
       shadowHomePath: "",
       launchArgs: "",
@@ -256,9 +283,10 @@ function buildRemoveCodexProviderInstanceCommand(): string {
 async function patchCodexProviderInstance(
   sandbox: SandboxHandle,
   input: Parameters<typeof buildCodexProviderInstanceCommand>[0],
+  layout: SandboxRuntimeLayout,
 ): Promise<void> {
   const result = await sandbox.process.executeCommand(
-    buildCodexProviderInstanceCommand(input),
+    buildCodexProviderInstanceCommand(input, layout),
     undefined,
     undefined,
     10,
@@ -299,41 +327,10 @@ function assertTrustedPreviewHost(
   if (url.username || url.password) {
     throw new Error("Codex exec-server preview cannot contain URL credentials");
   }
-  const hostname = url.hostname.toLowerCase();
-  if (provider === "cube") {
-    const domain = env.CUBE_SANDBOX_DOMAIN?.trim().toLowerCase() || "cube.app";
-    if (hostname !== domain && !hostname.endsWith(`.${domain}`)) {
-      throw new Error("Codex exec-server preview is outside the Cube sandbox domain");
-    }
-    return;
-  }
-  if (env.NODE_ENV !== "test" && url.protocol !== "https:") {
-    throw new Error("Daytona exec-server preview must use HTTPS");
-  }
-  if (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local") ||
-    hostname === "metadata.google.internal" ||
-    isPrivateIpLiteral(hostname)
-  ) {
-    throw new Error("Codex exec-server preview host is unavailable");
-  }
+  const problem = sandboxPlugin(provider).previewHostProblem(url, env);
+  if (problem) throw new Error(problem);
 }
 
-function isPrivateIpLiteral(hostname: string): boolean {
-  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
-  if (!match) return hostname === "::1" || hostname.startsWith("fe80:") || hostname.startsWith("fc") || hostname.startsWith("fd");
-  const octets = match.slice(1).map(Number);
-  if (octets.some((value) => value > 255)) return true;
-  const first = octets[0];
-  const second = octets[1];
-  if (first === undefined || second === undefined) return true;
-  return first === 0 || first === 10 || first === 127 ||
-    (first === 169 && second === 254) ||
-    (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 168);
-}
 
 function codexExecutionEnvironmentId(runId: string, sandboxId: string): string {
   const suffix = `${sandboxId}-${runId}`

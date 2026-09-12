@@ -57,7 +57,7 @@ function CodeBlockCode({
         // illegible; github-dark-default reads cleanly on it.
         const html = await codeToHtml(code, {
           lang: language,
-          themes: { light: "github-light", dark: "github-dark-default" },
+          themes: { light: "github-light", dark: "github-dark-default", dusk: "tokyo-night" },
           defaultColor: "light",
         });
         if (!cancelled) setHighlightedHtml(html);

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { createRun, runCreateFailureMessage, selectRunCreateAttempt } from "./create-run";
+import {
+  createRun,
+  createThreadMessage,
+  continueNativeChildAsSession,
+  runCreateFailureMessage,
+  selectRunCreateAttempt,
+} from "./create-run";
 
 interface FetchCall {
   input: RequestInfo | URL;
@@ -52,6 +58,43 @@ describe("createRun", () => {
 
     expect(response.status).toBe(503);
     expect(calls).toHaveLength(2);
+  });
+});
+
+describe("createThreadMessage", () => {
+  test("targets the exact ordinary child thread with the caller's stable key", async () => {
+    responses.push(Response.json({ id: "followup-1" }, { status: 201 }));
+    await createThreadMessage(
+      "child/one",
+      { text: "Add keyboard navigation", attachments: ["upload-1"] },
+      "message-key-1",
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.input).toBe("/api/threads/child%2Fone/messages");
+    expect(new Headers(calls[0]?.init?.headers).get("Idempotency-Key")).toBe("message-key-1");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      text: "Add keyboard navigation",
+      attachments: ["upload-1"],
+    });
+  });
+});
+
+describe("continueNativeChildAsSession", () => {
+  test("posts the exact execution identity to the thread continuation route", async () => {
+    responses.push(Response.json({ id: "run-child", thread_id: "thread-child" }, { status: 201 }));
+    await continueNativeChildAsSession(
+      "parent/thread",
+      "00000000-0000-4000-8000-000000000001",
+      "Continue research",
+      "continue-key",
+    );
+    expect(calls[0]?.input).toBe("/api/threads/parent%2Fthread/continue-native-child");
+    expect(new Headers(calls[0]?.init?.headers).get("idempotency-key")).toBe("continue-key");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      executionId: "00000000-0000-4000-8000-000000000001",
+      title: "Continue research",
+      idempotencyKey: "continue-key",
+    });
   });
 });
 

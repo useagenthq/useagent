@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   createExecutionProjector,
+  DELEGATION_POLICY_FIXTURES,
   expandedSyntheticEvents,
   fixtureEvidenceMatrix,
   normalizeAllFixtures,
@@ -11,12 +12,61 @@ import {
 } from "./child-execution-evaluator";
 
 describe("synthetic child-execution conformance evaluator", () => {
+  test("routes explicit product fan-out to durable messageable children on every harness", () => {
+    const productFanout = DELEGATION_POLICY_FIXTURES.filter(
+      (fixture) => fixture.intent === "product_fanout",
+    );
+    expect(productFanout.map(({ harness }) => harness)).toEqual([
+      "codex",
+      "claude-runtime",
+      "opencode",
+      "pi",
+    ]);
+    expect(productFanout.every((fixture) => (
+      fixture.observedTool === "child_session_create_many" &&
+      fixture.relationship.kind === "product_child" &&
+      fixture.relationship.messageable
+    ))).toBe(true);
+    expect(new Set(productFanout.map((fixture) => fixture.relationship.childId)).size).toBe(4);
+  });
+
+  test("keeps native child tools as harness-specific fidelity rather than product fan-out", () => {
+    const native = DELEGATION_POLICY_FIXTURES.filter(
+      (fixture) => fixture.intent === "native_internal_decomposition",
+    );
+    expect(native.map(({ harness, observedTool }) => ({ harness, observedTool }))).toEqual([
+      { harness: "codex", observedTool: "spawn_agent" },
+      { harness: "claude-runtime", observedTool: "Agent" },
+      { harness: "opencode", observedTool: "task" },
+      { harness: "pi", observedTool: "subagent" },
+    ]);
+    expect(native.every((fixture) => fixture.relationship.kind === "native_child")).toBe(true);
+    expect(native.find((fixture) => fixture.harness === "pi")?.relationship.messageable).toBe(false);
+  });
+
   test("labels its evidence boundary honestly", () => {
     expect(SYNTHETIC_FIXTURE_NOTICE).toContain("Synthetic");
     expect(SYNTHETIC_FIXTURE_NOTICE).toContain("not adapter parsing or live provider fidelity");
     expect(fixtureEvidenceMatrix().every((entry) => (
       entry.evidence === "synthetic-fixture-only" && entry.productCapabilityClaimed === false
     ))).toBe(true);
+  });
+
+  test("covers the four primary harness lanes without treating ACP as a fifth product harness", () => {
+    const primaryAdapters = fixtureEvidenceMatrix()
+      .filter(({ adapter }) => ["codex", "claude-runtime", "opencode", "pi"].includes(adapter))
+      .map(({ adapter, syntheticChildLifecycle }) => ({ adapter, syntheticChildLifecycle }));
+
+    expect(primaryAdapters).toEqual([
+      { adapter: "codex", syntheticChildLifecycle: true },
+      { adapter: "claude-runtime", syntheticChildLifecycle: true },
+      { adapter: "opencode", syntheticChildLifecycle: true },
+      { adapter: "pi", syntheticChildLifecycle: true },
+    ]);
+    expect(fixtureEvidenceMatrix().find(({ adapter }) => adapter === "claude-acp")).toMatchObject({
+      syntheticChildLifecycle: false,
+      productCapabilityClaimed: false,
+    });
   });
 
   test("normalizes synthetic lifecycle shapes and degrades fixtures without lifecycle events", () => {

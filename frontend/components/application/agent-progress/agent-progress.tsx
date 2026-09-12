@@ -32,7 +32,6 @@ const ACTIVE_BORDER_TRANSITION = {
 function ProgressLoadingText({ children, className }: { children: string; className?: string }) {
   return (
     <span
-      aria-label={children}
       className={cx("agent-progress-loading-text inline-block", className)}
     >
       {children}
@@ -51,7 +50,7 @@ function ProgressRing({
 }) {
   return (
     <svg
-      aria-hidden
+      aria-hidden="true"
       viewBox="0 0 16 16"
       width={size}
       height={size}
@@ -88,7 +87,7 @@ function ProgressRing({
 function ActiveStepLoader({ running, duration }: { running: boolean; duration: number }) {
   return (
     <svg
-      aria-hidden
+      aria-hidden="true"
       viewBox="0 0 14 14"
       className="size-3.5 shrink-0 -rotate-90"
     >
@@ -131,7 +130,7 @@ function MinimizeIcon() {
 
 function CompletedStepIcon() {
   return (
-    <svg aria-hidden viewBox="0 0 14 14" className="size-[15px]">
+    <svg aria-hidden="true" viewBox="0 0 14 14" className="size-[15px]">
       <circle cx="7" cy="7" r="7" fill="var(--color-background-quaternary-default)" />
       <path
         d="M4 7.5 5.646 9.146a.5.5 0 0 0 .708 0L10 5.5"
@@ -146,7 +145,7 @@ function CompletedStepIcon() {
 
 function PendingStepIcon() {
   return (
-    <svg aria-hidden viewBox="0 0 15 15" className="size-[15px]">
+    <svg aria-hidden="true" viewBox="0 0 15 15" className="size-[15px]">
       <circle
         cx="7.5"
         cy="7.5"
@@ -161,7 +160,7 @@ function PendingStepIcon() {
 
 function CurrentStepIcon() {
   return (
-    <svg aria-hidden viewBox="0 0 14 14" className="size-3.5 shrink-0">
+    <svg aria-hidden="true" viewBox="0 0 14 14" className="size-3.5 shrink-0">
       <path
         d="M7.47 2.47a.75.75 0 0 1 1.06 0l4.177 4.176a.5.5 0 0 1 0 .708L8.53 11.53a.75.75 0 0 1-1.06-1.06l2.72-2.72H2a.75.75 0 0 1 0-1.5h8.19L7.47 3.53a.75.75 0 0 1 0-1.06Z"
         fill="var(--color-foreground-icon-secondary)"
@@ -172,7 +171,7 @@ function CurrentStepIcon() {
 
 function ExpandIcon() {
   return (
-    <svg aria-hidden viewBox="0 0 20 20" className="size-5">
+    <svg aria-hidden="true" viewBox="0 0 20 20" className="size-5">
       <rect
         x="1"
         y="1"

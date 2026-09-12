@@ -18,6 +18,7 @@ import { preparePiRuntime, PI_BRIDGE_GENERATION } from "./pi-runtime-config";
 import { createPiRpcFrameMapper } from "./pi-canonical";
 import { runNativeBridgeTurn } from "./native-bridge-runtime";
 import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
+import { sandboxRuntimeLayout } from "../sandboxes/provider";
 
 export const piAdapter: EngineAdapter = {
   id: "pi",
@@ -33,7 +34,8 @@ export const piAdapter: EngineAdapter = {
       requiredLabels: { [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION },
       timingPrefix: "pi",
       providerAfterResources: true,
-      prepareProvider: (sandbox, workdir) => preparePiRuntime(sandbox, ctx, workdir),
+      prepareProvider: (sandbox, workdir, binding) =>
+        preparePiRuntime(sandbox, ctx, workdir, sandboxRuntimeLayout(binding.kind)),
     });
     try {
       // Preparation can outlive a client cancellation. Never create/resume a

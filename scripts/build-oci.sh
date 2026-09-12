@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 commit=$(git -C "$repo_root" rev-parse HEAD)
+short_commit=${commit:0:12}
 registry=${USEAGENT_OCI_REGISTRY:-ghcr.io/useagenthq}
 mode=${1:-load}
 
@@ -21,7 +22,7 @@ if [[ "$mode" == "push" ]]; then
 fi
 
 for service in backend gateway frontend; do
-  image="${registry}/useagent-${service}:${commit}"
+  image="${registry}/${service}:sha-${short_commit}"
   echo "== build ${image} =="
   docker buildx build \
     --platform linux/amd64 \

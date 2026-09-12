@@ -12,7 +12,7 @@ import {
   providerProtocolIdentity,
   providerSessionMatchesDriver,
 } from "@useagent/agent-harness/control";
-import { sandboxProvider, sandboxProviderApiKey, type SandboxHandle } from "../sandboxes/provider";
+import { type SandboxHandle } from "../sandboxes/provider";
 import { sessionCapabilities } from "./capabilities";
 import {
   piBridgeManager,
@@ -24,6 +24,7 @@ import {
   PI_CODING_AGENT_VERSION,
   type PreparedPiRuntime,
 } from "./pi-runtime-config";
+import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 
 interface PiStartMetadata {
   readonly workdir: string;
@@ -39,7 +40,7 @@ function metadata(value: Record<string, unknown> | undefined): PiStartMetadata |
     typeof runtime?.model?.selector === "string" &&
     typeof runtime?.executable === "string" && runtime.executable.startsWith("/") &&
     typeof runtime?.bunExecutable === "string" && runtime.bunExecutable.startsWith("/") &&
-    typeof runtime?.runAsUser === "string" && runtime.runAsUser.length > 0 &&
+    (runtime?.runAsUser === null || (typeof runtime?.runAsUser === "string" && runtime.runAsUser.length > 0)) &&
     typeof runtime?.home === "string" && runtime.home.startsWith("/")
     ? { workdir, runtime }
     : null;
@@ -52,7 +53,7 @@ function error(code: string, message: string) {
 async function resolveRuntime(runtime: HarnessRuntime): Promise<SandboxHandle | null> {
   if (runtime.kind !== "sandbox") return null;
   try {
-    return await sandboxProvider(sandboxProviderApiKey()).get(runtime.id);
+    return await (await resolveSandboxBindingForSandbox(runtime.id)).provider.get(runtime.id);
   } catch {
     return null;
   }

@@ -1,18 +1,10 @@
 "use client";
 
-import {
-  RiArrowLeftLine,
-  RiCheckLine,
-  RiErrorWarningLine,
-  RiRobot2Line,
-} from "@remixicon/react";
-import { useEffect, useMemo, useState } from "react";
+
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ExecutionSummarySnapshot } from "@useagent/agent-client";
 import {
-  type ChildTimelineEntry,
-  deriveChildTimeline,
   legacySpawnStepIdForCanonical,
-  type MergedChildFidelity,
 } from "@/components/chat/canonical-children";
 import type {
   CanonicalEventLike,
@@ -21,27 +13,39 @@ import { deriveChildrenViewFromExecutionSummary } from "@/components/chat/execut
 import {
   EXECUTION_GRAPH_CLIENT_MODE,
   executionHistoryKey,
-  fetchExecutionTranscript,
+  fetchExecutionGraph,
+  fetchExecutionTranscriptById,
   mergeExecutionTranscript,
+  type ExecutionGraphResponse,
 } from "@/components/chat/execution-graph-client";
+import {
+  type ChildTreeNode,
+  projectChildTree,
+} from "@/components/chat/child-tree-projector";
 import {
   firstLine,
   type GatewayChildSession,
-  RUN_CHILD_STATUS,
   RUN_STATUS_LABEL,
 } from "@/components/chat/gateway-children";
-import type { ChildStatus, NativeFrame } from "@/components/chat/native-events";
+import type { NativeFrame } from "@/components/chat/native-events";
+import { ProductChildDetail } from "@/components/chat/product-child-detail";
 import type { SubagentCard } from "@/components/chat/subagents";
-import { ToolStepRow } from "@/components/chat/tool-step-row";
-import { type ApiStep, deriveTrace } from "@/components/chat/types";
+import type { ThreadRelationship } from "@useagent/agent-client";
+import { type ApiStep } from "@/components/chat/types";
+import { useProductChildGraphs } from "@/components/chat/use-product-child-graphs";
 import { formatDuration } from "@/utils/format";
+import type { ChildKind } from "@/components/chat/child-labels";
 import {
-  formatSubagentCostUsd,
-  formatSubagentTokenCount,
   AgentPanelRow,
 } from "@/components/session-ui/agent-panel-row";
-import { cx as cn } from "@/utils/cx";
-
+import {
+  childElapsedMs,
+  childStatusLabel,
+  isChildActive,
+  type RailChildFidelity,
+  useNow,
+} from "@/components/chat/agent-status";
+import { AgentDetail } from "@/components/chat/agent-detail";
 /**
  * The right-rail "Agents" tab: one card per fanned-out subagent, mirroring
  * a live session view. Each card renders through the vendored T3 fleet row
@@ -64,69 +68,28 @@ import { cx as cn } from "@/utils/cx";
  */
 
 /** Ticks once a second while `live`, so elapsed timers advance; frozen otherwise. */
-function useNow(live: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!live) return;
-    setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [live]);
-  return now;
+interface VisibleChildNode {
+  readonly node: ChildTreeNode;
+  readonly level: number;
+  readonly parentId: string | null;
+  readonly position: number;
+  readonly setSize: number;
 }
 
-/** Elapsed ms this card has been (or was) active; frozen once it settles. */
-export function childElapsedMs(
-  card: SubagentCard,
-  now: number,
-  live: boolean,
-  providerDurationMs: number | null,
-): number | null {
-  if (!live && providerDurationMs !== null && Number.isFinite(providerDurationMs) && providerDurationMs > 0) {
-    return providerDurationMs;
-  }
-  // Canonical translation currently falls back to the provider sequence when no
-  // wall-clock timestamp exists. Never present that sequence delta as a duration.
-  if (!Number.isFinite(card.startedAt) || card.startedAt < Date.UTC(2000, 0, 1)) return null;
-  const endedAt = live ? now : (card.lastActivityAt ?? card.startedAt);
-  const elapsed = Math.max(0, endedAt - card.startedAt);
-  return elapsed > 0 ? elapsed : null;
+function visibleChildNodes(
+  roots: readonly ChildTreeNode[],
+  collapsed: ReadonlySet<string>,
+): VisibleChildNode[] {
+  const visible: VisibleChildNode[] = [];
+  const visit = (siblings: readonly ChildTreeNode[], level: number, parentId: string | null) => {
+    siblings.forEach((node, index) => {
+      visible.push({ node, level, parentId, position: index + 1, setSize: siblings.length });
+      if (!collapsed.has(node.id)) visit(node.children, level + 1, node.id);
+    });
+  };
+  visit(roots, 1, null);
+  return visible;
 }
-
-/** Resolve a card's authoritative status: native fidelity first, else fall back
- *  to the parent run's liveness (pre-native runs / before the lane loads). */
-function statusOf(fidelity: RailChildFidelity | undefined, runLive: boolean): ChildStatus {
-  return fidelity?.status ?? (runLive ? "running" : "completed");
-}
-
-export const isChildActive = (status: ChildStatus): boolean =>
-  status === "pending" || status === "running" || status === "waiting";
-
-export const childStatusLabel = (status: ChildStatus, resumable: boolean | null = null): string => {
-  switch (status) {
-    case "pending":
-      return "Pending";
-    case "running":
-      return "Running";
-    case "waiting":
-      return "Waiting";
-    case "idle":
-      return resumable === false ? "Idle" : "Idle · resumable";
-    case "completed":
-      return "Completed";
-    case "failed":
-      return "Failed";
-    case "cancelled":
-      return "Cancelled";
-    case "interrupted":
-      return "Interrupted";
-    default:
-      status satisfies never;
-      return "Unknown";
-  }
-};
-
-type RailChildFidelity = MergedChildFidelity;
 
 function fidelityFor(
   card: SubagentCard,
@@ -140,307 +103,97 @@ function fidelityFor(
 }
 
 /** Per-child state indicator: running pulse / completed check / failed warning. */
-function ChildStateDot({ status }: { status: ChildStatus }) {
-  if (isChildActive(status)) {
-    return (
-      <span
-        className="ai-loading-pixel bg-blue-500 size-1.5 shrink-0 rounded-full"
-        role="status"
-        aria-label="running"
-      />
-    );
-  }
-  if (status === "failed" || status === "cancelled" || status === "interrupted") {
-    return <RiErrorWarningLine className="text-red-500 size-4 shrink-0" aria-label="failed" />;
-  }
-  return <RiCheckLine className="text-lime-600 size-4 shrink-0" aria-label="completed" />;
-}
-
-function AgentCardRow({
-  card,
-  fidelity,
-  runLive,
+function ChildTreeRow({
+  node,
   onOpen,
+  treeItem,
 }: {
-  card: SubagentCard;
-  fidelity: RailChildFidelity | undefined;
-  runLive: boolean;
+  node: ChildTreeNode;
   onOpen: () => void;
+  treeItem: NonNullable<Parameters<typeof AgentPanelRow>[0]["treeItem"]>;
 }) {
-  const status = statusOf(fidelity, runLive);
-  const live = isChildActive(status);
+  const live = isChildActive(node.status);
   const now = useNow(live);
-  const elapsed = childElapsedMs(card, now, live, fidelity?.usage?.durationMs ?? null);
+  const elapsed = node.nativeCard
+    ? childElapsedMs(node.nativeCard, now, live, node.elapsedMs)
+    : node.elapsedMs;
+  const gatewaySummary = node.gatewayChild?.summary ? firstLine(node.gatewayChild.summary) : null;
+  const result = node.lane === "gateway"
+    ? isChildActive(node.status)
+      ? RUN_STATUS_LABEL[node.gatewayChild?.status ?? "running"]
+      : gatewaySummary
+    : node.result;
+  const kind: ChildKind = node.lane === "product"
+    ? node.productRelationship?.bot ? "bot_thread" : "child_thread"
+    : node.lane === "gateway" ? "spawned_session" : "subagent";
 
   return (
     <AgentPanelRow
+      href={node.productRelationship
+        ? undefined
+        : node.gatewayChild
+          ? `/session/${node.gatewayChild.id}`
+          : undefined}
       agent={{
-        title: card.title,
-        role: fidelity?.role ?? null,
-        engine: null,
-        model: fidelity?.model ?? null,
-        status,
-        statusLabel: childStatusLabel(status, fidelity?.resumable ?? null),
-        progress: fidelity?.progress ?? null,
-        lastToolName: fidelity?.lastToolName ?? null,
-        lastStepLabel: card.status,
-        result: fidelity?.resultText ?? null,
-        usage: fidelity?.usage ?? null,
+        title: node.title,
+        role: node.role,
+        engine: node.engine,
+        provider: node.provider,
+        model: node.model,
+        status: node.status,
+        statusLabel: childStatusLabel(node.status),
+        progress: node.progress,
+        lastToolName: node.lastToolName,
+        lastStepLabel: node.prompt !== node.title
+          ? node.prompt
+          : isChildActive(node.status)
+            ? node.nativeCard?.status ?? null
+            : null,
+        result,
+        usage: node.usage,
         elapsed: elapsed !== null ? formatDuration(elapsed) : null,
+        lane: node.lane,
+        childCount: node.childCount,
+        kind,
+        botName: node.productRelationship?.bot?.name ?? null,
       }}
       onOpen={onOpen}
+      treeItem={treeItem}
     />
   );
 }
 
-/**
- * A gateway child session (spawned via child_session_create) as a rail card. It
- * is its OWN run - a deferred serial thread turn - so the card links to that
- * session rather than opening an in-rail detail. Identity is real: the child's
- * prompt is the title, its engine + model ride the meta caption, and its
- * queued/running/settled state (plus any summary) reads on the caption line.
- */
-function GatewayAgentCard({ child }: { child: GatewayChildSession }) {
-  const status = RUN_CHILD_STATUS[child.status];
-  const summaryLine = child.summary ? firstLine(child.summary) : null;
-  // Active rows lead with their queue/run state (there is no glyph yet); settled
-  // rows lead with the summary (the dot/check already conveys the outcome). The
-  // row's own status-label fallback covers a settled child with no summary.
-  const result = isChildActive(status) ? RUN_STATUS_LABEL[child.status] : summaryLine;
-
-  return (
-    <AgentPanelRow
-      href={`/session/${child.id}`}
-      agent={{
-        title: child.prompt,
-        role: null,
-        engine: child.engine,
-        model: child.model,
-        status,
-        statusLabel: RUN_STATUS_LABEL[child.status],
-        progress: null,
-        lastToolName: null,
-        lastStepLabel: null,
-        result,
-        usage: null,
-        elapsed: null,
-      }}
-    />
-  );
+/** Resolve a durable execution id to its exact tree node, never by provider session id. */
+export function focusNodeIdFor(
+  nodes: readonly ChildTreeNode[],
+  focusExecutionId: string | null,
+): string | null {
+  if (!focusExecutionId) return null;
+  for (const node of nodes) {
+    if (node.executionId === focusExecutionId) return node.id;
+    const nested = focusNodeIdFor(node.children, focusExecutionId);
+    if (nested) return nested;
+  }
+  return null;
 }
-
-/**
- * The detail view for one subagent card. Its objective is the spawn step's prompt
- * (`deriveTrace(...).detail`); its returned answer is the native result text; its
- * activity is exactly the steps native-attributed to this card (`ownerByStep`).
- */
-function AgentDetail({
-  card,
-  fidelity,
-  runLive,
-  steps,
-  ownerByStep,
-  spawnStepId,
-  canonicalEvents,
-  historyLoading,
-  onBack,
-}: {
-  card: SubagentCard;
-  fidelity: RailChildFidelity | undefined;
-  runLive: boolean;
-  steps: ApiStep[];
-  ownerByStep: ReadonlyMap<string, string>;
-  spawnStepId: string;
-  canonicalEvents: readonly CanonicalEventLike[];
-  historyLoading: boolean;
-  onBack: () => void;
-}) {
-  const status = statusOf(fidelity, runLive);
-  const live = isChildActive(status);
-  const now = useNow(live);
-  const elapsed = childElapsedMs(card, now, live, fidelity?.usage?.durationMs ?? null);
-
-  const spawn = steps.find((s) => s.id === spawnStepId);
-  const objective = fidelity?.prompt ?? (spawn ? deriveTrace(spawn).detail : null);
-  const activity = steps.filter((s) => ownerByStep.get(s.id) === card.id);
-  // The child's REAL canonical activity (its own tool lifecycles + text). When
-  // present it IS the pane's timeline - durable-attributed steps already resolve
-  // into it (same sidecar rule as the conversation), so nothing renders twice.
-  const stepsById = new Map(steps.map((s) => [s.id, s]));
-  const timeline: ChildTimelineEntry[] = deriveChildTimeline(
-    canonicalEvents,
-    stepsById,
-    card.childSessionId,
-  );
-  const hasActivity = timeline.length > 0 || activity.length > 0;
-  const hasAnyChildData =
-    hasActivity ||
-    (fidelity?.recentActivity.length ?? 0) > 0 ||
-    Boolean(fidelity?.resultText) ||
-    Boolean(fidelity?.usage);
-
-  return (
-    <div className="flex h-full flex-col">
-      <header className="border-border-button-default flex shrink-0 items-start gap-2 border-b px-3 py-2.5">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back to agents list"
-          className="text-text-secondary hover:bg-background-secondary-hover mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors"
-        >
-          <RiArrowLeftLine className="size-4" aria-hidden />
-        </button>
-        <span className="bg-background-secondary-default text-foreground-icon-secondary mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg">
-          <RiRobot2Line className="size-3.5" aria-hidden />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-body-2-medium text-text-primary min-w-0 flex-1 truncate">
-              {card.title}
-            </span>
-            <ChildStateDot status={status} />
-          </div>
-          <div className="mt-0.5 flex items-center gap-2">
-            <span className="text-mono-label text-text-tertiary flex-1">
-              {fidelity?.role ?? "Subagent"}
-              {status === "failed" ? " · failed" : ""}
-            </span>
-            {elapsed !== null && (
-              <span className="text-text-tertiary shrink-0 font-mono text-caption-1-medium tabular-nums">
-                {formatDuration(elapsed)}
-              </span>
-            )}
-          </div>
-        </div>
-      </header>
-
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-        {objective && objective !== card.title && (
-          <section className="border-border-button-default border-b pb-3">
-            <p className="text-mono-label text-text-tertiary mb-1">Prompt</p>
-            <p className="text-body-2-regular text-text-secondary whitespace-pre-wrap break-words">
-              {objective}
-            </p>
-          </section>
-        )}
-
-        {fidelity?.resultText && (
-          <div
-            className={cn(
-              "rounded-xl border p-3",
-              status === "failed"
-                ? "border-border-error-default/30 bg-red-50"
-                : "border-border-button-default bg-background-secondary-default",
-            )}
-          >
-            <p className="text-mono-label text-text-tertiary mb-1">
-              {status === "failed" ? "Error" : "Answer"}
-            </p>
-            <p
-              className={cn(
-                "text-body-2-regular whitespace-pre-wrap break-words",
-                status === "failed" ? "text-red-500" : "text-text-primary",
-              )}
-            >
-              {fidelity.resultText}
-            </p>
-          </div>
-        )}
-
-        {(fidelity?.usage ||
-          fidelity?.lastToolName ||
-          fidelity?.model ||
-          fidelity?.role ||
-          fidelity?.resumable != null) && (
-          <div className="text-mono-label text-text-tertiary flex flex-wrap gap-x-3 gap-y-1">
-            {fidelity.lastToolName && <span>Last tool: {fidelity.lastToolName}</span>}
-            {fidelity.usage && (
-              <span>{formatSubagentTokenCount(fidelity.usage.totalTokens)} tokens</span>
-            )}
-            {fidelity.usage?.costUsd !== undefined && (
-              <span>{formatSubagentCostUsd(fidelity.usage.costUsd)}</span>
-            )}
-            {fidelity?.usage?.toolUses !== undefined && (
-              <span>{fidelity.usage.toolUses} tool uses</span>
-            )}
-            {fidelity.role && <span>Role: {fidelity.role}</span>}
-            {fidelity.model && <span>Model: {fidelity.model}</span>}
-            {fidelity.resumable !== undefined && fidelity.resumable !== null && (
-              <span>{fidelity.resumable ? "Resumable" : "Not resumable"}</span>
-            )}
-          </div>
-        )}
-
-        {timeline.length > 0 ? (
-          /* The child's own canonical timeline: its tool calls and returned text
-             in true order - never a bare status line when real activity exists. */
-          <div className="space-y-2.5">
-            {timeline.map((entry, i) =>
-              entry.kind === "text" ? (
-                <p
-                  key={entry.key}
-                  className="text-body-2-regular text-text-secondary whitespace-pre-wrap break-words"
-                >
-                  {entry.text}
-                </p>
-              ) : (
-                <ToolStepRow
-                  key={entry.key}
-                  step={entry.step}
-                  state={live && i === timeline.length - 1 ? "running" : "done"}
-                  nested={false}
-                />
-              ),
-            )}
-          </div>
-        ) : activity.length > 0 || (fidelity?.recentActivity.length ?? 0) > 0 ? (
-          <div className="space-y-2.5">
-            {fidelity?.recentActivity.map((entry, index) => (
-              <div
-                key={`${entry.at}:${index}:${entry.summary}`}
-                className="border-border-button-default bg-background-secondary-default rounded-lg border px-3 py-2"
-              >
-                <p className="text-caption-1-regular text-text-secondary break-words">{entry.summary}</p>
-              </div>
-            ))}
-            {activity.map((step, i) => (
-              <ToolStepRow
-                key={step.id}
-                step={step}
-                state={live && i === activity.length - 1 ? "running" : "done"}
-                nested={false}
-              />
-            ))}
-          </div>
-        ) : historyLoading ? (
-          <p className="text-body-2-regular text-text-tertiary py-6 text-center">
-            Loading child history…
-          </p>
-        ) : live ? (
-          <p className="text-body-2-regular text-text-tertiary py-6 text-center">
-            Waiting for the first native activity…
-          </p>
-        ) : hasAnyChildData ? null : (
-          /* Truly nothing known beyond the terminal state - only then a status line. */
-          <p className="text-body-2-regular text-text-tertiary py-6 text-center">
-            {childStatusLabel(status, fidelity?.resumable ?? null)}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function AgentsRail({
   rootRunId = null,
+  parentThreadId = null,
   steps,
   live,
   frames = [],
   canonicalEvents = [],
   executionSummary = null,
   childSessions = [],
+  productChildren = [],
+  focusProductThreadId = null,
+  focusExecutionId = null,
+  focusExecutionRunId = null,
+  onClearProductFocus,
+  onClearNativeSessionFocus,
 }: {
   rootRunId?: string | null;
+  parentThreadId?: string | null;
   steps: ApiStep[];
   live: boolean;
   frames?: readonly NativeFrame[];
@@ -449,6 +202,15 @@ export function AgentsRail({
   /** Gateway child sessions across the thread (child_session_create fan-out).
    *  Their own runs, so they render as link cards to their session. */
   childSessions?: readonly GatewayChildSession[];
+  /** Ordinary messageable child threads. These are the primary product lane. */
+  productChildren?: readonly ThreadRelationship[];
+  /** Product child selected from the parent conversation. */
+  focusProductThreadId?: string | null;
+  onClearProductFocus?: () => void;
+  /** Inspect-only native child selected from the persistent sidebar. */
+  focusExecutionId?: string | null;
+  focusExecutionRunId?: string | null;
+  onClearNativeSessionFocus?: () => void;
 }) {
   // ONE merged projection (canonical + legacy steps + native frames) - the same
   // view the inline conversation fold reads, so the two surfaces never disagree.
@@ -458,13 +220,13 @@ export function AgentsRail({
     canonicalEvents,
     executionSummary,
   );
-  // Gateway children are product runs with richer identity than the parent
-  // lifecycle receipt. Prefer their row when both lanes name the same child.
-  const gatewayIds = new Set(childSessions.map((child) => child.id));
-  const nativeCards = cards.filter(
-    (card) => !card.aliases.some((alias) => gatewayIds.has(alias)),
-  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const appliedFocusRef = useRef<string | null>(null);
+  const appliedProductFocusRef = useRef<string | null>(null);
+  const [graph, setGraph] = useState<ExecutionGraphResponse | null>(null);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const [activeTreeId, setActiveTreeId] = useState<string | null>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
   const [lazyHistory, setLazyHistory] = useState<{
     readonly key: string;
     readonly events: readonly CanonicalEventLike[];
@@ -474,24 +236,124 @@ export function AgentsRail({
   // and hasn't emitted its terminal `done` step.
   const runLive = live && !steps.some((s) => s.kind === "done");
 
-  const selected = selectedId ? nativeCards.find((card) => card.id === selectedId) ?? null : null;
+  const latestCanonical = canonicalEvents.at(-1);
+  const graphRefreshKey = [
+    latestCanonical
+      ? `${latestCanonical.seq}:${latestCanonical.kind}:${latestCanonical.status ?? ""}:${latestCanonical.nativeStatus ?? ""}`
+      : "none",
+    ...(executionSummary?.children.map((child) =>
+      `${child.id}:${child.lastActivitySeq}:${child.status}`
+    ) ?? []),
+  ].join("|");
+  const graphRunId = focusExecutionRunId ?? rootRunId;
+
+  useEffect(() => {
+    if (EXECUTION_GRAPH_CLIENT_MODE !== "read" || !graphRunId) {
+      setGraph(null);
+      return;
+    }
+    const controller = new AbortController();
+    void fetchExecutionGraph(graphRunId, controller.signal)
+      .then((next) => {
+        if (!controller.signal.aborted) setGraph(next);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setGraph(null);
+      });
+    return () => controller.abort();
+  }, [graphRunId, cards.length, graphRefreshKey]);
+
+  const productGraphs = useProductChildGraphs(productChildren, collapsed);
+
+  const tree = useMemo(
+    () => projectChildTree({
+      cards,
+      fidelity,
+      gatewayChildren: childSessions,
+      productChildren,
+      productGraphs,
+      graph,
+      delegationEdges: executionSummary?.delegationEdges,
+      canonicalEvents,
+      runLive,
+    }),
+    [cards, fidelity, childSessions, productChildren, productGraphs, graph, executionSummary, canonicalEvents, runLive],
+  );
+  const visible = useMemo(() => visibleChildNodes(tree, collapsed), [tree, collapsed]);
+  const allNodes = useMemo(() => {
+    const byId = new Map<string, ChildTreeNode>();
+    const add = (nodes: readonly ChildTreeNode[]) => {
+      for (const node of nodes) {
+        byId.set(node.id, node);
+        add(node.children);
+      }
+    };
+    add(tree);
+    return byId;
+  }, [tree]);
+  const focusNodeId = focusNodeIdFor(tree, focusExecutionId);
+  useEffect(() => {
+    if (!focusExecutionId) {
+      if (appliedFocusRef.current !== null) {
+        appliedFocusRef.current = null;
+        setSelectedId(null);
+      }
+      return;
+    }
+    if (!focusNodeId || appliedFocusRef.current === focusExecutionId) return;
+    appliedFocusRef.current = focusExecutionId;
+    setSelectedId(focusNodeId);
+  }, [focusExecutionId, focusNodeId]);
+  const focusProductNodeId = focusProductThreadId
+    ? `product:${focusProductThreadId}`
+    : null;
+  useEffect(() => {
+    if (!focusProductThreadId) {
+      if (appliedProductFocusRef.current !== null) {
+        appliedProductFocusRef.current = null;
+        setSelectedId(null);
+      }
+      return;
+    }
+    if (
+      !focusProductNodeId ||
+      !allNodes.has(focusProductNodeId) ||
+      appliedProductFocusRef.current === focusProductThreadId
+    ) return;
+    appliedProductFocusRef.current = focusProductThreadId;
+    setSelectedId(focusProductNodeId);
+  }, [allNodes, focusProductNodeId, focusProductThreadId]);
+  const selectedNode = selectedId ? allNodes.get(selectedId) ?? null : null;
+  const selected = selectedNode?.nativeCard ?? (selectedNode?.executionId
+    ? {
+        id: selectedNode.id,
+        title: selectedNode.title,
+        childSessionId: selectedNode.aliases.find((alias) => alias !== selectedNode.executionId) ?? null,
+        callId: selectedNode.executionId,
+        aliases: selectedNode.aliases,
+        status: selectedNode.status,
+        startedAt: 0,
+        lastActivityAt: null,
+      } satisfies SubagentCard
+    : null);
+  const selectedRunId = selectedNode?.executionRunId ?? graphRunId;
 
   useEffect(() => {
     if (
       EXECUTION_GRAPH_CLIENT_MODE !== "read" ||
-      !rootRunId ||
-      !selected?.childSessionId
+      !selectedRunId ||
+      !selectedNode?.executionId
     ) {
       setHistoryLoading(false);
       return;
     }
     const controller = new AbortController();
-    const key = executionHistoryKey(rootRunId, selected.id);
+    const key = executionHistoryKey(selectedRunId, selectedNode.executionId);
     setLazyHistory((current) => current?.key === key ? current : null);
     setHistoryLoading(true);
-    void fetchExecutionTranscript(
-      rootRunId,
-      selected.childSessionId,
+    void fetchExecutionTranscriptById(
+      selectedRunId,
+      selectedNode.executionId,
       controller.signal,
       (events) => {
         if (!controller.signal.aborted) setLazyHistory({ key, events });
@@ -509,24 +371,37 @@ export function AgentsRail({
         if (!controller.signal.aborted) setHistoryLoading(false);
       });
     return () => controller.abort();
-  }, [rootRunId, selected?.childSessionId, selected?.id]);
+  }, [selectedRunId, selectedNode?.executionId]);
 
   const detailEvents = useMemo(() => {
     if (
       !selected ||
-      !rootRunId ||
-      lazyHistory?.key !== executionHistoryKey(rootRunId, selected.id)
+      !selectedRunId ||
+      !selectedNode?.executionId ||
+      lazyHistory?.key !== executionHistoryKey(selectedRunId, selectedNode.executionId)
     ) return canonicalEvents;
     return mergeExecutionTranscript(lazyHistory.events, canonicalEvents);
-  }, [canonicalEvents, lazyHistory, selected]);
+  }, [canonicalEvents, lazyHistory, selected, selectedRunId, selectedNode?.executionId]);
 
-  if (nativeCards.length === 0 && childSessions.length === 0) {
+  if (tree.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <p className="text-body-2-regular text-text-tertiary text-center">
           No subagents in this conversation yet.
         </p>
       </div>
+    );
+  }
+
+  if (selectedNode?.productRelationship) {
+    return (
+      <ProductChildDetail
+        relationship={selectedNode.productRelationship}
+        onBack={() => {
+          setSelectedId(null);
+          if (focusProductThreadId) onClearProductFocus?.();
+        }}
+      />
     );
   }
 
@@ -538,32 +413,94 @@ export function AgentsRail({
     const spawnStepId = legacySpawnStepIdForCanonical(selected, legacy) ?? selected.id;
     return (
       <AgentDetail
+        node={selectedNode as ChildTreeNode}
         card={selected}
         fidelity={f}
-        runLive={runLive}
         steps={steps}
         ownerByStep={ownerByStep}
         spawnStepId={spawnStepId}
         canonicalEvents={detailEvents}
         historyLoading={historyLoading}
-        onBack={() => setSelectedId(null)}
+        parentThreadId={selectedNode?.productParentThreadId ?? parentThreadId ?? rootRunId ?? ""}
+        onBack={() => {
+          setSelectedId(null);
+          if (focusExecutionId) onClearNativeSessionFocus?.();
+        }}
       />
     );
   }
 
+  const focusVisible = (index: number): void => {
+    const rows = treeRef.current?.querySelectorAll<HTMLElement>("[data-child-tree-id]");
+    rows?.[Math.max(0, Math.min(index, (rows.length ?? 1) - 1))]?.focus();
+  };
+
+  const handleTreeKey = (item: VisibleChildNode, index: number) =>
+    (event: KeyboardEvent<HTMLElement>): void => {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        focusVisible(index + 1);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        focusVisible(index - 1);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        focusVisible(0);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        focusVisible(visible.length - 1);
+      } else if (event.key === "ArrowRight" && item.node.childCount > 0) {
+        event.preventDefault();
+        if (collapsed.has(item.node.id)) {
+          setCollapsed((current) => {
+            const next = new Set(current);
+            next.delete(item.node.id);
+            return next;
+          });
+        } else {
+          focusVisible(index + 1);
+        }
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        if (item.node.childCount > 0 && !collapsed.has(item.node.id)) {
+          setCollapsed((current) => new Set(current).add(item.node.id));
+        } else if (item.parentId) {
+          const parentIndex = visible.findIndex(({ node }) => node.id === item.parentId);
+          if (parentIndex >= 0) focusVisible(parentIndex);
+        }
+      }
+    };
+
   return (
-    <div className="h-full space-y-2 overflow-y-auto p-3" data-testid="agents-rail">
-      {nativeCards.map((card) => (
-        <AgentCardRow
-          key={card.id}
-          card={card}
-          fidelity={fidelityFor(card, fidelity)}
-          runLive={runLive}
-          onOpen={() => setSelectedId(card.id)}
+    <div
+      ref={treeRef}
+      role="tree"
+      aria-label="Child sessions"
+      aria-live="polite"
+      aria-relevant="additions text"
+      className="h-full space-y-2 overflow-y-auto p-3"
+      data-testid="agents-rail"
+    >
+      {visible.map((item, index) => (
+        <ChildTreeRow
+          key={item.node.id}
+          node={item.node}
+          onOpen={() => {
+            if (item.node.productRelationship || item.node.nativeCard || item.node.executionId) {
+              setSelectedId(item.node.id);
+            }
+          }}
+          treeItem={{
+            id: item.node.id,
+            level: item.level,
+            position: item.position,
+            setSize: item.setSize,
+            expanded: item.node.childCount > 0 ? !collapsed.has(item.node.id) : undefined,
+            tabIndex: (activeTreeId ?? visible[0]?.node.id) === item.node.id ? 0 : -1,
+            onKeyDown: handleTreeKey(item, index),
+            onFocus: () => setActiveTreeId(item.node.id),
+          }}
         />
-      ))}
-      {childSessions.map((child) => (
-        <GatewayAgentCard key={child.id} child={child} />
       ))}
     </div>
   );

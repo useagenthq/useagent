@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import {
   runs,
@@ -42,7 +42,11 @@ export interface ApiSchedule {
   approval_policy: AutomationJson | null;
   enablement_policy: AutomationJson | null;
   enabled: boolean;
+  /** The cron loop's last tick for this schedule (its same-minute guard). */
   last_fired_at: string | null;
+  /** When it last actually ran, by any trigger (cron or Run now): the newest
+   *  firing in the log, falling back to last_fired_at. What a card shows. */
+  last_run_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -53,14 +57,14 @@ export interface ApiFiring {
   run_id: string;
   fired_at: string;
   trigger: ScheduleTrigger;
-  /** Firing-time snapshot ("queued"). */
+  /** "queued" until the run settles, then the run's terminal status. */
   status: string;
   /** Live run status/summary, joined from the runs log. Null if the run is gone. */
   run_status: string | null;
   run_summary: string | null;
 }
 
-function toSchedule(s: ScheduleRecord): ApiSchedule {
+function toSchedule(s: ScheduleRecord, lastRunAt: Date | null = s.lastFiredAt): ApiSchedule {
   return {
     id: s.id,
     org_id: s.orgId,
@@ -87,6 +91,7 @@ function toSchedule(s: ScheduleRecord): ApiSchedule {
     enablement_policy: s.enablementPolicy,
     enabled: s.enabled,
     last_fired_at: s.lastFiredAt ? s.lastFiredAt.toISOString() : null,
+    last_run_at: (lastRunAt ?? s.lastFiredAt)?.toISOString() ?? null,
     created_at: s.createdAt.toISOString(),
     updated_at: s.updatedAt.toISOString(),
   };
@@ -97,12 +102,20 @@ function toSchedule(s: ScheduleRecord): ApiSchedule {
 // ---------------------------------------------------------------------------
 
 export async function listSchedules(orgId: string): Promise<ApiSchedule[]> {
+  // The newest firing of ANY trigger: a manual Run now records a firing but
+  // never stamps last_fired_at (that is the cron loop's guard), so the list
+  // reads the log rather than the guard.
+  // Written with explicit aliases: inside a select-list subquery drizzle renders
+  // column refs unqualified, so `schedules.id` would resolve to the firing's own id.
+  const lastRunAt = sql<Date | null>`(
+    select max(f.fired_at) from schedule_firings f where f.schedule_id = schedules.id
+  )`.mapWith(scheduleFirings.firedAt);
   const rows = await db
-    .select()
+    .select({ schedule: schedules, lastRunAt })
     .from(schedules)
     .where(eq(schedules.orgId, orgId))
     .orderBy(desc(schedules.createdAt), desc(schedules.id));
-  return rows.map(toSchedule);
+  return rows.map((row) => toSchedule(row.schedule, row.lastRunAt));
 }
 
 /** Org-scoped fetch — a cross-org (or missing) id resolves to null (→ 404). */
@@ -258,8 +271,9 @@ export async function markFired(id: string, firedAt: Date): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Firings — append-only. A firing row is never mutated; the live run outcome
-// comes from joining the runs log at read time.
+// Firings — one row per occurrence, recorded as "queued" and stamped with the
+// run's terminal status when it settles; the reader still joins the runs log
+// for the live status and summary in between.
 // ---------------------------------------------------------------------------
 
 export async function recordFiring(input: {
@@ -283,6 +297,19 @@ export async function recordFiring(input: {
     .onConflictDoNothing({ target: scheduleFirings.idempotencyKey })
     .returning({ id: scheduleFirings.id });
   return inserted.length === 1;
+}
+
+/** The fired run settled: stamp the firing row with its terminal status. Takes an
+ *  Executor so run finalization records it in the same transaction as the run. */
+export async function settleFiring(
+  runId: string,
+  status: "completed" | "failed",
+  exec: Executor = db,
+): Promise<void> {
+  await exec
+    .update(scheduleFirings)
+    .set({ status })
+    .where(eq(scheduleFirings.runId, runId));
 }
 
 /** A schedule's firing history, newest first, enriched with the run's live status. */

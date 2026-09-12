@@ -89,6 +89,16 @@ async function provisionSandboxDesktopView(
     return result;
   };
   try {
+    if (sandbox.desktop) {
+      await sandbox.desktop.start();
+      return finish(RUN_TIMING_OUTCOMES.ready, {
+        available: true,
+        browserTools: false,
+        home: sandbox.desktop.home,
+        workdir: sandbox.desktop.workdir,
+        browserExecutable: sandbox.desktop.browserExecutable ?? null,
+      });
+    }
     const probe = await sandbox.process.executeCommand(
       "mkdir -p ~/work ~/.skynet; browser=$(command -v google-chrome 2>/dev/null || command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null || true); " +
         `missing=""; for bin in ${DESKTOP_REQUIRED_BINARIES.join(" ")}; do command -v "$bin" >/dev/null 2>&1 || missing="$missing $bin"; done; ` +
@@ -268,6 +278,22 @@ async function provisionSandboxDesktop(
     );
     throw error;
   }
+}
+
+/** The boot row an engine emits when the sandbox desktop is not attached. Nothing
+ *  in a run asks for the desktop up front (computer-use tools attach on demand),
+ *  so a box without the desktop binaries is information for the timeline's boot
+ *  lane, not a warning that reads as something went wrong with the customer's task. */
+export function desktopUnavailableStep(
+  engineId: string,
+  desktop: Pick<SandboxDesktop, "reason">,
+): { readonly kind: "task"; readonly label: string; readonly chip: string } {
+  const why = desktop.reason ? ` (${desktop.reason.replace(/:(?=\S)/, ": ")})` : "";
+  return {
+    kind: "task",
+    label: `Desktop and computer-use tools are not attached to this run${why}`,
+    chip: engineId,
+  };
 }
 
 /** Make only the user-visible noVNC surface ready. This intentionally skips the

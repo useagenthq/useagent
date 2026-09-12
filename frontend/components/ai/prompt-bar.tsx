@@ -299,6 +299,7 @@ export function PromptBar({
                     {row.desc}
                   </span>
                   {source?.connect && (
+                    // biome-ignore lint/a11y/useKeyWithClickEvents: pointer-only toggle nested inside the row button, which owns the keyboard path.
                     <span
                       role="button"
                       tabIndex={-1}

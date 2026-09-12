@@ -20,7 +20,12 @@ describe("execution capability snapshot", () => {
       access: {
         kind: "useagent_gateway",
         discovery: "direct",
-        operations: ["computer_screenshot", "computer_sequence"],
+        operations: [
+          "computer_screenshot",
+          "computer_sequence",
+          "desktop_recording_start",
+          "desktop_recording_stop",
+        ],
       },
     });
     expect(snapshot.facilities.tools).toEqual({
@@ -35,7 +40,12 @@ describe("execution capability snapshot", () => {
       advertisedGatewayToolDescriptors({ childSessions: true, slack: true })
         .map((tool) => tool.name),
     );
-    for (const operation of ["computer_screenshot", "computer_sequence"]) {
+    for (const operation of [
+      "computer_screenshot",
+      "computer_sequence",
+      "desktop_recording_start",
+      "desktop_recording_stop",
+    ]) {
       expect(registered.has(operation)).toBe(true);
     }
   });

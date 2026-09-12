@@ -1,5 +1,5 @@
 import {
-  sandboxPreviewHeaders,
+  previewLinkBase,
   type SandboxHandle,
 } from "../sandboxes/provider";
 import {
@@ -139,7 +139,7 @@ async function visibleCdpConnection(sandbox: SandboxHandle): Promise<CdpConnecti
   ]);
   const baseUrl = link.url.replace(/\/+$/, "");
   const headers = {
-    ...sandboxPreviewHeaders(link.token ?? ""),
+    ...previewLinkBase(link).headers,
     authorization: `Bearer ${relayToken}`,
   };
   const response = await fetch(`${baseUrl}/json/list`, {
@@ -237,6 +237,12 @@ export async function navigateVisibleBrowserPage(
 const BROWSER_MCP_PROCESS_SESSION = "skynet-browser-mcp";
 const BROWSER_MCP_PORT = 8931;
 export const BROWSER_MCP_URL = `http://localhost:${BROWSER_MCP_PORT}/mcp`;
+export const BROWSER_MCP_SERVER_NAME = "useagent-browser";
+export const LEGACY_BROWSER_MCP_SERVER_NAME = "skynet-browser";
+export const BROWSER_MCP_SERVER_NAMES = [
+  BROWSER_MCP_SERVER_NAME,
+  LEGACY_BROWSER_MCP_SERVER_NAME,
+] as const;
 const BROWSER_MCP_GUARD_FILE = "$HOME/.skynet/browser-mcp-guard.session";
 
 function browserArgs(workdir: string): string[] {
@@ -271,7 +277,7 @@ function browserArgs(workdir: string): string[] {
 export function acpBrowserMcpServer(): Record<string, unknown> {
   return {
     type: "http",
-    name: "skynet-browser",
+    name: BROWSER_MCP_SERVER_NAME,
     url: BROWSER_MCP_URL,
   };
 }
@@ -299,9 +305,10 @@ export async function registerClaudeBrowserMcp(sandbox: SandboxHandle): Promise<
   });
   const command = [
     'export PATH="$HOME/.local/bin:$PATH"',
-    `if claude mcp get skynet-browser 2>/dev/null | grep -Fq "URL: ${BROWSER_MCP_URL}"; then exit 0; fi`,
-    "claude mcp remove skynet-browser --scope user >/dev/null 2>&1 || true",
-    `claude mcp add-json --scope user skynet-browser '${config}'`,
+    `claude mcp remove ${LEGACY_BROWSER_MCP_SERVER_NAME} --scope user >/dev/null 2>&1 || true`,
+    `if claude mcp get ${BROWSER_MCP_SERVER_NAME} 2>/dev/null | grep -Fq "URL: ${BROWSER_MCP_URL}"; then exit 0; fi`,
+    `claude mcp remove ${BROWSER_MCP_SERVER_NAME} --scope user >/dev/null 2>&1 || true`,
+    `claude mcp add-json --scope user ${BROWSER_MCP_SERVER_NAME} '${config}'`,
   ].join("; ");
   const result = await sandbox.process
     .executeCommand(command, undefined, undefined, 30)

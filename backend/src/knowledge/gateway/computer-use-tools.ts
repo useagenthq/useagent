@@ -1,16 +1,15 @@
 import { ensureSandboxDesktopView } from "../../engines/desktop";
 import { getRunForOrg } from "../../runs/repo";
-import {
-  sandboxProvider,
-  sandboxProviderApiKey,
-  type SandboxHandle,
-} from "../../sandboxes/provider";
+import { sandboxPlugin } from "../../sandboxes/plugins";
+import { type SandboxHandle, sandboxProviderKind } from "../../sandboxes/provider";
 import { executeArtifactTool, type ToolResult } from "./artifact-tools";
+import { compressScreenshotForModel } from "./screenshot-compression";
 import type { ToolTokenClaims } from "./token";
+import { resolveSandboxBindingForThread } from "../../sandboxes/binding";
 
 export type ComputerToolContent =
   | { type: "text"; text: string }
-  | { type: "image"; data: string; mimeType: "image/png" };
+  | { type: "image"; data: string; mimeType: "image/png" | "image/jpeg" };
 
 interface ComputerToolResult {
   content: ComputerToolContent[];
@@ -46,7 +45,7 @@ interface ComputerUseService {
   scroll(claims: ToolTokenClaims, x: number, y: number, direction: Direction, amount: number): Promise<void>;
 }
 
-const DISPLAY = ":1";
+const DEFAULT_DISPLAY = ":1";
 const MAX_COORDINATE = 10_000;
 const MAX_TEXT_LENGTH = 20_000;
 const KEY_RE = /^[A-Za-z0-9_+ -]{1,80}$/;
@@ -330,9 +329,7 @@ async function computerSandbox(claims: ToolTokenClaims): Promise<SandboxHandle> 
   const run = await getRunForOrg(claims.orgId, claims.runId);
   if (!run || run.threadId !== claims.threadId) throw new Error("run is not active in this thread");
   if (!run.sandboxId) throw new Error("no sandbox is attached to this run");
-  const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) throw new Error("sandbox provider credentials are not set");
-  return await sandboxProvider(apiKey).get(run.sandboxId);
+  return await (await resolveSandboxBindingForThread(claims.orgId, run.threadId)).provider.get(run.sandboxId);
 }
 
 async function readySandbox(claims: ToolTokenClaims): Promise<SandboxHandle> {
@@ -347,8 +344,9 @@ async function readySandbox(claims: ToolTokenClaims): Promise<SandboxHandle> {
 }
 
 async function cubeCommand(sandbox: SandboxHandle, command: string): Promise<string> {
+  const display = sandbox.desktop?.display ?? DEFAULT_DISPLAY;
   const executed = await sandbox.process.executeCommand(
-    `export DISPLAY=${DISPLAY}; ${command}`,
+    `export DISPLAY=${display}; ${command}`,
     undefined,
     undefined,
     60,
@@ -443,32 +441,35 @@ function buttonNumber(button: Button): number {
   }
 }
 
-async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<ComputerToolResult> {
-  const path = `${sandbox.computerUse ? "/home/daytona" : "/root"}/work/screenshots/screenshot-${Date.now()}.png`;
-  let data: string;
+export async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<ComputerToolResult> {
+  const plugin = sandboxPlugin(sandbox.providerKind ?? sandboxProviderKind());
+  const base = sandbox.computerUse ? "/home/daytona" : plugin.runsAsRoot ? "/root" : plugin.home;
+  const path = `${base}/work/screenshots/screenshot-${Date.now()}.png`;
+  let file: Buffer;
   if (sandbox.computerUse) {
     const captured = await sandbox.computerUse.screenshot.takeFullScreen(true);
-    data = (captured.screenshot ?? "").replace(/^data:image\/png;base64,/, "");
+    const data = (captured.screenshot ?? "").replace(/^data:image\/png;base64,/, "");
     if (!data) throw new Error("Daytona returned an empty screenshot");
+    file = Buffer.from(data, "base64");
     await cubeCommand(
       sandbox,
       `mkdir -p "$(dirname '${path}')"; printf '%s' '${data}' | base64 -d > '${path}'`,
     );
   } else {
-    const output = await cubeCommand(
+    const display = sandbox.desktop?.display ?? DEFAULT_DISPLAY;
+    await cubeCommand(
       sandbox,
       `mkdir -p "$(dirname '${path}')"; ` +
-        `size=$(xdpyinfo -display ${DISPLAY} | awk '/dimensions:/{print $2; exit}'); ` +
-        `ffmpeg -hide_banner -loglevel error -f x11grab -video_size "$size" -i ${DISPLAY} ` +
-        `-frames:v 1 -y '${path}'; printf '__PATH__%s\\n' '${path}'; base64 -w0 '${path}'`,
+        `size=$(xdpyinfo -display ${display} | awk '/dimensions:/{print $2; exit}'); ` +
+        `ffmpeg -hide_banner -loglevel error -f x11grab -video_size "$size" -i ${display} ` +
+        `-frames:v 1 -y '${path}'`,
     );
-    const markerEnd = output.indexOf("\n");
-    if (!output.startsWith("__PATH__") || markerEnd < 0) throw new Error("screenshot output was malformed");
-    data = output.slice(markerEnd + 1).trim();
+    file = await sandbox.fs.downloadFile(path);
   }
+  const modelScreenshot = await compressScreenshotForModel(file);
   return {
     content: [
-      { type: "image", data, mimeType: "image/png" },
+      { type: "image", data: modelScreenshot.toString("base64"), mimeType: "image/jpeg" },
       {
         type: "text",
         text: screenshotArtifactHandoff(path),

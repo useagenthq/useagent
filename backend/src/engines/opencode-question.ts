@@ -1,7 +1,7 @@
 import { getOpenCodeThreadServer } from "./opencode-runtime";
 import { resolvePreviewSandbox } from "../runs/preview-proxy";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
-import { sandboxPreviewHeaders } from "../sandboxes/provider";
+import { previewLinkBase } from "../sandboxes/provider";
 import type { SecretRedactor } from "../secrets/redact";
 import {
   ProviderQuestionError,
@@ -80,6 +80,7 @@ export function parseOpenCodeQuestionRequest(value: unknown): ProviderQuestionRe
 async function resolveControl(threadId: string): Promise<{
   baseUrl: string;
   token: string;
+  headers: Readonly<Record<string, string>>;
   workdir: string;
 }> {
   const cached = getOpenCodeThreadServer(threadId);
@@ -97,8 +98,7 @@ async function resolveControl(threadId: string): Promise<{
     throw new ProviderQuestionError("control_unavailable", 503, "sandbox workspace is unavailable");
   }
   return {
-    baseUrl: link.url.replace(/\/+$/, ""),
-    token: link.token ?? "",
+    ...previewLinkBase(link),
     workdir: `${home.result?.trim() || "/home/daytona"}/work`,
   };
 }
@@ -116,7 +116,7 @@ export async function replyToOpenCodeQuestion(input: {
   if (await providerEventExists(resolvedEventId)) return { alreadyAnswered: true };
 
   const control = await resolveControl(input.threadId);
-  const headers = sandboxPreviewHeaders(control.token);
+  const headers = control.headers;
   const directory = `?directory=${encodeURIComponent(control.workdir)}`;
   const list = await fetch(`${control.baseUrl}/question${directory}`, {
     headers,

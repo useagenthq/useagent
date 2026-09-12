@@ -27,15 +27,17 @@ import type { ComponentType } from "react";
 import * as React from "react";
 
 import { Kbd } from "@/components/base/kbd/kbd";
+import { runTitle } from "@/components/chat/types";
 import * as CommandMenu from "@/components/session-ui/command-palette";
 import { StatusDot } from "@/components/shared/status-dot";
 import { cx } from "@/utils/cx";
 import { relativeTimeShort } from "@/utils/format";
 import { runPrimaryRepo } from "./sidebar-project-groups";
-import { useSidebarThreads } from "./sidebar-threads-provider";
+import { useSidebarThreadRelationships, useSidebarThreads } from "./sidebar-threads-provider";
 import {
   effectiveThreadStatus,
   filterCommandEntries,
+  findChildThreadMatches,
   findThreadMatches,
   threadActivityTimestamp,
   threadStatusPresentation,
@@ -56,7 +58,7 @@ type Cmd = {
 // Every supported useAgent route surfaced by the ⌘K palette.
 const COMMANDS: Cmd[] = [
   { href: "/agent/new", label: "New thread", icon: RiAddLine, group: "Threads" },
-  { href: "/agent/runs", label: "Threads", icon: RiPulseLine, group: "Threads" },
+  { href: "/agent/runs", label: "All threads", icon: RiPulseLine, group: "Threads" },
 
   { href: "/skills", label: "Skills", icon: RiFlashlightLine, group: "Customize" },
   { href: "/playbooks", label: "Playbooks", icon: RiBookMarkedLine, group: "Customize" },
@@ -92,11 +94,15 @@ const GROUP_ORDER: Cmd["group"][] = ["Threads", "Customize", "Developer"];
 export function SearchCommand({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
   const runs = useSidebarThreads();
+  const relationships = useSidebarThreadRelationships();
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
+  const [shortcutHint, setShortcutHint] = React.useState("⌘K");
 
-  // Global ⌘K / Ctrl+K toggles the palette from anywhere.
+  // Global ⌘K / Ctrl+K toggles the palette from anywhere; the pill shows the
+  // modifier this platform actually uses.
   React.useEffect(() => {
+    if (!/Mac|iPhone|iPad|iPod/.test(navigator.platform)) setShortcutHint("Ctrl K");
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -120,7 +126,21 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
   const query = search.trim().toLowerCase();
   const matchingCommands = React.useMemo(() => filterCommandEntries(COMMANDS, query), [query]);
   const matchingThreads = React.useMemo(() => findThreadMatches(runs, query), [runs, query]);
-  const matchCount = matchingCommands.length + matchingThreads.length;
+  const childIds = React.useMemo(
+    () => new Set(relationships.filter((item) => item.parentThreadId).map((item) => item.threadId)),
+    [relationships],
+  );
+  const rootMatches = matchingThreads.filter((run) => !childIds.has(run.id));
+  // Delegated children match on their own words and say which thread they sit in.
+  const childMatches = React.useMemo(
+    () => findChildThreadMatches(relationships, query),
+    [relationships, query],
+  );
+  const parentTitle = (parentThreadId: string | null): string =>
+    relationships.find((item) => item.threadId === parentThreadId)?.title ??
+    runs.find((run) => run.id === parentThreadId)?.prompt ??
+    "its parent thread";
+  const matchCount = matchingCommands.length + rootMatches.length + childMatches.length;
 
   return (
     <>
@@ -138,7 +158,7 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
           <RiSearch2Line className="size-3.5 shrink-0 text-foreground-icon-secondary" aria-hidden />
         </span>
         {!compact && <span className="flex-1 text-left text-body-medium">Search</span>}
-        {!compact && <Kbd className="ml-auto">⌘K</Kbd>}
+        {!compact && <Kbd className="ml-auto">{shortcutHint}</Kbd>}
       </button>
 
       <CommandMenu.Dialog
@@ -168,11 +188,11 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
               className="[&>[cmdk-group-heading]]:text-text-tertiary"
             >
               {group === "Threads"
-                ? matchingThreads.map((run) => {
+                ? rootMatches.map((run) => {
                     const status = threadStatusPresentation(effectiveThreadStatus(run));
                     const repo = runPrimaryRepo(run);
                     const timestamp = threadActivityTimestamp(run);
-                    const title = run.prompt || "Untitled run";
+                    const title = runTitle(run.prompt);
                     const meta = [status.label, relativeTimeShort(timestamp)].join(" · ");
                     return (
                       <CommandMenu.Item
@@ -199,6 +219,42 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
                               {repo}
                             </span>
                           ) : null}
+                        </span>
+                        <span className="shrink-0 text-caption-1-regular text-text-tertiary tabular-nums">
+                          {meta}
+                        </span>
+                      </CommandMenu.Item>
+                    );
+                  })
+                : null}
+              {group === "Threads"
+                ? childMatches.map((child) => {
+                    const status = threadStatusPresentation(child.status);
+                    const inParent = `in ${parentTitle(child.parentThreadId)}`;
+                    const meta = [status.label, relativeTimeShort(child.latestActivityAt)].join(" · ");
+                    return (
+                      <CommandMenu.Item
+                        key={`child:${child.threadId}`}
+                        value={`${child.title} ${child.threadId}`}
+                        onSelect={() => go(`/session/${child.threadId}`)}
+                        aria-label={`${child.title}, ${inParent}, ${meta}`}
+                        className="bg-transparent text-text-primary data-[selected=true]:bg-background-primary-hover"
+                      >
+                        <span className="flex size-5 shrink-0 items-center justify-center">
+                          {status.dot ? (
+                            <StatusDot {...status.dot} />
+                          ) : (
+                            <RiFileTextLine
+                              className="size-4 text-foreground-icon-secondary"
+                              aria-hidden
+                            />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{child.title}</span>
+                          <span className="block truncate text-caption-1-regular text-text-tertiary">
+                            {inParent}
+                          </span>
                         </span>
                         <span className="shrink-0 text-caption-1-regular text-text-tertiary tabular-nums">
                           {meta}

@@ -66,14 +66,13 @@ function lineCount(text: string): number {
 // only SHRINK; new files get no baseline and are capped at 800. Test files are
 // out of scope (they grow with fixtures and cases).
 const BACKEND_SIZE_BASELINE: Record<string, number> = {
-  "engines/opencode-server.ts": 2094,
-  "engines/acp-server.ts": 1532,
-  "engines/runtime-orchestration.ts": 802,
+  "engines/opencode-server.ts":     1874,
+  "engines/acp-server.ts":     1462,
   // Read-only and windowed thread routes live in runs/read-routes.ts.
-  "runs/routes.ts": 1124,
+  "runs/routes.ts": 1067,
   "memory/team-memory.ts": 1005,
   // Scripted mock execution and worker events live in focused worker modules.
-  "worker.ts": 852,
+  "worker.ts": 839,
 };
 
 describe("file-size ratchet (backend/src)", () => {

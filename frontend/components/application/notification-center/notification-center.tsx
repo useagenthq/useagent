@@ -245,6 +245,7 @@ export function NotificationCenter({
                             {unread ? (
                               <span
                                 className="size-2 rounded-full bg-accent-500"
+                                role="img"
                                 aria-label="Unread"
                               />
                             ) : null}

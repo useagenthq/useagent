@@ -637,27 +637,29 @@ describe("native slack streaming outbox", () => {
   });
 
   test("set_thread_status delivers free text and the empty-string clear", async () => {
-    const { runId, teamId } = await linkedSlackRun();
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
     const setKey = uid("thread-status-set");
     const clearKey = uid("thread-status-clear");
     await enqueue({
       kind: "set_thread_status",
       idempotencyKey: setKey,
-      payload: { orgId: ORG, teamId, channel: "D1", threadTs: "1.1", runId, status: "is working: cloning repo" },
+      payload: { orgId: ORG, teamId, channel, threadTs, runId, status: "is working: cloning repo" },
     });
     await enqueue({
       kind: "set_thread_status",
       idempotencyKey: clearKey,
-      payload: { orgId: ORG, teamId, channel: "D1", threadTs: "1.1", runId, status: "" },
+      payload: { orgId: ORG, teamId, channel, threadTs, runId, status: "" },
     });
 
     const rec = recorder(() => ({ ok: true }));
     await processDue(rec.client);
     expect((await getSlackOutbox(setKey))?.state).toBe("delivered");
     expect((await getSlackOutbox(clearKey))?.state).toBe("delivered");
-    expect(rec.threadStatuses).toEqual([
-      { channel: "D1", threadTs: "1.1", status: "is working: cloning repo" },
-      { channel: "D1", threadTs: "1.1", status: "" },
+    expect(rec.threadStatuses.filter((entry) => (
+      entry.channel === channel && entry.threadTs === threadTs
+    ))).toEqual([
+      { channel, threadTs, status: "is working: cloning repo" },
+      { channel, threadTs, status: "" },
     ]);
   });
 

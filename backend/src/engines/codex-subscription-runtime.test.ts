@@ -65,7 +65,7 @@ describe("T3 Codex subscription lease", () => {
     expect(harness.createdSessions).toEqual(["skynet-codex-exec-server"]);
     expect(harness.sessionCommands).toHaveLength(1);
     expect(harness.sessionCommands[0]?.command).toContain(
-      "codex exec-server --listen ws://0.0.0.0:37734",
+      '"/usr/local/bin/codex" exec-server --listen ws://0.0.0.0:37734',
     );
     expect(harness.previewPorts).toEqual([37_734]);
     expect(relayBinding).toEqual({
@@ -109,6 +109,49 @@ describe("T3 Codex subscription lease", () => {
     );
   });
 
+  test("launches Box Codex through the installed absolute binary", async () => {
+    const harness = fakeSandbox({ providerKind: "box" });
+    const lease = await prepareCodexSubscription({
+      sandbox: harness.sandbox,
+      ctx: context(),
+      workdir: "/home/user/work",
+      runtime: runtime(),
+      dependencies: {
+        openExecBridge: () => ({
+          url: "ws://127.0.0.1:43111/grant",
+          close() {},
+        }),
+        issueRelay: () => ({
+          url: "wss://useagent.example.test/api/internal/codex-relay/opaque",
+          close() {},
+        }),
+      },
+    });
+
+    expect(harness.sessionCommands[0]?.command).toContain(
+      'exec "/home/user/.local/bin/codex" exec-server',
+    );
+    expect(harness.sessionCommands[0]?.command).not.toContain("exec codex ");
+
+    const patch = buildCodexProviderInstanceCommand({
+      relayUrl: "wss://useagent.example.test/api/internal/codex-relay/opaque",
+      environmentId: "skynet-run-1",
+      workdir: "/home/user/work",
+    }, {
+      home: "/home/user",
+      workdir: "/home/user/work",
+      runsAsRoot: false,
+      bunExecutable: "/usr/local/bin/bun",
+    });
+    const encoded = patch.match(/CODEX_INSTANCE_B64='([^']+)'/)?.[1] ?? "";
+    const instance = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
+      config?: { binaryPath?: string };
+    };
+    expect(instance.config?.binaryPath).toBe("/home/user/.local/bin/codex");
+
+    await lease.close();
+  });
+
   test("unwinds the exec server and bridges when provider configuration fails", async () => {
     const harness = fakeSandbox({ failProviderPatch: true });
     const closed: string[] = [];
@@ -131,6 +174,33 @@ describe("T3 Codex subscription lease", () => {
     })).rejects.toThrow("provider configuration failed");
 
     expect(closed).toEqual(["relay", "bridge"]);
+    expect(harness.deletedSessions).toEqual([
+      "skynet-codex-exec-server",
+      "skynet-codex-exec-server",
+    ]);
+  });
+
+  test("removes a session when the exec server launch fails", async () => {
+    const harness = fakeSandbox({ launchExit: 127 });
+    let relayIssued = false;
+
+    await expect(prepareCodexSubscription({
+      sandbox: harness.sandbox,
+      ctx: context(),
+      workdir: "/root/work",
+      runtime: runtime(),
+      dependencies: {
+        openExecBridge: () => {
+          throw new Error("bridge must not open");
+        },
+        issueRelay: () => {
+          relayIssued = true;
+          throw new Error("relay must not issue");
+        },
+      },
+    })).rejects.toThrow("Codex exec-server failed to start");
+
+    expect(relayIssued).toBe(false);
     expect(harness.deletedSessions).toEqual([
       "skynet-codex-exec-server",
       "skynet-codex-exec-server",
@@ -164,8 +234,11 @@ describe("T3 Codex subscription lease", () => {
   });
 
   test("builds shell-safe commands with no host credential material", () => {
-    expect(buildCodexExecServerCommand("skynet-run-1")).toContain(
-      "--environment-id skynet-run-1",
+    expect(buildCodexExecServerCommand("skynet-run-1")).toBe(
+      [
+        "set -eu",
+        'exec "/usr/local/bin/codex" exec-server --listen ws://0.0.0.0:37734 --environment-id skynet-run-1',
+      ].join("\n"),
     );
     expect(() => buildCodexExecServerCommand("unsafe; touch /tmp/pwned")).toThrow(
       "environment id is unsafe",
@@ -289,7 +362,11 @@ function runtime(): CodexSubscriptionRuntimeSelection {
   };
 }
 
-function fakeSandbox(options: { failProviderPatch?: boolean } = {}) {
+function fakeSandbox(options: {
+  failProviderPatch?: boolean;
+  launchExit?: number;
+  providerKind?: "box" | "cube" | "daytona";
+} = {}) {
   const commands: Array<{ command: string; result: SandboxExecuteResult }> = [];
   const createdSessions: string[] = [];
   const deletedSessions: string[] = [];
@@ -297,6 +374,7 @@ function fakeSandbox(options: { failProviderPatch?: boolean } = {}) {
   const previewPorts: number[] = [];
   const sandbox = {
     id: "sandbox-1",
+    ...(options.providerKind ? { providerKind: options.providerKind } : {}),
     cpu: 2,
     memory: 4,
     process: {
@@ -314,12 +392,17 @@ function fakeSandbox(options: { failProviderPatch?: boolean } = {}) {
       },
       async executeSessionCommand(sessionId: string, request: { command: string }) {
         sessionCommands.push({ sessionId, command: request.command });
-        return { cmdId: "cmd-1", exitCode: 0 };
+        return { cmdId: "cmd-1", exitCode: options.launchExit ?? 0 };
       },
     },
     async getPreviewLink(port: number) {
       previewPorts.push(port);
-      return { url: "https://preview.example.test", token: "preview-secret" };
+      return {
+        url: options.providerKind === "box"
+          ? "https://sandbox-37734.on.ascii.dev"
+          : "https://preview.example.test",
+        token: "preview-secret",
+      };
     },
   } as unknown as SandboxHandle;
   return {

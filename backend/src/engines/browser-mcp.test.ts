@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
   acpBrowserMcpServer,
+  BROWSER_MCP_SERVER_NAME,
   ensureResidentBrowserMcp,
+  LEGACY_BROWSER_MCP_SERVER_NAME,
   opencodeBrowserMcpConfig,
   PLAYWRIGHT_MCP_VERSION,
   registerClaudeBrowserMcp,
@@ -12,7 +14,7 @@ describe("resident browser MCP", () => {
   test("exposes one loopback endpoint to ACP", () => {
     expect(acpBrowserMcpServer()).toEqual({
       type: "http",
-      name: "skynet-browser",
+      name: BROWSER_MCP_SERVER_NAME,
       url: "http://localhost:8931/mcp",
     });
   });
@@ -39,8 +41,12 @@ describe("resident browser MCP", () => {
 
     await expect(registerClaudeBrowserMcp(sandbox)).resolves.toBe(true);
     expect(commands).toHaveLength(1);
-    expect(commands[0]).toContain("claude mcp get skynet-browser");
-    expect(commands[0]).toContain("claude mcp add-json --scope user skynet-browser");
+    expect(commands[0]).toContain(`claude mcp remove ${LEGACY_BROWSER_MCP_SERVER_NAME}`);
+    expect(commands[0]).toContain(`claude mcp get ${BROWSER_MCP_SERVER_NAME}`);
+    expect(commands[0]).toContain(`claude mcp add-json --scope user ${BROWSER_MCP_SERVER_NAME}`);
+    expect(commands[0]!.indexOf(`remove ${LEGACY_BROWSER_MCP_SERVER_NAME}`)).toBeLessThan(
+      commands[0]!.indexOf(`get ${BROWSER_MCP_SERVER_NAME}`),
+    );
     expect(commands[0]).toContain('"url":"http://localhost:8931/mcp"');
     expect(commands[0]).toContain('"alwaysLoad":true');
   });

@@ -3,12 +3,14 @@ import { describe, expect, test } from "bun:test";
 import {
   dedupeProjectRepos,
   groupThreadsByProject,
+  projectSidebarThreadFamilies,
   type ProjectRepo,
   runPrimaryRepo,
   UNATTACHED_KEY,
   visibleProjectGroups,
 } from "./sidebar-project-groups";
 import type { SidebarRun } from "./working-project-status";
+import type { ThreadRelationship } from "@useagent/agent-client";
 
 function run(overrides: Partial<SidebarRun> & Pick<SidebarRun, "id">): SidebarRun {
   return {
@@ -216,5 +218,72 @@ describe("visibleProjectGroups", () => {
 
   test("returns every project when expanded", () => {
     expect(visibleProjectGroups(groups, 5, true)).toEqual({ groups, hiddenCount: 0 });
+  });
+});
+
+describe("projectSidebarThreadFamilies", () => {
+  const relationship = (
+    threadId: string,
+    parentThreadId: string | null,
+    over: Partial<ThreadRelationship> = {},
+  ): ThreadRelationship => ({
+    threadId,
+    parentThreadId,
+    familyThreadId: "root",
+    kind: parentThreadId ? "delegated" : "root",
+    title: `Task ${threadId}`,
+    sourceRunId: "root",
+    sourceExecutionId: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-01T00:00:00.000Z",
+    status: "completed",
+    engine: "codex",
+    model: "gpt-5.6-sol",
+    latestRunId: threadId,
+    latestSummary: null,
+    latestDurationMs: null,
+    latestActivityAt: "2026-09-01T00:00:00.000Z",
+    bot: null,
+    followUpRunIds: [],
+    ...over,
+  });
+
+  test("keeps only roots in left navigation and omits durable product children", () => {
+    const projected = projectSidebarThreadFamilies(
+      [run({ id: "root", repos: ["acme/api"] }), run({ id: "child" }), run({ id: "grandchild" })],
+      [
+        relationship("root", null),
+        relationship("child", "root"),
+        relationship("grandchild", "child"),
+      ],
+    );
+    expect(projected.roots.map((item) => item.id)).toEqual(["root"]);
+  });
+
+  test("nests delegated children under their parent, newest first, so the tree can show them", () => {
+    const projected = projectSidebarThreadFamilies(
+      [run({ id: "root" })],
+      [
+        relationship("root", null),
+        relationship("older", "root", { latestActivityAt: "2026-09-01T00:01:00.000Z" }),
+        relationship("newer", "root", { latestActivityAt: "2026-09-01T00:02:00.000Z" }),
+        relationship("grandchild", "newer"),
+      ],
+    );
+    expect(projected.childrenByParent.get("root")?.map((item) => item.threadId)).toEqual(["newer", "older"]);
+    expect(projected.childrenByParent.get("newer")?.map((item) => item.threadId)).toEqual(["grandchild"]);
+    expect(projected.childrenByParent.has("older")).toBe(false);
+  });
+
+  test("does not promote active product children into the left thread list", () => {
+    const projected = projectSidebarThreadFamilies(
+      [run({ id: "root" }), run({ id: "done" }), run({ id: "working" })],
+      [
+        relationship("root", null),
+        relationship("done", "root", { status: "completed" }),
+        relationship("working", "root", { status: "running" }),
+      ],
+    );
+    expect(projected.roots.map((item) => item.id)).toEqual(["root"]);
   });
 });

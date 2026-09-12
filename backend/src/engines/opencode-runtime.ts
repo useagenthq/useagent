@@ -5,6 +5,8 @@ export interface OpenCodeThreadServer {
   readonly sandboxId: string;
   readonly baseUrl: string;
   readonly token: string;
+  /** Preview auth headers for this server (provider token header or Box's port-auth cookie). */
+  readonly headers: Readonly<Record<string, string>>;
   readonly workdir: string;
 }
 

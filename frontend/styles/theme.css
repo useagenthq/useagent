@@ -164,7 +164,9 @@
   --color-foreground-icon-primary:       var(--color-neutral-950);
   --color-foreground-icon-hover:         var(--color-black);
   --color-foreground-icon-secondary:     var(--color-neutral-500);
-  --color-foreground-icon-tertiary:      var(--color-neutral-400);
+  /* Tertiary icons (sidebar row glyphs, chevrons) need the 3:1 non-text floor
+   * on the #f5f5f5 panel fill; neutral-400 read 2.37:1 there. */
+  --color-foreground-icon-tertiary:      var(--color-neutral-500);
   --color-foreground-icon-quaternary:    var(--color-neutral-300);
   --color-foreground-icon-error:         var(--color-red-600);
   --color-foreground-icon-disabled:      var(--color-neutral-300);
@@ -179,14 +181,22 @@
    * surfaces. neutral-950 stays available via text-strong-950 for true-black
    * emphasis. */
   --color-text-primary:         #242528;
-  --color-text-secondary:       var(--color-neutral-500);
-  --color-text-tertiary:        var(--color-neutral-400);
+  --color-text-secondary:       var(--color-neutral-600);
+  /* Tertiary carries real text (section labels, times, captions, secondary
+   * button labels, placeholders). #666666 clears AA on every light surface
+   * down to the #ebebeb field fill (4.8:1); neutral-500 reads 3.98:1 there
+   * and 4.35:1 on the #f5f5f5 panel fill. */
+  --color-text-tertiary:        #666666;
   --color-text-disabled:        var(--color-neutral-300);
   --color-text-disabled-danger: var(--color-red-300);
-  --color-text-placeholder:     var(--color-neutral-400);
+  --color-text-placeholder:     var(--color-text-tertiary);
   --color-text-error-primary:   var(--color-red-500);
   --color-input-disabled-text:  var(--color-neutral-300);
   --color-text-white:           var(--color-white);
+  /* Accent used AS text (selected pill tab, inline links): accent-600 in
+   * light and accent-300 on the dark overlays. accent-500 itself is 3.45:1
+   * on the light panel fill and about 4:1 on the dark panels. */
+  --color-text-accent:          var(--color-accent-600);
 
   /* Background */
   /* Page canvas sits one warm step BELOW the white panels/cards so light
@@ -265,7 +275,7 @@
   --color-button-ghost-disabled-foreground:       var(--color-accent-300);
   --color-dropdown-item-hover-background:        var(--color-neutral-100);
   --color-kbd-background:                        var(--color-neutral-300);
-  --color-kbd-foreground:                        var(--color-neutral-500);
+  --color-kbd-foreground:                        var(--color-neutral-700);
   --color-docs-file-chip-background:             var(--color-purple-50);
   --color-docs-file-chip-border:                 var(--color-purple-100);
   --color-docs-file-chip-foreground:             var(--color-purple-500);
@@ -299,6 +309,8 @@
   --color-status-lime-text:         var(--color-lime-800);
   --color-status-yellow-background: var(--color-yellow-200);
   --color-status-yellow-text:       var(--color-yellow-800);
+  --color-status-orange-background: var(--color-orange-200);
+  --color-status-orange-text:       var(--color-orange-800);
   --color-status-rose-background:   var(--color-rose-200);
   --color-status-rose-text:         var(--color-rose-800);
   --color-status-cyan-background:   var(--color-cyan-200);
@@ -395,6 +407,7 @@
   /* Text */
   --color-text-primary:  var(--color-neutral-50);
   --color-text-tertiary: var(--color-neutral-600);
+  --color-text-accent:   var(--color-accent-300);
   --color-text-disabled: var(--color-neutral-800);
   --color-text-error-primary: var(--color-red-400);
   --color-input-disabled-text: color-mix(in srgb, var(--color-neutral-500) 40%, transparent);
@@ -509,6 +522,8 @@
   --color-status-lime-text:         var(--color-lime-500);
   --color-status-yellow-background: color-mix(in srgb, var(--color-yellow-950) 60%, transparent);
   --color-status-yellow-text:       var(--color-yellow-500);
+  --color-status-orange-background: color-mix(in srgb, var(--color-orange-950) 60%, transparent);
+  --color-status-orange-text:       var(--color-orange-500);
   --color-status-rose-background:   color-mix(in srgb, var(--color-rose-950) 60%, transparent);
   --color-status-rose-text:         var(--color-rose-500);
   --color-status-cyan-background:   color-mix(in srgb, var(--color-cyan-950) 60%, transparent);
@@ -595,6 +610,7 @@
   --color-text-disabled:        var(--color-text-disabled);
   --color-text-disabled-danger: var(--color-text-disabled-danger);
   --color-text-placeholder:     var(--color-text-placeholder);
+  --color-text-accent:          var(--color-text-accent);
   --color-text-error-primary:   var(--color-text-error-primary);
   --color-input-disabled-text:  var(--color-input-disabled-text);
   --color-text-white:           var(--color-text-white);
@@ -688,6 +704,8 @@
   --color-status-lime-text:         var(--color-status-lime-text);
   --color-status-yellow-background: var(--color-status-yellow-background);
   --color-status-yellow-text:       var(--color-status-yellow-text);
+  --color-status-orange-background: var(--color-status-orange-background);
+  --color-status-orange-text:       var(--color-status-orange-text);
   --color-status-rose-background:   var(--color-status-rose-background);
   --color-status-rose-text:         var(--color-status-rose-text);
   --color-status-cyan-background:   var(--color-status-cyan-background);

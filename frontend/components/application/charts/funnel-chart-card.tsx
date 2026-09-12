@@ -217,6 +217,7 @@ export function FunnelChartCard({
       <div ref={ref} className="relative min-h-0 w-full flex-1">
         {width > 0 && height > 0 && (
           <svg
+            role="presentation"
             width={width}
             height={height}
             viewBox={`0 0 ${width} ${height}`}

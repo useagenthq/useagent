@@ -11,7 +11,7 @@ import { recordRunFollowups } from "./followups";
 import {
   createSlackRunResponse,
   findSlackRunResponse,
-  findSlackThreadByRoot,
+  findSlackThreadForProductThread,
 } from "../slack/repo";
 import { composeSlackReplyText } from "../slack/reply";
 import { buildRunCard, deriveTitle, phaseForStatus, sessionUrl } from "../slack/card";
@@ -37,7 +37,7 @@ import {
 } from "../slack/streaming";
 import { turnStream } from "./turn-stream";
 import { env } from "../env";
-import { findScheduleForRun } from "../schedules/repo";
+import { findScheduleForRun, settleFiring } from "../schedules/repo";
 import { publishRunLifecycleChange } from "./org-signals";
 import { enqueueCanonicalization } from "./canonicalization-outbox";
 import { canonicalEngine } from "../engines/engine-alias";
@@ -52,6 +52,7 @@ import { evaluateFinishedWork, finishedWorkFailureSummary } from "./finished-wor
 import { listFinishedWorkForRun } from "./finished-work-repo";
 import { finishedWorkEnforcementEnabled, finishedWorkRolloutMode } from "./finished-work-rollout";
 import { lockFinishedWorkRun } from "./finished-work-lock";
+import { getThreadRelationship } from "./thread-relationship-repo";
 
 /** Providers whose runs project native events and/or `steps` into the canonical lane.
  *  OpenCode, Pi, and the ACP engines (acp/claude/codex). Legacy aliases (daytona -> opencode,
@@ -73,7 +74,7 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
   summary: string,
 ): Promise<boolean> {
   const thread = run.orgId
-    ? await findSlackThreadByRoot(run.threadId, tx, run.orgId)
+    ? await findSlackThreadForProductThread(run.orgId, run.threadId, tx)
     : null;
   let slack = await findSlackRunResponse(run.id, tx);
   if (
@@ -95,7 +96,8 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
   if (!slack) return false;
   if (!run.orgId) return false;
 
-  const title = deriveTitle(run.prompt);
+  const relationship = await getThreadRelationship(run.orgId, run.threadId, tx);
+  const title = relationship?.title ?? deriveTitle(run.prompt);
   const phase = phaseForStatus(status);
   const webUrl = sessionUrl(env.FRONTEND_ORIGIN, run.threadId);
   const repoSpecs = run.repos.map(parseRepoRef);
@@ -410,6 +412,7 @@ export async function finalizeRun(
     // allowlist is re-checked at delivery-enqueue time.
     const automation = await findScheduleForRun(runId, tx);
     if (automation) {
+      await settleFiring(runId, effectiveStatus, tx);
       const target = await resolveSlackAutomationTargetForOrg(
         automation.delivery,
         automation.orgId,

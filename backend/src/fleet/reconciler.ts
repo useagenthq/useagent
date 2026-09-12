@@ -1,3 +1,4 @@
+import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 import { fleetCapacityConfig } from "../env";
 import type { SandboxProvider } from "../sandboxes/provider";
 import {
@@ -30,6 +31,7 @@ import {
 } from "./lease-repo";
 import { cachedProviderInventory, ensureProviderInventory } from "./inventory";
 import type { CapacityInventory } from "./types";
+import { recordSandboxReclaimed } from "../engines/workspace-continuity";
 
 // ---------------------------------------------------------------------------
 // Fleet reconciliation worker (HA Stage A). One periodic tick, wired into the
@@ -88,7 +90,12 @@ export async function reconcileRetainedSandboxMappings(
 type ReleaseRetainedSandbox = (
   orgId: string,
   runId: string,
-) => Promise<{ readonly ok: boolean; readonly released?: boolean }>;
+) => Promise<{
+  readonly ok: boolean;
+  readonly released?: boolean;
+  readonly sandboxId?: string;
+  readonly threadId?: string;
+}>;
 
 type LoadCapacityReclaimPage = typeof listQueuedCapacityAdmissions;
 
@@ -149,7 +156,17 @@ export async function reclaimRetainedCapacityIfNeeded(
       const candidate = queued.reclaimCandidate;
       if (!candidate) continue;
       const result = await release(candidate.orgId, candidate.runId);
-      return result.ok && result.released === true ? 1 : 0;
+      if (!result.ok || result.released !== true) return 0;
+      // The thread's next turn reads this marker to say the workspace was
+      // reclaimed (not merely missing) and to tell the agent its files are gone.
+      if (result.sandboxId && result.threadId) {
+        await recordSandboxReclaimed({
+          runId: candidate.runId,
+          threadId: result.threadId,
+          sandboxId: result.sandboxId,
+        });
+      }
+      return 1;
     }
     const last = queuedAdmissions.at(-1)!;
     cursor = { priority: last.priority, queuedAt: last.queuedAt, runId: last.runId };
@@ -174,9 +191,8 @@ async function reconcileRetainedMappingsIfDue(force = false): Promise<number> {
 }
 
 async function deleteSandbox(sandboxId: string): Promise<void> {
-  const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) throw new Error("sandbox provider is not configured");
-  const provider = sandboxProvider(apiKey);
+  // The sandbox belongs to whichever provider created it (deployment or a user's computer).
+  const { provider } = await resolveSandboxBindingForSandbox(sandboxId);
   const sandbox = await provider.get(sandboxId);
   await sandbox.delete();
 }

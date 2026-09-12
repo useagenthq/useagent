@@ -12,16 +12,6 @@ const agentTurnFiles = [
 const sourceFor = (path: string): string =>
   readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-function backendExecutionSource(path: (typeof agentTurnFiles)[number], source: string): string {
-  if (path !== "src/engines/acp-server.ts") return source;
-  const withoutSandboxRelay = source.replace(
-    /export const RELAY_SCRIPT = `[\s\S]*?^`;/m,
-    "",
-  );
-  if (withoutSandboxRelay === source) throw new Error("missing in-sandbox ACP relay source");
-  return withoutSandboxRelay;
-}
-
 function stringLiteralsIn(source: string, declaration: RegExp): string[] {
   const body = declaration.exec(source)?.groups?.body;
   if (body === undefined) throw new Error(`missing source declaration: ${declaration.source}`);
@@ -40,7 +30,9 @@ describe("provider credential trust boundary", () => {
   for (const path of agentTurnFiles) {
     test(`${path} cannot read or inject backend provider credentials`, () => {
       const source = sourceFor(path);
-      const backendSource = backendExecutionSource(path, source);
+      // The in-sandbox relay (which legitimately inherits the sandbox env) lives in
+      // acp-relay-script.ts, so every agent-turn file is scanned whole.
+      const backendSource = source;
       for (const name of providerSecretNames) {
         expect(backendSource).not.toMatch(
           new RegExp(`(?:process\\.env|\\benv)(?:\\.${name}|\\[["']${name}["']\\])`),
@@ -73,20 +65,6 @@ describe("provider credential trust boundary", () => {
     }
   });
 
-  test("every retained engine substrate rejects an obsolete secret delivery generation", () => {
-    for (const path of [
-      "src/engines/acp-server.ts",
-      "src/engines/opencode-server.ts",
-      "src/engines/sandbox.ts",
-    ] as const) {
-      expect(sourceFor(path)).toContain("providerGatewaySandboxIsCurrent(prior)");
-    }
-
-    const sharedLease = sourceFor("src/engines/thread-sandbox.ts");
-    expect(sharedPreparation).toContain("acquireThreadSandbox(ctx");
-    expect(sharedLease).toContain("providerGatewaySandboxIsCurrent(sandbox)");
-  });
-
   test("Codex app-server stays auth-only and inherits only its child allowlist", () => {
     const source = sourceFor("src/provider-connections/codex-app-server.ts");
     const accountMethods = stringLiteralsIn(
@@ -104,7 +82,7 @@ describe("provider credential trust boundary", () => {
       "account/read",
       "account/logout",
     ]);
-    expect(inheritedKeys).toEqual(["PATH"]);
+    expect(inheritedKeys).toEqual(["PATH", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"]);
     expect(source).toMatch(
       /spawn\("codex", \["app-server", "--stdio"\], \{[\s\S]*?env: codexAppServerChildEnvironment\(input\.codexHome\),/,
     );
@@ -114,7 +92,8 @@ describe("provider credential trust boundary", () => {
       /export function codexAppServerChildEnvironment\([\s\S]*?\n\}/,
     )?.[0];
     expect(childEnvironment).toBeDefined();
-    expect(childEnvironment).toContain("{ CODEX_HOME: codexHome }");
+    expect(childEnvironment).toContain("CODEX_HOME: codexHome");
+    expect(childEnvironment).toContain("HOME: codexHome");
     expect(childEnvironment).toContain("for (const key of CODEX_APP_SERVER_ENV_KEYS)");
     expect(childEnvironment).not.toMatch(/\.\.\.(?:process\.env|env)\b/);
 

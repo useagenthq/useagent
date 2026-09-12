@@ -8,7 +8,7 @@
  * The downloader is swappable for tests (setSandboxDownloaderForTest) so the
  * tool + outbox can be exercised without a live sandbox.
  */
-import { sandboxProvider, sandboxProviderApiKey } from "../sandboxes/provider";
+import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 
 export interface SandboxFile {
   bytes: Buffer;
@@ -23,9 +23,7 @@ function shellQuote(value: string): string {
 }
 
 async function providerResolvePath(sandboxId: string, path: string): Promise<string> {
-  const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) throw new Error("sandbox provider credentials are not set");
-  const provider = sandboxProvider(apiKey);
+  const provider = (await resolveSandboxBindingForSandbox(sandboxId)).provider;
   const sandbox = await provider.get(sandboxId);
   const result = await sandbox.process.executeCommand(`realpath -e -- ${shellQuote(path)}`);
   const resolved = result.result?.replace(/\r?\n$/, "") ?? "";
@@ -36,9 +34,7 @@ async function providerResolvePath(sandboxId: string, path: string): Promise<str
 }
 
 async function providerDownload(sandboxId: string, path: string, maxBytes: number): Promise<SandboxFile> {
-  const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) throw new Error("sandbox provider credentials are not set");
-  const provider = sandboxProvider(apiKey);
+  const provider = (await resolveSandboxBindingForSandbox(sandboxId)).provider;
   const sandbox = await provider.get(sandboxId);
   const info = await sandbox.fs.getFileDetails(path);
   const declared = Number((info as { size?: number }).size ?? 0);

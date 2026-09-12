@@ -1,3 +1,5 @@
+import { productChildThreadsEnabled } from "../runs/thread-relationship-rollout";
+
 /** The provider-neutral context needed to compose one agent turn. */
 export interface TurnPromptContext {
   readonly prompt: string;
@@ -6,8 +8,14 @@ export interface TurnPromptContext {
   readonly resourceContext?: string;
   readonly skillContext?: string;
   readonly skillCatalogContext?: string;
+  /** Controller-only bot roster and delegation policy; absent on bot-owned/chat turns. */
+  readonly botContext?: string;
   readonly inputContext?: string;
   readonly commandName?: string | null;
+  readonly orgId?: string | null;
+  readonly origin?: string | null;
+  /** The conversation the run belongs to; names the port bridge the user opens. */
+  readonly threadId?: string;
 }
 
 /**
@@ -50,6 +58,53 @@ export const AGENT_SKILL_DISCOVERY_RULES =
   "Cached skill_catalog metadata may supplement this discovery but never replaces these calls.\n" +
   "</skill_discovery>\n\n";
 
+function productFanoutRoutingRules(
+  ctx: TurnPromptContext,
+  executionCapabilities: ExecutionCapabilitySnapshot,
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  const tools = executionCapabilities.facilities.tools;
+  const gatewayAvailable =
+    tools.availability === "ready" && tools.access.kind === "useagent_gateway";
+  const productFanoutAvailable = gatewayAvailable && ctx.origin === null &&
+    productChildThreadsEnabled(ctx.orgId, env);
+  if (!productFanoutAvailable) return "";
+  return "<delegation_routing>\n" +
+    "When the user explicitly asks to fan out, delegate, parallelize work across agents, or create " +
+    "user-visible child sessions, you MUST use the trusted child_session_create_many tool. Those " +
+    "product child sessions are the durable, independently visible delegation boundary. Even when " +
+    "the user does not explicitly request fan-out, you MUST use child_session_create_many when the " +
+    "request has at least two substantial independent workstreams whose concurrent execution materially " +
+    "helps and whose progress or result should remain visible and messageable. This includes multi-subject " +
+    "research or comparison requests where each subject requires its own sourced analysis. Keep small, sequential, approval-bound, " +
+    "destructive, or shared-state-conflicting work in the parent. After delegating outcome work, do not " +
+    "claim the overall task is complete until child_session_gather shows the relevant children settled; " +
+    "read their bounded child_session_events and synthesize the results. Do not busy-poll: if children " +
+    "are still running, report that honestly and let their durable UI continue updating. Native " +
+    "harness subagents are only for internal decomposition within the current product session and " +
+    "must not substitute for requested user-visible fan-out. Use native subagents only when the " +
+    "user explicitly requests native/internal subagents or when privately decomposing one product " +
+    "child's assigned task.\n" +
+    "</delegation_routing>\n\n";
+}
+
+/** A port the agent serves inside its sandbox is unreachable as localhost from
+ * the user's browser; the product bridges it. Tell the agent the URL to print. */
+function servedPortsContext(
+  ctx: TurnPromptContext,
+  executionCapabilities: ExecutionCapabilitySnapshot,
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  const origin = env.FRONTEND_ORIGIN?.trim();
+  if (executionCapabilities.runtime !== "sandbox" || !ctx.threadId || !origin) return "";
+  return "<served_ports>\n" +
+    "Nothing you serve inside the workspace is reachable by the user as localhost. A server " +
+    `listening on port N (bind it to 0.0.0.0) opens for the user at ${portProxyUrl(origin, ctx.threadId, "N")} ` +
+    "with N replaced by the real port. When you start a dev server, serve a directory or " +
+    "expose a preview, print that URL instead of a localhost link.\n" +
+    "</served_ports>\n\n";
+}
+
 /**
  * Compose the exact text sent to an engine for one turn. Fresh sessions receive
  * reconstructed thread history and global rules. Resumed sessions receive only
@@ -60,19 +115,28 @@ export function composeTurnPrompt(
   ctx: TurnPromptContext,
   resumed: boolean,
   executionCapabilities: ExecutionCapabilitySnapshot,
+  env: Readonly<Record<string, string | undefined>> = process.env,
 ): string {
   if (ctx.commandName) return ctx.prompt;
   const skillReference = ctx.skillContext ||
     AGENT_SKILL_DISCOVERY_RULES + (ctx.skillCatalogContext ?? "");
+  // Bots are reachable only through the gateway tools; a turn that cannot reach them
+  // (no gateway, or an internal origin such as Slack) must not be told to use them.
+  const tools = executionCapabilities.facilities.tools;
+  const botsReachable = tools.availability === "ready" && tools.access.kind === "useagent_gateway" && ctx.origin === null;
   const perTurn =
     executionCapabilityPrompt(executionCapabilities) +
     AGENT_WORKFLOW_ROUTING_RULES +
+    productFanoutRoutingRules(ctx, executionCapabilities, env) +
+    servedPortsContext(ctx, executionCapabilities, env) +
+    (botsReachable ? (ctx.botContext ?? "") : "") +
     skillReference +
     (ctx.resourceContext ?? "") +
     (ctx.inputContext ?? "") +
     ctx.turnContext;
   const prefix = resumed ? perTurn : AGENT_OPERATING_RULES + ctx.bootstrapContext + perTurn;
-  return prefix + ctx.prompt;
+  return `${prefix}<current_user_request>\n${ctx.prompt}\n</current_user_request>`;
 }
 import type { ExecutionCapabilitySnapshot } from "@useagent/agent-harness/canonical";
 import { executionCapabilityPrompt } from "./execution-capabilities";
+import { portProxyUrl } from "../runs/port-proxy-url";

@@ -3,13 +3,14 @@
 // backend drift reconciles in this single file.
 //
 // Contract (reconciled against the landed backend, approval-routes.ts):
-//   GET  /api/gateway/approvals/requests?runId=<id>
+//   GET  /api/gateway/approvals/requests?threadId=<id>  (or ?runId=<id>; ?status=pending narrows)
 //     -> { requests: [{ id, run_id, thread_id, tool_name, arguments (object),
 //          status: "pending"|"approved"|"denied"|"expired", requested_at,
-//          expires_at, resolved_at, resolved_by }] }  (PENDING rows only; a
-//          resolved row leaves the list - the POST response carries its state)
-//   POST /api/gateway/approvals/requests/:id/approve -> { id, status }  (409 race, 403 non-member)
-//   POST /api/gateway/approvals/requests/:id/deny    -> { id, status }
+//          expires_at, resolved_at, resolved_by }] }  (every status: resolved
+//          rows stay listed so a reloaded thread keeps its approval history)
+//   POST /api/gateway/approvals/requests/:id/approve -> { id, status, follow_up_run_id? }
+//        (409 race, 403 non-member; a settled run's thread gets a follow-up turn)
+//   POST /api/gateway/approvals/requests/:id/deny  body { reason? } -> { id, status, follow_up_run_id? }
 
 import { asRecord } from "@/components/chat/types";
 import { backendFetch } from "@/lib/backend-fetch";
@@ -77,10 +78,17 @@ export class GatewayApprovalRequestError extends Error {
   }
 }
 
-export async function fetchGatewayApprovals(runId: string): Promise<GatewayApproval[]> {
-  const response = await backendFetch(
-    `/api/gateway/approvals/requests?runId=${encodeURIComponent(runId)}`,
-  );
+/** Every approval one run, or a whole thread, ever raised: pending and resolved
+ *  alike (a request whose run already settled is still the thread's to decide,
+ *  and a decided one is its history). */
+export type GatewayApprovalScope = { readonly runId: string } | { readonly threadId: string };
+
+export async function fetchGatewayApprovals(scope: GatewayApprovalScope): Promise<GatewayApproval[]> {
+  const query =
+    "runId" in scope
+      ? `runId=${encodeURIComponent(scope.runId)}`
+      : `threadId=${encodeURIComponent(scope.threadId)}`;
+  const response = await backendFetch(`/api/gateway/approvals/requests?${query}`);
   if (!response.ok) {
     throw new GatewayApprovalRequestError(response.status, `backend ${response.status}`);
   }
@@ -95,10 +103,18 @@ export async function fetchGatewayApprovals(runId: string): Promise<GatewayAppro
 export async function resolveGatewayApproval(
   id: string,
   decision: GatewayApprovalDecision,
+  /** Why it was denied; carried to the agent when the decision starts a follow-up turn. */
+  reason: string | null = null,
 ): Promise<GatewayApprovalStatus> {
   const response = await backendFetch(
     `/api/gateway/approvals/requests/${encodeURIComponent(id)}/${decision}`,
-    { method: "POST" },
+    reason
+      ? {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason }),
+        }
+      : { method: "POST" },
   );
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as {

@@ -10,6 +10,7 @@ import { RiShieldCheckLine } from "@remixicon/react";
 import { useState } from "react";
 import { ApprovalCard } from "@/components/ai/approval-card";
 import { Chip } from "@/components/base/badges/chip";
+import { Input } from "@/components/base/input/input";
 import {
   type GatewayApproval,
   type GatewayApprovalDecision,
@@ -65,6 +66,8 @@ export function GatewayApprovalCard({
   onResolved?: () => void;
 }) {
   const [resolution, setResolution] = useState<ApprovalResolution>(idleResolution);
+  // Why a denial: carried to the agent when the decision continues the thread.
+  const [reason, setReason] = useState("");
   const status = effectiveStatus(approval.status, resolution);
   const error = resolution.phase === "idle" ? resolution.error : null;
   const entries = summarizeApprovalArguments(approval.arguments);
@@ -75,7 +78,11 @@ export function GatewayApprovalCard({
     if (resolution.phase === "submitting") return;
     setResolution(beginResolution(resolution, decision));
     try {
-      const settledStatus = await resolveGatewayApproval(approval.id, decision);
+      const settledStatus = await resolveGatewayApproval(
+        approval.id,
+        decision,
+        decision === "deny" ? reason.trim() || null : null,
+      );
       setResolution(resolutionSucceeded(settledStatus));
       onResolved?.();
     } catch (cause) {
@@ -92,7 +99,7 @@ export function GatewayApprovalCard({
       <div className="border-border-button-default bg-background-secondary-default space-y-3 rounded-2xl border p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="bg-yellow-500/10 text-yellow-600 flex size-7 shrink-0 items-center justify-center rounded-full">
+            <span className="bg-warning-lighter text-warning-base flex size-7 shrink-0 items-center justify-center rounded-full">
               <RiShieldCheckLine className="size-4" aria-hidden />
             </span>
             <div className="min-w-0">
@@ -134,22 +141,32 @@ export function GatewayApprovalCard({
             the record resolves (e.g. the 409 refetch landed) the resolved line
             is the whole truth. */}
         {status === "pending" && error && (
-          <p className="text-caption-1-regular text-red-500">{error}</p>
+          <p className="text-caption-1-regular text-text-error-primary">{error}</p>
         )}
       </div>
 
       {status === "pending" && (
-        <ApprovalCard
-          question={`Allow ${approval.toolName}?`}
-          options={[
-            {
-              label: `Run ${approval.toolName}`,
-              detail: "One-time approval for this tool call",
-            },
-          ]}
-          onApprove={() => void submit("approve")}
-          onDeny={() => void submit("deny")}
-        />
+        <>
+          <Input
+            size="small"
+            aria-label="Reason for denying"
+            placeholder="Reason, if you deny (optional)"
+            value={reason}
+            onChange={setReason}
+            isDisabled={resolution.phase === "submitting"}
+          />
+          <ApprovalCard
+            question={`Allow ${approval.toolName}?`}
+            options={[
+              {
+                label: `Run ${approval.toolName}`,
+                detail: "One-time approval for this tool call",
+              },
+            ]}
+            onApprove={() => void submit("approve")}
+            onDeny={() => void submit("deny")}
+          />
+        </>
       )}
     </section>
   );

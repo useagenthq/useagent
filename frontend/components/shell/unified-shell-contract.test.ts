@@ -212,18 +212,24 @@ describe("unified shell contract", () => {
     // Model rides the compact engine + model chip.
     expect(composer).toContain('ariaLabel="Select model"');
     expect(newThreadPage).toContain("max-w-3xl");
-    expect(composer).toContain('e.id !== "chat"');
+    // Chat is a first-class engine choice (no computer); the picker reads the
+    // manifest-driven option list instead of filtering it out.
+    expect(composer).toContain("pickerEngineOptions(enabledEngines)");
+    expect(composer).not.toContain('e.id !== "chat"');
     expect(composer).not.toContain("<AsteriskMark");
   });
 
   test("shares the same add-context grammar in the reply composer", () => {
     const replyComposer = readFromFrontend("components/chat/composer.tsx");
+    const addMenu = readFromFrontend("components/chat/composer-add-menu.tsx");
     // The reply "+" opens the SHARED add-menu rows (real upload + Create seeds)
     // in a popover above the input, instead of jumping straight to the file
     // dialog. Repos/GitHub are omitted - a reply reuses the thread's sandbox.
     expect(replyComposer).toContain('from "@/components/chat/composer-add-menu"');
-    expect(replyComposer).toContain("<AddFilesRow");
-    expect(replyComposer).toContain("<CreateRows");
+    expect(replyComposer).toContain("<AddContextMenu");
+    expect(addMenu).toContain("<AddFilesRow");
+    expect(addMenu).toContain("<CreateRows");
+    expect(addMenu).toContain('aria-label="Add context"');
     expect(replyComposer).toContain('aria-label="Add context"');
     expect(replyComposer).toContain("setAddMenuOpen");
     expect(replyComposer).not.toContain('aria-label="Add files"');
@@ -299,6 +305,7 @@ describe("unified shell contract", () => {
   test("gives the reply composer drafting room without a second boxed wrapper", () => {
     const composer = readFromFrontend("components/chat/composer.tsx");
     const conversation = readFromFrontend("components/chat/conversation.tsx");
+    const replyComposer = readFromFrontend("components/chat/reply-composer.tsx");
     const promptInput = readFromFrontend("components/prompt-kit/prompt-input.tsx");
 
     expect(composer).toContain("maxHeight={180}");
@@ -311,7 +318,12 @@ describe("unified shell contract", () => {
     expect(promptInput).toContain('el.style.height = "0px"');
     expect(promptInput).not.toContain('el.style.height = "auto"');
     expect(conversation).toContain("flex min-h-0 flex-1 flex-col overflow-hidden");
-    expect(conversation).toContain("mx-auto w-full max-w-5xl");
+    // The composer spans the conversation column like the timeline; a fixed cap
+    // left it narrower than the messages once the rail was dragged in.
+    expect(replyComposer).toContain('<div className="w-full">');
+    expect(replyComposer).not.toContain("max-w-5xl");
+    expect(replyComposer).toContain('className="shrink-0 px-5');
     expect(conversation).not.toContain("shrink-0 border-t p-3");
+    expect(replyComposer).not.toContain("shrink-0 border-t p-3");
   });
 });

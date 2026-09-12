@@ -1,4 +1,8 @@
-import { resolveHarness, resolveProviderRegistration } from "../engines";
+import {
+  resolveHarness,
+  resolveProviderDriverForSession,
+  resolveProviderRegistration,
+} from "../engines";
 import type {
   HarnessCheckpoint,
   HarnessInterimEvent,
@@ -49,6 +53,8 @@ import { providerSessionAuthIsCurrent } from "../engines/provider-session-author
 /** The event type for the durable "reconciling after restart" marker. Distinct
  *  from the terminal events so the timeline can show a run is being re-probed. */
 export const RUN_RECONCILING = "run.reconciling";
+export const INCOMPATIBLE_PROVIDER_SESSION_SUMMARY =
+  "This run stopped after an engine protocol upgrade. Retry the turn to start a fresh native session.";
 
 // ---------------------------------------------------------------------------
 // Restart recovery of the durable command lane (north star Phase 3 "Restart
@@ -166,14 +172,27 @@ async function recoverRunningRun(
         userId: cmd.userId,
       })
     : false;
-  const candidate = Boolean(
+  const identityCurrent = Boolean(
     binding &&
     authCurrent &&
     binding.runtime.kind === "sandbox" &&
     binding.runtime.id === cmd.sandboxId &&
     binding.nativeSessionId === cmd.engineSessionId,
   );
-  if (!candidate) {
+  const driver = binding && identityCurrent
+    ? resolveProviderDriverForSession(cmd.engine, binding, binding.authEpoch)
+    : undefined;
+  if (identityCurrent && !driver) {
+    const finalized = await finalizeRun(
+      cmd.runId,
+      "failed",
+      INCOMPATIBLE_PROVIDER_SESSION_SUMMARY,
+      0,
+    );
+    const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
+    return durable?.status === "completed" ? "reconciled" : "failed";
+  }
+  if (!identityCurrent) {
     const finalized = await finalizeRun(cmd.runId, "failed", STALE_SUMMARY, 0);
     const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
     return durable?.status === "completed" ? "reconciled" : "failed";
@@ -183,6 +202,7 @@ async function recoverRunningRun(
   }
 
   const lastStepAt = await getLastStepAt(cmd.runId);
+  const redact = await orgSecretRedactor(cmd.orgId);
   const handle: HarnessSessionHandle = {
     provider: binding!.provider,
     sessionId: binding!.nativeSessionId,
@@ -196,7 +216,10 @@ async function recoverRunningRun(
   let result: HarnessReconciliation;
   try {
     result = await Promise.race([
-      reconcile(handle, { sinceMs: lastStepAt?.getTime() ?? 0 }),
+      reconcile(handle, {
+        sinceMs: lastStepAt?.getTime() ?? 0,
+        eventContext: { runId: cmd.runId, threadId: cmd.threadId, redact },
+      }),
       new Promise<HarnessReconciliation>((resolve) =>
         setTimeout(() => resolve({ status: "unreachable" }), RECONCILE_BUDGET_MS),
       ),
@@ -206,11 +229,28 @@ async function recoverRunningRun(
   }
 
   switch (result.status) {
-    case "completed": {
-      // Finalize like a live completion: commits `completed` AND enqueues the
-      // durable memory capture in one transaction, so a boot-reconciled run
-      // captures to team memory exactly like a run that finished normally.
-      const finalized = await finalizeRun(cmd.runId, "completed", result.summary, 0);
+    case "completed":
+    case "failed": {
+      if (result.events?.length) {
+        try {
+          await ingestReconciliationEvents(cmd, redact, result.events, true);
+        } catch (error) {
+          try {
+            await parkRunningRun(cmd, binding!, lastStepAt);
+          } catch (parkError) {
+            throw new AggregateError(
+              [error, parkError],
+              `Terminal event backfill and retry parking failed for run ${cmd.runId}`,
+            );
+          }
+          console.error(`[reconcile] terminal event backfill for run ${cmd.runId} failed; parked for retry:`, error);
+          return "parked";
+        }
+      }
+      // Finalize only after the current native turn's tail is durable. Completed
+      // adoption still enqueues memory capture in the finalizer transaction;
+      // native failure/interruption keeps its specific recovered reason.
+      const finalized = await finalizeRun(cmd.runId, result.status, result.summary, 0);
       const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
       return durable?.status === "completed" ? "reconciled" : "failed";
     }
@@ -223,27 +263,35 @@ async function recoverRunningRun(
       // re-probe (the run stays `running`). enqueue is idempotent, so a re-boot
       // re-parks against the ORIGINAL deadline. A freshly parked run gets the
       // "reconciling" marker; a non-candidate already failed above.
-      const now = Date.now();
-      const newlyParked = await enqueueReconcile({
-        runId: cmd.runId,
-        threadId: cmd.threadId,
-        sandboxId: binding!.runtime.id,
-        sessionId: binding!.nativeSessionId,
-        sinceAt: lastStepAt ?? new Date(now),
-        nextAttemptAt: reconcileBackoffAt(now, 0),
-        deadline: new Date(now + RECONCILE_PARK_BUDGET_MS),
-      });
-      if (newlyParked) {
-        recordReconcilingMarker(cmd.runId, cmd.threadId, {
-          reason: "boot-restart",
-          sinceMs: (lastStepAt ?? new Date(now)).getTime(),
-          deadlineMs: now + RECONCILE_PARK_BUDGET_MS,
-        });
-      }
+      await parkRunningRun(cmd, binding!, lastStepAt);
       return "parked";
     }
     default:
       return assertNever(result, "unhandled reconciliation status");
+  }
+}
+
+async function parkRunningRun(
+  cmd: ActiveCommand,
+  binding: ProviderSessionBinding,
+  lastStepAt: Date | null,
+): Promise<void> {
+  const now = Date.now();
+  const newlyParked = await enqueueReconcile({
+    runId: cmd.runId,
+    threadId: cmd.threadId,
+    sandboxId: binding.runtime.id,
+    sessionId: binding.nativeSessionId,
+    sinceAt: lastStepAt ?? new Date(now),
+    nextAttemptAt: reconcileBackoffAt(now, 0),
+    deadline: new Date(now + RECONCILE_PARK_BUDGET_MS),
+  });
+  if (newlyParked) {
+    recordReconcilingMarker(cmd.runId, cmd.threadId, {
+      reason: "boot-restart",
+      sinceMs: (lastStepAt ?? new Date(now)).getTime(),
+      deadlineMs: now + RECONCILE_PARK_BUDGET_MS,
+    });
   }
 }
 
@@ -316,37 +364,46 @@ function recordReconcilingMarker(runId: string, threadId: string, payload: Recon
   }).catch(() => {});
 }
 
-/** Append the interim native events a re-probe surfaced to the canonical run, so
- *  SSE subscribers watch the timeline advance while the run is being adopted.
+/** Append native events a reconciliation surfaced to the canonical run, so SSE
+ *  subscribers watch progress and terminal tail activity is durable before seal.
  *  Idempotent: recordProviderEvent upserts on the stable provider event id
  *  (the run-scoped OpenCode part id), the SAME key the live lane uses, so
  *  re-probes and the pre-restart lane never create a duplicate row or collide
  *  with another run. Payloads are redacted like the live lane. Returns the
- *  number durably present after this probe. Never throws. */
-async function ingestInterimEvents(
-  entry: ReconcileEntry,
-  orgId: string | null,
+ *  number durably present after this probe; strict terminal ingestion throws so
+ *  the caller retains the run for retry instead of sealing incomplete history. */
+async function ingestReconciliationEvents(
+  entry: Pick<ReconcileEntry, "runId" | "threadId">,
+  redact: Awaited<ReturnType<typeof orgSecretRedactor>>,
   events: readonly HarnessInterimEvent[],
+  strict = false,
 ): Promise<number> {
-  const redact = await orgSecretRedactor(orgId);
   let recovered = 0;
   for (const ev of events) {
     try {
-      const eventId = scopedProviderEventId(entry.runId, ev.id);
+      if (ev.runScopedId && !ev.id.startsWith(`pe_${entry.runId}_`)) {
+        throw new Error(`Recovered event id does not match run ${entry.runId}`);
+      }
+      const eventId = ev.runScopedId ? ev.id : scopedProviderEventId(entry.runId, ev.id);
       await recordProviderEvent({
-        id: eventId,
-        runId: entry.runId,
-        threadId: entry.threadId,
-        provider: ev.provider,
-        eventType: ev.eventType,
-        nativeSessionId: ev.sessionId ?? null,
-        nativeMessageId: ev.messageId ?? null,
-        nativePartId: ev.partId ?? null,
-        nativeCallId: ev.callId ?? null,
-        payload: redact.unknown(ev.payload),
-      });
+          id: eventId,
+          runId: entry.runId,
+          threadId: entry.threadId,
+          provider: ev.provider,
+          eventType: ev.eventType,
+          nativeSessionId: ev.sessionId ?? null,
+          nativeParentSessionId: ev.parentSessionId ?? null,
+          nativeMessageId: ev.messageId ?? null,
+          nativePartId: ev.partId ?? null,
+          nativeCallId: ev.callId ?? null,
+          payload: redact.unknown(ev.payload),
+        },
+        { critical: strict, required: strict },
+      );
       if (await providerEventExists(eventId)) recovered++;
-    } catch {
+      else if (strict) throw new Error(`Recovered event ${eventId} was not durable`);
+    } catch (error) {
+      if (strict) throw error;
       /* a single malformed event must never abort the probe */
     }
   }
@@ -400,17 +457,47 @@ export async function runDueReconciles(
     const authCurrent = binding
       ? await providerSessionAuthIsCurrent({ binding, orgId: run.orgId, userId: run.userId })
       : false;
-    const result = await probeParked(entry, authCurrent ? binding : null, reconcile);
-    // CONTINUITY (#63): while the run is still parked and its session is reachable
-    // and generating, ingest the interim native events so the timeline advances
-    // during adoption instead of freezing. Idempotent across probes (upsert on the
-    // live-lane part id). A provider that can't surface interim events (ACP) just
-    // returns none — today's frozen-marker behavior, no faked progress.
-    const recovered =
-      result.status === "in_progress" && result.events?.length
-        ? await ingestInterimEvents(entry, run.orgId, result.events)
+    const redact = await orgSecretRedactor(run.orgId);
+    const result = await probeParked(entry, authCurrent ? binding : null, redact, reconcile);
+    // CONTINUITY (#63): ingest reachable native activity before deciding whether
+    // to retry or adopt. Completed-event ingestion is strict because finalization
+    // seals the run; in-progress activity remains best-effort timeline continuity.
+    // A provider that cannot surface events (ACP) simply returns none.
+    const recoveredEvents = result.status === "completed" ||
+      result.status === "failed" ||
+      result.status === "in_progress"
+      ? result.events
+      : undefined;
+    let recovered = 0;
+    try {
+      recovered = recoveredEvents?.length
+        ? await ingestReconciliationEvents(entry, redact, recoveredEvents, result.status !== "in_progress")
         : 0;
+    } catch (error) {
+      console.error(`[reconcile] terminal event backfill for run ${entry.runId} failed; retained for retry:`, error);
+      if (nextReconcileAction(false, Date.now(), entry.deadlineMs) === "fail") {
+        const finalized = await finalizeRun(entry.runId, "failed", STALE_SUMMARY, 0);
+        const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
+        await settleAndPump(entry.runId, entry.threadId);
+        await deleteReconcile(entry.runId);
+        if (durable?.status === "completed") adopted++;
+        else failed++;
+        continue;
+      }
+      await bumpReconcile(entry.runId, reconcileBackoffAt(Date.now(), entry.attempts));
+      retried++;
+      continue;
+    }
     eventsRecovered += recovered;
+    if (result.status === "failed") {
+      const finalized = await finalizeRun(entry.runId, "failed", result.summary, 0);
+      const durable = await resolveDurableFinalizationOutcome(entry.runId, finalized);
+      await settleAndPump(entry.runId, entry.threadId);
+      await deleteReconcile(entry.runId);
+      if (durable?.status === "completed") adopted++;
+      else failed++;
+      continue;
+    }
     const action = nextReconcileAction(result.status === "completed", Date.now(), entry.deadlineMs);
     if (action === "adopt") {
       const finalized = await finalizeRun(
@@ -463,6 +550,7 @@ export async function runDueReconciles(
 async function probeParked(
   entry: ReconcileEntry,
   binding: ProviderSessionBinding | null,
+  redact: Awaited<ReturnType<typeof orgSecretRedactor>>,
   reconcile: ReconcileProbe,
 ): Promise<HarnessReconciliation> {
   if (
@@ -484,7 +572,10 @@ async function probeParked(
   };
   try {
     return await Promise.race([
-      reconcile(handle, { sinceMs: entry.sinceMs }),
+      reconcile(handle, {
+        sinceMs: entry.sinceMs,
+        eventContext: { runId: entry.runId, threadId: entry.threadId, redact },
+      }),
       new Promise<HarnessReconciliation>((resolve) =>
         setTimeout(() => resolve({ status: "unreachable" }), RECONCILE_BUDGET_MS),
       ),

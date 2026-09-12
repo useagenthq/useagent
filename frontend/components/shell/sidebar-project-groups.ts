@@ -14,6 +14,7 @@ import { repoShortname } from "@/components/session-ui/git-chip";
 import { primaryRepo } from "@/lib/runs";
 import { rankThreads, threadActivityTimestamp } from "./thread-discovery";
 import type { SidebarRun } from "./working-project-status";
+import type { ThreadRelationship } from "@useagent/agent-client";
 
 export interface ProjectRepo {
   readonly fullName: string;
@@ -33,6 +34,50 @@ export interface ProjectGroup {
 
 /** Bucket key for threads that carry no repo. */
 export const UNATTACHED_KEY = "__unattached__";
+
+/** Durable product children never appear as flat siblings in the left
+ * navigation: only roots do, and each root nests its delegated children (bot
+ * threads and the like) beneath it, grouped here by parent thread id. */
+export function projectSidebarThreadFamilies(
+  runs: readonly SidebarRun[],
+  relationships: readonly ThreadRelationship[],
+): {
+  readonly roots: readonly SidebarRun[];
+  readonly childrenByParent: ReadonlyMap<string, readonly ThreadRelationship[]>;
+} {
+  const relationshipById = new Map(relationships.map((item) => [item.threadId, item] as const));
+  const childIds = new Set(
+    relationships.flatMap((item) => item.parentThreadId ? [item.threadId] : []),
+  );
+  const childrenByParent = new Map<string, ThreadRelationship[]>();
+  for (const item of relationships) {
+    if (!item.parentThreadId) continue;
+    const siblings = childrenByParent.get(item.parentThreadId) ?? [];
+    siblings.push(item);
+    childrenByParent.set(item.parentThreadId, siblings);
+  }
+  for (const siblings of childrenByParent.values()) {
+    siblings.sort((a, b) => Date.parse(b.latestActivityAt) - Date.parse(a.latestActivityAt));
+  }
+  const roots = rankThreads(runs.filter((run) => !childIds.has(run.id)).map((run) => {
+    const relationship = relationshipById.get(run.id);
+    if (!relationship) return run;
+    const status = relationship.status === "waiting"
+      ? "queued"
+      : relationship.status === "cancelled"
+        ? "completed"
+        : relationship.status;
+    return {
+      ...run,
+      prompt: relationship.title,
+      status,
+      latest_status: status,
+      latest_run_id: relationship.latestRunId,
+      latest_updated_at: relationship.latestActivityAt,
+    } satisfies SidebarRun;
+  }));
+  return { roots, childrenByParent };
+}
 
 /** Primary repo of a typed run summary (repo_specs > repos > legacy repo).
  *  A typed adapter over the shared `primaryRepo`, which reads the same fields

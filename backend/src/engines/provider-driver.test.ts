@@ -8,6 +8,7 @@ import type { HarnessSession } from "@useagent/agent-harness/canonical";
 import {
   resolveHarness,
   resolveProviderDriver,
+  resolveProviderDriverForSession,
   resolveProviderRegistration,
 } from "./index";
 import {
@@ -15,10 +16,11 @@ import {
   opencodeProviderDriver,
 } from "./opencode-server";
 import { t3ProviderDrivers } from "./t3-provider-driver";
+import { RUNTIME_GENERATION } from "./runtime-environment";
 
 const residentServer = {
   baseUrl: "https://opencode.test",
-  token: "preview-token",
+  token: "preview-token", headers: {},
   dirQ: "?directory=%2Fworkspace",
 };
 
@@ -143,6 +145,27 @@ describe("OpenCode provider driver", () => {
     expect(resolverCalls).toBe(0);
   });
 
+  test("prompt steering retries one transient server response", async () => {
+    let calls = 0;
+    const driver = makeOpenCodeProviderDriver({
+      resolveResidentServer: async () => residentServer,
+      fetcher: mockFetch(async () => {
+        calls += 1;
+        return calls === 1
+          ? Response.json({ name: "UnknownError" }, { status: 500 })
+          : new Response(null, { status: 200 });
+      }),
+    });
+
+    await expect(driver.steer({
+      runId: "run-1",
+      threadId: "thread-1",
+      session: sessionFor(driver),
+      input: { kind: "prompt", text: "hello", model: "cerebras/qwen-3.8-27b" },
+    })).resolves.toEqual({ status: "ok" });
+    expect(calls).toBe(2);
+  });
+
   test("cancel uses the driver factory dependencies and encodes the native session", async () => {
     const requests: Array<{ url: string; method: string }> = [];
     const driver = makeOpenCodeProviderDriver({
@@ -164,7 +187,7 @@ describe("OpenCode provider driver", () => {
 });
 
 describe("production provider registry", () => {
-  test("production selection resolves ProviderDrivers and declares only ACP compatibility fallbacks", () => {
+  test("keeps ACP exclusive to the explicit compatibility engine", () => {
     for (const engineId of ["acp", "claude", "claude-sdk", "codex", "daytona", "opencode", "pi"]) {
       const registration = resolveProviderRegistration(engineId);
       expect(registration).toBeDefined();
@@ -175,15 +198,18 @@ describe("production provider registry", () => {
 
     expect(resolveProviderRegistration("opencode")?.execution.kind).toBe("provider");
     expect(resolveProviderRegistration("pi")?.execution.kind).toBe("provider");
-    expect(resolveProviderRegistration("codex")?.execution.kind).toBe("acp_compatibility");
-    expect(resolveProviderRegistration("claude")?.execution.kind).toBe("acp_compatibility");
+    expect(resolveProviderRegistration("codex")?.execution.kind).toBe("provider");
+    expect(resolveProviderRegistration("claude")?.execution.kind).toBe("provider");
+    expect(resolveProviderRegistration("acp")?.execution.kind).toBe("acp_compatibility");
+    expect(resolveProviderDriver("codex")).toBe(t3ProviderDrivers.codex);
+    expect(resolveProviderDriver("claude")).toBe(t3ProviderDrivers.claude);
 
     expect(resolveProviderDriver("opencode")).toBe(opencodeProviderDriver);
     expect(resolveProviderRegistration("daytona")).toBe(resolveProviderRegistration("opencode"));
     expect(resolveProviderRegistration("claude-sdk")).toBe(resolveProviderRegistration("claude"));
   });
 
-  test("selected T3 turns resolve a native T3 ProviderDriver before ACP fallback", () => {
+  test("selected T3 turns resolve a native T3 ProviderDriver", () => {
     const driver = resolveProviderDriver(
       "codex",
       { runId: "run-t3", threadId: "thread-t3" },
@@ -197,116 +223,177 @@ describe("production provider registry", () => {
     expect(driver?.provider).toBe("codex");
     expect(driver?.descriptor.protocol).toEqual({
       name: "t3-orchestration",
-      version: "useagent-runtime-v8",
+      version: RUNTIME_GENERATION,
     });
     expect(validateProviderDriver(driver)).toEqual({ status: "ok" });
   });
 
-  test("selects Claude's runtime driver while preserving ACP as the config rollback", () => {
+  test("keeps engine protocol and grammar stable across providers and legacy flags", () => {
+    const ctx = { runId: "run-provider-layout", threadId: "thread-provider-layout" };
+    const legacyFlagSets = [
+      {},
+      { T3_RUN_ADAPTER_ENABLED: "false", ENGINE_TRANSPORT: "cli" },
+      {
+        T3_RUN_ADAPTER_ENABLED: "true",
+        T3_RUN_ADAPTER_MODE: "all",
+        T3_RUN_ADAPTER_ENGINES: "opencode",
+      },
+    ] as const;
+
+    for (const env of legacyFlagSets) {
+      for (const engine of ["claude", "codex", "opencode", "pi"] as const) {
+        const selections = (["box", "cube", "daytona"] as const).map((kind) =>
+          resolveProviderDriver(engine, ctx, env, kind)
+        );
+        expect(selections.every(Boolean)).toBe(true);
+        expect(selections.map((driver) => driver?.descriptor.protocol)).toEqual([
+          selections[0]?.descriptor.protocol,
+          selections[0]?.descriptor.protocol,
+          selections[0]?.descriptor.protocol,
+        ]);
+        expect(selections.map((driver) => driver?.descriptor.capabilities)).toEqual([
+          selections[0]?.descriptor.capabilities,
+          selections[0]?.descriptor.capabilities,
+          selections[0]?.descriptor.capabilities,
+        ]);
+        expect(selections.some((driver) => driver?.descriptor.protocol.name === "acp"))
+          .toBe(false);
+      }
+      expect(resolveProviderDriver("codex", ctx, env, "box")).toBe(t3ProviderDrivers.codex);
+      expect(resolveProviderDriver("claude", ctx, env, "box")).toBe(t3ProviderDrivers.claude);
+    }
+    expect(resolveProviderDriver("opencode", ctx, {}, "box")).toBe(opencodeProviderDriver);
+    expect(resolveProviderDriver("pi", ctx, {}, "box")?.descriptor.protocol.name)
+      .toBe("oh-my-pi-rpc");
+  });
+
+  test("does not let rollout or transport flags demote Codex or Claude", () => {
     const ctx = { runId: "run-claude", threadId: "thread-claude" };
     const enabled = resolveProviderDriver("claude", ctx, {
       T3_RUN_ADAPTER_ENABLED: "true",
       T3_RUN_ADAPTER_MODE: "all",
       T3_RUN_ADAPTER_ENGINES: "claude,codex,opencode",
     });
-    const rolledBack = resolveProviderDriver("claude", ctx, {
+    const excluded = resolveProviderDriver("claude", ctx, {
       T3_RUN_ADAPTER_ENABLED: "true",
       T3_RUN_ADAPTER_MODE: "all",
       T3_RUN_ADAPTER_ENGINES: "codex,opencode",
+      ENGINE_TRANSPORT: "cli",
     });
 
-    expect(enabled?.provider).toBe("claude");
-    expect(enabled?.descriptor.protocol.name).toBe("t3-orchestration");
-    expect(rolledBack?.descriptor.protocol.name).toBe("acp");
+    expect(enabled).toBe(t3ProviderDrivers.claude);
+    expect(excluded).toBe(t3ProviderDrivers.claude);
+    expect(resolveProviderDriver("codex", ctx, {})).toBe(t3ProviderDrivers.codex);
+  });
+
+  test("rejects old ACP bindings and accepts only fresh native bindings", () => {
+    for (const engine of ["claude", "codex"] as const) {
+      expect(resolveProviderDriverForSession(engine, {
+        provider: engine,
+        protocol: "acp/1",
+        generation: 1,
+        authEpoch: null,
+      }, null)).toBeUndefined();
+
+      const current = t3ProviderDrivers[engine];
+      expect(resolveProviderDriverForSession(engine, {
+        provider: engine,
+        protocol: providerProtocolIdentity(current.descriptor.protocol),
+        generation: current.descriptor.sessionGeneration as number,
+        authEpoch: null,
+      }, null)).toBe(current);
+    }
   });
 
   test("projects T3 control capabilities from the selected lifecycle driver", () => {
-    const handle = {
-      provider: "codex",
-      sessionId: "skynet-thread-thread-t3",
-      sandboxId: "cube-t3",
-      protocol: providerProtocolIdentity(t3ProviderDrivers.codex.descriptor.protocol),
-      generation: 2,
-      authEpoch: null,
-      currentAuthEpoch: null,
-    };
-    const capabilities = resolveHarness("codex")?.capabilities(handle);
-
-    expect(capabilities).toMatchObject({
-      resume: true,
-      cancel: true,
-      authoritativeHistory: true,
-      childSessions: true,
-      approvals: true,
-      questions: true,
-      reasoning: true,
-      todos: true,
-      patches: true,
-      usage: true,
-    });
-  });
-
-  test("rejects stale T3 protocol and generation before control dispatch", async () => {
-    const harness = resolveHarness("codex");
-    expect(harness).toBeDefined();
-    if (!harness) return;
-    for (const stale of [
-      { protocol: "t3-orchestration/useagent-runtime-v6", generation: 2 },
-      {
-        protocol: providerProtocolIdentity(t3ProviderDrivers.codex.descriptor.protocol),
-        generation: 1,
-      },
-      {
-        protocol: providerProtocolIdentity(t3ProviderDrivers.codex.descriptor.protocol),
+    for (const engine of ["claude", "codex"] as const) {
+      const capabilities = resolveHarness(engine)?.capabilities({
+        provider: engine,
+        sessionId: "skynet-thread-thread-t3",
+        sandboxId: "cube-t3",
+        protocol: providerProtocolIdentity(t3ProviderDrivers[engine].descriptor.protocol),
         generation: 2,
-        authEpoch: "epoch-old",
-        currentAuthEpoch: "epoch-current",
-      },
-      {
-        provider: "claude",
-        protocol: providerProtocolIdentity(t3ProviderDrivers.codex.descriptor.protocol),
-        generation: 2,
-      },
-    ]) {
-      const handle = {
-        provider: "codex",
-        sessionId: "skynet-thread-stale",
-        sandboxId: "cube-stale",
         authEpoch: null,
         currentAuthEpoch: null,
-        ...stale,
-      };
-      expect(harness.capabilities(handle)).toMatchObject({
-        cancel: false,
-        authoritativeHistory: false,
       });
-      await expect(harness.cancel(handle, "stop")).resolves.toMatchObject({
-        status: "unsupported_capability",
-        capability: "cancel",
+
+      expect(capabilities).toMatchObject({
+        resume: true,
+        cancel: true,
+        authoritativeHistory: true,
+        childSessions: true,
+        approvals: true,
+        questions: true,
+        reasoning: true,
+        todos: true,
+        patches: true,
+        usage: true,
       });
     }
   });
 
-  test("legacy orchestration losses are declared and return typed unsupported results", async () => {
-    const registration = resolveProviderRegistration("claude");
-    expect(registration).toBeDefined();
-    if (!registration) return;
-    expect(unsupportedProviderDriverOperations(registration.driver)).toEqual([
+  test("rejects stale T3 protocol and generation before control dispatch", async () => {
+    for (const engine of ["claude", "codex"] as const) {
+      const harness = resolveHarness(engine);
+      expect(harness).toBeDefined();
+      if (!harness) continue;
+      for (const stale of [
+        { protocol: "acp/1", generation: 1 },
+        { protocol: "t3-orchestration/useagent-runtime-v6", generation: 2 },
+        {
+          protocol: providerProtocolIdentity(t3ProviderDrivers[engine].descriptor.protocol),
+          generation: 1,
+        },
+        {
+          protocol: providerProtocolIdentity(t3ProviderDrivers[engine].descriptor.protocol),
+          generation: 2,
+          authEpoch: "epoch-old",
+          currentAuthEpoch: "epoch-current",
+        },
+      ]) {
+        const handle = {
+          provider: engine,
+          sessionId: "skynet-thread-stale",
+          sandboxId: "cube-stale",
+          authEpoch: null,
+          currentAuthEpoch: null,
+          ...stale,
+        };
+        expect(harness.capabilities(handle)).toMatchObject({
+          cancel: false,
+          authoritativeHistory: false,
+        });
+        await expect(harness.cancel(handle, "stop")).resolves.toMatchObject({
+          status: "unsupported_capability",
+          capability: "cancel",
+        });
+      }
+    }
+  });
+
+  test("primary native drivers retain lifecycle while explicit ACP stays compatibility-only", () => {
+    for (const engine of ["claude", "codex"] as const) {
+      const registration = resolveProviderRegistration(engine);
+      expect(registration?.driver).toBe(t3ProviderDrivers[engine]);
+      if (!registration) continue;
+      expect(unsupportedProviderDriverOperations(registration.driver)).toEqual([]);
+      expect(registration.driver.descriptor.lifecycle.operations).toEqual([
+        "start",
+        "resume",
+        "reconcile",
+        "steer",
+        "cancel",
+      ]);
+    }
+    const acp = resolveProviderRegistration("acp");
+    expect(acp).toBeDefined();
+    if (!acp) return;
+    expect(unsupportedProviderDriverOperations(acp.driver)).toEqual([
       "start",
       "resume",
       "reconcile",
       "steer",
+      "cancel",
     ]);
-
-    await expect(registration.driver.start({
-      runId: "run-compat",
-      threadId: "thread-compat",
-      runtime: { kind: "sandbox", id: "sandbox-compat" },
-    })).resolves.toEqual({
-      status: "unsupported_capability",
-      provider: "claude",
-      capability: "start",
-      message: "claude lifecycle is still owned by EngineAdapter compatibility orchestration",
-    });
   });
 });

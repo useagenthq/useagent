@@ -18,6 +18,7 @@ import {
   type StatusChipColor,
 } from '@/components/application/data-table/cells';
 import { Chip } from '@/components/base/badges/chip';
+import { runTitle } from '@/components/chat/types';
 import { Pagination } from '@/components/base/pagination/pagination';
 import {
   Table,
@@ -56,7 +57,7 @@ const COLUMNS: ColumnDef<DashRun>[] = [
     header: 'Run',
     cell: ({ row }) => (
       <span className='block max-w-[320px] truncate text-body-2-medium text-text-primary'>
-        {row.original.prompt || 'Untitled run'}
+        {runTitle(row.original.prompt)}
       </span>
     ),
   },
@@ -100,7 +101,7 @@ const COLUMNS: ColumnDef<DashRun>[] = [
     accessorFn: (run) => timestamp(run.created_at),
     header: 'Started',
     cell: ({ row }) => (
-      <span className='block whitespace-nowrap text-right text-body-2-regular text-text-tertiary'>
+      <span suppressHydrationWarning className='block whitespace-nowrap text-right text-body-2-regular text-text-tertiary'>
         {relativeTime(row.original.created_at)}
       </span>
     ),

@@ -1,5 +1,6 @@
 "use client";
 
+
 import {
   RiArrowLeftLine,
   RiArrowRightSLine,
@@ -8,6 +9,7 @@ import {
   RiErrorWarningLine,
   RiFileLine,
   RiFlashlightLine,
+  RiRobot2Line,
   RiFolder3Line,
   RiGitPullRequestLine,
   RiLoader4Line,
@@ -22,23 +24,46 @@ import {
   useReducer,
   useState,
 } from "react";
-import { backendFetch } from "@/lib/backend-fetch";
+import type { BotState } from "@useagent/agent-client";
+import { botStatus } from "@/components/bots/bot-status";
+import { StatusDot } from "@/components/shared/status-dot";
+import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { cx as cn } from "@/utils/cx";
-import { relativeTime } from "@/utils/format";
 import {
   detectMentionTrigger,
+  botMention,
   fileMention,
   insertMentionToken,
   type Mention,
   type MentionKind,
   mentionKey,
   mentionsReducer,
+  parseDraftMentions,
   prMention,
   removeMentionToken,
   skillMention,
   threadMention,
 } from "./composer-mentions";
-
+import {
+  type MentionSkill,
+  type Resource,
+  IDLE,
+  type ThreadItem,
+  type PullItem,
+  type RepoItem,
+  type TreeItem,
+  type BotItem,
+  fetchThreads,
+  fetchPulls,
+  fetchBots,
+  fetchRepos,
+  fetchTree,
+  orderRepos,
+  fetchSkillsPicker,
+} from "@/components/chat/composer-mentions-data";
+import { MentionRowMark } from "./mention-row-mark";
+export type { MentionSkill } from "@/components/chat/composer-mentions-data";
+export { repoTreeUrl } from "@/components/chat/composer-mentions-data";
 export type { Mention } from "./composer-mentions";
 // Re-export the submit-side helpers the composers need, so a composer wires the
 // whole feature from this one module.
@@ -52,8 +77,7 @@ export { mentionsToRunResources } from "./composer-mentions";
 // (skills, run summaries, pulls, and the repo tree browse endpoint).
 // ---------------------------------------------------------------------------
 
-/** A skill the caller already has (new-task composer); else the hook fetches. */
-export type MentionSkill = { id: string; name: string; tag?: string };
+
 
 const CATEGORIES: {
   kind: MentionKind;
@@ -65,6 +89,7 @@ const CATEGORIES: {
   { kind: "pr", label: "Pull requests", description: "Open and recent pull requests", icon: RiGitPullRequestLine },
   { kind: "thread", label: "Threads", description: "Reference another thread", icon: RiChat3Line },
   { kind: "skill", label: "Skills", description: "Skills available to the agent", icon: RiFlashlightLine },
+  { kind: "bot", label: "Bots", description: "Hand part of this to a bot", icon: RiRobot2Line },
 ];
 
 const CATEGORY_LABEL: Record<MentionKind, string> = {
@@ -72,19 +97,12 @@ const CATEGORY_LABEL: Record<MentionKind, string> = {
   pr: "Pull requests",
   thread: "Threads",
   skill: "Skills",
+  bot: "Bots",
 };
-
-type Resource<T> = { status: "idle" | "loading" | "ready" | "error"; items: T[] };
-const IDLE: Resource<never> = { status: "idle", items: [] };
-
-type ThreadItem = { id: string; title: string; meta: string };
-type PullItem = { repo: string; number: number; title: string };
-type RepoItem = { full_name: string; private: boolean; default_branch: string | null };
-type TreeItem = { path: string; name: string; type: "file" | "dir" };
 
 type MentionView =
   | { level: "root" }
-  | { level: "list"; kind: "skill" | "thread" | "pr" }
+  | { level: "list"; kind: "skill" | "thread" | "pr" | "bot" }
   | { level: "files"; repo: string | null; revision: string | null; dir: string };
 
 type MentionRow =
@@ -94,100 +112,34 @@ type MentionRow =
   | { type: "pr"; repo: string; number: number; title: string }
   | { type: "repo"; full_name: string; private: boolean }
   | { type: "dir"; path: string; name: string }
-  | { type: "file"; path: string; name: string };
-
-function firstLine(text: string): string {
-  const line = (text ?? "").split("\n").find((l) => l.trim().length > 0) ?? "";
-  return line.trim();
-}
-
-async function fetchThreads(): Promise<ThreadItem[]> {
-  const res = await backendFetch("/api/runs?view=summary&limit=50");
-  if (!res.ok) throw new Error(String(res.status));
-  const data = (await res.json()) as {
-    runs?: { id?: string; prompt?: string; created_at?: string | number; createdAt?: string | number }[];
-  };
-  const runs = Array.isArray(data.runs) ? data.runs : [];
-  return runs
-    .filter((r): r is { id: string; prompt?: string; created_at?: string | number; createdAt?: string | number } =>
-      typeof r.id === "string",
-    )
-    .map((r) => ({
-      id: r.id,
-      title: firstLine(r.prompt ?? "") || "Untitled thread",
-      meta: relativeTime(r.created_at ?? r.createdAt ?? null),
-    }));
-}
-
-async function fetchPulls(): Promise<PullItem[]> {
-  const res = await backendFetch("/api/pulls");
-  if (!res.ok) throw new Error(String(res.status));
-  const data = (await res.json()) as {
-    pulls?: { repo?: string; number?: number; title?: string }[];
-  };
-  const pulls = Array.isArray(data.pulls) ? data.pulls : [];
-  return pulls
-    .filter((p): p is { repo: string; number: number; title?: string } =>
-      typeof p.repo === "string" && typeof p.number === "number",
-    )
-    .map((p) => ({ repo: p.repo, number: p.number, title: p.title ?? "" }));
-}
-
-async function fetchRepos(): Promise<RepoItem[]> {
-  const res = await backendFetch("/api/repos");
-  if (!res.ok) throw new Error(String(res.status));
-  const data = (await res.json()) as {
-    repos?: { full_name?: string; private?: boolean; default_branch?: string }[];
-  };
-  const repos = Array.isArray(data.repos) ? data.repos : [];
-  return repos
-    .filter((r): r is { full_name: string; private?: boolean; default_branch?: string } =>
-      typeof r.full_name === "string",
-    )
-    .map((r) => ({
-      full_name: r.full_name,
-      private: Boolean(r.private),
-      default_branch: typeof r.default_branch === "string" ? r.default_branch : null,
-    }));
-}
-
-export function repoTreeUrl(repo: string, revision: string | null, dir: string): string {
-  const params = new URLSearchParams();
-  if (revision) params.set("ref", revision);
-  if (dir) params.set("path", dir);
-  return `/api/repos/${repo}/tree${params.size ? `?${params.toString()}` : ""}`;
-}
-
-async function fetchTree(repo: string, revision: string | null, dir: string): Promise<TreeItem[]> {
-  const res = await backendFetch(repoTreeUrl(repo, revision, dir));
-  if (!res.ok) throw new Error(String(res.status));
-  const data = (await res.json()) as { entries?: { path?: string; type?: string }[] };
-  const entries = Array.isArray(data.entries) ? data.entries : [];
-  return entries
-    .filter((e): e is { path: string; type?: string } => typeof e.path === "string")
-    .map((e) => ({
-      path: e.path,
-      name: e.path.split("/").pop() ?? e.path,
-      type: e.type === "dir" ? "dir" : "file",
-    }));
-}
-
-/** Order the caller's already-selected repos first, then the rest. */
-function orderRepos(repos: RepoItem[], selected: readonly string[] | undefined): RepoItem[] {
-  if (!selected || selected.length === 0) return repos;
-  const set = new Set(selected);
-  return [...repos.filter((r) => set.has(r.full_name)), ...repos.filter((r) => !set.has(r.full_name))];
-}
+  | { type: "file"; path: string; name: string }
+  | { type: "bot"; id: string; name: string; title: string; state: BotState; avatarTone: string; avatarIcon: string };
 
 export type UseComposerMentions = {
   mentions: Mention[];
   open: boolean;
+  /** Bots exist in this org, so "@ ... a bot" is an honest hint. */
+  botsAvailable: boolean;
+  /** ARIA wiring for the textarea combobox while the popover is open. */
+  listboxId: string;
+  activeOptionId: string | undefined;
   onTextareaKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onTextareaSelect: (e: React.SyntheticEvent<HTMLTextAreaElement>) => void;
+  /** Append an "@" and open straight on the Bots list (the "+" menu row). */
+  openBots: () => void;
   clear: () => void;
   chips: ReactNode;
   popover: ReactNode;
 };
+
+const LISTBOX_ID = "mention-listbox";
+export const mentionOptionId = (index: number): string => `mention-option-${index}`;
+const DRAFT_KEY_PREFIX = "useagent.draft-mentions.";
+
+function readDraftMentions(draftKey: string | null | undefined): Mention[] {
+  if (!draftKey || typeof window === "undefined") return [];
+  return parseDraftMentions(window.localStorage.getItem(`${DRAFT_KEY_PREFIX}${draftKey}`));
+}
 
 /**
  * The composer "@" mention controller. Owns the popover view/highlight state, the
@@ -195,11 +147,9 @@ export type UseComposerMentions = {
  * nav; returns ready-to-drop `chips` and `popover` nodes plus the textarea
  * handlers so each composer's wiring stays tiny.
  *
- * v1 note: the structured records (the chips) are EPHEMERAL - they are not
- * persisted with the composer draft. The inserted text tokens DO persist with the
- * draft (they live in the textarea value), so a reload still carries the reference
- * text into the prompt; only the removable-chip affordance and typed binding are
- * lost until the mention is re-picked.
+ * The structured records (the chips) persist alongside the textarea draft under
+ * `draftKey`, so a reload keeps the typed binding (a bot handoff, a pinned file
+ * revision) and not just the visible token text.
  */
 export function useComposerMentions(opts: {
   value: string;
@@ -211,11 +161,19 @@ export function useComposerMentions(opts: {
   repoRevisions?: Readonly<Record<string, string | null>>;
   /** Popover opens above the composer ("top", reply) or below it ("bottom", new task). */
   placement?: "top" | "bottom";
+  /** Same key the composer persists its text draft under; chips ride along. */
+  draftKey?: string | null;
 }): UseComposerMentions {
-  const { value, onValueChange, containerRef, enabled = true, skills, selectedRepos, repoRevisions } = opts;
+  const { value, onValueChange, containerRef, enabled = true, skills, selectedRepos, repoRevisions, draftKey } = opts;
   const placement = opts.placement ?? "top";
 
-  const [mentions, dispatch] = useReducer(mentionsReducer, []);
+  const [mentions, dispatch] = useReducer(mentionsReducer, draftKey, readDraftMentions);
+  useEffect(() => {
+    if (!draftKey || typeof window === "undefined") return;
+    const key = `${DRAFT_KEY_PREFIX}${draftKey}`;
+    if (mentions.length > 0) window.localStorage.setItem(key, JSON.stringify(mentions));
+    else window.localStorage.removeItem(key);
+  }, [draftKey, mentions]);
   const [caret, setCaret] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const [view, setView] = useState<MentionView>({ level: "root" });
@@ -227,6 +185,9 @@ export function useComposerMentions(opts: {
   const [repos, setRepos] = useState<Resource<RepoItem>>(IDLE);
   const [tree, setTree] = useState<Resource<TreeItem>>(IDLE);
   const [fetchedSkills, setFetchedSkills] = useState<Resource<MentionSkill>>(IDLE);
+  const [bots, setBots] = useState<Resource<BotItem>>(IDLE);
+  const { catalog } = useCapabilityCatalog();
+  const showBots = catalog?.bots === true;
 
   const trigger = enabled ? detectMentionTrigger(value, caret) : null;
   const open = trigger !== null && !dismissed;
@@ -276,6 +237,7 @@ export function useComposerMentions(opts: {
     };
     if (view.level === "list" && view.kind === "thread") void load(setThreads, fetchThreads);
     else if (view.level === "list" && view.kind === "pr") void load(setPulls, fetchPulls);
+    else if (view.level === "list" && view.kind === "bot") void load(setBots, fetchBots);
     else if (view.level === "list" && view.kind === "skill" && !skills)
       void load(setFetchedSkills, fetchSkillsPicker);
     else if (view.level === "files" && view.repo === null) void load(setRepos, fetchRepos);
@@ -298,13 +260,15 @@ export function useComposerMentions(opts: {
         view,
         query,
         skillItems,
+        bots,
+        showBots,
         skillStatus: skills ? "ready" : fetchedSkills.status,
         threads,
         pulls,
         repos: { ...repos, items: orderRepos(repos.items, selectedRepos) },
         tree,
       }),
-    [view, query, skillItems, skills, fetchedSkills.status, threads, pulls, repos, tree, selectedRepos],
+    [view, query, skillItems, skills, fetchedSkills.status, threads, pulls, repos, tree, selectedRepos, bots, showBots],
   );
 
   const insertMention = useCallback(
@@ -331,6 +295,9 @@ export function useComposerMentions(opts: {
       } else if (row.type === "skill") insertMention(skillMention(row.id, row.name));
       else if (row.type === "thread") insertMention(threadMention(row.id, row.title));
       else if (row.type === "pr") insertMention(prMention(row.repo, row.number, row.title));
+      else if (row.type === "bot") {
+        insertMention(botMention(row.id, row.name, row.avatarTone, row.avatarIcon));
+      }
       else if (row.type === "repo") {
         const repo = repos.items.find((item) => item.full_name === row.full_name);
         setView({
@@ -398,6 +365,16 @@ export function useComposerMentions(opts: {
 
   const clear = useCallback(() => dispatch({ type: "clear" }), []);
 
+  const openBots = useCallback(() => {
+    const next = value === "" || /\s$/.test(value) ? `${value}@` : `${value} @`;
+    onValueChange(next);
+    setDismissed(false);
+    setView({ level: "list", kind: "bot" });
+    setHighlight(0);
+    setCaret(next.length);
+    setPendingCaret(next.length);
+  }, [value, onValueChange]);
+
   const chips = <MentionChips mentions={mentions} onRemove={removeMention} />;
   const popover = open ? (
     <MentionPopover
@@ -413,21 +390,19 @@ export function useComposerMentions(opts: {
     />
   ) : null;
 
-  return { mentions, open, onTextareaKeyDown, onTextareaSelect, clear, chips, popover };
-}
-
-async function fetchSkillsPicker(): Promise<MentionSkill[]> {
-  const res = await backendFetch("/api/skills?view=picker&limit=2000");
-  if (!res.ok) throw new Error(String(res.status));
-  const data = (await res.json()) as {
-    skills?: { id?: string; name?: string; tags?: string[] }[];
+  return {
+    mentions,
+    open,
+    botsAvailable: showBots,
+    listboxId: LISTBOX_ID,
+    activeOptionId: open && rows.length > 0 ? mentionOptionId(Math.min(highlight, rows.length - 1)) : undefined,
+    onTextareaKeyDown,
+    onTextareaSelect,
+    openBots,
+    clear,
+    chips,
+    popover,
   };
-  const list = Array.isArray(data.skills) ? data.skills : [];
-  return list
-    .filter((s): s is { id: string; name: string; tags?: string[] } =>
-      typeof s.id === "string" && typeof s.name === "string",
-    )
-    .map((s) => ({ id: s.id, name: s.name, tag: s.tags?.[0] }));
 }
 
 function includesQuery(haystack: string, q: string): boolean {
@@ -445,11 +420,13 @@ function computeRows(input: {
   pulls: Resource<PullItem>;
   repos: Resource<RepoItem>;
   tree: Resource<TreeItem>;
+  bots: Resource<BotItem>;
+  showBots: boolean;
 }): { rows: MentionRow[]; status: Resource<unknown>["status"] } {
   const { view, query } = input;
   if (view.level === "root") {
     return {
-      rows: CATEGORIES.map((c) => ({
+      rows: CATEGORIES.filter((c) => c.kind !== "bot" || input.showBots).map((c) => ({
         type: "category" as const,
         kind: c.kind,
         label: c.label,
@@ -464,6 +441,13 @@ function computeRows(input: {
       .slice(0, ROW_CAP)
       .map((s) => ({ type: "skill" as const, id: s.id, name: s.name, tag: s.tag }));
     return { rows, status: input.skillStatus };
+  }
+  if (view.level === "list" && view.kind === "bot") {
+    const rows = input.bots.items
+      .filter((b) => includesQuery(b.name, query) || includesQuery(b.title, query))
+      .slice(0, ROW_CAP)
+      .map((b) => ({ type: "bot" as const, ...b }));
+    return { rows, status: input.bots.status };
   }
   if (view.level === "list" && view.kind === "thread") {
     const rows = input.threads.items
@@ -506,6 +490,8 @@ function chipIcon(kind: MentionKind) {
   switch (kind) {
     case "skill":
       return RiFlashlightLine;
+    case "bot":
+      return RiRobot2Line;
     case "thread":
       return RiChat3Line;
     case "pr":
@@ -518,6 +504,7 @@ function chipIcon(kind: MentionKind) {
 function chipLabel(m: Mention): string {
   switch (m.kind) {
     case "skill":
+    case "bot":
       return m.name;
     case "thread":
       return `thread/${m.shortId}`;
@@ -545,7 +532,10 @@ function MentionChips({
             key={mentionKey(m)}
             className="border-border-button-default bg-background-secondary-default text-text-secondary inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-caption-1-medium"
           >
-            <Icon className="size-3.5 shrink-0 text-foreground-icon-secondary" aria-hidden />
+            <MentionRowMark
+              bot={m.kind === "bot" ? m : undefined}
+              icon={Icon}
+            />
             <span className="max-w-52 truncate" title={m.token}>
               {chipLabel(m)}
             </span>
@@ -553,7 +543,7 @@ function MentionChips({
               type="button"
               aria-label={`Remove ${chipLabel(m)}`}
               onClick={() => onRemove(m)}
-              className="hover:text-text-primary rounded"
+              className="hover:text-text-primary -my-1 -mr-1 flex size-6 shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
             >
               <RiCloseLine className="size-3.5" aria-hidden />
             </button>
@@ -574,6 +564,8 @@ function rowIcon(row: MentionRow) {
       return CATEGORIES.find((c) => c.kind === row.kind)?.icon ?? RiFileLine;
     case "skill":
       return RiFlashlightLine;
+    case "bot":
+      return RiRobot2Line;
     case "thread":
       return RiChat3Line;
     case "pr":
@@ -591,6 +583,7 @@ function rowPrimary(row: MentionRow): string {
     case "category":
       return row.label;
     case "skill":
+    case "bot":
       return row.name;
     case "thread":
       return row.title;
@@ -610,6 +603,8 @@ function rowSecondary(row: MentionRow): string | undefined {
       return row.description;
     case "skill":
       return row.tag;
+    case "bot":
+      return row.title || undefined;
     case "thread":
       return row.meta;
     case "pr":
@@ -621,10 +616,22 @@ function rowSecondary(row: MentionRow): string | undefined {
   }
 }
 
+/** A bot row's second line: its live state from /api/bots, then its title. */
+function BotStateCaption({ row }: { row: Extract<MentionRow, { type: "bot" }> }) {
+  const state = botStatus(row.state);
+  return (
+    <span className="flex items-center gap-1 text-caption-1-regular text-text-tertiary">
+      <StatusDot tone={state.dotTone} pulse={state.pulse} />
+      <span className="truncate">{[state.label, row.title || null].filter(Boolean).join(" · ")}</span>
+    </span>
+  );
+}
+
 const EMPTY_TEXT: Record<string, string> = {
   skill: "No matching skills.",
   thread: "No matching threads.",
   pr: "No matching pull requests.",
+  bot: "No matching bots.",
   files: "No matching files.",
 };
 
@@ -685,7 +692,7 @@ function MentionPopover({
                 e.preventDefault();
                 onBack();
               }}
-              className="text-text-secondary hover:bg-background-primary-hover -ml-0.5 flex size-5 items-center justify-center rounded"
+              className="text-text-secondary hover:bg-background-primary-hover -my-0.5 -ml-1 flex size-6 items-center justify-center rounded"
             >
               <RiArrowLeftLine className="size-4" aria-hidden />
             </button>
@@ -697,12 +704,12 @@ function MentionPopover({
             <span className="text-caption-1-regular text-text-tertiary shrink-0 font-mono">@{query}</span>
           )}
         </div>
-        <div className="max-h-72 overflow-y-auto" role="listbox" aria-labelledby="mention-label">
+        <div className="max-h-72 overflow-y-auto" role="listbox" id={LISTBOX_ID} aria-labelledby="mention-label">
           {showStatusRow ? (
             <p
               className={cn(
                 "px-2 py-2 text-caption-1-regular",
-                status === "error" ? "text-red-500" : "text-text-tertiary",
+                status === "error" ? "text-text-error-primary" : "text-text-tertiary",
               )}
               role={status === "error" ? "alert" : "status"}
             >
@@ -728,6 +735,7 @@ function MentionPopover({
               return (
                 <button
                   key={rowKey(row, i)}
+                  id={mentionOptionId(i)}
                   type="button"
                   role="option"
                   aria-selected={i === highlight}
@@ -738,15 +746,19 @@ function MentionPopover({
                   onMouseEnter={() => onHover(i)}
                   className={cn(
                     "flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors",
-                    i === highlight ? "bg-background-secondary-default" : "hover:bg-background-primary-hover",
+                    i === highlight
+                      ? "bg-dropdown-item-hover-background ring-2 ring-inset ring-border-focus-ring"
+                      : "hover:bg-background-primary-hover",
                   )}
                 >
-                  <Icon className="text-text-secondary size-4 shrink-0" aria-hidden />
+                  <MentionRowMark bot={row.type === "bot" ? row : undefined} icon={Icon} />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="text-body-2-medium text-text-primary truncate">{rowPrimary(row)}</span>
-                    {secondary && (
+                    {row.type === "bot" ? (
+                      <BotStateCaption row={row} />
+                    ) : secondary ? (
                       <span className="text-caption-1-regular text-text-tertiary truncate">{secondary}</span>
-                    )}
+                    ) : null}
                   </span>
                   {drills && (
                     <RiArrowRightSLine className="text-foreground-icon-tertiary size-4 shrink-0" aria-hidden />
@@ -767,6 +779,8 @@ function rowKey(row: MentionRow, index: number): string {
       return `cat-${row.kind}`;
     case "skill":
       return `skill-${row.id}`;
+    case "bot":
+      return `bot-${row.id}`;
     case "thread":
       return `thread-${row.id}`;
     case "pr":

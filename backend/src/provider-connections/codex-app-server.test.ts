@@ -9,6 +9,7 @@ import {
   CodexAppServerAuthError,
   CodexAppServerRpcClient,
   ManagedCodexAppServerClientPool,
+  codexAppServerChildEnvironment,
   type CodexAppServerAccountMethod,
   type CodexChatGptRefreshRequest,
   type CodexChatGptRefreshResponse,
@@ -73,6 +74,23 @@ async function initialize(child: FakeAppServerProcess): Promise<void> {
 }
 
 describe("Codex app-server JSON-RPC transport", () => {
+  test("keeps trusted login state and CA access inside the scoped home", () => {
+    expect(
+      codexAppServerChildEnvironment("/var/lib/useagent/codex-app-server/scope", {
+        PATH: "/usr/local/bin:/usr/bin",
+        NODE_EXTRA_CA_CERTS: "/etc/ssl/certs/ca-certificates.crt",
+        SSL_CERT_FILE: "/etc/ssl/certs/ca-certificates.crt",
+        OPENAI_API_KEY: "must-not-cross-boundary",
+      }),
+    ).toEqual({
+      CODEX_HOME: "/var/lib/useagent/codex-app-server/scope",
+      HOME: "/var/lib/useagent/codex-app-server/scope",
+      PATH: "/usr/local/bin:/usr/bin",
+      NODE_EXTRA_CA_CERTS: "/etc/ssl/certs/ca-certificates.crt",
+      SSL_CERT_FILE: "/etc/ssl/certs/ca-certificates.crt",
+    });
+  });
+
   test("rejects forged non-account methods before they reach the child", async () => {
     const child = new FakeAppServerProcess();
     const client = createClient(child);
@@ -118,6 +136,23 @@ describe("Codex app-server JSON-RPC transport", () => {
       method: "account/login/completed",
       params: { loginId: "login-1", success: true },
     }]);
+    client.close();
+  });
+
+  test("uses the trusted app-server transport for model discovery", async () => {
+    const child = new FakeAppServerProcess();
+    const client = createClient(child);
+    await initialize(child);
+
+    const models = client.listModels({ limit: 100, includeHidden: false });
+    await Promise.resolve();
+    expect(child.messages().at(-1)).toEqual({
+      id: 2,
+      method: "model/list",
+      params: { limit: 100, includeHidden: false },
+    });
+    child.send('{"id":2,"result":{"data":[],"nextCursor":null}}\n');
+    await expect(models).resolves.toEqual({ data: [], nextCursor: null });
     client.close();
   });
 

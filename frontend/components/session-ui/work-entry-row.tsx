@@ -9,62 +9,29 @@
 //   status affordance + click-to-expand mono body).
 //
 // Port notes:
-// - lucide-react icons -> @remixicon/react (this repo's only icon set).
+// - lucide-react icons -> the shared step-family icon map (components/chat/step-icons),
+//   so these rows draw the same glyphs as the turn trace and the subagent rows.
 // - T3 shadcn tokens -> BoardUI semantic tokens (secondary-label -> text-text-secondary,
 //   icon-muted -> text-text-tertiary, foreground -> text-text-primary, destructive -> error red,
 //   accent hover -> background-primary-hover, border -> border-button-default). No hardcoded palette.
-// - Their Tooltip -> BoardUI tooltip (react-aria; plain triggers wrapped in Focusable).
+// - Their status Tooltip -> a plain labelled glyph (role="img" + title): nothing to activate, so no tab stop.
 // - runtime.warning chrome dropped (no sourceActivityKind in our canonical lane yet).
 
-import {
-  type RemixiconComponentType,
-  RiArrowDownSLine,
-  RiChat3Line,
-  RiCheckLine,
-  RiCloseLine,
-  RiEditBoxLine,
-  RiErrorWarningLine,
-  RiEyeLine,
-  RiFlashlightLine,
-  RiGlobalLine,
-  RiHammerLine,
-  RiRobot2Line,
-  RiSubtractLine,
-  RiTerminalLine,
-  RiToolsLine,
-} from "@remixicon/react";
+import { RiArrowDownSLine, RiCheckLine, RiCloseLine, RiSubtractLine } from "@remixicon/react";
 import { type KeyboardEvent, memo, useState } from "react";
-import { Focusable } from "react-aria-components";
-import { Tooltip, TooltipTrigger } from "@/components/base/tooltip/tooltip";
+import { iconForWorkEntry } from "@/components/chat/step-icons";
 import { cx as cn } from "@/utils/cx";
 import {
   buildToolCallExpandedBody,
   normalizeCompactToolLabel,
   type WorkEntry,
-  type WorkEntryIconName,
   toolWorkEntryHeading,
-  workEntryIconName,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
   workEntryIndicatesToolSuccess,
   workEntryIsToolLike,
   workEntryPreview,
 } from "./work-entry";
-
-const ENTRY_ICON: Record<WorkEntryIconName, RemixiconComponentType> = {
-  bot: RiRobot2Line,
-  check: RiCheckLine,
-  "circle-alert": RiErrorWarningLine,
-  eye: RiEyeLine,
-  globe: RiGlobalLine,
-  hammer: RiHammerLine,
-  "message-circle": RiChat3Line,
-  "square-pen": RiEditBoxLine,
-  terminal: RiTerminalLine,
-  wrench: RiToolsLine,
-  x: RiCloseLine,
-  zap: RiFlashlightLine,
-};
 
 /** Upstream workToneIcon: tone -> icon color class (BoardUI tokens). */
 function workToneClass(tone: WorkEntry["tone"]): string {
@@ -81,18 +48,16 @@ function StatusIndicator({ entry, turnSettled }: { entry: WorkEntry; turnSettled
   const [Icon, iconClass, label] = failed
     ? ([RiCloseLine, "text-text-error-primary", "Failed"] as const)
     : showSuccess
-      ? ([RiCheckLine, "text-lime-600", "Completed"] as const)
+      ? ([RiCheckLine, "text-success-base", "Completed"] as const)
       : ([RiSubtractLine, "opacity-70", "Empty"] as const);
 
+  // Plain glyph, not a focusable control: there is nothing to activate, and a
+  // 16px tab stop with no action only adds a keystroke. The label stays readable
+  // for assistive tech and as a native tooltip.
   return (
-    <TooltipTrigger delay={200}>
-      <Focusable>
-        <span className="flex size-4 items-center justify-center" aria-label={label}>
-          <Icon className={cn("block size-3 shrink-0", iconClass)} aria-hidden />
-        </span>
-      </Focusable>
-      <Tooltip size="sm">{label}</Tooltip>
-    </TooltipTrigger>
+    <span className="flex size-4 items-center justify-center" role="img" aria-label={label} title={label}>
+      <Icon className={cn("block size-3 shrink-0", iconClass)} aria-hidden />
+    </span>
   );
 }
 
@@ -111,8 +76,7 @@ export const WorkEntryRow = memo(function WorkEntryRow({
   turnSettled?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const entryIconName = workEntryIconName(entry);
-  const EntryIcon = ENTRY_ICON[entryIconName];
+  const EntryIcon = iconForWorkEntry(entry);
   const heading = toolWorkEntryHeading(entry);
   const rawPreview = workEntryPreview(entry, workspaceRoot);
   const preview =
@@ -199,6 +163,7 @@ export const WorkEntryRow = memo(function WorkEntryRow({
       {expanded && canExpand && expandedBody ? (
         <div
           className="mt-1 ms-7 cursor-default border-s border-border-button-default ps-3 pt-0.5"
+          role="presentation"
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         >

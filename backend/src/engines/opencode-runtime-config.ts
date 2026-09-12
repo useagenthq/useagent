@@ -1,8 +1,9 @@
+import type { PreviewLinkBase } from "../sandboxes/provider";
 import { sandboxPreviewHeaders } from "../sandboxes/provider";
+import { TOOL_GATEWAY_SERVER_NAMES } from "../knowledge/gateway/descriptor";
+import { BROWSER_MCP_SERVER_NAMES } from "./browser-mcp";
 
-export interface OpenCodeRuntimeServer {
-  readonly baseUrl: string;
-  readonly token: string;
+export interface OpenCodeRuntimeServer extends PreviewLinkBase {
   readonly workdir: string;
 }
 
@@ -21,7 +22,10 @@ interface RuntimeConfigInput {
   readonly timeoutMs?: number;
 }
 
-const MANAGED_MCP_PREFIX = "skynet-";
+const MANAGED_MCP_NAMES: ReadonlySet<string> = new Set([
+  ...TOOL_GATEWAY_SERVER_NAMES,
+  ...BROWSER_MCP_SERVER_NAMES,
+]);
 const DEFAULT_ACTIVATION_TIMEOUT_MS = 10_000;
 
 function asObject(value: unknown): JsonObject | null {
@@ -58,14 +62,34 @@ function managedMcpServers(config: JsonObject): JsonObject {
   const mcp = asObject(config.mcp) ?? {};
   return Object.fromEntries(
     Object.entries(mcp).filter(
-      ([name, value]) => name.startsWith(MANAGED_MCP_PREFIX) && value !== false,
+      ([name, value]) => MANAGED_MCP_NAMES.has(name) && value !== false,
     ),
   );
 }
 
+function setManagedMcpEntry(
+  mcp: JsonObject,
+  name: string,
+  legacyName: string,
+  value: unknown | null,
+): void {
+  if (value === null) delete mcp[name];
+  else mcp[name] = value;
+  delete mcp[legacyName];
+}
+
+export function setUseAgentMcpEntries(
+  mcp: JsonObject,
+  knowledge: unknown | null,
+  browser: unknown | null,
+): void {
+  setManagedMcpEntry(mcp, TOOL_GATEWAY_SERVER_NAMES[0], TOOL_GATEWAY_SERVER_NAMES[1], knowledge);
+  setManagedMcpEntry(mcp, BROWSER_MCP_SERVER_NAMES[0], BROWSER_MCP_SERVER_NAMES[1], browser);
+}
+
 function authHeaders(server: OpenCodeRuntimeServer): Record<string, string> {
   return {
-    ...sandboxPreviewHeaders(server.token),
+    ...server.headers,
     "content-type": "application/json",
   };
 }

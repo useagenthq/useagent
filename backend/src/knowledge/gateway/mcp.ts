@@ -4,14 +4,15 @@ import {
   JSONRPCRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { Hono } from "hono";
-import { findSlackThreadByRoot } from "../../slack/repo";
-import { childSessionToolsEnabled } from "./child-session-tools";
+import { findSlackThreadForProductThread } from "../../slack/repo";
+import { gatewayToolListOptionsFor } from "./child-session-tools";
 import {
   executeRegisteredGatewayTool,
   gatewayToolListDescriptors,
   isGatewayMetaToolName,
 } from "./operation-registry";
 import { resolveToolRunIdentity } from "./run-authorization";
+import { TOOL_GATEWAY_SERVER_NAME } from "./descriptor";
 import { type ToolTokenClaims, verifyToolToken } from "./token";
 
 // ---------------------------------------------------------------------------
@@ -39,7 +40,7 @@ import { type ToolTokenClaims, verifyToolToken } from "./token";
 // A conservative, widely-supported protocol version. We echo the client's
 // requested version when present so negotiation is a no-op for any supported peer.
 const DEFAULT_PROTOCOL_VERSION = "2025-06-18";
-const SERVER_INFO = { name: "skynet-knowledge", version: "1.0.0" } as const;
+const SERVER_INFO = { name: TOOL_GATEWAY_SERVER_NAME, version: "1.0.0" } as const;
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const MAX_BATCH_MESSAGES = 16;
 
@@ -82,10 +83,8 @@ export async function handleMcpMessage(
   msg: RpcRequest,
 ): Promise<RpcResponse | null> {
   const params = msg.params as Record<string, unknown> | undefined;
-  const listOptions = async () => ({
-    childSessions: await childSessionToolsEnabled(claims),
-    slack: Boolean(await findSlackThreadByRoot(claims.threadId)),
-  });
+  const listOptions = async () =>
+    gatewayToolListOptionsFor(claims, Boolean(await findSlackThreadForProductThread(claims.orgId, claims.threadId)));
   switch (msg.method) {
     case "initialize": {
       const requested = (params?.protocolVersion as string) || DEFAULT_PROTOCOL_VERSION;

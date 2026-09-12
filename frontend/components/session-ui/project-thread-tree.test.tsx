@@ -7,6 +7,8 @@ import {
   type ProjectMenuControl,
   type ProjectThread,
   ProjectThreadTree,
+  projectThreadTreeIds,
+  retainThreadTreeActiveId,
 } from "./project-thread-tree";
 
 const thread = (id: string, label: string, over: Partial<ProjectThread> = {}): ProjectThread => ({
@@ -72,6 +74,8 @@ test("a project row toggles expansion while only its threads navigate", () => {
   // grid-rows 0fr collapses the thread list height (native animation).
   expect(collapsed).toContain("grid-rows-[0fr]");
   expect(collapsed).toContain('aria-hidden="true"');
+  expect(collapsed.match(/role="treeitem"[^>]*tabindex="-1"/g) ?? []).toHaveLength(2);
+  expect(collapsed).not.toContain('role="treeitem" tabindex="0"');
 });
 
 test("threads show a relative-time chip and mark the active thread", () => {
@@ -86,6 +90,33 @@ test("threads show a relative-time chip and mark the active thread", () => {
   expect(html).toContain("2h ago");
   expect(html).toContain("1d ago");
   expect(html).toContain('aria-current="page"'); // the selected thread only
+});
+
+test("product children render as nested accessible session links", () => {
+  const html = renderTree([
+    group({
+      threads: [thread("root", "Calendar app", {
+        children: [thread("child", "Keyboard design", {
+          engine: "codex",
+          model: "gpt-5.6-sol",
+          isSelected: true,
+        })],
+      })],
+    }),
+  ]);
+  expect(html).toContain('role="tree"');
+  expect(html).toContain('role="group"');
+  expect(html).toContain('aria-level="2"');
+  expect(html).toContain('href="/session/child"');
+  expect(html).toContain('aria-current="page"');
+});
+
+test("live child insertion preserves roving focus on the existing selected row", () => {
+  const before = [thread("root", "Root", { children: [thread("a", "A")] })];
+  const after = [thread("root", "Root", { children: [thread("a", "A"), thread("b", "B")] })];
+  expect(projectThreadTreeIds(after)).toEqual(["root", "a", "b"]);
+  expect(retainThreadTreeActiveId("a", projectThreadTreeIds(after))).toBe("a");
+  expect(retainThreadTreeActiveId("missing", projectThreadTreeIds(before))).toBe("root");
 });
 
 test("active statuses render truthful dots with non-color aria labels", () => {
@@ -114,6 +145,48 @@ test("each project shows at most six threads until its own disclosure is expande
   expect(html.match(/data-session-ui="thread-row"/g) ?? []).toHaveLength(6);
   expect(html).toContain("Show 2 more");
   expect(html).not.toContain("Thread 6");
+});
+
+test("native subagent rows nest under their parent thread as inspect-only links", () => {
+  const html = renderTree([
+    group({
+      threads: [
+        thread("r1", "Fix the auth bug", {
+          nativeChildren: {
+            rows: [
+              {
+                id: "e1",
+                label: "Research checkout",
+                state: "running",
+                href: "/session/r1?agent_execution=e1&agent_run=run-1",
+              },
+              {
+                id: "e2",
+                label: "Subagent",
+                state: "failed",
+                href: "/session/r1?agent_execution=e2&agent_run=run-1",
+              },
+            ],
+            overflow: 3,
+          },
+        }),
+        thread("r2", "Add tests"),
+      ],
+    }),
+  ]);
+
+  // The nested rows link to the PARENT session with exact execution identity and
+  // never register as thread rows; the bound's remainder shows as "+N more".
+  expect(html.match(/data-session-ui="native-agent-row"/g) ?? []).toHaveLength(2);
+  expect(html.match(/data-session-ui="thread-row"/g) ?? []).toHaveLength(2);
+  expect(html).toContain(
+    'href="/session/r1?agent_execution=e1&amp;agent_run=run-1"',
+  );
+  expect(html).toContain(
+    'href="/session/r1?agent_execution=e2&amp;agent_run=run-1"',
+  );
+  expect(html).toContain("Research checkout");
+  expect(html).toContain("+3 more");
 });
 
 test("each real project gets one shared actions-menu slot; the no-project bucket gets none", () => {

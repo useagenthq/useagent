@@ -15,17 +15,26 @@
  *   thread -> @thread/<short-id>
  *   pr     -> @<owner>/<repo>#<number>
  *   file   -> @<owner>/<repo>:<path>
+ *   bot    -> @bot/<handle>  (the name's slug: "Night triage" -> night-triage)
  */
 
-import type { RunResourceSelection } from "@useagent/agent-client/wire";
+import { botHandle, type RunResourceSelection } from "@useagent/agent-client/wire";
 
-export type MentionKind = "skill" | "thread" | "pr" | "file";
+export type MentionKind = "skill" | "thread" | "pr" | "file" | "bot";
 
 export type Mention =
   | { kind: "skill"; id: string; name: string; token: string }
   | { kind: "thread"; id: string; shortId: string; title: string; token: string }
   | { kind: "pr"; repo: string; number: number; title: string; token: string }
-  | { kind: "file"; repo: string; path: string; revision: string | null; token: string };
+  | { kind: "file"; repo: string; path: string; revision: string | null; token: string }
+  | {
+      kind: "bot";
+      id: string;
+      name: string;
+      token: string;
+      avatarTone: string;
+      avatarIcon: string;
+    };
 
 // ---------------------------------------------------------------------------
 // Token builders + identity
@@ -47,6 +56,13 @@ export function fileToken(repo: string, path: string): string {
   return `@${repo}:${path}`;
 }
 
+/** A bot handoff. The token carries the bot's handle (its name's slug, so a
+ *  name with spaces is still one token); the chip shows the name and the id
+ *  rides in `bot_mentions`. */
+export function botToken(name: string): string {
+  return `@bot/${botHandle(name)}`;
+}
+
 /** Short, human-facing thread handle - the run id's leading segment. */
 export function shortThreadId(id: string): string {
   return id.slice(0, 8);
@@ -55,6 +71,8 @@ export function shortThreadId(id: string): string {
 /** Stable identity for dedupe + React keys (independent of the display token). */
 export function mentionKey(m: Mention): string {
   switch (m.kind) {
+    case "bot":
+      return `bot:${m.id}`;
     case "skill":
       return `skill:${m.id}`;
     case "thread":
@@ -82,6 +100,15 @@ export function prMention(repo: string, num: number, title: string): Mention {
 
 export function fileMention(repo: string, path: string, revision: string | null): Mention {
   return { kind: "file", repo, path, revision, token: fileToken(repo, path) };
+}
+
+export function botMention(
+  id: string,
+  name: string,
+  avatarTone = "blue",
+  avatarIcon = "robot",
+): Mention {
+  return { kind: "bot", id, name, token: botToken(name), avatarTone, avatarIcon };
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +180,7 @@ export function mentionsToRunResources(mentions: readonly Mention[]): RunResourc
   return mentions.flatMap((mention): RunResourceSelection[] => {
     switch (mention.kind) {
       case "skill":
+      case "bot":
         return [];
       case "thread":
         return [{
@@ -206,5 +234,103 @@ export function mentionsReducer(state: Mention[], action: MentionAction): Mentio
       return state.filter((m) => mentionKey(m) !== action.key);
     case "clear":
       return [];
+  }
+}
+
+/** Bot ids behind the @bot chips - sent as `bot_mentions`, each opens a handoff thread. */
+export function mentionedBotIds(mentions: readonly Mention[]): string[] {
+  return [...new Set(mentions.flatMap((m) => (m.kind === "bot" ? [m.id] : [])))];
+}
+
+/**
+ * `@bot/...` tokens in the text that no chip backs. The backend hands off ONLY
+ * from `bot_mentions` (the chips), so such a token would send as plain text and
+ * no bot would be involved - the composer warns before that happens.
+ */
+export function unlinkedBotTokens(text: string, mentions: readonly Mention[]): string[] {
+  const linked = new Set(
+    mentions.flatMap((m) => (m.kind === "bot" ? [m.token.toLowerCase()] : [])),
+  );
+  const tokens = text.match(/(?<=^|\s)@bot\/\S+/g) ?? [];
+  return [...new Set(tokens.filter((token) => !linked.has(token.toLowerCase())))];
+}
+
+// ---------------------------------------------------------------------------
+// Draft persistence (the chips ride along with the textarea draft)
+// ---------------------------------------------------------------------------
+
+const MENTION_KINDS: ReadonlySet<string> = new Set(["skill", "thread", "pr", "file", "bot"]);
+
+function parseMention(value: unknown): Mention | null {
+  if (typeof value !== "object" || value === null) return null;
+  const m = value as Record<string, unknown>;
+  if (typeof m.kind !== "string" || !MENTION_KINDS.has(m.kind) || typeof m.token !== "string") {
+    return null;
+  }
+  switch (m.kind) {
+    case "skill": {
+      if (typeof m.id !== "string" || typeof m.name !== "string") return null;
+      return { kind: "skill", id: m.id, name: m.name, token: m.token };
+    }
+    case "bot":
+      if (
+        typeof m.id !== "string" ||
+        typeof m.name !== "string" ||
+        (m.avatarTone !== undefined && typeof m.avatarTone !== "string") ||
+        (m.avatarIcon !== undefined && typeof m.avatarIcon !== "string")
+      ) {
+        return null;
+      }
+      return {
+        kind: "bot",
+        id: m.id,
+        name: m.name,
+        token: m.token,
+        avatarTone: m.avatarTone ?? "blue",
+        avatarIcon: m.avatarIcon ?? "robot",
+      };
+    case "thread": {
+      if (
+        typeof m.id !== "string" ||
+        typeof m.shortId !== "string" ||
+        typeof m.title !== "string"
+      ) {
+        return null;
+      }
+      return { kind: "thread", id: m.id, shortId: m.shortId, title: m.title, token: m.token };
+    }
+    case "pr": {
+      if (typeof m.repo !== "string" || typeof m.number !== "number" || typeof m.title !== "string") {
+        return null;
+      }
+      return { kind: "pr", repo: m.repo, number: m.number, title: m.title, token: m.token };
+    }
+    case "file": {
+      if (
+        typeof m.repo !== "string" ||
+        typeof m.path !== "string" ||
+        (m.revision !== null && typeof m.revision !== "string")
+      ) {
+        return null;
+      }
+      return { kind: "file", repo: m.repo, path: m.path, revision: m.revision, token: m.token };
+    }
+    default:
+      return null;
+  }
+}
+
+/** Mentions saved with a draft; anything malformed decodes to no chips. */
+export function parseDraftMentions(raw: string | null): Mention[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((value) => {
+      const mention = parseMention(value);
+      return mention ? [mention] : [];
+    });
+  } catch {
+    return [];
   }
 }

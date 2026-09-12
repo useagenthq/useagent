@@ -40,6 +40,7 @@ function makeRun(overrides: Record<string, unknown> = {}): Record<string, unknow
     child_session: false,
     thread_id: "run_1",
     engine_session_id: null,
+    sandbox_id: null,
     repo: null,
     repos: [],
     repo_specs: [],

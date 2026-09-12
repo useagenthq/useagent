@@ -105,7 +105,7 @@ describe("T3 run adapter gate", () => {
     expect(() => runtimeRunSnapshot({
       SANDBOX_PROVIDER: "cube",
       CUBE_TEMPLATE_ID: "production-v7",
-      USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v9",
+      USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v10",
     })).toThrow("requires a dedicated RUNTIME_CUBE_TEMPLATE_ID");
     expect(runtimeRunSnapshot({
       SANDBOX_PROVIDER: "cube",
@@ -167,8 +167,13 @@ describe("T3 run adapter gate", () => {
     expect(source).toContain("await driver.cancel(session, \"turn aborted\")");
     expect(source).toContain("providerGatewayWired()");
     expect(source).toContain("prepareSandboxTurn(ctx");
+    expect(source).toContain("prepareStableRuntimeProvider(sandbox, ctx, engine)");
+    expect(source).toContain('providerAfterResources: engine === "claude"');
+    expect(source).toContain('resourceUser: engine === "claude"');
     expect(source).toContain("prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir)");
-    expect(source).toContain("await providerBridgeLease?.close()");
+    expect(source).toContain("closeProvider: (state) => state.close()");
+    expect(source).toContain("await prepared.close().catch(() => {})");
+    expect(source).not.toContain("await providerBridgeLease?.close()");
     expect(source).not.toContain("runManagedCodexSubscriptionTurn");
     expect(source).not.toContain('runtimeKind: "managed_codex_app_server"');
     expect(source).not.toContain("prompt.includes(");
@@ -244,6 +249,8 @@ describe("T3 run adapter gate", () => {
 
   test("barriers on the reconciled Claude gateway instance before session start", () => {
     const source = readFileSync(new URL("./runtime-adapter.ts", import.meta.url), "utf8");
+    expect(source).toContain("const CLAUDE_BARRIER_DEADLINE_MS = 35_000");
+    expect(source).toContain("const CLAUDE_VERIFY_DEADLINE_MS = 35_000");
     const bridgeIdx = source.indexOf("prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir)");
     const barrierIdx = source.indexOf("await ensureRuntimeProviderReadyForTurn({", bridgeIdx);
     const establishIdx = source.indexOf("await establishProviderSession({");

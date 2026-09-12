@@ -65,7 +65,7 @@ describe("MCP wire is byte-identical after the SDK-schema adoption (#98)", () =>
     );
     expect(result.protocolVersion).toBe("2025-06-18");
     expect(result.capabilities).toEqual({ tools: { listChanged: false } });
-    expect(result.serverInfo).toEqual({ name: "skynet-knowledge", version: "1.0.0" });
+    expect(result.serverInfo).toEqual({ name: "useagent", version: "1.0.0" });
   });
 
   test("tools/list returns the knowledge, execution, and semantic skill tool set", async () => {

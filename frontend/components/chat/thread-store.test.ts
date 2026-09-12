@@ -89,6 +89,7 @@ function makeRun(
     summary: opts.summary ?? null,
     duration_ms: null,
     engine_session_id: null,
+    sandbox_id: null,
     memory_scope: "org",
     created_at: new Date(0).toISOString(),
     updated_at: new Date(0).toISOString(),

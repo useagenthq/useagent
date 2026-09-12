@@ -67,7 +67,7 @@ export function piBridgeProviderEvent(
         nativeCallId: body.toolCallId,
         payload: {
           tool: body.name,
-          input: body.kind === "tool.started" ? body.input : undefined,
+          input: body.input,
           state: {
             status: body.kind === "tool.started" ? "running" : terminal ? body.status : "running",
             output: body.kind === "tool.started" ? undefined : body.preview,

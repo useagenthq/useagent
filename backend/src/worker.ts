@@ -21,7 +21,6 @@ import { listSkillCatalogForOrg } from "./skills/repo";
 import { resolveExecutableSkillPin } from "./skills/pins";
 import {
   formatSkillCatalogPrefill,
-  frameSkillCatalogContext,
   shouldPrefillSkillCatalog,
 } from "./skills/catalog";
 import { formatSkillMarkdown, frameSkillContext } from "./skills/format";
@@ -43,8 +42,9 @@ import {
   RUN_TIMING_STAGES,
   type RunStageTimer,
 } from "./runs/run-timing";
-import { listRunUploads } from "./uploads/repo";
-import { formatInputContext, sandboxInputPath } from "./uploads/materialize";
+import { botContextForTurn, NO_BOT_TURN_CONTEXT } from "./bots/prompt-context";
+import { frameTurnContexts } from "./engines/turn-contexts";
+import { formatInputContext, runInputFiles } from "./uploads/materialize";
 import { CHAT_SYSTEM_PROMPT } from "./chat/prompt";
 import { retrieveChatContext } from "./chat/retrieve";
 import { streamChat, type ChatMessage } from "./chat/stream";
@@ -266,8 +266,9 @@ async function runWorker(runId: string): Promise<void> {
       await runMock(runId, run.threadId, run.orgId, run.origin, ac.signal, wasCancelled);
       return;
     }
+    const bot = run.commandName ? NO_BOT_TURN_CONTEXT : await botContextForTurn({ orgId: run.orgId, threadId: run.threadId, engine: run.engine });
     if (run.engine === "chat") {
-      await runChat(run, skillContext, ac.signal, wasCancelled);
+      await runChat(run, skillContext, bot.identity, ac.signal, wasCancelled);
       return;
     }
 
@@ -289,7 +290,7 @@ async function runWorker(runId: string): Promise<void> {
     // source. The result both controls fresh-only catalog prefill and is reused
     // by the adapter, avoiding a second DB lookup before dispatch.
     const providerSessionStatePromise = getThreadProviderSessionState(
-      run.threadId,
+      run.orgId, run.threadId,
       run.engine,
       run.id,
     );
@@ -358,13 +359,7 @@ async function runWorker(runId: string): Promise<void> {
     const providerSession = providerSessionState.binding ?? undefined;
     const engineSessionId = providerSession?.nativeSessionId ??
       providerSessionState.legacySessionId ?? undefined;
-    const turnContext = recall?.rendered ?? "";
-    const skillCatalogContext = skillCatalogPage
-      ? frameSkillCatalogContext(skillCatalogPage)
-      : "";
-    const resourceContext = resourceSnapshot
-      ? formatResourceAccessContext(resourceSnapshot)
-      : "";
+    const { turnContext, skillCatalogContext, resourceContext } = frameTurnContexts({ recall, skillCatalogPage, resourceSnapshot, botIdentity: bot.identity });
 
     if (turnContext || bootstrapContext || skillContext || skillCatalogContext || resourceContext) {
       console.log(
@@ -390,15 +385,7 @@ async function runWorker(runId: string): Promise<void> {
     }
     endContext?.();
 
-    const inputFiles: RunInputFile[] = (await listRunUploads(run.id)).map((upload) => ({
-      id: upload.id,
-      name: upload.name,
-      contentType: upload.contentType,
-      sizeBytes: upload.sizeBytes,
-      sha256: upload.sha256,
-      storageKey: upload.storageKey,
-      sandboxPath: sandboxInputPath(upload.id, upload.name),
-    }));
+    const inputFiles = await runInputFiles(run);
 
     // The completed-turn capture is enqueued by runs/finalize.ts (transactionally,
     // from the run row's scope) — not here — so it survives a crash in the old
@@ -432,14 +419,14 @@ async function runWorker(runId: string): Promise<void> {
         resourceContext,
         skillContext,
         skillCatalogContext,
+        bot.delegation,
         run.threadId,
         engineSessionId,
         providerSession,
         run.model,
         run.repos,
         run.resolvedResources,
-        run.orgId,
-        run.userId,
+        run.orgId, run.userId, run.origin,
         inputFiles,
         ac.signal,
         wasCancelled,
@@ -478,7 +465,7 @@ type WorkerRun = NonNullable<Awaited<ReturnType<typeof getRun>>>;
 
 async function runChat(
   run: WorkerRun,
-  skillContext: string,
+  skillContext: string, botIdentity: string,
   signal: AbortSignal,
   wasCancelled: () => string | null,
 ): Promise<void> {
@@ -537,7 +524,7 @@ async function runChat(
         : Promise.resolve(null),
     ]);
 
-    const systemParts = [CHAT_SYSTEM_PROMPT];
+    const systemParts = botIdentity ? [CHAT_SYSTEM_PROMPT, botIdentity] : [CHAT_SYSTEM_PROMPT];
     if (skillContext) systemParts.push(skillContext);
     if (resourceSnapshot) systemParts.push(formatResourceAccessContext(resourceSnapshot));
     if (context.block) systemParts.push(context.block);
@@ -635,14 +622,14 @@ async function runEngine(
   resourceContext: string,
   skillContext: string,
   skillCatalogContext: string,
+  botContext: string,
   threadId: string,
   engineSessionId: string | undefined,
   providerSession: ProviderSessionBinding | undefined,
   model: string,
   repos: string[],
   resolvedResources: EngineRunContext["resolvedResources"],
-  orgId: string | null,
-  userId: string | null,
+  orgId: string | null, userId: string | null, origin: string | null,
   inputFiles: readonly RunInputFile[],
   /** Aborts on the hard timeout OR a user cancel (worker owns the controller). */
   signal: AbortSignal,
@@ -732,11 +719,11 @@ async function runEngine(
     resourceContext,
     skillContext,
     skillCatalogContext,
+    botContext,
     workdir,
     threadId,
     timing,
-    orgId,
-    userId,
+    orgId, userId, origin,
     inputFiles,
     inputContext: formatInputContext(inputFiles),
     model,

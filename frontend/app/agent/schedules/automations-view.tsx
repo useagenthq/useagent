@@ -33,7 +33,7 @@ import {
   updateSchedule,
   type CreateScheduleInput,
 } from "./schedules-api";
-import type { ScheduleRecord } from "./schedules-data";
+import { lastRunAt, type ScheduleRecord } from "./schedules-data";
 import { useAutomationRecovery } from "./use-automation-recovery";
 
 type Filter = "all" | "active" | "paused";
@@ -97,7 +97,7 @@ export function AutomationsView() {
 
   const activeCount = automations?.filter((automation) => automation.enabled).length ?? 0;
   const latestActivity = automations
-    ?.map((automation) => automation.last_fired_at)
+    ?.map((automation) => lastRunAt(automation))
     .filter((value): value is string => value !== null)
     .toSorted((left, right) => right.localeCompare(left))[0];
 

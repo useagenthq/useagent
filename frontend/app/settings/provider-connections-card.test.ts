@@ -15,7 +15,7 @@ function renderProviderConnectionsCard(): string {
 test("renders the provider connection summary and loading state before client effects", () => {
   const html = renderProviderConnectionsCard();
 
-  expect(html).toContain("0 of 3 providers connected");
+  expect(html).toContain("0 of 4 providers connected");
   expect(html).toContain("Loading provider connections...");
   expect(html).toContain(">Refresh<");
   expect(html).not.toContain("Updates refresh from the org event stream");
@@ -56,8 +56,46 @@ test("renders OpenAI connected when OAuth is active and an old API key is revoke
   expect(html.slice(apiKeyRow)).toContain("Revoked");
 });
 
+test("a provider served by the deployment's own key says so instead of Not connected", () => {
+  const html = renderToStaticMarkup(
+    createElement(ProviderConnectionPanel, {
+      provider: "openrouter",
+      connection: null,
+      oauthConnection: null,
+      codexSandboxExecutionEnabled: null,
+      deploymentProvided: true,
+      onSaved: async () => {},
+    }),
+  );
+  const header = html.slice(0, html.indexOf("API key"));
+  expect(header).toContain("Provided by this deployment");
+  expect(header).toContain("Runs use this deployment");
+  expect(header).not.toContain("Not connected");
+  // An org key of its own wins over the deployment's.
+  const own = renderToStaticMarkup(
+    createElement(ProviderConnectionPanel, {
+      provider: "openrouter",
+      connection: {
+        id: "pc_or",
+        provider: "openrouter",
+        authMethod: "api_key",
+        status: "connected",
+        metadata: {},
+        createdAt: "2026-08-28T00:00:00.000Z",
+        updatedAt: "2026-08-28T00:00:00.000Z",
+        revokedAt: null,
+      },
+      oauthConnection: null,
+      codexSandboxExecutionEnabled: null,
+      deploymentProvided: true,
+      onSaved: async () => {},
+    }),
+  );
+  expect(own).not.toContain("Provided by this deployment");
+});
+
 test("keeps Daytona out of the model-provider count", () => {
   const html = renderProviderConnectionsCard();
-  expect(html).toContain("0 of 3 providers connected");
-  expect(html).not.toContain("0 of 4 providers connected");
+  expect(html).toContain("0 of 4 providers connected");
+  expect(html).not.toContain("0 of 5 providers connected");
 });

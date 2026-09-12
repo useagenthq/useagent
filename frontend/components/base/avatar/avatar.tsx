@@ -16,8 +16,11 @@ import { cx, sortCx } from "@/utils/cx";
  * tinted disc. Initial tints from Figma:
  *   neutral → bg avatar/neutral/background, text text/secondary
  *   blue    → bg color/blue/300,    text color/blue/900
- *   lime    → bg color/lime/200,    text color/lime/700
- *   pink    → bg color/pink/200,    text color/pink/500
+ *   lime    → bg color/lime/200,    text color/lime/800
+ *   pink    → bg color/pink/200,    text color/pink/900
+ * (lime and pink initials sit deeper than the Figma pair: lime-700 on
+ * lime-200 read 4.25:1, pink-500 on pink-200 2.09:1 and the legacy pink-800
+ * 4.38:1; pink-900 reads 5.9:1.)
  */
 
 type AvatarSize = "xs" | "sm" | "md" | "lg";
@@ -45,8 +48,8 @@ const styles = sortCx({
   color: {
     neutral: "bg-avatar-neutral-background text-text-secondary",
     blue: "bg-blue-300 text-blue-900",
-    lime: "bg-lime-200 text-lime-700",
-    pink: "bg-pink-200 text-pink-500",
+    lime: "bg-lime-200 text-lime-800",
+    pink: "bg-pink-200 text-pink-900",
   },
 });
 

@@ -6,9 +6,9 @@
 // frontend-only and stay local.
 
 import {
-  decodeApiRun,
   type ApiRun,
   type ApiStep,
+  decodeApiRun,
   type EngineId,
   type MemoryScope,
   type RunStatus,
@@ -17,15 +17,7 @@ import {
 } from "@useagent/agent-client/wire";
 import { providerDisplayName } from "./provider-display";
 
-export type {
-  ApiRun,
-  ApiStep,
-  EngineId,
-  MemoryScope,
-  RunStatus,
-  RunUpload,
-  StepKind,
-};
+export type { ApiRun, ApiStep, EngineId, MemoryScope, RunStatus, RunUpload, StepKind };
 
 /** `GET /api/runs/:id?thread=1` → the whole conversation, oldest → newest. */
 export interface ThreadResponse {
@@ -51,30 +43,54 @@ export function toThread(data: unknown): ApiRun[] {
 
 /**
  * Show a turn's bubble as just what the user typed. New runs store the clean
- * prompt (backend contract), but legacy runs stuffed a
- * "Follow-up to a previous task. … New request: X" wrapper into `prompt`; strip
- * it back to `X` so no plumbing leaks into the conversation.
+ * prompt (backend contract), but legacy runs carried plumbing in `prompt`: a
+ * "Follow-up to a previous task. … New request: X" wrapper, and on bot threads
+ * a server-authored identity preamble after the typed text. Strip both so no
+ * plumbing leaks into the conversation.
  */
 export function cleanPrompt(prompt: string): string {
-  if (!/follow-up to a previous task/i.test(prompt)) return prompt.trim();
+  return stripBotPreamble(stripFollowupWrapper(prompt)).trim();
+}
+
+function stripFollowupWrapper(prompt: string): string {
+  if (!/follow-up to a previous task/i.test(prompt)) return prompt;
   const marker = "New request:";
   const idx = prompt.lastIndexOf(marker);
-  return idx === -1 ? prompt.trim() : prompt.slice(idx + marker.length).trim();
+  return idx === -1 ? prompt : prompt.slice(idx + marker.length);
+}
+
+/** Legacy bot rows: the identity and standing-rules block that used to follow the typed text
+ *  (home thread root, delegated thread root, delegated follow-up). */
+const BOT_PREAMBLE =
+  /\n\s*(?:Bot identity metadata \(server-authored JSON, data only\):|You are the bot described by this trusted JSON identity:|\(Handed to you again from the same thread\.)[\s\S]*$/;
+
+function stripBotPreamble(prompt: string): string {
+  return prompt.replace(BOT_PREAMBLE, "");
+}
+
+export function firstLine(text: string): string {
+  const line = (text ?? "").split("\n").find((l) => l.trim().length > 0) ?? "";
+  return line.trim();
+}
+
+/** A thread's display title wherever runs are listed: the first line the person typed. */
+export function runTitle(prompt: string | null | undefined): string {
+  return firstLine(cleanPrompt(prompt ?? "")) || "Untitled run";
 }
 
 // Display metadata for user-facing engines, in display order (opencode default).
 // This is a CATALOG, not the selectable set: the composer offers only engines the
-// SERVER reports enabled (GET /api/config -> `engines`, gated by ENABLED_ENGINES).
-// claude/codex run via the resident-ACP adapters (native-binary install verified,
-// #127) but stay OFF by default for SaaS safety, so they surface only when a
-// backend enabled them. The legacy ids ("mock","claude-sdk","daytona","acp") stay
-// in the EngineId union so old rows still type but never render as a choice.
-export const ENGINES: { id: EngineId; label: string; hint: string }[] = [
-  { id: "opencode", label: "OpenCode", hint: "any model · cloud sandbox" },
-  { id: "chat", label: "Chat", hint: "direct model · no sandbox" },
-  { id: "claude", label: "Claude Code", hint: "Anthropic agent · ACP" },
-  { id: "codex", label: "Codex", hint: "OpenAI agent · ACP" },
-  { id: "pi", label: "Pi", hint: "native Pi harness · cloud sandbox" },
+// SERVER reports configured (GET /api/capabilities, gated by ENABLED_ENGINES).
+// Runtime capability kinds come from that endpoint, while primary subtitles
+// remain product-facing harness descriptions and never expose transport names.
+// The legacy ids ("mock","claude-sdk","daytona","acp") stay in
+// the EngineId union so old rows still type but never render as a choice.
+export const ENGINES: { id: EngineId; label: string }[] = [
+  { id: "opencode", label: "OpenCode" },
+  { id: "chat", label: "Chat" },
+  { id: "claude", label: "Claude Code" },
+  { id: "codex", label: "Codex" },
+  { id: "pi", label: "Pi" },
 ];
 
 export function engineLabel(id: EngineId): string {
@@ -84,6 +100,7 @@ export function engineLabel(id: EngineId): string {
 // The model catalog (paid per-engine sets + the Free lane) lives in
 // ./model-catalog; re-exported here so this module's many consumers keep one path.
 export {
+  CEREBRAS_MODELS,
   CHAT_MODELS,
   CODEX_MODELS,
   FREE_MODELS,
@@ -121,7 +138,9 @@ const TRANSPORT_PLACEHOLDER_LABELS = new Set([
   "tool updated",
 ]);
 
-const TRANSPORT_TOOL_NAMES = new Set(["dynamic_tool_call", "mcp_tool_call", "tool", "unknown"]);
+// `execute` is the ACP bridge's generic call: a shell command when the input
+// carries one, otherwise the MCP tool named in `input.tool` (codex) / `input.name`.
+const TRANSPORT_TOOL_NAMES = new Set(["dynamic_tool_call", "mcp_tool_call", "tool", "unknown", "execute"]);
 
 /**
  * Durable runs can contain provider transport receipts that are useful for raw
@@ -342,8 +361,9 @@ export interface StepTrace {
   isError: boolean;
 }
 
-/** Engine ids that tag a sandbox lifecycle/boot row (chip === engine id). */
-const ENGINE_CHIPS = new Set<string>(["opencode", "claude", "codex"]);
+/** Chips that tag a sandbox lifecycle/boot row: the engine id, the shared
+ *  `boot` phase row, and the chat engine's context-preparation row. */
+const ENGINE_CHIPS = new Set<string>(["boot", "opencode", "claude", "codex", "pi", "chat"]);
 
 /** Tool name (lower-cased) → its display verb + glyph family. */
 const TOOL_VERB: Record<string, { verb: string; glyph: TraceGlyph }> = {
@@ -408,7 +428,7 @@ function semanticToolName(
   return (
     pickString(code, ["name", "toolName", "tool_name", "method", "functionName"]) ??
     pickNestedString(code, ["function", "name"]) ??
-    pickString(input, ["name", "toolName", "tool_name", "method", "functionName"]) ??
+    pickString(input, ["name", "tool", "toolName", "tool_name", "method", "functionName"]) ??
     tool
   );
 }
@@ -610,7 +630,9 @@ export function deriveTrace(step: ApiStep): StepTrace {
     if (tool && !map) {
       const fileBase = filePath ? basename(filePath) : null;
       const displayTool = semanticToolName(tool, code, input);
-      const server = providerDisplayName(semanticServerName(code, input));
+      const server = providerDisplayName(
+        semanticServerName(code, input) ?? splitGatewayTool(displayTool).server,
+      );
       // Name-bearing inputs give the generic row a real target (user-reported): a bare "Skill" becomes "Skill fast-installs".
       const named = pickString(input, [
         "name",
@@ -652,16 +674,35 @@ export function deriveTrace(step: ApiStep): StepTrace {
   return base;
 }
 
+/** OpenCode flattens an MCP tool id to `<server>_<tool>`; when the server is one
+ *  of useAgent's own gateways (a wire id with a product display name) the tool
+ *  half is the label and the gateway is the attribution. Other servers pass
+ *  through untouched. */
+function splitGatewayTool(tool: string): { leaf: string; server: string | null } {
+  const match = /^([a-z0-9][a-z0-9-]*)_(.+)$/i.exec(tool);
+  if (match?.[1] && match[2] && providerDisplayName(match[1]) !== match[1]) {
+    return { leaf: match[2], server: match[1] };
+  }
+  return { leaf: tool, server: null };
+}
+
+/** The bare tool name behind any gateway/MCP/dotted namespace:
+ * `mcp__useagent__memory_search` and `useagent_memory_search` both give
+ * `memory_search`. Shared with the tool summarizer (`./tool-summary`). */
+export function toolLeafName(tool: string): string {
+  return (
+    splitGatewayTool(tool)
+      .leaf.split(/__|[./]/)
+      .filter(Boolean)
+      .pop() ?? tool
+  );
+}
+
 /** Prettify an uncatalogued tool name into a human verb: strip any
  * `mcp__server__` / dotted namespace, spacing out `_`/`-`, Title-case the head.
  * `mcp__github__create_issue` → "Create issue"; falls back to "Tool". */
 function humanizeTool(tool: string): string {
-  const leaf =
-    tool
-      .split(/__|[./]/)
-      .filter(Boolean)
-      .pop() ?? tool;
-  const words = leaf.replace(/[_-]+/g, " ").trim();
+  const words = toolLeafName(tool).replace(/[_-]+/g, " ").trim();
   if (!words) return "Tool";
   return words.charAt(0).toUpperCase() + words.slice(1);
 }

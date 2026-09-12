@@ -15,6 +15,12 @@ import {
   type ArtifactWorkpieceState,
 } from "./artifacts";
 import { decodeFrame, THREAD_FRAME_TYPES, type DecodedFrame } from "./thread-events";
+import {
+  decodeThreadFamilyPage,
+  decodeThreadRelationshipEnvelope,
+  type ThreadFamilyPage,
+  type ThreadRelationship,
+} from "./thread-relationships";
 import { decodeApiRun, decodeApiRunSummary, type ApiRun, type ApiRunSummary } from "./wire";
 
 /** Minimal injected fetch/response surface (works with the browser fetch, a Node/Bun
@@ -100,6 +106,17 @@ export interface ArtifactListInput {
   readonly threadId?: string;
 }
 
+export interface ThreadFamilyInput {
+  readonly limit?: number;
+  readonly cursor?: string;
+}
+
+export interface SendThreadMessageInput {
+  readonly text: string;
+  readonly idempotencyKey: string;
+  readonly attachments?: readonly string[];
+}
+
 export interface ConnectThreadDeps {
   createEventSource: (url: string) => EventSourceLike;
   timers: TimerHost;
@@ -119,6 +136,10 @@ export interface AgentClient {
   /** Recent run summaries (newest first), scoped to the authenticated org. */
   listRuns(input?: ListRunsInput): Promise<readonly ApiRunSummary[]>;
   listArtifacts(input?: ArtifactListInput): Promise<readonly ArtifactDescriptor[]>;
+  getThreadRelationship(threadId: string): Promise<ThreadRelationship>;
+  listThreadChildren(familyThreadId: string, input?: ThreadFamilyInput): Promise<ThreadFamilyPage>;
+  listThreadRelationships(input?: ThreadFamilyInput): Promise<ThreadFamilyPage>;
+  sendThreadMessage(threadId: string, input: SendThreadMessageInput): Promise<RunHandle>;
   getArtifact(artifactId: string): Promise<ArtifactDescriptor>;
   getArtifactWorkpiece(artifactId: string): Promise<ArtifactWorkpieceResult>;
   updateArtifactWorkpiece(
@@ -209,6 +230,56 @@ export function createAgentClient(config: AgentClientConfig): AgentClient {
         throw new AgentClientError("decode_error", "GET /api/artifacts returned invalid artifact metadata");
       }
       return artifacts;
+    },
+
+    async getThreadRelationship(threadId) {
+      const path = `/api/threads/${encodeURIComponent(threadId)}/relationship`;
+      const relationship = decodeThreadRelationshipEnvelope(await send(path, {}));
+      if (!relationship) throw new AgentClientError("decode_error", `${path} returned invalid relationship metadata`);
+      return relationship;
+    },
+
+    async listThreadChildren(familyThreadId, input = {}) {
+      const query: string[] = [];
+      if (input.limit !== undefined) query.push(`limit=${encodeURIComponent(String(input.limit))}`);
+      if (input.cursor) query.push(`cursor=${encodeURIComponent(input.cursor)}`);
+      const path = `/api/threads/${encodeURIComponent(familyThreadId)}/children${query.length ? `?${query.join("&")}` : ""}`;
+      const page = decodeThreadFamilyPage(await send(path, {}));
+      if (!page) throw new AgentClientError("decode_error", `${path} returned invalid child metadata`);
+      return page;
+    },
+
+    async listThreadRelationships(input = {}) {
+      const query: string[] = [];
+      if (input.limit !== undefined) query.push(`limit=${encodeURIComponent(String(input.limit))}`);
+      if (input.cursor) query.push(`cursor=${encodeURIComponent(input.cursor)}`);
+      const path = `/api/threads/relationships${query.length ? `?${query.join("&")}` : ""}`;
+      const raw = await send(path, {});
+      const envelope = raw && typeof raw === "object" && !Array.isArray(raw)
+        ? raw as Record<string, unknown>
+        : null;
+      const page = decodeThreadFamilyPage(envelope ? {
+        children: envelope.relationships,
+        next_cursor: envelope.next_cursor,
+        has_more: envelope.has_more,
+      } : null);
+      if (!page) throw new AgentClientError("decode_error", `${path} returned invalid relationship metadata`);
+      return page;
+    },
+
+    async sendThreadMessage(threadId, input) {
+      const path = `/api/threads/${encodeURIComponent(threadId)}/messages`;
+      const json = (await send(path, {
+        method: "POST",
+        body: {
+          text: input.text,
+          ...(input.attachments ? { attachments: input.attachments } : {}),
+        },
+        extraHeaders: { "Idempotency-Key": input.idempotencyKey },
+      })) as Record<string, unknown>;
+      const runId = typeof json.id === "string" ? json.id : "";
+      if (!runId) throw new AgentClientError("decode_error", `${path} returned no run id`);
+      return { runId, status: typeof json.status === "string" ? json.status : "queued" };
     },
 
     async getArtifact(artifactId) {

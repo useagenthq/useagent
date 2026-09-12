@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CHILD_SESSION_TOOLS } from "./child-session-tools";
+import { CHILD_SESSION_TOOLS, advertisedChildSessionTools } from "./child-session-tools";
 import {
   advertisedGatewayToolDescriptor,
   advertisedGatewayToolDescriptors,
@@ -13,6 +13,7 @@ import {
   isRegisteredGatewayToolName,
   isGatewayMetaToolName,
 } from "./operation-registry";
+import { gatewayToolCatalogDescriptors } from "./operation-registry";
 import { SLACK_TOOLS } from "./slack-tools";
 import type { ToolTokenClaims } from "./token";
 
@@ -112,7 +113,7 @@ describe("gateway operation registry", () => {
       expect(baseNames.has(tool.name)).toBe(false);
       expect(enabledNames.has(tool.name)).toBe(true);
     }
-    for (const tool of CHILD_SESSION_TOOLS) {
+    for (const tool of advertisedChildSessionTools()) {
       expect(baseNames.has(tool.name)).toBe(false);
       expect(enabledNames.has(tool.name)).toBe(true);
     }
@@ -290,5 +291,30 @@ describe("gateway operation registry", () => {
     expect(structuredContent(describe.result).tool).toEqual(
       expect.objectContaining({ name: "run_resource_bindings" }),
     );
+  });
+});
+
+describe("registry parity", () => {
+  test("every advertised tool resolves to an executor and a descriptor", () => {
+    // The bots surface is flag-gated; advertise it here so the handoff tool is in the set.
+    const previous = process.env.BOTS;
+    process.env.BOTS = "1";
+    let advertised: ReturnType<typeof advertisedGatewayToolDescriptors>;
+    try {
+      advertised = advertisedGatewayToolDescriptors({ childSessions: true, slack: true, productChildThreads: true, orgId: "org-parity" });
+    } finally {
+      if (previous === undefined) delete process.env.BOTS;
+      else process.env.BOTS = previous;
+    }
+    expect(advertised.length).toBeGreaterThan(0);
+    const unresolvable = advertised.filter((tool) => !isRegisteredGatewayToolName(tool.name) || !advertisedGatewayToolDescriptor(tool.name));
+    expect(unresolvable.map((tool) => tool.name)).toEqual([]);
+    expect(advertised.some((tool) => tool.name === "bot_handoff")).toBe(true);
+  });
+
+  test("child-session catalog entries, the bot handoff included, carry the child_session condition", () => {
+    const entries = gatewayToolCatalogDescriptors().filter((entry) => entry.category === "child_sessions");
+    expect(entries.map((entry) => entry.descriptor.name)).toContain("bot_handoff");
+    expect(entries.every((entry) => entry.condition === "child_session")).toBe(true);
   });
 });

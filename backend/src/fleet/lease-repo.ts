@@ -50,7 +50,8 @@ export async function createLease(
 }
 
 /** Snapshot of currently-reserved capacity, including reclaiming leases and
- * retained thread sandboxes that no active lease currently owns. */
+ * deployment-owned retained thread sandboxes that no active lease owns.
+ * Personal remote computers are not host reservations once their run settles. */
 export interface ReservationSnapshot {
   readonly globalActiveSandboxes: number;
   readonly globalReservedCpuMillicores: number;
@@ -119,6 +120,7 @@ export async function oldestReclaimableRetainedSandbox(
     with current as (
       select distinct on (r.org_id, r.thread_id)
         r.id, r.org_id, r.thread_id, r.sandbox_id, r.status,
+        r.sandbox_credential,
         coalesce(r.settled_at, r.updated_at, r.created_at) as last_used_at
       from runs r
       where r.sandbox_id is not null
@@ -127,6 +129,7 @@ export async function oldestReclaimableRetainedSandbox(
     select c.id, c.org_id, c.thread_id, c.sandbox_id
     from current c
     where c.status in ('completed', 'failed')
+      and coalesce(c.sandbox_credential, 'env') <> 'user'
       ${orgFilter}
       and not exists (
         select 1 from runs active
@@ -153,6 +156,9 @@ export async function oldestReclaimableRetainedSandbox(
 /**
  * Clear retained mappings that a successful authoritative provider listing did
  * not return. Callers must not invoke this after a failed or partial listing.
+ * The listing comes from the deployment's own provider, so only mappings
+ * created with the deployment credential are cleared; a sandbox on a user's
+ * personal computer is not in that listing and is reconciled when it is used.
  */
 export async function clearMissingRetainedSandboxMappings(
   liveSandboxIds: ReadonlySet<string>,
@@ -169,6 +175,7 @@ export async function clearMissingRetainedSandboxMappings(
     update runs
     set sandbox_id = null, updated_at = now()
     where sandbox_id in (${sql.join(missing.map((id) => sql`${id}`), sql`, `)})
+      and (sandbox_credential is null or sandbox_credential = 'env')
     returning id`);
   return rows.length;
 }
@@ -184,12 +191,18 @@ export async function reservationSnapshot(
     : sql``;
   const [row] = await exec.execute(sql`
     with reserved as (
-      select * from sandbox_leases where state in ('active', 'reclaiming')
+      select lease.*,
+        case when run.sandbox_credential = 'user' then 0 else lease.reserved_cpu_millicores end as capacity_cpu,
+        case when run.sandbox_credential = 'user' then 0 else lease.reserved_memory_mib end as capacity_mem
+      from sandbox_leases lease
+      left join runs run on run.id = lease.run_id and run.org_id = lease.org_id
+      where lease.state in ('active', 'reclaiming')
     ), latest_thread_sandbox as (
       select distinct on (r.org_id, r.thread_id)
         r.sandbox_id, r.org_id, r.thread_id
       from runs r
       where r.sandbox_id is not null
+        and coalesce(r.sandbox_credential, 'env') <> 'user'
         and (
           r.status in ('queued', 'running') or
           coalesce(r.settled_at, r.updated_at, r.created_at) >=
@@ -217,9 +230,9 @@ export async function reservationSnapshot(
     )
     select
       ((select count(*) from reserved) + (select count(*) from retained))::int as global_count,
-      ((select coalesce(sum(reserved_cpu_millicores), 0) from reserved) +
+      ((select coalesce(sum(capacity_cpu), 0) from reserved) +
        (select coalesce(sum(cpu), 0) from retained))::int as global_cpu,
-      ((select coalesce(sum(reserved_memory_mib), 0) from reserved) +
+      ((select coalesce(sum(capacity_mem), 0) from reserved) +
        (select coalesce(sum(mem), 0) from retained))::int as global_mem,
       ((select count(*) from reserved where org_id = ${orgId}) +
        (select count(*) from retained where org_id = ${orgId}))::int as org_count`);

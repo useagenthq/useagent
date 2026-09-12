@@ -1,0 +1,12 @@
+{
+  "id": "claude-run",
+  "engine": "claude",
+  "summary": "The release checklist is ready. It covers migrations, health checks, rollback, and post-release verification.",
+  "duration_ms": 4300,
+  "steps": [
+    {"id":"claude-step-context","run_id":"claude-run","idx":0,"kind":"task","label":"Preparing context and runtime…","chip":"boot","code_json":"{\"phase\":\"preparing\"}","created_at":"2026-01-01T09:00:00.000Z"},
+    {"id":"claude-step-sandbox","run_id":"claude-run","idx":1,"kind":"task","label":"Sandbox demo ready in 2s (2 CPU / 4 GiB)","chip":"claude","code_json":null,"created_at":"2026-01-01T09:00:02.000Z"},
+    {"id":"claude-step-reply-preview","run_id":"claude-run","idx":2,"kind":"task","label":"The release checklist is ready. It covers migrations…","chip":"task","code_json":null,"created_at":"2026-01-01T09:00:04.200Z"},
+    {"id":"claude-step-done","run_id":"claude-run","idx":3,"kind":"done","label":"Done","chip":null,"code_json":null,"created_at":"2026-01-01T09:00:04.300Z"}
+  ]
+}

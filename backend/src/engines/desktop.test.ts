@@ -16,6 +16,7 @@ import {
   DESKTOP_REQUIRED_BINARIES,
   ensureSandboxDesktop,
   ensureSandboxDesktopView,
+  desktopUnavailableStep,
 } from "./desktop";
 
 function relayFileSystem(): SandboxFileSystem {
@@ -136,6 +137,37 @@ describe("shared sandbox desktop", () => {
       browserExecutable: null,
       reason: "desktop provisioning failed",
     });
+  });
+
+  test("uses a provider-owned desktop instead of provisioning a competing workstation", async () => {
+    let starts = 0;
+    const sandbox: SandboxHandle = {
+      ...sandboxFixture("sandbox-native-desktop", {
+        executeCommand: async () => {
+          throw new Error("the generic desktop path must not run");
+        },
+      }),
+      desktop: {
+        display: ":0",
+        home: "/home/user",
+        workdir: "/home/user/work",
+        browserExecutable: null,
+        start: async () => {
+          starts += 1;
+        },
+      },
+    };
+
+    await expect(
+      ensureSandboxDesktopView(sandbox, new AbortController().signal),
+    ).resolves.toEqual({
+      available: true,
+      browserTools: false,
+      home: "/home/user",
+      workdir: "/home/user/work",
+      browserExecutable: null,
+    });
+    expect(starts).toBe(1);
   });
 
   test("readies the user-visible desktop without installing agent browser tools", async () => {
@@ -324,5 +356,21 @@ describe("shared sandbox desktop", () => {
     expect(desktopLaunches).toBe(1);
     expect(created.filter((name) => name === "skynet-desktop")).toHaveLength(1);
     expect(deleted.filter((name) => name === "skynet-desktop")).toHaveLength(1);
+  });
+});
+
+describe("desktopUnavailableStep", () => {
+  test("is a boot-lane task row on the engine chip, never a warning, and names the reason", () => {
+    const step = desktopUnavailableStep("claude", { reason: "missing desktop binaries:xdotool" });
+    expect(step).toEqual({
+      kind: "task",
+      chip: "claude",
+      label: "Desktop and computer-use tools are not attached to this run (missing desktop binaries: xdotool)",
+    });
+    expect(desktopUnavailableStep("opencode", {})).toEqual({
+      kind: "task",
+      chip: "opencode",
+      label: "Desktop and computer-use tools are not attached to this run",
+    });
   });
 });

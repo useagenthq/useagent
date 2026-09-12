@@ -10,7 +10,14 @@ import {
   RiRefreshLine,
 } from "@remixicon/react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AddFilesRow,
   AddMenuDivider,
@@ -18,7 +25,12 @@ import {
   GithubConnectedRow,
 } from "@/components/chat/composer-add-menu";
 import { mentionsToRunResources, useComposerMentions } from "@/components/chat/composer-mentions-ui";
-import { resolveEnabledEngine, useEnabledEngineConfig } from "@/components/chat/engine-picker";
+import {
+  engineRuntimeCaption,
+  pickerEngineOptions,
+  resolveEnabledEngine,
+  useEnabledEngineConfig,
+} from "@/components/chat/engine-picker";
 import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 import {
   type CommandPickerStatus,
@@ -28,12 +40,10 @@ import {
   slashInsertText,
 } from "@/components/chat/slash-command";
 import {
-  ENGINES,
   type EngineId,
   engineLabel,
   modelOptionsForEngine,
   partitionModelOptions,
-  selectableModelsForEngine,
 } from "@/components/chat/types";
 import { AgentThinking } from "@/components/application/agent-thinking/agent-thinking";
 import { ComposerLoader } from "@/components/application/composer-loader/composer-loader";
@@ -51,6 +61,7 @@ import { RepoBranchBar } from "./repo-branch-bar";
 import { type RepoItem, RepoMultiPicker } from "./repo-multi-picker";
 import { type PickerGroup, SearchablePicker } from "./searchable-picker";
 import type { Skill } from "./skills-data";
+import { mentionedBotIds } from "@/components/chat/composer-mentions";
 
 /**
  * The New Task composer: a prompt textarea over a control row of searchable
@@ -78,22 +89,25 @@ export function NewTaskComposer({
   const [selectedRepos, setSelectedRepos] = useState<string[]>([]);
   const [repos, setRepos] = useState<RepoItem[]>([]);
   const [playbook, setPlaybook] = useState(""); // selected skill/playbook id, "" = none
-  // Codex is the preferred default engine (user decision 2026-08-23); the
-  // manifest effect below demotes it only AFTER the server manifest loads
-  // without codex, so the default survives the pre-fetch fallback window.
-  const [model, setModel] = useState(selectableModelsForEngine("codex")[0]?.value ?? "");
+  // Codex is the preferred default engine. Model membership and the default
+  // arrive from the authenticated capability catalog below.
+  const [model, setModel] = useState("");
   const [engine, setEngine] = useState<string>("codex");
   // The "+" action shelf under the composer holds the add-context controls
   // (upload, repos, skills, GitHub, branches) so the toolbar row never overflows.
   const [addMenuOpen, setAddMenuOpen] = useState(false);
-  // Only offer engines the SERVER enabled (GET /api/config, gated by
+  // Only offer engines the SERVER configured (GET /api/capabilities, gated by
   // ENABLED_ENGINES): claude/codex surface here only on a backend that turned them
   // on, so the picker never lets a user start a run the backend would 403. This is
   // the capability-driven engine manifest.
   const engineConfig = useEnabledEngineConfig();
   const enabledEngines = engineConfig.engines;
   const engineId = engine as EngineId;
-  const selectableModels = modelOptionsForEngine(engineId, engineConfig.models[engineId]);
+  const selectableModels = modelOptionsForEngine(
+    engineId,
+    engineConfig.models[engineId] ?? [],
+    engineConfig.modelDetails[engineId] ?? [],
+  );
   // The Free lane tracks OpenRouter's live catalog; the heading's refresh
   // re-derives it on demand (same affordance as the chat surface's picker).
   const [refreshingModels, setRefreshingModels] = useState(false);
@@ -102,12 +116,12 @@ export function NewTaskComposer({
     async (preserveModel: string) => {
       setRefreshingModels(true);
       try {
-        await refreshModels(preserveModel);
+        await refreshModels(preserveModel, engineId);
       } finally {
         setRefreshingModels(false);
       }
     },
-    [refreshModels],
+    [engineId, refreshModels],
   );
   const modelGroups: PickerGroup[] = useMemo(() => {
     const toOption = (m: (typeof selectableModels)[number]) => ({
@@ -216,7 +230,7 @@ export function NewTaskComposer({
     };
   }, [engine]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (selectableModels.length === 0) return;
     if (!selectableModels.some((m) => m.value === model)) {
       setModel(selectableModels[0]?.value ?? "");
@@ -330,17 +344,21 @@ export function NewTaskComposer({
     () => [
       {
         label: "Engines",
-        options: ENGINES.filter((e) => e.id !== "chat" && enabledEngines.includes(e.id)).map(
+        options: pickerEngineOptions(enabledEngines).map(
           (e) => ({
             value: e.id,
             label: e.label,
-            caption: `${e.hint}${engineConfig.readiness[e.id]?.ready === false ? " · needs attention" : ""}`,
+            caption: engineRuntimeCaption(
+              e.id,
+              engineConfig.runtimes[e.id],
+              engineConfig.readiness[e.id],
+            ),
             icon: RiCpuLine,
           }),
         ),
       },
     ],
-    [enabledEngines, engineConfig.readiness],
+    [enabledEngines, engineConfig.readiness, engineConfig.runtimes],
   );
 
   // One combined picker over the shared substrate: an explicit "none" option, then
@@ -399,6 +417,7 @@ export function NewTaskComposer({
       if (chosen && chosen !== item.default_branch) branchPayload[item.full_name] = chosen;
     }
     const mentionResources = mentionsToRunResources(mentions.mentions);
+    const mentionedBots = mentionedBotIds(mentions.mentions);
 
     const body = {
       // Send a model only for engines with an explicit picker/catalog. Codex
@@ -410,6 +429,7 @@ export function NewTaskComposer({
       ...(selectedRepos.length ? { repos: selectedRepos } : {}),
       ...(Object.keys(branchPayload).length ? { branches: branchPayload } : {}),
       ...(mentionResources.length ? { resources: mentionResources } : {}),
+      ...(mentionedBots.length ? { bot_mentions: mentionedBots } : {}),
       ...(runUploads.readyIds.length > 0 ? { attachments: runUploads.readyIds } : {}),
       ...(selectedSkill
         ? { skill: { id: selectedSkill.id, version: selectedSkill.version } }

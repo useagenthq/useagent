@@ -8,6 +8,8 @@ import {
   type RunStatus,
 } from "../db/schema";
 import { isMemoryScope } from "../memory/scope";
+import { acceptedRunHandoffs, runBotMentions } from "../bots/handoffs";
+import { isReservedBotHandoffKey } from "../bots/handoff-keys";
 import { orgScope } from "../middleware/org";
 import {
   getRun,
@@ -18,6 +20,7 @@ import {
   getThreadForRun,
 } from "./repo";
 import {
+  BotHomeThreadTakenError,
   acceptRunCommand,
   preflightRunCommandReplay,
   RunAdmissionClosedError,
@@ -63,7 +66,7 @@ import {
 } from "./canonical-events";
 import { completeCanonicalRuns } from "./canonicalization-outbox";
 import { subscribeThread } from "./thread-signals";
-import { clientOrgChangeForUser, subscribeOrg } from "./org-signals";
+import { registerRunChangesRoute } from "./changes-route";
 import type { ApiStep } from "./repo";
 import { defaultModelForEngine, isReplyModelAllowedForEngine } from "./model-policy";
 import {
@@ -71,6 +74,7 @@ import {
   modelProviderReadinessErrorBody,
   modelProviderReadyForEngine,
   resolveAcceptedEngine,
+  USER_FACING_ENGINES,
 } from "./engine-readiness";
 import { releaseRunSandbox } from "./sandbox-release";
 import { parseProviderSessionBinding } from "@useagent/agent-harness/canonical";
@@ -78,76 +82,19 @@ import { UploadClaimError } from "../uploads/repo";
 import { registerRunReadRoutes } from "./read-routes.js";
 import { registerExecutionGraphRoutes } from "./execution-graph-routes.js";
 import { registerProviderSessionRoutes } from "./provider-session-routes.js";
-import { boundedRunPrompt, runCreateBodyLimit, type RunCreateBody } from "./run-create-policy";
+import { boundedRunPrompt, runAttachmentIds, runCreateBodyLimit, type RunCreateBody } from "./run-create-policy";
+import { acceptExistingThreadFollowup, ThreadFollowupTargetError } from "./thread-followups";
 export type { RunCreateBody } from "./run-create-policy";
-
 export const runsRoutes = new Hono<AppEnv>();
-
 runsRoutes.use("*", orgScope);
-
-// One lightweight, tenant-scoped invalidation stream for ambient product
-// surfaces (Workspace, Runs, Recents, Artifacts). The database remains the
-// source of truth: events carry IDs only and tell clients which snapshot to
-// refresh. The active conversation keeps its richer thread-events stream.
-runsRoutes.get("/changes", (c) => {
-  const orgId = c.get("orgId");
-  const userId = c.get("userId");
-  const encoder = new TextEncoder();
-  const signal = c.req.raw.signal;
-
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      let closed = false;
-      const send = (frame: string): void => {
-        if (closed) return;
-        try {
-          controller.enqueue(encoder.encode(frame));
-        } catch {
-          cleanup();
-        }
-      };
-      const unsubscribe = subscribeOrg(orgId, (change) => {
-        const clientChange = clientOrgChangeForUser(change, userId);
-        if (!clientChange) return;
-        send(`event: change\ndata: ${JSON.stringify(clientChange)}\n\n`);
-      });
-      const heartbeat = setInterval(() => send(": ping\n\n"), 25_000);
-      heartbeat.unref?.();
-
-      function cleanup(): void {
-        if (closed) return;
-        closed = true;
-        clearInterval(heartbeat);
-        unsubscribe();
-        signal.removeEventListener("abort", cleanup);
-        try {
-          controller.close();
-        } catch {
-          // The browser may already have closed the stream.
-        }
-      }
-
-      send(": open\nretry: 1500\n\n");
-      if (signal.aborted) cleanup();
-      else signal.addEventListener("abort", cleanup);
-    },
-  });
-
-  return new Response(body, {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
-});
-
 export async function handleRunCreate(
   c: Context<AppEnv>,
   options: {
     readonly body?: RunCreateBody;
     readonly origin?: InternalRunOrigin;
+    /** The bot whose home thread this root run opens (stamped with the run, see
+     *  RunCommandInput.botHome); a lost race answers 409 with no run created. */
+    readonly botHome?: { readonly botId: string };
   } = {},
 ): Promise<Response> {
   let body: RunCreateBody;
@@ -168,24 +115,12 @@ export async function handleRunCreate(
   if (!promptResult.ok) return c.json({ error: promptResult.error }, promptResult.status);
   const prompt = promptResult.prompt;
 
-  const rawAttachments = body.attachments ?? [];
-  if (!Array.isArray(rawAttachments) || rawAttachments.length > 10) {
-    return c.json({ error: "attachments must be an array of at most 10 upload ids" }, 400);
-  }
-  const attachmentIds = [...new Set(rawAttachments)];
-  if (
-    attachmentIds.some(
-      (id) =>
-        typeof id !== "string" ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id),
-    )
-  ) {
-    return c.json({ error: "attachments contain an invalid upload id" }, 400);
-  }
-  if (attachmentIds.length > 0 && !c.get("userId")) {
-    return c.json({ error: "authenticated user required for attachments" }, 401);
-  }
+  const attachments = runAttachmentIds(body.attachments, Boolean(c.get("userId")));
+  if (!attachments.ok) return c.json({ error: attachments.error }, attachments.status);
+  const attachmentIds = attachments.ids;
 
+  const botMentions = runBotMentions(c.get("orgId"), body.bot_mentions);
+  if ("status" in botMentions) return c.json(botMentions.body, botMentions.status);
   const requestedResources = decodeRunResourceSelections(body.resources ?? []);
   if (!requestedResources) {
     return c.json({ error: "resources must be an array of valid resource selections" }, 400);
@@ -197,11 +132,8 @@ export async function handleRunCreate(
       : null;
   let requestedEngine: EngineId | null = null;
   if (body.engine !== undefined && body.engine !== null && body.engine !== "") {
-    if (
-      typeof body.engine !== "string" ||
-      !(ENGINE_IDS as readonly string[]).includes(body.engine)
-    ) {
-      return c.json({ error: `engine must be one of: ${ENGINE_IDS.join(", ")}` }, 400);
+    if (typeof body.engine !== "string" || !(ENGINE_IDS as readonly string[]).includes(body.engine)) {
+      return c.json({ error: `engine must be one of: ${USER_FACING_ENGINES.join(", ")}` }, 400);
     }
     requestedEngine = body.engine as EngineId;
   }
@@ -358,6 +290,9 @@ export async function handleRunCreate(
   }
 
   const idempotencyKey = c.req.header("Idempotency-Key")?.trim() || null;
+  if (!options.origin && idempotencyKey && isReservedBotHandoffKey(idempotencyKey)) {
+    return c.json({ error: "reserved_idempotency_key" }, 400);
+  }
   const intent: RunCommandIntent = {
     prompt: finalPrompt,
     model: requestedModel,
@@ -488,11 +423,6 @@ export async function handleRunCreate(
     }
     throw error;
   }
-
-  // Accept the run as a durable command. An `Idempotency-Key` makes a lost-
-  // response retry observe the ORIGINAL run instead of starting duplicate work;
-  // the un-keyed path behaves exactly as before (new run every call). Empty /
-  // whitespace-only keys are treated as absent.
   let accepted;
   try {
     const commandInput = {
@@ -501,16 +431,26 @@ export async function handleRunCreate(
       actorId: c.get("userId"),
       intent,
       run: { id, prompt: finalPrompt, model, engine, parentRunId, threadId, repos, resolvedResources, attachmentIds, memoryScope, skillId, skillVersion, skillContentHash, commandName, commandProvider, commandSessionId, commandCatalogRevision },
+      ...(options.botHome && !parentRunId ? { botHome: options.botHome } : {}),
     };
-    accepted = options.origin
-      ? await acceptInternalRunCommand({ ...commandInput, origin: options.origin })
-      : await acceptRunCommand(commandInput);
+    accepted = parentRunId
+      ? await acceptExistingThreadFollowup(c.get("orgId"), parentRunId, commandInput)
+      : options.origin
+        ? await acceptInternalRunCommand({ ...commandInput, origin: options.origin })
+        : await acceptRunCommand(commandInput);
   } catch (error) {
     if (error instanceof RunPromptTooLargeError) {
       return c.json({ error: error.code }, 413);
     }
     if (error instanceof UploadClaimError) {
       return c.json({ error: "upload_unavailable" }, 409);
+    }
+    if (error instanceof ThreadFollowupTargetError) return c.json({ error: error.code }, error.status);
+    if (error instanceof BotHomeThreadTakenError) {
+      return c.json(
+        { error: error.code, reason: "Another message opened this bot's thread first. Send yours again into that thread." },
+        409,
+      );
     }
     if (error instanceof RunAdmissionClosedError) {
       return c.json({ error: error.code, retryable: true }, 503);
@@ -527,11 +467,13 @@ export async function handleRunCreate(
     case "created": {
       // Pump the mailbox: dispatches now if the thread is idle AND capacity is
       // free, else the run stays queued (survives a restart; the reconciler
-      // admits it later). ADDITIVE response: still `id`, plus `status` + `queue`.
+      // admits it later). ADDITIVE response: `id` + `status` + `queue`, plus
+      // `handoffs` when @mentioned bots each got a delegated child thread.
       await pumpThread(threadId);
+      const handoffs = await acceptedRunHandoffs({ orgId: c.get("orgId"), actorId: c.get("userId"), runId: accepted.runId, threadId, text: prompt, botIds: botMentions.ids });
       const queue = await runQueueView(accepted.runId);
       const status = queue?.state === "queued" ? "queued" : "running";
-      return c.json({ id: accepted.runId, status, queue }, 201);
+      return c.json({ id: accepted.runId, status, queue, ...handoffs }, 201);
     }
     case "replayed":
       // The original run's worker is already running (or finished) — return its
@@ -606,6 +548,7 @@ runsRoutes.delete("/:id/sandbox", async (c) => {
   return c.json(result);
 });
 
+registerRunChangesRoute(runsRoutes);
 registerRunReadRoutes(runsRoutes);
 registerExecutionGraphRoutes(runsRoutes);
 registerProviderSessionRoutes(runsRoutes);

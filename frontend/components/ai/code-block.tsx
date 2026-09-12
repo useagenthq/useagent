@@ -104,7 +104,7 @@ export function CodeBlock({
       try {
         const out = await codeToHtml(trimmed, {
           lang: language,
-          themes: { light: "github-light", dark: "github-dark-default" },
+          themes: { light: "github-light", dark: "github-dark-default", dusk: "tokyo-night" },
           defaultColor: "light",
           transformers: [
             {

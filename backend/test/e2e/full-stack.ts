@@ -27,19 +27,50 @@
  * memory-phase live proofs). Here the mock honest-fails on crash and ignores
  * injected context, so stage 4 asserts recovery + ordering, and stage 3 asserts the
  * recall PATH fired (search call + context.retrieved ledger frame).
+ *
+ * Environment (every value has today's default, so `bun run e2e` still works on a
+ * machine with the stock Postgres on :5432; set them to run on another server or
+ * next to other stacks):
+ *   TEST_ADMIN_URL    admin connection used to DROP/CREATE the throwaway database
+ *                     (default postgres://postgres@localhost:5432/postgres)
+ *   E2E_DATABASE_URL  the throwaway database itself; its name is derived from the
+ *                     URL path and is dropped at the end
+ *                     (default postgres://postgres@localhost:5432/useagent_e2e)
+ *   E2E_PORT          backend port (default 3507); the mock Memory and Slack
+ *                     receivers take E2E_MEM_PORT and E2E_SLACK_PORT, defaulting to
+ *                     E2E_PORT + 10 and + 11 (3517 / 3518)
+ *   E2E_ENGINE        engine for the Slack-driven runs (default mock)
  */
 import { createHmac } from "node:crypto";
 import postgres from "postgres";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
-const DB = "useagent_e2e";
-const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
-const PORT = 3507;
-const MEM_PORT = 3517;
-const SLACK_PORT = 3518;
+const DB_URL = process.env.E2E_DATABASE_URL ?? "postgres://postgres@localhost:5432/useagent_e2e";
+const DB = throwawayDatabaseName(DB_URL);
+const PORT = Number(process.env.E2E_PORT ?? 3507);
+const MEM_PORT = Number(process.env.E2E_MEM_PORT ?? PORT + 10);
+const SLACK_PORT = Number(process.env.E2E_SLACK_PORT ?? PORT + 11);
 const BASE = `http://localhost:${PORT}`;
 const SIGNING = "e2e-signing-secret";
 const BOT = "U0E2EBOT";
+/** The Slack workspace this stack is bound to. Inbound events are a permanent
+ *  no-op unless the envelope's team_id resolves to a slack_workspaces row and the
+ *  sender to a slack_users row (fail-closed tenant model), so the backend is booted
+ *  with SLACK_WORKSPACE_BINDINGS / SLACK_USER_BINDINGS for exactly this team. */
+const TEAM = "T0E2ETEAM";
+const HUMAN = "U-HUMAN";
+const DEV_ORG = "org-skynet-dev";
+const DEV_USER = "user-useagent-dev";
+
+/** The database name is interpolated into DROP/CREATE DATABASE, so it must be a
+ *  plain identifier; anything else is refused before any statement runs. */
+function throwawayDatabaseName(url: string): string {
+  const name = decodeURIComponent(new URL(url).pathname.replace(/^\//, ""));
+  if (!/^[a-z_][a-z0-9_]{0,62}$/i.test(name)) {
+    throw new Error(`E2E_DATABASE_URL must name a plain database identifier, got "${name}"`);
+  }
+  return name;
+}
 /** Engine for the Slack-driven runs; `mock` by default (no Daytona). Set
  *  E2E_ENGINE=opencode to exercise the real recall path (needs a live sandbox). */
 const E2E_ENGINE = process.env.E2E_ENGINE ?? "mock";
@@ -100,6 +131,9 @@ async function startBackend(label: string): Promise<Proc> {
       MEMORY_USER_ID: "skynet",
       MEMORY_OUTBOX_TICK_MS: "400",
       SLACK_BOT_TOKEN: "xoxb-e2e",
+      SLACK_LEGACY_TEAM_ID: TEAM,
+      SLACK_WORKSPACE_BINDINGS: `${TEAM}:${DEV_ORG}:${DEV_USER}`,
+      SLACK_USER_BINDINGS: `${TEAM}:${HUMAN}:${DEV_ORG}:${DEV_USER}`,
       SLACK_SIGNING_SECRET: SIGNING,
       SLACK_API_URL: `http://localhost:${SLACK_PORT}`,
       SLACK_DEFAULT_ENGINE: E2E_ENGINE,
@@ -148,7 +182,7 @@ function slackHeaders(raw: string): Record<string, string> {
 }
 
 async function postSlackEvent(event: Record<string, unknown>): Promise<void> {
-  const raw = JSON.stringify({ type: "event_callback", event_id: `Ev${crypto.randomUUID().slice(0, 8)}`, authorizations: [{ user_id: BOT }], event });
+  const raw = JSON.stringify({ type: "event_callback", event_id: `Ev${crypto.randomUUID().slice(0, 8)}`, authorizations: [{ user_id: BOT }], team_id: TEAM, event });
   await fetch(`${BASE}/api/slack/events`, { method: "POST", body: raw, headers: slackHeaders(raw) });
 }
 
@@ -263,7 +297,7 @@ async function stage3_slackMemory(): Promise<{ channel: string; rootTs: string }
   const channel = `C${crypto.randomUUID().slice(0, 6)}`;
   const rootTs = `${crypto.randomUUID().slice(0, 6)}.1`;
   const rootPrompt = `root question ${rootTs}`;
-  await postSlackEvent({ type: "app_mention", channel, user: "U-HUMAN", text: `<@${BOT}> ${rootPrompt}`, ts: rootTs });
+  await postSlackEvent({ type: "app_mention", channel, user: HUMAN, text: `<@${BOT}> ${rootPrompt}`, ts: rootTs });
   const root = await waitRun(rootPrompt, (r) => r.status === "completed");
 
   // GAP 3: the durable Slack reply was delivered to the mock Slack receiver.
@@ -293,7 +327,7 @@ async function stage3_slackMemory(): Promise<{ channel: string; rootTs: string }
 
   // Threaded reply recalls team memory (canary) — the recall PATH fires.
   const replyPrompt = `what is our canary rollout gate check id ${rootTs}`;
-  await postSlackEvent({ type: "app_mention", channel, user: "U-HUMAN", text: `<@${BOT}> ${replyPrompt}`, ts: `${rootTs}.2`, thread_ts: rootTs });
+  await postSlackEvent({ type: "app_mention", channel, user: HUMAN, text: `<@${BOT}> ${replyPrompt}`, ts: `${rootTs}.2`, thread_ts: rootTs });
   const reply = await waitRun(replyPrompt, (r) => r.status === "completed");
   check("threaded reply is a follow-up in the same thread", reply.parent_run_id === root.id && reply.thread_id === root.id);
   // The recall path (searchTeamMemory + retrieval ledger) runs only for REAL
@@ -406,7 +440,7 @@ async function stage5_durabilitySurvived(root: { channel: string; rootTs: string
 
 // ── run ───────────────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
-  console.log("E2E full-stack — isolated stack (:3507, DB useagent_e2e, mock memory/slack)");
+  console.log(`E2E full-stack - isolated stack (:${PORT}, DB ${DB}, mock memory :${MEM_PORT} / slack :${SLACK_PORT})`);
   await recreateDb();
   let proc = await startBackend("boot");
   // Safety: confirm the backend is on the throwaway DB before anything else.

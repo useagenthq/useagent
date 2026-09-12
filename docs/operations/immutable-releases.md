@@ -3,9 +3,9 @@
 This is the additive first phase of the v0.0.2 release-path migration. It builds
 three independent OCI images from one committed Git SHA:
 
-- `ghcr.io/useagenthq/useagent-backend:<git-sha>`
-- `ghcr.io/useagenthq/useagent-gateway:<git-sha>`
-- `ghcr.io/useagenthq/useagent-frontend:<git-sha>`
+- `ghcr.io/useagenthq/backend:sha-<12-character-git-sha>`
+- `ghcr.io/useagenthq/gateway:sha-<12-character-git-sha>`
+- `ghcr.io/useagenthq/frontend:sha-<12-character-git-sha>`
 
 The backend and gateway use Bun 1.3.14 from a pinned multi-platform digest. The
 frontend uses Bun only for its frozen install, then builds and runs the compact

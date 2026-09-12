@@ -1,3 +1,4 @@
+import type { SandboxProviderKind } from "@useagent/sandbox-contract";
 import {
   ENGINE_IDS,
   MEMORY_SCOPES,
@@ -74,6 +75,11 @@ export const runs = pgTable(
     // mapping SURVIVES backend restarts — the next turn resumes the same box
     // (workspace + resident engine server) instead of provisioning a new one.
     sandboxId: text("sandbox_id"),
+    // Which provider created that sandbox and whose credential (env = the
+    // server's, user = a personal Daytona/Box connection), so later touches of
+    // the sandbox resolve the same provider. Null for runs before this record.
+    sandboxProvider: text("sandbox_provider").$type<SandboxProviderKind>(),
+    sandboxCredential: text("sandbox_credential").$type<"env" | "user">(),
     // The GitHub repository this run works in ("owner/name"), chosen in the New
     // Task composer and validated against GET /api/repos. Nullable — a run with
     // no repo works in a bare sandbox workdir. Inherited across a thread (a reply
@@ -122,11 +128,10 @@ export const runs = pgTable(
     commandProvider: text("command_provider"),
     commandSessionId: text("command_session_id"),
     commandCatalogRevision: bigint("command_catalog_revision", { mode: "number" }),
-    // First-class INTERNAL-run marker (memory self-improvement item 2). Set only
-    // by server-owned acceptance to an exact trusted `internal:*` origin (see
-    // src/runs/origin.ts). Public identifiers never influence it. Internal
-    // runs (parity canaries, e2e/soak harnesses, QC probes) are excluded from
-    // org-memory capture so evaluation traffic never pollutes team memory.
+    // Server-owned execution provenance (see src/runs/origin.ts). `internal:*`
+    // values isolate evaluation traffic from memory; `product:*` values mark
+    // unattended product execution without discarding the creator's user id.
+    // Public callers can never set this field.
     origin: text("origin"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

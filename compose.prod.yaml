@@ -4,6 +4,10 @@ services:
   backend:
     image: ${USEAGENT_BACKEND_IMAGE:?set an immutable backend image digest}
     network_mode: host
+    labels:
+      io.useagent.release.color: ${USEAGENT_RELEASE_COLOR}
+      io.useagent.release.commit: ${USEAGENT_RELEASE_COMMIT}
+      io.useagent.release.service: backend
     env_file:
       - ${USEAGENT_BACKEND_ENV_FILE:-/etc/useagent/backend.env}
     environment:
@@ -12,9 +16,25 @@ services:
       USEAGENT_BIND_HOST: 127.0.0.1
       USEAGENT_RELEASE_COMMIT: ${USEAGENT_RELEASE_COMMIT:?set the exact release commit}
       REQUIRE_SINGLE_BACKEND: "true"
+      # Runtime compatibility belongs to the immutable image. An empty override
+      # defeats stale host env pins while letting each image use its own default,
+      # so rollback selects the previous generation automatically.
+      USEAGENT_RUNTIME_GENERATION: ""
+      ARTIFACT_STORAGE_DIR: /app/backend/.artifacts
+      RUNS_ROOT: /app/backend/.runs
+      SLACK_UPLOAD_STAGING_ROOT: /app/backend/.slack-uploads
+      SCRATCH_DIR: /var/lib/useagent/scratch/${USEAGENT_RELEASE_COLOR}
       CODEX_APP_SERVER_HOME_ROOT: /var/lib/useagent/codex-app-server
+      NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
       GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL:?set the sandbox-reachable HTTPS gateway origin}
       PROVIDER_GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL}
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||'3201')+'/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      start_period: 15s
+      retries: 12
     read_only: true
     tmpfs:
       - /tmp:size=256m,mode=1777
@@ -22,14 +42,20 @@ services:
       - /var/lib/useagent/artifacts:/app/backend/.artifacts
       - /var/lib/useagent/runs:/app/backend/.runs
       - /var/lib/useagent/slack-uploads:/app/backend/.slack-uploads
+      - /var/lib/useagent/scratch:/var/lib/useagent/scratch
       - /var/lib/useagent/codex-app-server:/var/lib/useagent/codex-app-server
       - /opt/useagent/pi-runtime:/opt/useagent/pi-runtime
+      - ${USEAGENT_HOST_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}:/etc/ssl/certs/ca-certificates.crt:ro
     restart: unless-stopped
     stop_grace_period: 30s
 
   gateway:
     image: ${USEAGENT_GATEWAY_IMAGE:?set an immutable gateway image digest}
     network_mode: host
+    labels:
+      io.useagent.release.color: ${USEAGENT_RELEASE_COLOR}
+      io.useagent.release.commit: ${USEAGENT_RELEASE_COMMIT}
+      io.useagent.release.service: gateway
     env_file:
       - ${USEAGENT_GATEWAY_ENV_FILE:-/etc/useagent/gateway.env}
     environment:
@@ -37,23 +63,44 @@ services:
       GATEWAY_PORT: ${USEAGENT_GATEWAY_PORT:?set the inactive-color gateway port}
       USEAGENT_BIND_HOST: 127.0.0.1
       USEAGENT_RELEASE_COMMIT: ${USEAGENT_RELEASE_COMMIT:?set the exact release commit}
+      NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+      USEAGENT_API_ORIGIN: http://127.0.0.1:${USEAGENT_BACKEND_PORT}
       GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL:?set the sandbox-reachable HTTPS gateway origin}
       PROVIDER_GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL}
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:'+(process.env.GATEWAY_PORT||'3202')+'/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 12
     read_only: true
     tmpfs:
       - /tmp:size=128m,mode=1777
+    volumes:
+      - ${USEAGENT_HOST_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}:/etc/ssl/certs/ca-certificates.crt:ro
     restart: unless-stopped
     stop_grace_period: 30s
 
   frontend:
     image: ${USEAGENT_FRONTEND_IMAGE:?set an immutable frontend image digest}
     network_mode: host
+    labels:
+      io.useagent.release.color: ${USEAGENT_RELEASE_COLOR}
+      io.useagent.release.commit: ${USEAGENT_RELEASE_COMMIT}
+      io.useagent.release.service: frontend
     environment:
       NODE_ENV: production
       HOSTNAME: 127.0.0.1
       PORT: ${USEAGENT_FRONTEND_PORT:?set the inactive-color frontend port}
       USEAGENT_API_ORIGIN: http://127.0.0.1:${USEAGENT_BACKEND_PORT}
       NEXT_PUBLIC_USEAGENT_RELEASE_COMMIT: ${USEAGENT_RELEASE_COMMIT}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||'3400')+'/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      start_period: 15s
+      retries: 12
     read_only: true
     tmpfs:
       - /tmp:size=128m,mode=1777

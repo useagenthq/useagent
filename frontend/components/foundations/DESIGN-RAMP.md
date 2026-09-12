@@ -77,13 +77,15 @@ lives in the BoardUI semantic text tokens — map onto them, never hard-code the
 | Blueprint role | Token | Light ≈ ratio | Dark (inverted) |
 | --------------------- | ----------------------- | ------------------- | -------------------- |
 | **Strong** (#292929) | `text-text-primary` | near-black ~13–16:1 | white |
-| **Mid** (#5D5D5D) | `text-text-secondary` | ~6.5:1 | warm mid-gray (58%L) |
-| **Muted** (#9E9E9E) | `text-text-tertiary` | ~3:1 | dim gray (44%L) |
+| **Mid** (#5D5D5D) | `text-text-secondary` | #525252, ~7:1 | warm mid-gray (58%L) |
+| **Muted** (#9E9E9E) | `text-text-tertiary` | #666666, 4.8 to 5.7:1 | dim gray (44%L) |
 
-The light-mode neutrals already sit almost exactly on the blueprint ratios, and `.dark`
-re-anchors them so the same three-step ladder reads on the dark canvas — so **no color token
-changed**. Rule: strong → sub → soft for primary → secondary → tertiary. Don't flatten two
-tiers into one; don't invent a fourth gray.
+The muted step is deeper than the blueprint's #9E9E9E on purpose: tertiary carries real
+text (section labels, relative times, captions, secondary button labels, placeholders), so
+it clears AA on every light surface it lands on, including the #ebebeb field fill. `.dark`
+re-anchors the ladder so the same three steps read on the dark canvas. Rule: strong → sub →
+soft for primary → secondary → tertiary. Don't flatten two tiers into one; don't invent a
+fourth gray.
 
 ---
 

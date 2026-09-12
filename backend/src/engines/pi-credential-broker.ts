@@ -61,8 +61,9 @@ export async function startPiCredentialBroker(input: {
   readonly sandbox: SandboxHandle;
   readonly provider: PiBrokerProviderCapability;
   readonly tools: ToolGatewayCapabilityDescriptor | null;
+  readonly root: string;
 }): Promise<void> {
-  const root = "/root/.useagent/pi-broker";
+  const root = input.root;
   const scriptPath = `${root}/broker.cjs`;
   const configPath = `${root}/capabilities.json`;
   const pidPath = `${root}/broker.pid`;

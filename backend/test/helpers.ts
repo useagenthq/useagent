@@ -25,9 +25,11 @@ export function fetchApi(path: string, init: ApiInit = {}): Promise<Response> {
     origin: ORIGIN,
     ...(init.headers ?? {}),
   };
-  let body: string | FormData | undefined;
+  let body: RequestInit["body"];
   if (init.body !== undefined) {
     if (init.body instanceof FormData) {
+      body = init.body;
+    } else if (init.body instanceof ReadableStream) {
       body = init.body;
     } else if (typeof init.body === "string") {
       body = init.body;

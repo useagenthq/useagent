@@ -6,7 +6,8 @@
  * Compound API (Root/Trigger/Close/Content/Header/Title/Description/Body/Footer)
  * built on @radix-ui/react-dialog for correct focus-trap, Esc-to-close,
  * scroll-lock, backdrop dismiss, and form submission. Callers own the open
- * state (controlled: Root open/onOpenChange) or drive it from a Trigger.
+ * state (controlled: Root open/onOpenChange) or drive it from a Trigger; on
+ * close, focus returns to whatever opened the dialog either way.
  * Visible chrome is on BoardUI tokens; callers restyle the panel via Content's
  * className.
  */
@@ -17,6 +18,8 @@ import { type RemixiconComponentType } from "@remixicon/react";
 
 import { cx } from "@/utils/cx";
 import { CloseButton } from "@/components/base/buttons/close-button";
+import { OverlayPortalContainerContext, escapeBelongsToNestedOverlay } from "@/components/base/overlay-portal-container";
+import { useFocusReturn } from "./focus-return";
 
 const ModalRoot = DialogPrimitive.Root;
 const ModalTrigger = DialogPrimitive.Trigger;
@@ -49,16 +52,37 @@ const ModalContent = React.forwardRef<
     overlayClassName?: string;
     showClose?: boolean;
   }
->(({ className, overlayClassName, children, showClose = true, ...rest }, forwardedRef) => {
+>(({ className, overlayClassName, children, showClose = true, onOpenAutoFocus, onCloseAutoFocus, onEscapeKeyDown, ...rest }, forwardedRef) => {
+  const focusReturn = useFocusReturn();
+  // Popovers opened from inside the dialog portal into its content, so the
+  // focus trap and pointer-events lock do not shut them out.
+  const [container, setContainer] = React.useState<HTMLElement | null>(null);
+  const handleEscape = (event: KeyboardEvent) => {
+    onEscapeKeyDown?.(event);
+    if (escapeBelongsToNestedOverlay(event.target, container)) event.preventDefault();
+  };
+  const setRefs = (node: HTMLDivElement | null) => {
+    setContainer(node);
+    if (typeof forwardedRef === "function") forwardedRef(node);
+    else if (forwardedRef) forwardedRef.current = node;
+  };
   return (
     <ModalPortal>
       <ModalOverlay className={overlayClassName}>
         <DialogPrimitive.Content
-          ref={forwardedRef}
+          ref={setRefs}
+          onOpenAutoFocus={(event) => {
+            onOpenAutoFocus?.(event);
+            focusReturn.onOpenAutoFocus();
+          }}
+          onCloseAutoFocus={(event) => {
+            onCloseAutoFocus?.(event);
+            if (!event.defaultPrevented) focusReturn.onCloseAutoFocus(event);
+          }}
           className={cx(
             // base
             "relative w-full max-w-[400px]",
-            "rounded-3xl bg-background-primary-default shadow-dropdown",
+            "rounded-2xl bg-background-primary-default shadow-dropdown",
             // focus
             "focus:outline-none",
             // animation
@@ -67,9 +91,12 @@ const ModalContent = React.forwardRef<
             "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
             className,
           )}
+          onEscapeKeyDown={handleEscape}
           {...rest}
         >
-          {children}
+          <OverlayPortalContainerContext.Provider value={container}>
+            {children}
+          </OverlayPortalContainerContext.Provider>
           {showClose && (
             <ModalClose asChild>
               <CloseButton aria-label="Close" size="md" className="absolute right-4 top-4" />

@@ -9,6 +9,7 @@ import { providerForEngine, type ProviderId } from "../provider-gateway/provider
 import { engineAuthMode, engineUsesProviderGateway } from "./engine-auth-mode";
 import { chatLlmEnabled } from "../chat/stream";
 import { enabledEnginesForEnv } from "../env";
+import { providerGatewayProblem } from "../provider-gateway/config";
 
 export const USER_FACING_ENGINES = ["chat", "opencode", "claude", "codex", "pi"] as const;
 export type UserFacingEngineId = (typeof USER_FACING_ENGINES)[number];
@@ -21,6 +22,7 @@ export type EngineReadinessReason =
   | "enabled"
   | "disabled"
   | "provider_unhealthy"
+  | "gateway_unconfigured"
   | "not_proven";
 
 export interface EngineReadiness {
@@ -69,7 +71,7 @@ export function engineResolutionErrorBody(
   };
 }
 
-const ENGINE_DISPLAY_NAMES: Record<UserFacingEngineId, string> = {
+export const ENGINE_DISPLAY_NAMES: Record<UserFacingEngineId, string> = {
   chat: "Chat",
   opencode: "OpenCode",
   claude: "Claude Code",
@@ -79,18 +81,26 @@ const ENGINE_DISPLAY_NAMES: Record<UserFacingEngineId, string> = {
 
 function unavailableMessage(readiness: EngineReadiness): string {
   const label = ENGINE_DISPLAY_NAMES[readiness.engine];
-  if (readiness.reason === "provider_unhealthy" && readiness.provider) {
-    const provider = readiness.provider === "anthropic"
-      ? "Anthropic"
-      : readiness.provider === "openai"
-        ? "OpenAI"
+  const provider = readiness.provider === "anthropic"
+    ? "Anthropic"
+    : readiness.provider === "openai"
+      ? "OpenAI"
+      : readiness.provider === "cerebras"
+        ? "Cerebras"
         : "OpenRouter";
+  if (readiness.reason === "provider_unhealthy" && readiness.provider) {
     if (readiness.providerHealth === "insufficient_credit") {
       return `${label} is configured, but ${provider} reports insufficient credits. Add credits or update the provider key in Settings, then retry.`;
     }
     return `${label} is configured, but ${provider} is unavailable${readiness.providerHealth ? ` (${readiness.providerHealth})` : ""}. Check provider credentials and billing in Settings, then retry.`;
   }
   if (readiness.reason === "disabled") return `${label} is disabled on this server.`;
+  if (readiness.reason === "gateway_unconfigured") {
+    return `${label} runs in a sandbox that reaches models through the provider gateway, which is not wired: set GATEWAY_PUBLIC_URL and PROVIDER_GATEWAY_SECRET on the backend and restart it${readiness.providerHealth ? ` (${readiness.providerHealth})` : ""}.`;
+  }
+  if (readiness.provider) {
+    return `${label} is configured, but no ${provider} connection is verified. Connect an ${provider} key in Settings, then retry.`;
+  }
   return `${label} is configured but not ready. Check its provider connection in Settings, then retry.`;
 }
 
@@ -170,6 +180,8 @@ export function modelProviderReadinessErrorBody(
       ? "OpenAI"
       : provider === "openrouter"
         ? "OpenRouter"
+        : provider === "cerebras"
+          ? "Cerebras"
         : "The selected model provider";
   const action = health === "insufficient_credit"
     ? "Add credits or update the provider key in Settings, then retry."
@@ -217,12 +229,22 @@ export function engineReadiness(
   }
 
   const engineHealth = explicitEngineHealth(engine, env);
-  if (!engineHealth || !POSITIVE_HEALTH.has(engineHealth)) {
-    return { engine, ready: false, reason: "not_proven" };
+  if (!engineHealth || !POSITIVE_HEALTH.has(engineHealth) || engineAuthMode(engine, env) === null) {
+    const readiness: EngineReadiness = { engine, ready: false, reason: "not_proven" };
+    return { ...readiness, message: unavailableMessage(readiness) };
   }
 
-  if (engineAuthMode(engine, env) === null) {
-    return { engine, ready: false, reason: "not_proven" };
+  // Every sandbox engine boots its model traffic through the provider gateway;
+  // without the wiring the run would be accepted and fail inside the adapter.
+  const gatewayProblem = providerGatewayProblem(env);
+  if (gatewayProblem) {
+    const readiness: EngineReadiness = {
+      engine,
+      ready: false,
+      reason: "gateway_unconfigured",
+      providerHealth: gatewayProblem,
+    };
+    return { ...readiness, message: unavailableMessage(readiness) };
   }
 
   const provider = engineUsesProviderGateway(engine, env)
@@ -306,7 +328,7 @@ export function resolveAcceptedEngine(
       typeof rawEngine !== "string" ||
       !ENGINE_ID_SET.has(rawEngine)
     ) {
-      return { ok: false, status: 400, error: `engine must be one of: ${ENGINE_IDS.join(", ")}` };
+      return { ok: false, status: 400, error: `engine must be one of: ${USER_FACING_ENGINES.join(", ")}` };
     }
     const engine = rawEngine as EngineId;
     if (engine === "mock") {

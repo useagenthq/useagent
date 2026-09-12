@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { knowledgeMcpRoutes } from "./knowledge/gateway/mcp";
 import { providerGatewayRoutes } from "./provider-gateway/routes";
 import { currentReleaseFingerprint } from "./release";
@@ -10,11 +10,13 @@ import { currentReleaseFingerprint } from "./release";
  */
 export function createGatewayApp(): Hono {
   const app = new Hono();
-  app.get("/api/health", (c) => {
+  const health = (c: Context) => {
     const release = currentReleaseFingerprint();
     c.header("x-useagent-release-fingerprint", release.fingerprint);
     return c.json({ status: "ok", surface: "gateway" });
-  });
+  };
+  app.get("/health", health);
+  app.get("/api/health", health);
   app.route("/api/mcp/knowledge", knowledgeMcpRoutes);
   app.route("/api/provider", providerGatewayRoutes);
   return app;

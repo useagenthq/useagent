@@ -3,12 +3,6 @@ import type { Sql } from "postgres";
 export const GATEWAY_DATABASE_ROLE = "useagent_gateway";
 const LEGACY_GATEWAY_DATABASE_ROLE = "skynet_gateway";
 
-export function gatewayDatabaseRoleRequired(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): boolean {
-  return Boolean(env.GATEWAY_PUBLIC_URL?.trim());
-}
-
 /**
  * Declarative grants for the RESTRICTED sandbox-gateway role, applied
  * idempotently at every backend boot (right after migrations).
@@ -28,7 +22,7 @@ export function gatewayDatabaseRoleRequired(
  * process writes, add it HERE in the same change.
  */
 export const GATEWAY_GRANTS: readonly string[] = [
-  "GRANT SELECT ON runs, skills, skill_revisions, secrets, artifacts, provider_gateway_audit, slack_threads TO useagent_gateway",
+  "GRANT SELECT ON runs, skills, skill_revisions, secrets, artifacts, provider_gateway_audit, slack_threads, thread_relationships TO useagent_gateway",
   "GRANT UPDATE (skill_id, skill_version, skill_content_hash, updated_at) ON runs TO useagent_gateway",
   "GRANT UPDATE (usage_count, last_run_at, updated_at) ON skills TO useagent_gateway",
   "GRANT SELECT (id, run_id, seq, event_type, payload) ON provider_events TO useagent_gateway",
@@ -59,13 +53,18 @@ export const GATEWAY_GRANTS: readonly string[] = [
   // and the encrypted server-side credential. OAuth lifecycle writes stay in
   // the privileged control plane.
   "GRANT SELECT ON integration_connections, integration_connection_credentials TO useagent_gateway",
+  // Personal computer bindings resolve through the filtered API-key view; the
+  // provider's control-plane labels are the sandbox ownership trust anchor.
+  // Never grant the gateway the underlying provider_connections table.
+  "GRANT SELECT ON sandbox_labels TO useagent_gateway",
   // Unified context index (Phase 1): the gateway context_search/context_read
   // tools READ the projection; the privileged BACKEND writes it (projector on
   // skill/knowledge/automation writes). SELECT only - no gateway write path.
   "GRANT SELECT ON context_index TO useagent_gateway",
 ];
 
-/** Migration 0039 creates the BYOK credentials view; grant only if present. */
+/** Migration 0039 creates the BYOK credentials view; later migrations extend
+ * it with non-secret computer metadata. Grant only if present. */
 const VIEW_GRANT =
   "GRANT SELECT ON gateway_provider_api_key_credentials TO useagent_gateway";
 

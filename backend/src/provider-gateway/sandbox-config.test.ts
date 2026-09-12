@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { SandboxHandle } from "../sandboxes/provider";
 import type { EngineRunContext } from "../engines/types";
 import {
@@ -9,10 +12,12 @@ import {
   providerGatewayWired,
   prepareProviderGatewaySandbox,
   codexProviderConfigToml,
+  buildClaudeCapabilityWriteCommand,
   SANDBOX_GENERATION,
 } from "./sandbox-config";
 import { verifyProviderToken } from "./token";
 import { verifyToolToken } from "../knowledge/gateway/token";
+import { TOOL_GATEWAY_SERVER_NAME } from "../knowledge/gateway/descriptor";
 
 const original = { ...process.env };
 
@@ -62,6 +67,11 @@ function recordingSandbox(): {
       executeCommand: async (command: string) => {
         for (const match of command.matchAll(/printf %s '([^']+)' \| base64 -d > ([^ ]+)/g)) {
           files[match[2]!] = Buffer.from(match[1]!, "base64").toString("utf8");
+        }
+        for (const match of command.matchAll(
+          /renameSync\(process\.argv\[1\],process\.argv\[2\]\)'\s+([^ ]+)\s+([^ &]+)/g,
+        )) {
+          files[match[2]!] = files[match[1]!]!;
         }
         return { exitCode: 0, result: "" };
       },
@@ -123,7 +133,8 @@ describe("sandbox provider gateway config", () => {
     expect(config).toContain("[model_providers.skynet.auth]");
     expect(config).toContain('command = "sh"');
     expect(config).not.toContain("env_key");
-    expect(config).toContain("[mcp_servers.skynet-knowledge]");
+    expect(config).toContain(`[mcp_servers.${TOOL_GATEWAY_SERVER_NAME}]`);
+    expect(config).not.toContain("mcp_servers.skynet-knowledge");
     expect(config).toContain('url = "https://gateway.example.test/api/mcp/knowledge"');
     expect(config).toContain('http_headers = { Authorization = "Bearer tool-token" }');
     expect(config).toContain("enabled = true");
@@ -139,14 +150,14 @@ describe("sandbox provider gateway config", () => {
     await prepareProviderGatewaySandbox(sandbox, ctx(), "claude");
 
     const mcpConfig = JSON.parse(
-      files["/tmp/skynet-claude-config/skynet-mcp.json"]!,
+      files["/tmp/useagent-claude-capability/useagent-mcp.json"]!,
     ) as {
       mcpServers: Record<
         string,
         { type: string; url: string; headers: { Authorization: string } }
       >;
     };
-    const knowledge = mcpConfig.mcpServers["skynet-knowledge"]!;
+    const knowledge = mcpConfig.mcpServers[TOOL_GATEWAY_SERVER_NAME]!;
     expect(knowledge).toMatchObject({
       type: "http",
       url: "https://gateway.example.test/api/mcp/knowledge",
@@ -159,13 +170,42 @@ describe("sandbox provider gateway config", () => {
       runId: "run-a",
       scope: "thread",
     });
-    expect(files["/tmp/skynet-claude-config/settings.json"]).not.toContain(bearerToken);
-    expect(files["/tmp/skynet-claude-config/settings.json"]).not.toContain(
+    expect(files["/tmp/useagent-claude-capability/useagent-settings.json"]).not.toContain(bearerToken);
+    expect(files["/tmp/useagent-claude-capability/useagent-settings.json"]).not.toContain(
       process.env.TOOL_GATEWAY_SECRET!,
     );
-    expect(files["/tmp/skynet-claude-config/skynet-mcp.json"]).not.toContain(
+    expect(files["/tmp/useagent-claude-capability/useagent-mcp.json"]).not.toContain(
       process.env.TOOL_GATEWAY_SECRET!,
     );
+  });
+
+  test("atomically replaces a symlinked Claude capability without following it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "useagent-claude-capability-"));
+    const directory = join(root, "capability");
+    const tokenPath = join(directory, "provider.token");
+    const victimPath = join(root, "victim");
+    try {
+      await mkdir(directory);
+      await writeFile(victimPath, "unchanged");
+      await symlink(victimPath, tokenPath);
+      const result = Bun.spawnSync([
+        "/bin/sh",
+        "-c",
+        buildClaudeCapabilityWriteCommand(
+          directory,
+          [{ path: tokenPath, content: "scoped-capability" }],
+          process.getuid?.() ?? 0,
+          process.getgid?.() ?? 0,
+        ),
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      expect(await readFile(victimPath, "utf8")).toBe("unchanged");
+      expect(await readFile(tokenPath, "utf8")).toBe("scoped-capability");
+      expect((await lstat(tokenPath)).isSymbolicLink()).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("Claude warm replies reuse a user-bound thread provider capability", async () => {
@@ -181,9 +221,9 @@ describe("sandbox provider gateway config", () => {
     const { sandbox, files } = recordingSandbox();
 
     await prepareProviderGatewaySandbox(sandbox, first, "claude");
-    const firstToken = files["$HOME/.skynet/provider-anthropic.token"];
+    const firstToken = files["/tmp/useagent-claude-capability/provider-anthropic.token"];
     await prepareProviderGatewaySandbox(sandbox, second, "claude");
-    const secondToken = files["$HOME/.skynet/provider-anthropic.token"];
+    const secondToken = files["/tmp/useagent-claude-capability/provider-anthropic.token"];
 
     expect(secondToken).toBe(firstToken);
     expect(verifyProviderToken(secondToken)).toMatchObject({
@@ -216,10 +256,12 @@ describe("sandbox provider gateway config", () => {
     expect(options.anthropic?.baseURL).toEndWith("/api/provider/anthropic/v1");
     expect(options.openai?.baseURL).toEndWith("/api/provider/openai/v1");
     expect(options.openrouter?.baseURL).toEndWith("/api/provider/openrouter/v1");
+    expect(options.cerebras?.baseURL).toEndWith("/api/provider/cerebras/v1");
     expect(verifyProviderToken(options.anthropic?.apiKey)).toMatchObject({ provider: "anthropic" });
     expect(verifyProviderToken(options.openai?.apiKey)).toMatchObject({ provider: "openai" });
     expect(verifyProviderToken(options.openrouter?.apiKey)).toMatchObject({ provider: "openrouter" });
-    expect(SANDBOX_GENERATION).toBe("provider-gateway-v15-gateway-only-secrets");
+    expect(verifyProviderToken(options.cerebras?.apiKey)).toMatchObject({ provider: "cerebras" });
+    expect(SANDBOX_GENERATION).toBe("provider-gateway-v17-useagent-mcp-gateway-only-secrets");
     expect(providerGatewaySandboxLabels("run-a")).toEqual({
       "skynet-run": "run-a",
       "skynet-provider-generation": SANDBOX_GENERATION,
@@ -266,10 +308,10 @@ describe("sandbox provider gateway config", () => {
     const before = Date.now();
     await prepareProviderGatewaySandbox(sandbox, context, "claude");
     const after = Date.now();
-    const config = JSON.parse(files["/tmp/skynet-claude-config/skynet-mcp.json"]!) as {
+    const config = JSON.parse(files["/tmp/useagent-claude-capability/useagent-mcp.json"]!) as {
       mcpServers: Record<string, { headers: { Authorization: string } }>;
     };
-    const token = config.mcpServers["skynet-knowledge"]!.headers.Authorization.replace(/^Bearer /, "");
+    const token = config.mcpServers[TOOL_GATEWAY_SERVER_NAME]!.headers.Authorization.replace(/^Bearer /, "");
     const claims = verifyToolToken(token, before);
 
     expect(claims).not.toBeNull();
@@ -446,7 +488,7 @@ describe("sandbox provider gateway config", () => {
     const sandbox = {
       labels: {
         "skynet-run": "run-a",
-        "skynet-provider-generation": "provider-gateway-v10",
+        "skynet-provider-generation": "provider-gateway-v16-gateway-only-secrets",
       },
       process: {
         executeCommand: async () => {
@@ -471,7 +513,7 @@ describe("sandbox provider gateway config", () => {
     process.env.SANDBOX_SECRET_MODE = "compatibility";
     const compatibilityLabels = providerGatewaySandboxLabels("run-compatibility");
     expect(compatibilityLabels["skynet-provider-generation"]).toBe(
-      "provider-gateway-v15-compatibility-secrets",
+      "provider-gateway-v17-useagent-mcp-compatibility-secrets",
     );
 
     process.env.SANDBOX_SECRET_MODE = "gateway_only";

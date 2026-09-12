@@ -1,4 +1,8 @@
 import { client } from "../db/client";
+import type {
+  ProviderConnectionMetadata,
+  ProviderConnectionProvider,
+} from "../db/schema";
 import { openSecret } from "../secrets/crypto";
 import type { ProviderId } from "./provider";
 
@@ -8,6 +12,20 @@ export interface GatewayProviderApiKeyCredentialRow {
   readonly credential_ciphertext: string;
   readonly iv: string;
   readonly tag: string;
+}
+
+interface GatewayComputerApiKeyCredentialRow
+  extends GatewayProviderApiKeyCredentialRow {
+  readonly provider: ProviderConnectionProvider;
+  readonly metadata: ProviderConnectionMetadata;
+  readonly updated_at: Date;
+}
+
+export interface GatewayComputerApiKeyConnection {
+  readonly provider: ProviderConnectionProvider;
+  readonly value: string;
+  readonly metadata: ProviderConnectionMetadata;
+  readonly updatedAt: string;
 }
 
 export function openGatewayProviderApiKeyCredential(
@@ -56,4 +74,33 @@ export async function resolveGatewayProviderApiKeyCredential(input: {
   `;
   const row = rows[0];
   return row ? openGatewayProviderApiKeyCredential(row) : null;
+}
+
+/** Resolve the most recently updated connected computer credential through the
+ * restricted API-key view. The gateway never reads the underlying table
+ * directly; metadata is non-secret and the credential remains sealed until
+ * this exact org/user lookup succeeds. */
+export async function resolveGatewayComputerApiKeyConnection(input: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly providers: readonly ProviderConnectionProvider[];
+}): Promise<GatewayComputerApiKeyConnection | null> {
+  if (input.providers.length === 0) return null;
+  const rows = await client<GatewayComputerApiKeyCredentialRow[]>`
+    SELECT provider, auth_method, status, credential_ciphertext, iv, tag, metadata, updated_at
+    FROM gateway_provider_api_key_credentials
+    WHERE org_id = ${input.orgId}
+      AND user_id = ${input.userId}
+      AND provider = ANY(${[...input.providers]})
+      AND auth_method = 'api_key'
+      AND status = 'connected'
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  const value = openGatewayProviderApiKeyCredential(row);
+  return value
+    ? { provider: row.provider, value, metadata: row.metadata ?? {}, updatedAt: row.updated_at.toISOString() }
+    : null;
 }

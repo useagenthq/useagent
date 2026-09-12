@@ -13,6 +13,7 @@ import {
   RiTerminalBoxLine,
 } from "@remixicon/react";
 import type { RunResourceSelection } from "@useagent/agent-client/wire";
+import { replyRunBody } from "@/components/chat/reply-run-body";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentsRail } from "@/components/chat/agents-rail";
 import { deriveThreadGatewayChildren } from "@/components/chat/gateway-children";
@@ -23,22 +24,16 @@ import {
 } from "@/components/chat/approval-state";
 import { ArtifactsRail } from "@/components/chat/artifacts-rail";
 import {
-  type CanonicalCommandView,
-  resolveCommandCatalog,
   selectActiveSessionId,
   selectSessionCapabilities,
   selectSessionCommandCatalog,
-  selectSessionCommands,
 } from "@/components/chat/canonical-timeline";
-import { Conversation } from "@/components/chat/conversation";
+import { type AssistantIdentity, Conversation } from "@/components/chat/conversation";
 import { DesktopPane } from "@/components/chat/desktop-pane";
 import { DiffPane } from "@/components/chat/diff-pane";
 import { EditorPane } from "@/components/chat/editor-pane";
-import { gatewayApprovalSignature } from "@/components/chat/gateway-approval-state";
-import {
-  type GatewayApprovalSignal,
-  useGatewayApprovals,
-} from "@/components/chat/use-gateway-approvals";
+import { decodeRunAccepted, type HandoffReceipt, handoffNotice } from "@/components/chat/handoff-receipts";
+import { useGatewayApprovals } from "@/components/chat/use-gateway-approvals";
 import { OrbBootIndicator } from "@/components/chat/orb-boot-indicator";
 import { type PendingQuestion, selectPendingQuestion } from "@/components/chat/question-state";
 import {
@@ -47,14 +42,19 @@ import {
   useRailWidth,
   useSplitTooNarrow,
 } from "@/components/chat/rail-resizer";
-import type { SlashCommand } from "@/components/chat/slash-command";
 import { SubagentChips } from "@/components/chat/subagent-pane";
-import { type SurfaceChoice, SurfaceChooser } from "@/components/chat/surface-chooser";
+import {
+  railTabLabelFor,
+  type SurfaceChoice,
+  SurfaceChooser,
+} from "@/components/chat/surface-chooser";
+import { useAgentsRailDeepLink } from "@/components/chat/use-agents-rail-deep-link";
 import { TerminalPane } from "@/components/chat/terminal-pane";
 import { terminalRunIdForThread } from "@/components/chat/terminal-run-state";
 import type { TimelineArtifact } from "@/components/chat/timeline";
 import { ComposerPrefillProvider } from "@/components/chat/composer-prefill-context";
 import { SessionLatestRunProvider } from "@/components/chat/session-run-context";
+import { SessionThreadBreadcrumb } from "@/components/chat/session-thread-breadcrumb";
 import { useWorkpieceAutoOpen } from "@/components/chat/use-workpiece-auto-open";
 import { shouldFocusAutoOpened, workspaceSurfaceHasFocus } from "@/components/chat/workpiece-auto-open";
 import { WorkspaceOpenProvider } from "@/components/chat/workspace-open-context";
@@ -72,6 +72,7 @@ import {
   supportsPreSessionModelSelection,
 } from "@/components/chat/types";
 import { shouldRetireOptimistic, useThreadStream } from "@/components/chat/use-thread-stream";
+import { useReplyCommandCatalog } from "@/components/chat/use-reply-command-catalog";
 import { useWindowedThread } from "@/components/chat/use-windowed-thread";
 import type { ApiThreadOutlineTurn } from "@/components/chat/windowed-thread";
 import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
@@ -79,8 +80,10 @@ import { Button } from "@/components/base/buttons/button";
 import { CloseButton } from "@/components/base/buttons/close-button";
 import { PillTab, PillTabList } from "@/components/base/tabs/pill-tab";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { threadSubmissionLane, useThreadFamily } from "@/hooks/use-thread-family";
+import type { InitialThreadRelationshipHint } from "@/lib/thread-relationship-hint";
 import { backendFetch } from "@/lib/backend-fetch";
-import { createRun, runCreateFailureMessage } from "@/lib/create-run";
+import { createRun, createThreadMessage, runCreateFailureMessage } from "@/lib/create-run";
 import { cx } from "@/utils/cx";
 
 // The rail is a resizable sub-viewport panel (viewport breakpoints can't
@@ -100,20 +103,22 @@ const RAIL_TAB_LABEL_COLLAPSE = "@max-[40rem]:sr-only";
  * A reply starts a child run in the same thread and arrives on the open stream -
  * never navigating away, never reconnecting.
  */
-export function SessionView({
-  initialThread,
-  initialOutline = null,
-}: {
+export function SessionView({ initialThread, initialOutline = null, initialRelationshipHint = "legacy_or_off", assistantIdentity, readOnlyMessage, onNewestTurnChange }: {
   initialThread: ApiRun[];
   /** Windowed initial loading (long threads): the WHOLE thread's per-turn
    *  skeleton, while `initialThread` carries only the root + the fully-loaded
    *  tail. Turns known only by outline render as sized placeholders and are
    *  fetched in islands as the user scrolls into them. Null = full load. */
-  initialOutline?: ApiThreadOutlineTurn[] | null;
+  initialOutline?: ApiThreadOutlineTurn[] | null; initialRelationshipHint?: InitialThreadRelationshipHint; assistantIdentity?: AssistantIdentity;
+  /** Set when nothing new may be sent here (an archived bot): the composer is
+   *  locked with this message while the thread stays readable. */
+  readOnlyMessage?: string;
+  /** The thread's newest run as the live stream sees it, for a header that
+   *  renders outside this view (a bot header's per-turn model label). */
+  onNewestTurnChange?: (run: ApiRun) => void;
 }) {
   const root = initialThread[0];
   if (!root) throw new Error("SessionView requires a non-empty thread");
-
   // Optimistic reply, keyed by the accepted run id: kept visible until the durable
   // run is observed in the store, so a POST-accepted message never vanishes if SSE
   // is momentarily down AND the reconcile fetch fails (Codex finding 4).
@@ -124,17 +129,30 @@ export function SessionView({
   const [questionError, setQuestionError] = useState<string | null>(null);
   const [answeringApproval, setAnsweringApproval] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
-
+  // What each accepted reply's @mentioned bots did (POST /api/runs `handoffs[]`), keyed by
+  // run id, plus the composer notice for the ones that did NOT get the message.
+  const [handoffs, setHandoffs] = useState<{
+    byRun: ReadonlyMap<string, readonly HandoffReceipt[]>;
+    notice: string | null;
+  }>({ byRun: new Map(), notice: null });
+  const dismissHandoffNotice = useCallback(() => setHandoffs((h) => ({ ...h, notice: null })), []);
   // ONE realtime subscription for the whole conversation, keyed by the ROOT thread
   // id for the page lifetime (final_fix.md): creating/queueing/starting/settling/
   // cancelling a run never resets the store or reconnects. Every run's projection
   // (durable steps + native frames + live narration) is owned by the thread store,
   // so no run-switch transition can blank/freeze a turn or target the wrong run.
   const rootId = root.id;
+  const threadFamily = useThreadFamily(rootId, initialRelationshipHint);
+  const { descendants: productChildren } = threadFamily;
+  const submissionLane = threadSubmissionLane(threadFamily, initialRelationshipHint);
+  const isProductChild = submissionLane === "child" || (!threadFamily.ready && initialRelationshipHint === "child");
+  const composerRelationshipBlocked = submissionLane === "blocked";
   const { snapshot, reconcile, mergeRuns } = useThreadStream(rootId, initialThread);
   const thread = snapshot.runs.length ? snapshot.runs : initialThread;
   const newest = thread.at(-1) ?? root;
-
+  useEffect(() => {
+    onNewestTurnChange?.(newest);
+  }, [newest, onNewestTurnChange]);
   const { turns, onTurnsNeeded: handleTurnsNeeded } = useWindowedThread({
     rootId,
     thread,
@@ -219,28 +237,12 @@ export function SessionView({
     return null;
   }, [turns]);
 
-  // Gateway approvals (#77): same seam as the question card - the run's OWN
-  // projection decides. A live turn whose timeline carries an approval step /
-  // provider event signals this lane, which then fetches the authoritative
-  // records from GET /api/gateway/approvals. The SIGNATURE (not a poll) drives
-  // revalidation: a new approval event arriving on the thread SSE re-projects
-  // the turn, changes the signature, and triggers exactly one refetch. Settled
-  // turns are excluded like questions: history never re-raises a card.
-  const gatewayApprovalSignals = useMemo(() => {
-    const signals: GatewayApprovalSignal[] = [];
-    for (const turn of turns) {
-      if (!isLiveStatus(turn.status)) continue;
-      const signature = gatewayApprovalSignature(
-        turn.steps,
-        turn.native?.nativeFrames ?? [],
-        turn.canonical ?? [],
-      );
-      if (signature) signals.push({ runId: turn.run.id, signature });
-    }
-    return signals;
-  }, [turns]);
+  // Gateway approvals (#77): the thread's durable requests, pending AND resolved
+  // (history survives reload), from GET /api/gateway/approvals. The turns' approval
+  // SIGNATURES (not a poll) drive revalidation: an approval event on the thread SSE
+  // re-projects the turn and triggers exactly one refetch (see use-gateway-approvals).
   const { approvals: gatewayApprovals, refresh: refreshGatewayApprovals } =
-    useGatewayApprovals(gatewayApprovalSignals);
+    useGatewayApprovals(rootId, turns);
 
   const submitQuestionAnswers = useCallback(
     async (target: { runId: string; request: PendingQuestion }, answers: string[][]) => {
@@ -365,12 +367,12 @@ export function SessionView({
       command?: { name: string; args: string } | null,
       attachmentIds: readonly string[] = [],
       resources: readonly RunResourceSelection[] = [],
+      botMentions: readonly string[] = [],
     ) => {
-      // A free-text reply to a native question resumes the resident OpenCode
-      // turn. It must never enqueue a child run behind the blocked parent.
+      // Native-question replies resume the blocked provider turn instead of enqueueing a run.
       if (activeQuestion && composerCanAnswerQuestion) {
-        if (attachmentIds.length > 0 || resources.length > 0) {
-          throw new Error("Resources cannot be added while answering a native question");
+        if (attachmentIds.length > 0 || resources.length > 0 || botMentions.length > 0) {
+          throw new Error("You can't attach files or mention bots while answering a question");
         }
         const accepted = await submitQuestionAnswers(activeQuestion, [[text]]);
         if (!accepted) throw new Error("question reply failed");
@@ -378,51 +380,33 @@ export function SessionView({
       }
       setPending({ text, runId: null });
       try {
-        const res = await createRun(
-          {
-            prompt: text,
-            engine,
-            // Unsupported controls must not leak stale values into the API.
-            // ACP replies inherit the thread model server-side; OpenCode may
-            // send the user-selected per-turn override it actually supports.
-            ...(modelSelection ? { model } : {}),
-            parent_run_id: newest.id,
-            // The backend inherits the parent's scope when omitted; sending the
-            // composer's choice lets the user change it for this reply.
-            memory_scope: memoryScope,
-            ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}),
-            ...(resources.length > 0 ? { resources } : {}),
-            // TYPED native-command intent (Phase 3): present ONLY for a `/known-command ...`
-            // from the current session's catalog. Carries the provider + native session id so
-            // the backend rejects a stale/cross-session intent; the backend re-validates before
-            // delivering it verbatim. Absent => an ordinary prompt keeps its full context.
-            ...(command
-              ? {
-                  command: {
-                    ...command,
-                    provider: engine,
-                    sessionId: engineSessionId ?? undefined,
-                    catalogRevision: commandCatalogRevision ?? undefined,
-                  },
-                }
-              : {}),
-          },
-          idempotencyKey,
-        );
+        if (composerRelationshipBlocked) throw new Error("Checking this thread. Try again in a moment.");
+        if (isProductChild && (command || resources.length > 0 || botMentions.length > 0)) {
+          throw new Error("Commands, linked context and bots aren't available in this child thread yet");
+        }
+        const res = submissionLane === "child"
+          ? await createThreadMessage(rootId, {
+                text,
+                ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}),
+              }, idempotencyKey)
+          : await createRun(replyRunBody({
+            text, engine, model: modelSelection ? model : null, parentRunId: newest.id, memoryScope,
+            attachmentIds, resources, botMentions, command, engineSessionId, commandCatalogRevision,
+          }), idempotencyKey);
         if (!res.ok) throw new Error(await runCreateFailureMessage(res, `backend ${res.status}`));
-        // Key the optimistic bubble to the ACCEPTED run id and keep it until that
-        // durable run is observed in the store (retired by the effect below). The
-        // child run normally arrives on the OPEN thread stream (post-commit
-        // `created` signal); reconcile is a best-effort nudge if SSE was momentarily
-        // down. If BOTH are down, the message must NOT vanish - the backend accepted
-        // it (Codex finding 4).
-        const body = (await res.json().catch(() => ({}))) as { id?: unknown };
-        const runId = typeof body.id === "string" ? body.id : null;
+        // Keep the accepted run visible until SSE/reconcile observes its durable id.
+        const accepted = decodeRunAccepted(await res.json().catch(() => ({})));
+        const runId = accepted.runId;
         setPending((p) => (p ? { ...p, runId } : { text, runId }));
+        if (runId && accepted.handoffs.length > 0) {
+          setHandoffs((h) => ({
+            byRun: new Map(h.byRun).set(runId, accepted.handoffs),
+            notice: handoffNotice(accepted.handoffs),
+          }));
+        }
         void reconcile();
       } catch (err) {
-        // POST itself failed: drop the optimistic bubble and re-throw so the composer
-        // restores the draft and shows an explicit retry state.
+        // A failed POST restores the draft and explicit retry state.
         setPending(null);
         throw err;
       }
@@ -433,19 +417,18 @@ export function SessionView({
       commandCatalogRevision,
       composerCanAnswerQuestion,
       engineSessionId,
+      isProductChild,
+      composerRelationshipBlocked, submissionLane,
       newest.id,
+      rootId,
       reconcile,
       submitQuestionAnswers,
     ],
   );
-
-  // Retire the optimistic bubble ONLY once its accepted run is present in the thread
-  // store (matched by run id, never prompt text) - so a POST-accepted reply survives
-  // an SSE/reconcile outage and is cleared exactly when the durable run lands.
+  // Retire optimistic state by accepted run id, never matching prompt text.
   useEffect(() => {
     if (pending && shouldRetireOptimistic(pending.runId, snapshot)) setPending(null);
   }, [pending, snapshot]);
-
   // The ACTUALLY-RUNNING turn may not be the newest (rapid-fire replies make
   // the newest a QUEUED run) - Stop and Send-now must target the running one.
   const runningTurn = turns.find((t) => t.status === "running") ?? null;
@@ -514,6 +497,7 @@ export function SessionView({
   const hasFiles = allSteps.some((s) => s.kind === "file" && parseFileEntries(s).length > 0);
   const hasCommands = allSteps.some((s) => s.kind === "command");
   const hasSubagents =
+    productChildren.length > 0 ||
     gatewayChildren.length > 0 ||
     allCanonicalEvents.some((event) => event.kind === "child.started") ||
     allSteps.some((s) => s.chip === "subagent");
@@ -569,9 +553,15 @@ export function SessionView({
   const [railTabOverride, setRailTabOverride] = useState<SurfaceChoice | "editor" | "workspace" | null>(
     null,
   );
+  const [focusedProductThreadId, setFocusedProductThreadId] = useState<string | null>(null);
   const railTab =
     railTabOverride ??
     (hasSubagents ? "agents" : hasFiles ? "artifacts" : hasCommands ? "terminal" : null);
+  const openProductChild = useCallback((threadId: string) => {
+    setFocusedProductThreadId(threadId);
+    setRailOverride(true);
+    setRailTabOverride("agents");
+  }, []);
   // Sheet grammar: the chooser card grid is a side-by-side surface - the
   // sheet's pill tabs ARE the chooser, so opening on a quiet thread lands on
   // a concrete tab (Files); the pane body's null branch falls back the same way.
@@ -579,6 +569,8 @@ export function SessionView({
     setRailOverride(true);
     if (railTab === null) setRailTabOverride("artifacts");
   }, [railTab]);
+  const { focusExecutionId, focusExecutionRunId, clearAgentFocus } =
+    useAgentsRailDeepLink(setRailTabOverride, setRailOverride);
 
   const openWorkpiece = useCallback((artifact: Pick<TimelineArtifact, "id" | "name">) => {
     setOpenWorkpieces((prev) =>
@@ -629,23 +621,9 @@ export function SessionView({
     },
     [activeWorkpieceId, openWorkpieces, railTabOverride],
   );
-  const railTabLabel =
-    railTab === null
-      ? "Surface"
-      : railTab === "agents"
-        ? "Agents"
-        : railTab === "artifacts"
-          ? "Files"
-          : railTab === "diff"
-            ? "Diff"
-            : railTab === "editor"
-              ? "Editor"
-              : railTab === "workspace"
-                ? "Workspace"
-                : railTab === "terminal"
-                  ? "Terminal"
-                  : "Desktop";
+  const railTabLabel = railTabLabelFor(railTab);
   const [desktopEverOpened, setDesktopEverOpened] = useState(false);
+  const desktopActive = railTab === "desktop" && (!surfacesSheet || sheetSurfacesOpen);
   useEffect(() => {
     if (railTab === "desktop") setDesktopEverOpened(true);
     if (railTab === "workspace") setWorkspaceEverOpened(true);
@@ -676,80 +654,7 @@ export function SessionView({
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [surfacesSheet, sheetSurfacesOpen]);
 
-  // Slash-command catalog for the reply composer's "/" autocomplete - the SELECTED engine's
-  // real native commands, capability-driven (no provider-name gate). Authoritative source is
-  // the DURABLE canonical stream's per-session `commands.updated`, SESSION-SCOPED to the current
-  // native session so a historical or other-session snapshot can NEVER mask the active session
-  // (a restarted/new session that has not re-advertised falls back to the pre-session priming
-  // fetch rather than showing stale commands). The live session snapshot always wins; the priming
-  // fetch (GET /api/commands, keyed by engine - one path for OpenCode/Claude/Codex, no per-engine
-  // side channel) only primes until this session advertises. `resolveCommandCatalog` folds both
-  // into one honest state (loading / unavailable / error / ready[+stale]).
-  const engine = normalizeEngine(newest.engine);
-  const durableCommands = useMemo(
-    () => selectSessionCommands([...snapshot.byId.values()], engineSessionId),
-    [snapshot.byId, engineSessionId],
-  );
-  const hasDurable = durableCommands !== null;
-  const [fetchState, setFetchState] = useState<{
-    phase: "loading" | "done" | "error";
-    commands: CanonicalCommandView[];
-  }>({
-    phase: "loading",
-    commands: [],
-  });
-  useEffect(() => {
-    if (hasDurable) return; // the durable session catalog wins; no priming fetch needed
-    let cancelled = false;
-    // Clear-on-change: reset immediately so a prior engine's commands never linger while loading.
-    setFetchState({ phase: "loading", commands: [] });
-    void (async () => {
-      const fail = () => !cancelled && setFetchState({ phase: "error", commands: [] });
-      try {
-        // ONE pre-session priming path for every engine: the org/snapshot catalog via GET
-        // /api/commands (keyed by engine). The durable per-session `commands.updated` (now emitted
-        // by opencode too, C5) is authoritative and supersedes this the moment the session advertises.
-        const res = await backendFetch(`/api/commands?engine=${encodeURIComponent(engine)}`);
-        if (!res.ok) return fail();
-        const list =
-          (
-            (await res.json()) as {
-              commands?: { name?: string; description?: string; input?: string }[];
-            }
-          ).commands ?? [];
-        if (cancelled) return;
-        if (!Array.isArray(list)) return fail();
-        setFetchState({
-          phase: "done",
-          commands: list
-            .filter((c): c is { name: string; description?: string; input?: string } => !!c.name)
-            .map((c) => ({
-              name: c.name,
-              description: c.description ?? null,
-              input: typeof c.input === "string" ? c.input : null,
-            })),
-        });
-      } catch {
-        fail();
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [engine, hasDurable]);
-  // Memoized so the memoized Conversation sees stable prop identities between
-  // catalog changes (a re-render here must not re-render the whole timeline).
-  const catalogState = useMemo(
-    () => resolveCommandCatalog(durableCommands, fetchState, engine),
-    [durableCommands, fetchState, engine],
-  );
-  const commands: SlashCommand[] = useMemo(
-    () =>
-      catalogState.status === "ready"
-        ? catalogState.commands.map((c) => ({ name: c.name, description: c.description ?? null }))
-        : [],
-    [catalogState],
-  );
+  const { catalogState, commands } = useReplyCommandCatalog(snapshot.byId, engineSessionId, newest.engine);
 
   return (
     <WorkspaceOpenProvider value={openWorkpiece}>
@@ -758,29 +663,24 @@ export function SessionView({
           open workpiece can tell a requested edit (from the user's own last
           message's run) from an unsolicited one. */}
       <SessionLatestRunProvider value={newest.id}>
-      {/* The conversation dominates; the full-height rail stays alongside it.
-          Its header stays inside the conversation column.
-          The boot orb yields to the conversation's Thinking block once steps stream. */}
+      {/* Conversation and full-height inspector share one responsive split. */}
       <div ref={bodyRef} className="flex h-full min-h-0 flex-col md:flex-row">
         {/* Conversation */}
         <section
           aria-hidden={railExpanded}
           className={cx(
-            // min-h-0 (not a vh block) below md too: the conversation is the ONLY
-            // in-flow surface on a phone, so this column fills main exactly and
-            // its internal scroller pins the composer to the viewport bottom.
-            // md:min-w-80 floors the tablet split so a wide rail cannot crush it.
+            // min-h-0 pins the internal scroller/composer; md:min-w-80 protects the split.
             "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-w-80",
             railExpanded && "hidden",
           )}
         >
-          {/* Compact thread bar - INSIDE the conversation column so the rail
-              can run full height beside it. Brand/search stay in the sidebar. */}
-          {/* border-b drops when the sidebar is minimized (group/shell data
-              attribute): the collapsed layout reads as one full-bleed surface. */}
+          {/* Compact in-column thread bar; collapsed sidebar removes its divider. */}
           <div className="border-border-button-default/50 flex h-12 shrink-0 items-center justify-between gap-3 border-b px-4 md:group-data-[sidebar-collapsed]/shell:border-b-0">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="text-mono-label text-text-tertiary">Session</span>
+              <SessionThreadBreadcrumb
+                relationship={threadFamily.relationship}
+                parent={threadFamily.parent}
+              />
               {/* The thread's git identity: repos (+ chosen branch) come from the
                   ROOT run's durable wire row - repos are inherited across a thread,
                   so the SSR-provided root is authoritative for the page lifetime. */}
@@ -832,10 +732,10 @@ export function SessionView({
             // composer lets the user change it. Legacy runs w/o a scope → "org".
             defaultMemoryScope={newest.memory_scope ?? "org"}
             pendingReply={pending?.text ?? null}
-            commands={commands}
-            commandState={catalogState}
-            modelSelection={modelSelection}
-            onReply={handleReply}
+            commands={isProductChild ? [] : commands}
+            commandState={isProductChild ? undefined : catalogState}
+            modelSelection={isProductChild ? false : modelSelection}
+            onReply={handleReply} assistantIdentity={assistantIdentity}
             pendingQuestion={activeQuestion?.request ?? null}
             answeringQuestion={answeringQuestion}
             questionError={questionError}
@@ -857,7 +757,15 @@ export function SessionView({
             repoRevisions={Object.fromEntries(
               newest.repo_specs.map((spec) => [spec.repo, spec.branch]),
             )}
+            resourceMentions={!isProductChild}
+            composerLocked={composerRelationshipBlocked || readOnlyMessage !== undefined}
+            composerLockedMessage={readOnlyMessage ?? "Verifying child session…"}
             onTurnsNeeded={initialOutline ? handleTurnsNeeded : undefined}
+            productChildren={productChildren}
+            onOpenProductChild={openProductChild}
+            handoffReceipts={handoffs.byRun}
+            handoffNotice={handoffs.notice}
+            onDismissHandoffNotice={dismissHandoffNotice}
           />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the
               moment the first step streams in (Thinking block takes over).
@@ -1075,9 +983,8 @@ export function SessionView({
               />
             </div>
             <div className="relative min-h-0 flex-1">
-              {/* Browser work starts only after an explicit selection. Once
-                  opened, keep noVNC mounted across tab switches to preserve the
-                  visible desktop and its WebSocket. */}
+              {/* Browser work starts only after selection; then noVNC stays mounted
+                  across tab switches to preserve the desktop and its WebSocket. */}
               {desktopEverOpened ? (
                 <div
                   aria-hidden={railTab !== "desktop"}
@@ -1086,7 +993,7 @@ export function SessionView({
                     railTab === "desktop" ? "visible" : "pointer-events-none invisible",
                   )}
                 >
-                  <DesktopPane threadId={rootId} />
+                  <DesktopPane threadId={rootId} live={live} active={desktopActive} />
                 </div>
               ) : null}
               {/* Workspace stays mounted once opened (like Desktop) so switching
@@ -1127,12 +1034,19 @@ export function SessionView({
                   ) : railTab === "agents" ? (
                     <AgentsRail
                       rootRunId={rootId}
+                      parentThreadId={root.thread_id}
                       steps={allSteps}
                       live={live}
                       frames={allFrames}
                       canonicalEvents={allCanonicalEvents}
                       executionSummary={snapshot.executionSummary}
                       childSessions={gatewayChildren}
+                      productChildren={productChildren}
+                      focusProductThreadId={focusedProductThreadId}
+                      onClearProductFocus={() => setFocusedProductThreadId(null)}
+                      focusExecutionId={focusExecutionId}
+                      focusExecutionRunId={focusExecutionRunId}
+                      onClearNativeSessionFocus={clearAgentFocus}
                     />
                   ) : railTab === "artifacts" ? (
                     <ArtifactsRail threadId={rootId} live={live} />

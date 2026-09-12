@@ -4,6 +4,7 @@ import { gatewayApprovalRequests } from "../../db/schema";
 import { recordProviderEvent } from "../../runs/provider-events";
 import { getRunForOrg } from "../../runs/repo";
 import { approvalArgumentsHash, mintApprovalCapability } from "./approval-capability";
+import { isBotThread } from "../../bots/repo";
 
 // ---------------------------------------------------------------------------
 // Durable approval-request lane (#77). The agent records a request for one
@@ -19,6 +20,13 @@ import { approvalArgumentsHash, mintApprovalCapability } from "./approval-capabi
 
 /** How long a request waits for the human before it lapses. */
 const REQUEST_TTL_MS = 15 * 60_000;
+/** A bot's threads (home or handed off) are standing assignments: their approvals
+ *  wait for a person instead of expiring in minutes and leaving the bot silently stuck. */
+export const BOT_REQUEST_TTL_MS = 7 * 24 * 60 * 60_000;
+
+async function approvalTtlMs(orgId: string, threadId: string): Promise<number> {
+  return (await isBotThread(orgId, threadId)) ? BOT_REQUEST_TTL_MS : REQUEST_TTL_MS;
+}
 const LIST_LIMIT = 50;
 
 /** Timeline provider lane for approval cards (mirrors "useAgent-knowledge"). */
@@ -28,12 +36,32 @@ export type ApprovalRequestRecord = typeof gatewayApprovalRequests.$inferSelect;
 
 export interface ApprovalRunGate {
   readonly userId: string | null;
+  readonly threadId: string;
   readonly status: string;
 }
+
+export type ApprovalDecision = "approve" | "deny";
+
+/** A decision for a run that already settled: the turn that carries it to the agent. */
+export interface ApprovalFollowUpInput {
+  readonly request: ApprovalRequestRecord;
+  readonly decision: ApprovalDecision;
+  /** The person who decided; the follow-up turn is theirs. */
+  readonly actorId: string;
+  readonly reason: string | null;
+}
+
+export type ApprovalFollowUpOutcome =
+  | { readonly runId: string }
+  | { readonly error: string };
 
 export interface ApprovalResolutionDependencies {
   readonly findRun: (orgId: string, runId: string) => Promise<ApprovalRunGate | null>;
   readonly mint: typeof mintApprovalCapability;
+  readonly isBotThread?: typeof isBotThread;
+  /** Starts the follow-up turn that tells a SETTLED run's thread the decision
+   *  (see `approvalDecisionPrompt`). Absent, a settled run stays unapprovable. */
+  readonly startFollowUp?: (input: ApprovalFollowUpInput) => Promise<ApprovalFollowUpOutcome>;
 }
 
 const defaultResolutionDependencies: ApprovalResolutionDependencies = {
@@ -47,11 +75,38 @@ export type ApprovalResolutionError =
   | "request_expired"
   | "run_not_found"
   | "run_not_active"
-  | "run_user_mismatch";
+  | "run_user_mismatch"
+  | "follow_up_failed";
 
 export type ApprovalResolutionResult =
-  | { readonly ok: true; readonly request: ApprovalRequestRecord }
-  | { readonly ok: false; readonly error: ApprovalResolutionError };
+  | {
+      readonly ok: true;
+      readonly request: ApprovalRequestRecord;
+      /** The turn started to carry the decision when the requesting run had settled; null on the live path. */
+      readonly followUpRunId: string | null;
+    }
+  | { readonly ok: false; readonly error: ApprovalResolutionError; readonly detail?: string };
+
+/** Runs that ended: the agent left its turn to wait for the person, as the
+ *  approval_request contract tells it to. A queued run cannot have asked yet. */
+const SETTLED_RUN_STATUSES: ReadonlySet<string> = new Set(["completed", "failed"]);
+
+/**
+ * The follow-up turn's prompt: what the person decided, plus what the agent
+ * needs to continue. The request id is what approval_poll takes; the bearer
+ * capability itself never rides in a prompt, it reaches only that poll.
+ */
+export function approvalDecisionPrompt(
+  request: Pick<ApprovalRequestRecord, "id" | "toolName">,
+  decision: ApprovalDecision,
+  reason: string | null,
+): string {
+  if (decision === "approve") {
+    return `Approved ${request.toolName}. Fetch approval ${request.id} with approval_poll, then call ${request.toolName} with the same arguments and finish the task.`;
+  }
+  const why = reason?.trim() ? ` Reason: ${reason.trim()}` : "";
+  return `Denied ${request.toolName} (approval ${request.id}).${why} Do not retry it; continue without it or say what you need.`;
+}
 
 /** Approval-card timeline frame. Awaited so the card is durable before the
  *  caller replies, but a capture failure never fails the lane (the durable
@@ -168,7 +223,7 @@ export async function createApprovalRequest(
       argumentsHash,
       status: "pending",
       requestedAt: now,
-      expiresAt: new Date(now.getTime() + REQUEST_TTL_MS),
+      expiresAt: new Date(now.getTime() + (await approvalTtlMs(input.orgId, input.threadId))),
     })
     .returning();
   if (!request) throw new Error("failed to record gateway approval request");
@@ -176,16 +231,24 @@ export async function createApprovalRequest(
   return { request, created: true };
 }
 
-/** Pending requests for one run or thread (org-scoped, lazily expired). */
-export async function listPendingApprovalRequests(
-  scope: {
-    readonly orgId: string;
-    readonly runId?: string;
-    readonly threadId?: string;
-  },
+export interface ApprovalListScope {
+  readonly orgId: string;
+  readonly runId?: string;
+  readonly threadId?: string;
+  /** Default: every status, so a reloaded thread keeps its resolved cards. */
+  readonly status?: "pending";
+}
+
+/** Requests for one run or thread (org-scoped, lazily expired). Serves resolved
+ *  rows too: approvals are part of the thread's history, not only its live state. */
+export async function listApprovalRequests(
+  scope: ApprovalListScope,
   now = new Date(),
 ): Promise<readonly ApprovalRequestRecord[]> {
   if (!scope.runId && !scope.threadId) return [];
+  const inScope = scope.runId
+    ? eq(gatewayApprovalRequests.runId, scope.runId)
+    : eq(gatewayApprovalRequests.threadId, scope.threadId ?? "");
   await db
     .update(gatewayApprovalRequests)
     .set({ status: "expired", resolvedAt: now })
@@ -194,9 +257,7 @@ export async function listPendingApprovalRequests(
         eq(gatewayApprovalRequests.orgId, scope.orgId),
         eq(gatewayApprovalRequests.status, "pending"),
         lte(gatewayApprovalRequests.expiresAt, now),
-        scope.runId
-          ? eq(gatewayApprovalRequests.runId, scope.runId)
-          : eq(gatewayApprovalRequests.threadId, scope.threadId ?? ""),
+        inScope,
       ),
     );
   return db
@@ -205,32 +266,62 @@ export async function listPendingApprovalRequests(
     .where(
       and(
         eq(gatewayApprovalRequests.orgId, scope.orgId),
-        eq(gatewayApprovalRequests.status, "pending"),
-        scope.runId
-          ? eq(gatewayApprovalRequests.runId, scope.runId)
-          : eq(gatewayApprovalRequests.threadId, scope.threadId ?? ""),
+        inScope,
+        ...(scope.status ? [eq(gatewayApprovalRequests.status, scope.status)] : []),
       ),
     )
     .orderBy(desc(gatewayApprovalRequests.requestedAt))
     .limit(LIST_LIMIT);
 }
 
+type ResolutionGate =
+  | { readonly error: ApprovalResolutionError }
+  | {
+      readonly error?: undefined;
+      /** The requesting run ended: the decision reaches the agent through a follow-up turn. */
+      readonly settled: boolean;
+    };
+
 /** The mint route's exact gate, applied to a stored request row: the target run
- *  must be ACTIVE and belong to the resolver. */
+ *  must be live or settled (never merely queued) and belong to the resolver. */
 async function gateResolution(
   request: ApprovalRequestRecord,
   resolvedBy: string,
   deps: ApprovalResolutionDependencies,
   now: Date,
-): Promise<ApprovalResolutionError | null> {
+): Promise<ResolutionGate> {
   const lapsed = await expireIfOverdue(request, now);
-  if (lapsed.status === "expired" && request.status === "pending") return "request_expired";
-  if (lapsed.status !== "pending") return "request_not_pending";
+  if (lapsed.status === "expired" && request.status === "pending") return { error: "request_expired" };
+  if (lapsed.status !== "pending") return { error: "request_not_pending" };
   const run = await deps.findRun(request.orgId, request.runId);
-  if (!run) return "run_not_found";
-  if (run.status !== "running") return "run_not_active";
-  if (run.userId !== resolvedBy) return "run_user_mismatch";
-  return null;
+  if (!run) return { error: "run_not_found" };
+  const settled = SETTLED_RUN_STATUSES.has(run.status);
+  if (run.status !== "running" && !settled) return { error: "run_not_active" };
+  // A settled run can only be continued through a follow-up turn; a resolver
+  // without that path (the operator loopback) keeps the live-only rule.
+  if (settled && !deps.startFollowUp) return { error: "run_not_active" };
+  if (request.threadId !== run.threadId) return { error: "run_user_mismatch" };
+  // A run started by a person is that person's to approve. A bot's unattended run (a
+  // routine firing, or a handoff from one) belongs to the org: any member who reached this
+  // org-scoped route may act. Other userless runs (an unmapped Slack user) stay unapprovable.
+  if (run.userId === resolvedBy) return { settled };
+  if (
+    run.userId === null &&
+    (await (deps.isBotThread ?? isBotThread)(request.orgId, run.threadId))
+  ) {
+    return { settled };
+  }
+  return { error: "run_user_mismatch" };
+}
+
+/** For a settled run: the follow-up turn that will consume the decision. */
+async function followUpForSettledRun(
+  gate: ResolutionGate,
+  input: ApprovalFollowUpInput,
+  deps: ApprovalResolutionDependencies,
+): Promise<ApprovalFollowUpOutcome | null> {
+  if (gate.error || !gate.settled || !deps.startFollowUp) return null;
+  return deps.startFollowUp(input);
 }
 
 /**
@@ -239,6 +330,12 @@ async function gateResolution(
  * only a still-pending row, so exactly one of any concurrent resolutions wins;
  * a loser's freshly minted capability is never referenced and simply expires in
  * the single-use ledger.
+ *
+ * A request whose run already SETTLED (the agent ended its turn to wait, as the
+ * approval_request contract says) is decided the same way, but the capability
+ * is bound to a follow-up turn started on the thread first: the row is
+ * re-pointed at that run so its approval_poll receives the capability, while
+ * the card stays on the turn that asked.
  */
 export async function approveApprovalRequest(
   input: { readonly orgId: string; readonly requestId: string; readonly approvedBy: string },
@@ -247,14 +344,23 @@ export async function approveApprovalRequest(
 ): Promise<ApprovalResolutionResult> {
   const request = await getApprovalRequest(input.orgId, input.requestId);
   if (!request) return { ok: false, error: "request_not_found" };
-  const gateError = await gateResolution(request, input.approvedBy, deps, now);
-  if (gateError) return { ok: false, error: gateError };
+  const gate = await gateResolution(request, input.approvedBy, deps, now);
+  if (gate.error) return { ok: false, error: gate.error };
+  const followUp = await followUpForSettledRun(
+    gate,
+    { request, decision: "approve", actorId: input.approvedBy, reason: null },
+    deps,
+  );
+  if (followUp && "error" in followUp) {
+    return { ok: false, error: "follow_up_failed", detail: followUp.error };
+  }
+  const consumerRunId = followUp?.runId ?? request.runId;
 
   const minted = await deps.mint({
     orgId: request.orgId,
     userId: input.approvedBy,
     threadId: request.threadId,
-    runId: request.runId,
+    runId: consumerRunId,
     toolName: request.toolName,
     arguments: request.arguments,
   });
@@ -262,6 +368,7 @@ export async function approveApprovalRequest(
     .update(gatewayApprovalRequests)
     .set({
       status: "approved",
+      runId: consumerRunId,
       capability: minted.capability,
       capabilityExpiresAt: minted.expiresAt,
       resolvedAt: now,
@@ -275,24 +382,44 @@ export async function approveApprovalRequest(
     )
     .returning();
   if (!approved) return { ok: false, error: "request_not_pending" };
-  await emitApprovalEvent(approved, "resolved");
-  return { ok: true, request: approved };
+  // The card lives on the turn that asked, whichever run consumes the capability.
+  await emitApprovalEvent({ ...approved, runId: request.runId }, "resolved");
+  return { ok: true, request: approved, followUpRunId: followUp?.runId ?? null };
 }
 
-/** Deny: same gate and single pending->denied transition, no capability. */
+/** Deny: same gate and single pending->denied transition, no capability. A
+ *  settled run's thread gets a follow-up turn carrying the denial and its reason. */
 export async function denyApprovalRequest(
-  input: { readonly orgId: string; readonly requestId: string; readonly deniedBy: string },
+  input: {
+    readonly orgId: string;
+    readonly requestId: string;
+    readonly deniedBy: string;
+    readonly reason?: string | null;
+  },
   deps: ApprovalResolutionDependencies = defaultResolutionDependencies,
   now = new Date(),
 ): Promise<ApprovalResolutionResult> {
   const request = await getApprovalRequest(input.orgId, input.requestId);
   if (!request) return { ok: false, error: "request_not_found" };
-  const gateError = await gateResolution(request, input.deniedBy, deps, now);
-  if (gateError) return { ok: false, error: gateError };
+  const gate = await gateResolution(request, input.deniedBy, deps, now);
+  if (gate.error) return { ok: false, error: gate.error };
+  const followUp = await followUpForSettledRun(
+    gate,
+    { request, decision: "deny", actorId: input.deniedBy, reason: input.reason ?? null },
+    deps,
+  );
+  if (followUp && "error" in followUp) {
+    return { ok: false, error: "follow_up_failed", detail: followUp.error };
+  }
 
   const [denied] = await db
     .update(gatewayApprovalRequests)
-    .set({ status: "denied", resolvedAt: now, resolvedBy: input.deniedBy })
+    .set({
+      status: "denied",
+      runId: followUp?.runId ?? request.runId,
+      resolvedAt: now,
+      resolvedBy: input.deniedBy,
+    })
     .where(
       and(
         eq(gatewayApprovalRequests.id, request.id),
@@ -301,8 +428,8 @@ export async function denyApprovalRequest(
     )
     .returning();
   if (!denied) return { ok: false, error: "request_not_pending" };
-  await emitApprovalEvent(denied, "resolved");
-  return { ok: true, request: denied };
+  await emitApprovalEvent({ ...denied, runId: request.runId }, "resolved");
+  return { ok: true, request: denied, followUpRunId: followUp?.runId ?? null };
 }
 
 /**

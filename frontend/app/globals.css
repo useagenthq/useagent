@@ -693,7 +693,7 @@ html {
       --neutral-0: 0 0% 100%;
       --neutral-50: 228.57 72.41% 88.63%; /* #cdd5f7 - primary text (lifted Tokyo Night lavender) */
       --neutral-100: 229.76 35.65% 77.45%; /* #b1b8da - secondary text (derived) */
-      --neutral-200: 232.11 19.39% 61.57%; /* #8a8fb0 - muted text */
+      --neutral-200: 232.11 19.39% 65%; /* #9499b7 - muted text (5.2:1 on the raised panel) */
       --neutral-300: 229.29 22.76% 48.24%; /* #5f6997 - soft text (derived) */
       --neutral-400: 229.33 23.81% 37.06%; /* #485075 - stronger border / disabled (derived) */
       --neutral-500: 230 23.08% 30.59%; /* #3c4260 - surface step (derived) */
@@ -2165,6 +2165,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(0 0% 20%); /* #333333 */
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
 
@@ -2257,6 +2258,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(228.75 24.24% 25.88%); /* #323852 */
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
 
@@ -2290,7 +2292,7 @@ html {
   --color-ai-chat-composer-add-hover-background: hsl(var(--neutral-300));
   --color-agent-progress-ring:                   color-mix(in srgb, hsl(var(--neutral-0)) 50%, transparent);
   --color-dropdown-item-hover-background:        color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
-  --color-kbd-background:                        hsl(var(--neutral-400));
+  --color-kbd-background:                        hsl(var(--neutral-500)); /* #3c4260: the hint reads 5:1, one step lighter it was 4:1 */
   --color-kbd-foreground:                        hsl(var(--neutral-100));
   --color-docs-code-background:                  var(--color-background-full);
   --color-docs-install-rail:                     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
@@ -2333,6 +2335,96 @@ html {
     hsl(var(--neutral-400)) 0%,
     hsl(var(--neutral-700)) 100%
   );
+
+  /* Component token overlay (accent ramp, status chips, notifications,
+   * calendar, docs chips) - the set every non-default theme defines; without
+   * it these fall through to theme.css LIGHT values (pale diff rows, pastel
+   * chips on the dark surface). Dusk's blue ramp is not inverted, so the
+   * accent ramp maps straight. */
+  --color-accent-50:  hsl(var(--blue-50));
+  --color-accent-100: hsl(var(--blue-alpha-16));
+  --color-accent-200: hsl(var(--blue-alpha-24));
+  --color-accent-300: hsl(var(--blue-300));
+  --color-accent-400: hsl(var(--blue-400));
+  --color-accent-500: hsl(var(--blue-500));
+  --color-accent-600: hsl(var(--blue-600));
+  --color-accent-700: hsl(var(--blue-700));
+  --color-accent-800: hsl(var(--blue-800));
+  --color-accent-900: hsl(var(--blue-900));
+  --color-accent-950: hsl(var(--blue-950));
+
+  --color-background-tertiary-error:  hsl(var(--red-alpha-16));
+  --color-border-error-default:       hsl(var(--red-400));
+  --color-text-error-primary:         hsl(var(--red-400));
+  --color-foreground-disabled-danger: hsl(var(--red-400));
+  --color-foreground-icon-error:      hsl(var(--red-400));
+
+  --color-badge-new-background: hsl(var(--blue-alpha-24));
+  --color-badge-new-text:       hsl(var(--blue-300));
+
+  --color-button-ghost-background:          hsl(var(--blue-900));
+  --color-button-ghost-foreground:          hsl(var(--blue-300));
+  --color-button-ghost-hover:               hsl(var(--blue-800));
+  --color-button-ghost-active:              hsl(var(--blue-700));
+  --color-button-ghost-disabled:            hsl(var(--neutral-700));
+  --color-button-ghost-disabled-foreground: hsl(var(--neutral-300));
+
+  /* Table status chips (lime->green, rose->red, cyan->sky, indigo->purple).
+   * Tints are the TEXT color at 12%, not the ramp's 24% alpha: Dusk's red /
+   * purple / yellow text fell under 4.5:1 on a 24% tint of themselves
+   * (3.7 / 4.0 / 4.4 on the raised panel); 12% clears AA for every pair. */
+  --color-status-lime-background:   hsl(var(--green-400) / 12%);
+  --color-status-lime-text:         hsl(var(--green-400));
+  --color-status-rose-background:   hsl(var(--red-400) / 12%);
+  --color-status-rose-text:         hsl(var(--red-400));
+  --color-status-yellow-background: hsl(var(--yellow-400) / 12%);
+  --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-orange-background: hsl(var(--orange-400) / 12%);
+  --color-status-orange-text:       hsl(var(--orange-400));
+  --color-status-blue-background:   hsl(var(--blue-300) / 12%);
+  --color-status-blue-text:         hsl(var(--blue-300));
+  --color-status-cyan-background:   hsl(var(--sky-400) / 12%);
+  --color-status-cyan-text:         hsl(var(--sky-400));
+  --color-status-purple-background: hsl(var(--purple-400) / 12%);
+  --color-status-purple-text:       hsl(var(--purple-400));
+  --color-status-dot-green-halo:    hsl(var(--green-alpha-24));
+  --color-status-dot-indigo-halo:   hsl(var(--purple-alpha-24));
+  --color-status-dot-yellow-halo:   hsl(var(--yellow-alpha-24));
+
+  --color-notification-error-background:       hsl(var(--red-400) / 12%);
+  --color-notification-error-foreground:       hsl(var(--red-400));
+  --color-notification-information-background: color-mix(in srgb, hsl(var(--blue-800)) 50%, transparent);
+  --color-notification-information-foreground: hsl(var(--blue-300));
+  --color-notification-success-background:     hsl(var(--green-400) / 12%);
+  --color-notification-success-foreground:     hsl(var(--green-400));
+
+  --color-calendar-event-blue-background:    hsl(var(--blue-300) / 12%);
+  --color-calendar-event-blue-time:          hsl(var(--blue-300));
+  --color-calendar-event-blue-title:         hsl(var(--blue-300));
+  --color-calendar-event-emerald-background: hsl(var(--teal-400) / 12%);
+  --color-calendar-event-emerald-time:       hsl(var(--teal-400));
+  --color-calendar-event-emerald-title:      hsl(var(--teal-400));
+  --color-calendar-event-lime-background:    hsl(var(--green-400) / 12%);
+  --color-calendar-event-lime-time:          hsl(var(--green-400));
+  --color-calendar-event-lime-title:         hsl(var(--green-400));
+  --color-calendar-event-pink-background:    hsl(var(--pink-400) / 12%);
+  --color-calendar-event-pink-time:          hsl(var(--pink-400));
+  --color-calendar-event-pink-title:         hsl(var(--pink-400));
+  --color-calendar-event-purple-background:  hsl(var(--purple-400) / 12%);
+  --color-calendar-event-purple-time:        hsl(var(--purple-400));
+  --color-calendar-event-purple-title:       hsl(var(--purple-400));
+
+  --color-chart-agents-bar:        hsl(var(--purple-500));
+  --color-chart-agents-bar-active: hsl(var(--purple-600));
+
+  --color-date-range-background:      hsl(var(--blue-alpha-24));
+  --color-date-range-edge-background: hsl(var(--blue-800));
+
+  --color-docs-file-chip-background: hsl(var(--purple-alpha-16));
+  --color-docs-file-chip-border:     color-mix(in srgb, hsl(var(--purple-500)) 40%, transparent);
+  --color-docs-file-chip-foreground: hsl(var(--purple-400));
+
+  --color-tab-count-selected-background: color-mix(in srgb, hsl(var(--blue-800)) 60%, transparent);
 }
 
 .aura {
@@ -2371,6 +2463,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(259.96 19.06% 24.71%); /* #3b334b */
   --color-text-error-primary: hsl(var(--red-400));
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
@@ -2484,6 +2577,8 @@ html {
   --color-status-lime-text:         hsl(var(--green-400));
   --color-status-yellow-background: hsl(var(--yellow-alpha-24));
   --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-orange-background: hsl(var(--orange-alpha-24));
+  --color-status-orange-text:       hsl(var(--orange-400));
   --color-status-rose-background:   hsl(var(--red-alpha-24));
   --color-status-rose-text:         hsl(var(--red-400));
   --color-status-cyan-background:   hsl(var(--sky-alpha-24));
@@ -2540,9 +2635,25 @@ html {
 }
 
 .harbor {
-  /* Accent deliberately NOT overridden: interactive blue (nav selected,
-   * primary buttons, focus) stays the standard light-theme ramp per user
-   * decision 2026-08-23; harbor personality lives in surfaces and text. */
+  /* Accent hue deliberately NOT re-tinted: interactive blue (nav selected,
+   * primary buttons, focus) stays the standard ramp per user decision
+   * 2026-08-23; harbor personality lives in surfaces and text. The stops are
+   * still declared so the overlay carries the full component token set:
+   * 300-950 point at the standard blue primitives (what harbor rendered
+   * anyway), and the three pale tints become alpha washes of that blue,
+   * because the light pastels they fell through to sat as bright blocks on
+   * the dark canvas. */
+  --color-accent-50:  color-mix(in srgb, var(--color-blue-500) 10%, transparent);
+  --color-accent-100: color-mix(in srgb, var(--color-blue-500) 16%, transparent);
+  --color-accent-200: color-mix(in srgb, var(--color-blue-500) 24%, transparent);
+  --color-accent-300: var(--color-blue-300);
+  --color-accent-400: var(--color-blue-400);
+  --color-accent-500: var(--color-blue-500);
+  --color-accent-600: var(--color-blue-600);
+  --color-accent-700: var(--color-blue-700);
+  --color-accent-800: var(--color-blue-800);
+  --color-accent-900: var(--color-blue-900);
+  --color-accent-950: var(--color-blue-950);
 
   /* Foreground */
   --color-foreground-full:            hsl(var(--neutral-400));
@@ -2562,6 +2673,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(220 12.24% 19.22%); /* #2b2f37 */
   --color-text-error-primary: hsl(var(--red-400));
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
@@ -2672,6 +2784,8 @@ html {
   --color-status-lime-text:         hsl(var(--green-400));
   --color-status-yellow-background: hsl(var(--yellow-alpha-24));
   --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-orange-background: hsl(var(--orange-alpha-24));
+  --color-status-orange-text:       hsl(var(--orange-400));
   --color-status-rose-background:   hsl(var(--red-alpha-24));
   --color-status-rose-text:         hsl(var(--red-400));
   --color-status-cyan-background:   hsl(var(--sky-alpha-24));
@@ -2760,6 +2874,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(135.65 29.11% 15.49%); /* #1c3322 */
   --color-text-error-primary: hsl(var(--red-400));
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
@@ -2870,6 +2985,8 @@ html {
   --color-status-lime-text:         hsl(var(--green-400));
   --color-status-yellow-background: hsl(var(--yellow-alpha-24));
   --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-orange-background: hsl(var(--orange-alpha-24));
+  --color-status-orange-text:       hsl(var(--orange-400));
   --color-status-rose-background:   hsl(var(--red-alpha-24));
   --color-status-rose-text:         hsl(var(--red-400));
   --color-status-cyan-background:   hsl(var(--sky-alpha-24));
@@ -2958,6 +3075,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(222.35 10.83% 30.78%); /* #464b57 */
   --color-text-error-primary: hsl(var(--red-400));
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
@@ -3068,6 +3186,8 @@ html {
   --color-status-lime-text:         hsl(var(--green-400));
   --color-status-yellow-background: hsl(var(--yellow-alpha-24));
   --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-orange-background: hsl(var(--orange-alpha-24));
+  --color-status-orange-text:       hsl(var(--orange-400));
   --color-status-rose-background:   hsl(var(--red-alpha-24));
   --color-status-rose-text:         hsl(var(--red-400));
   --color-status-cyan-background:   hsl(var(--sky-alpha-24));
@@ -3400,6 +3520,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(320 17.65% 20%); /* #3c2a36 */
   --color-text-error-primary: hsl(var(--red-400));
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
@@ -3510,6 +3631,8 @@ html {
   --color-status-lime-text:         hsl(var(--green-400));
   --color-status-yellow-background: hsl(var(--yellow-alpha-24));
   --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-orange-background: hsl(var(--orange-alpha-24));
+  --color-status-orange-text:       hsl(var(--orange-400));
   --color-status-rose-background:   hsl(var(--red-alpha-24));
   --color-status-rose-text:         hsl(var(--red-400));
   --color-status-cyan-background:   hsl(var(--sky-alpha-24));
@@ -3585,6 +3708,149 @@ html {
 }
 
 /* ---------------------------------------------------------------------------
+ * Orb - the glossy sphere behind bot avatars (components/base/orb/orb.tsx).
+ * Built the way the reference swatches are built: a radial base from a
+ * lighter center to a deeper edge, then four white sheen layers inside a
+ * clipped ball. No shadow, no glow, nothing animated.
+ *
+ * The pairs are identity colors, fixed in every theme (like .theme-swatch:
+ * literal values live here in the style layer, never in a component). The
+ * state ramp was tried first and went chalky in the dark themes, where those
+ * tokens are deliberately pastel for text and badges.
+ *
+ * The sheen is deliberately fainter than the reference swatches (about half
+ * their alphas) so the ball reads soft rather than lacquered. A bot's avatar
+ * is the face variant: two white dot eyes, no glyph.
+ * ------------------------------------------------------------------------- */
+.orb {
+  color: rgb(255 255 255);
+}
+
+.orb[data-tone="blue"] {
+  --orb-light: rgb(67 126 247);
+  --orb-deep: rgb(0 77 233);
+}
+.orb[data-tone="violet"] {
+  --orb-light: rgb(133 84 246);
+  --orb-deep: rgb(62 0 205);
+}
+.orb[data-tone="rose"] {
+  --orb-light: rgb(227 71 152);
+  --orb-deep: rgb(211 0 109);
+}
+.orb[data-tone="emerald"] {
+  --orb-light: rgb(85 186 130);
+  --orb-deep: rgb(0 144 64);
+}
+.orb[data-tone="amber"] {
+  --orb-light: rgb(240 158 56);
+  --orb-deep: rgb(229 127 0);
+}
+.orb[data-tone="cyan"] {
+  --orb-light: rgb(56 189 248);
+  --orb-deep: rgb(0 119 182);
+}
+.orb[data-tone="fuchsia"] {
+  --orb-light: rgb(198 52 218);
+  --orb-deep: rgb(162 0 190);
+}
+.orb[data-tone="slate"] {
+  --orb-light: rgb(96 112 142);
+  --orb-deep: rgb(52 64 88);
+}
+
+.orb > .orb-ball {
+  z-index: 0;
+  background: radial-gradient(circle closest-side, var(--orb-light) 0%, var(--orb-deep) 100%);
+}
+
+/* Everything that is not the ball (the face, a state dot) paints above it. */
+.orb > :not(.orb-ball) {
+  z-index: 1;
+}
+
+.orb-face {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 18%;
+  pointer-events: none;
+}
+.orb-face > span {
+  display: block;
+  width: 16%;
+  height: 16%;
+  border-radius: 999px;
+  background: rgb(255 255 255);
+  box-shadow: 0 1px 1.5px rgb(0 0 0 / 0.35);
+}
+
+.orb-sheen {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.orb-sheen[data-layer="glaze"] {
+  inset: 0;
+  border-radius: 0;
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0) 0%, rgb(255 255 255 / 0.16) 100%);
+}
+.orb-sheen[data-layer="cap"] {
+  top: 0;
+  left: 7.7%;
+  width: 84.6%;
+  height: 38.5%;
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0.3) 0%, rgb(255 255 255 / 0) 100%);
+  filter: blur(0.5px);
+}
+.orb-sheen[data-layer="glint"] {
+  top: 0;
+  left: 34.6%;
+  width: 30.8%;
+  height: 11.5%;
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0.3) 0%, rgb(255 255 255 / 0) 100%);
+  filter: blur(1px);
+}
+.orb-sheen[data-layer="bounce"] {
+  top: 73.1%;
+  left: -23.1%;
+  width: 138.5%;
+  height: 53.8%;
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0) 0%, rgb(255 255 255 / 0.22) 100%);
+  filter: blur(0.5px);
+}
+
+/* The iridescent ball: soft pastel spokes under a light center haze, the same
+ * sheen on top, and a dark ring inside a hairline neutral border on the
+ * unclipped wrapper. */
+.orb[data-variant="prism"] > .orb-ball {
+  background:
+    radial-gradient(circle at 50% 50%, rgb(255 255 255 / 0.4) 0%, rgb(255 255 255 / 0) 62%),
+    conic-gradient(
+      from 200deg,
+      hsl(280 70% 72%),
+      hsl(190 75% 70%),
+      hsl(215 80% 75%),
+      hsl(340 70% 68%),
+      hsl(45 80% 68%),
+      hsl(160 55% 62%),
+      hsl(280 70% 72%)
+    );
+}
+.orb[data-variant="prism"] {
+  box-shadow:
+    0 0 0 2px rgb(0 0 0 / 0.35),
+    0 0 0 3px hsl(var(--stroke-soft-200));
+}
+.orb[data-variant="prism"] > .orb-face > span {
+  background: rgb(0 0 0);
+  box-shadow: 0 1px 1.5px rgb(255 255 255 / 0.45);
+}
+
+/* ---------------------------------------------------------------------------
  * Theme-picker swatches - a fixed per-theme preview dot (canvas + accent split)
  * shown beside each option in the theme menu. These are deliberately constant
  * (NOT semantic tokens) so every option shows its OWN colors regardless of the
@@ -3647,7 +3913,7 @@ html {
  * ========================================================================= */
 @utility text-mono-label {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -3909,8 +4175,6 @@ html {
  * ------------------------------------------------------------------------- */
 .dark .shiki,
 .dark .shiki span,
-.dusk .shiki,
-.dusk .shiki span,
 .aura .shiki,
 .aura .shiki span,
 .harbor .shiki,
@@ -3925,6 +4189,16 @@ html {
   font-style: var(--shiki-dark-font-style) !important;
   font-weight: var(--shiki-dark-font-weight) !important;
   text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+
+/* Dusk's ramp is Tokyo Night, so its code tokens come from the matching
+ * shiki theme instead of the neutral github-dark palette. */
+.dusk .shiki,
+.dusk .shiki span {
+  color: var(--shiki-dusk) !important;
+  font-style: var(--shiki-dusk-font-style) !important;
+  font-weight: var(--shiki-dusk-font-weight) !important;
+  text-decoration: var(--shiki-dusk-text-decoration) !important;
 }
 
 /* ---------------------------------------------------------------------------
@@ -3974,6 +4248,14 @@ html {
 
 @media (prefers-reduced-motion: reduce) {
   .useagent-orbit-active {
+    animation: none;
+  }
+  /* Overlay enter/exit keyframes (Modal, Drawer, menus) and the breathing
+   * status dots. The utilities sit behind variant prefixes in the class
+   * attribute (data-[state=open]:animate-in), so match by substring. */
+  [class*="animate-in"],
+  [class*="animate-out"],
+  [class*="animate-pulse"] {
     animation: none;
   }
   .ai-code-surface .ai-code-line {

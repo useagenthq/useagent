@@ -95,7 +95,7 @@ export function CloseButton({
       className={cx(styles.base, styles.container[size], className)}
       {...props}
     >
-      <svg width={glyph} height={glyph} viewBox={`0 0 ${glyph} ${glyph}`} fill="none" aria-hidden>
+      <svg width={glyph} height={glyph} viewBox={`0 0 ${glyph} ${glyph}`} fill="none" aria-hidden="true">
         <path
           d={`M${inset} ${inset}L${glyph - inset} ${glyph - inset}`}
           stroke="currentColor"

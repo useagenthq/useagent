@@ -17,7 +17,7 @@ graph LR
   PUMP["Thread claim + fleet admission"]
   WORKER["Worker"]
   CHAT["Direct Chat provider<br/>no sandbox"]
-  SANDBOX["Per-thread Cube/Daytona sandbox<br/>OpenCode / ACP / Pi"]
+  SANDBOX["Per-thread Cube/Daytona/Box sandbox<br/>provider-native engine runtime"]
   GATEWAY["Knowledge + provider gateway"]
   SSE["Thread SSE"]
   UI["Thread store + UI"]

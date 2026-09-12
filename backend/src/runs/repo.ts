@@ -27,12 +27,15 @@ import {
   type RunStatus,
   type StepKind,
 } from "../db/schema";
+import { sidebarNativeChildren } from "./native-children-projection";
+import { executionGraphReadEnabled } from "./execution-graph-rollout";
 import { parseRepoRef } from "../github/repo-ref";
 import type { RunResource } from "../resources/types";
 import { ensureProject } from "../projects/repo";
 import { listUploadsForRuns, type RunUploadDescriptor } from "../uploads/repo";
 import { publicRunCondition } from "./visibility";
 import { MODEL_QUALIFICATION_RUN_ORIGIN } from "./origin";
+import type { SandboxProviderKind } from "@useagent/sandbox-contract";
 export { completeRun, pinSkillToActiveRun, setRunStatus } from "./run-state";
 export {
   getThreadEngineSession,
@@ -99,6 +102,7 @@ function toRun(
     child_session: childSession,
     thread_id: r.threadId,
     engine_session_id: r.engineSessionId,
+    sandbox_id: r.sandboxId,
     repo: r.repo ? parseRepoRef(r.repo).repo : null,
     repos: specs.map((s) => s.repo),
     repo_specs: specs,
@@ -261,10 +265,17 @@ export async function getRun(id: string): Promise<RunRecord | null> {
  * the updated row id; THROWS if no run row matched (a zero-row UPDATE must not read as
  * success - the control plane would then believe the association was recorded when it
  * was not). Callers await this BEFORE executing so a missing row fails the turn closed. */
-export async function setRunSandbox(id: string, sandboxId: string): Promise<void> {
+export async function setRunSandbox(
+  id: string,
+  sandboxId: string,
+  binding?: { readonly kind: SandboxProviderKind; readonly credential: "env" | "user" },
+): Promise<void> {
   const updated = await db
     .update(runs)
-    .set({ sandboxId })
+    .set({
+      sandboxId,
+      ...(binding ? { sandboxProvider: binding.kind, sandboxCredential: binding.credential } : {}),
+    })
     .where(eq(runs.id, id))
     .returning({ id: runs.id });
   if (updated.length === 0) {
@@ -441,7 +452,12 @@ export async function listRunsWithSteps(
  * uploads, resources, and provider session state stay off this wire. */
 export async function listRunSummaries(
   orgId: string,
-  opts: { all?: boolean; limit?: number; includeActive?: boolean } = {},
+  opts: {
+    all?: boolean;
+    limit?: number;
+    includeActive?: boolean;
+    includeNativeChildren?: boolean;
+  } = {},
 ): Promise<ApiRunSummary[]> {
   const limit = opts.limit ?? 100;
   const rootFilter = opts.all ? sql`` : sql`and root.parent_run_id is null`;
@@ -526,7 +542,7 @@ export async function listRunSummaries(
     order by ${outputOrder}
   `);
 
-  return rows.map((row) => {
+  const summaries = rows.map((row) => {
     const repoRefs = row.repos as string[];
     const specs = repoRefs.map(parseRepoRef);
     return {
@@ -548,6 +564,28 @@ export async function listRunSummaries(
       latest_created_at: new Date(row.latest_created_at as string | Date).toISOString(),
       latest_updated_at: new Date(row.latest_updated_at as string | Date).toISOString(),
     } satisfies ApiRunSummary;
+  });
+  // Native-children projection only decorates the THREAD view (each row is a
+  // root whose id IS its thread id); the `all` flat view keeps its shape.
+  if (
+    opts.all ||
+    !opts.includeNativeChildren ||
+    !executionGraphReadEnabled() ||
+    summaries.length === 0
+  ) return summaries;
+  const childrenByThread = await sidebarNativeChildren(
+    orgId,
+    summaries.map((summary) => summary.id),
+  );
+  if (childrenByThread.size === 0) return summaries;
+  return summaries.map((summary) => {
+    const projection = childrenByThread.get(summary.id);
+    if (!projection) return summary;
+    return {
+      ...summary,
+      native_children: projection.children,
+      native_children_total: projection.total,
+    };
   });
 }
 

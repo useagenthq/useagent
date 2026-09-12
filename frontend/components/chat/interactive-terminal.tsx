@@ -7,6 +7,7 @@ import {
   applyDevicePixelRatio,
   gridChanged,
   isIdleTerminalNotice,
+  isTerminalUnavailableNotice,
   terminalFontFamily,
   terminalFontLoadRequests,
   terminalTheme,
@@ -94,6 +95,9 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
     // back-to-back). Reset when real PTY output resumes so a later drop re-notifies.
     let waitingShown = false;
     let idleNoticeSeen = false;
+    // A declared capability gap ends the reconnect loop: the notice stays on
+    // screen and nothing retries until the pane is remounted.
+    let unavailable = false;
 
     void (async () => {
       const { init, Terminal, FitAddon } = await import("ghostty-web");
@@ -187,12 +191,17 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
             idleNoticeSeen = true;
             return;
           }
+          if (isTerminalUnavailableNotice(text)) {
+            unavailable = true;
+            term?.write(text);
+            return;
+          }
           idleNoticeSeen = false;
           waitingShown = false; // real output flowing again
           term?.write(text);
         };
         sock.onclose = () => {
-          if (disposed) return;
+          if (disposed || unavailable) return;
           // One friendly line per idle stretch, not a disconnect message every retry.
           if (!waitingShown) {
             waitingShown = true;

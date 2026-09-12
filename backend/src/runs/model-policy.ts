@@ -8,10 +8,14 @@ export const DEEPSEEK_V4_FLASH_MODEL = "deepseek/deepseek-v4-flash";
 export const GEMINI_FLASH_MODEL = "google/gemini-3.7-flash";
 export const FAST_OPENCODE_MODEL = "openai/gpt-5.6-luna";
 export const FAST_CODEX_MODEL = "gpt-5.6-luna";
+export const CEREBRAS_QWEN_MODEL = "cerebras/qwen-3.8-27b";
+/** Kept for durable runs created before the picker moved to Qwen 3.8. */
+export const CEREBRAS_GEMMA_MODEL = "cerebras/gemma-4-31b";
 export const CODEX_ALLOWED_MODELS = [
   FAST_CODEX_MODEL,
   "gpt-5.6-terra",
   "gpt-5.6-sol",
+  "gpt-6-astra",
 ] as const;
 
 /** Models that the OpenCode picker and provider gateway are allowed to spend. */
@@ -32,6 +36,7 @@ export const OPENCODE_ALLOWED_MODELS = {
     DEEPSEEK_V4_FLASH_MODEL,
     GEMINI_FLASH_MODEL,
   ],
+  cerebras: [CEREBRAS_QWEN_MODEL],
 } as const;
 
 // The Free lane (OpenRouter ":free" variants, OpenCode only) is DYNAMIC. The
@@ -41,8 +46,19 @@ export const OPENCODE_ALLOWED_MODELS = {
 // path as the paid ones, so a user's own connected OpenRouter key is spent when
 // present and the shared house key serves only where that fallback is allowed.
 
-const OPENCODE_MODELS = new Set<string>(Object.values(OPENCODE_ALLOWED_MODELS).flat());
+const SHARED_SANDBOX_MODELS = [
+  ...OPENCODE_ALLOWED_MODELS.anthropic,
+  ...OPENCODE_ALLOWED_MODELS.openai,
+  ...OPENCODE_ALLOWED_MODELS.openrouter,
+];
+const OPENCODE_MODELS = new Set<string>([
+  ...SHARED_SANDBOX_MODELS,
+  ...OPENCODE_ALLOWED_MODELS.cerebras,
+]);
+const OPENCODE_PROVIDER_IDS = new Set<string>(Object.keys(OPENCODE_ALLOWED_MODELS));
+const SHARED_SANDBOX_MODEL_SET = new Set<string>(SHARED_SANDBOX_MODELS);
 const CLAUDE_MODELS = new Set<string>(OPENCODE_ALLOWED_MODELS.anthropic);
+const PERSISTED_OPENCODE_MODELS = new Set<string>([CEREBRAS_GEMMA_MODEL]);
 export const DEFAULT_OPENCODE_MODEL = FAST_OPENCODE_MODEL;
 export const DEFAULT_CLAUDE_MODEL = "claude-opus-5";
 export const DEFAULT_CODEX_MODEL = FAST_CODEX_MODEL;
@@ -66,7 +82,7 @@ export function allowedModelsForEngine(
       return [...Object.values(OPENCODE_ALLOWED_MODELS).flat(), ...freeModelLane()];
     case "daytona":
     case "pi":
-      return Object.values(OPENCODE_ALLOWED_MODELS).flat();
+      return SHARED_SANDBOX_MODELS;
     case "claude":
     case "claude-sdk":
       return OPENCODE_ALLOWED_MODELS.anthropic;
@@ -116,7 +132,7 @@ export function isModelAllowedForEngine(
       return OPENCODE_MODELS.has(model) || isAllowedFreeModel(model);
     case "daytona":
     case "pi":
-      return OPENCODE_MODELS.has(model);
+      return SHARED_SANDBOX_MODEL_SET.has(model);
     case "claude":
     case "claude-sdk":
       return CLAUDE_MODELS.has(model);
@@ -140,14 +156,27 @@ export function isPersistedModelAllowedForEngine(
   model: string,
   env: Record<string, string | undefined> = process.env,
 ): boolean {
+  if (engine === "opencode" && PERSISTED_OPENCODE_MODELS.has(model)) return true;
   if (engine === "opencode" && model.includes("/") && model.endsWith(":free")) {
     return true;
   }
   return isModelAllowedForEngine(engine, model, env);
 }
 
+/** Convert the product catalog id into the provider-qualified id T3/OpenCode expects. */
+export function openCodeRuntimeModelId(model: string): string {
+  const separator = model.indexOf("/");
+  if (separator === -1) return `anthropic/${model}`;
+
+  const provider = model.slice(0, separator);
+  if (OPENCODE_PROVIDER_IDS.has(provider)) return model;
+  if (isPersistedModelAllowedForEngine("opencode", model)) return `openrouter/${model}`;
+  throw new Error(`Unsupported OpenCode model provider: ${provider}`);
+}
+
 /** A reply may inherit its durable parent's accepted model after a restart;
- * explicit switches must still be present in the current catalog. */
+ * explicit switches must still be present in the current catalog. Persisted
+ * policy also keeps retired curated models replayable after a catalog rotation. */
 export function isReplyModelAllowedForEngine(
   engine: EngineId,
   model: string,

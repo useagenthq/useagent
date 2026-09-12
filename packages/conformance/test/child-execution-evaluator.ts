@@ -21,6 +21,80 @@ export type AdapterId =
   | "pi"
   | "dsh";
 
+export type PrimaryHarnessId = "codex" | "claude-runtime" | "opencode" | "pi";
+
+export interface DelegationPolicyFixture {
+  readonly harness: PrimaryHarnessId;
+  readonly intent: "product_fanout" | "native_internal_decomposition";
+  readonly observedTool: string;
+  readonly relationship: {
+    readonly kind: "product_child" | "native_child";
+    readonly parentId: string;
+    readonly childId: string;
+    readonly messageable: boolean;
+  };
+}
+
+/** Deterministic policy fixtures. These assert the product routing contract and
+ * relationship projection without invoking a provider or spending model tokens. */
+export const DELEGATION_POLICY_FIXTURES: readonly DelegationPolicyFixture[] = [
+  ...(["codex", "claude-runtime", "opencode", "pi"] as const).map((harness) => ({
+    harness,
+    intent: "product_fanout" as const,
+    observedTool: "child_session_create_many",
+    relationship: {
+      kind: "product_child" as const,
+      parentId: `${harness}:product-parent`,
+      childId: `${harness}:product-child`,
+      messageable: true,
+    },
+  })),
+  {
+    harness: "codex",
+    intent: "native_internal_decomposition",
+    observedTool: "spawn_agent",
+    relationship: {
+      kind: "native_child",
+      parentId: "codex-parent",
+      childId: "codex-child",
+      messageable: true,
+    },
+  },
+  {
+    harness: "claude-runtime",
+    intent: "native_internal_decomposition",
+    observedTool: "Agent",
+    relationship: {
+      kind: "native_child",
+      parentId: "claude-parent",
+      childId: "claude-child",
+      messageable: true,
+    },
+  },
+  {
+    harness: "opencode",
+    intent: "native_internal_decomposition",
+    observedTool: "task",
+    relationship: {
+      kind: "native_child",
+      parentId: "opencode-parent",
+      childId: "opencode-child",
+      messageable: true,
+    },
+  },
+  {
+    harness: "pi",
+    intent: "native_internal_decomposition",
+    observedTool: "subagent",
+    relationship: {
+      kind: "native_child",
+      parentId: "pi-parent",
+      childId: "pi-child",
+      messageable: false,
+    },
+  },
+] as const;
+
 interface SyntheticFixture {
   readonly adapter: AdapterId;
   /** Fixture coverage only; never a claim about the product's negotiated capability. */

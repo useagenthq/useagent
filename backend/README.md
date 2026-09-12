@@ -23,7 +23,7 @@ The backend is the control plane for useAgent. It listens on `:3201` by default 
 1. The frontend posts a run to `POST /api/runs`.
 2. The backend resolves org and user server-side, then validates the request against the current org, engine policy, repos, branches, uploads, and skill selection.
 3. The run and its durable command record are written atomically.
-4. The worker resolves the selected engine through the production provider registry. Native OpenCode and selected T3 routes receive a concrete `ProviderDriver`; explicitly marked ACP compatibility registrations continue through their existing adapter.
+4. The worker resolves the selected engine through the production provider registry. Codex, Claude Code, OpenCode, and Pi receive their provider-native `ProviderDriver`; sandbox selection never changes the engine protocol.
 5. The thread SSE endpoint multiplexes snapshots, runs, steps, live deltas, native frames, and canonical events to the frontend. A reconnect receives a fresh authoritative snapshot. The separate `/api/runs/changes` stream carries live org invalidations only; it has no replay log.
 6. Finalization records the terminal run state and enqueues follow-up work such as memory capture, Slack delivery, and canonicalization.
 
@@ -66,23 +66,25 @@ a subscription-only Codex release.
 ## Engine Adapters
 
 `src/engines/index.ts` is the production provider registry, and
-`src/worker.ts` dispatches real turns through `runProviderTurn`. For `claude`,
-`codex`, and `opencode`, an enabled T3 route resolves a native T3
-`ProviderDriver` before compatibility execution. The table below describes the
-non-T3 route.
+`src/worker.ts` dispatches real turns through `runProviderTurn`. Runtime
+orchestration may provision or supervise an engine, but it does not replace the
+engine's native driver, protocol, session identity, lifecycle, or event grammar.
 
 | Adapter | Where it runs | Notes |
 |---|---|---|
 | `opencode` | Resident `opencode serve` inside the thread sandbox | Uses the native OpenCode `ProviderDriver` for start, resume, steer, and cancel. |
-| `claude` | Resident ACP relay or CLI fallback | Used when T3 routing is not selected. Its registration declares start, resume, and steer as compatibility-owned rather than pretending the portable lifecycle is native. |
-| `codex` | Resident ACP relay or CLI fallback | Used when T3 routing is not selected; it has the same explicit compatibility boundary as Claude, with provider-specific model handling. |
+| `claude` | Resident Claude Code runtime inside the thread sandbox | Uses the native Claude Code driver and event grammar for start, resume, steer, approvals, questions, and cancel where supported. |
+| `codex` | Resident Codex runtime inside the thread sandbox | Uses the native Codex driver and event grammar for start, resume, steer, approvals, questions, and cancel where supported. |
+| `pi` | Resident Pi runtime inside the thread sandbox | Uses the native Pi driver and event grammar. |
+| `acp` | Explicit future compatibility engines only | Never a fallback for Codex, Claude Code, OpenCode, or Pi. |
 | `daytona` | Alias for the OpenCode path | Keeps old thread rows and replies readable after the provider rename. |
 | `mock` | Scripted worker path | Used for deterministic local runs and tests. |
 
-Selected T3 routes for Codex, Claude, and OpenCode use native T3 lifecycle
-drivers. `ENGINE_TRANSPORT=cli` selects the legacy per-turn CLI poll-tail fallback for
-the non-T3 Claude and Codex routes. It does not disable an independently enabled
-T3 route. `daytona` and `claude-sdk` remain aliases for older rows.
+Cube, Daytona, and Box change only the execution substrate. If one cannot host
+an engine's native runtime, readiness reports that engine/provider pair as
+unsupported and stops before the turn starts. It must not silently select ACP,
+another engine, or a reduced lifecycle. `daytona` and `claude-sdk` remain
+aliases for older rows, but aliases resolve to the same native engine contract.
 
 ### Capability Notes
 
@@ -91,34 +93,51 @@ T3 route. `daytona` and `claude-sdk` remain aliases for older rows.
 - Streaming text, tool progress, commands, and the sandbox terminal are available for every engine.
 - File diffs, child sessions, reasoning, plans, and usage are honest only where the adapter really supports them.
 - Desktop and knowledge tools are runtime resources, not pure protocol negotiation. They are only true when the session actually has them.
-- The T3 orchestration path exposes the fullest capability set, including approvals and authoritative history.
+- Runtime orchestration may expose approvals and authoritative history only when the selected native driver proves those capabilities.
 
-## Sandbox Provider Matrix
+## Sandbox Provider Plugins
 
-`src/sandboxes/provider.ts` defines the provider-neutral contract and selects
-the provider with `SANDBOX_PROVIDER`. The matrix describes implemented source
-capabilities, not current hosted proof. Daytona invokes a small shared
-create/get/list conformance fixture, then adds Daytona-specific tests. Cube has
-its own provider-specific suite and does not invoke that fixture, so the two
-adapters do not yet share one complete conformance helper.
+Every sandbox vendor is a plugin package. `packages/sandbox-contract` holds the
+provider-neutral contract (`SandboxProvider`, `SandboxHandle`, the
+`SandboxProviderPlugin` shape and the shared create/get/list conformance
+helper); `packages/sandbox-daytona`, `packages/sandbox-cube` and
+`packages/sandbox-box` each export one plugin that owns its API client, env
+config, credential validation, preview auth headers and runtime layout (home
+directory, root or not). `src/sandboxes/plugins.ts` is the registry and
+`src/sandboxes/provider.ts` the env-coupled selector (`SANDBOX_PROVIDER`);
+nothing else in the backend switches on a vendor name.
 
-| Capability | Daytona | Cube | Notes |
-|---|---|---|---|
-| Commands | Yes | Yes | Both providers expose the command lane. |
-| Persistent command sessions | Yes | Yes | Session IDs are preserved at the provider boundary. |
-| PTY | Yes | Yes | The frontend terminal uses this path. |
-| File upload and download | Yes | Yes | Used for repo materialization and artifacts. |
-| Preview links | Yes | Yes | Browser access is proxied through provider-issued credentials. |
-| Native computer use API | Yes | No | Cube intentionally omits this surface. |
-| Desktop workstation | Yes | Yes | Cube drives the workstation through the trusted gateway instead of a native computer-use API. |
-| Recording | Yes | Yes | Daytona uses native recording. Cube uses the X11 and FFmpeg path. |
-| Resume after timeout | Yes | Yes | Cube pauses and resumes through its provider lifecycle; Daytona resumes through its own provider lifecycle. |
-| Pause, checkpoint, snapshot primitives in the shared interface | No | No | This is still a bounded roadmap item. |
+Adding a vendor: create `packages/sandbox-<vendor>` from the Box package,
+export its plugin, add one line to the registry, add the package to the root
+`typecheck` script, the CI `package-test` matrix and `Dockerfile.backend`.
+Run its conformance test plus a live smoke against a real account before
+sign-off; the in-memory fakes hide vendor quirks.
 
-The library default is Daytona unless `SANDBOX_PROVIDER=cube` is set. The
-current Hetzner bootstrap configures Cube explicitly. Hosted Daytona
-credentials, preview-header behavior, confirmed deletion, and latency remain
-unproven for the current tree.
+The matrix describes implemented source capabilities, not current hosted
+proof.
+
+| Capability | Daytona | Cube | Box | Notes |
+|---|---|---|---|---|
+| Commands | Yes | Yes | Yes | Box runs sync commands under a 600 s cap and longer ones detached with an exit marker. |
+| Persistent command sessions | Yes | Yes | Yes | Box sessions are pid-file process groups under `/home/user/.useagent`. |
+| PTY | Yes | Yes | Yes | The frontend terminal uses this path; Box uses its managed interactive SSH transport. |
+| File upload and download | Yes | Yes | Yes | Used for repo materialization and artifacts. |
+| Preview links | Yes | Yes | Yes | Auth headers come from the plugin: token headers for Daytona and Cube, a port-auth cookie for Box. |
+| Native computer use API | Yes | No | No | |
+| Desktop workstation | Yes | Yes | No | Cube drives the workstation through the trusted gateway. |
+| Recording | Yes | Yes | No | Daytona uses native recording. Cube uses the X11 and FFmpeg path. |
+| Resume after timeout | Yes | Yes | Yes | Box archives on its absolute TTL and resumes on the next start. |
+| Runs as root | Yes | Yes | No | Box runs as `user`; all providers retain the same native engine drivers under their declared home/workspace layout. |
+| Labels | Native | Native | Control plane | Box labels live in `sandbox_labels`; the box cannot rewrite them. |
+| Pause, checkpoint, snapshot primitives in the shared interface | No | No | No | This is still a bounded roadmap item. |
+
+The library default is Daytona unless `SANDBOX_PROVIDER=cube` or `box` is
+set. The current Hetzner bootstrap configures Cube explicitly. Box is verified
+live (create, commands, files, previews, sessions, archive/resume, delete);
+hosted Daytona credentials, preview-header behavior, confirmed deletion, and
+latency remain unproven for the current tree. With `USER_COMPUTERS=on`, a
+user's stored Daytona or Box key (Settings) runs that user's threads instead
+of the deployment's provider.
 
 ## Skills, Knowledge, Memory, Playbooks, Automations
 
@@ -190,7 +209,7 @@ The important variables are:
 - `FRONTEND_ORIGIN=http://localhost:3400` for local browser auth and CORS.
 - `BETTER_AUTH_URL=http://localhost:3201` for auth redirects.
 - `ENABLED_ENGINES` to opt extra engines into the backend picker.
-- `SANDBOX_PROVIDER=daytona|cube` to choose the sandbox provider.
+- `SANDBOX_PROVIDER=daytona|cube|box` to choose the sandbox provider (Box: `BOX_API_KEY`, optional `BOX_SNAPSHOT`, `BOX_MACHINE_TYPE`; or per-user keys via Settings with `USER_COMPUTERS=on`).
 - `MEMORY_API_URL` and related memory variables to enable the optional team-memory layer.
 - `GITHUB_TOKEN` or `GITHUB_APP_*` for repository access.
 - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to enable Google sign-in.
@@ -213,7 +232,7 @@ The important variables are:
 - Single-backend operation is enforced with a database lock.
 - Runs, SSE, canonicalization, uploads, artifacts, native artifact export, memory capture, and connector delivery are all wired.
 - The provider gateway and knowledge gateway are real backend services, not placeholders.
-- The worker routes production turns through the provider registry. OpenCode and selected T3 turns use native `ProviderDriver` lifecycles; non-T3 Claude/Codex remain explicit compatibility execution.
+- The worker routes production turns through the provider registry. Codex, Claude Code, OpenCode, and Pi retain their native `ProviderDriver` lifecycles on every supported sandbox provider.
 - Cube and Daytona both run real sandboxes, but with different provider-specific capabilities.
 - Desktop readiness and repair cover noVNC, RFB, the XFCE process set, browser CDP, and the restricted CDP relays. Failure degrades the advertised capability instead of failing the coding run.
 
@@ -223,7 +242,7 @@ The important variables are:
 - The org-change SSE bus must move to durable pub/sub or outbox fanout before multi-replica operation.
 - The sandbox provider interface still lacks explicit pause, checkpoint, and snapshot operations.
 - Hosted Daytona credentials, preview isolation, deletion, and latency still require release-gate evidence.
-- Legacy ACP restart reconciliation is weaker than the OpenCode and T3 paths.
+- Explicit future ACP compatibility engines require their own restart-reconciliation evidence before release.
 - Artifact storage is still local to the backend node.
 - Rich Office/PDF binary round-trip editors, PDF import, and shared object
   storage remain future work. The current presentation and PDF editors operate

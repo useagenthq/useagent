@@ -145,7 +145,7 @@ function useMorph() {
 function MorphPopoverTrigger({ children }: { children: ReactNode }) {
   const { open, setOpen } = useMorph();
   return (
-    <span onClick={() => setOpen(!open)} className="inline-flex">
+    <span role="presentation" onClick={() => setOpen(!open)} className="inline-flex">
       {children}
     </span>
   );

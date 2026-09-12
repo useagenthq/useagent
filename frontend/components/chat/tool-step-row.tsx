@@ -1,34 +1,20 @@
 "use client";
 
 import {
-  type RemixiconComponentType,
   RiArrowDownSLine,
-  RiBookMarkedLine,
-  RiBookOpenLine,
   RiCheckLine,
   RiCloseLine,
-  RiDatabase2Line,
   RiErrorWarningLine,
-  RiFileAddLine,
   RiFileCodeLine,
-  RiFileEditLine,
   RiFileLine,
   RiFileTextLine,
-  RiFlashlightLine,
-  RiGlobalLine,
   RiImageLine,
-  RiListCheck,
-  RiLoader4Line,
   RiReactjsLine,
-  RiRobot2Line,
-  RiSearchLine,
-  RiServerLine,
-  RiSparkling2Line,
-  RiTerminalLine,
+  type RemixiconComponentType,
 } from "@remixicon/react";
 import { memo, useState } from "react";
 import { PlanChecklist } from "@/components/agent-ui/plan-checklist";
-import type { TimelineMarker } from "@/components/chat/timeline";
+import { familyForGlyph, STEP_ICON } from "@/components/chat/step-icons";
 import {
   type ApiStep,
   deriveTrace,
@@ -36,7 +22,6 @@ import {
   parseTodos,
   type StepTrace,
   type TodoItem,
-  type TraceGlyph,
 } from "@/components/chat/types";
 import { formatDuration } from "@/utils/format";
 import { cx as cn } from "@/utils/cx";
@@ -75,152 +60,15 @@ export const ToolStepRow = memo(function ToolStepRow({
   return <TraceRow trace={nested === undefined ? trace : { ...trace, nested }} state={state} />;
 });
 
-// ── Canonical context markers (skill.loaded / context.retrieved) ─────────────
-
-/** Visual model for one marker row — same row anatomy as a trace row, tinted with
- *  the `feature` accent so context markers read distinctly from tool calls. */
-function markerView(marker: TimelineMarker): {
-  Icon: RemixiconComponentType;
-  verb: string;
-  target: string;
-  badge: string | null;
-  error: boolean;
-} {
-  if (marker.kind === "skill") {
-    return {
-      Icon: marker.playbook ? RiBookMarkedLine : RiFlashlightLine,
-      verb: marker.playbook ? "Playbook" : "Skill",
-      target: marker.name,
-      badge: `v${marker.version}`,
-      error: false,
-    };
-  }
-  if (marker.kind === "reconciling") {
-    return {
-      Icon: RiLoader4Line,
-      verb: "Reconciling",
-      target: "after a restart; the turn may still be completing",
-      badge: null,
-      error: false,
-    };
-  }
-  if (marker.kind === "memory") {
-    const pool = marker.scope === "personal" ? "personal memory" : "organization memory";
-    if (marker.failed) {
-      // Honest write failure - distinct from a 0-hit recall, never a fake save.
-      const what =
-        marker.op === "correct"
-          ? "update failed"
-          : marker.op === "forget"
-            ? "delete failed"
-            : marker.op === "search"
-              ? "recall unavailable"
-              : "not saved";
-      return {
-        Icon: RiErrorWarningLine,
-        verb: "Memory",
-        target: `${what} (service unavailable)`,
-        badge: null,
-        error: true,
-      };
-    }
-    if (marker.op === "correct") {
-      return { Icon: RiDatabase2Line, verb: "Updated", target: pool, badge: null, error: false };
-    }
-    if (marker.op === "forget") {
-      return {
-        Icon: RiDatabase2Line,
-        verb: "Forgot",
-        target: `from ${pool}`,
-        badge: null,
-        error: false,
-      };
-    }
-    // remember: L0 write is durable + searchable now; L1 distillation is async
-    // and unobserved during the turn, so "indexing" is the terminal badge.
-    return {
-      Icon: RiDatabase2Line,
-      verb: "Remembered",
-      target: `in ${pool}`,
-      badge: marker.reconciled ? "already saved" : "indexing",
-      error: false,
-    };
-  }
-  const known = marker.source === "knowledge" || marker.source === "memory";
-  const label = known ? marker.source : "context";
-  const n = marker.itemCount;
-  return {
-    Icon: marker.source === "knowledge" ? RiBookOpenLine : RiDatabase2Line,
-    verb: "Recalled",
-    target: `${n} ${n === 1 ? "item" : "items"} from ${label}`,
-    badge: null,
-    error: false,
-  };
-}
-
-/**
- * A canonical context marker rendered in the SHARED trace grammar (skill.loaded →
- * "Skill <name> v<n>", context.retrieved → "Recalled N items from memory"). Not a
- * parallel context pane — one typed row, feature-accented. Memoized by the marker
- * object (the timeline replaces it only when the underlying frame changes).
- */
-export const MarkerRow = memo(function MarkerRow({ marker }: { marker: TimelineMarker }) {
-  const { Icon, verb, target, badge, error } = markerView(marker);
-  return (
-    <div
-      data-testid="marker-row"
-      data-marker-kind={marker.kind}
-      className="animate-ai-fade-up flex items-center gap-2 px-1.5 py-1"
-    >
-      <Icon
-        className={cn(
-          "size-4 shrink-0",
-          error ? "text-red-500" : "text-foreground-icon-secondary",
-        )}
-        aria-hidden
-      />
-      <span className="min-w-0 flex-1 truncate">
-        <span
-          className={cn(
-            "text-body-2-medium font-medium",
-            error ? "text-red-500" : "text-text-secondary",
-          )}
-        >
-          {verb}
-        </span>
-        {target && <span className="text-text-secondary ml-1.5 text-body-2-medium">{target}</span>}
-      </span>
-      {badge && (
-        <span className="text-text-tertiary shrink-0 font-mono text-caption-1-medium tabular-nums">
-          {badge}
-        </span>
-      )}
-    </div>
-  );
-});
-
 // ── Icons ────────────────────────────────────────────────────────────────────
 
-const GLYPH_ICON: Record<TraceGlyph, RemixiconComponentType> = {
-  read: RiFileTextLine,
-  edit: RiFileEditLine,
-  write: RiFileAddLine,
-  run: RiTerminalLine,
-  search: RiSearchLine,
-  list: RiListCheck,
-  fetch: RiGlobalLine,
-  subagent: RiRobot2Line,
-  reasoning: RiSparkling2Line,
-  task: RiSparkling2Line,
-  boot: RiServerLine,
-};
-
-/** File-shaped rows prefer an extension-aware glyph over the generic family one. */
+/** File-shaped rows prefer an extension-aware glyph over the family one; every
+ *  other row draws the shared step-family glyph (components/chat/step-icons). */
 function iconForTrace(trace: StepTrace): RemixiconComponentType {
   if (trace.base && (trace.glyph === "read" || trace.glyph === "edit" || trace.glyph === "write")) {
     return fileTypeIcon(trace.base);
   }
-  return GLYPH_ICON[trace.glyph];
+  return STEP_ICON[familyForGlyph(trace.glyph)];
 }
 
 // ── Trace row ────────────────────────────────────────────────────────────────

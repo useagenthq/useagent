@@ -1,9 +1,5 @@
-import {
-  sandboxProvider,
-  sandboxProviderApiKey,
-  sandboxTemplate,
-  type SandboxHandle,
-} from "../sandboxes/provider";
+import { sandboxRuntimeLayout, type SandboxHandle } from "../sandboxes/provider";
+import { sandboxPlugin } from "../sandboxes/plugins";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import {
   assertSandboxResources,
@@ -23,6 +19,8 @@ import {
 import { materializeRunInputs } from "../uploads/materialize";
 import { checkoutPullRequestResources, prepareRepos } from "./repo-prep";
 import {
+  CLAUDE_MCP_CONFIG_FILE,
+  CLAUDE_SETTINGS_FILE,
   prepareProviderGatewaySandbox,
   providerGatewayEnv,
   providerGatewaySandboxIsCurrent,
@@ -43,6 +41,8 @@ import {
   sandboxExitError,
   withSandboxOutputRedaction,
 } from "./sandbox-output-redaction";
+import { bindingSnapshot, resolveSandboxBindingForRun } from "../sandboxes/binding";
+import { provisionSandbox } from "./sandbox-provision";
 export { createSandboxSessionRevealPersister } from "./sandbox-session-persistence";
 export { sandboxExitError, withSandboxOutputRedaction } from "./sandbox-output-redaction";
 
@@ -63,7 +63,7 @@ const DEFAULT_MODEL = "claude-opus-5";
 /** Pinned versions for npx-on-demand installs inside the sandbox (the default
  *  image has no engines preinstalled). */
 const CLAUDE_CODE_VERSION = "2.1.222";
-const CODEX_VERSION = "0.146.0";
+const CODEX_VERSION = "0.153.3";
 
 /** In-sandbox paths for one engine turn: the staged prompt (fed via stdin
  *  redirect — see SandboxEngineSpec.command), the live output log the poll loop
@@ -231,7 +231,7 @@ export const claudeSpec: SandboxEngineSpec = {
     // verified-dev yolo mode (permission-policy.ts). Without it a non-interactive
     // CLI cannot approve tools - fail-closed, the intended SaaS default.
     const skip = allowPermissionBypass() ? " --dangerously-skip-permissions" : "";
-    return `claude -p ${resume}--model ${model} --output-format stream-json --verbose${skip}`;
+    return `claude -p ${resume}--model ${model} --output-format stream-json --verbose${skip} --settings ${CLAUDE_SETTINGS_FILE} --mcp-config ${CLAUDE_MCP_CONFIG_FILE}`;
   },
   install: { pkg: `@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}`, bin: "claude" },
   prepare: (sandbox, ctx) => prepareProviderGatewaySandbox(sandbox, ctx, "claude"),
@@ -433,13 +433,13 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
     id: spec.id as EngineAdapter["id"],
 
     async run(ctx: EngineRunContext): Promise<void> {
-      const apiKey = sandboxProviderApiKey();
-      if (apiKey === undefined) throw new Error(`${spec.id} engine needs sandbox provider credentials`);
       if (!providerGatewayWired()) {
         throw new Error(`${spec.id} engine requires a configured provider gateway`);
       }
       const startedAt = Date.now();
-      const provider = sandboxProvider(apiKey);
+      // The user's own computer when USER_COMPUTERS is on and they connected one; else the server's.
+      const binding = await resolveSandboxBindingForRun(ctx);
+      const provider = binding.provider;
 
       // Engine/provider keys ride as sandbox env — never on the command line.
       // Org secrets live in a protected dotenv that the CLI launch sources
@@ -467,7 +467,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       // world alive for days before deletion.
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320); // 3 days
-      const snapshot = sandboxTemplate("DAYTONA_ACP_SNAPSHOT", "skynet-acp-v3");
+      const snapshot = bindingSnapshot(binding, "DAYTONA_ACP_SNAPSHOT");
       const resourceTarget = resolveSandboxResourceTarget();
       let sandbox: SandboxHandle | null = null;
       let retainForThread = false;
@@ -524,13 +524,14 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         const provisionedFresh = !sandbox;
         if (provisionedFresh) {
           await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: spec.id });
-          sandbox = await provider.create({
+          sandbox = (await provisionSandbox({
+            ctx,
+            binding,
             snapshot,
-            envVars,
-            labels: providerGatewaySandboxLabels(ctx.runId),
-            autoStopInterval,
-            autoDeleteInterval,
-          });
+            chip: spec.id,
+            create: { envVars, labels: providerGatewaySandboxLabels(ctx.runId), autoStopInterval, autoDeleteInterval },
+            resourceTarget,
+          })).sandbox;
         }
         if (!sandbox) throw new Error("Sandbox provider returned no sandbox");
         const box = sandbox;
@@ -578,13 +579,15 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         // The documented CLI fallback must honor the same persisted repository
         // and change-resource scope as the resident ACP/runtime adapters. Prepare
         // the base checkout first, then pin an authorized PR to its exact head.
-        const workdir = "/home/daytona/work";
-        await prepareRepos(box, workdir, ctx);
+        const runtimeLayout = sandboxRuntimeLayout(binding.kind);
+        const workdir = runtimeLayout.workdir;
+        await prepareRepos(box, workdir, ctx, runtimeLayout);
         await checkoutPullRequestResources(
           box,
           workdir,
           ctx.resolvedResources ?? [],
           ctx,
+          runtimeLayout,
         );
 
         // Explicit native-session resume: id from the DB (previous turn, same

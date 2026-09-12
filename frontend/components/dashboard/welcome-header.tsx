@@ -23,7 +23,7 @@ export function WelcomeHeader({ liveCount = 0 }: { liveCount?: number }) {
           leadingIcon={RiAddLine}
           className='rounded-full'
         >
-          New run
+          New thread
         </ButtonLink>
       </div>
     </header>

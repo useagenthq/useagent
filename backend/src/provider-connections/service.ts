@@ -8,6 +8,7 @@ import {
   type ProviderConnectionRecord,
   type ProviderConnectionScope,
   revokeProviderConnection,
+  setProviderSnapshotIfUnset,
   upsertProviderConnection,
   upsertProviderConnectionUnlessRevoked,
 } from "./repo";
@@ -168,6 +169,19 @@ export async function upsertApiKeyProviderConnection(
   });
   publishProviderConnectionChange(row, "updated");
   return toMeta(row);
+}
+
+export async function rememberPreparedProviderSnapshot(
+  scope: ProviderConnectionScope & {
+    provider: ProviderConnectionProvider;
+    snapshotName: string;
+    expectedUpdatedAt: string;
+  },
+): Promise<boolean> {
+  const row = await setProviderSnapshotIfUnset(scope);
+  if (!row) return false;
+  publishProviderConnectionChange(row, "updated");
+  return true;
 }
 
 /**

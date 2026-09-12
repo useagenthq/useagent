@@ -20,10 +20,11 @@ inside its thread's sandbox.
 ## Sandbox provider
 
 A vendor-specific implementation selected behind a provider-neutral sandbox
-contract. **Daytona** and **Cube** expose the same required process, filesystem,
+contract. **Daytona**, **Cube** and **Box** expose the same required process, filesystem,
 PTY, preview, and lifecycle boundary, then keep provider-specific behavior and
-tests for native capabilities. Code above the contract does not branch on the
-provider.
+tests for native capabilities (Box has no PTY or desktop yet). Each provider is
+a plugin package under `packages/sandbox-*`. Code above the contract does not
+branch on the provider.
 
 ## Warm pool
 

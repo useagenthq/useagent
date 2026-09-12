@@ -6,13 +6,19 @@ import type { RunCommandInput, RunCommandIntent, RunCommandOutcome } from "./typ
 import { publishRunLifecycleChange } from "../runs/org-signals";
 import {
   assertInternalRunOrigin,
+  assertUnattendedRunOrigin,
+  isInternalRunOrigin,
   type InternalRunOrigin,
+  type TrustedRunOrigin,
+  type UnattendedRunOrigin,
 } from "../runs/origin";
 import { isModelAllowedForEngine, isPersistedModelAllowedForEngine } from "../runs/model-policy";
 import { engineModelReadyForDispatch, persistedEngineModelReadyForDispatch } from "../runs/engine-readiness";
 import { withThreadLifecycleLock } from "../runs/thread-lifecycle-lock";
 import { assertRunAdmissionOpen } from "./admission";
 import { assertRunPromptLimit } from "./prompt-policy";
+import { and, desc, eq } from "drizzle-orm";
+import { runs } from "../db/schema";
 
 // ---------------------------------------------------------------------------
 // Command acceptance orchestration (north star "Durable Commands"). Decides,
@@ -23,80 +29,19 @@ import { assertRunPromptLimit } from "./prompt-policy";
 
 /** Bounded audit copy of the accepted request. */
 const PAYLOAD_CAP = 8_192;
+const textEncoder = new TextEncoder();
 
-/** Classify a keyed submission against an existing command: same fingerprint →
- *  idempotent replay of its run; different fingerprint → ambiguous reuse. */
-function classifyReplay(
-  existing: CommandRecord,
-  fingerprint: string,
-  origin: InternalRunOrigin | null,
-): RunCommandOutcome {
-  if (existing.runOrigin !== origin) {
-    return { status: "conflict", reason: "origin_mismatch" };
-  }
-  if (existing.payloadFingerprint === fingerprint && existing.runId) {
-    return { status: "replayed", runId: existing.runId };
-  }
-  return { status: "conflict", reason: "payload_mismatch" };
+function payloadBytes(value: string): number {
+  return textEncoder.encode(value).byteLength;
 }
 
-/**
- * Read a previously accepted keyed decision before any external preflight.
- * Missing/unkeyed submissions return null and must continue through normal
- * authorization. This helper never reserves a key or accepts new work.
- */
-async function preflightRunCommandReplayWithOrigin(input: {
-  readonly orgId: string;
-  readonly idempotencyKey: string | null;
-  readonly intent: RunCommandIntent;
-  readonly origin: InternalRunOrigin | null;
-}): Promise<RunCommandOutcome | null> {
-  if (input.idempotencyKey) {
-    const existing = await findCommandByKey(input.orgId, input.idempotencyKey);
-    if (existing) {
-      return classifyReplay(existing, runIntentFingerprint(input.intent), input.origin);
-    }
-  }
-  await assertRunAdmissionOpen();
-  return null;
-}
-
-export function preflightRunCommandReplay(input: {
-  readonly orgId: string;
-  readonly idempotencyKey: string | null;
-  readonly intent: RunCommandIntent;
-}): Promise<RunCommandOutcome | null> {
-  return preflightRunCommandReplayWithOrigin({ ...input, origin: null });
-}
-
-export function preflightInternalRunCommandReplay(input: {
-  readonly orgId: string;
-  readonly idempotencyKey: string | null;
-  readonly intent: RunCommandIntent;
-  readonly origin: InternalRunOrigin;
-}): Promise<RunCommandOutcome | null> {
-  assertInternalRunOrigin(input.origin);
-  return preflightRunCommandReplayWithOrigin(input);
-}
-
-/**
- * Accept a `run.create` command. Idempotent by (org, idempotencyKey):
- *  - keyed replay with a matching payload → the ORIGINAL run id (no new work);
- *  - keyed replay with a different payload → conflict (never silently rerun);
- *  - otherwise commit command + run atomically and report `created`.
- *
- * A concurrent same-key race is resolved by the unique index: the loser's
- * transaction rolls back with a unique violation, which we re-read into the
- * winner's outcome rather than surfacing a raw DB error.
- */
-async function acceptRunCommandWithOrigin(
+function serializeRunCommandPayload(
   input: RunCommandInput,
-  origin: InternalRunOrigin | null,
-  priority = 0,
-): Promise<RunCommandOutcome> {
-  const intent = input.intent ?? runIntentFromAcceptedRun(input.run);
-  const fingerprint = runIntentFingerprint(intent);
-  const payload = JSON.stringify({
+  intent: RunCommandIntent,
+  fingerprint: string,
+): string {
+  const full = {
+    botHandoff: input.botHandoff ?? null,
     prompt: input.run.prompt,
     model: input.run.model,
     engine: input.run.engine,
@@ -113,7 +58,142 @@ async function acceptRunCommandWithOrigin(
     commandSessionId: input.run.commandSessionId,
     commandCatalogRevision: input.run.commandCatalogRevision,
     intent,
-  }).slice(0, PAYLOAD_CAP);
+  };
+  const serialized = JSON.stringify(full);
+  if (payloadBytes(serialized) <= PAYLOAD_CAP) return serialized;
+
+  const withoutDuplicatePrompt = JSON.stringify({
+    ...full,
+    intent: { ...intent, prompt: undefined },
+    _audit: { omitted: ["intent.prompt"] },
+  });
+  if (payloadBytes(withoutDuplicatePrompt) <= PAYLOAD_CAP) return withoutDuplicatePrompt;
+
+  const promptBytes = payloadBytes(input.run.prompt);
+  return JSON.stringify({
+    botHandoff: input.botHandoff ?? null,
+    model: input.run.model,
+    engine: input.run.engine,
+    parentRunId: input.run.parentRunId,
+    threadId: input.run.threadId,
+    _audit: {
+      omitted: ["prompt", "intent", "repos", "resolvedResources", "attachmentIds"],
+      promptChars: input.run.prompt.length,
+      promptBytes,
+      promptSha256: new Bun.CryptoHasher("sha256").update(input.run.prompt).digest("hex"),
+      intentFingerprint: fingerprint,
+    },
+  });
+}
+
+export class StaleThreadHeadError extends Error {
+  readonly code = "stale_thread_head" as const;
+}
+
+/** Classify a keyed submission against an existing command: same fingerprint →
+ *  idempotent replay of its run; different fingerprint → ambiguous reuse. */
+function classifyReplay(
+  existing: CommandRecord,
+  fingerprint: string,
+  origin: TrustedRunOrigin | null,
+): RunCommandOutcome {
+  if (existing.runOrigin !== origin) {
+    return { status: "conflict", reason: "origin_mismatch" };
+  }
+  if (existing.payloadFingerprint === fingerprint && existing.runId) {
+    return { status: "replayed", runId: existing.runId };
+  }
+  return { status: "conflict", reason: "payload_mismatch" };
+}
+
+function acceptedFingerprint(
+  intent: RunCommandIntent,
+  threadRelationship?: RunCommandInput["threadRelationship"],
+): string {
+  const base = runIntentFingerprint(intent);
+  if (!threadRelationship) return base;
+  return new Bun.CryptoHasher("sha256").update(JSON.stringify([
+    base,
+    threadRelationship.parentThreadId,
+    threadRelationship.familyThreadId,
+    threadRelationship.kind,
+    threadRelationship.title,
+    threadRelationship.sourceRunId,
+    threadRelationship.sourceExecutionId ?? null,
+  ])).digest("hex");
+}
+
+/**
+ * Read a previously accepted keyed decision before any external preflight.
+ * Missing/unkeyed submissions return null and must continue through normal
+ * authorization. This helper never reserves a key or accepts new work.
+ */
+async function preflightRunCommandReplayWithOrigin(input: {
+  readonly orgId: string;
+  readonly idempotencyKey: string | null;
+  readonly intent: RunCommandIntent;
+  readonly origin: TrustedRunOrigin | null;
+  readonly threadRelationship?: RunCommandInput["threadRelationship"];
+}): Promise<RunCommandOutcome | null> {
+  if (input.idempotencyKey) {
+    const existing = await findCommandByKey(input.orgId, input.idempotencyKey);
+    if (existing) {
+      return classifyReplay(existing, acceptedFingerprint(input.intent, input.threadRelationship), input.origin);
+    }
+  }
+  await assertRunAdmissionOpen();
+  return null;
+}
+
+export function preflightRunCommandReplay(input: {
+  readonly orgId: string;
+  readonly idempotencyKey: string | null;
+  readonly intent: RunCommandIntent;
+  readonly threadRelationship?: RunCommandInput["threadRelationship"];
+}): Promise<RunCommandOutcome | null> {
+  return preflightRunCommandReplayWithOrigin({ ...input, origin: null });
+}
+
+export function preflightInternalRunCommandReplay(input: {
+  readonly orgId: string;
+  readonly idempotencyKey: string | null;
+  readonly intent: RunCommandIntent;
+  readonly origin: InternalRunOrigin;
+  readonly threadRelationship?: RunCommandInput["threadRelationship"];
+}): Promise<RunCommandOutcome | null> {
+  assertInternalRunOrigin(input.origin);
+  return preflightRunCommandReplayWithOrigin(input);
+}
+
+export function preflightUnattendedRunCommandReplay(input: {
+  readonly orgId: string;
+  readonly idempotencyKey: string | null;
+  readonly intent: RunCommandIntent;
+  readonly origin: UnattendedRunOrigin;
+  readonly threadRelationship?: RunCommandInput["threadRelationship"];
+}): Promise<RunCommandOutcome | null> {
+  assertUnattendedRunOrigin(input.origin);
+  return preflightRunCommandReplayWithOrigin(input);
+}
+
+/**
+ * Accept a `run.create` command. Idempotent by (org, idempotencyKey):
+ *  - keyed replay with a matching payload → the ORIGINAL run id (no new work);
+ *  - keyed replay with a different payload → conflict (never silently rerun);
+ *  - otherwise commit command + run atomically and report `created`.
+ *
+ * A concurrent same-key race is resolved by the unique index: the loser's
+ * transaction rolls back with a unique violation, which we re-read into the
+ * winner's outcome rather than surfacing a raw DB error.
+ */
+async function acceptRunCommandWithOrigin(
+  input: RunCommandInput,
+  origin: TrustedRunOrigin | null,
+  priority = 0,
+): Promise<RunCommandOutcome> {
+  const intent = input.intent ?? runIntentFromAcceptedRun(input.run);
+  const fingerprint = acceptedFingerprint(intent, input.threadRelationship);
+  const payload = serializeRunCommandPayload(input, intent, fingerprint);
   const commandId = crypto.randomUUID();
 
   let outcome: RunCommandOutcome | null;
@@ -126,6 +206,13 @@ async function acceptRunCommandWithOrigin(
         if (input.idempotencyKey) {
           const existing = await findCommandByKey(input.orgId, input.idempotencyKey, tx);
           if (existing) return classifyReplay(existing, fingerprint, origin);
+        }
+        if (input.expectedThreadHeadRunId) {
+          const [head] = await tx.select({ id: runs.id }).from(runs).where(and(
+            eq(runs.orgId, input.orgId),
+            eq(runs.threadId, input.run.threadId),
+          )).orderBy(desc(runs.createdAt), desc(runs.id)).limit(1);
+          if (head?.id !== input.expectedThreadHeadRunId) throw new StaleThreadHeadError();
         }
 
         // Shared transaction lock closes the preflight-vs-insert race: a deploy
@@ -168,6 +255,8 @@ async function acceptRunCommandWithOrigin(
             run: input.run,
             origin,
             priority,
+            threadRelationship: input.threadRelationship,
+            botHome: input.botHome,
           },
           tx,
         );
@@ -192,7 +281,7 @@ async function acceptRunCommandWithOrigin(
   // Skills Run all accept here, so none grows its own UI notification code. Only
   // fired on a fresh `created`; an idempotent replay returns above and re-signals
   // nothing (no duplicate run signal). IDs only, never secrets/payloads.
-  if (origin === null) {
+  if (!isInternalRunOrigin(origin)) {
     publishRunLifecycleChange({
       orgId: input.orgId,
       threadId: input.run.threadId,
@@ -218,4 +307,14 @@ export function acceptInternalRunCommand(
 ): Promise<RunCommandOutcome> {
   assertInternalRunOrigin(input.origin);
   return acceptRunCommandWithOrigin(input, input.origin, input.priority ?? 0);
+}
+
+/** Server-only product acceptance for unattended automations and bot work. */
+export function acceptUnattendedRunCommand(
+  input: RunCommandInput & {
+    readonly origin: UnattendedRunOrigin;
+  },
+): Promise<RunCommandOutcome> {
+  assertUnattendedRunOrigin(input.origin);
+  return acceptRunCommandWithOrigin(input, input.origin, 0);
 }

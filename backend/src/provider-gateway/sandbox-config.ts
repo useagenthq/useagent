@@ -4,7 +4,11 @@ import type { SandboxHandle } from "../sandboxes/provider";
 import { providerGatewayConfig, PROVIDER_GATEWAY_PATH } from "./config";
 import { type ProviderId } from "./provider";
 import { mintProviderToken } from "./token";
-import { DEFAULT_CODEX_MODEL } from "../runs/model-policy";
+import {
+  CEREBRAS_GEMMA_MODEL,
+  CEREBRAS_QWEN_MODEL,
+  DEFAULT_CODEX_MODEL,
+} from "../runs/model-policy";
 import {
   THREAD_TOKEN_REUSE_WINDOW_MS,
   ThreadTokenMemo,
@@ -14,6 +18,7 @@ import { toolGatewayConfig } from "../knowledge/gateway/config";
 import {
   buildToolGatewayCapabilityDescriptor,
   describeToolGatewayCapabilityDescriptor,
+  TOOL_GATEWAY_SERVER_NAME,
   toCodexToolGatewayConfig,
   type ToolGatewayCapabilityDescriptor,
 } from "../knowledge/gateway/descriptor";
@@ -24,20 +29,60 @@ export interface OpenCodeProviderOptions {
   readonly apiKey: string;
 }
 
-// v15 replaces every retained sandbox created before secret delivery mode was
-// part of the trusted control-plane generation. In particular, an older v14
-// sandbox may have been created in compatibility mode while carrying the same
-// label as gateway-only. Separate generations also prevent a resident process
-// with inherited raw secrets from surviving a compatibility -> gateway-only
-// transition; replacing only files and rc hooks would not clear process env.
-export const SANDBOX_GENERATION = "provider-gateway-v15-gateway-only-secrets";
-const COMPATIBILITY_SANDBOX_GENERATION = "provider-gateway-v15-compatibility-secrets";
+export function mergeOpenCodeProviderConfig(
+  provider: string,
+  current: unknown,
+  options: OpenCodeProviderOptions,
+): Record<string, unknown> {
+  const existing = current && typeof current === "object"
+    ? current as Record<string, unknown>
+    : {};
+  const existingOptions = existing.options && typeof existing.options === "object"
+    ? existing.options as Record<string, unknown>
+    : {};
+  if (provider !== "cerebras") {
+    return { ...existing, options: { ...existingOptions, ...options } };
+  }
+  const existingModels = existing.models && typeof existing.models === "object"
+    ? existing.models as Record<string, unknown>
+    : {};
+  return {
+    ...existing,
+    npm: "@ai-sdk/cerebras",
+    name: "Cerebras",
+    models: {
+      ...existingModels,
+      [CEREBRAS_QWEN_MODEL.slice("cerebras/".length)]: {
+        name: "Qwen 3.8 27B",
+        limit: { context: 65_536, output: 32_768 },
+      },
+      // Existing durable Gemma threads may still resume or receive replies.
+      [CEREBRAS_GEMMA_MODEL.slice("cerebras/".length)]: {
+        name: "Gemma 4 31B",
+        limit: { context: 131_072, output: 40_960 },
+      },
+    },
+    options: { ...existingOptions, ...options },
+  };
+}
+
+// v17 replaces retained sandboxes whose resident harnesses still expose the
+// retired MCP server ids. A generation boundary makes both forward deployment
+// and rollback converge on one config instead of accumulating duplicate tools.
+// Separate variants still prevent a resident process with inherited raw secrets
+// from surviving a compatibility -> gateway-only transition.
+export const SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-gateway-only-secrets";
+const COMPATIBILITY_SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-compatibility-secrets";
 export const SANDBOX_GENERATION_LABEL = "skynet-provider-generation";
 const SANDBOX_MARKER = "$HOME/.skynet/provider-gateway-generation";
-const ANTHROPIC_TOKEN_FILE = "$HOME/.skynet/provider-anthropic.token";
 const OPENAI_TOKEN_FILE = "$HOME/.skynet/provider-openai.token";
-const CLAUDE_CONFIG_DIR = "/tmp/skynet-claude-config";
-const CLAUDE_MCP_CONFIG_FILE = `${CLAUDE_CONFIG_DIR}/skynet-mcp.json`;
+export const CLAUDE_CONFIG_DIR = "/tmp/skynet-claude-config";
+export const CLAUDE_CAPABILITY_DIR = "/tmp/useagent-claude-capability";
+export const CLAUDE_CAPABILITY_GID = 1000;
+export const CLAUDE_ACP_SETTINGS_FILE = `${CLAUDE_CAPABILITY_DIR}/settings.json`;
+export const CLAUDE_SETTINGS_FILE = `${CLAUDE_CAPABILITY_DIR}/useagent-settings.json`;
+export const CLAUDE_MCP_CONFIG_FILE = `${CLAUDE_CAPABILITY_DIR}/useagent-mcp.json`;
+const ANTHROPIC_TOKEN_FILE = `${CLAUDE_CAPABILITY_DIR}/provider-anthropic.token`;
 const CLAUDE_ONE_MILLION_CONTEXT_MODELS = new Set([
   "claude-opus-5",
   "claude-sonnet-5",
@@ -245,12 +290,14 @@ export function opencodeProviderGatewayOptions(
   const anthropicToken = mintResidentThreadToken(ctx, "opencode", "anthropic");
   const openaiToken = mintResidentThreadToken(ctx, "opencode", "openai");
   const openrouterToken = mintResidentThreadToken(ctx, "opencode", "openrouter");
+  const cerebrasToken = mintResidentThreadToken(ctx, "opencode", "cerebras");
   // OpenCode passes provider options directly to the AI SDK; provider baseURLs
   // include `/v1` for the SDK-specific endpoint suffixes. Claude Code's
   // ANTHROPIC_BASE_URL seam differs and appends `/v1/messages` itself.
   const anthropicBase = providerGatewayEndpoint("anthropic", true);
   const openaiBase = providerGatewayEndpoint("openai", true);
   const openrouterBase = providerGatewayEndpoint("openrouter", true);
+  const cerebrasBase = providerGatewayEndpoint("cerebras", true);
   return {
     ...(anthropicToken && anthropicBase
       ? { anthropic: { baseURL: anthropicBase, apiKey: anthropicToken } }
@@ -260,6 +307,9 @@ export function opencodeProviderGatewayOptions(
       : {}),
     ...(openrouterToken && openrouterBase
       ? { openrouter: { baseURL: openrouterBase, apiKey: openrouterToken } }
+      : {}),
+    ...(cerebrasToken && cerebrasBase
+      ? { cerebras: { baseURL: cerebrasBase, apiKey: cerebrasToken } }
       : {}),
   };
 }
@@ -312,7 +362,7 @@ export function codexProviderConfigToml(
     "",
     ...(toolGateway
       ? [
-          "[mcp_servers.skynet-knowledge]",
+          `[mcp_servers.${TOOL_GATEWAY_SERVER_NAME}]`,
           `url = ${JSON.stringify(toolGateway.url)}`,
           `http_headers = { Authorization = ${JSON.stringify(`Bearer ${toolGateway.bearerToken}`)} }`,
           "enabled = true",
@@ -324,22 +374,6 @@ export function codexProviderConfigToml(
   ].join("\n");
 }
 
-async function readJsonFile(sandbox: SandboxHandle, path: string): Promise<Record<string, unknown>> {
-  const result = await sandbox.process
-    .executeCommand(`cat ${path} 2>/dev/null || true`, undefined, undefined, 10)
-    .catch(() => null);
-  const raw = result?.result?.trim();
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
 async function writePrivateFiles(
   sandbox: SandboxHandle,
   files: readonly { readonly path: string; readonly content: string }[],
@@ -349,8 +383,8 @@ async function writePrivateFiles(
     return `printf %s '${encoded}' | base64 -d > ${path} && chmod 600 ${path}`;
   });
   const result = await sandbox.process.executeCommand(
-    `mkdir -p $HOME/.skynet $HOME/.claude $HOME/.codex ${CLAUDE_CONFIG_DIR} && ` +
-      `chmod 700 $HOME/.skynet ${CLAUDE_CONFIG_DIR} && ${writes.join(" && ")}`,
+    `mkdir -p $HOME/.skynet $HOME/.claude $HOME/.codex && ` +
+      `chmod 700 $HOME/.skynet && ${writes.join(" && ")}`,
     undefined,
     undefined,
     20,
@@ -358,26 +392,94 @@ async function writePrivateFiles(
   if ((result.exitCode ?? 1) !== 0) throw new Error("failed to configure provider gateway");
 }
 
+/** Atomically replace Claude's run capabilities inside a root-owned directory.
+ * The agent uid can read these scoped files but cannot replace them with
+ * symlinks before a later root refresh. */
+export function buildClaudeCapabilityWriteCommand(
+  directory: string,
+  files: readonly { readonly path: string; readonly content: string }[],
+  ownerUid = 0,
+  readerGid = CLAUDE_CAPABILITY_GID,
+): string {
+  const temporaryPaths: string[] = [];
+  const writes = files.map(({ path, content }) => {
+    const encoded = Buffer.from(content, "utf8").toString("base64");
+    const temporaryPath = `${directory}/.capability-${crypto.randomUUID()}`;
+    temporaryPaths.push(temporaryPath);
+    return [
+      `printf %s '${encoded}' | base64 -d > ${temporaryPath}`,
+      `chown ${ownerUid}:${readerGid} ${temporaryPath}`,
+      `chmod 440 ${temporaryPath}`,
+      `node -e 'require("node:fs").renameSync(process.argv[1],process.argv[2])' ${temporaryPath} ${path}`,
+    ].join(" && ");
+  });
+  return [
+    `if [ -L ${directory} ]; then rm -f -- ${directory}; fi`,
+    `install -d -o ${ownerUid} -g ${readerGid} -m 750 ${directory}`,
+    `test -d ${directory} && test ! -L ${directory}`,
+    ...writes,
+    `rm -f -- ${temporaryPaths.join(" ")}`,
+  ].join(" && ");
+}
+
+async function writeClaudeCapabilityFiles(
+  sandbox: SandboxHandle,
+  files: readonly { readonly path: string; readonly content: string }[],
+): Promise<void> {
+  const result = await sandbox.process.executeCommand(
+    buildClaudeCapabilityWriteCommand(CLAUDE_CAPABILITY_DIR, files),
+    undefined,
+    undefined,
+    20,
+  );
+  if ((result.exitCode ?? 1) !== 0) {
+    throw new Error("failed to configure Claude provider capability");
+  }
+}
+
+async function writeUserClaudeCapabilityFiles(
+  sandbox: SandboxHandle,
+  files: readonly { readonly path: string; readonly content: string }[],
+): Promise<void> {
+  const writes = files.map(({ path, content }) => {
+    const encoded = Buffer.from(content, "utf8").toString("base64");
+    return `printf %s '${encoded}' | base64 -d > ${path} && chmod 600 ${path}`;
+  });
+  const result = await sandbox.process.executeCommand(
+    `mkdir -p ${CLAUDE_CAPABILITY_DIR} && chmod 700 ${CLAUDE_CAPABILITY_DIR} && ${writes.join(" && ")}`,
+    undefined,
+    undefined,
+    20,
+  );
+  if ((result.exitCode ?? 1) !== 0) {
+    throw new Error("failed to configure user-owned Claude provider capability");
+  }
+}
+
 /** Rewrite the exact current run capability without restarting the resident agent. */
 export async function prepareProviderGatewaySandbox(
   sandbox: SandboxHandle,
   ctx: EngineRunContext,
   engine: "claude" | "codex",
+  options: { readonly rootOwnedClaudeCapability?: boolean } = {},
 ): Promise<void> {
   if (!providerGatewayWired()) return;
   const generation = sandboxGeneration();
   if (engine === "claude") {
     const token = mintResidentThreadToken(ctx, "claude", "anthropic");
     if (!token) throw new Error("provider gateway could not mint Claude capability");
-    const settings = await readJsonFile(sandbox, `${CLAUDE_CONFIG_DIR}/settings.json`);
-    settings.apiKeyHelper = `cat \"${ANTHROPIC_TOKEN_FILE}\"`;
+    const managedSettings = { apiKeyHelper: `cat \"${ANTHROPIC_TOKEN_FILE}\"` };
     const toolDescriptor = toolGatewayDescriptor(ctx, "claude");
-    await writePrivateFiles(sandbox, [
+    const files = [
       { path: ANTHROPIC_TOKEN_FILE, content: token },
-      { path: `${CLAUDE_CONFIG_DIR}/settings.json`, content: JSON.stringify(settings) },
+      { path: CLAUDE_ACP_SETTINGS_FILE, content: JSON.stringify(managedSettings) },
+      { path: CLAUDE_SETTINGS_FILE, content: JSON.stringify(managedSettings) },
       { path: CLAUDE_MCP_CONFIG_FILE, content: claudeMcpConfig(toolDescriptor) },
-      { path: SANDBOX_MARKER, content: generation },
-    ]);
+    ];
+    await (options.rootOwnedClaudeCapability
+      ? writeClaudeCapabilityFiles(sandbox, files)
+      : writeUserClaudeCapabilityFiles(sandbox, files));
+    await writePrivateFiles(sandbox, [{ path: SANDBOX_MARKER, content: generation }]);
     return;
   }
 

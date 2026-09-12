@@ -18,9 +18,44 @@ import {
 const PROD = {
   NODE_ENV: "production",
   USEAGENT_DEV_MODE: "false",
+  GATEWAY_PUBLIC_URL: "https://gateway.example.test",
+  PROVIDER_GATEWAY_SECRET: "readiness-test-provider-gateway-secret-0123456789",
 } as const;
 
 describe("engine readiness advertisement", () => {
+  test("a sandbox engine is not ready without a wired provider gateway", () => {
+    const proven = {
+      ...PROD,
+      ENABLED_ENGINES: "opencode,codex",
+      ENGINE_READINESS_OPENCODE: "verified",
+      ENGINE_READINESS_CODEX: "verified",
+      PROVIDER_HEALTH_OPENAI: "verified",
+      PROVIDER_HEALTH_OPENROUTER: "verified",
+    };
+    expect(engineReadiness("opencode", proven)).toMatchObject({ ready: true, reason: "enabled" });
+
+    const unwired = { ...proven, GATEWAY_PUBLIC_URL: "", PROVIDER_GATEWAY_PUBLIC_URL: "" };
+    const readiness = engineReadiness("opencode", unwired);
+    expect(readiness).toMatchObject({ ready: false, reason: "gateway_unconfigured" });
+    expect(readiness.message).toContain("GATEWAY_PUBLIC_URL");
+    expect(readyUserFacingEngines(unwired)).toEqual([]);
+    expect(resolveAcceptedEngine("codex", unwired)).toMatchObject({
+      ok: false,
+      status: 403,
+      error: "engine_not_ready",
+      reason: "gateway_unconfigured",
+    });
+    expect(engineReadyForDispatch("codex", unwired)).toBe(false);
+
+    // A URL without the signing secret is just as unusable as no URL.
+    expect(engineReadiness("codex", { ...proven, PROVIDER_GATEWAY_SECRET: "" })).toMatchObject({
+      ready: false,
+      reason: "gateway_unconfigured",
+    });
+    // Chat never touches a sandbox, so it does not need the gateway.
+    expect(engineReadiness("chat", { ...unwired, OPENROUTER_API_KEY: "k" })).toMatchObject({ ready: true });
+  });
+
   test("advertises no-sandbox chat only when its direct provider is configured", () => {
     expect(readyUserFacingEngines(PROD)).not.toContain("chat");
 
@@ -206,6 +241,10 @@ describe("engine readiness advertisement", () => {
     expect(engineModelReadyForDispatch("opencode", "claude-opus-5", env)).toBe(false);
     expect(engineModelReadyForDispatch("opencode", "openai/gpt-5.6-sol", env)).toBe(true);
     expect(engineModelReadyForDispatch("opencode", "made-up/provider-model", env)).toBe(false);
+    expect(engineModelReadyForDispatch("opencode", "cerebras/qwen-3.8-27b", {
+      ...env,
+      PROVIDER_HEALTH_CEREBRAS: "verified",
+    })).toBe(true);
     expect(engineModelsForConfiguredEngines(env).opencode).not.toContain("claude-opus-5");
     expect(modelProviderReadinessErrorBody("opencode", "claude-opus-5", env)).toMatchObject({
       error: "model_provider_not_ready",
@@ -285,5 +324,22 @@ describe("engine dispatch readiness", () => {
         PROVIDER_HEALTH_OPENAI: "verified",
       }),
     ).toBe(true);
+  });
+});
+
+describe("readiness remedy text", () => {
+  test("an unproven engine and an unverified provider both name the remedy", () => {
+    expect(engineReadiness("claude", { ...PROD, ENABLED_ENGINES: "claude" }).message)
+      .toBe("Claude Code is configured but not ready. Check its provider connection in Settings, then retry.");
+    expect(engineReadiness("claude", {
+      ...PROD,
+      ENABLED_ENGINES: "claude",
+      ENGINE_READINESS_CLAUDE: "verified",
+    })).toMatchObject({
+      ready: false,
+      reason: "not_proven",
+      provider: "anthropic",
+      message: "Claude Code is configured, but no Anthropic connection is verified. Connect an Anthropic key in Settings, then retry.",
+    });
   });
 });

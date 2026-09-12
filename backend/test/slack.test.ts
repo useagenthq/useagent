@@ -1017,8 +1017,11 @@ describe("slack native stream and Block Kit fallback", () => {
         rec.messages.find((m) => m.channel === t.channel && m.blocks) ?? null,
       );
       expect(posted.threadTs).toBe(t.ts);
-      const row = await getSlackOutbox(`slack-stream:start:${TEAM}:${t.runId}`);
-      expect(row?.state).toBe("delivered");
+      const row = await waitFor(async () => {
+        const candidate = await getSlackOutbox(`slack-stream:start:${TEAM}:${t.runId}`);
+        return candidate?.state === "delivered" ? candidate : null;
+      });
+      expect(row.state).toBe("delivered");
       expect(row?.attemptCount).toBe(0); // never re-attempted
       const response = await findSlackRunResponse(t.runId);
       expect(response?.nativeStreamTs).toBeNull();

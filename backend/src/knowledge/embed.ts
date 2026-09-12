@@ -16,9 +16,35 @@ interface EmbeddingResponse {
   error?: { message?: string };
 }
 
-/** True when embeddings are available (a key is configured). */
+/** True when an embedding key is configured. Configuration alone does not make
+ *  search hybrid: see embeddingsAvailable(). */
 export function embeddingsEnabled(): boolean {
   return env.embed.apiKey !== null;
+}
+
+// Health is observed, not assumed: a configured key that the provider rejects
+// (or that cannot be reached) leaves every ingest and search keyword-only, and
+// the API must say so instead of reporting embeddings as on. The last failure
+// is remembered until the next embedding succeeds.
+let lastEmbedFailure: string | null = null;
+
+export function markEmbeddingsHealthy(): void {
+  lastEmbedFailure = null;
+}
+
+export function markEmbeddingsDegraded(reason: string): void {
+  lastEmbedFailure = reason;
+}
+
+/** Why search is keyword-only right now, or null when embeddings serve. */
+export function embeddingsUnavailableReason(): string | null {
+  if (!embeddingsEnabled()) return "no embedding key is configured";
+  return lastEmbedFailure ? `the embedding provider failed (${lastEmbedFailure})` : null;
+}
+
+/** True only when a key is configured AND the last embedding call succeeded. */
+export function embeddingsAvailable(): boolean {
+  return embeddingsUnavailableReason() === null;
 }
 
 /**
@@ -46,10 +72,14 @@ export async function embed(input: string | string[]): Promise<number[][] | null
       if (!res.ok || body.error) throw new EmbedError(`openai embeddings: ${body.error?.message ?? res.status}`);
       const rows = (body.data ?? []).sort((a, b) => a.index - b.index).map((d) => d.embedding);
       if (rows.length !== texts.length) throw new EmbedError(`embedding count ${rows.length} != ${texts.length}`);
+      markEmbeddingsHealthy();
       return rows;
     } catch (e) {
       lastErr = e;
-      if (attempt === 4) throw e;
+      if (attempt === 4) {
+        markEmbeddingsDegraded((e as Error).message);
+        throw e;
+      }
       await new Promise((r) => setTimeout(r, 500 * attempt));
     }
   }

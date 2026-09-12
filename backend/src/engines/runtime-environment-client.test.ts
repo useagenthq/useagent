@@ -12,6 +12,19 @@ import {
   RuntimeEnvironmentRequestError,
 } from "./runtime-environment-client";
 import { buildRuntimeEnvironmentReadinessCommand } from "./runtime-environment";
+import { buildNativeRuntimeArtifactProbe } from "./native-runtime-artifact";
+
+const ROOT_LAYOUT = {
+  home: "/root",
+  workdir: "/root/work",
+  runsAsRoot: true,
+} as const;
+const BOX_LAYOUT = {
+  home: "/home/user",
+  workdir: "/home/user/work",
+  runsAsRoot: false,
+  bunExecutable: "/usr/local/bin/bun",
+} as const;
 
 describe("T3 environment client", () => {
   test("decodes the bounded HTTP status marker for runtime and canary callers", () => {
@@ -27,13 +40,26 @@ describe("T3 environment client", () => {
   test("keeps the one-time pairing credential and cookie inside the sandbox", () => {
     const command = buildRuntimeEnvironmentAuthenticationCommand();
 
-    expect(command).toContain("t3 auth pairing create");
+    expect(command).toContain(
+      '"/root/.local/share/useagent/native-runtime/524d46b26f5ac85c82cd41e20f6c709d9f08db9b/bin/t3" auth pairing create',
+    );
+    expect(command).not.toMatch(/(^|\s)t3 auth pairing create/);
     expect(command).toContain('--json >"$PAIRING"');
     expect(command).toContain("/api/auth/browser-session");
     expect(command).toContain("chmod 600");
     expect(command).toContain('rm -f "$PAIRING"');
     expect(command).not.toContain("echo $PAIRING");
     expect(command).not.toContain("0.0.0.0");
+    expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
+  });
+
+  test("uses the resident native runtime artifact for Box authentication", () => {
+    const command = buildRuntimeEnvironmentAuthenticationCommand(BOX_LAYOUT);
+
+    expect(command).toContain(
+      '"/home/user/.local/share/useagent/native-runtime/524d46b26f5ac85c82cd41e20f6c709d9f08db9b/bin/t3" auth pairing create',
+    );
+    expect(command).not.toContain("/root");
     expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
   });
 
@@ -89,6 +115,9 @@ describe("T3 environment client", () => {
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
+          if (command === buildNativeRuntimeArtifactProbe(ROOT_LAYOUT)) {
+            return { exitCode: 0, result: "" };
+          }
           if (command === buildRuntimeEnvironmentReadinessCommand()) {
             return { exitCode: 0, result: "" };
           }
@@ -114,8 +143,9 @@ describe("T3 environment client", () => {
         new AbortController().signal,
       ),
     ).resolves.toEqual({ projects: [], threads: [] });
-    expect(commands).toHaveLength(4);
+    expect(commands).toHaveLength(5);
     expect(commands).toEqual([
+      buildNativeRuntimeArtifactProbe(ROOT_LAYOUT),
       buildRuntimeEnvironmentReadinessCommand(),
       buildRuntimeEnvironmentSessionProbeCommand(),
       expect.stringContaining("/api/orchestration/shell"),
@@ -123,20 +153,24 @@ describe("T3 environment client", () => {
     ]);
   });
 
-  test("bootstraps authentication without returning credential material", async () => {
+  test("bootstraps Box authentication with the same native runtime launcher", async () => {
     const commands: string[] = [];
     const sandbox = {
       id: "cube-t3-auth-bootstrap",
+      providerKind: "box",
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
+          if (command === buildNativeRuntimeArtifactProbe(BOX_LAYOUT)) {
+            return { exitCode: 0, result: "" };
+          }
           if (command === buildRuntimeEnvironmentReadinessCommand()) {
             return { exitCode: 0, result: "" };
           }
           if (command === buildRuntimeEnvironmentSessionProbeCommand()) {
             return { exitCode: 1, result: "" };
           }
-          if (command === buildRuntimeEnvironmentAuthenticationCommand()) {
+          if (command === buildRuntimeEnvironmentAuthenticationCommand(BOX_LAYOUT)) {
             return { exitCode: 0, result: "" };
           }
           return { exitCode: 0, result: '{"projects":[]}' };
@@ -151,8 +185,9 @@ describe("T3 environment client", () => {
         new AbortController().signal,
       ),
     ).resolves.toEqual({ projects: [] });
-    expect(commands).toContain(buildRuntimeEnvironmentAuthenticationCommand());
-    expect(commands).toHaveLength(4);
+    expect(commands).toContain(buildRuntimeEnvironmentAuthenticationCommand(BOX_LAYOUT));
+    expect(commands).toHaveLength(5);
+    expect(commands[0]).toBe(buildNativeRuntimeArtifactProbe(BOX_LAYOUT));
   });
 
   test("prewarms private access without making an orchestration request", async () => {
@@ -162,6 +197,9 @@ describe("T3 environment client", () => {
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
+          if (command === buildNativeRuntimeArtifactProbe(ROOT_LAYOUT)) {
+            return { exitCode: 0, result: "" };
+          }
           if (command === buildRuntimeEnvironmentReadinessCommand()) {
             return { exitCode: 0, result: "" };
           }
@@ -180,6 +218,7 @@ describe("T3 environment client", () => {
       prewarmRuntimeEnvironmentAccess(sandbox, new AbortController().signal),
     ).resolves.toBeUndefined();
     expect(commands).toEqual([
+      buildNativeRuntimeArtifactProbe(ROOT_LAYOUT),
       buildRuntimeEnvironmentReadinessCommand(),
       buildRuntimeEnvironmentSessionProbeCommand(),
       buildRuntimeEnvironmentAuthenticationCommand(),
@@ -194,6 +233,9 @@ describe("T3 environment client", () => {
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
+          if (command === buildNativeRuntimeArtifactProbe(ROOT_LAYOUT)) {
+            return { exitCode: 0, result: "" };
+          }
           if (command === buildRuntimeEnvironmentReadinessCommand()) {
             return { exitCode: 0, result: "" };
           }
@@ -224,10 +266,12 @@ describe("T3 environment client", () => {
     ).resolves.toEqual({ projects: [], threads: [] });
 
     expect(commands).toEqual([
+      buildNativeRuntimeArtifactProbe(ROOT_LAYOUT),
       buildRuntimeEnvironmentReadinessCommand(),
       buildRuntimeEnvironmentSessionProbeCommand(),
       expect.stringContaining("/api/orchestration/shell"),
       expect.stringContaining("/api/orchestration/shell"),
+      buildNativeRuntimeArtifactProbe(ROOT_LAYOUT),
       buildRuntimeEnvironmentReadinessCommand(),
       buildRuntimeEnvironmentSessionProbeCommand(),
       expect.stringContaining("/api/orchestration/shell"),
@@ -241,6 +285,9 @@ describe("T3 environment client", () => {
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
+          if (command === buildNativeRuntimeArtifactProbe(ROOT_LAYOUT)) {
+            return { exitCode: 0, result: "" };
+          }
           if (command === buildRuntimeEnvironmentReadinessCommand()) {
             return { exitCode: 0, result: "" };
           }
@@ -278,6 +325,7 @@ describe("T3 environment client", () => {
       },
     });
     expect(commands).toEqual([
+      buildNativeRuntimeArtifactProbe(ROOT_LAYOUT),
       buildRuntimeEnvironmentReadinessCommand(),
       buildRuntimeEnvironmentSessionProbeCommand(),
       expect.stringContaining("/api/orchestration/threads/thread-missing"),
@@ -292,6 +340,9 @@ describe("T3 environment client", () => {
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
+          if (command === buildNativeRuntimeArtifactProbe(ROOT_LAYOUT)) {
+            return { exitCode: 0, result: "" };
+          }
           if (command === buildRuntimeEnvironmentReadinessCommand()) {
             return { exitCode: 0, result: "" };
           }
@@ -317,10 +368,12 @@ describe("T3 environment client", () => {
     ).resolves.toBe("0123456789abcdef");
 
     expect(commands).toEqual([
+      buildNativeRuntimeArtifactProbe(ROOT_LAYOUT),
       buildRuntimeEnvironmentReadinessCommand(),
       buildRuntimeEnvironmentSessionProbeCommand(),
       buildRuntimeEnvironmentWebSocketTicketCommand(),
       buildRuntimeEnvironmentWebSocketTicketCommand(),
+      buildNativeRuntimeArtifactProbe(ROOT_LAYOUT),
       buildRuntimeEnvironmentReadinessCommand(),
       buildRuntimeEnvironmentSessionProbeCommand(),
       buildRuntimeEnvironmentWebSocketTicketCommand(),

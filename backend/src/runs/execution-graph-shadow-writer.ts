@@ -9,6 +9,7 @@ import {
   type ExecutionStatus,
 } from "../db/schema";
 import { errorMessage } from "../util/error-message";
+import { publishOrgChange } from "./org-signals";
 import type { ProviderEventInput } from "./provider-events";
 import {
   advanceExecutionLifecycle,
@@ -624,15 +625,15 @@ async function writeExecutionGraph(
   input: ProviderEventInput,
   deliverySeq: number,
   exec: Executor,
-): Promise<void> {
+): Promise<{ readonly orgId: string; readonly changed: boolean } | null> {
   const observation = graphObservation(input);
-  if (!observation) return;
+  if (!observation) return null;
   const orgId = await owningOrgId(input.runId, exec);
-  if (!orgId) return;
+  if (!orgId) return null;
 
   if (observation.kind === "root") {
     const nativeSessionId = stringValue(input.nativeSessionId);
-    if (!nativeSessionId) return;
+    if (!nativeSessionId) return { orgId, changed: false };
     const root = await createRootExecution({
       orgId,
       runId: input.runId,
@@ -663,11 +664,11 @@ async function writeExecutionGraph(
       // existing explicit /root/<agent> fallback prove those observations.
       includeRunScan: input.provider === "t3",
     }, exec);
-    return;
+    return { orgId, changed: true };
   }
 
   const structure = observationStructure(input, observation);
-  await inTransaction(exec, async (tx) => {
+  const changed = await inTransaction(exec, async (tx) => {
     const staged = await stageExecutionGraphObservation({
       orgId,
       runId: input.runId,
@@ -676,9 +677,9 @@ async function writeExecutionGraph(
       deliverySeq,
       structure,
     }, tx);
-    if (staged.outcome === "stale" || staged.outcome === "structural_mismatch") return;
+    if (staged.outcome === "stale" || staged.outcome === "structural_mismatch") return false;
     const applied = await applyObservation(orgId, input, deliverySeq, observation, tx);
-    if (!applied.applied || !applied.resolutionReason) return;
+    if (!applied.applied || !applied.resolutionReason) return false;
     await markExecutionGraphObservationApplied({
       id: staged.row.id,
       expectedProviderEventSeq: deliverySeq,
@@ -692,7 +693,9 @@ async function writeExecutionGraph(
       seedParentSessionIds: applied.wakeParentSessionIds,
       seedChildSessionIds: applied.wakeChildSessionIds,
     }, tx);
+    return true;
   });
+  return { orgId, changed };
 }
 
 /** Strict seal-time audit. Replays the latest durable provider rows in bounded
@@ -772,7 +775,15 @@ export async function shadowWriteExecutionGraph(
   exec: Executor = db,
 ): Promise<void> {
   try {
-    await writeExecutionGraph(input, deliverySeq, exec);
+    const result = await writeExecutionGraph(input, deliverySeq, exec);
+    if (result?.changed) {
+      publishOrgChange(result.orgId, {
+        type: "execution_graph",
+        runId: input.runId,
+        threadId: input.threadId,
+        graphCursor: deliverySeq,
+      });
+    }
   } catch (error) {
     console.warn("[execution-graph-shadow] write failed", {
       runId: input.runId.slice(0, LOG_VALUE_CAP),

@@ -26,6 +26,8 @@ interface PendingRequest {
   readonly timer: ReturnType<typeof setTimeout>;
 }
 
+class PiRpcReadinessTimeoutError extends Error {}
+
 export type PiRpcFrameListener = (frame: unknown) => void;
 type PiRpcCommandInput = RpcCommand extends infer Command
   ? Command extends { id?: string }
@@ -94,6 +96,7 @@ class LivePiBridgeSession implements PiBridgeSession {
     readonly workdir: string;
     readonly runtime: PreparedPiRuntime;
     readonly resumeSessionFile?: string;
+    readonly readinessTimeoutMs?: number;
   }): Promise<LivePiBridgeSession> {
     let instance: LivePiBridgeSession | undefined;
     const pty = await input.sandbox.process.createPty({
@@ -124,16 +127,19 @@ class LivePiBridgeSession implements PiBridgeSession {
       `--model ${shellQuote(input.runtime.model.selector)} --no-title --no-lsp ` +
       `--no-extensions --no-skills --no-rules --auto-approve ` +
       `--tools read,write,bash,task${resume}`;
-    const command =
-      `stty -echo -onlcr -icanon min 1 time 0; exec su -s /bin/sh ${shellQuote(input.runtime.runAsUser)} ` +
-      `-c ${shellQuote(piCommand)}`;
+    const command = input.runtime.runAsUser
+      ? `stty -echo -onlcr -icanon min 1 time 0; exec su -s /bin/sh ${shellQuote(input.runtime.runAsUser)} ` +
+        `-c ${shellQuote(piCommand)}`
+      : `stty -echo -onlcr -icanon min 1 time 0; ${piCommand}`;
     await pty.sendInput(`${command}\n`);
     try {
       await Promise.race([
         instance.#ready,
         new Promise((_, reject) => setTimeout(
-          () => reject(new Error(`Pi ${PI_CODING_AGENT_VERSION} RPC readiness timed out`)),
-          RPC_REQUEST_TIMEOUT_MS,
+          () => reject(new PiRpcReadinessTimeoutError(
+            `Pi ${PI_CODING_AGENT_VERSION} RPC readiness timed out`,
+          )),
+          input.readinessTimeoutMs ?? RPC_REQUEST_TIMEOUT_MS,
         )),
       ]);
       const negotiation = await instance.request({ type: "negotiate_protocol", protocolVersion: 2 });
@@ -160,7 +166,7 @@ class LivePiBridgeSession implements PiBridgeSession {
 
   subscribe(listener: PiRpcFrameListener): () => void {
     this.#listeners.add(listener);
-    for (const frame of this.#initialFrames) listener(frame);
+    for (const frame of this.#initialFrames) this.emitToListener(listener, frame);
     this.#initialFrames = [];
     return () => this.#listeners.delete(listener);
   }
@@ -171,7 +177,7 @@ class LivePiBridgeSession implements PiBridgeSession {
       const data = "data" in result ? result.data as Record<string, unknown> : undefined;
       if (data?.agentInvoked === false) {
         for (const listener of this.#listeners) {
-          listener({ type: "prompt_result", agentInvoked: false });
+          this.emitToListener(listener, { type: "prompt_result", agentInvoked: false });
         }
       }
       return;
@@ -293,8 +299,17 @@ class LivePiBridgeSession implements PiBridgeSession {
     this.#pending.clear();
     const frame = { type: "rpc_frame_error", error: error.message };
     if (this.#listeners.size === 0) this.#initialFrames = [frame];
-    else for (const listener of this.#listeners) listener(frame);
+    else for (const listener of this.#listeners) this.emitToListener(listener, frame);
     void this.dispose();
+  }
+
+  private emitToListener(listener: PiRpcFrameListener, frame: unknown): void {
+    try {
+      listener(frame);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : "unknown listener failure";
+      console.warn("[pi-rpc] frame listener failed", detail.slice(0, 180));
+    }
   }
 
   private ingest(data: Uint8Array): void {
@@ -336,7 +351,9 @@ class LivePiBridgeSession implements PiBridgeSession {
       }
       const id = typeof frame.id === "string" ? frame.id : null;
       if (frame.type === "response" && !id) {
-        this.failProtocol(new Error("Pi RPC response is missing its request id"));
+        const command = typeof frame.command === "string" ? frame.command : null;
+        const safeCommand = command && /^[a-z_]{1,64}$/u.test(command) ? command : "unknown";
+        this.failProtocol(new Error(`Pi RPC ${safeCommand} response is missing its request id`));
         return;
       }
       if (frame.type === "response" && id) {
@@ -350,7 +367,9 @@ class LivePiBridgeSession implements PiBridgeSession {
       if (this.#listeners.size === 0 && frame.type === "available_commands_update") {
         this.#initialFrames = [frame];
       }
-      for (const listener of this.#listeners) listener(frame as unknown as RpcSessionEventFrame);
+      for (const listener of this.#listeners) {
+        this.emitToListener(listener, frame as unknown as RpcSessionEventFrame);
+      }
     }
   }
 }
@@ -369,6 +388,8 @@ export interface PiBridgeManager {
 export class DefaultPiBridgeManager implements PiBridgeManager {
   #sessions = new Map<string, PiBridgeSession>();
 
+  constructor(private readonly readinessTimeoutMs = RPC_REQUEST_TIMEOUT_MS) {}
+
   async ensure(input: {
     readonly sandbox: SandboxHandle;
     readonly workdir: string;
@@ -384,7 +405,19 @@ export class DefaultPiBridgeManager implements PiBridgeManager {
       return existing;
     }
     if (existing) await this.remove(existing.sessionFile);
-    const session = await LivePiBridgeSession.start(input);
+    let session: PiBridgeSession;
+    try {
+      session = await LivePiBridgeSession.start({
+        ...input,
+        readinessTimeoutMs: this.readinessTimeoutMs,
+      });
+    } catch (error) {
+      if (!(error instanceof PiRpcReadinessTimeoutError)) throw error;
+      session = await LivePiBridgeSession.start({
+        ...input,
+        readinessTimeoutMs: this.readinessTimeoutMs,
+      });
+    }
     this.#sessions.set(session.sessionFile, session);
     return session;
   }

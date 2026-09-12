@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { StatusDot } from "@/components/shared/status-dot";
 import { Chip } from "@/components/base/badges/chip";
+import { runTitle } from "@/components/chat/types";
 import { EntityShareRow } from "@/components/dashboard/entity-share-row";
 import type { RunStatus } from "@/lib/runs";
 import { cx } from "@/utils/cx";
@@ -39,7 +40,7 @@ function RunRow({ run }: { run: WorkspaceRun }) {
     >
       <RunStatusDot status={run.status} />
       <span className="min-w-0 flex-1 truncate text-caption-1-medium text-text-primary">
-        {run.prompt || "Untitled run"}
+        {runTitle(run.prompt)}
       </span>
       <span className="hidden font-mono text-caption-1-regular tabular-nums text-text-tertiary sm:inline">
         {formatDuration(run.duration_ms)}

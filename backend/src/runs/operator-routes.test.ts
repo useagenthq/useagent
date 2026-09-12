@@ -9,13 +9,32 @@ function makeApp() {
     cancel: Array<[string, string]>;
     approve: string[];
     admit: Array<[string, string]>;
+    admission: Array<{ open: boolean; operationId: string; actor: string; reason: string }>;
+    inflight: number;
   } = {
     pump: [],
     cancel: [],
     approve: [],
     admit: [],
+    admission: [],
+    inflight: 0,
   };
   const app = createOperatorRoutes({
+    getAdmission: async () => ({
+      open: true,
+      operationId: "bootstrap",
+      actor: "system",
+      reason: "no deployment boundary is active",
+      changedAt: "unknown",
+    }),
+    setAdmission: async (change) => {
+      calls.admission.push(change);
+      return { ...change, changedAt: "2026-09-02T00:00:00.000Z" };
+    },
+    deploymentInflight: async () => {
+      calls.inflight += 1;
+      return { count: 2, runIds: ["run-1", "run-2"] };
+    },
     pump: async (threadId) => {
       calls.pump.push(threadId);
       return `dispatched-${threadId}`;
@@ -42,6 +61,10 @@ function post(path: string, body: unknown, headers: Record<string, string> = {})
     headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
+}
+
+function get(path: string, headers: Record<string, string> = {}) {
+  return new Request(`http://loopback${path}`, { headers });
 }
 
 function fetchOperator(
@@ -110,6 +133,64 @@ describe("operator dispatch bridge", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ signalled: true });
     expect(calls.cancel).toEqual([["run-9", "gate teardown"]]);
+  });
+
+  test("reads and changes run admission with explicit operator ownership", async () => {
+    const { app, calls } = makeApp();
+    const headers = { authorization: `Bearer ${SECRET}` };
+    const current = await fetchOperator(app, get("/run-admission", headers));
+    expect(current.status).toBe(200);
+    expect(await current.json()).toEqual({
+      open: true,
+      operationId: "bootstrap",
+      actor: "system",
+      reason: "no deployment boundary is active",
+      changedAt: "unknown",
+    });
+    const changed = await fetchOperator(
+      app,
+      post("/run-admission", {
+        open: false,
+        operationId: "release-42",
+        actor: "promote",
+        reason: "backend swap",
+      }, headers),
+    );
+    expect(changed.status).toBe(200);
+    expect(calls.admission).toEqual([{
+      open: false,
+      operationId: "release-42",
+      actor: "promote",
+      reason: "backend swap",
+    }]);
+  });
+
+  test("reads the bounded deployment in-flight snapshot", async () => {
+    const { app, calls } = makeApp();
+    const response = await fetchOperator(
+      app,
+      get("/deployment-inflight", { authorization: `Bearer ${SECRET}` }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ count: 2, runIds: ["run-1", "run-2"] });
+    expect(calls.inflight).toBe(1);
+  });
+
+  test("requires every run-admission ownership field", async () => {
+    const { app, calls } = makeApp();
+    const headers = { authorization: `Bearer ${SECRET}` };
+    for (const body of [
+      { operationId: "release-42", actor: "promote", reason: "swap" },
+      { open: false, actor: "promote", reason: "swap" },
+      { open: false, operationId: "release-42", reason: "swap" },
+      { open: false, operationId: "release-42", actor: "promote" },
+      { open: false, operationId: " ", actor: "promote", reason: "swap" },
+    ]) {
+      const response = await fetchOperator(app, post("/run-admission", body, headers));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "open_operationId_actor_reason_required" });
+    }
+    expect(calls.admission).toEqual([]);
   });
 
   test("admits parity only through the authenticated operator lane with server identity", async () => {

@@ -1,11 +1,10 @@
 import { expect, test } from "bun:test";
+import type { ThreadRelationship } from "@useagent/agent-client";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
+import type { HandoffReceipt } from "./handoff-receipts";
 import type { ApiRun, RunStatus } from "./types";
 
-// The canonical-timeline flag is read at module load; flip it on BEFORE importing
-// the conversation so these turns render through the canonical lane.
-process.env.NEXT_PUBLIC_CANONICAL_TIMELINE = "1";
 const { Conversation } = await import("./conversation");
 type Turn = import("./conversation").Turn;
 
@@ -46,6 +45,7 @@ function makeTurn(
     child_session: false,
     thread_id: id,
     engine_session_id: null,
+    sandbox_id: null,
     repo: null,
     repos: [],
     repo_specs: [],
@@ -71,18 +71,23 @@ function makeTurn(
   };
 }
 
-function render(turns: Turn[]): string {
+function render(
+  turns: Turn[],
+  productChildren: readonly ThreadRelationship[] = [],
+  handoffReceipts?: ReadonlyMap<string, readonly HandoffReceipt[]>,
+): string {
   return renderToStaticMarkup(
-    <>
-      <Conversation
-        turns={turns}
-        defaultEngine="opencode"
-        defaultModel="claude-sonnet-5"
-        defaultMemoryScope="org"
-        pendingReply={null}
-        onReply={async () => {}}
-      />
-    </>,
+    <Conversation
+      turns={turns}
+      defaultEngine="opencode"
+      defaultModel="claude-sonnet-5"
+      defaultMemoryScope="org"
+      pendingReply={null}
+      onReply={async () => {}}
+      productChildren={productChildren}
+      handoffReceipts={handoffReceipts}
+      canonicalTimeline
+    />,
   );
 }
 
@@ -170,13 +175,13 @@ function fanOutEvents(): StoredCanonicalEvent[] {
 
 test("fan-out turn rows always render a visible heading", () => {
   const html = render([makeTurn("run-fanout", "completed", fanOutEvents())]);
-  const rows = html.split('data-session-ui="work-entry-row"').slice(1);
+  const rows = html.split('data-testid="trace-row"').slice(1);
   expect(rows.length).toBeGreaterThan(0);
   for (const row of rows) {
-    const heading = /<span class="min-w-0 shrink truncate[^"]*">([^<]*)<\/span>/.exec(row)?.[1];
+    const heading = /data-testid="trace-row-label"[^>]*>([^<]*)<\/span>/.exec(row)?.[1];
     expect(heading?.trim().length ?? 0).toBeGreaterThan(0);
   }
-  // The newest visible row is the child_session_create call, named by its tool.
+  // The child_session_create call is a step line named by its tool.
   expect(html).toContain("Child session create");
 });
 
@@ -200,10 +205,113 @@ test("a gateway child-session turn folds under its parent, never a second turn b
   // Its truth lives in the parent's subagent fold: honest serial Queued state
   // plus the open-as-own-session affordance.
   expect(html).toContain('data-testid="subagents-fold"');
-  expect(html).toContain("1 subagent");
+  expect(html).toContain("1 spawned session");
   expect(html).toContain("Delegated: audit the docs");
   expect(html).toContain("Queued");
   expect(html).toContain('href="/session/run-child"');
+});
+
+test("a product child result stays under its spawning parent and links to its thread", () => {
+  const parent = makeTurn("run-parent", "completed");
+  const child: ThreadRelationship = {
+    threadId: "product-child",
+    parentThreadId: "run-parent",
+    familyThreadId: "run-parent",
+    kind: "delegated",
+    title: "Research market prices",
+    sourceRunId: "run-parent",
+    sourceExecutionId: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-01T00:01:00.000Z",
+    status: "completed",
+    engine: "codex",
+    model: "gpt-5.6-luna",
+    latestRunId: "product-child",
+    latestSummary: "NVDA and GOOGL prices are ready.",
+    latestDurationMs: 1_500,
+    latestActivityAt: "2026-09-01T00:01:00.000Z",
+    bot: null,
+    followUpRunIds: [],
+  };
+  const html = render([parent], [child]);
+  expect(html).toContain("Research market prices");
+  expect(html).toContain("NVDA and GOOGL prices are ready.");
+  expect(html).toContain('href="/session/product-child"');
+  // The agent opened this child itself: no bot, so no handoff receipt under the turn.
+  expect(html).not.toContain('data-testid="handoff-receipts"');
+});
+
+test("a bot's thread leaves a receipt under the turn that handed it work and under every follow-up", () => {
+  const first = makeTurn("run-first", "completed");
+  const second = makeTurn("run-second", "completed");
+  const child: ThreadRelationship = {
+    threadId: "nova-thread",
+    parentThreadId: "run-first",
+    familyThreadId: "run-first",
+    kind: "delegated",
+    title: "Nova: compare the EU tiers",
+    sourceRunId: "run-first",
+    sourceExecutionId: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-01T00:01:00.000Z",
+    status: "running",
+    engine: "opencode",
+    model: "claude-opus-5",
+    latestRunId: "nova-thread",
+    latestSummary: null,
+    latestDurationMs: null,
+    latestActivityAt: "2026-09-01T00:01:00.000Z",
+    bot: { id: "bot-nova", name: "Nova" },
+    followUpRunIds: ["run-second"],
+  };
+  const html = render([first, second], [child]);
+  expect(html).toContain('data-handoff-status="created"');
+  expect(html).toContain("Handed to Nova.");
+  expect(html).toContain('data-handoff-status="followed_up"');
+  expect(html).toContain("Sent to Nova&#x27;s existing thread.");
+  expect(html.match(/href="\/session\/nova-thread"/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  // The fold names it by what happened, not by the lane id.
+  expect(html).toContain("1 bot thread");
+  expect(html).toContain("Nova · bot thread");
+  expect(html).not.toContain("Product child");
+});
+
+test("a live accepted handoff yields to its exact durable final reply without a reload", () => {
+  const parent = makeTurn("run-parent", "completed");
+  const optimistic: HandoffReceipt = {
+    botId: "bot-nova",
+    name: "Nova",
+    avatarTone: "violet",
+    avatarIcon: "research",
+    threadId: "nova-thread",
+    status: "created",
+  };
+  const child: ThreadRelationship = {
+    threadId: "nova-thread",
+    parentThreadId: "run-parent",
+    familyThreadId: "run-parent",
+    kind: "delegated",
+    title: "Nova: compare the tiers",
+    sourceRunId: "run-parent",
+    sourceExecutionId: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-01T00:01:00.000Z",
+    status: "completed",
+    engine: "opencode",
+    model: "claude-opus-5",
+    latestRunId: "nova-thread",
+    latestSummary: "Newer thread summary",
+    latestDurationMs: 1_000,
+    latestActivityAt: "2026-09-01T00:01:00.000Z",
+    bot: { id: "bot-nova", name: "Nova", avatarTone: "violet", avatarIcon: "research" },
+    handoffOutcomes: [
+      { sourceRunId: "run-parent", status: "completed", summary: "Exact final reply" },
+    ],
+    followUpRunIds: [],
+  };
+  const html = render([parent], [child], new Map([["run-parent", [optimistic]]]));
+  expect(html).toContain("Nova: Exact final reply");
+  expect(html).not.toContain("Handed to Nova.");
 });
 
 test("a reply turn without the child-session mark still renders as its own block", () => {
@@ -216,70 +324,147 @@ test("a reply turn without the child-session mark still renders as its own block
   expect(html).not.toContain('data-testid="subagents-fold"');
 });
 
-test("settled turn renders tool bursts through the T3 work grammar", () => {
+test("settled turn renders its work as one trace block", () => {
   const html = render([makeTurn("run-settled", "completed", settledEvents())]);
 
-  // The canonical lane drove the timeline, and tools render as T3 work rows.
+  // The canonical lane drove the timeline, and the work is ONE trace.
   expect(html).toContain('data-timeline-source="canonical"');
   // The timeline wrapper carries the shared 12px (space-y-3) rhythm so a trailing
   // published-artifact card / answer sits one step below the timeline above it,
   // not glued to it (artifact-block spacing fix).
   const timelineWrapper = html.match(/<div[^>]*data-timeline-source="canonical"[^>]*>/)?.[0] ?? "";
   expect(timelineWrapper).toContain("space-y-3");
-  expect(html).toContain('data-session-ui="work-group"');
-  expect(html).toContain('data-session-ui="work-entry-row"');
-  // The legacy ToolStepRow grammar no longer renders tool nodes.
+  expect(html.match(/data-testid="turn-trace"/g)).toHaveLength(1);
+  // A plain thread opens the trace: the skill receipt and the 3 tools are its
+  // step lines, one short line each, in the Thinking grammar; the pre-tool
+  // prose is a narration line between them, with no verb and no chip.
+  expect(html).toContain('aria-expanded="true"');
+  expect(html.match(/data-testid="trace-row"/g)).toHaveLength(4);
+  expect(html.match(/data-testid="trace-narration"/g)).toHaveLength(1);
+  // The context marker is a receipt, not a tool call. Pre-tool prose is one
+  // narration message inside the trace; the durable summary owns the reply.
+  expect(html).toContain("3 tool calls, 1 message, 1 failed");
+  expect(html).toContain(">Loaded skill<");
+  expect(html).toContain(">fix-loop<");
+  expect(html).toContain(">Run<");
+  expect(html).toContain(">bun test retry<");
+  expect(html).toContain('aria-label="Completed"');
+  // The old grammars no longer render tool nodes: no T3 work rows, no overflow
+  // fold, no marker rows, no legacy ToolStepRow.
+  expect(html).not.toContain('data-session-ui="work-group"');
+  expect(html).not.toContain('data-session-ui="work-entry-row"');
+  expect(html).not.toContain("previous tool calls");
+  expect(html).not.toContain('data-testid="marker-row"');
   expect(html).not.toContain('data-testid="tool-row"');
 
-  // The 3-tool burst folds behind the upstream overflow toggle (newest visible).
-  expect(html).toContain("+2 previous tool calls");
-
-  // Failed/success affordances from the ported status heuristics.
-  expect(html).toContain('aria-label="Completed"');
-
-  // Everything else is preserved: marker rows, narration bursts, the answer.
-  expect(html).toContain('data-testid="marker-row"');
+  // Narration followed by work stays in the trace. The durable summary is the
+  // only terminal answer outside it.
   expect(html).toContain("Scoping the retry budget now.");
+  expect(html).toContain("Scoped the retry budget per attempt chain.");
 });
 
-test("settled turn surfaces the failed tool once the fold is expanded", () => {
-  const html = render([makeTurn("run-settled", "completed", settledEvents())]);
-  // The failure affordance belongs to a hidden (older) row; the fold itself and
-  // the newest visible row must still expose the failure heuristics' markup when
-  // the collapsed group carries the failing entry as its newest row.
-  const htmlNewestFailure = render([
-    makeTurn("run-failed-last", "completed", [
-      ev("tool.started", {
-        toolCallId: "only-bad",
-        name: "bash",
-        input: { command: "cat missing.txt" },
-      }),
-      ev("tool.completed", {
-        toolCallId: "only-bad",
-        status: "error",
-        error: "cat: missing.txt: No such file or directory",
-      }),
-    ]),
+test("canonical replay renders one Thinking owner when live reasoning is also buffered", () => {
+  const reasoning = ev("reasoning.delta", {
+    messageId: "reasoning-message",
+    text: "Checking the synthetic retry policy.",
+    identity: {
+      nativeEventId: "reasoning-event",
+      nativeSeq: seq + 1,
+      nativeMessageId: "reasoning-message",
+      nativePartId: "reasoning-part",
+    },
+  });
+  const turn = makeTurn("run-reasoning", "running", [reasoning, { ...reasoning, revision: 2 }]);
+  turn.liveReasoning = "Checking the synthetic retry policy.";
+  const html = render([turn]);
+
+  expect(html.match(/data-testid="thinking-header"/g)).toHaveLength(1);
+  expect(html.match(/data-family="reasoning"/g)).toHaveLength(1);
+});
+
+test("a timeline work row owns transient reasoning before its durable frame arrives", () => {
+  const turn = makeTurn("run-reasoning-race", "running", liveEvents());
+  turn.liveReasoning = "Checking the synthetic retry policy.";
+  const html = render([turn]);
+
+  expect(html.match(/data-testid="thinking-header"/g)).toHaveLength(1);
+  expect(html.match(/data-family="reasoning"/g)).toHaveLength(1);
+  expect(html).toContain("Checking the synthetic retry policy.");
+});
+
+test("a run that failed at boot traces its category with the full reason and copies it", () => {
+  // Synthetic steps-only relay failure: all sandbox plumbing, then a done step
+  // that says just "Engine error"; run.summary carries the detailed reason.
+  const reason =
+    "error: synthetic engine relay stopped during startup after the child process exited before signaling readiness. Diagnostic output remains visible in full so operators can copy the complete failure context.";
+  const boot = (
+    idx: number,
+    kind: "task" | "done",
+    label: string,
+    chip: string | null,
+  ): Turn["steps"][number] => ({
+    id: `st${idx}`,
+    run_id: "run-boot-failed",
+    idx,
+    kind,
+    label,
+    chip,
+    code_json: null,
+    created_at: "2030-01-01T00:00:00.000Z",
+  });
+  const turn = makeTurn("run-boot-failed", "failed", undefined, [
+    boot(0, "task", "Preparing context and runtime…", "boot"),
+    boot(1, "task", "Provisioning cloud sandbox…", "claude"),
+    boot(2, "task", "Sandbox sandbox-demo-02 ready in 4s (4 CPU / 8 GiB)", "claude"),
+    boot(3, "task", "Preparing browser, tools, and integrations…", "claude"),
+    boot(4, "done", "Engine error", null),
   ]);
-  expect(htmlNewestFailure).toContain('aria-label="Failed"');
-  expect(html).toContain('data-session-ui="work-group"');
+  turn.summary = reason;
+  const html = render([turn]);
+  const escaped = reason.replaceAll("'", "&#x27;");
+
+  // The trace exists for the failure alone: the header is the category in the
+  // failure tint with the reason as its detail, and one failed terminal row.
+  expect(html).toContain('data-testid="turn-trace"');
+  const header = html.split('data-testid="thinking-header"')[1]?.split("</button>")[0] ?? "";
+  expect(header).toContain(">Engine error<");
+  expect(header).toContain(escaped);
+  expect(html.match(/data-testid="trace-row"/g)).toHaveLength(1);
+  expect(html).toContain('data-status="failed"');
+  // The failure banner shows the whole reason with its own copy affordance.
+  expect(html).toContain('data-session-ui="thread-error-banner"');
+  expect(html).toContain('aria-label="Copy error"');
+  expect(html).not.toContain("line-clamp");
 });
 
-test("live turn tails with the T3 working indicator and hides the in-flight row", () => {
+test("settled turn shows the failed step as an x in the open trace", () => {
+  const html = render([makeTurn("run-settled", "completed", settledEvents())]);
+  expect(html).toContain('data-status="failed"');
+  expect(html).toContain('aria-label="Failed"');
+  expect(html).toContain(">cat missing.txt<");
+  // Payloads stay behind the row until opened: the error text never renders inline.
+  expect(html).not.toContain("No such file or directory");
+});
+
+test("live turn heads the trace with Thinking and the loader, and runs its last step", () => {
   const html = render([makeTurn("run-live", "running", liveEvents())]);
 
-  // Working indicator with the self-ticking timer and the in-flight step suffix.
-  expect(html).toContain('data-session-ui="working-indicator"');
-  expect(html).toContain("Working for");
-  expect(html).toContain("· Run");
-  expect(html).not.toContain("· Run - bun run typecheck");
-  // The old LoadingState "Working" shimmer tail is gone from the timeline (no
-  // narration is streaming here, so nothing else may render it either).
-  expect(html).not.toContain("agent-progress-loading-text");
-
-  // Completed work folds T3-style even while live (newest visible, older hidden).
-  expect(html).toContain('data-session-ui="work-group"');
-  expect(html).toContain("+1 previous tool call");
+  // The header shimmers "Thinking" beside the pixel loader; the running step is
+  // its muted detail, named by the summarizer: for a shell step, the command
+  // line itself (never the "Run - <command>" row grammar).
+  expect(html).toContain('data-testid="turn-trace"');
+  expect(html).toContain('data-live="true"');
+  expect(html).toContain("agent-progress-loading-text");
+  expect(html).toContain(">Thinking<");
+  expect(html).toContain(">Run bun run typecheck<");
+  expect(html).not.toContain("Run - bun run typecheck");
+  // The in-flight step is a row with the loader in place of the check.
+  expect(html).toContain('data-status="running"');
+  expect(html).toContain('aria-label="Running"');
+  // Completed work stays visible above it; no T3 working indicator, no folds.
+  expect(html.match(/data-testid="trace-row"/g)).toHaveLength(3);
+  expect(html).not.toContain('data-session-ui="working-indicator"');
+  expect(html).not.toContain("previous tool call");
 });
 
 test("canonical OpenCode plan renders the latest checklist instead of a generic tool row", () => {
@@ -322,9 +507,7 @@ test("durable OpenCode todowrite fallback renders the checklist instead of a gen
     }),
     created_at: "2026-08-17T09:00:00Z",
   };
-  const html = render([
-    makeTurn("run-plan-fallback", "completed", undefined, [planStep]),
-  ]);
+  const html = render([makeTurn("run-plan-fallback", "completed", undefined, [planStep])]);
 
   expect(html).toContain('data-testid="todo-list"');
   expect(html).toContain("Create components");

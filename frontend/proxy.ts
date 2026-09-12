@@ -11,7 +11,15 @@ const SESSION_COOKIES = [
  * Better Auth session and fails closed independently.
  */
 export function proxy(request: NextRequest): NextResponse {
-  if (request.nextUrl.pathname === "/healthz") return NextResponse.next();
+  // next.config sets skipTrailingSlashRedirect so the port bridge under /api
+  // keeps its trailing slash; pages keep Next's canonical no-slash form here.
+  const { pathname } = request.nextUrl;
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    const canonical = new URL(request.url);
+    canonical.pathname = pathname.replace(/\/+$/, "");
+    return NextResponse.redirect(canonical, 308);
+  }
+  if (pathname === "/healthz") return NextResponse.next();
 
   // Local preview escape hatch (used by `bun run local`): skip the login redirect
   // so the app renders against a remote API for UI work. HARD-GATED to development

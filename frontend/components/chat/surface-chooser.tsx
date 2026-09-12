@@ -55,6 +55,24 @@ const SURFACES: readonly SurfaceOption[] = [
   },
 ] as const;
 
+/** Header label for the rail's ACTIVE tab: the chooser surfaces plus the
+ *  non-chooser editor/workspace tabs (their labels live with the tab type). */
+export function railTabLabelFor(
+  railTab: SurfaceChoice | "editor" | "workspace" | null,
+): string {
+  if (railTab === null) return "Surface";
+  const labels = {
+    agents: "Agents",
+    artifacts: "Files",
+    diff: "Diff",
+    editor: "Editor",
+    workspace: "Workspace",
+    terminal: "Terminal",
+    desktop: "Desktop",
+  } satisfies Record<Exclude<SurfaceChoice | "editor" | "workspace", null>, string>;
+  return labels[railTab];
+}
+
 export function SurfaceChooser({
   agentsAvailable,
   diffAvailable,

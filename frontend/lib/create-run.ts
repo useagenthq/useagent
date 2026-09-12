@@ -17,7 +17,7 @@ export function selectRunCreateAttempt(
   return { serializedBody, idempotencyKey: generateKey() };
 }
 
-export async function createRun(body: unknown, idempotencyKey = crypto.randomUUID()) {
+async function postAcceptedCommand(path: string, body: unknown, idempotencyKey: string) {
   const serializedBody = JSON.stringify(body);
   const init: RequestInit = {
     method: "POST",
@@ -28,12 +28,41 @@ export async function createRun(body: unknown, idempotencyKey = crypto.randomUUI
     body: serializedBody,
   };
 
-  const response = await backendFetch("/api/runs", init);
+  const response = await backendFetch(path, init);
   if (!TRANSIENT_RUN_CREATE_STATUSES.has(response.status)) return response;
 
   await response.body?.cancel();
   await new Promise((resolve) => setTimeout(resolve, 100));
-  return backendFetch("/api/runs", init);
+  return backendFetch(path, init);
+}
+
+export async function createRun(body: unknown, idempotencyKey = crypto.randomUUID()) {
+  return postAcceptedCommand("/api/runs", body, idempotencyKey);
+}
+
+export async function createThreadMessage(
+  threadId: string,
+  body: { readonly text: string; readonly attachments?: readonly string[] },
+  idempotencyKey = crypto.randomUUID(),
+) {
+  return postAcceptedCommand(
+    `/api/threads/${encodeURIComponent(threadId)}/messages`,
+    body,
+    idempotencyKey,
+  );
+}
+
+export async function continueNativeChildAsSession(
+  parentThreadId: string,
+  executionId: string,
+  title: string,
+  idempotencyKey = crypto.randomUUID(),
+) {
+  return postAcceptedCommand(
+    `/api/threads/${encodeURIComponent(parentThreadId)}/continue-native-child`,
+    { executionId, title, idempotencyKey },
+    idempotencyKey,
+  );
 }
 
 export async function runCreateFailureMessage(

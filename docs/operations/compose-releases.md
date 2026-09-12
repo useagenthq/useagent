@@ -29,9 +29,9 @@ release orchestrator must run `bun deploy/compose/validate-release.ts` and pass
 the validated registry digests, not mutable tags, into Compose:
 
 ```text
-ghcr.io/useagenthq/useagent-backend@sha256:...
-ghcr.io/useagenthq/useagent-gateway@sha256:...
-ghcr.io/useagenthq/useagent-frontend@sha256:...
+ghcr.io/useagenthq/backend@sha256:...
+ghcr.io/useagenthq/gateway@sha256:...
+ghcr.io/useagenthq/frontend@sha256:...
 ```
 
 It must also set `USEAGENT_GATEWAY_PUBLIC_URL` to the credential-free HTTPS
@@ -71,3 +71,12 @@ computer/recording/repository tools still need the single deployment-selected
 sandbox provider credential; configure only that active provider's key and
 endpoint/template fields. Never place both Cube and Daytona control credentials
 in the gateway environment, and never copy the backend environment wholesale.
+
+The gateway does need `GATEWAY_DATABASE_URL`, `USEAGENT_API_ORIGIN` (the
+backend origin it forwards child-session, handoff and approval tool calls to),
+`FRONTEND_ORIGIN`, the three shared secrets, `GATEWAY_PUBLIC_URL`, and the same
+`PRODUCT_CHILD_THREADS` and `BOTS` values as the backend. The tool families it
+advertises follow the backend's `GET /api/config` `product` block, refreshed
+once a minute; while its own flags disagree it logs an error naming both values,
+and while the backend is unreachable it falls back to its own flags with a
+warning.

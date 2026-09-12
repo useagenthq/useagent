@@ -16,6 +16,8 @@ import {
   slackArtifactDeliveryIdempotencyKey,
 } from "../src/slack/outbox";
 import { createRun, setRunEngineSession, setRunSandbox, setRunStatus } from "../src/runs/repo";
+import { insertThreadRelationship } from "../src/runs/thread-relationship-repo";
+import { insertCommandWithRun } from "../src/commands/repo";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
 
 // Regression for GAP 3: a restart could lose the final Slack reply. The reply used
@@ -241,6 +243,80 @@ describe("slack reply durability at finalization (GAP 3)", () => {
       .from(slackOutbox)
       .where(eq(slackOutbox.idempotencyKey, revisionUploadKey));
     expect(revisionUploads).toHaveLength(1);
+  });
+
+  test("a product child thread delivers its result into the parent Slack thread", async () => {
+    const root = await slackRootRun("coordinate children");
+    await insertThreadRelationship({
+      orgId: ORG,
+      threadId: root.runId,
+      parentThreadId: null,
+      familyThreadId: root.runId,
+      kind: "root",
+      title: "Coordinate children",
+      sourceRunId: root.runId,
+    });
+    const childId = crypto.randomUUID();
+    await insertCommandWithRun({
+      commandId: crypto.randomUUID(),
+      idempotencyKey: null,
+      orgId: ORG,
+      actorId: null,
+      payloadFingerprint: "a".repeat(64),
+      payload: "{}",
+      origin: null,
+      priority: 0,
+      run: {
+        id: childId,
+        prompt: "Design the calendar interactions",
+        model: "claude-opus-5",
+        engine: "mock",
+        parentRunId: null,
+        threadId: childId,
+        repos: [],
+        resolvedResources: [],
+        attachmentIds: [],
+        memoryScope: "org",
+        skillId: null,
+        skillVersion: null,
+        skillContentHash: null,
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+      threadRelationship: {
+        parentThreadId: root.runId,
+        familyThreadId: root.runId,
+        kind: "delegated",
+        title: "Calendar interaction design",
+        sourceRunId: root.runId,
+        sourceExecutionId: null,
+      },
+    });
+
+    const started = await getSlackOutbox(`slack-child:started:${TEAM}:${childId}`);
+    expect(started?.kind).toBe("post_message");
+    expect(JSON.parse(started?.payload ?? "{}")).toMatchObject({
+      channel: root.channel,
+      threadTs: root.ts,
+    });
+
+    await finalizeRun(childId, "completed", "Interaction design finished", 100);
+
+    const reply = await getSlackOutbox(`slack-reply:${TEAM}:${childId}`);
+    expect(reply).not.toBeNull();
+    const payload = JSON.parse(reply?.payload ?? "{}") as {
+      channel?: string;
+      threadTs?: string;
+      fallbackChunks?: string[];
+      blocks?: unknown[];
+    };
+    expect(payload.channel).toBe(root.channel);
+    expect(payload.threadTs).toBe(root.ts);
+    expect(payload.fallbackChunks).toEqual(["Interaction design finished"]);
+    expect(JSON.stringify(payload.blocks)).toContain(`/session/${childId}`);
+    expect(JSON.stringify(payload.blocks)).toContain("Calendar interaction design");
   });
 
   test("reply enqueue is idempotent across re-finalization (crash-retry safe)", async () => {

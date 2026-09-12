@@ -1,10 +1,10 @@
 "use client";
 
+
 import {
   RiAddLine,
   RiArrowDownSLine,
   RiArrowUpLine,
-  RiErrorWarningLine,
   RiMicLine,
   RiStopFill,
   RiToolsLine,
@@ -15,7 +15,9 @@ import { useEffect, useRef, useState } from "react";
 import { type Agent, AgentChip, ChooseAgentPopover } from "@/components/chat/agent-command";
 import type { CommandCatalogState } from "@/components/chat/canonical-timeline";
 import { ChatModelMenu, type ChatModelOption } from "@/components/chat/chat-model-menu";
-import { AddFilesRow, AddMenuDivider, CreateRows } from "@/components/chat/composer-add-menu";
+import { AddContextMenu } from "@/components/chat/composer-add-menu";
+import { ComposerAlert } from "@/components/chat/composer-alert";
+import { mentionedBotIds, unlinkedBotTokens } from "@/components/chat/composer-mentions";
 import { mentionsToRunResources, useComposerMentions } from "@/components/chat/composer-mentions-ui";
 import { ModelPicker } from "@/components/chat/engine-picker";
 import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
@@ -28,55 +30,17 @@ import {
   SlashCommandPopover,
   slashInsertText,
 } from "@/components/chat/slash-command";
-import { type EngineId, engineLabel, type MemoryScope } from "@/components/chat/types";
+import type { EngineId, MemoryScope } from "@/components/chat/types";
 import { Loader } from "@/components/prompt-kit/loader";
 import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt-input";
 import { BackgroundStatusPill } from "@/components/session-ui/background-status-pill";
-import { ProviderStatusBanner } from "@/components/session-ui/provider-status-banner";
+import { engineDisplayLabel, ProviderStatusBanner } from "@/components/session-ui/provider-status-banner";
 import { ThreadErrorBanner } from "@/components/session-ui/thread-error-banner";
+import { composerPlaceholder, getComposerAction } from "@/components/chat/composer-model";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { cx as cn } from "@/utils/cx";
-
 type Variant = "hero" | "compact";
 
-type ComposerAction =
-  | { kind: "send"; label: "Send" }
-  | { kind: "steer"; label: "Steer" }
-  | { kind: "stop"; label: "Stop this run" };
-
-export function getComposerAction({
-  running,
-  hasDraft,
-  canStop,
-}: {
-  running: boolean;
-  hasDraft: boolean;
-  canStop: boolean;
-}): ComposerAction {
-  if (running && hasDraft) return { kind: "steer", label: "Steer" };
-  if (running && canStop) return { kind: "stop", label: "Stop this run" };
-  return { kind: "send", label: "Send" };
-}
-
-/**
- * Honest default placeholder: hint ONLY affordances this composer actually has.
- * "/" is real (agent picker on hero, command autocomplete when a catalog holds
- * commands); "@" files and "$" skills are NOT typed affordances here today, so
- * they are never advertised. An explicit caller placeholder always wins.
- */
-export function composerPlaceholder({
-  explicit,
-  agentSlash,
-  commandCount,
-}: {
-  explicit?: string;
-  agentSlash: boolean;
-  commandCount: number;
-}): string {
-  if (explicit !== undefined) return explicit;
-  if (agentSlash) return "Ask anything, / for agents";
-  if (commandCount > 0) return "Ask anything, / for commands";
-  return "Ask anything...";
-}
 
 /**
  * Submit a composed prompt. `idempotencyKey` is a stable per-submission id the
@@ -98,11 +62,16 @@ export type ComposerSubmit = (
   command?: { name: string; args: string } | null,
   attachmentIds?: readonly string[],
   resources?: readonly RunResourceSelection[],
+  /** Bot ids behind @bot chips; each opens a delegated handoff thread on that bot's preset. */
+  botMentions?: readonly string[],
 ) => void | Promise<void>;
 
 export type ComposerProps = {
   variant?: Variant;
   placeholder?: string;
+  /** Opening words of the computed placeholder ("Reply to Agent"); ignored when
+   *  `placeholder` is explicit. */
+  placeholderLead?: string;
   engine?: EngineId;
   defaultEngine?: EngineId;
   pending?: boolean;
@@ -166,6 +135,11 @@ export type ComposerProps = {
   threadError?: string | null;
   /** Records the session-scoped dismissal at the call site; absent hides the X. */
   onDismissThreadError?: () => void;
+  /** A notice about the LAST accepted send (e.g. a mentioned bot that did not
+   *  get the message). Rendered in the failure slot; the draft is NOT restored
+   *  because the message itself went through. Editing dismisses it. */
+  notice?: string | null;
+  onDismissNotice?: () => void;
   /** The selected engine is missing from the server's ready-engines manifest
    *  (GET /api/config `engines`, see unavailableEngineLabel) - shows the slim
    *  provider status banner. Computed by the call site; no fetch here. */
@@ -198,6 +172,7 @@ export type ComposerProps = {
 export function Composer({
   variant = "hero",
   placeholder,
+  placeholderLead,
   engine: engineProp,
   defaultEngine = "opencode",
   pending = false,
@@ -222,6 +197,8 @@ export function Composer({
   runStartedAt,
   threadError,
   onDismissThreadError,
+  notice,
+  onDismissNotice,
   engineUnavailable = false,
   engineUnavailableMessage,
   draftKey,
@@ -260,6 +237,7 @@ export function Composer({
   // can still override it without changing the call sites.
   const [engineState] = useState<EngineId>(defaultEngine);
   const [model, setModel] = useState(defaultModel);
+  const [modelAvailable, setModelAvailable] = useState(true);
   const [command, setCommand] = useState<Agent | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -267,6 +245,13 @@ export function Composer({
   // holding the real upload row + the Create prompt-seeds, shared with the
   // new-thread shelf. Only mounted when uploads are enabled (the reply composer).
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  // The provider banner is dismissible here; it comes back if the engine's
+  // readiness flips again (the dismissal is scoped to one unavailable episode).
+  const [providerBannerDismissed, setProviderBannerDismissed] = useState(false);
+  useEffect(() => {
+    if (!engineUnavailable) setProviderBannerDismissed(false);
+  }, [engineUnavailable]);
+  const isMobile = useIsMobile();
   const [cmdHighlight, setCmdHighlight] = useState(0);
   const [cmdDismissed, setCmdDismissed] = useState(false);
   // Prompt-submission transaction: `submitting` guards the in-flight await (no
@@ -286,6 +271,7 @@ export function Composer({
     enabled: enableMentions,
     selectedRepos: repoRevisions ? Object.keys(repoRevisions) : undefined,
     repoRevisions,
+    draftKey,
   });
 
   const engine = engineProp ?? engineState;
@@ -297,7 +283,7 @@ export function Composer({
   const slashActive = allowAgent && !command && value.trimStart().startsWith("/");
   const showAgentPopover = slashActive || toolsOpen;
   const busy = pending || submitting;
-  const blocked = busy || locked || runUploads.blocked;
+  const blocked = busy || locked || runUploads.blocked || (enableModelPicker && !modelAvailable);
   const hasDraft = value.trim().length > 0;
   const canSend = hasDraft && !blocked;
   const composerAction = getComposerAction({
@@ -332,8 +318,12 @@ export function Composer({
   // only for the "/" affordances that really exist on THIS composer instance.
   const effectivePlaceholder = composerPlaceholder({
     explicit: placeholder,
+    lead: placeholderLead,
     agentSlash: allowAgent,
     commandCount: catalogCommands.length,
+    mentions: enableMentions,
+    bots: mentions.botsAvailable,
+    compact: isMobile,
   });
   const cmdToken = /^\/([^\s]*)$/.exec(value.trimStart())?.[1];
   const slashTyped = !allowAgent && !cmdDismissed && cmdToken !== undefined;
@@ -385,6 +375,16 @@ export function Composer({
     // Reuse the idempotency key when resending the SAME failed text, so a retry
     // after an ambiguous failure observes the original run instead of starting a
     // duplicate; fresh text gets a fresh key.
+    // A typed "@bot/..." with no chip behind it would send as plain text and hand off to
+    // nobody - say so instead of letting the message pretend to be a handoff.
+    const unlinked = enableMentions ? unlinkedBotTokens(text, mentions.mentions) : [];
+    if (unlinked.length > 0) {
+      setFailed(true);
+      setFailureMessage(
+        `${unlinked[0]} isn't linked to a bot. Pick the bot from the @ menu again, or remove it to send as plain text.`,
+      );
+      return;
+    }
     const key =
       retry.current && retry.current.text === text ? retry.current.key : crypto.randomUUID();
     setSubmitting(true);
@@ -409,6 +409,7 @@ export function Composer({
         intent,
         runUploads.readyIds,
         mentionsToRunResources(mentions.mentions),
+        mentionedBotIds(mentions.mentions),
       );
       retry.current = null; // accepted — drop the retry key
       runUploads.clearAccepted();
@@ -481,61 +482,32 @@ export function Composer({
           carries its own absolute placement (above this reply composer). */}
       {mentions.popover}
 
-      {/* The "+" add-context menu: a BoardUI-style popover ABOVE the input (the
-          reply composer sits at the viewport bottom). Same rows as the new-thread
-          shelf via the shared module - a real upload + Create prompt-seeds. Repos
-          and GitHub are omitted here: a reply reuses the thread's provisioned
-          sandbox, so they are not real reply capabilities. */}
+      {/* The "+" add-context menu floats above the input; rows live in the shared module. */}
       {enableUploads && (
-        <AnimatePresence>
-          {addMenuOpen && (
-            <>
-              <button
-                type="button"
-                aria-hidden
-                tabIndex={-1}
-                className="fixed inset-0 z-20 cursor-default"
-                onClick={() => setAddMenuOpen(false)}
-              />
-              <div className="absolute bottom-full left-0 z-30 mb-2 w-full">
-                <motion.div
-                  role="menu"
-                  aria-label="Add context"
-                  initial={{ opacity: 0, scale: 0.96, y: 4 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.96, y: 4 }}
-                  transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-                  className="w-[340px] max-w-full origin-bottom-left rounded-2xl border border-border-button-default bg-background-primary-default p-1.5 shadow-dropdown"
-                >
-                  <AddFilesRow inline onPick={() => { setAddMenuOpen(false); fileInput.current?.click(); }} />
-                  <AddMenuDivider />
-                  <CreateRows inline onSeed={(seed) => { setAddMenuOpen(false); setValue((prev) => (prev.trim() ? prev : seed)); }} />
-                </motion.div>
-              </div>
-            </>
-          )}
-        </AnimatePresence>
+        <AddContextMenu
+          open={addMenuOpen}
+          onClose={() => setAddMenuOpen(false)}
+          onPickFiles={() => fileInput.current?.click()}
+          onHandToBot={enableMentions && mentions.botsAvailable ? mentions.openBots : null}
+          onSeed={(seed) => setValue((prev) => (prev.trim() ? prev : seed))}
+        />
       )}
 
       {failed && (
-        <div
-          role="alert"
-          className="text-red-500 mb-1.5 flex items-center gap-1.5 px-1 text-caption-1-regular"
-        >
-          <RiErrorWarningLine className="size-3.5 shrink-0" aria-hidden />
+        <ComposerAlert>
           {failureMessage ?? "Couldn't send - your message is restored. Press send to try again."}
-        </div>
+        </ComposerAlert>
       )}
-
+      {enableModelPicker && !modelAvailable && (
+        <ComposerAlert testId="model-unavailable">
+          No available model is selected. Refresh the model list or reconnect the provider.
+        </ComposerAlert>
+      )}
+      {notice && !failed && <ComposerAlert testId="composer-notice">{notice}</ComposerAlert>}
       {stopError && (
-        <div
-          role="alert"
-          data-testid="stop-error"
-          className="text-red-500 mb-1.5 flex items-center gap-1.5 px-1 text-caption-1-regular"
-        >
-          <RiErrorWarningLine className="size-3.5 shrink-0" aria-hidden />
+        <ComposerAlert testId="stop-error">
           Couldn&apos;t stop this run: {stopError}. Try again.
-        </div>
+        </ComposerAlert>
       )}
 
       {/* T3 banner stack above the input card, ordered error -> provider ->
@@ -544,15 +516,16 @@ export function Composer({
           even while a Steer draft is being typed (the send button is Steer
           then, not Stop) - same existing durable cancel handler as the button,
           never a second API path. */}
-      {(threadError || engineUnavailable || (running && onStop)) && (
+      {(threadError || (engineUnavailable && !providerBannerDismissed) || (running && onStop)) && (
         <div className="mb-1.5 flex flex-col gap-1.5">
           {threadError && (
             <ThreadErrorBanner error={threadError} onDismiss={onDismissThreadError} />
           )}
-          {engineUnavailable && (
+          {engineUnavailable && !providerBannerDismissed && (
             <ProviderStatusBanner
-              engineLabel={engineLabel(engine)}
+              engineLabel={engineDisplayLabel(engine)}
               description={engineUnavailableMessage}
+              onDismiss={() => setProviderBannerDismissed(true)}
             />
           )}
           {running && onStop && (
@@ -601,6 +574,7 @@ export function Composer({
             setCmdDismissed(false);
             setCmdHighlight(0);
             if (failed) setFailed(false); // editing dismisses the failed state
+            if (notice) onDismissNotice?.();
           }}
           onSubmit={submit}
           isLoading={pending}
@@ -612,6 +586,32 @@ export function Composer({
               : "grid h-fit grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 p-2",
           )}
         >
+          {/* The "+" add-context button sits FIRST in the DOM so keyboard focus
+              travels + -> textarea -> send, matching the visual left-to-right
+              order in the compact grid (col-start-1 pins it to the left cell). */}
+          {enableUploads ? (
+            <button
+              type="button"
+              aria-label="Add context"
+              aria-haspopup="menu"
+              aria-expanded={addMenuOpen}
+              onClick={() => setAddMenuOpen((o) => !o)}
+              className={cn(
+                "col-start-1 row-start-1 flex size-9 items-center justify-center rounded-full border transition-colors",
+                addMenuOpen
+                  ? "border-border-button-default bg-background-secondary-default text-text-primary"
+                  : "border-border-button-default text-text-secondary hover:bg-background-primary-hover",
+              )}
+            >
+              <RiAddLine
+                className={cn(
+                  "size-5 transition-transform duration-200",
+                  addMenuOpen && "rotate-45",
+                )}
+                aria-hidden
+              />
+            </button>
+          ) : null}
           <div
             className={cn(
               "flex items-start gap-1.5 px-1",
@@ -627,15 +627,22 @@ export function Composer({
               autoFocus={autoFocus}
               disabled={locked}
               placeholder={command ? "" : effectivePlaceholder}
-              // ARIA combobox/listbox wiring for the "/" command popover: announce that a list is
-              // available, whether it is open, and which option is active (so a screen reader reads
-              // the highlighted command as the user arrows through it).
+              // ARIA combobox/listbox wiring for BOTH popovers: the "@" mention list (which
+              // claims the keys first) and the "/" command list. Announce that a list is
+              // available, whether it is open, and which option is active so a screen reader
+              // reads the highlighted row as the user arrows through it.
               role="combobox"
               aria-autocomplete="list"
-              aria-expanded={cmdActive}
-              aria-controls={cmdActive ? "slashcmd-label" : undefined}
+              aria-expanded={mentions.open || cmdActive}
+              aria-controls={
+                mentions.open ? mentions.listboxId : cmdActive ? "slashcmd-label" : undefined
+              }
               aria-activedescendant={
-                cmdActive && cmdHighlightedName ? commandOptionId(cmdHighlightedName) : undefined
+                mentions.open
+                  ? mentions.activeOptionId
+                  : cmdActive && cmdHighlightedName
+                    ? commandOptionId(cmdHighlightedName)
+                    : undefined
               }
               onSelect={mentions.onTextareaSelect}
               onKeyDown={(e) => {
@@ -661,31 +668,8 @@ export function Composer({
           {/* px-1 matches the text row above so the +/send controls left/right-align
               with the placeholder (was px-0.5 → a 2px asymmetry). */}
           <div className={cn(hero ? "mt-1 flex items-center gap-1.5 px-1" : "contents")}>
-            {/* Left cluster */}
-            {enableUploads ? (
-              <button
-                type="button"
-                aria-label="Add context"
-                aria-haspopup="menu"
-                aria-expanded={addMenuOpen}
-                onClick={() => setAddMenuOpen((o) => !o)}
-                className={cn(
-                  "col-start-1 row-start-1 flex size-9 items-center justify-center rounded-full border transition-colors",
-                  addMenuOpen
-                    ? "border-border-button-default bg-background-secondary-default text-text-primary"
-                    : "border-border-button-default text-text-secondary hover:bg-background-primary-hover",
-                )}
-              >
-                <RiAddLine
-                  className={cn(
-                    "size-5 transition-transform duration-200",
-                    addMenuOpen && "rotate-45",
-                  )}
-                  aria-hidden
-                />
-              </button>
-            ) : null}
-
+            {/* Left cluster: the "+" button renders BEFORE the textarea (see above) so
+                Tab order follows the visual order. */}
             {hero && !modelMenu && (
               <button
                 type="button"
@@ -742,7 +726,12 @@ export function Composer({
             >
               {/* One engine now — the meaningful per-message choice is the MODEL. */}
               {enableModelPicker && (
-                <ModelPicker engine={engine} model={model} onChange={setModel} />
+                <ModelPicker
+                  engine={engine}
+                  model={model}
+                  onChange={setModel}
+                  onAvailabilityChange={setModelAvailable}
+                />
               )}
               {hero && (
                 <button
@@ -769,7 +758,7 @@ export function Composer({
                     hero ? "h-10 min-w-10" : "h-9 min-w-9",
                     composerAction.kind === "steer" ? "gap-1.5 px-3.5" : hero ? "w-10" : "w-9",
                     composerAction.kind === "stop"
-                      ? "bg-red-500 text-white hover:opacity-90 disabled:opacity-50"
+                      ? "bg-error-base text-white hover:opacity-90 disabled:opacity-50"
                       : canSend
                         ? "bg-accent-500 text-white hover:bg-accent-600"
                         : "bg-background-tertiary-default text-text-tertiary cursor-not-allowed",

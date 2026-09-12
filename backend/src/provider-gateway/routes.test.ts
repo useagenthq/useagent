@@ -169,6 +169,32 @@ describe("provider gateway routes", () => {
     expect(JSON.parse(forwardedBody).model).toBe("gpt-5.6-luna");
   });
 
+  test("Cerebras Qwen uses native chat completions with the server-side key", async () => {
+    const cerebrasClaims = { ...claims, provider: "cerebras" as const };
+    const cerebrasRun = { ...run, model: "cerebras/qwen-3.8-27b" };
+    let forwardedUrl = "";
+    let forwardedBody = "";
+    let forwardedAuthorization = "";
+    const response = await app({
+      token: cerebrasClaims,
+      activeRun: cerebrasRun,
+      fetchUpstream: async (input, init) => {
+        forwardedUrl = String(input);
+        forwardedBody = String(init?.body);
+        forwardedAuthorization = new Headers(init?.headers).get("authorization") ?? "";
+        return Response.json({ ok: true });
+      },
+    }).request("/api/provider/cerebras/v1/chat/completions", {
+      method: "POST",
+      headers: { authorization: "Bearer sandbox-capability" },
+      body: JSON.stringify({ model: "qwen-3.8-27b", max_tokens: 16 }),
+    });
+    expect(response.status).toBe(200);
+    expect(forwardedUrl).toBe("https://api.cerebras.ai/v1/chat/completions");
+    expect(JSON.parse(forwardedBody).model).toBe("qwen-3.8-27b");
+    expect(forwardedAuthorization).toBe("Bearer real-upstream-key");
+  });
+
   test("replaces sandbox auth with the server-side key and preserves an SSE body", async () => {
     let captured: { url: string; init?: RequestInit } | null = null;
     let auditCompletions = 0;

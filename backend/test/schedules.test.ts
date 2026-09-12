@@ -7,6 +7,7 @@ import { tick } from "../src/schedules/scheduler";
 import { acceptRunCommand, type RunCommandIntent } from "../src/commands";
 import { fireScheduleWithOutcome, firingKey } from "../src/schedules/fire";
 import { getScheduleForOrg } from "../src/schedules/repo";
+import { AUTOMATION_RUN_ORIGIN } from "../src/runs/origin";
 import { db } from "../src/db/client";
 import { runs, skillRevisions } from "../src/db/schema";
 import { createOrgSession, json, waitFor } from "./helpers";
@@ -269,7 +270,7 @@ describe("schedules API", () => {
       .from(runs)
       .where(eq(runs.id, runId))
       .limit(1);
-    expect(persisted?.origin).toBeNull();
+    expect(persisted?.origin).toBe(AUTOMATION_RUN_ORIGIN);
 
     // History shows the manual firing, enriched with the live run status.
     const hist = await json<FiringHistoryResponse>(
@@ -283,6 +284,18 @@ describe("schedules API", () => {
     expect(firing.trigger).toBe("manual");
     expect(firing.run_id).toBe(runId);
     expect(firing.run_status).toBe("completed");
+
+    // The list (what the card reads) reports the manual firing as the last run
+    // even though the cron loop's last_fired_at guard was never stamped.
+    const listed = await json<{ automations?: ApiSchedule[]; schedules?: ApiSchedule[] }>(
+      "/api/schedules",
+      { cookies: s.cookies },
+    );
+    const mine = (listed.body.schedules ?? listed.body.automations ?? []).find(
+      (item) => item.id === created.id,
+    );
+    expect(mine?.last_fired_at).toBeNull();
+    expect(mine?.last_run_at).toBe(firing.fired_at);
   });
 
   test("run-now fails before persistence when a linked resource is unavailable", async () => {

@@ -138,6 +138,15 @@ async function findCredential(
   return null;
 }
 
+/** Browser-safe configuration truth: credential presence/decryptability only.
+ * The credential value never leaves the control plane. */
+export async function gcsConfiguredForOrg(
+  orgId: string,
+  decryptSecret: typeof decryptOrgSecretByName = decryptOrgSecretByName,
+): Promise<boolean> {
+  return (await findCredential(orgId, decryptSecret)) !== null;
+}
+
 async function exchangeAccessToken(
   account: ServiceAccount,
   fetchGoogle: FetchLike,

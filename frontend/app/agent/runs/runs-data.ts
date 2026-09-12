@@ -42,7 +42,7 @@ let sidebarRequest: Promise<Run[]> | null = null;
 let sidebarDirty = false;
 
 async function fetchSidebarSnapshot(): Promise<Run[]> {
-  const res = await backendFetch('/api/runs?view=summary&limit=100&include_active=1', {
+  const res = await backendFetch('/api/runs?view=summary&limit=100&include_active=1&include_native_children=1', {
     cache: 'no-store',
   });
   if (!res.ok) throw new Error(`runs request failed: ${res.status}`);

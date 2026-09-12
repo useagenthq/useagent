@@ -41,6 +41,7 @@ const wireRun = (n: number): ApiRun => ({
   child_session: false,
   thread_id: "run-000",
   engine_session_id: null,
+  sandbox_id: null,
   repo: null,
   repos: [],
   repo_specs: [],

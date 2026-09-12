@@ -14,6 +14,7 @@ import {
 } from "../src/runs/recovery";
 import { enqueueReconcile, getReconcile } from "../src/runs/reconcile-queue";
 import { finalizeRun } from "../src/runs/finalize";
+import { recordProviderEvent } from "../src/runs/provider-events";
 import { getRun, insertStep, setRunProviderSession, setRunSandbox, setRunStatus, STALE_SUMMARY } from "../src/runs/repo";
 import { uid } from "./helpers";
 import { providerSessionBinding } from "@useagent/agent-harness/canonical";
@@ -317,6 +318,118 @@ describe("continuity during re-probe (interim events + heartbeat)", () => {
       .from(providerEvents)
       .where(and(eq(providerEvents.runId, runId), eq(providerEvents.eventType, RUN_RECONCILING)));
     expect(markers.length).toBe(0);
+  });
+
+  test("a completed re-probe persists its tail before adoption and reuses exact stable ids", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId);
+    const eventId = `pe_${runId}_t3_tail`;
+    const out = await runDueReconciles(async () => ({
+      status: "completed",
+      summary: "adopted with tail",
+      events: [{
+        id: eventId,
+        runScopedId: true,
+        provider: "t3",
+        eventType: "t3.activity.tool.completed",
+        sessionId: "ses_x",
+        partId: "tail",
+        callId: "call-tail",
+      }],
+    }));
+
+    expect(out.adopted).toBe(1);
+    const [event] = await db.select().from(providerEvents).where(eq(providerEvents.id, eventId));
+    const run = await getRun(runId);
+    expect(event?.runId).toBe(runId);
+    expect(event?.createdAt.getTime()).toBeLessThanOrEqual(run!.settledAt!.getTime());
+    expect((await db.select().from(providerEvents).where(eq(providerEvents.id, eventId)))).toHaveLength(1);
+  });
+
+  test("a failed re-probe persists its tail before finalizing with the provider reason", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId);
+    const eventId = `pe_${runId}_t3_failed-tail`;
+    const out = await runDueReconciles(async () => ({
+      status: "failed",
+      summary: "Provider runtime turn failed",
+      events: [{
+        id: eventId,
+        runScopedId: true,
+        provider: "t3",
+        eventType: "t3.activity.runtime.warning",
+        partId: "failed-tail",
+      }],
+    }));
+
+    expect(out.failed).toBe(1);
+    const run = await getRun(runId);
+    expect(run?.status).toBe("failed");
+    expect(run?.summary).toBe("Provider runtime turn failed");
+    const [event] = await db.select().from(providerEvents).where(eq(providerEvents.id, eventId));
+    expect(event?.createdAt.getTime()).toBeLessThanOrEqual(run!.settledAt!.getTime());
+    expect(await getReconcile(runId)).toBeNull();
+  });
+
+  test("a failed update of an existing terminal event stays parked for retry", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId);
+    const eventId = `pe_${runId}_t3_stable-tail`;
+    await recordProviderEvent({
+      id: eventId,
+      runId,
+      threadId,
+      provider: "t3",
+      eventType: "t3.activity.tool.started",
+      nativePartId: "stable-tail",
+    }, { required: true });
+    const out = await runDueReconciles(async () => ({
+      status: "completed",
+      summary: "must not seal",
+      events: [{
+        id: eventId,
+        runScopedId: true,
+        provider: "t3",
+        eventType: null as never,
+        partId: "stable-tail",
+      }],
+    }));
+
+    expect(out.adopted).toBe(0);
+    expect(out.retried).toBe(1);
+    expect((await getRun(runId))?.status).toBe("running");
+    expect((await getReconcile(runId))?.attempts).toBe(1);
+    const [event] = await db.select().from(providerEvents).where(eq(providerEvents.id, eventId));
+    expect(event?.eventType).toBe("t3.activity.tool.started");
+  });
+
+  test("an expired terminal backfill failure releases the run instead of retrying forever", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId, { deadline: new Date(Date.now() - 1) });
+    const eventId = `pe_${runId}_t3_expired-tail`;
+    await recordProviderEvent({
+      id: eventId,
+      runId,
+      threadId,
+      provider: "t3",
+      eventType: "t3.activity.tool.started",
+    }, { required: true });
+    const out = await runDueReconciles(async () => ({
+      status: "completed",
+      summary: "must not seal complete",
+      events: [{
+        id: eventId,
+        runScopedId: true,
+        provider: "t3",
+        eventType: null as never,
+      }],
+    }));
+
+    expect(out.retried).toBe(0);
+    expect(out.failed).toBe(1);
+    expect((await getRun(runId))?.status).toBe("failed");
+    expect((await getRun(runId))?.summary).toBe(STALE_SUMMARY);
+    expect(await getReconcile(runId)).toBeNull();
   });
 });
 

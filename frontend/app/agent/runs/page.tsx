@@ -5,7 +5,7 @@ import { fetchRuns, type Run } from "./runs-data";
 import { RunsList } from "./runs-list";
 
 export const metadata: Metadata = {
-  title: "Active runs",
+  title: "All threads",
   description: "Live agent runs from the useAgent orchestrator.",
 };
 

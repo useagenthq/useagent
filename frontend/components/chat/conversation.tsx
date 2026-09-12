@@ -1,20 +1,33 @@
 "use client";
 
+import type { ExecutionSummarySnapshot, ThreadRelationship } from "@useagent/agent-client";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { ExecutionSummarySnapshot } from "@useagent/agent-client";
 import { LoadingState } from "@/components/ai/loading-state";
 import { Thinking } from "@/components/ai/thinking";
+import { AgentAnswer } from "@/components/chat/agent-answer";
 import type { ApprovalDecision, PendingApproval } from "@/components/chat/approval-state";
+import {
+  type AssistantIdentity,
+  AssistantTurnHeader,
+} from "@/components/chat/assistant-turn-header";
 import {
   buildTimelineFromCanonical,
   type CommandCatalogState,
   type StoredCanonicalEvent,
   shouldUseCanonicalTimeline,
 } from "@/components/chat/canonical-timeline";
-import { Composer, type ComposerSubmit } from "@/components/chat/composer";
+import { chatCitationsFromSteps } from "@/components/chat/chat-citations";
+import type { ComposerSubmit } from "@/components/chat/composer";
 import { useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { GatewayApprovalCard } from "@/components/chat/gateway-approval-card";
+import { groupApprovalsByRun } from "@/components/chat/gateway-approval-state";
 import { toGatewayChildSession } from "@/components/chat/gateway-children";
+import {
+  deriveHandoffReceipts,
+  mergeHandoffReceipts,
+  type HandoffReceipt,
+  HandoffReceipts,
+} from "@/components/chat/handoff-receipts";
 import { InboundAttachments } from "@/components/chat/inbound-attachments";
 import { NativeApprovalCard } from "@/components/chat/native-approval-card";
 import type { NativeSnapshot } from "@/components/chat/native-store";
@@ -23,22 +36,39 @@ import {
   composerAcceptsRunResources,
   type PendingQuestion,
 } from "@/components/chat/question-state";
+import { ReplyComposer } from "@/components/chat/reply-composer";
 import type { SlashCommand } from "@/components/chat/slash-command";
+import { type GatewayChildSession, SubagentsFold } from "@/components/chat/subagents-fold";
+import { buildTimeline, hasNarration } from "@/components/chat/timeline";
 import {
-  type GatewayChildSession,
-  SubagentsFold,
-} from "@/components/chat/subagents-fold";
+  MD_CLASS,
+  MD_CLASS_REASONING,
+  Timeline,
+  turnTraceContext,
+} from "@/components/chat/timeline-view";
 import {
-  buildTimeline,
-  hasNarration,
-  type TimelineNode,
-} from "@/components/chat/timeline";
-import { MD_CLASS, MD_CLASS_REASONING, Timeline } from "@/components/chat/timeline-view";
+  splitTurn,
+  turnNodesFromSteps,
+  withTransientLiveReasoning,
+} from "@/components/chat/turn-trace-model";
 import { TurnWindow } from "@/components/chat/turn-window";
 
-// Re-exported so existing importers (lab samples, workspace sample) keep working.
+export { AgentAnswer } from "@/components/chat/agent-answer";
+export {
+  type AssistantIdentity,
+  AssistantTurnHeader,
+} from "@/components/chat/assistant-turn-header";
 export { Timeline } from "@/components/chat/timeline-view";
-import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
+
+import {
+  type ApiRun,
+  type ApiStep,
+  cleanPrompt,
+  type EngineId,
+  isRenderableTimelineStep,
+  type MemoryScope,
+  type RunStatus,
+} from "@/components/chat/types";
 import { Markdown } from "@/components/prompt-kit/markdown";
 import { MessageCopyButton } from "@/components/session-ui/message-copy-button";
 import { MessageScrollerRail } from "@/components/session-ui/message-scroller-rail";
@@ -49,28 +79,10 @@ import {
   dismissThreadErrorBannerForSession,
   getThreadErrorBannerKey,
   isThreadErrorBannerDismissedForSession,
+  latestTurnFailure,
   shouldShowThreadErrorBanner,
 } from "@/components/session-ui/thread-error-banner";
 import type { GatewayApproval } from "@/lib/gateway-approvals";
-
-// Canonical-timeline cutover flag. OFF by default:
-// the legacy native/steps derivation renders unless a backend + build opt in via
-// NEXT_PUBLIC_CANONICAL_TIMELINE=1. The canonical path is proven byte-for-byte
-// equivalent (canonical-timeline.equiv/.nodes tests); this flag lets us flip it on
-// deliberately and fall straight back to legacy if a run has no canonical events.
-const CANONICAL_TIMELINE = process.env.NEXT_PUBLIC_CANONICAL_TIMELINE === "1";
-
-import {
-  type ApiRun,
-  type ApiStep,
-  cleanPrompt,
-  deriveTrace,
-  type EngineId,
-  engineLabel,
-  isRenderableTimelineStep,
-  type MemoryScope,
-  type RunStatus,
-} from "@/components/chat/types";
 
 /** One conversation turn: a run, plus its live-or-settled step/summary state. */
 export type Turn = {
@@ -104,11 +116,12 @@ export type Turn = {
   pendingOutline?: { readonly stepCount: number; readonly hasSummary: boolean };
 };
 
-
 /** Terminal note for a run that failed before writing a summary. */
 function FailedNote() {
   return (
-    <p className="text-body-2-regular text-red-500">This run failed before producing a summary.</p>
+    <p className="text-body-2-regular text-text-error-primary">
+      This run failed before producing a summary.
+    </p>
   );
 }
 
@@ -122,39 +135,11 @@ export function UserBubble({ children }: { children: string }) {
   );
 }
 
-/** The assistant turn's identity row: brand glyph + "Agent" + the engine label.
- *  Shared by TurnBlock and the /lab/session sample so both read identically. */
-export function AssistantTurnHeader({ engine }: { engine: EngineId }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="ring-border-button-default bg-background-secondary-default flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
-        <OrbitKnotMark className="size-3.5" stroke={2.2} />
-      </span>
-      <span className="text-body-2-medium text-text-primary">Agent</span>
-      <span className="text-mono-label text-text-tertiary">{engineLabel(engine)}</span>
-    </div>
-  );
-}
-
-/** The agent's answer. No fake typewriter: real streaming is LiveNarration's
- * job (progressive markdown on actual deltas); once a run completes, the
- * summary renders as settled Markdown immediately — a plain-text re-typing
- * animation both lied about liveness and showed raw markdown runes. */
-export function AgentAnswer({ summary }: { summary: string; stream?: boolean }) {
-  return (
-    <div className="animate-ai-fade-up" data-testid="agent-answer">
-      <Markdown className={MD_CLASS}>{summary}</Markdown>
-    </div>
-  );
-}
-
 /**
- * Live narration: the run's token deltas rendered as the answer-in-progress —
- * PROGRESSIVE MARKDOWN (Zola-style): remark-gfm parses whatever partial
- * markdown exists on each delta and degrades gracefully, so bold/tables/lists
- * render as they stream instead of arriving as raw `**`/`|` runes and snapping
- * into shape only at completion. A blinking caret tails the rendered block.
- * Replaced by the durable Markdown summary once the run settles.
+ * Live narration: the run's token deltas rendered as the answer-in-progress as
+ * PROGRESSIVE MARKDOWN: remark-gfm parses whatever partial markdown exists on each
+ * delta and degrades gracefully, so bold, tables and lists render as they stream
+ * instead of snapping into shape at completion. A blinking caret tails the block.
  */
 function LiveNarration({ text }: { text: string }) {
   return (
@@ -166,7 +151,6 @@ function LiveNarration({ text }: { text: string }) {
     </div>
   );
 }
-
 
 /** Live provider "thinking" surfaced AHEAD of the answer: a subdued, truthful
  *  Thinking disclosure streaming the real reasoning tokens. It fills the
@@ -183,17 +167,6 @@ const LiveThinking = memo(function LiveThinking({ text }: { text: string }) {
   );
 });
 
-// NOTE: the mock NetworkApprovalRequest demo card was removed — engines run
-// one-shot in yolo mode, so nothing can actually pause a run for approval; a
-// fake approval card mid-run was actively misleading. When a real approval flow
-// lands backend-side, compose `@/components/ai/approval-card` here again.
-
-/** Wrap legacy ApiStep rows as canonical tool nodes so the T3 adapter stays the
- *  ONE step-to-work-entry mapping (no parallel grammar for the fallback lane). */
-function toolNodesFromSteps(steps: readonly ApiStep[]): TimelineNode[] {
-  return steps.map((step) => ({ kind: "tool", key: step.id, step }));
-}
-
 /** A single turn: the user's clean prompt, the agent's answer, and its activity
  * (open + streaming while live, a collapsed disclosure once settled).
  * Memoized: the thread store keeps a settled run's view (and so its Turn object)
@@ -204,24 +177,48 @@ const TurnBlock = memo(function TurnBlock({
   queuePosition,
   onSendNow,
   childSessions,
+  productChildren,
+  onOpenProductChild,
+  handoffs,
+  approvals,
+  onGatewayApprovalResolved,
   isLatestTurn = false,
   windowOwnsRunMarker = false,
+  assistantIdentity,
+  canonicalTimeline,
+  threadBusy = false,
 }: {
   turn: Turn;
   /** 1-based place among this thread's queued turns (queued rendering only). */
   queuePosition?: number;
   onSendNow?: () => void;
+  /** A turn is running: a queued reply waits on it (otherwise only on admission). */
+  threadBusy?: boolean;
+  /** Gateway approvals this run raised: pending is actionable, resolved is its record. */
+  approvals?: readonly GatewayApproval[];
+  onGatewayApprovalResolved?: () => void;
   /** Gateway child sessions THIS turn spawned (deferred serial thread turns) -
    *  they fold under this turn's subagent group instead of rendering as their
    *  own top-level turns. */
   childSessions?: readonly GatewayChildSession[];
+  /** Durable product children spawned by this exact parent turn. */
+  productChildren?: readonly ThreadRelationship[];
+  onOpenProductChild?: (threadId: string) => void;
+  /** What this turn's @mentioned bots did - one receipt row per bot. */
+  handoffs?: readonly HandoffReceipt[];
   /** True for the thread's final turn - the only one whose follow-up
    *  suggestions render (stale suggestions under history are noise). */
   isLatestTurn?: boolean;
   /** The turn-window wrapper owns the rail marker for virtualized rows. */
   windowOwnsRunMarker?: boolean;
+  assistantIdentity?: AssistantIdentity;
+  /** Resolved once by Conversation; injectable so canonical composition tests
+   *  never depend on module-import order or shared process.env mutation. */
+  canonicalTimeline: boolean;
 }) {
   const { run, steps, status, summary, live, liveText, liveReasoning } = turn;
+  // Every thread reads like chat: the work is ONE trace, the reply is the block.
+  const trace = turnTraceContext(turn, !assistantIdentity);
   // Capture whether this turn was streaming when it first mounted, so its
   // summary typewriters in on arrival but settled history renders instantly.
   const [wasLive] = useState(() => live);
@@ -237,36 +234,38 @@ const TurnBlock = memo(function TurnBlock({
   // from the watched run's native ordered frames. Null on turns without native
   // data (settled history, non-native engines) → the legacy rendering below takes
   // over. Recomputed only when the native snapshot or liveness changes.
-  const timeline = useMemo(() => {
+  const durableTimeline = useMemo(() => {
     // Canonical cutover (flag-gated): render from the canonical lane ONLY once this run's
     // canonicalization reached its durable `complete` record (H2). A still-provisional
     // projection (the outbox is retrying, the snapshot may be partial) never drives the
     // UI - the legacy native derivation does. The two are proven byte-for-byte equivalent,
     // so a completed swap never changes what the user sees.
     const canonical = turn.canonical;
-    if (canonical && shouldUseCanonicalTimeline(CANONICAL_TIMELINE, turn)) {
+    if (canonical && shouldUseCanonicalTimeline(canonicalTimeline, turn)) {
       const stepsById = new Map(turn.steps.map((s) => [s.id, s]));
       return buildTimelineFromCanonical(canonical, stepsById, live);
     }
     return turn.native ? buildTimeline(turn.native, live) : null;
-  }, [turn.native, turn.canonical, turn.canonicalComplete, turn.steps, live]);
+  }, [turn.native, turn.canonical, turn.canonicalComplete, turn.steps, live, canonicalTimeline]);
+
+  const timeline = useMemo(
+    () => withTransientLiveReasoning(durableTimeline, live, liveReasoning),
+    [durableTimeline, live, liveReasoning],
+  );
 
   // Which lane actually drove the timeline above - a test/debug hook (asserted by the
   // flag-on browser E2E to prove the canonical path really rendered, not just that a
   // timeline appeared). Cheap + pure.
-  const timelineSource: "canonical" | "native" = shouldUseCanonicalTimeline(
-    CANONICAL_TIMELINE,
-    turn,
-  )
+  const timelineSource: "canonical" | "native" = shouldUseCanonicalTimeline(canonicalTimeline, turn)
     ? "canonical"
     : "native";
 
   const activity = steps.filter((s) => s.kind !== "done" && isRenderableTimelineStep(s));
+  const citations = chatCitationsFromSteps(steps);
   const failed = status === "failed";
-  // Settled history drops sandbox plumbing rows ("Sandbox — Thinking…" etc.):
-  // they're live indicators, not work worth re-reading. Live rendering keeps
-  // them — they ARE the signal during the boot gap.
-  const settled = activity.filter((s) => deriveTrace(s).accent !== "boot");
+  // The steps-only lane: settled history drops sandbox plumbing and the engine's
+  // prose preview (the summary is the reply); live keeps the boot signal.
+  const settledNodes = turnNodesFromSteps(steps, false, status);
   // While narration is streaming it IS this turn's live indicator: show the
   // fading text + caret and suppress the Thinking shimmer so only one live
   // signal shows at a time.
@@ -276,6 +275,8 @@ const TurnBlock = memo(function TurnBlock({
   // burst inside the interleaved timeline.
   const answerStarted =
     liveText.length > 0 || Boolean(summary) || (timeline != null && hasNarration(timeline));
+  const timelineOwnsReasoning = timeline?.some((node) => node.kind === "reasoning") ?? false;
+  const timelineReply = timeline ? splitTurn(timeline, live).reply : null;
 
   // STANDARD queued rendering (matches opencode's steering-queue model): a
   // follow-up sent while the thread is busy queues into the same session, and
@@ -292,9 +293,10 @@ const TurnBlock = memo(function TurnBlock({
       >
         <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
         <InboundAttachments uploads={run.uploads} />
+        <HandoffReceipts receipts={handoffs} />
         <QueuedMessagePill
           position={queuePosition ?? 1}
-          waitingOnCurrentRun={run.parent_run_id !== null}
+          waitingOnCurrentRun={threadBusy}
           onSendNow={onSendNow}
         />
       </div>
@@ -310,17 +312,22 @@ const TurnBlock = memo(function TurnBlock({
       <div className="space-y-2">
         <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
         <InboundAttachments uploads={run.uploads} />
+        <HandoffReceipts receipts={handoffs} />
       </div>
 
       {/* Assistant block: avatar + name on a header row, with the answer and the
           worklog capsule aligned to the same left content edge as every other
           assistant turn — one column, symmetric with the user bubble's bounds. */}
       <div className="group/turn space-y-3">
-        <AssistantTurnHeader engine={run.engine} />
+        <AssistantTurnHeader engine={run.engine} identity={assistantIdentity} />
 
         {/* Thinking surfaced ahead of the answer: real streamed reasoning tokens
             (not a spinner), yielding the instant answer text starts. */}
-        {live && !answerStarted && liveReasoning && <LiveThinking text={liveReasoning} />}
+        {live &&
+          !assistantIdentity &&
+          !answerStarted &&
+          !timelineOwnsReasoning &&
+          liveReasoning && <LiveThinking text={liveReasoning} />}
 
         {timeline ? (
           /* Native turn: the interleaved timeline IS the turn — narration bursts
@@ -333,8 +340,12 @@ const TurnBlock = memo(function TurnBlock({
               live={live}
               workingSince={run.created_at}
               showFollowups={isLatestTurn}
+              trace={trace}
             />
-            {summary && !hasNarration(timeline) && <AgentAnswer summary={summary} />}
+            {summary && !timelineReply && <AgentAnswer summary={summary} citations={citations} />}
+            {/* A run whose native frames carry no text (the chat engine streams its
+                answer as deltas only) still narrates live from the delta channel. */}
+            {narrating && !summary && !hasNarration(timeline) && <LiveNarration text={liveText} />}
             {failed && !summary && !hasNarration(timeline) && <FailedNote />}
           </div>
         ) : (
@@ -350,19 +361,23 @@ const TurnBlock = memo(function TurnBlock({
               : live
                 ? activity.length > 0 && (
                     <Timeline
-                      nodes={toolNodesFromSteps(activity)}
+                      nodes={turnNodesFromSteps(steps, true, status)}
                       live
                       workingSince={run.created_at}
+                      trace={trace}
                     />
                   )
-                : settled.length > 0 && (
-                    <Timeline
-                      nodes={toolNodesFromSteps(settled)}
-                      live={false}
-                    />
+                : (settledNodes.length > 0 || trace.failure) && (
+                    <Timeline nodes={settledNodes} live={false} trace={trace} />
                   )}
 
-            {summary && <AgentAnswer summary={summary} stream={wasLive && !sawNarration} />}
+            {summary && (
+              <AgentAnswer
+                summary={summary}
+                stream={wasLive && !sawNarration}
+                citations={citations}
+              />
+            )}
 
             {/* Answer-in-progress: the run's live tokens stream in word-by-word
                 until the durable summary/markdown takes over on completion. */}
@@ -374,10 +389,18 @@ const TurnBlock = memo(function TurnBlock({
                 turns never reach here - they early-return as a bare user
                 bubble above, per the opencode steering-queue standard). */}
             {!summary && !narrating && !failed && activity.length === 0 && status === "running" && (
-              <span className="text-body-2-medium text-text-tertiary">Working...</span>
+              <span className="text-body-2-medium text-text-tertiary">Working…</span>
             )}
           </div>
         )}
+
+        {approvals?.map((approval) => (
+          <GatewayApprovalCard
+            key={approval.id}
+            approval={approval}
+            onResolved={onGatewayApprovalResolved}
+          />
+        ))}
 
         {/* This turn's subagents: native task fan-out (same projection as the
             Agents rail) plus gateway child sessions it spawned - one fold, real
@@ -389,8 +412,9 @@ const TurnBlock = memo(function TurnBlock({
           executionSummary={turn.executionSummary}
           live={live}
           childSessions={childSessions}
+          productChildren={productChildren}
+          onOpenProductChild={onOpenProductChild}
         />
-
 
         {/* Hover copy on the settled answer (T3 grammar). The durable summary IS
             the answer markdown even when the timeline's final narration burst
@@ -405,104 +429,13 @@ const TurnBlock = memo(function TurnBlock({
   );
 });
 
-function ReplyComposer({
-  engine,
-  model,
-  memoryScope,
-  pending,
-  commands,
-  commandState,
-  modelSelection,
-  locked,
-  placeholder,
-  onReply,
-  running,
-  stopping,
-  stopError,
-  onStop,
-  runStartedAt,
-  threadError,
-  onDismissThreadError,
-  engineUnavailable,
-  engineUnavailableMessage,
-  draftKey,
-  prefill,
-  enableMentions,
-  enableUploads,
-  repoRevisions,
-}: {
-  engine: EngineId;
-  model: string;
-  memoryScope: MemoryScope;
-  pending: boolean;
-  commands?: SlashCommand[];
-  commandState?: CommandCatalogState;
-  /** The session's negotiated model-selection capability - the per-message model picker shows ONLY
-   *  when the engine actually lets the user choose (opencode); ACP engines run a fixed model. */
-  modelSelection?: boolean;
-  locked?: boolean;
-  placeholder?: string;
-  onReply: ComposerSubmit;
-  running?: boolean;
-  stopping?: boolean;
-  stopError?: string | null;
-  onStop?: () => void;
-  runStartedAt?: string | null;
-  threadError?: string | null;
-  onDismissThreadError?: () => void;
-  engineUnavailable?: boolean;
-  engineUnavailableMessage?: string;
-  /** Thread key for per-thread draft persistence (the root run id). */
-  draftKey?: string | null;
-  /** Externally seed the composer (conflicted-proposal "Ask agent to redo"). */
-  prefill?: { readonly text: string; readonly nonce: number } | null;
-  enableMentions?: boolean;
-  enableUploads?: boolean;
-  repoRevisions?: Readonly<Record<string, string | null>>;
-}) {
-  return (
-    <div className="shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
-      <div className="mx-auto w-full max-w-5xl">
-        <Composer
-          variant="compact"
-          placeholder={placeholder ?? "Reply to Agent…"}
-          defaultEngine={engine}
-          defaultModel={model}
-          defaultMemoryScope={memoryScope}
-          pending={pending}
-          locked={locked}
-          commands={commands} commandState={commandState}
-          enableUploads={enableUploads}
-          enableMentions={enableMentions}
-          repoRevisions={repoRevisions}
-          enableModelPicker={modelSelection === true}
-          onSubmit={onReply}
-          running={running}
-          stopping={stopping}
-          stopError={stopError}
-          onStop={onStop}
-          runStartedAt={runStartedAt}
-          threadError={threadError}
-          onDismissThreadError={onDismissThreadError}
-          engineUnavailable={engineUnavailable}
-          engineUnavailableMessage={engineUnavailableMessage}
-          draftKey={draftKey}
-          prefill={prefill}
-        />
-      </div>
-    </div>
-  );
-}
-
 /**
- * Left column of the session: the whole thread as one conversation — one
- * `TurnBlock` per run (clean user bubble + agent answer + activity) — with a
- * reply composer pinned to the bottom. A reply appears optimistically until the
- * refetched thread carries the real child run.
- *
- * Memoized: SessionView hands it memoized `turns` and useCallback handlers, so
- * unrelated SessionView state (rail width commit, tab switches, workspace
- * bookkeeping) no longer re-renders the whole timeline.
+ * Left column of the session: the whole thread as one conversation, one
+ * `TurnBlock` per run (user bubble + agent answer + activity), with a reply
+ * composer pinned to the bottom. A reply appears optimistically until the
+ * refetched thread carries the real child run. Memoized: SessionView hands it
+ * memoized `turns` and useCallback handlers, so unrelated SessionView state
+ * (rail width, tab switches, workspace bookkeeping) does not re-render the timeline.
  */
 export const Conversation = memo(function Conversation({
   turns,
@@ -533,9 +466,23 @@ export const Conversation = memo(function Conversation({
   runStartedAt,
   prefill,
   repoRevisions,
+  resourceMentions = true,
   onTurnsNeeded,
+  composerLocked = false,
+  composerLockedMessage,
+  productChildren = [],
+  onOpenProductChild,
+  handoffReceipts,
+  handoffNotice,
+  onDismissHandoffNotice,
+  assistantIdentity,
+  canonicalTimeline = process.env.NEXT_PUBLIC_CANONICAL_TIMELINE === "1",
 }: {
   turns: Turn[];
+  /** The thread's own identity (a bot on its home thread): heads every assistant turn and names the composer. */
+  assistantIdentity?: AssistantIdentity;
+  /** Test-injectable cutover decision. Production defaults to the build flag. */
+  canonicalTimeline?: boolean;
   defaultEngine: EngineId;
   defaultModel: string;
   /** The thread's current memory scope — the reply composer starts here. */
@@ -560,9 +507,8 @@ export const Conversation = memo(function Conversation({
   answeringApproval?: boolean;
   approvalError?: string | null;
   onAnswerApproval?: (decision: ApprovalDecision) => void | Promise<void>;
-  /** Gateway approvals (#77) for the thread's live runs - pending ones render
-   * as Approve/Deny cards (stacked when several are pending); each card owns
-   * its own optimistic resolve against /api/gateway/approvals. */
+  /** Gateway approvals (#77) for the thread's runs: pending cards act, resolved
+   *  cards stay as history; each renders under the turn whose run raised it. */
   gatewayApprovals?: readonly GatewayApproval[];
   /** Nudges the approvals fetch lane after a card resolves locally. */
   onGatewayApprovalResolved?: () => void;
@@ -582,10 +528,21 @@ export const Conversation = memo(function Conversation({
    *  proposal); each request carries a fresh nonce so repeats re-apply. */
   prefill?: { readonly text: string; readonly nonce: number } | null;
   repoRevisions?: Readonly<Record<string, string | null>>;
+  resourceMentions?: boolean;
+  composerLocked?: boolean;
+  composerLockedMessage?: string;
   /** Windowed initial loading: called with the run ids of not-yet-loaded
    *  (outline stub) turns entering the render window, so their island can be
    *  fetched. Absent on fully-loaded threads. */
   onTurnsNeeded?: (runIds: readonly string[]) => void;
+  productChildren?: readonly ThreadRelationship[];
+  onOpenProductChild?: (threadId: string) => void;
+  /** Live handoff outcomes from this page's own replies, keyed by run id. They
+   *  bridge admission until the matching durable child-turn outcome arrives. */
+  handoffReceipts?: ReadonlyMap<string, readonly HandoffReceipt[]>;
+  /** Composer notice for a reply whose bots did not all get the message. */
+  handoffNotice?: string | null;
+  onDismissHandoffNotice?: () => void;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
   // stream, but ONLY while the user is already near the bottom — scrolling up
@@ -598,6 +555,9 @@ export const Conversation = memo(function Conversation({
         `${t.steps.length}:${t.liveText.length}:${t.liveReasoning.length}:${t.summary ? 1 : 0}`,
     )
     .join("|");
+  const productChildSignature = productChildren
+    .map((child) => `${child.threadId}:${child.status}:${child.latestActivityAt}`)
+    .join("|");
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
@@ -607,6 +567,7 @@ export const Conversation = memo(function Conversation({
     pendingQuestion?.id,
     pendingApproval?.id,
     gatewayApprovals?.length,
+    productChildSignature,
     turns.length,
   ]);
 
@@ -635,7 +596,10 @@ export const Conversation = memo(function Conversation({
     }
     const folded = new Set([...grouped.values()].flat().map((t) => t.run.id));
     const cache = childRowsCacheRef.current;
-    const next = new Map<string, { source: readonly Turn[]; rows: readonly GatewayChildSession[] }>();
+    const next = new Map<
+      string,
+      { source: readonly Turn[]; rows: readonly GatewayChildSession[] }
+    >();
     const byParent = new Map<string, readonly GatewayChildSession[]>();
     for (const [parentId, children] of grouped) {
       const cached = cache.get(parentId);
@@ -657,6 +621,16 @@ export const Conversation = memo(function Conversation({
       childSessionsByParent: byParent,
     };
   }, [turns]);
+  const productChildrenByParent = useMemo(() => {
+    const grouped = new Map<string, ThreadRelationship[]>();
+    for (const child of productChildren) {
+      const siblings = grouped.get(child.sourceRunId) ?? [];
+      siblings.push(child);
+      grouped.set(child.sourceRunId, siblings);
+    }
+    return grouped;
+  }, [productChildren]);
+  const durableHandoffs = useMemo(() => deriveHandoffReceipts(productChildren), [productChildren]);
 
   // 1-based FIFO position per queued turn: the queued pill states the honest
   // place in line (position 1 waits only on the running turn). Counted over the
@@ -664,13 +638,21 @@ export const Conversation = memo(function Conversation({
   const queuedPositions = new Map(
     turns.filter((t) => t.status === "queued").map((t, i) => [t.run.id, i + 1] as const),
   );
+  const threadBusy = turns.some((t) => t.status === "running");
+  const { byRun: approvalsByRun, orphans: orphanApprovals } = useMemo(
+    () =>
+      groupApprovalsByRun(
+        gatewayApprovals ?? [],
+        renderedTurns.map((t) => t.run.id),
+      ),
+    [gatewayApprovals, renderedTurns],
+  );
 
-  // Thread-error banner: the newest FAILED run's real summary, dismissible for
+  // Thread-error banner: the LATEST turn's real failure summary, dismissible for
   // the session (a NEW error re-appears because the key includes the message).
-  // No banner while a turn is running - the live pill owns that state.
-  const newestFailed = running
-    ? undefined
-    : [...turns].reverse().find((t) => t.status === "failed" && t.summary);
+  // No banner while a turn is running - the live pill owns that state - and none
+  // once a newer turn succeeded: that failure is history, not the thread's state.
+  const newestFailed = running ? undefined : latestTurnFailure(turns);
   const threadErrorKey = getThreadErrorBannerKey(
     newestFailed?.run.id ?? "",
     newestFailed?.summary ?? null,
@@ -699,11 +681,11 @@ export const Conversation = memo(function Conversation({
       engineConfig.engines,
       engineConfig.readinessKnown,
       engineConfig.readiness,
-    ) !==
-    null;
-  const engineUnavailableMessage = engineConfig.readiness[defaultEngine]?.ready === false
-    ? engineConfig.readiness[defaultEngine]?.message
-    : undefined;
+    ) !== null;
+  const engineUnavailableMessage =
+    engineConfig.readiness[defaultEngine]?.ready === false
+      ? engineConfig.readiness[defaultEngine]?.message
+      : undefined;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -730,8 +712,16 @@ export const Conversation = memo(function Conversation({
                 queuePosition={queuedPositions.get(turn.run.id)}
                 onSendNow={turn.run.id === sendNowFor ? onSendNow : undefined}
                 childSessions={childSessionsByParent.get(turn.run.id)}
+                productChildren={productChildrenByParent.get(turn.run.id)}
+                onOpenProductChild={onOpenProductChild}
+                handoffs={mergeHandoffReceipts(handoffReceipts?.get(turn.run.id), durableHandoffs.get(turn.run.id))}
+                approvals={approvalsByRun.get(turn.run.id)}
+                onGatewayApprovalResolved={onGatewayApprovalResolved}
                 isLatestTurn={index === renderedTurns.length - 1}
                 windowOwnsRunMarker={windowOwnsRunMarker}
+                assistantIdentity={assistantIdentity}
+                canonicalTimeline={canonicalTimeline}
+                threadBusy={threadBusy}
               />
             )}
           />
@@ -753,7 +743,7 @@ export const Conversation = memo(function Conversation({
               onRespond={onAnswerApproval}
             />
           )}
-          {gatewayApprovals?.map((approval) => (
+          {orphanApprovals.map((approval) => (
             <GatewayApprovalCard
               key={approval.id}
               approval={approval}
@@ -765,7 +755,6 @@ export const Conversation = memo(function Conversation({
         <MessageScrollerRail turns={renderedTurns} scrollRef={scrollRef} />
         <ScrollToEndPill scrollRef={scrollRef} />
       </div>
-
       <ReplyComposer
         engine={defaultEngine}
         model={defaultModel}
@@ -774,7 +763,7 @@ export const Conversation = memo(function Conversation({
         commands={commands}
         commandState={commandState}
         modelSelection={modelSelection}
-        locked={controlLocksComposer}
+        locked={controlLocksComposer || composerLocked}
         placeholder={
           pendingApproval
             ? "Respond to the approval above to continue…"
@@ -782,7 +771,11 @@ export const Conversation = memo(function Conversation({
               ? composerCanAnswerQuestion
                 ? "Answer Agent’s question…"
                 : "Answer the question above to continue…"
-              : undefined
+              : composerLocked
+                ? (composerLockedMessage ?? "Loading thread controls…")
+                : assistantIdentity
+                  ? `Message ${assistantIdentity.name}`
+                  : undefined
         }
         onReply={onReply}
         running={running}
@@ -792,11 +785,13 @@ export const Conversation = memo(function Conversation({
         runStartedAt={runStartedAt}
         threadError={threadError}
         onDismissThreadError={handleDismissThreadError}
+        notice={handoffNotice}
+        onDismissNotice={onDismissHandoffNotice}
         engineUnavailable={engineUnavailable}
         engineUnavailableMessage={engineUnavailableMessage}
         draftKey={turns[0]?.run.id ?? null}
         prefill={prefill}
-        enableMentions={composerAcceptsRunResources(pendingQuestion ?? null)}
+        enableMentions={resourceMentions && composerAcceptsRunResources(pendingQuestion ?? null)}
         enableUploads={composerAcceptsRunResources(pendingQuestion ?? null)}
         repoRevisions={repoRevisions}
       />

@@ -154,7 +154,7 @@ describe("Codex subscription run relay", () => {
       runtime: runtime(),
       execServerUrl: "ws://127.0.0.1:43111/opaque-exec-grant",
       toolGateway: {
-        serverName: "skynet-knowledge",
+        serverName: "useagent",
         url: "https://useagent.example.test/api/internal/tool-gateway",
         bearerToken: "mcp-bearer-secret",
         authorizationHeader: "Bearer mcp-bearer-secret",
@@ -189,7 +189,7 @@ describe("Codex subscription run relay", () => {
       codexHome: "/host/codex-home",
       execServerUrl: "ws://127.0.0.1:43111/opaque-exec-grant",
       toolGateway: {
-        serverName: "skynet-knowledge",
+        serverName: "useagent",
         url: "https://useagent.example.test/api/internal/tool-gateway",
         bearerToken: "mcp-bearer-secret",
         authorizationHeader: "Bearer mcp-bearer-secret",

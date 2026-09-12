@@ -6,7 +6,7 @@ import { db } from "../../db/client";
 import { createRun, setRunStatus } from "../../runs/repo";
 import { recordProviderEvent } from "../../runs/provider-events";
 import { createGatewayApp } from "../../gateway-app";
-import { executeRegisteredGatewayTool } from "./operation-registry";
+import { advertisedGatewayToolDescriptors, executeRegisteredGatewayTool } from "./operation-registry";
 import {
   CHILD_SESSION_TOOLS,
   executeChildSessionTool,
@@ -22,6 +22,9 @@ const ENV_KEYS = [
   "ENGINE_READINESS_OPENCODE",
   "PROVIDER_HEALTH_OPENAI",
   "PROVIDER_HEALTH_OPENROUTER",
+  "PRODUCT_CHILD_THREADS",
+  "GATEWAY_DATABASE_URL",
+  "USEAGENT_API_ORIGIN",
 ] as const;
 
 let savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> =
@@ -33,6 +36,7 @@ beforeEach(() => {
   process.env.ENABLED_ENGINES = "opencode,codex";
   process.env.ENGINE_READINESS_CODEX = "ready";
   process.env.ENGINE_READINESS_OPENCODE = "ready";
+  process.env.PRODUCT_CHILD_THREADS = "off";
   process.env.PROVIDER_HEALTH_OPENAI = "ready";
   process.env.PROVIDER_HEALTH_OPENROUTER = "ready";
 });
@@ -108,6 +112,12 @@ function childId(
 }
 
 describe("child session gateway tools", () => {
+  test("batch advertisement is rollout honest", () => {
+    const names = () => advertisedGatewayToolDescriptors({ childSessions: true, slack: false }).map((tool) => tool.name);
+    expect(names()).not.toContain("child_session_create_many");
+    process.env.PRODUCT_CHILD_THREADS = "on";
+    expect(names()).toContain("child_session_create_many");
+  });
   test("schemas never accept caller-supplied org or user identity", () => {
     const schemas = CHILD_SESSION_TOOLS.map((tool) => tool.inputSchema);
     expect(JSON.stringify(schemas)).not.toContain("orgId");
@@ -152,6 +162,32 @@ describe("child session gateway tools", () => {
     expect(acpCodexBody.result.tools.map((tool) => tool.name)).toContain(
       "child_session_create",
     );
+
+    // The restricted standalone gateway delegates child operations to the
+    // primary API, which owns the authoritative engine-readiness check. It must
+    // not hide child tools merely because provider readiness is intentionally
+    // absent from the gateway environment.
+    process.env.GATEWAY_DATABASE_URL = "postgres://restricted";
+    process.env.USEAGENT_API_ORIGIN = "http://127.0.0.1:3201";
+    process.env.PRODUCT_CHILD_THREADS = "on";
+    delete process.env.ENGINE_READINESS_CODEX;
+    const restrictedGateway = await app.request("/api/mcp/knowledge", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${acpCodexToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/list" }),
+    });
+    const restrictedGatewayBody = (await restrictedGateway.json()) as {
+      result: { tools: Array<{ name: string }> };
+    };
+    expect(restrictedGatewayBody.result.tools.map((tool) => tool.name)).toContain(
+      "child_session_create_many",
+    );
+    delete process.env.GATEWAY_DATABASE_URL;
+    delete process.env.USEAGENT_API_ORIGIN;
+    process.env.PRODUCT_CHILD_THREADS = "off";
 
     // claude is NOT dispatch-ready in this env (absent from ENABLED_ENGINES), so
     // readiness - not engine capability - withholds the tools.
@@ -276,7 +312,7 @@ describe("child session gateway tools", () => {
     expect(listedChildren).toHaveLength(1);
     const listedChild = listedChildren[0]!;
     expect([firstId, secondId]).toContain(listedChild.id);
-    expect(listedChild.eventRef).toContain("skynet://runs/");
+    expect(listedChild.eventRef).toContain("useagent://runs/");
 
     const events = await executeChildSessionTool(
       claims,
@@ -293,7 +329,7 @@ describe("child session gateway tools", () => {
     expect(eventRows).toHaveLength(1);
     expect(events.structuredContent?.nextCursor).toBe(0);
     expect(events.structuredContent?.eventRef).toBe(
-      `skynet://runs/${firstId}/native-events`,
+      `useagent://runs/${firstId}/native-events`,
     );
     expect(events.content[0]?.text).toContain(`Child run: ${firstId}`);
     expect(events.content[0]?.text).toContain("Returned: 1; shown: 1; more: true; cursor: 0;");
@@ -319,7 +355,7 @@ describe("child session gateway tools", () => {
       "child.started",
     ]);
     expect(firstGather?.eventRef).toBe(
-      `skynet://runs/${firstId}/native-events`,
+      `useagent://runs/${firstId}/native-events`,
     );
   });
 
@@ -358,7 +394,7 @@ describe("child session gateway tools", () => {
 
     expect(text).toContain(`Child run: ${runId}`);
     expect(text).toContain("Returned: 25; shown: 20; more: true; cursor: 19;");
-    expect(text).toContain(`ref: skynet://runs/${runId}/native-events`);
+    expect(text).toContain(`ref: useagent://runs/${runId}/native-events`);
     expect(eventLines).toHaveLength(20);
     const payload = eventLines[0]!.match(/ payload=(.*) payload_truncated=/)?.[1];
     expect(payload?.length).toBeLessThanOrEqual(320);

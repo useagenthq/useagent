@@ -28,6 +28,7 @@ const run = (status = "running") => ({
   child_session: false,
   thread_id: "r1",
   engine_session_id: null,
+  sandbox_id: null,
   repo: null,
   repos: [],
   repo_specs: [],

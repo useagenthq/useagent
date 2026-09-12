@@ -14,6 +14,7 @@ import {
 import { Chip } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
 import { REVEAL_ON_HOVER } from "@/components/customize/list-row";
+import { InlineDeleteConfirm } from "@/components/shared/inline-delete-confirm";
 import { plainTextPreview } from "@/components/shared/plain-text-preview";
 import { cx } from "@/utils/cx";
 import { kindChipColor, type KnowledgeItem } from "./knowledge-data";
@@ -36,6 +37,7 @@ export function KnowledgeRow({
   onDelete: (item: KnowledgeItem) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const detailsId = `knowledge-details-${item.id}`;
 
   const details: Array<[string, string]> = [];
@@ -124,10 +126,22 @@ export function KnowledgeRow({
             size="xs"
             leadingIcon={RiDeleteBinLine}
             aria-label={`Delete ${item.title}`}
-            onClick={() => onDelete(item)}
+            aria-expanded={confirmingDelete}
+            onClick={() => setConfirmingDelete((v) => !v)}
           />
         </div>
       </div>
+      {confirmingDelete && (
+        <InlineDeleteConfirm
+          question={`Delete "${item.title}"?`}
+          consequence="It disappears from search and from future answers."
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={() => {
+            setConfirmingDelete(false);
+            onDelete(item);
+          }}
+        />
+      )}
       {open && (
         <div
           id={detailsId}

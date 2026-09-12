@@ -17,7 +17,7 @@ async function runToCompletion(
     body,
     ...(cookies ? { cookies } : {}),
   });
-  expect(created.status).toBe(201);
+  expect(created.status, JSON.stringify(created.body)).toBe(201);
   const id = created.body.id;
   return waitFor(async () => {
     const { body: run } = await json<any>(`/api/runs/${id}`, {
@@ -694,6 +694,29 @@ describe("runs", () => {
       const response = await json<{ runs: any[] }>(query, { cookies: session.cookies });
       expect(response.status).toBe(200);
       expect(response.body.runs.map((run) => run.id)).toEqual([activeId]);
+    }
+  });
+
+  test("GET /api/runs/:id carries sandbox_id (null for a sandbox-less run)", async () => {
+    const created = await json<{ id: string }>("/api/runs", {
+      method: "POST",
+      body: { prompt: "where do I run" },
+    });
+    const { status, body } = await json<Record<string, unknown>>(`/api/runs/${created.body.id}`);
+    expect(status).toBe(200);
+    expect("sandbox_id" in body).toBe(true);
+    expect(body.sandbox_id).toBeNull();
+  });
+
+  test("an unknown engine is refused with the user-facing engine list only", async () => {
+    const { status, body } = await json<{ error: string }>("/api/runs", {
+      method: "POST",
+      body: { prompt: "x", engine: "nonsense" },
+    });
+    expect(status).toBe(400);
+    expect(body.error).toBe("engine must be one of: chat, opencode, claude, codex, pi");
+    for (const internal of ["mock", "daytona", "claude-sdk", "acp"]) {
+      expect(body.error).not.toContain(internal);
     }
   });
 

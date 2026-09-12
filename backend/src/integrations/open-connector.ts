@@ -109,6 +109,8 @@ export function createOpenConnectorBackend(
 
   return {
     kind: "delegated",
+    catalogBackend: "openconnector",
+    catalogAuthMethod: "oauth2",
     runtimeBindingId: `openconnector:${config.origin}`,
     disconnectSupported: true,
     supports: (provider) =>

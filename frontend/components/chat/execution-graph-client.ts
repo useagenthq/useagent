@@ -9,15 +9,30 @@ export const EXECUTION_GRAPH_CLIENT_MODE: ExecutionGraphClientMode =
       ? "shadow"
       : "off";
 
-interface ExecutionGraphRow {
+export interface ExecutionGraphRow {
   readonly id: string;
   readonly mode: string;
   readonly provider: string;
   readonly native_session_id: string | null;
+  readonly native_parent_session_id?: string | null;
+  readonly status?: string;
+  readonly started_at?: string | null;
+  readonly settled_at?: string | null;
+  readonly created_at?: string;
 }
 
-interface ExecutionGraphResponse {
+export interface ExecutionGraphEdge {
+  readonly id: string;
+  readonly parent_execution_id: string | null;
+  readonly child_execution_id: string | null;
+  readonly native_target_session_id: string | null;
+  readonly observed_delivery_seq: number;
+}
+
+export interface ExecutionGraphResponse {
+  readonly graphCursor?: number;
   readonly executions: readonly ExecutionGraphRow[];
+  readonly delegationEdges?: readonly ExecutionGraphEdge[];
   readonly hasMore?: boolean;
   readonly nextCursor?: string | null;
 }
@@ -29,11 +44,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const EXECUTION_GRAPH_CACHE_LIMIT = 32;
 
 interface ExecutionGraphCacheEntry {
+  readonly executionsById: Map<string, ExecutionGraphRow>;
   readonly executionsByNativeSession: Map<string, ExecutionGraphRow>;
+  readonly delegationEdgesById: Map<string, ExecutionGraphEdge>;
+  graphCursor: number;
   initialized: boolean;
   nextCursor: string | null;
   initialInFlight: Promise<void> | null;
   refreshInFlight: Promise<void> | null;
+  authoritativeInFlight: Promise<void> | null;
 }
 
 const executionGraphCache = new Map<string, ExecutionGraphCacheEntry>();
@@ -41,11 +60,15 @@ let executionGraphCacheEpoch = 0;
 
 function newGraphCacheEntry(): ExecutionGraphCacheEntry {
   return {
+    executionsById: new Map(),
     executionsByNativeSession: new Map(),
+    delegationEdgesById: new Map(),
+    graphCursor: 0,
     initialized: false,
     nextCursor: null,
     initialInFlight: null,
     refreshInFlight: null,
+    authoritativeInFlight: null,
   };
 }
 
@@ -139,7 +162,13 @@ function decodeGraph(value: unknown): ExecutionGraphResponse | null {
       typeof raw.id !== "string" ||
       typeof raw.mode !== "string" ||
       typeof raw.provider !== "string" ||
-      (raw.native_session_id !== null && typeof raw.native_session_id !== "string")
+      (raw.native_session_id !== null && typeof raw.native_session_id !== "string") ||
+      (raw.native_parent_session_id !== undefined && raw.native_parent_session_id !== null &&
+        typeof raw.native_parent_session_id !== "string") ||
+      (raw.status !== undefined && typeof raw.status !== "string") ||
+      (raw.started_at !== undefined && raw.started_at !== null && typeof raw.started_at !== "string") ||
+      (raw.settled_at !== undefined && raw.settled_at !== null && typeof raw.settled_at !== "string") ||
+      (raw.created_at !== undefined && typeof raw.created_at !== "string")
     )
       return [];
     return [
@@ -148,17 +177,50 @@ function decodeGraph(value: unknown): ExecutionGraphResponse | null {
         mode: raw.mode,
         provider: raw.provider,
         native_session_id: raw.native_session_id,
+        native_parent_session_id: raw.native_parent_session_id,
+        status: raw.status,
+        started_at: raw.started_at,
+        settled_at: raw.settled_at,
+        created_at: raw.created_at,
       },
     ];
   });
+  if (value.delegation_edges !== undefined && !Array.isArray(value.delegation_edges)) return null;
+  const delegationEdges = (value.delegation_edges ?? []).flatMap((raw): ExecutionGraphEdge[] => {
+    if (!isRecord(raw)) return [];
+    if (
+      typeof raw.id !== "string" ||
+      (raw.parent_execution_id !== null && typeof raw.parent_execution_id !== "string") ||
+      (raw.child_execution_id !== null && typeof raw.child_execution_id !== "string") ||
+      (raw.native_target_session_id !== null &&
+        typeof raw.native_target_session_id !== "string") ||
+      typeof raw.observed_delivery_seq !== "number" ||
+      !Number.isSafeInteger(raw.observed_delivery_seq) ||
+      raw.observed_delivery_seq < 0
+    ) return [];
+    return [{
+      id: raw.id,
+      parent_execution_id: raw.parent_execution_id,
+      child_execution_id: raw.child_execution_id,
+      native_target_session_id: raw.native_target_session_id,
+      observed_delivery_seq: raw.observed_delivery_seq,
+    }];
+  });
   const hasMore = value.has_more;
   const nextCursor = value.next_cursor;
+  const graphCursor = value.graph_cursor;
+  if (
+    graphCursor !== undefined &&
+    (typeof graphCursor !== "number" || !Number.isSafeInteger(graphCursor) || graphCursor < 0)
+  ) return null;
   if (hasMore !== undefined && typeof hasMore !== "boolean") return null;
   if (nextCursor !== undefined && nextCursor !== null && typeof nextCursor !== "string") {
     return null;
   }
   return {
+    graphCursor: graphCursor ?? 0,
     executions,
+    delegationEdges,
     hasMore: hasMore ?? false,
     nextCursor: nextCursor ?? null,
   };
@@ -166,11 +228,44 @@ function decodeGraph(value: unknown): ExecutionGraphResponse | null {
 
 function mergeGraphPage(entry: ExecutionGraphCacheEntry, graph: ExecutionGraphResponse): void {
   for (const execution of graph.executions) {
+    entry.executionsById.set(execution.id, execution);
     if (execution.native_session_id) {
       entry.executionsByNativeSession.set(execution.native_session_id, execution);
     }
   }
+  for (const edge of graph.delegationEdges ?? []) entry.delegationEdgesById.set(edge.id, edge);
+  entry.graphCursor = Math.max(entry.graphCursor, graph.graphCursor ?? 0);
   entry.nextCursor = graph.nextCursor ?? null;
+}
+
+function graphSnapshot(entry: ExecutionGraphCacheEntry): ExecutionGraphResponse {
+  return {
+    graphCursor: entry.graphCursor,
+    executions: [...entry.executionsById.values()].toSorted((a, b) =>
+      (a.created_at ?? "").localeCompare(b.created_at ?? "") || a.id.localeCompare(b.id)),
+    delegationEdges: [...entry.delegationEdgesById.values()].toSorted((a, b) =>
+      a.observed_delivery_seq - b.observed_delivery_seq || a.id.localeCompare(b.id)),
+    hasMore: false,
+    nextCursor: entry.nextCursor,
+  };
+}
+
+/** Load the durable graph used by the child-workspace tree. Pages and replayed
+ * rows merge by stable ids, so repeated reads produce the same projection. */
+export async function fetchExecutionGraph(
+  runId: string,
+  signal: AbortSignal,
+): Promise<ExecutionGraphResponse | null> {
+  if (signal.aborted) throw abortError();
+  const entry = graphCacheEntry(runId);
+  try {
+    if (entry.initialized) await refreshAuthoritativeGraph(runId, entry, signal);
+    else await ensureInitialGraph(runId, entry, signal);
+    return graphSnapshot(entry);
+  } catch (error) {
+    if (error instanceof Error && error.message === "execution graph not found") return null;
+    throw error;
+  }
 }
 
 async function fetchGraphPages(
@@ -199,6 +294,16 @@ async function fetchGraphPages(
     }
     cursor = graph.nextCursor;
   }
+}
+
+async function fetchAuthoritativeGraph(
+  runId: string,
+  epoch: number,
+): Promise<ExecutionGraphCacheEntry> {
+  const snapshot = newGraphCacheEntry();
+  await fetchGraphPages(runId, snapshot, null, epoch);
+  snapshot.initialized = true;
+  return snapshot;
 }
 
 async function ensureInitialGraph(
@@ -236,6 +341,41 @@ async function refreshGraph(
     });
   }
   await waitWithSignal(entry.refreshInFlight, signal);
+}
+
+/** Refresh an existing graph from an authoritative first page. The API cursor is
+ * creation-ordered, so an incremental cursor can discover new executions but
+ * cannot observe a status/revision update on an existing execution. */
+async function refreshAuthoritativeGraph(
+  runId: string,
+  entry: ExecutionGraphCacheEntry,
+  signal: AbortSignal,
+): Promise<void> {
+  if (!entry.authoritativeInFlight) {
+    const epoch = executionGraphCacheEpoch;
+    entry.authoritativeInFlight = fetchAuthoritativeGraph(runId, epoch)
+      .then((snapshot) => {
+        if (epoch !== executionGraphCacheEpoch || snapshot.graphCursor < entry.graphCursor) return;
+        entry.executionsById.clear();
+        entry.executionsByNativeSession.clear();
+        entry.delegationEdgesById.clear();
+        for (const execution of snapshot.executionsById.values()) {
+          entry.executionsById.set(execution.id, execution);
+          if (execution.native_session_id) {
+            entry.executionsByNativeSession.set(execution.native_session_id, execution);
+          }
+        }
+        for (const edge of snapshot.delegationEdgesById.values()) {
+          entry.delegationEdgesById.set(edge.id, edge);
+        }
+        entry.graphCursor = snapshot.graphCursor;
+        entry.nextCursor = snapshot.nextCursor;
+      })
+      .finally(() => {
+        entry.authoritativeInFlight = null;
+      });
+  }
+  await waitWithSignal(entry.authoritativeInFlight, signal);
 }
 
 function cachedExecutionId(
@@ -296,6 +436,18 @@ export async function fetchExecutionTranscript(
   }
   if (!executionId) return null;
 
+  return fetchExecutionTranscriptById(runId, executionId, signal, onPage);
+}
+
+/** Exact transcript read for a selected durable execution. Sidebar/detail
+ * navigation must use this path because native provider session ids can repeat. */
+export async function fetchExecutionTranscriptById(
+  runId: string,
+  executionId: string,
+  signal: AbortSignal,
+  onPage?: (events: readonly StoredCanonicalEvent[]) => void,
+): Promise<StoredCanonicalEvent[] | null> {
+  if (signal.aborted) throw abortError();
   let cursor = 0;
   let events: StoredCanonicalEvent[] = [];
   for (;;) {

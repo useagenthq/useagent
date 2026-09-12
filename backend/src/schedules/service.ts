@@ -13,6 +13,7 @@ import {
   engineModelReadyForDispatch,
   engineResolutionErrorBody,
   resolveAcceptedEngine,
+  USER_FACING_ENGINES,
 } from "../runs/engine-readiness";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
 import { publishOrgChange, type OrgChange } from "../runs/org-signals";
@@ -25,6 +26,7 @@ import {
 import { resolveSkillSelection } from "../skills/repo";
 import { RunIntakeError } from "../resources/run-intake";
 import { RunAdmissionClosedError } from "../commands";
+import { BotsDisabledError } from "../bots/rollout";
 import {
   assertRunPromptLimit,
   RunPromptTooLargeError,
@@ -170,7 +172,7 @@ function resolveDraftEngine(rawEngine: unknown): EngineId {
   }
   if (typeof rawEngine !== "string" || !ENGINE_IDS.includes(rawEngine as EngineId)) {
     throw new ScheduleServiceError(400, {
-      error: `engine must be one of: ${ENGINE_IDS.join(", ")}`,
+      error: `engine must be one of: ${USER_FACING_ENGINES.join(", ")}`,
     });
   }
   return rawEngine as EngineId;
@@ -468,6 +470,9 @@ export async function fireScheduleForOrg(
   try {
     fired = await fireScheduleWithOutcome(schedule, trigger, occurrence);
   } catch (error) {
+    if (error instanceof BotsDisabledError) {
+      throw new ScheduleServiceError(409, { error: error.code, retryable: false });
+    }
     if (error instanceof SkillPinIntegrityError) {
       throw new ScheduleServiceError(error.code === "invalid_skill_pin" ? 400 : 409, {
         error: error.code,

@@ -1,7 +1,27 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { desktopClientQueryRedirect } from "./desktop-proxy";
 
 describe("desktop proxy recovery", () => {
+  test("reflects provider VNC client state without replacing the proxy path", () => {
+    const source = new URL(
+      "https://app.example/api/desktop-proxy/thread/vnc.html?autoconnect=1&path=api%2Fdesktop-proxy%2Fthread%2Fwebsockify",
+    );
+    const redirect = desktopClientQueryRedirect(source, {
+      password: "provider-password",
+    });
+    expect(redirect).not.toBeNull();
+    expect(redirect).toStartWith("/api/desktop-proxy/");
+    const parsed = new URL(redirect!, source.origin);
+    expect(parsed.searchParams.get("password")).toBe("provider-password");
+    expect(parsed.searchParams.get("path")).toBe(
+      "api/desktop-proxy/thread/websockify",
+    );
+    expect(
+      desktopClientQueryRedirect(parsed, { password: "provider-password" }),
+    ).toBeNull();
+  });
+
   test("repairs retained Daytona desktops before retrying a failed preview", () => {
     const source = readFileSync(new URL("./desktop-proxy.ts", import.meta.url), "utf8");
 

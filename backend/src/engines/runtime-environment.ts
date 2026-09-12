@@ -1,5 +1,12 @@
-import type { SandboxHandle } from "../sandboxes/provider";
+import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
+import { sandboxPlugin } from "../sandboxes/plugins";
 import { operatorEnv } from "./runtime-env";
+import { TOOL_GATEWAY_SERVER_NAME } from "../knowledge/gateway/descriptor";
+import {
+  ensureNativeRuntimeArtifact,
+  NATIVE_RUNTIME_ARTIFACT,
+  nativeRuntimeExecutable,
+} from "./native-runtime-artifact";
 import {
   RUN_TIMING_OUTCOMES,
   RUN_TIMING_STAGES,
@@ -8,9 +15,10 @@ import {
 
 export const RUNTIME_ENVIRONMENT_PORT = 37_733;
 export const RUNTIME_GENERATION_LABEL = "useagent.runtime";
-// Bump this identity whenever the embedded provider runtime changes. It is
-// stamped on retained/warm sandboxes and doubles as the pool name, so a new
-// release cannot accidentally resume a thread against an older runtime binary.
+// Native wire/session compatibility, not the application release number. The
+// pinned fork is the same v8 runtime already deployed; exact distribution bytes
+// are verified separately. A future incompatible generation needs an explicit
+// workspace-preserving upgrade, never delete-and-recreate of retained threads.
 const DEFAULT_RUNTIME_GENERATION = "useagent-runtime-v8";
 
 export function runtimeGeneration(
@@ -31,14 +39,17 @@ const RUNTIME_ENVIRONMENT_PROCESS_SESSION = "skynet-t3-environment";
 // Frozen VALUE: the runtime binary's base-dir, baked into sandbox templates
 // (auth cookies, settings.json, and caches all live under it).
 export const RUNTIME_ENVIRONMENT_HOME = "$HOME/.skynet/t3";
-export const RUNTIME_ENVIRONMENT_WORKDIR = "$HOME/work";
+export const RUNTIME_ENVIRONMENT_WORKDIR = "/root/work";
+export const RUNTIME_SANDBOX_HOME = "/root";
+const RUNTIME_MCP_SERVER_MARKER = `${RUNTIME_ENVIRONMENT_HOME}/.useagent-required-mcp`;
 const RUNTIME_READINESS_DEADLINE_MS = 60_000;
 const RUNTIME_READINESS_DELAY_MS = 100;
 const RUNTIME_STOP_DEADLINE_MS = 15_000;
 const DEFAULT_FIRST_ACTIVITY_TIMEOUT_MS = 45_000;
 const DEFAULT_NO_PROGRESS_TIMEOUT_MS = 600_000;
 type TimingRecorder = Pick<RunStageTimer, "begin">;
-type RuntimeEnvironmentSandbox = Pick<SandboxHandle, "id"> & {
+type RuntimeEnvironmentSandbox = Pick<SandboxHandle, "id" | "providerKind"> & {
+  readonly fs?: Pick<SandboxHandle["fs"], "uploadFile">;
   readonly process: Pick<
     SandboxHandle["process"],
     "createSession" | "deleteSession" | "executeCommand" | "executeSessionCommand"
@@ -54,6 +65,18 @@ export interface RuntimeEnvironment {
 
 const environmentOperations = new Map<string | RuntimeEnvironmentSandbox, Promise<RuntimeEnvironment>>();
 
+const ROOT_RUNTIME_LAYOUT: SandboxRuntimeLayout = {
+  home: RUNTIME_SANDBOX_HOME,
+  workdir: RUNTIME_ENVIRONMENT_WORKDIR,
+  runsAsRoot: true,
+};
+
+function runtimeEnvironmentLayout(sandbox: RuntimeEnvironmentSandbox): SandboxRuntimeLayout {
+  if (!sandbox.providerKind) return ROOT_RUNTIME_LAYOUT;
+  const plugin = sandboxPlugin(sandbox.providerKind);
+  return { ...plugin.runtime, runsAsRoot: plugin.runsAsRoot };
+}
+
 export function runtimeEnvironmentEnabled(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
@@ -64,46 +87,50 @@ export function runtimeEnvironmentEnabled(
 }
 
 export function buildRuntimeEnvironmentReadinessCommand(): string {
-  return `curl -fsS -m 3 -o /dev/null http://127.0.0.1:${RUNTIME_ENVIRONMENT_PORT}/api/auth/session`;
+  return [
+    `test "$(cat \"${RUNTIME_MCP_SERVER_MARKER}\" 2>/dev/null)" = "${TOOL_GATEWAY_SERVER_NAME}"`,
+    `test "$(cat \"${RUNTIME_ENVIRONMENT_HOME}/.useagent-native-runtime\" 2>/dev/null)" = "${NATIVE_RUNTIME_ARTIFACT.archiveSha256}:${NATIVE_RUNTIME_ARTIFACT.dependencyLockSha256}"`,
+    `curl -fsS -m 3 -o /dev/null http://127.0.0.1:${RUNTIME_ENVIRONMENT_PORT}/api/auth/session`,
+  ].join(" && ");
 }
 
-export function buildRuntimeIdentityPreflightCommand(): string {
+export function buildRuntimeIdentityPreflightCommand(
+  layout: SandboxRuntimeLayout = {
+    home: RUNTIME_SANDBOX_HOME,
+    workdir: RUNTIME_ENVIRONMENT_WORKDIR,
+    runsAsRoot: true,
+  },
+): string {
   return [
     "set -eu",
-    `mkdir -p "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
-    `cd "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
-    "test -w .",
-    "pwd -P",
-  ].join("\n");
-}
-
-/** Cube templates are operator-owned and intentionally root-pinned. Keep that
- * stronger image contract at the Cube adapter boundary while the shared
- * runtime workspace resolver remains compatible with Daytona/custom homes. */
-export function buildCubeRuntimeIdentityPreflightCommand(): string {
-  return [
-    "set -eu",
-    'test "$(id -u)" = "0"',
-    'test "$HOME" = "/root"',
-    'mkdir -p "/root/work"',
-    'test "$(cd "/root/work" && pwd -P)" = "/root/work"',
-    'test -w "/root/work"',
-    'printf \'%s\\n\' "/root/work"',
+    ...(layout.runsAsRoot ? ['test "$(id -u)" = "0"'] : ['test "$(id -u)" != "0"']),
+    `test "${"$HOME"}" = "${layout.home}"`,
+    `mkdir -p "${layout.workdir}"`,
+    `test "$(cd "${layout.workdir}" && pwd -P)" = "${layout.workdir}"`,
+    `test -w "${layout.workdir}"`,
+    `printf '%s\\n' "${layout.workdir}"`,
   ].join("\n");
 }
 
 export async function resolveRuntimeWorkspaceRoot(
   sandbox: Pick<RuntimeEnvironmentSandbox, "process">,
+  layout: SandboxRuntimeLayout = {
+    home: RUNTIME_SANDBOX_HOME,
+    workdir: RUNTIME_ENVIRONMENT_WORKDIR,
+    runsAsRoot: true,
+  },
 ): Promise<string> {
   const result = await sandbox.process.executeCommand(
-    buildRuntimeIdentityPreflightCommand(),
+    buildRuntimeIdentityPreflightCommand(layout),
     undefined,
     undefined,
     10,
   );
   const workdir = result.result?.trim();
-  if ((result.exitCode ?? 1) !== 0 || !workdir?.startsWith("/")) {
-    throw new Error("Sandbox runtime workspace contract failed (requires a writable absolute $HOME/work)");
+  if ((result.exitCode ?? 1) !== 0 || workdir !== layout.workdir) {
+    throw new Error(
+      `Sandbox runtime identity contract failed (requires ${layout.runsAsRoot ? "uid=0" : "non-root uid"}, HOME=${layout.home}, workspaceRoot=${layout.workdir} writable)`,
+    );
   }
   return workdir;
 }
@@ -143,14 +170,19 @@ export function runtimeCodexChildForwardingEnabled(
 
 export function buildRuntimeEnvironmentLaunchCommand(
   env: Readonly<Record<string, string | undefined>> = process.env,
+  layout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT,
 ): string {
+  const runtimeHome = `${layout.home}/.skynet/t3`;
+  const localBin = `${layout.home}/.local/bin`;
   return [
     "set -eu",
-    `export T3CODE_HOME="${RUNTIME_ENVIRONMENT_HOME}"`,
+    `export HOME="${layout.home}"`,
+    `export PATH="${localBin}:$PATH"`,
+    `export T3CODE_HOME="${runtimeHome}"`,
     "export T3CODE_MODE=web",
     "export T3CODE_HOST=0.0.0.0",
     `export T3CODE_PORT=${RUNTIME_ENVIRONMENT_PORT}`,
-    "export T3_CODEX_REQUIRED_MCP_SERVERS=skynet-knowledge",
+    `export T3_CODEX_REQUIRED_MCP_SERVERS=${TOOL_GATEWAY_SERVER_NAME}`,
     // The embedded T3 Codex adapter suppresses child-thread notifications by
     // default. Keep a separate operator kill switch from graph READ/SHADOW.
     ...(runtimeCodexChildForwardingEnabled(env)
@@ -162,13 +194,16 @@ export function buildRuntimeEnvironmentLaunchCommand(
     "export T3CODE_NO_BROWSER=true",
     "export T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD=false",
     "export T3CODE_LOG_WS_EVENTS=false",
-    `mkdir -p "${RUNTIME_ENVIRONMENT_HOME}" "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
+    `mkdir -p "${runtimeHome}" "${layout.workdir}"`,
+    `test -x "${nativeRuntimeExecutable(layout)}"`,
+    `printf '%s\\n' "${TOOL_GATEWAY_SERVER_NAME}" > "${runtimeHome}/.useagent-required-mcp"`,
+    `printf '%s\\n' "${NATIVE_RUNTIME_ARTIFACT.archiveSha256}:${NATIVE_RUNTIME_ARTIFACT.dependencyLockSha256}" > "${runtimeHome}/.useagent-native-runtime"`,
     // Org secrets are deliberately NOT sourced into the T3 process environment:
     // the codex provider adapter composes child/session environments from the
     // T3 process env, and foreign variables there broke the codex subscription
     // dial (proven by the 2026-08-18 release-gate failure). Tool shells receive
     // secrets through rc-file hooks installed by materializeSecretFiles.
-    `exec t3 serve --host 0.0.0.0 --port ${RUNTIME_ENVIRONMENT_PORT} --base-dir "$T3CODE_HOME" --no-browser "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
+    `exec "${nativeRuntimeExecutable(layout)}" serve --host 0.0.0.0 --port ${RUNTIME_ENVIRONMENT_PORT} --base-dir "$T3CODE_HOME" --no-browser "${layout.workdir}"`,
   ].join("\n");
 }
 
@@ -201,15 +236,19 @@ async function provisionRuntimeEnvironment(
 ): Promise<RuntimeEnvironment> {
   const endReadiness = timing?.begin(RUN_TIMING_STAGES.runtimeReadiness);
   try {
+    const layout = runtimeEnvironmentLayout(sandbox);
     if (signal.aborted) throw new Error("Provider runtime start aborted");
+    await ensureNativeRuntimeArtifact(sandbox, layout, signal);
     const alreadyHealthy = await runtimeEnvironmentHealthy(sandbox);
     if (!alreadyHealthy) {
+      // A healthy old binary can still own the port even when provenance fails.
+      await stopRuntimeEnvironment(sandbox, signal);
       await deleteRuntimeEnvironmentSessionIfPresent(sandbox);
       await sandbox.process.createSession(RUNTIME_ENVIRONMENT_PROCESS_SESSION);
       const launch = await sandbox.process.executeSessionCommand(
         RUNTIME_ENVIRONMENT_PROCESS_SESSION,
         {
-          command: buildRuntimeEnvironmentLaunchCommand(),
+          command: buildRuntimeEnvironmentLaunchCommand(process.env, layout),
           runAsync: true,
           suppressInputEcho: true,
         },
@@ -236,8 +275,8 @@ async function provisionRuntimeEnvironment(
     return {
       sandboxId: sandbox.id,
       port: RUNTIME_ENVIRONMENT_PORT,
-      home: RUNTIME_ENVIRONMENT_HOME,
-      workdir: RUNTIME_ENVIRONMENT_WORKDIR,
+      home: `${layout.home}/.skynet/t3`,
+      workdir: layout.workdir,
     };
   } catch (error) {
     endReadiness?.(signal.aborted ? RUN_TIMING_OUTCOMES.aborted : RUN_TIMING_OUTCOMES.failure);
@@ -283,8 +322,8 @@ export async function ensureRuntimeEnvironment(
 async function killRuntimeServerProcess(sandbox: RuntimeEnvironmentSandbox): Promise<void> {
   const command = [
     "set +e",
-    "if command -v pkill >/dev/null 2>&1; then pkill -KILL -f '[t]3 serve';" +
-      " else for pid in $(ps -eo pid=,args= | awk '/[t]3 serve/{print $1}');" +
+    "if command -v pkill >/dev/null 2>&1; then pkill -KILL -f '([t]3 serve|[b]in.mjs serve --host 0.0.0.0 --port 37733)';" +
+      " else for pid in $(ps -eo pid=,args= | awk '/[t]3 serve|[b]in.mjs serve --host 0.0.0.0 --port 37733/{print $1}');" +
       ' do kill -KILL "$pid"; done; fi',
     "true",
   ].join("\n");
@@ -303,7 +342,11 @@ async function stopRuntimeEnvironment(
   await killRuntimeServerProcess(sandbox);
   const deadline = Date.now() + RUNTIME_STOP_DEADLINE_MS;
   while (!signal.aborted) {
-    if (!(await runtimeEnvironmentHealthy(sandbox))) return;
+    const probe = await sandbox.process.executeCommand(
+      `curl -fsS -m 3 -o /dev/null http://127.0.0.1:${RUNTIME_ENVIRONMENT_PORT}/api/auth/session`,
+      undefined, undefined, 5,
+    );
+    if (probe.exitCode !== 0) return;
     if (Date.now() >= deadline) {
       throw new Error("Provider runtime did not stop for restart");
     }

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { compressTerminalLog, LOG_BODY_MAX_LINES } from "@/components/chat/terminal-log-model";
 import { TerminalPane } from "@/components/chat/terminal-pane";
 import type { ApiStep } from "@/components/chat/types";
 
@@ -17,6 +18,26 @@ function commandStep(command: string, extra: Record<string, unknown> = {}): ApiS
     label: command,
     chip: "bash",
     code_json: JSON.stringify({ tool: "bash", input: { command }, ...extra }),
+    created_at: "2026-08-17T00:00:00.000Z",
+  };
+}
+
+/** A tool step shaped like the engine records a gateway/MCP call: the tool is
+ *  the generic bridge and the real call rides in `input.name`. */
+function callStep(name: string, args: Record<string, unknown>, output: unknown): ApiStep {
+  seq += 1;
+  return {
+    id: `step-${seq}`,
+    run_id: "run-1",
+    idx: seq,
+    kind: "command",
+    label: "Execute",
+    chip: null,
+    code_json: JSON.stringify({
+      tool: "execute",
+      input: { name, arguments: args },
+      output: typeof output === "string" ? output : JSON.stringify(output),
+    }),
     created_at: "2026-08-17T00:00:00.000Z",
   };
 }
@@ -84,5 +105,59 @@ describe("TerminalPane log", () => {
     expect(render([], false)).toContain("No commands were run.");
     // A boot-phase live run with zero commands does not also show the footer.
     expect(render([], true)).not.toContain("terminal-log-working");
+  });
+
+  test("a shell result wrapped as formatted_output shows its text, never the wrapper", () => {
+    const wrapped = commandStep("git status", {
+      output: JSON.stringify({ formatted_output: "On branch main\nnothing to commit" }),
+      exit_code: 0,
+    });
+    const html = render([wrapped], false);
+    expect(html).toContain("$</span>");
+    expect(html).toContain("git status");
+    expect(html).toContain("On branch main");
+    expect(html).toContain("nothing to commit");
+    expect(html).not.toContain("formatted_output");
+    expect(html).not.toContain("{&quot;");
+  });
+
+  test("an MCP-shaped gateway call is one line, with no payload dump", () => {
+    const descriptor = "x".repeat(2000);
+    const recall = callStep("memory_search", { query: "digest" }, {
+      result: { content: [{ type: "text", text: "4 memories matched\n- ship on Fridays" }] },
+    });
+    const activate = callStep("skill_activate", { name: "pr-review" }, {
+      result: { content: [{ type: "text", text: `Playbook pr-review v3\n${descriptor}` }] },
+    });
+    const html = render([recall, activate], false);
+    expect(html).toContain('data-testid="terminal-log-call"');
+    expect(html).toContain("recalled memory");
+    expect(html).toContain("4 memories matched");
+    expect(html).toContain("activated playbook: pr-review");
+    expect(html).not.toContain("$ Execute");
+    expect(html).not.toContain("ship on Fridays");
+    expect(html).not.toContain(descriptor);
+    expect(html).not.toContain('{&quot;result&quot;');
+    expect(html).not.toContain("content");
+  });
+
+  test("a long result is cut to the first lines with a +K lines tail", () => {
+    const lines = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`);
+    const long = commandStep("bun test", { output: lines.join("\n"), exit_code: 0 });
+    const html = render([long], false);
+    expect(html).toContain(`line ${LOG_BODY_MAX_LINES}`);
+    expect(html).not.toContain(`line ${LOG_BODY_MAX_LINES + 1}<`);
+    expect(html).toContain(`+${40 - LOG_BODY_MAX_LINES} lines`);
+  });
+
+  test("a truncated JSON payload still yields its readable text", () => {
+    const cut = `{"result":{"content":[{"type":"text","text":"first line\\nsecond line`;
+    const entries = compressTerminalLog([commandStep("cat big.json", { output: cut, exit_code: 0 })]);
+    expect(entries[0]).toMatchObject({ kind: "command", lines: ["first line", "second line"], hiddenLines: 0 });
+    // A result in an unknown JSON shape renders nothing rather than the JSON.
+    const unknown = compressTerminalLog([
+      commandStep("curl api", { output: JSON.stringify({ data: { id: 1 } }), exit_code: 0 }),
+    ]);
+    expect(unknown[0]).toMatchObject({ kind: "command", lines: [], settled: true });
   });
 });

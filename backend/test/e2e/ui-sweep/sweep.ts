@@ -10,7 +10,7 @@
 import type { Browser, Page } from "playwright-core";
 import {
   BE, FE, createRun, getRun, getThread, waitRun, newPage, launch, shot, sleep,
-  verdictOf, printResult, beApi, TAG, type Result,
+  verdictOf, printResult, beApi, removeDevOverlay, TAG, type Result,
 } from "./harness";
 
 const ONLY = (process.env.SCENARIOS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -513,9 +513,11 @@ async function s9_auth(): Promise<Result> {
     const unauth = await fetch(`${FE}/api/runs`, { headers: { Origin: "http://localhost:3200" } });
     checks.push({ name: "auth: ALLOW_DEV_ORG default keeps API working unauthenticated (GET /api/runs 200)", ok: unauth.status === 200, note: `HTTP ${unauth.status}` });
 
-    // User menu anonymous state.
+    // User menu anonymous state. The Next dev-tools badge sits on top of the
+    // account button, so drop it before clicking.
     await page.goto(`${FE}/agent/new`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(800);
+    await removeDevOverlay(page);
     await page.locator('[aria-label="Open account menu"]').first().click();
     await page.waitForTimeout(500);
     const menuTxt = (await page.locator("body").innerText());
@@ -632,16 +634,21 @@ async function s12_skills(): Promise<Result> {
     await page.goto(`${FE}/skills`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1200);
     checks.push({ name: "skills: page heading present", ok: (await page.getByRole("heading", { name: /^Skills$/ }).count()) > 0 });
-    // List: the seeded skill's card is on the page (real data, not a mock).
-    const card = page.locator("article", { hasText: name }).first();
+    // List: the seeded skill's row is on the page (real data, not a mock). The
+    // library is a list of <li> rows: name button + description caption + Run.
+    const card = page.locator("li", { hasText: name }).first();
     checks.push({ name: "skills: seeded skill renders in the library (real data)", ok: (await card.count()) > 0, note: name });
-    // Detail: its section content (overview line) is rendered somewhere on the card/page.
+    checks.push({ name: "skills: row caption shows the seeded description", ok: (await card.getByText(`uisweep skill fixture ${marker}`).count()) > 0 });
+    // Detail: the name opens the detail view, which renders the sections.
+    await card.getByRole("button", { name }).first().click().catch(() => {});
+    await page.waitForTimeout(600);
     checks.push({ name: "skills: detail section content visible (overview line)", ok: (await page.getByText(overview).count()) > 0, note: overview });
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(400);
 
-    // Run preselect: the card's Run button deep-links to /agent/new?skill=<id>,
-    // and the New Task composer opens with that playbook chosen. A lone skill
-    // renders as the FEATURED card ("Run skill"); with peers it's a library card
-    // ("Run") — match both, plus the post-click "Ran" state.
+    // Run preselect: the row's Run button deep-links to /agent/new?skill=<id>,
+    // and the New Task composer opens with that playbook chosen. Match the
+    // post-click "Ran" state too.
     const runBtn = card.getByRole("button", { name: /^Run( skill)?$|^Ran$/i }).first();
     let preselected = false;
     if ((await runBtn.count()) > 0 && skillId) {
@@ -700,8 +707,11 @@ async function s13_knowledge(): Promise<Result> {
     // Add modal: opens with the real form fields — no fabricated success string.
     await page.getByRole("button", { name: /Add knowledge/i }).first().click().catch(() => {});
     await page.waitForTimeout(600);
-    const hasName = (await page.locator("#knowledge-name").count()) > 0;
-    const hasContent = (await page.locator("#knowledge-content").count()) > 0;
+    // The dialog's fields are label-bound (Name, Trigger, Content, Folder), so
+    // find them by accessible label rather than a fixed id.
+    const dialog = page.getByRole("dialog").first();
+    const hasName = (await dialog.getByLabel("Name", { exact: true }).count()) > 0;
+    const hasContent = (await dialog.getByLabel("Content", { exact: true }).count()) > 0;
     checks.push({ name: "knowledge: Add modal exposes real name + content fields", ok: hasName && hasContent, note: `name=${hasName} content=${hasContent}` });
     // Honesty: before any submit, no premature "saved/success" claim is shown.
     const body = await page.locator("body").innerText();
@@ -769,17 +779,19 @@ async function s15_schedules(): Promise<Result> {
   const marker = crypto.randomUUID().slice(0, 6);
   const name = `${TAG}-sched ${marker}`;
   try {
-    await page.goto(`${FE}/agent/schedules`, { waitUntil: "domcontentloaded" });
+    // Schedules were renamed Automations; /agent/schedules redirects here.
+    await page.goto(`${FE}/agent/automations`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1200);
-    checks.push({ name: "schedules: page heading present", ok: (await page.getByRole("heading", { name: /^Schedules$/ }).count()) > 0 });
-    checks.push({ name: "schedules: 'created disabled' automation banner present", ok: (await page.getByText(/New schedules are created disabled/i).count()) > 0 });
+    checks.push({ name: "schedules: page heading present", ok: (await page.getByRole("heading", { name: /^Automations$/ }).count()) > 0 });
 
-    // Open the New schedule modal and fill it (cron validates locally — no LLM).
-    await page.getByRole("button", { name: /New schedule/i }).first().click().catch(() => {});
+    // Open the New automation modal and fill it (cron validates locally, no LLM).
+    await page.getByRole("button", { name: /New automation/i }).first().click().catch(() => {});
     await page.waitForTimeout(500);
-    const nameInput = page.locator('[aria-label="Name"]').first();
-    const cronInput = page.locator('[aria-label="Cron expression"]').first();
-    const promptInput = page.locator('[aria-label="Prompt"]').first();
+    const dialog = page.getByRole("dialog").first();
+    checks.push({ name: "schedules: 'starts paused' copy present in the create modal", ok: (await dialog.getByText(/New automations start paused/i).count()) > 0 });
+    const nameInput = dialog.getByLabel("What should run?", { exact: true }).first();
+    const cronInput = dialog.getByLabel("Cron expression", { exact: true }).first();
+    const promptInput = dialog.locator("#automation-instructions").first();
     // Hydration-safe fills.
     for (let i = 0; i < 20; i++) {
       await nameInput.fill(name);
@@ -788,13 +800,13 @@ async function s15_schedules(): Promise<Result> {
       if ((await nameInput.inputValue()) === name) break;
       await page.waitForTimeout(150);
     }
-    const createBtn = page.getByRole("button", { name: /^Create$|Creating/ }).first();
+    const createBtn = dialog.getByRole("button", { name: /^Create automation$|Saving/ }).first();
     await createBtn.click().catch(() => {});
     // The new row lands in the list.
     const row = page.locator("article", { hasText: name }).first();
     await row.waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
     checks.push({ name: "schedules: created schedule appears in the list (real row)", ok: (await row.count()) > 0, note: name });
-    checks.push({ name: "schedules: new row shows cron + disabled status (honest, created off)", ok: (await row.getByText("0 9 * * 1").count()) > 0 && (await row.getByText(/Disabled/i).count()) > 0 });
+    checks.push({ name: "schedules: new row shows cron + paused status (honest, created off)", ok: (await row.getByText("0 9 * * 1").count()) > 0 && (await row.getByText(/^Paused$/).count()) > 0 });
     // Confirm it persisted server-side too.
     const list = await beApi("/api/schedules");
     const persisted = (list.body?.schedules ?? []).some((s: any) => s.name === name && s.enabled === false);
@@ -817,17 +829,18 @@ async function s16_workspace(wf: string): Promise<Result> {
     // Ground truth from the same APIs the page reads.
     const fleet = (await beApi("/api/fleet")).body ?? {};
     const runs = (await beApi("/api/runs")).body?.runs ?? [];
-    await page.goto(`${FE}/agent/workspace`, { waitUntil: "domcontentloaded" });
+    // The workspace overview merged into /dashboard (/agent/workspace redirects).
+    await page.goto(`${FE}/dashboard`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2000);
-    checks.push({ name: "workspace: page heading present", ok: (await page.getByRole("heading", { name: /^Workspace$/ }).count()) > 0 });
+    checks.push({ name: "workspace: page heading present", ok: (await page.getByRole("heading", { name: /^Welcome back$/ }).count()) > 0 });
 
-    // Limits card: Models·burn panel shows REAL per-model burn or the honest empty.
+    // Limits card: the token-burn panel shows REAL per-model burn or the honest empty.
     checks.push({ name: "workspace: Limits section heading present", ok: (await page.getByRole("heading", { name: /^Limits$/ }).count()) > 0 });
-    const modelsHeading = (await page.getByText(/Models · burn/).count()) > 0;
-    checks.push({ name: "workspace: 'Models · burn' panel present", ok: modelsHeading });
+    const modelsHeading = (await page.getByText(/Token burn · today/).count()) > 0;
+    checks.push({ name: "workspace: 'Token burn · today' panel present", ok: modelsHeading });
     const hasModelRows = (fleet.models ?? []).length > 0;
     const emptyBurn = (await page.getByText(/No model runs yet today/i).count()) > 0;
-    const tokensToday = (await page.getByText(/tokens today/i).count()) > 0;
+    const tokensToday = (await page.getByText(/\btokens\b/).count()) > 0;
     checks.push({
       name: "workspace: Limits reflects real /api/fleet (rows+totals, or honest empty)",
       ok: hasModelRows ? tokensToday && !emptyBurn : emptyBurn,
@@ -873,9 +886,10 @@ async function s17_artifacts(): Promise<Result> {
     const runs = (await beApi("/api/runs")).body?.runs ?? [];
     await page.goto(`${FE}/agent/artifacts`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2000);
-    checks.push({ name: "artifacts: 'Live Artifacts' heading present", ok: (await page.getByRole("heading", { name: /Live Artifacts/ }).count()) > 0 });
+    checks.push({ name: "artifacts: 'Artifacts' heading present", ok: (await page.getByRole("heading", { name: /^Artifacts$/ }).count()) > 0 });
 
-    const cards = page.locator("article");
+    // Cards are plain links back to their run's session, not <article> elements.
+    const cards = page.locator('a[href^="/session/"]');
     const cardCount = await cards.count();
     const emptyShown = (await page.getByText(/No artifacts yet/i).count()) > 0;
     if (cardCount > 0 && !emptyShown) {

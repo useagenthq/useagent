@@ -74,7 +74,7 @@ export async function enforceSingleBackend(
     // Dev/test may deliberately run throwaway databases without strict singleton
     // enforcement. Production never reaches this fail-open branch.
     console.warn("[boot] single-backend guard skipped (advisory lock unavailable):", detail);
-    return true;
+    return false;
   }
 
   await holder.end().catch(() => {});
