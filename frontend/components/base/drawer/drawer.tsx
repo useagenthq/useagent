@@ -6,7 +6,8 @@
  * Compound API (Root/Trigger/Close/Content/Header/Title/Body/Footer) built on
  * @radix-ui/react-dialog for focus-trap, Esc-to-close, scroll-lock and backdrop
  * dismiss. Slides in from the right; callers own the open state (Root
- * open/onOpenChange). BoardUI tokens; callers restyle via className.
+ * open/onOpenChange) and focus returns to whatever opened the drawer on
+ * close. BoardUI tokens; callers restyle via className.
  */
 
 import * as React from "react";
@@ -14,6 +15,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import { cx } from "@/utils/cx";
 import { CloseButton } from "@/components/base/buttons/close-button";
+import { useFocusReturn } from "@/components/base/modal/focus-return";
 
 const DrawerRoot = DialogPrimitive.Root;
 const DrawerTrigger = DialogPrimitive.Trigger;
@@ -43,12 +45,21 @@ DrawerOverlay.displayName = "DrawerOverlay";
 const DrawerContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...rest }, forwardedRef) => {
+>(({ className, children, onOpenAutoFocus, onCloseAutoFocus, ...rest }, forwardedRef) => {
+  const focusReturn = useFocusReturn();
   return (
     <DrawerPortal>
       <DrawerOverlay>
         <DialogPrimitive.Content
           ref={forwardedRef}
+          onOpenAutoFocus={(event) => {
+            onOpenAutoFocus?.(event);
+            focusReturn.onOpenAutoFocus();
+          }}
+          onCloseAutoFocus={(event) => {
+            onCloseAutoFocus?.(event);
+            if (!event.defaultPrevented) focusReturn.onCloseAutoFocus(event);
+          }}
           className={cx(
             // base
             "size-full max-w-[400px] overflow-y-auto",

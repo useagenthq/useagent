@@ -52,13 +52,13 @@ const Textarea = React.forwardRef<
           ],
           !disabled && [
             // placeholder
-            "placeholder:select-none placeholder:text-text-soft-400 placeholder:transition placeholder:duration-200 placeholder:ease-out",
+            "placeholder:select-none placeholder:text-text-tertiary placeholder:transition placeholder:duration-200 placeholder:ease-out",
             // hover placeholder
-            "group-hover/textarea:placeholder:text-text-sub-600",
+            "group-hover/textarea:placeholder:text-text-secondary",
             // focus
             "focus:outline-none",
             // focus placeholder
-            "focus:placeholder:text-text-sub-600",
+            "focus:placeholder:text-text-secondary",
           ],
           disabled && [
             // disabled

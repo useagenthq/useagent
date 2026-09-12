@@ -6,7 +6,8 @@
  * Compound API (Root/Trigger/Close/Content/Header/Title/Description/Body/Footer)
  * built on @radix-ui/react-dialog for correct focus-trap, Esc-to-close,
  * scroll-lock, backdrop dismiss, and form submission. Callers own the open
- * state (controlled: Root open/onOpenChange) or drive it from a Trigger.
+ * state (controlled: Root open/onOpenChange) or drive it from a Trigger; on
+ * close, focus returns to whatever opened the dialog either way.
  * Visible chrome is on BoardUI tokens; callers restyle the panel via Content's
  * className.
  */
@@ -17,6 +18,7 @@ import { type RemixiconComponentType } from "@remixicon/react";
 
 import { cx } from "@/utils/cx";
 import { CloseButton } from "@/components/base/buttons/close-button";
+import { useFocusReturn } from "./focus-return";
 
 const ModalRoot = DialogPrimitive.Root;
 const ModalTrigger = DialogPrimitive.Trigger;
@@ -49,16 +51,25 @@ const ModalContent = React.forwardRef<
     overlayClassName?: string;
     showClose?: boolean;
   }
->(({ className, overlayClassName, children, showClose = true, ...rest }, forwardedRef) => {
+>(({ className, overlayClassName, children, showClose = true, onOpenAutoFocus, onCloseAutoFocus, ...rest }, forwardedRef) => {
+  const focusReturn = useFocusReturn();
   return (
     <ModalPortal>
       <ModalOverlay className={overlayClassName}>
         <DialogPrimitive.Content
           ref={forwardedRef}
+          onOpenAutoFocus={(event) => {
+            onOpenAutoFocus?.(event);
+            focusReturn.onOpenAutoFocus();
+          }}
+          onCloseAutoFocus={(event) => {
+            onCloseAutoFocus?.(event);
+            if (!event.defaultPrevented) focusReturn.onCloseAutoFocus(event);
+          }}
           className={cx(
             // base
             "relative w-full max-w-[400px]",
-            "rounded-3xl bg-background-primary-default shadow-dropdown",
+            "rounded-2xl bg-background-primary-default shadow-dropdown",
             // focus
             "focus:outline-none",
             // animation

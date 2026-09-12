@@ -219,6 +219,13 @@
   --text-body-2-bold--letter-spacing: 0;
   --text-body-2-bold--font-weight: 700;
 
+  /* Body 2 prose: 13 / 20. Multi-line copy (markdown answers, user bubbles)
+   * needs a line-height of at least 1.4; 13/18 stays for single-line labels. */
+  --text-body-2-prose: 0.8125rem;
+  --text-body-2-prose--line-height: 1.25rem;
+  --text-body-2-prose--letter-spacing: 0;
+  --text-body-2-prose--font-weight: 400;
+
   /* ===== Caption 1 — 12 / 16 (tracking 0.15) =============================== */
   --text-caption-1-regular: 0.75rem;
   --text-caption-1-regular--line-height: 1rem;
