@@ -440,7 +440,7 @@ function buttonNumber(button: Button): number {
   }
 }
 
-async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<ComputerToolResult> {
+export async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<ComputerToolResult> {
   const plugin = sandboxPlugin(sandbox.providerKind ?? sandboxProviderKind());
   const base = sandbox.computerUse ? "/home/daytona" : plugin.runsAsRoot ? "/root" : plugin.home;
   const path = `${base}/work/screenshots/screenshot-${Date.now()}.png`;
@@ -455,16 +455,16 @@ async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<Compute
     );
   } else {
     const display = sandbox.desktop?.display ?? DEFAULT_DISPLAY;
-    const output = await cubeCommand(
+    await cubeCommand(
       sandbox,
       `mkdir -p "$(dirname '${path}')"; ` +
         `size=$(xdpyinfo -display ${display} | awk '/dimensions:/{print $2; exit}'); ` +
         `ffmpeg -hide_banner -loglevel error -f x11grab -video_size "$size" -i ${display} ` +
-        `-frames:v 1 -y '${path}'; printf '__PATH__%s\\n' '${path}'; base64 -w0 '${path}'`,
+        `-frames:v 1 -y '${path}'`,
     );
-    const markerEnd = output.indexOf("\n");
-    if (!output.startsWith("__PATH__") || markerEnd < 0) throw new Error("screenshot output was malformed");
-    data = output.slice(markerEnd + 1).trim();
+    const file = await sandbox.fs.downloadFile(path);
+    if (file.byteLength === 0) throw new Error("desktop screenshot was empty");
+    data = file.toString("base64");
   }
   return {
     content: [
