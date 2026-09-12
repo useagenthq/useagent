@@ -33,6 +33,7 @@ describe("gateway grants single source of truth", () => {
         "GRANT SELECT, INSERT ON tasks TO useagent_gateway",
         "GRANT UPDATE (title, body, status, priority, order_key, updated_at) ON tasks TO useagent_gateway",
         "GRANT SELECT ON integration_connections, integration_connection_credentials TO useagent_gateway",
+        "GRANT SELECT ON sandbox_labels TO useagent_gateway",
       ]),
     );
   });

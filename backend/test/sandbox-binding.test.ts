@@ -7,7 +7,7 @@ import { setRunSandbox } from "../src/runs/repo";
 import { clearMissingRetainedSandboxMappings, listCurrentRetainedSandboxMappings } from "../src/fleet/lease-repo";
 import { db } from "../src/db/client";
 import { runs } from "../src/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   bindingSnapshot,
   resolveSandboxBindingForRun,
@@ -104,6 +104,93 @@ describe("sandbox binding", () => {
     const legacyRun = await json<{ id: string }>("/api/runs", { method: "POST", cookies, body: { prompt: "Legacy.", engine: "mock" } });
     await setRunSandbox(legacyRun.body.id, "legacy_1");
     expect((await resolveSandboxBindingForSandbox("legacy_1", deps)).credential).toBe("env");
+  });
+
+  test("the restricted gateway resolves personal computers through its filtered credential view", async () => {
+    const built: string[] = [];
+    const binding = await resolveSandboxBindingForRun(
+      { orgId: "org", userId: "user" },
+      {
+        env: {
+          USER_COMPUTERS: "on",
+          GATEWAY_DATABASE_URL: "postgres://restricted",
+        },
+        envProvider: () => envBinding,
+        gatewayConnection: async ({ orgId, userId, providers }) => {
+          expect({ orgId, userId, providers }).toEqual({
+            orgId: "org",
+            userId: "user",
+            providers: ["daytona", "box"],
+          });
+          return {
+            provider: "box",
+            value: "box_gateway_key",
+            metadata: { snapshotName: "box-snapshot" },
+          };
+        },
+        providers: {
+          box: (key: string) => {
+            built.push(key);
+            return fakeProvider("box-gateway");
+          },
+        },
+      },
+    );
+
+    expect(binding).toMatchObject({
+      kind: "box",
+      credential: "user",
+      snapshot: "box-snapshot",
+      userId: "user",
+    });
+    expect(built).toEqual(["box_gateway_key"]);
+  });
+
+  test("the hosted gateway role can read computer metadata through the filtered view and label trust anchor", async () => {
+    const { cookies, orgId } = await createOrgSession("binding-gateway-role");
+    const userId = await userIdForCookies(cookies);
+    const app = new Hono<AppEnv>().route(
+      "/api/provider-connections",
+      createProviderConnectionsRoutes({ validateCredential: async () => {} }),
+    );
+    const saved = await app.request(
+      "/api/provider-connections/box/api-key",
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json", cookie: cookies },
+        body: JSON.stringify({
+          apiKey: "box_restricted_view",
+          metadata: { snapshotName: "native-desktop" },
+        }),
+      },
+    );
+    expect(saved.status).toBe(200);
+
+    const roles = await db.execute(sql`
+      select rolname from pg_roles
+      where rolname in ('useagent_gateway', 'skynet_gateway')
+      order by (rolname = 'useagent_gateway') desc
+      limit 1
+    `);
+    const role = roles[0]?.rolname;
+    if (typeof role !== "string") return;
+
+    const rows = await db.transaction(async (tx) => {
+      await tx.execute(sql.raw(`set local role "${role}"`));
+      await tx.execute(sql`select sandbox_id from sandbox_labels limit 0`);
+      return tx.execute(sql`
+        select provider, metadata
+        from gateway_provider_api_key_credentials
+        where org_id = ${orgId}
+          and user_id = ${userId}
+          and provider = 'box'
+      `);
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      provider: "box",
+      metadata: { snapshotName: "native-desktop" },
+    });
   });
 
   test("reconciling the deployment provider's listing leaves personal-computer mappings alone", async () => {

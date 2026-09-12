@@ -44,7 +44,7 @@ interface ComputerUseService {
   scroll(claims: ToolTokenClaims, x: number, y: number, direction: Direction, amount: number): Promise<void>;
 }
 
-const DISPLAY = ":1";
+const DEFAULT_DISPLAY = ":1";
 const MAX_COORDINATE = 10_000;
 const MAX_TEXT_LENGTH = 20_000;
 const KEY_RE = /^[A-Za-z0-9_+ -]{1,80}$/;
@@ -343,8 +343,9 @@ async function readySandbox(claims: ToolTokenClaims): Promise<SandboxHandle> {
 }
 
 async function cubeCommand(sandbox: SandboxHandle, command: string): Promise<string> {
+  const display = sandbox.desktop?.display ?? DEFAULT_DISPLAY;
   const executed = await sandbox.process.executeCommand(
-    `export DISPLAY=${DISPLAY}; ${command}`,
+    `export DISPLAY=${display}; ${command}`,
     undefined,
     undefined,
     60,
@@ -453,11 +454,12 @@ async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<Compute
       `mkdir -p "$(dirname '${path}')"; printf '%s' '${data}' | base64 -d > '${path}'`,
     );
   } else {
+    const display = sandbox.desktop?.display ?? DEFAULT_DISPLAY;
     const output = await cubeCommand(
       sandbox,
       `mkdir -p "$(dirname '${path}')"; ` +
-        `size=$(xdpyinfo -display ${DISPLAY} | awk '/dimensions:/{print $2; exit}'); ` +
-        `ffmpeg -hide_banner -loglevel error -f x11grab -video_size "$size" -i ${DISPLAY} ` +
+        `size=$(xdpyinfo -display ${display} | awk '/dimensions:/{print $2; exit}'); ` +
+        `ffmpeg -hide_banner -loglevel error -f x11grab -video_size "$size" -i ${display} ` +
         `-frames:v 1 -y '${path}'; printf '__PATH__%s\\n' '${path}'; base64 -w0 '${path}'`,
     );
     const markerEnd = output.indexOf("\n");

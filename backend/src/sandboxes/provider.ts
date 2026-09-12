@@ -56,12 +56,18 @@ export interface PreviewLinkBase {
   readonly baseUrl: string;
   readonly token: string;
   readonly headers: Readonly<Record<string, string>>;
+  readonly clientQuery?: Readonly<Record<string, string>>;
 }
 
 /** A link's base for consumers; a link without headers falls back to this deployment's provider. */
 export function previewLinkBase(link: SandboxPreviewLink): PreviewLinkBase {
   const token = link.token ?? "";
-  return { baseUrl: link.url.replace(/\/+$/, ""), token, headers: link.headers ?? sandboxPreviewHeaders(token) };
+  return {
+    baseUrl: link.url.replace(/\/+$/, ""),
+    token,
+    headers: link.headers ?? sandboxPreviewHeaders(token),
+    ...(link.clientQuery ? { clientQuery: link.clientQuery } : {}),
+  };
 }
 
 export function sandboxTemplate(daytonaEnvName: string, daytonaFallback: string, env: SandboxEnv = process.env): string {

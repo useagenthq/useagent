@@ -35,6 +35,8 @@ export interface PreviewEndpoint {
   token: string;
   /** Auth headers every upstream request must carry (provider token header or Box's port-auth cookie). */
   headers: Readonly<Record<string, string>>;
+  /** Provider-issued values that must be reflected in the browser-side preview URL. */
+  clientQuery?: Readonly<Record<string, string>>;
   resolvedAt: number;
 }
 

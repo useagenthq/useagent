@@ -49,6 +49,25 @@ function invalidateDesktopPreview(threadId: string): void {
   desktopReadyUntil.delete(threadId);
 }
 
+/** Reflect provider-issued noVNC client values into the authenticated
+ * same-origin iframe URL. Upstream bearer tokens remain server-side headers;
+ * only values the browser client itself must read (currently the VNC password)
+ * are redirected. */
+export function desktopClientQueryRedirect(
+  url: URL,
+  clientQuery: Readonly<Record<string, string>> | undefined,
+): string | null {
+  if (!clientQuery) return null;
+  const redirected = new URL(url);
+  let changed = false;
+  for (const [key, value] of Object.entries(clientQuery)) {
+    if (redirected.searchParams.get(key) === value) continue;
+    redirected.searchParams.set(key, value);
+    changed = true;
+  }
+  return changed ? redirected.toString() : null;
+}
+
 /** Old retained sandboxes may predate desktop provisioning, and a stopped box
  * may wake without its process session. Repair exactly once per thread while
  * concurrent iframe/static/WebSocket requests wait on the same promise. */
@@ -230,6 +249,10 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
 
   try {
     let ep = await resolvePreviewEndpoint(threadId, DESKTOP_PORT);
+    if (subpath === "/vnc.html") {
+      const redirect = desktopClientQueryRedirect(url, ep.clientQuery);
+      if (redirect) return c.redirect(redirect, 302);
+    }
     let upstream: Response;
     try {
       upstream = await forward(ep);
@@ -244,6 +267,10 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
       await ensureDesktopPreview(threadId);
       invalidatePreviewEndpoint(threadId, DESKTOP_PORT);
       ep = await resolvePreviewEndpoint(threadId, DESKTOP_PORT, true);
+      if (subpath === "/vnc.html") {
+        const redirect = desktopClientQueryRedirect(url, ep.clientQuery);
+        if (redirect) return c.redirect(redirect, 302);
+      }
       upstream = await forward(ep);
     }
     return buildProxyResponse(upstream);

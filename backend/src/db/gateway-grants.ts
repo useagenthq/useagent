@@ -53,13 +53,18 @@ export const GATEWAY_GRANTS: readonly string[] = [
   // and the encrypted server-side credential. OAuth lifecycle writes stay in
   // the privileged control plane.
   "GRANT SELECT ON integration_connections, integration_connection_credentials TO useagent_gateway",
+  // Personal computer bindings resolve through the filtered API-key view; the
+  // provider's control-plane labels are the sandbox ownership trust anchor.
+  // Never grant the gateway the underlying provider_connections table.
+  "GRANT SELECT ON sandbox_labels TO useagent_gateway",
   // Unified context index (Phase 1): the gateway context_search/context_read
   // tools READ the projection; the privileged BACKEND writes it (projector on
   // skill/knowledge/automation writes). SELECT only - no gateway write path.
   "GRANT SELECT ON context_index TO useagent_gateway",
 ];
 
-/** Migration 0039 creates the BYOK credentials view; grant only if present. */
+/** Migration 0039 creates the BYOK credentials view; later migrations extend
+ * it with non-secret computer metadata. Grant only if present. */
 const VIEW_GRANT =
   "GRANT SELECT ON gateway_provider_api_key_credentials TO useagent_gateway";
 

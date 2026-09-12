@@ -89,6 +89,16 @@ async function provisionSandboxDesktopView(
     return result;
   };
   try {
+    if (sandbox.desktop) {
+      await sandbox.desktop.start();
+      return finish(RUN_TIMING_OUTCOMES.ready, {
+        available: true,
+        browserTools: false,
+        home: sandbox.desktop.home,
+        workdir: sandbox.desktop.workdir,
+        browserExecutable: sandbox.desktop.browserExecutable ?? null,
+      });
+    }
     const probe = await sandbox.process.executeCommand(
       "mkdir -p ~/work ~/.skynet; browser=$(command -v google-chrome 2>/dev/null || command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null || true); " +
         `missing=""; for bin in ${DESKTOP_REQUIRED_BINARIES.join(" ")}; do command -v "$bin" >/dev/null 2>&1 || missing="$missing $bin"; done; ` +
