@@ -8,6 +8,7 @@ import { engineAuthMode } from "../runs/engine-auth-mode";
 import { ENGINE_DISPLAY_NAMES } from "../runs/engine-readiness";
 import { defaultModelForEngine } from "../runs/model-policy";
 import type { EngineRunContext } from "./types";
+import { getCodexSubscriptionRuntimeSelection } from "../provider-connections/service";
 
 export const PROVIDER_DISPLAY_NAMES: Record<ProviderId, string> = {
   anthropic: "Anthropic",
@@ -33,19 +34,38 @@ export async function assertRunProviderCredential(
   ctx: Pick<EngineRunContext, "orgId" | "userId" | "model">,
   deps: ProviderCredentialResolvers & {
     readonly resolve?: typeof resolveProviderCredentialForRun;
+    readonly resolveSubscription?: typeof getCodexSubscriptionRuntimeSelection;
   } = {},
 ): Promise<void> {
   if (!ctx.orgId) return;
   const env = deps.env ?? process.env;
   const engineId = engine as EngineId;
-  if (engineAuthMode(engineId, env) !== "provider_gateway") return;
+  const authMode = engineAuthMode(engineId, env);
+  if (!authMode) return;
+  if (engineId === "codex" && (authMode === "subscription" || authMode === "hybrid")) {
+    const subscription = ctx.userId
+      ? await (deps.resolveSubscription ?? getCodexSubscriptionRuntimeSelection)({
+          orgId: ctx.orgId,
+          userId: ctx.userId,
+        })
+      : null;
+    if (subscription) return;
+    if (authMode === "subscription") {
+      throw new Error(
+        "Codex cannot start: no connected Codex account is available for this user. " +
+          "Connect the account in Settings, then retry.",
+      );
+    }
+  } else if (authMode !== "provider_gateway") {
+    return;
+  }
   const model = ctx.model?.trim() || defaultModelForEngine(engineId, env);
   const provider = providerForEngine(engineId, model);
   if (!provider) return;
-  const { resolve = resolveProviderCredentialForRun, ...resolvers } = deps;
+  const resolve = deps.resolve ?? resolveProviderCredentialForRun;
   const resolved = await resolve(
     { orgId: ctx.orgId, userId: ctx.userId, provider, model },
-    resolvers,
+    deps,
   );
   if (resolved) return;
   throw new Error(providerCredentialMissingMessage(engine, provider));

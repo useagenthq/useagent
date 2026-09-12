@@ -30,10 +30,26 @@ export const FOLLOWUP_KEY_PATTERN = `${FOLLOWUP_PREFIX}:%`;
  * Ids never contain ":" so a plain split is exact.
  */
 export function mentionFollowupSourceRunId(key: string): string | null {
+  return parseMentionFollowupKey(key)?.sourceRunId ?? null;
+}
+
+export interface MentionFollowupKey {
+  readonly parentThreadId: string;
+  readonly botId: string;
+  readonly sourceRunId: string;
+}
+
+/** Parse every identity carried by an internal mention-followup command key. */
+export function parseMentionFollowupKey(key: string): MentionFollowupKey | null {
   const parts = key.split(":");
   if (parts.length !== 6) return null;
-  const [prefix, , botId, mention, runId, mentionBotId] = parts;
+  const [prefix, parentThreadId, botId, mention, runId, mentionBotId] = parts;
   if (prefix !== FOLLOWUP_PREFIX || mention !== MENTION_PREFIX) return null;
-  if (!runId || botId !== mentionBotId) return null;
-  return runId;
+  if (!parentThreadId || !runId || !botId || botId !== mentionBotId) return null;
+  return { parentThreadId, botId, sourceRunId: runId };
+}
+
+/** Browser idempotency keys may not claim the server's bot-handoff namespace. */
+export function isReservedBotHandoffKey(key: string): boolean {
+  return key.startsWith(`${MENTION_PREFIX}:`) || key.startsWith(`${FOLLOWUP_PREFIX}:`);
 }

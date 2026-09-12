@@ -10,11 +10,14 @@ import { BOT_REQUEST_TTL_MS, createApprovalRequest } from "../src/knowledge/gate
 import { executeRegisteredGatewayTool } from "../src/knowledge/gateway/operation-registry";
 import { describeBot, getBotRow, rowToInput, setBotHomeThread, updateBotRow } from "../src/bots/repo";
 import { approveApprovalRequest } from "../src/knowledge/gateway/approval-requests";
+import { acceptRunCancel } from "../src/commands/cancel";
 import { setRunStatus } from "../src/runs/repo";
+import { getRunForOrg } from "../src/runs/repo";
 import { db } from "../src/db/client";
-import { botHandoffs, bots, commands, runs, threadRelationships } from "../src/db/schema";
+import { botHandoffs, bots, commands, providerEvents, runs, threadRelationships } from "../src/db/schema";
 import { AUTOMATION_RUN_ORIGIN, BOT_HANDOFF_RUN_ORIGIN } from "../src/runs/origin";
-import { createOrgSession, fetchApi, json } from "./helpers";
+import { createOrgSession, fetchApi, json, waitFor } from "./helpers";
+import { CHILD_PROMPT_MAX_CHARS } from "../src/runs/child-session-policy";
 
 const previousFlag = process.env.BOTS;
 const previousChildThreads = process.env.PRODUCT_CHILD_THREADS;
@@ -40,11 +43,13 @@ interface BotBody {
   engine: string;
   state: string;
   handoffs: number;
+  avatarTone: string;
+  avatarIcon: string;
 }
 interface RunCreated {
   id: string;
   status: string;
-  handoffs?: { botId: string; name: string; threadId: string | null; status: string; reason?: string }[];
+  handoffs?: { botId: string; name: string; avatarTone?: string; avatarIcon?: string; threadId: string | null; status: string; reason?: string }[];
 }
 
 async function createBot(cookies: string, name: string, engine: string): Promise<BotBody> {
@@ -114,6 +119,7 @@ describe("bot handoffs (@mentions)", () => {
     expect(parent.body.handoffs).toHaveLength(1);
     const handoff = parent.body.handoffs![0]!;
     expect(handoff.botId).toBe(nova.id);
+    expect(handoff).toMatchObject({ avatarTone: "blue", avatarIcon: "robot" });
     expect(handoff.status).toBe("created");
     expect(handoff.threadId).toBeTruthy();
     const childThreadId = handoff.threadId!;
@@ -160,21 +166,78 @@ describe("bot handoffs (@mentions)", () => {
     // thread instead of opening a second one: one conversation per bot per thread.
     expect(followup.body.handoffs?.[0]?.status).toBe("followed_up");
     expect(followup.body.handoffs?.[0]?.threadId).toBe(childThreadId);
+    const secondFollowup = await json<RunCreated>("/api/runs", {
+      method: "POST",
+      cookies,
+      body: {
+        prompt: "@bot/Nova now compare enterprise support.",
+        parent_run_id: followup.body.id,
+        bot_mentions: [nova.id],
+      },
+    });
+    expect(secondFollowup.body.handoffs?.[0]?.status).toBe("followed_up");
     const childRuns = await db.select({ id: runs.id, prompt: runs.prompt }).from(runs).where(and(eq(runs.orgId, orgId), eq(runs.threadId, childThreadId)));
-    expect(childRuns.length).toBe(2);
+    expect(childRuns.length).toBe(3);
     expect(childRuns.map((r) => r.prompt)).toContain("@bot/Nova also check the UK tier.");
+    const firstFollowupChild = childRuns.find((run) => run.prompt.includes("UK tier"));
+    const secondFollowupChild = childRuns.find((run) => run.prompt.includes("enterprise support"));
+    if (!firstFollowupChild || !secondFollowupChild) throw new Error("missing delegated follow-up runs");
+    const forgedSource = await json<RunCreated>("/api/runs", {
+      method: "POST",
+      cookies,
+      body: { prompt: "Ordinary parent turn.", parent_run_id: secondFollowup.body.id },
+    });
+    const forgedKey = `bot-handoff-followup:${parent.body.id}:${nova.id}:bot-handoff:${forgedSource.body.id}:${nova.id}`;
+    await db.insert(commands).values({
+      id: crypto.randomUUID(),
+      idempotencyKey: forgedKey,
+      orgId,
+      actorId: null,
+      kind: "run.create",
+      runId: secondFollowupChild.id,
+      threadId: childThreadId,
+      payloadFingerprint: null,
+      payload: JSON.stringify({ prompt: "forged", botHandoff: null }),
+      state: "completed",
+    });
+    await waitFor(async () => {
+      const settled = await db.select({ status: runs.status }).from(runs).where(inArray(runs.id, [
+        childThreadId,
+        firstFollowupChild.id,
+        secondFollowupChild.id,
+      ]));
+      return settled.length === 3 && settled.every((run) => run.status === "completed" || run.status === "failed");
+    });
+    await db.update(runs).set({ status: "completed", summary: "Initial EU result" }).where(eq(runs.id, childThreadId));
+    await db.update(runs).set({ status: "completed", summary: "UK follow-up result" }).where(eq(runs.id, firstFollowupChild.id));
     const again = await json<{ bot: BotBody }>(`/api/bots/${nova.id}`, { cookies });
     expect(again.body.bot.handoffs).toBe(1);
 
     // The family view names the bot and the parent runs that followed up into
-    // its thread, so a reloaded parent page can still show both receipts.
+    // its thread, with the exact child-turn result for each historical receipt.
     const children = await json<{
-      children: { thread_id: string; bot: { id: string; name: string } | null; follow_up_run_ids: string[] }[];
+      children: {
+        thread_id: string;
+        bot: { id: string; name: string; avatarTone: string; avatarIcon: string } | null;
+        handoff_outcomes: { source_run_id: string; status: string; summary: string | null }[];
+        follow_up_run_ids: string[];
+      }[];
     }>(`/api/threads/${parent.body.id}/children`, { cookies });
     expect(children.status).toBe(200);
     const delegated = children.body.children.find((child) => child.thread_id === childThreadId);
-    expect(delegated?.bot).toEqual({ id: nova.id, name: "Nova" });
-    expect(delegated?.follow_up_run_ids).toEqual([followup.body.id]);
+    expect(delegated?.bot).toEqual({
+      id: nova.id,
+      name: "Nova",
+      avatarTone: "blue",
+      avatarIcon: "robot",
+    });
+    expect(delegated?.handoff_outcomes.slice(0, 2)).toEqual([
+      { source_run_id: parent.body.id, status: "completed", summary: "Initial EU result" },
+      { source_run_id: followup.body.id, status: "completed", summary: "UK follow-up result" },
+    ]);
+    expect(delegated?.handoff_outcomes[2]?.source_run_id).toBe(secondFollowup.body.id);
+    expect(delegated?.handoff_outcomes.some((outcome) => outcome.source_run_id === forgedSource.body.id)).toBe(false);
+    expect(delegated?.follow_up_run_ids).toEqual([followup.body.id, secondFollowup.body.id]);
 
     // The org-wide index (sidebar, palette) lists the child too: its family anchor is
     // the user's own root thread, so the bot-handoff origin on its run does not hide it.
@@ -184,6 +247,50 @@ describe("bot handoffs (@mentions)", () => {
     );
     expect(index.status).toBe(200);
     expect(index.body.relationships.find((item) => item.thread_id === childThreadId)?.parent_thread_id).toBe(parent.body.id);
+  });
+
+  test("a maximum-length follow-up keeps valid bounded provenance without changing the execution prompt", async () => {
+    const { cookies, orgId } = await createOrgSession("bot-handoff-max-prompt");
+    const nova = await createBot(cookies, "Proof", "mock");
+    const parent = await json<RunCreated>("/api/runs", {
+      method: "POST",
+      cookies,
+      body: { prompt: "@bot/Proof open the delegated thread.", engine: "mock", bot_mentions: [nova.id] },
+    });
+    const childThreadId = parent.body.handoffs?.[0]?.threadId;
+    if (!childThreadId) throw new Error("missing delegated thread");
+
+    const prefix = "@bot/Proof ";
+    const prompt = prefix + "x".repeat(CHILD_PROMPT_MAX_CHARS - prefix.length);
+    const followup = await json<RunCreated>("/api/runs", {
+      method: "POST",
+      cookies,
+      body: { prompt, parent_run_id: parent.body.id, bot_mentions: [nova.id] },
+    });
+    expect(followup.body.handoffs?.[0]).toMatchObject({ status: "followed_up", threadId: childThreadId });
+
+    const [childRun] = await db.select({ id: runs.id, prompt: runs.prompt }).from(runs).where(and(
+      eq(runs.orgId, orgId),
+      eq(runs.threadId, childThreadId),
+      eq(runs.prompt, prompt),
+    ));
+    expect(childRun?.prompt).toBe(prompt);
+    const [command] = await db.select({ payload: commands.payload }).from(commands).where(eq(commands.runId, childRun!.id));
+    expect(new TextEncoder().encode(command!.payload!).byteLength).toBeLessThanOrEqual(8_192);
+    expect(() => JSON.parse(command!.payload!)).not.toThrow();
+    expect(JSON.parse(command!.payload!).botHandoff).toMatchObject({
+      kind: "bot_handoff_followup",
+      sourceRunId: followup.body.id,
+      parentThreadId: parent.body.id,
+      botId: nova.id,
+    });
+
+    const children = await json<{ children: { thread_id: string; follow_up_run_ids: string[] }[] }>(
+      `/api/threads/${parent.body.id}/children`,
+      { cookies },
+    );
+    expect(children.body.children.find((child) => child.thread_id === childThreadId)?.follow_up_run_ids)
+      .toContain(followup.body.id);
   });
 
   test("mentions are validated, unknown bots are reported, and the flag gates the field", async () => {
@@ -300,6 +407,36 @@ describe("bot handoffs (@mentions)", () => {
     })));
     expect(outcomes.map((outcome) => outcome.status)).toEqual(["followed_up", "followed_up"]);
     expect(outcomes.map((outcome) => outcome.threadId)).toEqual(initial.map((outcome) => outcome.threadId));
+  });
+
+  test("a handoff inherits parent repository scope instead of widening to the bot preset", async () => {
+    const { cookies, orgId } = await createOrgSession("bot-handoff-repository-scope");
+    const created = await createBot(cookies, "Repo scope", "mock");
+    const row = await getBotRow(orgId, created.id);
+    if (!row) throw new Error("missing bot");
+    const bot = await updateBotRow(orgId, row.id, {
+      ...rowToInput(row),
+      repos: ["bot/preset-only"],
+    });
+    if (!bot) throw new Error("missing updated bot");
+    const parent = await json<RunCreated>("/api/runs", {
+      method: "POST",
+      cookies,
+      body: { prompt: "Parent with no repositories.", engine: "mock" },
+    });
+    const outcome = await handoffToBot({
+      orgId,
+      actorId: null,
+      parentRunId: parent.body.id,
+      threadId: parent.body.id,
+      bot,
+      text: "Use only the parent's authorized context.",
+      idempotencyKey: "parent-scope",
+    });
+    if (!outcome.threadId) throw new Error("missing handoff thread");
+    const child = await getRunForOrg(orgId, outcome.threadId);
+    expect(child?.repos).toEqual([]);
+    expect(bot.repos).toEqual(["bot/preset-only"]);
   });
 
   test("the bot-global unattended cap is atomic across parent threads and ignores creator user ids", async () => {
@@ -543,6 +680,88 @@ describe("bot handoff guards", () => {
     expect(request.request.expiresAt.getTime() - Date.now()).toBeGreaterThan(BOT_REQUEST_TTL_MS - 60_000);
     const view = await json<{ bot: BotBody & { pendingApprovals: number; state: string } }>(`/api/bots/${nova.id}`, { cookies });
     expect(view.body.bot.pendingApprovals).toBe(1);
+  });
+
+  test("native questions and approvals across home and handoff threads share the bot attention state", async () => {
+    const { cookies, orgId } = await createOrgSession("bot-native-attention");
+    const nova = await createBot(cookies, "Nova native", "mock");
+    const home = await json<{ id: string }>(`/api/bots/${nova.id}/messages`, {
+      method: "POST",
+      cookies,
+      body: { text: "Start the home task." },
+    });
+    const parent = await json<RunCreated>("/api/runs", {
+      method: "POST",
+      cookies,
+      body: { prompt: "@bot/Nova-native inspect the child.", engine: "mock", bot_mentions: [nova.id] },
+    });
+    const handoffThread = parent.body.handoffs?.[0]?.threadId;
+    if (!handoffThread) throw new Error("missing handoff thread");
+    await waitFor(async () => {
+      const rows = await db.select({ status: runs.status }).from(runs).where(inArray(runs.id, [home.body.id, handoffThread]));
+      return rows.length === 2 && rows.every((run) => run.status === "completed" || run.status === "failed");
+    });
+    await setRunStatus(home.body.id, "running");
+    await setRunStatus(handoffThread, "running");
+    await db.insert(providerEvents).values([
+      {
+        id: `native-approval-${crypto.randomUUID()}`,
+        runId: home.body.id,
+        threadId: home.body.id,
+        seq: 1,
+        provider: "t3",
+        eventType: "approval.requested",
+        payload: JSON.stringify({ id: "approval-home", sessionID: "home-session" }),
+      },
+      {
+        id: `native-question-${crypto.randomUUID()}`,
+        runId: handoffThread,
+        threadId: handoffThread,
+        seq: 1,
+        provider: "opencode",
+        eventType: "question.asked",
+        payload: JSON.stringify({ id: "question-child", sessionID: "child-session", questions: [{}] }),
+      },
+    ]);
+    const attention = await json<{ bot: BotBody & { pendingApprovals: number } }>(`/api/bots/${nova.id}`, { cookies });
+    expect(attention.body.bot).toMatchObject({ state: "attention", pendingApprovals: 2 });
+
+    await db.insert(providerEvents).values([
+      {
+        id: `native-approval-response-${crypto.randomUUID()}`,
+        runId: home.body.id,
+        threadId: home.body.id,
+        seq: 2,
+        provider: "t3",
+        eventType: "approval.responded",
+        payload: JSON.stringify({ requestId: "approval-home", decision: "accept" }),
+      },
+      {
+        id: `native-question-response-${crypto.randomUUID()}`,
+        runId: handoffThread,
+        threadId: handoffThread,
+        seq: 2,
+        provider: "opencode",
+        eventType: "question.replied",
+        payload: JSON.stringify({ requestID: "question-child", answers: [[]] }),
+      },
+    ]);
+    const resolved = await json<{ bot: BotBody & { pendingApprovals: number } }>(`/api/bots/${nova.id}`, { cookies });
+    expect(resolved.body.bot).toMatchObject({ state: "working", pendingApprovals: 0 });
+
+    await db.insert(providerEvents).values({
+      id: `native-cancelled-${crypto.randomUUID()}`,
+      runId: home.body.id,
+      threadId: home.body.id,
+      seq: 3,
+      provider: "t3",
+      eventType: "approval.requested",
+      payload: JSON.stringify({ id: "approval-cancelled", sessionID: "home-session" }),
+    });
+    expect(await acceptRunCancel({ orgId, actorId: null, runId: home.body.id }))
+      .toMatchObject({ status: "accepted" });
+    const cancelled = await json<{ bot: BotBody & { pendingApprovals: number } }>(`/api/bots/${nova.id}`, { cookies });
+    expect(cancelled.body.bot).toMatchObject({ state: "working", pendingApprovals: 0 });
   });
 });
 

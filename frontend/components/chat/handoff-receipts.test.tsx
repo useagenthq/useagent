@@ -7,12 +7,16 @@ import {
   type HandoffReceipt,
   HandoffReceipts,
   handoffNotice,
+  handoffReceiptPreview,
   handoffReceiptText,
+  mergeHandoffReceipts,
 } from "./handoff-receipts";
 
 const receipt = (over: Partial<HandoffReceipt> = {}): HandoffReceipt => ({
   botId: "bot-nova",
   name: "Nova",
+  avatarTone: "violet",
+  avatarIcon: "research",
   threadId: "nova-thread",
   status: "created",
   ...over,
@@ -119,20 +123,97 @@ describe("deriveHandoffReceipts", () => {
     latestSummary: null,
     latestDurationMs: null,
     latestActivityAt: "2026-09-01T00:01:00.000Z",
-    bot: { id: "bot-nova", name: "Nova" },
+    bot: { id: "bot-nova", name: "Nova", avatarTone: "violet", avatarIcon: "research" },
+    handoffOutcomes: [
+      { sourceRunId: "run-1", status: "completed", summary: null },
+      { sourceRunId: "run-2", status: "completed", summary: null },
+      { sourceRunId: "run-3", status: "completed", summary: null },
+    ],
     followUpRunIds: ["run-2", "run-3"],
     ...over,
   });
 
   test("a bot's thread yields created on its source run and followed_up on each follow-up run", () => {
     const byRun = deriveHandoffReceipts([child()]);
-    expect(byRun.get("run-1")).toEqual([receipt({ status: "created" })]);
-    expect(byRun.get("run-2")).toEqual([receipt({ status: "followed_up" })]);
-    expect(byRun.get("run-3")).toEqual([receipt({ status: "followed_up" })]);
+    expect(byRun.get("run-1")).toEqual([
+      expect.objectContaining(receipt({ status: "created" })),
+    ]);
+    expect(byRun.get("run-2")).toEqual([
+      expect.objectContaining(receipt({ status: "followed_up" })),
+    ]);
+    expect(byRun.get("run-3")).toEqual([
+      expect.objectContaining(receipt({ status: "followed_up" })),
+    ]);
+  });
+
+  test("a settled child projects its final reply while pending and failed children keep their states", () => {
+    const completed = deriveHandoffReceipts([
+      child({
+        bot: { id: "bot-nova", name: "Nova", avatarTone: "violet", avatarIcon: "research" },
+        latestSummary: "The EU tier is cheaper for annual usage.",
+        handoffOutcomes: [
+          {
+            sourceRunId: "run-1",
+            status: "completed",
+            summary: "The EU tier is cheaper for annual usage.",
+          },
+        ],
+      }),
+    ]).get("run-1")?.[0];
+    expect(completed).toMatchObject({
+      avatarTone: "violet",
+      avatarIcon: "research",
+      childStatus: "completed",
+      finalReply: "The EU tier is cheaper for annual usage.",
+    });
+    if (!completed) throw new Error("missing completed handoff receipt");
+    expect(handoffReceiptPreview(completed)).toBe("Nova: The EU tier is cheaper for annual usage.");
+    expect(handoffReceiptPreview(receipt({ childStatus: "running" }))).toBe("Handed to Nova.");
+    expect(handoffReceiptPreview(receipt({ childStatus: "failed" }))).toBe("Nova's handoff failed.");
   });
 
   test("children the agent opened itself leave no receipt", () => {
     expect(deriveHandoffReceipts([child({ bot: null, followUpRunIds: [] })]).size).toBe(0);
+  });
+
+  test("keeps each parent mention bound to its exact child turn across two follow-ups", () => {
+    const byRun = deriveHandoffReceipts([
+      child({
+        latestSummary: "Reply B is the newest thread result.",
+        handoffOutcomes: [
+          { sourceRunId: "run-1", status: "completed", summary: "Reply A" },
+          { sourceRunId: "run-2", status: "completed", summary: "Reply B" },
+          { sourceRunId: "run-3", status: "running", summary: null },
+        ],
+      }),
+    ]);
+    expect(byRun.get("run-1")?.[0]).toMatchObject({ childStatus: "completed", finalReply: "Reply A" });
+    expect(byRun.get("run-2")?.[0]).toMatchObject({ childStatus: "completed", finalReply: "Reply B" });
+    expect(byRun.get("run-3")?.[0]).toMatchObject({ childStatus: "running", finalReply: null });
+  });
+});
+
+describe("mergeHandoffReceipts", () => {
+  test("advances an optimistic success through live durable state to its final reply", () => {
+    const optimistic = [receipt()];
+    const running = [receipt({ childStatus: "running" })];
+    const settled = [
+      receipt({ childStatus: "completed", finalReply: "The final delegated answer." }),
+    ];
+    expect(mergeHandoffReceipts(optimistic, running)?.[0]?.childStatus).toBe("running");
+    expect(mergeHandoffReceipts(optimistic, settled)?.[0]).toMatchObject({
+      childStatus: "completed",
+      finalReply: "The final delegated answer.",
+    });
+  });
+
+  test("preserves optimistic failures and successes that have not materialized", () => {
+    const failed = receipt({ botId: "bot-failed", status: "failed", threadId: null });
+    const pending = receipt({ botId: "bot-pending" });
+    const durable = receipt({ botId: "bot-other", childStatus: "completed", finalReply: "Done" });
+    expect(mergeHandoffReceipts([failed, pending], [durable])).toEqual([failed, pending, durable]);
+    expect(mergeHandoffReceipts([failed], [receipt({ botId: "bot-failed", childStatus: "completed" })]))
+      .toEqual([failed]);
   });
 });
 
@@ -149,6 +230,7 @@ describe("HandoffReceipts", () => {
       />,
     );
     expect(html).toContain('data-testid="handoff-receipts"');
+    expect(html).toContain('data-tone="violet"');
     expect(html).toContain("Handed to Nova.");
     expect(html).toContain('href="/session/nova-thread"');
     expect(html).toContain("Sent to Atlas&#x27;s existing thread.");
@@ -164,5 +246,14 @@ describe("HandoffReceipts", () => {
   test("renders nothing without receipts", () => {
     expect(renderToStaticMarkup(<HandoffReceipts receipts={[]} />)).toBe("");
     expect(renderToStaticMarkup(<HandoffReceipts />)).toBe("");
+  });
+
+  test("renders a durable failure as an error state", () => {
+    const html = renderToStaticMarkup(
+      <HandoffReceipts receipts={[receipt({ childStatus: "failed" })]} />,
+    );
+    expect(html).toContain('data-child-status="failed"');
+    expect(html).toContain("Nova&#x27;s handoff failed.");
+    expect(html).toContain("text-text-error-primary");
   });
 });

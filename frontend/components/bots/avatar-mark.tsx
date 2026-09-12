@@ -20,7 +20,6 @@ export function botOrb(tone: string): Pick<OrbProps, "tone" | "variant"> {
 /** The state in words beside a name: the dot alone is colour only. */
 export function StateBadge({ state }: { state: BotState }) {
   const label = stateLabel(state);
-  if (!label) return null;
   return <Badge color={state === "attention" ? "primary" : "neutral"}>{label}</Badge>;
 }
 

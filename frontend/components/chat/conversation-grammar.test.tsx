@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { ThreadRelationship } from "@useagent/agent-client";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
+import type { HandoffReceipt } from "./handoff-receipts";
 import type { ApiRun, RunStatus } from "./types";
 
 const { Conversation } = await import("./conversation");
@@ -70,7 +71,11 @@ function makeTurn(
   };
 }
 
-function render(turns: Turn[], productChildren: readonly ThreadRelationship[] = []): string {
+function render(
+  turns: Turn[],
+  productChildren: readonly ThreadRelationship[] = [],
+  handoffReceipts?: ReadonlyMap<string, readonly HandoffReceipt[]>,
+): string {
   return renderToStaticMarkup(
     <Conversation
       turns={turns}
@@ -80,6 +85,7 @@ function render(turns: Turn[], productChildren: readonly ThreadRelationship[] = 
       pendingReply={null}
       onReply={async () => {}}
       productChildren={productChildren}
+      handoffReceipts={handoffReceipts}
       canonicalTimeline
     />,
   );
@@ -268,6 +274,44 @@ test("a bot's thread leaves a receipt under the turn that handed it work and und
   expect(html).toContain("1 bot thread");
   expect(html).toContain("Nova · bot thread");
   expect(html).not.toContain("Product child");
+});
+
+test("a live accepted handoff yields to its exact durable final reply without a reload", () => {
+  const parent = makeTurn("run-parent", "completed");
+  const optimistic: HandoffReceipt = {
+    botId: "bot-nova",
+    name: "Nova",
+    avatarTone: "violet",
+    avatarIcon: "research",
+    threadId: "nova-thread",
+    status: "created",
+  };
+  const child: ThreadRelationship = {
+    threadId: "nova-thread",
+    parentThreadId: "run-parent",
+    familyThreadId: "run-parent",
+    kind: "delegated",
+    title: "Nova: compare the tiers",
+    sourceRunId: "run-parent",
+    sourceExecutionId: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-01T00:01:00.000Z",
+    status: "completed",
+    engine: "opencode",
+    model: "claude-opus-5",
+    latestRunId: "nova-thread",
+    latestSummary: "Newer thread summary",
+    latestDurationMs: 1_000,
+    latestActivityAt: "2026-09-01T00:01:00.000Z",
+    bot: { id: "bot-nova", name: "Nova", avatarTone: "violet", avatarIcon: "research" },
+    handoffOutcomes: [
+      { sourceRunId: "run-parent", status: "completed", summary: "Exact final reply" },
+    ],
+    followUpRunIds: [],
+  };
+  const html = render([parent], [child], new Map([["run-parent", [optimistic]]]));
+  expect(html).toContain("Nova: Exact final reply");
+  expect(html).not.toContain("Handed to Nova.");
 });
 
 test("a reply turn without the child-session mark still renders as its own block", () => {

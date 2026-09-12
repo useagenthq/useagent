@@ -1,21 +1,30 @@
 "use client";
 
 import { RiArrowDownSLine, RiCheckLine, RiCpuLine, RiRefreshLine } from "@remixicon/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {
   ENGINES,
   type EngineId,
   isFreeModel,
   modelLabel,
   modelOptionsForEngine,
+  normalizeEngine,
   partitionModelOptions,
   selectableModelsForEngine,
 } from "@/components/chat/types";
 import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
-import type { CapabilityCatalog, CapabilityEngineRuntime } from "@/lib/capability-catalog";
+import {
+  type CapabilityCatalog,
+  type CapabilityCatalogModel,
+  type CapabilityEngineRuntime,
+  type CapabilityModelCatalogStatus,
+  parseCapabilityCatalog,
+} from "@/lib/capability-catalog";
 import { cx as cn } from "@/utils/cx";
 
 export type EngineModelCatalog = Partial<Record<EngineId, readonly string[]>>;
+export type EngineModelDetails = Partial<Record<EngineId, readonly CapabilityCatalogModel[]>>;
+export type EngineModelCatalogStatuses = Partial<Record<EngineId, CapabilityModelCatalogStatus>>;
 export interface EngineReadinessStatus {
   readonly ready: boolean;
   readonly reason: "enabled" | "disabled" | "provider_unhealthy" | "gateway_unconfigured" | "not_proven";
@@ -24,6 +33,49 @@ export interface EngineReadinessStatus {
   readonly message?: string;
 }
 export type EngineReadinessCatalog = Partial<Record<EngineId, EngineReadinessStatus>>;
+
+export function unavailableModelOptions(
+  engine: EngineId,
+  details: readonly CapabilityCatalogModel[],
+) {
+  return details
+    .filter((entry) => !entry.dispatchable)
+    .map((entry) => ({
+      value: entry.id,
+      label: entry.displayName ?? modelLabel(entry.id, engine),
+      tint: "text-text-tertiary",
+      disabled: true,
+      description: entry.degradationReason === "model_not_allowed"
+        ? "Discovered for this account; blocked by deployment policy"
+        : entry.degradationReason === "model_not_available"
+          ? "Allowed by deployment policy; unavailable for this account"
+          : "Currently unavailable",
+    }));
+}
+
+export function reconcileSelectedModel(
+  selected: string,
+  options: readonly { readonly value: string }[],
+  loaded: boolean,
+): { readonly replacement: string | null; readonly blocked: boolean } {
+  if (!loaded || options.some((option) => option.value === selected)) {
+    return { replacement: null, blocked: false };
+  }
+  return {
+    replacement: options[0]?.value ?? null,
+    blocked: options.length === 0,
+  };
+}
+
+export function modelCatalogNotice(
+  status: CapabilityModelCatalogStatus | undefined,
+): string | null {
+  if (!status?.stale) return null;
+  if (status.error === "native_catalog_refreshing") {
+    return "Refreshing availability for this account…";
+  }
+  return "Model availability could not refresh. Showing the last known catalog.";
+}
 
 const ENGINE_RUNTIME_CAPTIONS: Partial<Record<EngineId, string>> = {
   opencode: "any model · cloud sandbox",
@@ -56,6 +108,8 @@ export function engineConfigFromCapabilityCatalog(catalog: CapabilityCatalog): {
   models: EngineModelCatalog;
   readiness: EngineReadinessCatalog;
   runtimes: Partial<Record<EngineId, CapabilityEngineRuntime>>;
+  modelDetails: EngineModelDetails;
+  modelCatalogStatuses: EngineModelCatalogStatuses;
 } {
   const configured = catalog.engines.filter((engine) => engine.configured);
   return {
@@ -68,6 +122,17 @@ export function engineConfigFromCapabilityCatalog(catalog: CapabilityCatalog): {
           .sort((left, right) => Number(right.default) - Number(left.default))
           .map((model) => model.id),
       ]),
+    ),
+    modelDetails: Object.fromEntries(
+      configured.map((engine) => [
+        engine.id,
+        engine.models.toSorted((left, right) => Number(right.default) - Number(left.default)),
+      ]),
+    ),
+    modelCatalogStatuses: Object.fromEntries(
+      configured.flatMap((engine) =>
+        engine.modelCatalog ? [[engine.id, engine.modelCatalog] as const] : []
+      ),
     ),
     readiness: Object.fromEntries(
       configured.map((engine) => [
@@ -99,23 +164,11 @@ export function fallbackEnabledEngineConfig() {
     } satisfies EngineModelCatalog,
     readiness: {} as EngineReadinessCatalog,
     runtimes: {} as Partial<Record<EngineId, CapabilityEngineRuntime>>,
+    modelDetails: {} as EngineModelDetails,
+    modelCatalogStatuses: {} as EngineModelCatalogStatuses,
     loaded: false,
     readinessKnown: false,
   };
-}
-
-function parseEngineModelCatalog(raw: unknown): EngineModelCatalog {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  const out: EngineModelCatalog = {};
-  for (const engine of ENGINES) {
-    const models = (raw as Record<string, unknown>)[engine.id];
-    if (!Array.isArray(models)) continue;
-    const ids = models.filter(
-      (model): model is string => typeof model === "string" && model.trim().length > 0,
-    );
-    if (ids.length > 0) out[engine.id] = ids;
-  }
-  return out;
 }
 
 export function parseEngineReadinessCatalog(raw: unknown): EngineReadinessCatalog {
@@ -159,19 +212,31 @@ export function mergeEngineModelCatalog(
 }
 
 /**
- * Ask the backend to re-derive the Free model lane from the live catalog
- * (POST busts its TTL cache) and return the refreshed per-engine manifest.
- * Null on failure or rate-limit - the caller keeps its current catalog.
- * The fetcher seam keeps this testable without a network.
+ * Refresh the shared Free lane, then ask the authenticated capability endpoint
+ * for this actor's native model catalog. Null on failure keeps the current list.
  */
 export async function requestModelCatalogRefresh(
   fetcher: (url: string, init?: RequestInit) => Promise<Response> = fetch,
-): Promise<EngineModelCatalog | null> {
+  options: { readonly refreshFree?: boolean } = {},
+): Promise<{
+  models: EngineModelCatalog;
+  modelDetails: EngineModelDetails;
+  modelCatalogStatuses: EngineModelCatalogStatuses;
+} | null> {
   try {
-    const res = await fetcher("/api/config/models/refresh", { method: "POST" });
-    if (!res.ok) return null;
-    const j = (await res.json()) as { models?: unknown; configuredModels?: unknown };
-    return parseEngineModelCatalog(j.configuredModels ?? j.models);
+    if (options.refreshFree !== false) {
+      await fetcher("/api/config/models/refresh", { method: "POST" }).catch(() => null);
+    }
+    const response = await fetcher("/api/capabilities?refresh=models");
+    if (!response.ok) return null;
+    const catalog = parseCapabilityCatalog(await response.json());
+    if (!catalog) return null;
+    const config = engineConfigFromCapabilityCatalog(catalog);
+    return {
+      models: config.models,
+      modelDetails: config.modelDetails,
+      modelCatalogStatuses: config.modelCatalogStatuses,
+    };
   } catch {
     return null;
   }
@@ -180,6 +245,8 @@ export async function requestModelCatalogRefresh(
 export function useEnabledEngineConfig(): {
   engines: EngineId[];
   models: EngineModelCatalog;
+  modelDetails: EngineModelDetails;
+  modelCatalogStatuses: EngineModelCatalogStatuses;
   readiness: EngineReadinessCatalog;
   runtimes: Partial<Record<EngineId, CapabilityEngineRuntime>>;
   /** True once GET /api/capabilities resolved (or failed): before that the engines
@@ -187,14 +254,16 @@ export function useEnabledEngineConfig(): {
   loaded: boolean;
   /** True only when the server returned an engines manifest. */
   readinessKnown: boolean;
-  /** Manual Free-lane refresh: swaps the refreshed manifest in place; a failed
-   * or rate-limited request keeps the current catalog. */
-  refreshModels: (preserveModel?: string) => Promise<void>;
+  /** Manual model refresh: swaps the refreshed manifest in place; a failed
+   * request keeps the current catalog. */
+  refreshModels: (preserveModel?: string, engine?: EngineId) => Promise<void>;
 } {
   const capabilityState = useCapabilityCatalog();
   const [config, setConfig] = useState<{
     engines: EngineId[];
     models: EngineModelCatalog;
+    modelDetails: EngineModelDetails;
+    modelCatalogStatuses: EngineModelCatalogStatuses;
     readiness: EngineReadinessCatalog;
     runtimes: Partial<Record<EngineId, CapabilityEngineRuntime>>;
     loaded: boolean;
@@ -213,12 +282,16 @@ export function useEnabledEngineConfig(): {
       readinessKnown: true,
     });
   }, [capabilityState.catalog, capabilityState.loaded]);
-  const refreshModels = useCallback(async (preserveModel?: string) => {
-    const models = await requestModelCatalogRefresh();
-    if (!models || Object.keys(models).length === 0) return;
+  const refreshModels = useCallback(async (preserveModel?: string, engine?: EngineId) => {
+    const refreshed = await requestModelCatalogRefresh(fetch, {
+      refreshFree: engine === undefined || normalizeEngine(engine) === "opencode",
+    });
+    if (!refreshed || Object.keys(refreshed.models).length === 0) return;
     setConfig((c) => ({
       ...c,
-      models: mergeEngineModelCatalog(c.models, models, preserveModel),
+      models: mergeEngineModelCatalog(c.models, refreshed.models, preserveModel),
+      modelDetails: refreshed.modelDetails,
+      modelCatalogStatuses: refreshed.modelCatalogStatuses,
     }));
   }, []);
   return { ...config, refreshModels };
@@ -240,30 +313,58 @@ export function ModelPicker({
   engine,
   model,
   onChange,
+  onAvailabilityChange,
   className,
 }: {
   engine: EngineId;
   model: string;
   onChange: (model: string) => void;
+  onAvailabilityChange?: (available: boolean) => void;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const { models: modelCatalog, refreshModels } = useEnabledEngineConfig();
-  const models = modelOptionsForEngine(engine, modelCatalog[engine] ?? []);
+  const {
+    models: modelCatalog,
+    modelDetails,
+    modelCatalogStatuses,
+    refreshModels,
+    loaded,
+  } = useEnabledEngineConfig();
+  const models = modelOptionsForEngine(
+    engine,
+    modelCatalog[engine] ?? [],
+    modelDetails[engine] ?? [],
+  );
+  const unavailable = unavailableModelOptions(engine, modelDetails[engine] ?? []);
+  const reconciliation = reconcileSelectedModel(model, models, loaded);
+  const replacementModel = reconciliation.replacement;
+  const modelBlocked = reconciliation.blocked;
+  useLayoutEffect(() => {
+    if (replacementModel && replacementModel !== model) {
+      onChange(replacementModel);
+    }
+    onAvailabilityChange?.(!modelBlocked);
+  }, [model, modelBlocked, onAvailabilityChange, onChange, replacementModel]);
   // The zero-cost OpenRouter ":free" variants render under their own section;
   // membership is manifest-driven (":free" id suffix), never a hardcoded list.
   const { paid, free } = partitionModelOptions(models);
   const sections = [
     { label: "Model", options: paid },
     { label: "Free", options: free },
+    { label: "Discovered", options: unavailable },
   ].filter((section) => section.options.length > 0);
+  const selectedLabel = [...models, ...unavailable].find((entry) => entry.value === model)?.label ??
+    modelLabel(model, engine);
+  const catalogNotice = engine === "codex"
+    ? modelCatalogNotice(modelCatalogStatuses.codex)
+    : null;
 
   const handleRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await refreshModels(model);
+      await refreshModels(model, engine);
     } finally {
       setRefreshing(false);
     }
@@ -277,7 +378,7 @@ export function ModelPicker({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={`Model: ${modelLabel(model, engine)}`}
+        title={`Model: ${selectedLabel}`}
         className="text-text-primary hover:bg-background-primary-hover flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-body-2-medium transition-colors"
       >
         {/* Engine chip glyph — the AsteriskMark is useAgent's brand, not an
@@ -285,7 +386,7 @@ export function ModelPicker({
             label folds into the accessible name so the reply placeholder keeps
             one line at phone width. */}
         <RiCpuLine className="text-text-secondary size-4" aria-hidden />
-        <span className="max-sm:sr-only">{modelLabel(model, engine)}</span>
+        <span className="max-sm:sr-only">{selectedLabel}</span>
         <RiArrowDownSLine className="text-text-tertiary size-4 max-sm:hidden" aria-hidden />
       </button>
 
@@ -293,19 +394,25 @@ export function ModelPicker({
         <>
           <div className="fixed inset-0 z-10" aria-hidden onClick={() => setOpen(false)} />
           <div className="border-border-button-default bg-background-primary-default shadow-dropdown absolute bottom-11 right-0 z-20 w-56 rounded-2xl border p-1.5">
+            {catalogNotice ? (
+              <p className="text-caption-1-regular text-text-tertiary px-2 py-1.5">
+                {catalogNotice}
+              </p>
+            ) : null}
             {sections.map((section) => (
               <div key={section.label}>
                 <div className="flex items-center justify-between">
                   <p className="text-mono-label text-text-tertiary px-2 pb-1 pt-1.5">
                     {section.label}
                   </p>
-                  {/* The Free lane tracks OpenRouter's live catalog; the refresh
-                      re-derives it on demand (settings "Refresh" grammar:
-                      RiRefreshLine spinning while in flight). */}
-                  {section.label === "Free" ? (
+                  {/* Refresh either the shared Free lane or this actor's native
+                      Codex catalog. RiRefreshLine spins while the request runs. */}
+                  {section.label === "Free" ||
+                  (engine === "codex" &&
+                    (section.label === "Model" || section.label === "Discovered")) ? (
                     <button
                       type="button"
-                      aria-label="Refresh free models"
+                      aria-label={engine === "codex" ? "Refresh Codex models" : "Refresh free models"}
                       title="Refresh"
                       disabled={refreshing}
                       onClick={() => void handleRefresh()}
@@ -324,11 +431,14 @@ export function ModelPicker({
                     <button
                       key={e.value}
                       type="button"
+                      disabled={e.disabled}
+                      title={e.description}
                       onClick={() => {
+                        if (e.disabled) return;
                         onChange(e.value);
                         setOpen(false);
                       }}
-                      className="hover:bg-background-primary-hover flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-colors"
+                      className="hover:bg-background-primary-hover flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55"
                     >
                       <span
                         className={cn(
@@ -342,6 +452,11 @@ export function ModelPicker({
                         <span className="text-body-2-medium text-text-primary block">
                           {e.label}
                         </span>
+                        {e.description ? (
+                          <span className="text-caption-1-regular text-text-tertiary block">
+                            {e.description}
+                          </span>
+                        ) : null}
                       </span>
                     </button>
                   );

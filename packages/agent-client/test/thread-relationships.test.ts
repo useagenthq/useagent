@@ -22,6 +22,14 @@ const relationship = {
   latest_summary: "Calendar grid complete.",
   latest_duration_ms: 1_250,
   latest_activity_at: "2026-09-01T00:01:00.000Z",
+  bot: { id: "bot-nova", name: "Nova", avatarTone: "violet", avatarIcon: "research" },
+  handoff_outcomes: [
+    {
+      source_run_id: "parent-run-1",
+      status: "completed",
+      summary: "Calendar grid complete.",
+    },
+  ],
 };
 
 describe("thread relationship wire contract", () => {
@@ -48,7 +56,14 @@ describe("thread relationship wire contract", () => {
       latestSummary: "Calendar grid complete.",
       latestDurationMs: 1_250,
       latestActivityAt: "2026-09-01T00:01:00.000Z",
-      bot: null,
+      bot: { id: "bot-nova", name: "Nova", avatarTone: "violet", avatarIcon: "research" },
+      handoffOutcomes: [
+        {
+          sourceRunId: "parent-run-1",
+          status: "completed",
+          summary: "Calendar grid complete.",
+        },
+      ],
       followUpRunIds: [],
     });
   });
@@ -65,6 +80,23 @@ describe("thread relationship wire contract", () => {
     expect(decodeThreadRelationship({ ...relationship, latest_summary: 42 })).toBeNull();
     expect(decodeThreadRelationship({ ...relationship, latest_duration_ms: "1250" })).toBeNull();
     expect(decodeThreadRelationship({ ...relationship, latest_duration_ms: 1.5 })).toBeNull();
+  });
+
+  test("keeps bot orb identity additive for older relationship payloads", () => {
+    const olderBot = { id: "bot-nova", name: "Nova" };
+    expect(decodeThreadRelationship({ ...relationship, bot: olderBot })?.bot).toEqual(olderBot);
+    expect(decodeThreadRelationship({ ...relationship, bot: { ...olderBot, avatarTone: 42 } })).toBeNull();
+  });
+
+  test("keeps per-mention handoff outcomes additive and rejects malformed entries", () => {
+    const { handoff_outcomes: _outcomes, ...older } = relationship;
+    expect(decodeThreadRelationship(older)?.handoffOutcomes).toEqual([]);
+    expect(
+      decodeThreadRelationship({
+        ...relationship,
+        handoff_outcomes: [{ source_run_id: "parent-run-1", status: "idle", summary: null }],
+      }),
+    ).toBeNull();
   });
 
   test("rejects malformed identity, enums, and missing derived status", () => {

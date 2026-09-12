@@ -39,12 +39,50 @@ describe("provider credential gate", () => {
     expect(asked[0]!.model).toBeTruthy();
   });
 
-  test("subscription and hybrid engines, missing identity and mock are left alone", async () => {
+  test("subscription-only fails early while hybrid falls back to the provider gateway", async () => {
     let resolved = 0;
-    const resolve = async () => { resolved += 1; return null; };
-    await assertRunProviderCredential("codex", { orgId: "org-a", userId: "u", model: "gpt-5.6-luna" }, { env, resolve });
+    const resolve = async () => { resolved += 1; return { value: "k", source: "org_secret" as const }; };
+    await expect(assertRunProviderCredential(
+      "codex",
+      { orgId: "org-a", userId: "u", model: "gpt-6-astra" },
+      {
+        env: { ...env, ENGINE_AUTH_MODE_CODEX: "subscription" },
+        resolve,
+        resolveSubscription: async () => null,
+      },
+    )).rejects.toThrow("no connected Codex account");
+    await assertRunProviderCredential(
+      "codex",
+      { orgId: "org-a", userId: "u", model: "gpt-6-astra" },
+      {
+        env: { ...env, ENGINE_AUTH_MODE_CODEX: "hybrid" },
+        resolve,
+        resolveSubscription: async () => null,
+      },
+    );
     await assertRunProviderCredential("claude", { orgId: null, userId: "u", model: "claude-opus-5" }, { env, resolve });
     await assertRunProviderCredential("mock", { orgId: "org-a", userId: "u", model: "" }, { env, resolve });
+    expect(resolved).toBe(1);
+  });
+
+  test("a connected subscription avoids the provider gateway", async () => {
+    let resolved = 0;
+    await expect(assertRunProviderCredential(
+      "codex",
+      { orgId: "org-a", userId: "u", model: "gpt-6-astra" },
+      {
+        env: { ...env, ENGINE_AUTH_MODE_CODEX: "subscription" },
+        resolve: async () => { resolved += 1; return null; },
+        resolveSubscription: async () => ({
+          authMethod: "chatgpt_oauth",
+          mode: "managed_codex_app_server",
+          connectionId: "connection-a",
+          authEpoch: "epoch-a",
+          codexHome: "/private/codex-home",
+          metadata: {},
+        }),
+      },
+    )).resolves.toBeUndefined();
     expect(resolved).toBe(0);
   });
 

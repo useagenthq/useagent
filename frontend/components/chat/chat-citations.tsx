@@ -5,6 +5,7 @@
 // as stored (a wiki title can carry HTML entities), so they are decoded for
 // display, duplicates collapse, and the strip shows six chips plus a count.
 
+import { Chip } from "@/components/base/badges/chip";
 import { type ApiStep, asRecord, parseStepCode } from "@/components/chat/types";
 import { decodeEntities } from "@/components/shared/plain-text-preview";
 
@@ -54,17 +55,18 @@ export function ChatSourcesRow({ citations }: { citations: readonly ChatCitation
     <div className="flex flex-wrap items-center gap-1.5" data-testid="chat-sources">
       <span className="text-caption-1-medium text-text-tertiary">Sources</span>
       {shown.map((citation) => (
-        <span
+        <Chip
           key={`${citation.source}:${citation.title}`}
           title={citation.title}
           data-testid="chat-source"
-          className="inline-flex max-w-72 items-center gap-1.5 rounded-full border border-border-button-default bg-background-primary-default px-2 py-px text-caption-1-medium text-text-secondary"
+          color="soft"
+          className="max-w-72 gap-1.5 rounded-full px-2 py-px"
         >
           <span className="shrink-0 text-[10px] font-medium uppercase tracking-wider text-text-tertiary">
             {citation.source}
           </span>
           <span className="min-w-0 truncate">{citation.title}</span>
-        </span>
+        </Chip>
       ))}
       {more > 0 && <span className="text-caption-1-medium text-text-tertiary">+{more} more</span>}
     </div>

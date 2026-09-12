@@ -142,7 +142,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   // (durable steps + native frames + live narration) is owned by the thread store,
   // so no run-switch transition can blank/freeze a turn or target the wrong run.
   const rootId = root.id;
-  const threadFamily = useThreadFamily(rootId);
+  const threadFamily = useThreadFamily(rootId, initialRelationshipHint);
   const { descendants: productChildren } = threadFamily;
   const submissionLane = threadSubmissionLane(threadFamily, initialRelationshipHint);
   const isProductChild = submissionLane === "child" || (!threadFamily.ready && initialRelationshipHint === "child");

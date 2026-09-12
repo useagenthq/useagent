@@ -6,8 +6,9 @@ import {
   type EngineId,
 } from "@useagent/agent-client";
 import { and, count, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { RUN_CANCEL } from "../commands/repo";
 import { db } from "../db/client";
-import { botHandoffs, bots, gatewayApprovalRequests, runs, schedules, type BotRow } from "../db/schema";
+import { botHandoffs, bots, commands, gatewayApprovalRequests, providerEvents, runs, schedules, type BotRow } from "../db/schema";
 
 type ScheduleRecord = typeof schedules.$inferSelect;
 import { isMemoryScope, type MemoryScope } from "../memory/scope";
@@ -41,6 +42,7 @@ export interface BotView {
   /** The latest run's summary - the bot's own words for what it finished. */
   readonly lastOutcome: string | null;
   readonly lastAt: string | null;
+  /** Unresolved gateway approvals plus provider-native approvals/questions. */
   readonly pendingApprovals: number;
   /** Enabled routines (schedules owned by this bot). */
   readonly routines: number;
@@ -319,6 +321,95 @@ async function pendingApprovalCounts(orgId: string, threadIds: readonly string[]
   return new Map(rows.map((row) => [row.threadId, Number(row.pending)]));
 }
 
+const NATIVE_HUMAN_INPUT_EVENTS = [
+  "approval.requested",
+  "approval.responded",
+  "approval.resolved",
+  "question.asked",
+  "question.replied",
+  "question.rejected",
+] as const;
+
+function providerPayload(value: string | null): Record<string, unknown> | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Unresolved provider-native questions and approvals, across all requested
+ *  threads. Reads the same durable event lifecycle as the session cards. */
+async function pendingNativeHumanInputCounts(
+  orgId: string,
+  threadIds: readonly string[],
+): Promise<Map<string, number>> {
+  if (threadIds.length === 0) return new Map();
+  const events = await db
+    .select({
+      threadId: providerEvents.threadId,
+      runId: providerEvents.runId,
+      provider: providerEvents.provider,
+      eventType: providerEvents.eventType,
+      payload: providerEvents.payload,
+      seq: providerEvents.seq,
+    })
+    .from(providerEvents)
+    .innerJoin(runs, and(eq(runs.id, providerEvents.runId), eq(runs.orgId, orgId)))
+    .where(and(
+      eq(runs.status, "running"),
+      inArray(providerEvents.threadId, [...threadIds]),
+      inArray(providerEvents.eventType, [...NATIVE_HUMAN_INPUT_EVENTS]),
+    ))
+    .orderBy(providerEvents.threadId, providerEvents.runId, providerEvents.seq);
+  const liveRunIds = [...new Set(events.map((event) => event.runId))];
+  const cancelRows = liveRunIds.length > 0
+    ? await db.select({ runId: commands.runId }).from(commands).where(and(
+        eq(commands.orgId, orgId),
+        eq(commands.kind, RUN_CANCEL),
+        inArray(commands.runId, liveRunIds),
+      ))
+    : [];
+  const cancelled = new Set(cancelRows.flatMap((row) => row.runId ? [row.runId] : []));
+  const pending = new Map<string, Set<string>>();
+  for (const event of events) {
+    if (cancelled.has(event.runId)) continue;
+    const payload = providerPayload(event.payload);
+    if (!payload) continue;
+    const approvals = event.provider === "t3";
+    const questions = event.provider === "t3" || event.provider === "opencode";
+    let kind: "approval" | "question" | null = null;
+    let requestId: string | null = null;
+    let requested = false;
+    if (approvals && event.eventType === "approval.requested") {
+      kind = "approval";
+      requestId = typeof payload.id === "string" ? payload.id : null;
+      requested = true;
+    } else if (approvals && (event.eventType === "approval.responded" || event.eventType === "approval.resolved")) {
+      kind = "approval";
+      requestId = typeof payload.requestId === "string" ? payload.requestId : null;
+    } else if (questions && event.eventType === "question.asked") {
+      kind = "question";
+      requestId = typeof payload.id === "string" ? payload.id : null;
+      requested = true;
+    } else if (questions && (event.eventType === "question.replied" || event.eventType === "question.rejected")) {
+      kind = "question";
+      requestId = typeof payload.requestID === "string" ? payload.requestID : null;
+    }
+    if (!kind || !requestId) continue;
+    const requests = pending.get(event.threadId) ?? new Set<string>();
+    const key = `${event.runId}:${kind}:${requestId}`;
+    if (requested) requests.add(key);
+    else requests.delete(key);
+    pending.set(event.threadId, requests);
+  }
+  return new Map([...pending].map(([threadId, requests]) => [threadId, requests.size]));
+}
+
 export async function latestRunInThread(orgId: string, threadId: string): Promise<ThreadHead | null> {
   return (await threadHeads(orgId, [threadId])).get(threadId) ?? null;
 }
@@ -392,15 +483,16 @@ function toView(
   };
 }
 
-/** Attach the derived fields for many bots with four queries total. */
+/** Attach the derived fields for many bots with batched queries only. */
 export async function describeBots(orgId: string, rows: readonly BotRow[]): Promise<BotView[]> {
   const botIds = rows.map((row) => row.id);
   const handoffs = await handoffThreads(orgId, botIds);
   const homeThreadIds = rows.flatMap((row) => (row.homeThreadId ? [row.homeThreadId] : []));
   const allThreadIds = [...homeThreadIds, ...[...handoffs.values()].flat()];
-  const [heads, pending, routines] = await Promise.all([
+  const [heads, pending, pendingNative, routines] = await Promise.all([
     threadHeads(orgId, allThreadIds),
     pendingApprovalCounts(orgId, allThreadIds),
+    pendingNativeHumanInputCounts(orgId, allThreadIds),
     routineCounts(orgId, botIds),
   ]);
   return rows.map((row) => {
@@ -412,9 +504,9 @@ export async function describeBots(orgId: string, rows: readonly BotRow[]): Prom
       const status = heads.get(threadId)?.status;
       return status !== undefined && LIVE_STATUSES.has(status);
     }).length;
-    // Approvals wait for a person wherever the bot works: its home thread or a delegated one.
+    // Human input waits wherever the bot works: its home thread or a delegated one.
     const pendingForBot = workThreads
-      .reduce((sum, threadId) => sum + (pending.get(threadId) ?? 0), 0);
+      .reduce((sum, threadId) => sum + (pending.get(threadId) ?? 0) + (pendingNative.get(threadId) ?? 0), 0);
     // The bot's latest activity, wherever it worked: its home thread or a delegated one.
     const newestHead = workThreads
       .map((threadId) => heads.get(threadId) ?? null)

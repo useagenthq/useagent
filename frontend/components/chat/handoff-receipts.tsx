@@ -7,8 +7,9 @@
 // was opened for this run, or this run's mention became a later turn of it).
 
 import { RiExternalLinkLine, RiRobot2Line } from "@remixicon/react";
-import type { ThreadRelationship } from "@useagent/agent-client";
+import type { ProductThreadStatus, ThreadRelationship } from "@useagent/agent-client";
 import Link from "next/link";
+import { AvatarMark } from "@/components/bots/avatar-mark";
 import { cx as cn } from "@/utils/cx";
 
 export const HANDOFF_STATUSES = [
@@ -28,8 +29,12 @@ export type HandoffRefusal = "self" | "cycle" | "depth" | "cap";
 export interface HandoffReceipt {
   readonly botId: string;
   readonly name: string;
+  readonly avatarTone?: string;
+  readonly avatarIcon?: string;
   readonly threadId: string | null;
   readonly status: HandoffStatus;
+  readonly childStatus?: ProductThreadStatus;
+  readonly finalReply?: string | null;
   readonly reason?: HandoffRefusal;
   readonly retryAfterMs?: number;
   readonly error?: string;
@@ -45,6 +50,8 @@ function decodeReceipt(value: unknown): HandoffReceipt | null {
   return {
     botId: raw.botId,
     name: typeof raw.name === "string" ? raw.name : "",
+    ...(typeof raw.avatarTone === "string" ? { avatarTone: raw.avatarTone } : {}),
+    ...(typeof raw.avatarIcon === "string" ? { avatarIcon: raw.avatarIcon } : {}),
     threadId: typeof raw.threadId === "string" ? raw.threadId : null,
     status: raw.status as HandoffStatus,
     ...(typeof raw.reason === "string" && REFUSALS.has(raw.reason)
@@ -83,9 +90,27 @@ export function deriveHandoffReceipts(
   };
   for (const child of children) {
     if (!child.bot) continue;
-    const base = { botId: child.bot.id, name: child.bot.name, threadId: child.threadId };
-    push(child.sourceRunId, { ...base, status: "created" });
-    for (const runId of child.followUpRunIds) push(runId, { ...base, status: "followed_up" });
+    const base = {
+      botId: child.bot.id,
+      name: child.bot.name,
+      ...(child.bot.avatarTone ? { avatarTone: child.bot.avatarTone } : {}),
+      ...(child.bot.avatarIcon ? { avatarIcon: child.bot.avatarIcon } : {}),
+      threadId: child.threadId,
+    };
+    const outcomes = child.handoffOutcomes ?? [];
+    if (outcomes.length === 0) {
+      push(child.sourceRunId, { ...base, status: "created" });
+      for (const runId of child.followUpRunIds) push(runId, { ...base, status: "followed_up" });
+      continue;
+    }
+    for (const outcome of outcomes) {
+      push(outcome.sourceRunId, {
+        ...base,
+        status: outcome.sourceRunId === child.sourceRunId ? "created" : "followed_up",
+        childStatus: outcome.status,
+        finalReply: outcome.status === "completed" ? outcome.summary : null,
+      });
+    }
   }
   return byRun;
 }
@@ -94,6 +119,24 @@ const SUCCESS: ReadonlySet<HandoffStatus> = new Set(["created", "replayed", "fol
 
 export function isHandoffSuccess(receipt: HandoffReceipt): boolean {
   return SUCCESS.has(receipt.status);
+}
+
+/** Live accepted receipts remain until their exact durable bot turn appears;
+ *  durable state then advances that bot without hiding unrelated failures. */
+export function mergeHandoffReceipts(
+  optimistic: readonly HandoffReceipt[] | undefined,
+  durable: readonly HandoffReceipt[] | undefined,
+): HandoffReceipt[] | undefined {
+  if (!optimistic?.length) return durable ? [...durable] : undefined;
+  if (!durable?.length) return [...optimistic];
+  const durableByBot = new Map(durable.map((receipt) => [receipt.botId, receipt]));
+  const merged = optimistic.map((receipt) => {
+    const persisted = durableByBot.get(receipt.botId);
+    if (!persisted) return receipt;
+    durableByBot.delete(receipt.botId);
+    return isHandoffSuccess(receipt) ? persisted : receipt;
+  });
+  return [...merged, ...durableByBot.values()];
 }
 
 function retryHint(ms: number | undefined): string {
@@ -141,6 +184,18 @@ export function handoffReceiptText(receipt: HandoffReceipt): string {
   }
 }
 
+/** Durable child state replaces the admission sentence only after the handoff settles. */
+export function handoffReceiptPreview(receipt: HandoffReceipt): string {
+  const name = receipt.name || "That bot";
+  if (receipt.childStatus === "completed") {
+    const reply = receipt.finalReply?.trim();
+    return reply ? `${name}: ${reply}` : `${name} finished with no reply.`;
+  }
+  if (receipt.childStatus === "failed") return `${name}'s handoff failed.`;
+  if (receipt.childStatus === "cancelled") return `${name}'s handoff was cancelled.`;
+  return handoffReceiptText(receipt);
+}
+
 /** The composer notice for a batch of receipts: every outcome that means a bot
  *  did NOT get the message, or null when all of them did. */
 export function handoffNotice(receipts: readonly HandoffReceipt[]): string | null {
@@ -160,6 +215,12 @@ const TONE: Record<HandoffStatus, string> = {
   failed: "text-text-error-primary",
 };
 
+function receiptTone(receipt: HandoffReceipt): string {
+  return receipt.childStatus === "failed" || receipt.childStatus === "cancelled"
+    ? "text-text-error-primary"
+    : TONE[receipt.status];
+}
+
 /** One row per bot under the user's message, right-aligned with the bubble. */
 export function HandoffReceipts({ receipts }: { receipts?: readonly HandoffReceipt[] }) {
   if (!receipts || receipts.length === 0) return null;
@@ -169,10 +230,22 @@ export function HandoffReceipts({ receipts }: { receipts?: readonly HandoffRecei
         <li
           key={`${receipt.botId}:${receipt.status}`}
           data-handoff-status={receipt.status}
-          className={cn("flex max-w-[85%] items-center gap-1.5 text-caption-1-regular", TONE[receipt.status])}
+          data-child-status={receipt.childStatus}
+          className={cn("flex max-w-[85%] items-center gap-1.5 text-caption-1-regular", receiptTone(receipt))}
         >
-          <RiRobot2Line className="size-3.5 shrink-0" aria-hidden />
-          <span className="min-w-0 truncate">{handoffReceiptText(receipt)}</span>
+          {receipt.avatarTone ? (
+            <AvatarMark
+              tone={receipt.avatarTone}
+              icon={receipt.avatarIcon}
+              size="size-4"
+              className="shrink-0"
+            />
+          ) : (
+            <RiRobot2Line className="size-3.5 shrink-0" aria-hidden />
+          )}
+          <span className="min-w-0 truncate" title={receipt.finalReply?.trim() || undefined}>
+            {handoffReceiptPreview(receipt)}
+          </span>
           {receipt.threadId && isHandoffSuccess(receipt) ? (
             <Link
               href={`/session/${receipt.threadId}`}

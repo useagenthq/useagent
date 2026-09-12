@@ -12,6 +12,7 @@ import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cx } from "@/utils/cx";
 import { AvatarMark, botOrb } from "./avatar-mark";
+import { BotRepositories } from "./bot-repositories";
 import { BOT_SUGGESTIONS, type BotSuggestion } from "./suggestions";
 import {
   type ApiBot,
@@ -52,6 +53,7 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const [icon, setIcon] = useState<string>("robot");
   // Starter rules travel with a picked suggestion; typing a different name clears them.
   const [rules, setRules] = useState("");
+  const [repos, setRepos] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const chosenEngine = engine ?? engines[0]?.id ?? null;
@@ -65,6 +67,7 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     setTone("blue");
     setIcon("robot");
     setRules("");
+    setRepos([]);
     setError(null);
   };
 
@@ -92,7 +95,7 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       const response = await backendFetch("/api/bots", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), title: title.trim(), rules, engine: chosenEngine, avatarTone: tone, avatarIcon: icon }),
+        body: JSON.stringify({ name: name.trim(), title: title.trim(), rules, engine: chosenEngine, repos, avatarTone: tone, avatarIcon: icon }),
       });
       const data = (await response.json().catch(() => ({}))) as { bot?: ApiBot; field?: string };
       if (!response.ok || !data.bot) {
@@ -184,6 +187,8 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
               {chosenEngine && <p className="text-caption-1-regular text-text-secondary">{engineNote(chosenEngine)}</p>}
             </div>
           </div>
+
+          <BotRepositories value={repos} onChange={setRepos} />
 
           <div>
             <div className="flex items-baseline justify-between pb-2">

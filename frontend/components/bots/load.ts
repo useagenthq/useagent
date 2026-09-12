@@ -30,5 +30,5 @@ export async function loadHomeThread(bot: ApiBot): Promise<ThreadView | null> {
   const probe = await backendFetch(`/api/runs/${bot.homeThreadId}`);
   if (probe.status === 404) return null;
   if (!probe.ok) throw new Error(`home thread failed: ${probe.status}`);
-  return loadThreadView(bot.homeThreadId);
+  return loadThreadView(bot.homeThreadId, false);
 }

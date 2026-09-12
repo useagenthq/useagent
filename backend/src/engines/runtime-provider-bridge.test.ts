@@ -211,9 +211,9 @@ describe("T3 provider bridge", () => {
     const engines = [
       {
         id: "codex" as const,
-        package: "@openai/codex@0.147.0",
+        package: "@openai/codex@0.153.3",
         binary: "codex",
-        version: "codex-cli 0.147.0",
+        version: "codex-cli 0.153.3",
       },
       {
         id: "opencode" as const,
@@ -249,7 +249,7 @@ describe("T3 provider bridge", () => {
         expect(result.exitCode).toBe(0);
         expect(command).toContain(engine.package);
         for (const otherPackage of [
-          "@openai/codex@0.147.0",
+          "@openai/codex@0.153.3",
           "@anthropic-ai/claude-code@2.1.226",
           "opencode-ai@1.18.7",
         ]) {
@@ -417,7 +417,7 @@ describe("T3 provider bridge", () => {
     await prewarmRuntimeProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" });
 
     expect(commands).toHaveLength(3);
-    expect(commands[0]).toContain("@openai/codex@0.147.0");
+    expect(commands[0]).toContain("@openai/codex@0.153.3");
     expect(commands[1]).toContain("@anthropic-ai/claude-code@2.1.226");
     expect(commands[2]).toContain("opencode-ai@1.18.7");
   });

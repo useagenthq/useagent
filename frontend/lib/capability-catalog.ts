@@ -4,7 +4,18 @@ export interface CapabilityCatalogModel {
   id: string;
   default: boolean;
   dispatchable: boolean;
+  policyAllowed: boolean;
+  displayName?: string;
+  nativeAvailable?: boolean;
+  defaultReasoningEffort?: string;
+  supportedReasoningEfforts?: string[];
   degradationReason?: string;
+}
+
+export interface CapabilityModelCatalogStatus {
+  source: "native" | "policy";
+  stale: boolean;
+  error?: string;
 }
 
 export interface CapabilityCatalogEngine {
@@ -15,6 +26,7 @@ export interface CapabilityCatalogEngine {
   message?: string;
   defaultModel: string;
   models: CapabilityCatalogModel[];
+  modelCatalog?: CapabilityModelCatalogStatus;
   runtime: CapabilityEngineRuntime;
 }
 
@@ -112,11 +124,29 @@ export function parseCapabilityCatalog(value: unknown): CapabilityCatalog | null
         id: model.id,
         default: model.default,
         dispatchable: model.dispatchable,
+        policyAllowed: typeof model.policyAllowed === "boolean"
+          ? model.policyAllowed
+          : model.dispatchable,
+        ...(typeof model.displayName === "string" && model.displayName.length <= 120
+          ? { displayName: model.displayName }
+          : {}),
+        ...(typeof model.nativeAvailable === "boolean"
+          ? { nativeAvailable: model.nativeAvailable }
+          : {}),
+        ...(typeof model.defaultReasoningEffort === "string"
+          ? { defaultReasoningEffort: model.defaultReasoningEffort }
+          : {}),
+        ...(Array.isArray(model.supportedReasoningEfforts) &&
+            model.supportedReasoningEfforts.length <= 8 &&
+            model.supportedReasoningEfforts.every((effort) => typeof effort === "string")
+          ? { supportedReasoningEfforts: model.supportedReasoningEfforts as string[] }
+          : {}),
         ...(typeof model.degradationReason === "string"
           ? { degradationReason: model.degradationReason }
           : {}),
       });
     }
+    const modelCatalog = record(engine.modelCatalog);
     engines.push({
       id: engine.id as EngineId,
       configured: engine.configured,
@@ -127,6 +157,17 @@ export function parseCapabilityCatalog(value: unknown): CapabilityCatalog | null
         kind: runtime.kind as CapabilityEngineRuntime["kind"],
         label: runtime.label,
       },
+      ...(modelCatalog?.source === "native" || modelCatalog?.source === "policy"
+        ? {
+            modelCatalog: {
+              source: modelCatalog.source,
+              stale: modelCatalog.stale === true,
+              ...(typeof modelCatalog.error === "string"
+                ? { error: modelCatalog.error }
+                : {}),
+            },
+          }
+        : {}),
       ...(typeof engine.degradationReason === "string"
         ? { degradationReason: engine.degradationReason }
         : {}),

@@ -48,8 +48,6 @@ export function SettingsRail({ className }: { className?: string }) {
       const index = activeSectionIndex({
         sectionTops: els.map((el) => el.getBoundingClientRect().top - origin),
         viewportHeight: box.clientHeight,
-        scrollTop: box.scrollTop,
-        scrollHeight: box.scrollHeight,
       });
       setActive(els[index].id);
     };

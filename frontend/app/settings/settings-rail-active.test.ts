@@ -1,34 +1,61 @@
 import { describe, expect, test } from "bun:test";
-import { activeSectionIndex } from "./settings-rail-active";
+import {
+  activeSectionIndex,
+  SETTINGS_ACTIVATION_RATIO,
+  SETTINGS_SCROLL_TAIL_RATIO,
+} from "./settings-rail-active";
 
 // The settings page measured on production at 1440x900: section top edges at
-// rest inside the shell's <main> scroller (3822px of content, 900px viewport,
-// so it bottoms out at scrollTop 2922). Rail order: general, providers,
+// rest inside the shell's <main> scroller (3822px of content before the
+// trailing scroll reserve, 900px viewport). Rail order: general, providers,
 // integrations, usage, infrastructure, secrets, apikeys, team.
 const TOPS_AT_REST = [92, 411, 1550, 1950, 2369, 3043, 3319, 3638] as const;
 const VIEWPORT_HEIGHT = 900;
-const SCROLL_HEIGHT = 3822;
+const CONTENT_HEIGHT = 3822;
+const SCROLL_HEIGHT = CONTENT_HEIGHT + VIEWPORT_HEIGHT * SETTINGS_SCROLL_TAIL_RATIO;
 const MAX_SCROLL_TOP = SCROLL_HEIGHT - VIEWPORT_HEIGHT;
+const ANCHOR_SCROLL_MARGIN = VIEWPORT_HEIGHT * SETTINGS_ACTIVATION_RATIO;
 
 const INFRASTRUCTURE = 4;
 const SECRETS = 5;
+const API_KEYS = 6;
 const TEAM = 7;
 
 const scrolledTo = (scrollTop: number) => ({
   sectionTops: TOPS_AT_REST.map((top) => top - scrollTop),
   viewportHeight: VIEWPORT_HEIGHT,
-  scrollTop,
-  scrollHeight: SCROLL_HEIGHT,
 });
 
+const anchoredTo = (index: number) =>
+  scrolledTo(Math.min(TOPS_AT_REST[index] - ANCHOR_SCROLL_MARGIN, MAX_SCROLL_TOP));
+
 describe("settings rail scroll-spy", () => {
-  test("at the bottom of the page the final section wins even when its heading cannot reach the activation line", () => {
+  test("the final section crosses the normal activation line at the real scroll boundary", () => {
     expect(activeSectionIndex(scrolledTo(MAX_SCROLL_TOP))).toBe(TEAM);
   });
 
-  test("a scroller a couple of pixels short of its end still counts as the bottom", () => {
-    expect(activeSectionIndex(scrolledTo(MAX_SCROLL_TOP - 2))).toBe(TEAM);
-    expect(activeSectionIndex(scrolledTo(MAX_SCROLL_TOP - 3))).toBe(SECRETS);
+  test("anchor navigation keeps each final section independently reachable and highlighted", () => {
+    expect(activeSectionIndex(anchoredTo(SECRETS))).toBe(SECRETS);
+    expect(activeSectionIndex(anchoredTo(API_KEYS))).toBe(API_KEYS);
+    expect(activeSectionIndex(anchoredTo(TEAM))).toBe(TEAM);
+  });
+
+  test("a compact next card cannot steal the anchored section at the activation line", () => {
+    const line = VIEWPORT_HEIGHT * SETTINGS_ACTIVATION_RATIO;
+    expect(
+      activeSectionIndex({ sectionTops: [line, line + 170], viewportHeight: VIEWPORT_HEIGHT }),
+    ).toBe(0);
+  });
+
+  test("reproduces the collapsed boundary that made API keys impossible to select", () => {
+    const oldMaxScrollTop = CONTENT_HEIGHT - VIEWPORT_HEIGHT;
+    const apiKeysScrollTop = Math.min(
+      TOPS_AT_REST[API_KEYS] - ANCHOR_SCROLL_MARGIN,
+      oldMaxScrollTop,
+    );
+    const teamScrollTop = Math.min(TOPS_AT_REST[TEAM] - ANCHOR_SCROLL_MARGIN, oldMaxScrollTop);
+    expect(apiKeysScrollTop).toBe(teamScrollTop);
+    expect(activeSectionIndex(scrolledTo(oldMaxScrollTop))).toBe(SECRETS);
   });
 
   test("mid-page a section takes over once its top reaches the upper 30% band", () => {
@@ -43,8 +70,6 @@ describe("settings rail scroll-spy", () => {
       activeSectionIndex({
         sectionTops: [400, 732],
         viewportHeight: VIEWPORT_HEIGHT,
-        scrollTop: 0,
-        scrollHeight: SCROLL_HEIGHT,
       }),
     ).toBe(0);
   });

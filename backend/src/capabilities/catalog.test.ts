@@ -69,6 +69,99 @@ describe("capability catalog", () => {
     expect(catalog.engines.find((engine) => engine.id === "chat")?.runtime.kind).toBe("direct");
   });
 
+  test("exposes actor-discovered Codex models without widening deployment policy", () => {
+    const catalog = buildCapabilityCatalog({
+      env: {
+        ...READY_ENV,
+        PROVIDER_HEALTH_OPENAI: "ready",
+        CODEX_ALLOWED_MODELS: "gpt-5.6-luna,gpt-6-astra",
+      },
+      gatewayConfigured: true,
+      slackConfigured: false,
+      codexModelCatalog: {
+        status: "native",
+        stale: false,
+        models: [
+          {
+            id: "gpt-6-astra",
+            displayName: "GPT-6 Astra",
+            defaultReasoningEffort: "high",
+            supportedReasoningEfforts: ["low", "high", "max"],
+          },
+          {
+            id: "gpt-future-native",
+            displayName: "Future Native",
+            supportedReasoningEfforts: ["medium"],
+          },
+        ],
+      },
+    });
+    const codex = catalog.engines.find((engine) => engine.id === "codex")!;
+    expect(codex.modelCatalog).toEqual({ source: "native", stale: false });
+    expect(codex.models.find((model) => model.id === "gpt-6-astra")).toMatchObject({
+      displayName: "GPT-6 Astra",
+      policyAllowed: true,
+      nativeAvailable: true,
+      dispatchable: true,
+      supportedReasoningEfforts: ["low", "high", "max"],
+    });
+    expect(codex.models.find((model) => model.id === "gpt-future-native")).toMatchObject({
+      displayName: "Future Native",
+      policyAllowed: false,
+      nativeAvailable: true,
+      dispatchable: false,
+      degradationReason: "model_not_allowed",
+    });
+    expect(codex.models.find((model) => model.id === "gpt-5.6-luna")).toMatchObject({
+      policyAllowed: true,
+      dispatchable: true,
+    });
+    expect(codex.models.find((model) => model.id === "gpt-5.6-luna"))
+      .not.toHaveProperty("nativeAvailable");
+  });
+
+  test("subscription-only Codex is unavailable until the actor account catalog is usable", () => {
+    const unavailable = buildCapabilityCatalog({
+      env: {
+        ...READY_ENV,
+        PROVIDER_HEALTH_OPENAI: "ready",
+        ENGINE_AUTH_MODE_CODEX: "subscription",
+      },
+      gatewayConfigured: true,
+      slackConfigured: false,
+      codexModelCatalog: {
+        models: [],
+        status: "unavailable",
+        stale: false,
+        error: "not_connected",
+      },
+    }).engines.find((engine) => engine.id === "codex")!;
+    expect(unavailable).toMatchObject({
+      ready: false,
+      degradationReason: "provider_unhealthy",
+      message: "Connect a Codex account in Settings, then retry.",
+    });
+    expect(unavailable.models.every((model) => !model.dispatchable)).toBe(true);
+
+    const hybrid = buildCapabilityCatalog({
+      env: {
+        ...READY_ENV,
+        PROVIDER_HEALTH_OPENAI: "ready",
+        ENGINE_AUTH_MODE_CODEX: "hybrid",
+      },
+      gatewayConfigured: true,
+      slackConfigured: false,
+      codexModelCatalog: {
+        models: [],
+        status: "unavailable",
+        stale: false,
+        error: "not_connected",
+      },
+    }).engines.find((engine) => engine.id === "codex")!;
+    expect(hybrid.ready).toBe(true);
+    expect(hybrid.models.some((model) => model.dispatchable)).toBe(true);
+  });
+
   test("publishes bounded registry metadata without run or credential material", () => {
     const catalog = buildCapabilityCatalog({
       env: READY_ENV,

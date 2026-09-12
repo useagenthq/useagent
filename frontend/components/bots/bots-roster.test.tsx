@@ -40,7 +40,7 @@ describe("BotsRoster", () => {
     );
     const rows = links(html);
     expect(rows.map((row) => row.name)).toEqual(["Atlas", "Nova", "Scout", "Quill"]);
-    expect(rows[0]?.describedBy).toBe("Waiting on your approval");
+    expect(rows[0]?.describedBy).toBe("Waiting for your input");
     expect(rows[1]?.describedBy).toBe("Digest posted");
     // The 300-character reply is not the accessible description; the fallback is.
     expect(rows[2]?.describedBy).toBe("Replied");
