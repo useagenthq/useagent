@@ -10,23 +10,25 @@ import {
   RiUserSearchLine,
 } from "@remixicon/react";
 import { Badge } from "@/components/base/badges/badge";
+import { Orb, type OrbProps, type OrbTone } from "@/components/base/orb/orb";
 import { cx } from "@/utils/cx";
 import { stateLabel } from "./roster-model";
 import type { BotState } from "./types";
 
 /**
- * Avatar fills come from the theme's state ramp, so a bot looks native in
- * every theme (Dusk gets Tokyo Night, Aura gets violet) with no raw palette.
+ * A bot's tone is a name on the wire and a step on the theme's state ramp on
+ * screen, so a bot looks native in every theme (Dusk gets Tokyo Night, Aura
+ * gets violet) with no raw palette. `prism` is the iridescent ball.
  */
-const TONES: Record<string, string> = {
-  blue: "bg-primary-base",
-  violet: "bg-feature-base",
-  emerald: "bg-success-base",
-  amber: "bg-warning-base",
-  rose: "bg-error-base",
-  cyan: "bg-verified-base",
-  fuchsia: "bg-highlighted-base",
-  slate: "bg-away-base",
+const TONES: Record<string, OrbTone> = {
+  blue: "primary",
+  violet: "feature",
+  emerald: "success",
+  amber: "warning",
+  rose: "error",
+  cyan: "verified",
+  fuchsia: "highlighted",
+  slate: "away",
 };
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -41,20 +43,9 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   compass: RiCompass3Line,
 };
 
-/**
- * Glyph ink per tone. The emerald, amber, cyan and slate fills are bright in
- * the light themes, where the white glyph read 2.0 to 2.4:1; static-black is
- * the darkest neutral of every ramp, so it also holds on the dark overlays.
- */
-const INK: Record<string, string> = {
-  emerald: "text-static-black",
-  amber: "text-static-black",
-  cyan: "text-static-black",
-  slate: "text-static-black",
-};
-
-export function toneClass(tone: string): string {
-  return TONES[tone] ?? TONES.blue!;
+/** The Orb behind a bot tone: its ramp step, or the prism variant. */
+export function botOrb(tone: string): Pick<OrbProps, "tone" | "variant"> {
+  return tone === "prism" ? { variant: "prism" } : { tone: TONES[tone] ?? "primary" };
 }
 
 export function iconFor(icon: string): React.ComponentType<{ className?: string }> {
@@ -77,9 +68,11 @@ export function StateBadge({ state }: { state: BotState }) {
 }
 
 /**
- * Flat, rounded, one color, one-ink glyph - the reference's avatar language.
- * State is one small dot in the theme's success/warning color, paired with
- * the StateBadge wherever the name is shown.
+ * A glossy orb in the bot's tone with its role glyph centered on it - the one
+ * avatar language for every place a bot appears. The glyph's ink (white on a
+ * deep ball, black on a bright one) is the orb's own, decided per theme from
+ * the tone it resolves to. State is one small dot in the theme's
+ * success/warning color, paired with the StateBadge wherever the name is shown.
  */
 export function AvatarMark({
   tone,
@@ -96,16 +89,7 @@ export function AvatarMark({
 }) {
   const Icon = iconFor(icon);
   return (
-    <span
-      className={cx(
-        "relative flex shrink-0 items-center justify-center rounded-full",
-        toneClass(tone),
-        INK[tone] ?? "text-text-white-0",
-        size,
-        className,
-      )}
-      aria-hidden
-    >
+    <Orb {...botOrb(tone)} size={size} className={className} aria-hidden>
       <Icon className={GLYPH[size] ?? "size-5"} />
       {state !== "idle" && (
         <span
@@ -115,6 +99,6 @@ export function AvatarMark({
           )}
         />
       )}
-    </span>
+    </Orb>
   );
 }

@@ -58,7 +58,7 @@ export type ThreadItem = { id: string; title: string; meta: string };
 export type PullItem = { repo: string; number: number; title: string };
 export type RepoItem = { full_name: string; private: boolean; default_branch: string | null };
 export type TreeItem = { path: string; name: string; type: "file" | "dir" };
-export type BotItem = { id: string; name: string; title: string; state: BotState };
+export type BotItem = { id: string; name: string; title: string; state: BotState; avatarTone: string; avatarIcon: string };
 
 export { firstLine } from "./types";
 
@@ -98,13 +98,15 @@ export async function fetchBots(): Promise<BotItem[]> {
   const res = await backendFetch("/api/bots");
   if (!res.ok) throw new Error(`bots ${res.status}`);
   const data = (await res.json()) as {
-    bots?: { id: string; name: string; title: string; archived?: boolean; state?: unknown }[];
+    bots?: { id: string; name: string; title: string; archived?: boolean; state?: unknown; avatarTone: string; avatarIcon: string }[];
   };
   return (data.bots ?? []).filter((b) => !b.archived).map((b) => ({
     id: b.id,
     name: b.name,
     title: b.title,
     state: (BOT_STATES as readonly unknown[]).includes(b.state) ? (b.state as BotState) : "idle",
+    avatarTone: b.avatarTone,
+    avatarIcon: b.avatarIcon,
   }));
 }
 

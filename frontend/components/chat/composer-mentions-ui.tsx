@@ -61,6 +61,7 @@ import {
   orderRepos,
   fetchSkillsPicker,
 } from "@/components/chat/composer-mentions-data";
+import { MentionRowMark } from "./mention-row-mark";
 export type { MentionSkill } from "@/components/chat/composer-mentions-data";
 export { repoTreeUrl } from "@/components/chat/composer-mentions-data";
 export type { Mention } from "./composer-mentions";
@@ -112,7 +113,7 @@ type MentionRow =
   | { type: "repo"; full_name: string; private: boolean }
   | { type: "dir"; path: string; name: string }
   | { type: "file"; path: string; name: string }
-  | { type: "bot"; id: string; name: string; title: string; state: BotState };
+  | { type: "bot"; id: string; name: string; title: string; state: BotState; avatarTone: string; avatarIcon: string };
 
 export type UseComposerMentions = {
   mentions: Mention[];
@@ -294,7 +295,9 @@ export function useComposerMentions(opts: {
       } else if (row.type === "skill") insertMention(skillMention(row.id, row.name));
       else if (row.type === "thread") insertMention(threadMention(row.id, row.title));
       else if (row.type === "pr") insertMention(prMention(row.repo, row.number, row.title));
-      else if (row.type === "bot") insertMention(botMention(row.id, row.name));
+      else if (row.type === "bot") {
+        insertMention(botMention(row.id, row.name, row.avatarTone, row.avatarIcon));
+      }
       else if (row.type === "repo") {
         const repo = repos.items.find((item) => item.full_name === row.full_name);
         setView({
@@ -443,7 +446,7 @@ function computeRows(input: {
     const rows = input.bots.items
       .filter((b) => includesQuery(b.name, query) || includesQuery(b.title, query))
       .slice(0, ROW_CAP)
-      .map((b) => ({ type: "bot" as const, id: b.id, name: b.name, title: b.title, state: b.state }));
+      .map((b) => ({ type: "bot" as const, ...b }));
     return { rows, status: input.bots.status };
   }
   if (view.level === "list" && view.kind === "thread") {
@@ -529,7 +532,10 @@ function MentionChips({
             key={mentionKey(m)}
             className="border-border-button-default bg-background-secondary-default text-text-secondary inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-caption-1-medium"
           >
-            <Icon className="size-3.5 shrink-0 text-foreground-icon-secondary" aria-hidden />
+            <MentionRowMark
+              bot={m.kind === "bot" ? m : undefined}
+              icon={Icon}
+            />
             <span className="max-w-52 truncate" title={m.token}>
               {chipLabel(m)}
             </span>
@@ -751,7 +757,7 @@ function MentionPopover({
                       : "hover:bg-background-primary-hover",
                   )}
                 >
-                  <Icon className="text-text-secondary size-4 shrink-0" aria-hidden />
+                  <MentionRowMark bot={row.type === "bot" ? row : undefined} icon={Icon} />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="text-body-2-medium text-text-primary truncate">{rowPrimary(row)}</span>
                     {row.type === "bot" ? (

@@ -6,11 +6,12 @@ import { Radio as AriaRadio, RadioGroup as AriaRadioGroup } from "react-aria-com
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
 import * as Modal from "@/components/base/modal/modal";
+import { Orb } from "@/components/base/orb/orb";
 import { Select, SelectItem } from "@/components/base/select/select";
 import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cx } from "@/utils/cx";
-import { AvatarMark, iconFor, toneClass } from "./avatar-mark";
+import { AvatarMark, botOrb, iconFor } from "./avatar-mark";
 import { BOT_SUGGESTIONS, type BotSuggestion } from "./suggestions";
 import {
   type ApiBot,
@@ -135,13 +136,14 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                   aria-label={`Color ${option}`}
                   className={({ isSelected, isFocusVisible }) =>
                     cx(
-                      "size-6 cursor-pointer rounded-full transition-transform",
-                      toneClass(option),
+                      "flex cursor-pointer rounded-full transition-transform",
                       isSelected && "scale-110 ring-2 ring-border-button-hover ring-offset-2 ring-offset-background-primary-default",
                       isFocusVisible && FOCUS_RING,
                     )
                   }
-                />
+                >
+                  <Orb {...botOrb(option)} size="size-6" />
+                </AriaRadio>
               ))}
             </AriaRadioGroup>
             <AriaRadioGroup aria-label="Icon" value={icon} onChange={setIcon} className="flex items-center gap-1.5">
@@ -155,7 +157,9 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                     className={({ isSelected, isFocusVisible }) =>
                       cx(
                         "flex size-8 cursor-pointer items-center justify-center rounded-lg transition-colors",
-                        isSelected ? cx(toneClass(tone), "text-text-white-0") : "text-text-tertiary hover:bg-background-primary-hover",
+                        isSelected
+                          ? "bg-background-secondary-default text-text-primary ring-1 ring-border-button-hover ring-inset"
+                          : "text-text-tertiary hover:bg-background-primary-hover",
                         isFocusVisible && FOCUS_RING,
                       )
                     }

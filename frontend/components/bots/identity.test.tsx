@@ -16,10 +16,12 @@ describe("bot identity for threads", () => {
     expect(botForThread(null, "home-nova")).toBeNull();
   });
 
-  test("the identity carries the bot's name and its own mark", () => {
+  test("the identity carries the bot's name and its own orb at turn-header size", () => {
     const identity = botAssistantIdentity(nova);
     expect(identity.name).toBe("Nova");
-    expect(renderToStaticMarkup(<>{identity.avatar}</>)).toContain("size-5");
+    const avatar = renderToStaticMarkup(<>{identity.avatar}</>);
+    expect(avatar).toContain("size-5");
+    expect(avatar).toContain("--orb-tone:hsl(var(--primary-base))");
   });
 
   test("an archived bot locks the composer with a way back; an active one does not", () => {

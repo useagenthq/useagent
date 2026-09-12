@@ -49,6 +49,9 @@ describe("BotsRoster", () => {
     expect(html).toContain('aria-current="page"');
     expect(html).toContain('title="Scout"');
     expect(html).not.toContain("rounded-xl px-3");
+    // Every row leads with the bot's orb, tone from the theme ramp, never a flat fill.
+    expect(html.match(/class="orb /g)).toHaveLength(4);
+    expect(html).toContain("--orb-tone:hsl(var(--primary-base))");
   });
 
   test("an empty roster carries the create action and the page title sits on the display ramp", () => {

@@ -27,7 +27,14 @@ export type Mention =
   | { kind: "thread"; id: string; shortId: string; title: string; token: string }
   | { kind: "pr"; repo: string; number: number; title: string; token: string }
   | { kind: "file"; repo: string; path: string; revision: string | null; token: string }
-  | { kind: "bot"; id: string; name: string; token: string };
+  | {
+      kind: "bot";
+      id: string;
+      name: string;
+      token: string;
+      avatarTone: string;
+      avatarIcon: string;
+    };
 
 // ---------------------------------------------------------------------------
 // Token builders + identity
@@ -95,8 +102,13 @@ export function fileMention(repo: string, path: string, revision: string | null)
   return { kind: "file", repo, path, revision, token: fileToken(repo, path) };
 }
 
-export function botMention(id: string, name: string): Mention {
-  return { kind: "bot", id, name, token: botToken(name) };
+export function botMention(
+  id: string,
+  name: string,
+  avatarTone = "blue",
+  avatarIcon = "robot",
+): Mention {
+  return { kind: "bot", id, name, token: botToken(name), avatarTone, avatarIcon };
 }
 
 // ---------------------------------------------------------------------------
@@ -249,26 +261,62 @@ export function unlinkedBotTokens(text: string, mentions: readonly Mention[]): s
 
 const MENTION_KINDS: ReadonlySet<string> = new Set(["skill", "thread", "pr", "file", "bot"]);
 
-function isMention(value: unknown): value is Mention {
-  if (typeof value !== "object" || value === null) return false;
+function parseMention(value: unknown): Mention | null {
+  if (typeof value !== "object" || value === null) return null;
   const m = value as Record<string, unknown>;
   if (typeof m.kind !== "string" || !MENTION_KINDS.has(m.kind) || typeof m.token !== "string") {
-    return false;
+    return null;
   }
   switch (m.kind) {
-    case "skill":
+    case "skill": {
+      if (typeof m.id !== "string" || typeof m.name !== "string") return null;
+      return { kind: "skill", id: m.id, name: m.name, token: m.token };
+    }
     case "bot":
-      return typeof m.id === "string" && typeof m.name === "string";
-    case "thread":
-      return typeof m.id === "string" && typeof m.shortId === "string" && typeof m.title === "string";
-    case "pr":
-      return typeof m.repo === "string" && typeof m.number === "number" && typeof m.title === "string";
+      if (
+        typeof m.id !== "string" ||
+        typeof m.name !== "string" ||
+        (m.avatarTone !== undefined && typeof m.avatarTone !== "string") ||
+        (m.avatarIcon !== undefined && typeof m.avatarIcon !== "string")
+      ) {
+        return null;
+      }
+      return {
+        kind: "bot",
+        id: m.id,
+        name: m.name,
+        token: m.token,
+        avatarTone: m.avatarTone ?? "blue",
+        avatarIcon: m.avatarIcon ?? "robot",
+      };
+    case "thread": {
+      if (
+        typeof m.id !== "string" ||
+        typeof m.shortId !== "string" ||
+        typeof m.title !== "string"
+      ) {
+        return null;
+      }
+      return { kind: "thread", id: m.id, shortId: m.shortId, title: m.title, token: m.token };
+    }
+    case "pr": {
+      if (typeof m.repo !== "string" || typeof m.number !== "number" || typeof m.title !== "string") {
+        return null;
+      }
+      return { kind: "pr", repo: m.repo, number: m.number, title: m.title, token: m.token };
+    }
+    case "file": {
+      if (
+        typeof m.repo !== "string" ||
+        typeof m.path !== "string" ||
+        (m.revision !== null && typeof m.revision !== "string")
+      ) {
+        return null;
+      }
+      return { kind: "file", repo: m.repo, path: m.path, revision: m.revision, token: m.token };
+    }
     default:
-      return (
-        typeof m.repo === "string" &&
-        typeof m.path === "string" &&
-        (m.revision === null || typeof m.revision === "string")
-      );
+      return null;
   }
 }
 
@@ -277,7 +325,11 @@ export function parseDraftMentions(raw: string | null): Mention[] {
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isMention) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((value) => {
+      const mention = parseMention(value);
+      return mention ? [mention] : [];
+    });
   } catch {
     return [];
   }
