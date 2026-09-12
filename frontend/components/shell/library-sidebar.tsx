@@ -79,7 +79,7 @@ export function LibrarySidebar({ active }: { active?: LibrarySidebarActive }) {
       }
     >
       <SearchCommand />
-      <SidebarNavItem href="/agent/runs" icon={RiStackLine} label="Workspace" />
+      <SidebarNavItem href="/agent/runs" icon={RiStackLine} label="All threads" />
       <SidebarSectionLabel>Customize</SidebarSectionLabel>
       {LIBRARY_ITEMS.map((item) => (
         <SidebarNavItem

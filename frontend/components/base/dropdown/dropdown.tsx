@@ -5,12 +5,17 @@ import {
   Button as AriaButton,
   Dialog as AriaDialog,
   DialogTrigger as AriaDialogTrigger,
+  Menu as AriaMenu,
+  MenuItem as AriaMenuItem,
+  type MenuItemProps as AriaMenuItemProps,
+  type MenuProps as AriaMenuProps,
   Popover as AriaPopover,
 } from "react-aria-components";
 import {
   MENU_ITEM,
   MENU_ITEM_ACTIVE,
   MENU_ITEM_INTERACTIVE,
+  MENU_ITEMS_CONTAINER,
   MENU_POPOVER_SURFACE,
   MENU_POPOVER_WIDTH,
 } from "@/components/base/dropdown/menu-styles";
@@ -56,6 +61,7 @@ import { useDismissOnOutsidePress, useTriggerToggle } from "@/utils/use-dismiss-
 interface DropdownContextValue {
   triggerRef: RefObject<HTMLButtonElement | null>;
   popoverRef: RefObject<HTMLElement | null>;
+  close: () => void;
 }
 
 const DropdownContext = createContext<DropdownContextValue | null>(null);
@@ -92,7 +98,7 @@ export function Dropdown({ isOpen: controlledOpen, onOpenChange, children }: Dro
   const allowOpenChange = useTriggerToggle(isOpen, triggerRef);
 
   return (
-    <DropdownContext.Provider value={{ triggerRef, popoverRef }}>
+    <DropdownContext.Provider value={{ triggerRef, popoverRef, close: () => setOpen(false) }}>
       <AriaDialogTrigger isOpen={isOpen} onOpenChange={(o) => allowOpenChange(o) && setOpen(o)}>
         {children}
       </AriaDialogTrigger>
@@ -156,6 +162,69 @@ export function DropdownPopover({
         {children}
       </AriaDialog>
     </AriaPopover>
+  );
+}
+
+/* ------------------------------------------------------------------- menu */
+
+export interface DropdownMenuProps<T extends object>
+  extends Omit<AriaMenuProps<T>, "className" | "style" | "onClose" | "autoFocus">,
+    Pick<DropdownPopoverProps, "placement" | "offset" | "crossOffset" | "className"> {
+  "aria-label": string;
+  /** Free-form content above the rows (an identity header, a divider). */
+  header?: ReactNode;
+}
+
+/**
+ * The menu-semantics variant of DropdownPopover: the same panel, but the rows
+ * are a React Aria Menu, so arrow keys, Home/End, typeahead, Escape and
+ * close-on-select come from the library and the rows expose `menuitem` (or
+ * `menuitemradio` with `selectionMode="single"`). Use it when every row is an
+ * action or an option; keep DropdownPopover for free-form panels (forms,
+ * pickers, filters).
+ */
+export function DropdownMenu<T extends object>({
+  placement = "bottom start",
+  offset = 4,
+  crossOffset,
+  className,
+  header,
+  ...menuProps
+}: DropdownMenuProps<T>) {
+  const context = useContext(DropdownContext);
+  return (
+    <AriaPopover
+      ref={context?.popoverRef}
+      isNonModal
+      placement={placement}
+      offset={offset}
+      crossOffset={crossOffset}
+      className={cx(MENU_POPOVER_WIDTH, MENU_POPOVER_SURFACE, "flex flex-col gap-0.5", className)}
+    >
+      {header}
+      <AriaMenu autoFocus="first" onClose={context?.close} {...menuProps} className={MENU_ITEMS_CONTAINER} />
+    </AriaPopover>
+  );
+}
+
+export interface DropdownMenuItemProps extends Omit<AriaMenuItemProps, "className" | "style" | "children"> {
+  /** Row padding defaults to px-2 py-1.5 like DropdownItem; override for denser rows. */
+  className?: string;
+  children: ReactNode;
+}
+
+/** A DropdownMenu row. Pass `textValue` when the children are not plain text
+ *  so typeahead still works. */
+export function DropdownMenuItem({ className, children, ...props }: DropdownMenuItemProps) {
+  return (
+    <AriaMenuItem
+      {...props}
+      className={({ isSelected }) =>
+        cx(MENU_ITEM, isSelected ? MENU_ITEM_ACTIVE : MENU_ITEM_INTERACTIVE, className)
+      }
+    >
+      {children}
+    </AriaMenuItem>
   );
 }
 

@@ -88,16 +88,18 @@ export function CodexChatGptPath({
           >
             Connect with ChatGPT
           </Button>
-          <Button
-            variant="danger"
-            size="xs"
-            className="rounded-full"
-            disabled={!active || busy !== null}
-            onClick={() => void revokeLogin()}
-            leadingIcon={busy === "revoke" ? SpinnerIcon : undefined}
-          >
-            Log out
-          </Button>
+          {connection || status?.account?.authMode === "chatgpt" ? (
+            <Button
+              variant="danger"
+              size="xs"
+              className="rounded-full"
+              disabled={!active || busy !== null}
+              onClick={() => void revokeLogin()}
+              leadingIcon={busy === "revoke" ? SpinnerIcon : undefined}
+            >
+              Log out
+            </Button>
+          ) : null}
         </div>
       </div>
 

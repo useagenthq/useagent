@@ -57,7 +57,7 @@ type Cmd = {
 // Every supported useAgent route surfaced by the ⌘K palette.
 const COMMANDS: Cmd[] = [
   { href: "/agent/new", label: "New thread", icon: RiAddLine, group: "Threads" },
-  { href: "/agent/runs", label: "Threads", icon: RiPulseLine, group: "Threads" },
+  { href: "/agent/runs", label: "All threads", icon: RiPulseLine, group: "Threads" },
 
   { href: "/skills", label: "Skills", icon: RiFlashlightLine, group: "Customize" },
   { href: "/playbooks", label: "Playbooks", icon: RiBookMarkedLine, group: "Customize" },
@@ -96,9 +96,12 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
   const relationships = useSidebarThreadRelationships();
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
+  const [shortcutHint, setShortcutHint] = React.useState("⌘K");
 
-  // Global ⌘K / Ctrl+K toggles the palette from anywhere.
+  // Global ⌘K / Ctrl+K toggles the palette from anywhere; the pill shows the
+  // modifier this platform actually uses.
   React.useEffect(() => {
+    if (!/Mac|iPhone|iPad|iPod/.test(navigator.platform)) setShortcutHint("Ctrl K");
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -145,7 +148,7 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
           <RiSearch2Line className="size-3.5 shrink-0 text-foreground-icon-secondary" aria-hidden />
         </span>
         {!compact && <span className="flex-1 text-left text-body-medium">Search</span>}
-        {!compact && <Kbd className="ml-auto">⌘K</Kbd>}
+        {!compact && <Kbd className="ml-auto">{shortcutHint}</Kbd>}
       </button>
 
       <CommandMenu.Dialog

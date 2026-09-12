@@ -101,7 +101,7 @@ const COLUMNS: ColumnDef<DashRun>[] = [
     accessorFn: (run) => timestamp(run.created_at),
     header: 'Started',
     cell: ({ row }) => (
-      <span className='block whitespace-nowrap text-right text-body-2-regular text-text-tertiary'>
+      <span suppressHydrationWarning className='block whitespace-nowrap text-right text-body-2-regular text-text-tertiary'>
         {relativeTime(row.original.created_at)}
       </span>
     ),

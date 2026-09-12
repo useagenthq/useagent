@@ -8,7 +8,7 @@ import {
   RiStackLine,
 } from "@remixicon/react";
 import type { ComputerProviderConnectionProvider } from "@useagent/agent-client/provider-connections";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/base/buttons/button";
 import { InputBase } from "@/components/base/input/input";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
@@ -16,6 +16,7 @@ import { cx } from "@/utils/cx";
 import { ConnectionStatusChip, SpinnerIcon } from "./connection-status-chip";
 import { fetchSandboxConfig, putProviderApiKey, revokeProviderConnection, type SandboxConfig } from "./provider-connections-api";
 import {
+  computerFooterCopy,
   connectionBadgeStatus,
   isActiveConnection,
   safeComputerMetadata,
@@ -80,7 +81,9 @@ function ComputerSection({
   const [snapshotName, setSnapshotName] = useState("");
   const [saving, setSaving] = useState(false);
   const [revoking, setRevoking] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [keyError, setKeyError] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
+  const keyInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setSnapshotName(connection?.metadata.snapshotName ?? "");
@@ -94,17 +97,18 @@ function ComputerSection({
     const key = apiKey.trim();
     if (!key) return;
     setSaving(true);
-    setFormError(null);
+    setKeyError(null);
     try {
       await putProviderApiKey({ provider, apiKey: key, metadata: nextMetadata });
       setApiKey("");
       await load();
     } catch {
-      setFormError(
+      setKeyError(
         copy.snapshotRequired
           ? `Couldn't validate the ${copy.name} key and snapshot. Check both values and retry.`
           : `Couldn't validate the ${copy.name} key${snapshotName.trim() ? " and snapshot" : ""}. Check the value and retry.`,
       );
+      keyInputRef.current?.focus();
     } finally {
       setSaving(false);
     }
@@ -112,28 +116,29 @@ function ComputerSection({
 
   const revoke = useCallback(async () => {
     setRevoking(true);
-    setFormError(null);
+    setRevokeError(null);
     try {
       await revokeProviderConnection({ provider, authMethod: "api_key" });
       setApiKey("");
       await load();
     } catch {
-      setFormError(`Couldn't revoke the ${copy.name} connection.`);
+      setRevokeError(`Couldn't revoke the ${copy.name} connection.`);
     } finally {
       setRevoking(false);
     }
   }, [copy.name, load, provider]);
 
   const keyId = `${provider}-api-key`;
+  const keyErrorId = `${provider}-api-key-error`;
   const snapshotId = `${provider}-snapshot`;
 
   return (
     <section className="rounded-xl border border-border-button-default bg-background-secondary-default px-4">
-      <div className="flex items-center justify-between gap-3 border-b border-separator-border py-3">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-separator-border py-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <RiStackLine aria-hidden className="size-4 shrink-0 text-foreground-icon-tertiary" />
           <h3 className="text-body-medium text-text-primary">{copy.name}</h3>
-          <span className="truncate text-caption-1-regular text-text-tertiary">{copy.tagline}</span>
+          <span className="text-caption-1-regular text-text-tertiary">{copy.tagline}</span>
         </div>
         <div className="flex items-center gap-2">
           <ConnectionStatusChip status={connectionBadgeStatus(connection)}>{statusLabel(connection)}</ConnectionStatusChip>
@@ -169,8 +174,11 @@ function ComputerSection({
                 API key
               </label>
               <InputBase
+                ref={keyInputRef}
                 id={keyId}
                 aria-label={`${copy.name} API key`}
+                aria-invalid={keyError ? true : undefined}
+                aria-describedby={keyError ? keyErrorId : undefined}
                 placeholder={connected ? MASK : copy.keyPlaceholder}
                 type="password"
                 autoComplete="off"
@@ -179,7 +187,13 @@ function ComputerSection({
                 value={apiKey}
                 onChange={(event) => setApiKey(event.target.value)}
               />
-              <p className="mt-1 text-caption-1-regular text-text-tertiary">{copy.keyHint}</p>
+              {keyError ? (
+                <p id={keyErrorId} role="alert" className="mt-1 text-caption-1-regular text-text-error-primary">
+                  {keyError}
+                </p>
+              ) : (
+                <p className="mt-1 text-caption-1-regular text-text-tertiary">{copy.keyHint}</p>
+              )}
             </div>
             <div>
               <label className="mb-1.5 block text-caption-1-medium text-text-secondary" htmlFor={snapshotId}>
@@ -199,26 +213,24 @@ function ComputerSection({
           </div>
           <div className="flex flex-col gap-3 border-t border-separator-border pt-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-caption-1-regular text-text-tertiary">
-              {userComputers === null
-                ? "Checking whether personal computers run your work on this server..."
-                : userComputers
-                  ? `Connected, ${copy.name} runs your threads on your own account.`
-                  : `Stored for now. Runs stay on the server's computer until USER_COMPUTERS=on is set.`}
+              {computerFooterCopy(copy.name, userComputers, connected)}
             </p>
             <div className="flex items-center gap-2">
               {connection ? (
                 <span className="text-caption-1-regular text-text-tertiary">Updated {relTime(connection.updatedAt)}</span>
               ) : null}
-              <Button
-                type="button"
-                variant="danger"
-                size="xs"
-                className="rounded-full"
-                disabled={!connected || revoking}
-                onClick={() => void revoke()}
-              >
-                Revoke
-              </Button>
+              {connected ? (
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="xs"
+                  className="rounded-full"
+                  disabled={revoking}
+                  onClick={() => void revoke()}
+                >
+                  Revoke
+                </Button>
+              ) : null}
               <Button
                 type="submit"
                 variant="secondary"
@@ -231,7 +243,11 @@ function ComputerSection({
               </Button>
             </div>
           </div>
-          {formError ? <p className="text-caption-1-regular text-text-error-primary">{formError}</p> : null}
+          {revokeError ? (
+            <p role="alert" className="text-caption-1-regular text-text-error-primary">
+              {revokeError}
+            </p>
+          ) : null}
         </form>
       )}
     </section>
