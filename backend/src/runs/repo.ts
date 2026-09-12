@@ -1,5 +1,6 @@
 import type {
   ApiRun,
+  ApiRunLifecycle,
   ApiRunSummary,
   ApiStep,
   ApiThreadOutlineTurn,
@@ -51,6 +52,7 @@ export {
 // `satisfies` them, so any field or optionality drift is a compile error here.
 export type {
   ApiRun,
+  ApiRunLifecycle,
   ApiRunSummary,
   ApiStep,
   ApiThreadOutlineTurn,
@@ -137,6 +139,16 @@ async function gatewayChildRunIds(runIds: readonly string[]): Promise<ReadonlySe
       ),
     );
   return new Set(rows.map((r) => r.runId).filter((id): id is string => id !== null));
+}
+
+/** Runs with a committed durable cancel intent. */
+async function cancelledRunIds(runIds: readonly string[]): Promise<ReadonlySet<string>> {
+  if (runIds.length === 0) return new Set();
+  const rows = await db
+    .select({ runId: commands.runId })
+    .from(commands)
+    .where(and(inArray(commands.runId, [...runIds]), eq(commands.kind, "run.cancel")));
+  return new Set(rows.map((row) => row.runId).filter((id): id is string => id !== null));
 }
 
 /** Attach steps to a set of run rows in a single batched query, preserving the
@@ -400,6 +412,20 @@ export async function getCustomerRunForOrg(
   return row ?? null;
 }
 
+export async function getCustomerRunLifecycle(
+  orgId: string,
+  id: string,
+): Promise<ApiRunLifecycle | null> {
+  const run = await getCustomerRunForOrg(orgId, id);
+  if (!run) return null;
+  return {
+    id: run.id,
+    thread_id: run.threadId,
+    status: run.status,
+    cancelled: (await cancelledRunIds([id])).has(id),
+  };
+}
+
 export async function getCustomerRunWithSteps(
   orgId: string,
   id: string,
@@ -481,6 +507,12 @@ export async function listRunSummaries(
         candidate.org_id,
         candidate.thread_id,
         candidate.status,
+        exists (
+          select 1 from commands cancel_command
+          where cancel_command.run_id = candidate.id
+            and cancel_command.org_id = candidate.org_id
+            and cancel_command.kind = 'run.cancel'
+        ) as cancelled,
         candidate.created_at,
         candidate.updated_at,
         row_number() over (
@@ -506,6 +538,7 @@ export async function listRunSummaries(
         root.updated_at,
         latest.id as latest_run_id,
         latest.status as latest_status,
+        latest.cancelled as latest_cancelled,
         latest.created_at as latest_created_at,
         latest.updated_at as latest_updated_at,
         row_number() over (
@@ -537,7 +570,7 @@ export async function listRunSummaries(
     select
       id, prompt, model, engine, status, summary, duration_ms, project_id,
       repo, repos, created_at, updated_at,
-      latest_run_id, latest_status, latest_created_at, latest_updated_at
+      latest_run_id, latest_status, latest_cancelled, latest_created_at, latest_updated_at
     from selected_rows
     order by ${outputOrder}
   `);
@@ -561,6 +594,7 @@ export async function listRunSummaries(
       updated_at: new Date(row.updated_at as string | Date).toISOString(),
       latest_run_id: row.latest_run_id as string,
       latest_status: row.latest_status as RunStatus,
+      latest_cancelled: row.latest_cancelled as boolean,
       latest_created_at: new Date(row.latest_created_at as string | Date).toISOString(),
       latest_updated_at: new Date(row.latest_updated_at as string | Date).toISOString(),
     } satisfies ApiRunSummary;

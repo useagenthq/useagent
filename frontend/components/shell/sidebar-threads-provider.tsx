@@ -1,21 +1,23 @@
 "use client";
 
+import type { ThreadRelationship } from "@useagent/agent-client";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
-
 import { fetchSidebarRuns } from "@/app/agent/runs/runs-data";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import type { OrgChange } from "@/lib/org-changes";
 import { fetchThreadRelationshipIndex } from "@/lib/thread-relationships-data";
-import type { ThreadRelationship } from "@useagent/agent-client";
 import type { SidebarRun } from "./working-project-status";
 
 const SidebarThreadsContext = createContext<readonly SidebarRun[] | null>(null);
 const SidebarThreadRelationshipsContext = createContext<readonly ThreadRelationship[] | null>(null);
 
 export function refreshesSidebarThreads(change: OrgChange): boolean {
-  return change.type === "run" || change.type === "thread_relationship" ||
+  return (
+    change.type === "run" ||
+    change.type === "thread_relationship" ||
     change.type === "execution_graph" ||
-    (change.type === "automation" && change.action === "fired");
+    (change.type === "automation" && change.action === "fired")
+  );
 }
 
 /** Owns the shell's single thread snapshot and refreshes it from the shared SSE. */
@@ -38,9 +40,12 @@ export function SidebarThreadsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  useOrgChanges((change) => {
-    if (refreshesSidebarThreads(change)) void load(true);
-  });
+  useOrgChanges(
+    (change) => {
+      if (refreshesSidebarThreads(change)) void load(true);
+    },
+    () => void load(true),
+  );
 
   useEffect(() => {
     void load();

@@ -1,11 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
-import { db } from "../src/db/client";
-import { commands, runs } from "../src/db/schema";
 import { acceptRunCommand } from "../src/commands";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../src/commands/cancel";
 import { claimNextRun, listActiveCommands, settleCommandForRun } from "../src/commands/dispatch";
-import { completeRun, setRunStatus } from "../src/runs/repo";
+import { db } from "../src/db/client";
+import { commands, runs } from "../src/db/schema";
+import { subscribeOrg, type OrgChange } from "../src/runs/org-signals";
+import {
+  completeRun,
+  getCustomerRunLifecycle,
+  listRunSummaries,
+  setRunStatus,
+} from "../src/runs/repo";
 import { terminalOnReturn } from "../src/worker";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
 
@@ -50,13 +56,30 @@ async function runStatus(runId: string): Promise<string | null> {
   return (row?.status as string) ?? null;
 }
 
+async function acceptCancelWithChanges(runId: string) {
+  const changes: OrgChange[] = [];
+  const unsubscribe = subscribeOrg(ORG, (change) => changes.push(change));
+  try {
+    const outcome = await acceptRunCancel({ orgId: ORG, actorId: null, runId });
+    return { outcome, changes };
+  } finally {
+    unsubscribe();
+  }
+}
+
 describe("durable run cancellation", () => {
   test("cancelling a QUEUED run fails it 'Stopped by user' and settles its command in one tx", async () => {
     const runId = await enqueueRoot();
 
-    const out = await acceptRunCancel({ orgId: ORG, actorId: null, runId });
+    const { outcome: out, changes } = await acceptCancelWithChanges(runId);
     expect(out.status).toBe("accepted");
     if (out.status === "accepted") expect(out.runStatusWas).toBe("queued");
+    expect(changes).toEqual([{
+      type: "run",
+      action: "cancelled",
+      runId,
+      threadId: runId,
+    }]);
 
     // Run failed honestly; its run.create command settled; run.cancel recorded.
     expect(await runStatus(runId)).toBe("failed");
@@ -64,6 +87,9 @@ describe("durable run cancellation", () => {
     expect(r.summary).toBe(CANCEL_SUMMARY);
     expect(await cmdState(runId, "run.create")).toBe("completed");
     expect(await cmdState(runId, "run.cancel")).toBe("completed");
+    expect((await getCustomerRunLifecycle(ORG, runId))?.cancelled).toBe(true);
+    expect((await listRunSummaries(ORG)).find((run) => run.id === runId)?.latest_cancelled)
+      .toBe(true);
 
     // A cancelled queued run can NEVER be dispatched (its command is completed),
     // so the boot reconciler / pump can't resurrect it.
@@ -75,15 +101,22 @@ describe("durable run cancellation", () => {
     expect(await claimNextRun(runId)).toBe(runId); // dispatched
     await setRunStatus(runId, "running");
 
-    const out = await acceptRunCancel({ orgId: ORG, actorId: null, runId });
+    const { outcome: out, changes } = await acceptCancelWithChanges(runId);
     expect(out.status).toBe("accepted");
     if (out.status === "accepted") expect(out.runStatusWas).toBe("running");
+    expect(changes).toEqual([{
+      type: "run",
+      action: "cancelled",
+      runId,
+      threadId: runId,
+    }]);
 
     // The tx does NOT fail a running run (its live actor stops it); only the
     // durable cancel intent is recorded (already terminal).
     expect(await runStatus(runId)).toBe("running");
     expect(await cmdState(runId, "run.cancel")).toBe("completed");
     expect(await cmdState(runId, "run.create")).toBe("dispatched");
+    expect((await getCustomerRunLifecycle(ORG, runId))?.cancelled).toBe(true);
 
     // retire so this run doesn't pollute a later boot reconcile in the suite.
     await db.execute(sql`update commands set state='completed' where run_id=${runId}`);

@@ -35,6 +35,7 @@ import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { SearchCommand } from "./search-command";
 import { NAV_ICON_TONE, type NavIconTone, SidebarNavItem } from "./sidebar-nav";
+import { TaskSoundToggle } from "./task-sound-toggle";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 import { useWorkingSignal } from "./working-signal";
@@ -258,6 +259,7 @@ export function AppSidebarFrame({
             isCollapsed ? "flex-row md:flex-col-reverse" : "flex-row",
           )}
         >
+          {!isCollapsed && <TaskSoundToggle />}
           {!isCollapsed && <ThemeToggle />}
           <SidebarTrigger className="rounded-2lg text-foreground-icon-secondary hover:bg-background-secondary-hover hover:text-foreground-icon-primary" />
         </div>
