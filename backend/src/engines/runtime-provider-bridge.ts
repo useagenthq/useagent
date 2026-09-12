@@ -9,7 +9,6 @@ import {
   CLAUDE_MCP_CONFIG_FILE,
   CLAUDE_SETTINGS_FILE,
   claudeProviderGatewayEnvironment,
-  markProviderGatewaySandboxCurrent,
   prepareProviderGatewaySandbox,
   providerGatewayEnv,
 } from "../provider-gateway/sandbox-config";
@@ -20,11 +19,6 @@ import {
 import { engineAuthMode } from "../runs/engine-auth-mode";
 import type { EngineRunContext } from "./types";
 import {
-  prepareOpencodeSandboxConfig,
-  readOpencodeSandboxConfig,
-  writeOpencodeSandboxConfig,
-} from "./opencode-server";
-import {
   RUNTIME_ENVIRONMENT_HOME,
   RUNTIME_ENVIRONMENT_WORKDIR,
   runtimeEnvironmentEnabled,
@@ -34,6 +28,8 @@ import {
   type CodexSubscriptionLease,
 } from "./codex-subscription-runtime";
 import { ensureSandboxBun, sandboxBunExecutable } from "./sandbox-bun";
+import { prepareOpenCodeGateway } from "./opencode-model-limit-refresh";
+export { openCodeModelLimitsChanged } from "./opencode-model-limit-refresh";
 
 const RUNTIME_SETTINGS_PATH = `${RUNTIME_ENVIRONMENT_HOME}/userdata/settings.json`;
 const RUNTIME_BIN_DIRECTORY = `${RUNTIME_ENVIRONMENT_HOME}/skynet-bin`;
@@ -103,6 +99,10 @@ type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
 export interface RuntimeProviderBridgeLease extends CodexSubscriptionLease {
   readonly authPath: CodexBridgeAuthPath | null;
   readonly readiness: RuntimeProviderReadiness | null;
+  readonly modelLimitsChanged: boolean;
+  readonly modelLimitsRevision: string | null;
+  readonly modelLimitsChangedAt: string | null;
+  readonly ackModelLimitsReload: () => Promise<void>;
 }
 
 export interface RuntimeProviderReadiness {
@@ -115,6 +115,10 @@ const NOOP_PROVIDER_BRIDGE_LEASE: RuntimeProviderBridgeLease = {
   authPath: null,
   authEpoch: null,
   readiness: null,
+  modelLimitsChanged: false,
+  modelLimitsRevision: null,
+  modelLimitsChangedAt: null,
+  async ackModelLimitsReload() {},
   async close() {},
 };
 
@@ -122,6 +126,10 @@ const CODEX_GATEWAY_BRIDGE_LEASE: RuntimeProviderBridgeLease = {
   authPath: "provider_gateway",
   authEpoch: null,
   readiness: null,
+  modelLimitsChanged: false,
+  modelLimitsRevision: null,
+  modelLimitsChangedAt: null,
+  async ackModelLimitsReload() {},
   async close() {},
 };
 
@@ -570,19 +578,6 @@ async function prepareClaudeRuntimeAccess(
   }
 }
 
-async function prepareOpenCodeGateway(
-  sandbox: SandboxHandle,
-  ctx: EngineRunContext,
-): Promise<void> {
-  const baseConfig = await readOpencodeSandboxConfig(sandbox);
-  const prepared = await prepareOpencodeSandboxConfig(sandbox, ctx, baseConfig);
-  if (!prepared?.state.provider) {
-    throw new Error("the provider runtime OpenCode provider gateway configuration failed");
-  }
-  await writeOpencodeSandboxConfig(sandbox, prepared.config);
-  await markProviderGatewaySandboxCurrent(sandbox);
-}
-
 /**
  * Backend-only selector for subscription-backed Codex runtime auth. The returned
  * managed app-server home is never copied into the sandbox; callers must use it
@@ -627,7 +622,17 @@ export async function prepareRuntimeProviderBridge(
   await prepareStableRuntimeProvider(sandbox, ctx, engine);
 
   if (engine === "opencode") {
-    await prepareOpenCodeGateway(sandbox, ctx);
+    const modelLimitRefresh = await prepareOpenCodeGateway(sandbox, ctx);
+    return {
+      authPath: null,
+      authEpoch: null,
+      readiness: null,
+      modelLimitsChanged: modelLimitRefresh.changed,
+      modelLimitsRevision: modelLimitRefresh.revision,
+      modelLimitsChangedAt: modelLimitRefresh.changedAt,
+      ackModelLimitsReload: modelLimitRefresh.acknowledge,
+      async close() {},
+    };
   } else if (engine === "claude") {
     await prepareProviderGatewaySandbox(sandbox, ctx, engine, {
       rootOwnedClaudeCapability: layout.runsAsRoot,
@@ -646,6 +651,10 @@ export async function prepareRuntimeProviderBridge(
         authPath: "subscription",
         authEpoch: lease.authEpoch,
         readiness: null,
+        modelLimitsChanged: false,
+        modelLimitsRevision: null,
+        modelLimitsChangedAt: null,
+        async ackModelLimitsReload() {},
         close: () => lease.close(),
       };
     }
@@ -658,6 +667,10 @@ export async function prepareRuntimeProviderBridge(
       authPath: null,
       authEpoch: null,
       readiness: claudeProviderReadiness(claudeEnvironment),
+      modelLimitsChanged: false,
+      modelLimitsRevision: null,
+      modelLimitsChangedAt: null,
+      async ackModelLimitsReload() {},
       async close() {},
     };
   }

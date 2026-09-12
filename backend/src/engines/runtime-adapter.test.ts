@@ -12,10 +12,307 @@ import {
   ensureRuntimeProviderReadyForTurn,
   projectRuntimeAssistantText,
   readRuntimeTerminalSnapshot,
+  reloadRetainedOpenCodeSession,
   RUNTIME_EMPTY_TERMINAL_OUTPUT_ERROR,
+  type OpenCodeSessionReloadDependencies,
 } from "./runtime-adapter";
+import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
+import type { RuntimeEnvironmentRequest } from "./runtime-environment-client";
+import type { SandboxHandle } from "../sandboxes/provider";
+
+function reloadSnapshot(
+  sessionStatus: string | null,
+  turnState: "running" | "completed" | null = "completed",
+  threadId = "thread-1",
+): RuntimeThreadSnapshot {
+  return {
+    snapshotSequence: 1,
+    thread: {
+      id: threadId,
+      latestTurn: turnState === null
+        ? null
+        : {
+            turnId: "turn-1",
+            state: turnState,
+            requestedAt: "2026-09-05T00:00:00.000Z",
+            startedAt: "2026-09-05T00:00:00.001Z",
+            completedAt: turnState === "running" ? null : "2026-09-05T00:00:00.002Z",
+            assistantMessageId: null,
+          },
+      messages: [],
+      activities: [],
+      session: sessionStatus === null
+        ? null
+        : {
+            threadId,
+            status: sessionStatus,
+            providerName: "opencode",
+            runtimeMode: "full-access",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: "2026-09-05T00:00:00.000Z",
+          },
+    },
+  } as unknown as RuntimeThreadSnapshot;
+}
+
+const reloadCommandState = {
+  modelLimitsChanged: true,
+  modelLimitsRevision: "revision-1",
+  modelLimitsChangedAt: "2026-09-05T00:00:00.000Z",
+} as const;
 
 describe("T3 run adapter gate", () => {
+  test("stops an idle retained OpenCode session before continuing", async () => {
+    const calls: Array<{
+      method: string;
+      path: string;
+      payload?: Readonly<Record<string, unknown>>;
+    }> = [];
+    const snapshots = [
+      reloadSnapshot("ready", "completed", "skynet-thread-thread-1"),
+      reloadSnapshot("stopped", "completed", "skynet-thread-thread-1"),
+    ];
+    await reloadRetainedOpenCodeSession({
+      sandbox: {} as never,
+      signal: new AbortController().signal,
+      threadId: "skynet-thread-thread-1",
+      threadExists: true,
+      ...reloadCommandState,
+      dependencies: {
+        requestEnvironment: async <T>(
+          _sandbox: SandboxHandle,
+          request: RuntimeEnvironmentRequest,
+        ) => {
+          calls.push(request);
+          if (request.method === "GET") return snapshots.shift() as T;
+          return {} as T;
+        },
+        wait: async () => {},
+      } satisfies OpenCodeSessionReloadDependencies,
+    });
+
+    expect(calls.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "GET /api/orchestration/threads/skynet-thread-thread-1",
+      "POST /api/orchestration/dispatch",
+      "GET /api/orchestration/threads/skynet-thread-thread-1",
+    ]);
+    expect(calls[1]?.payload).toMatchObject({
+      type: "thread.session.stop",
+      threadId: "skynet-thread-thread-1",
+    });
+  });
+
+  test("skips cold and unchanged OpenCode sessions", async () => {
+    let requests = 0;
+    const dependencies = {
+      requestEnvironment: async <T>() => {
+        requests += 1;
+        return {} as T;
+      },
+      wait: async () => {},
+    } satisfies OpenCodeSessionReloadDependencies;
+    await reloadRetainedOpenCodeSession({
+      sandbox: {} as never,
+      signal: new AbortController().signal,
+      threadId: "thread-1",
+      threadExists: false,
+      ...reloadCommandState,
+      dependencies,
+    });
+    await reloadRetainedOpenCodeSession({
+      sandbox: {} as never,
+      signal: new AbortController().signal,
+      threadId: "thread-1",
+      threadExists: true,
+      modelLimitsChanged: false,
+      dependencies,
+    });
+    expect(requests).toBe(0);
+  });
+
+  test("accepts only an explicit null session as the retained no-session path", async () => {
+    const calls: string[] = [];
+    await reloadRetainedOpenCodeSession({
+      sandbox: {} as never,
+      signal: new AbortController().signal,
+      threadId: "thread-1",
+      threadExists: true,
+      ...reloadCommandState,
+      dependencies: {
+        requestEnvironment: async <T>(
+          _sandbox: SandboxHandle,
+          request: RuntimeEnvironmentRequest,
+        ) => {
+          calls.push(`${request.method} ${request.path}`);
+          return reloadSnapshot(null) as T;
+        },
+        wait: async () => {},
+      } satisfies OpenCodeSessionReloadDependencies,
+    });
+    expect(calls).toEqual(["GET /api/orchestration/threads/thread-1"]);
+  });
+
+  test.each([
+    ["running", "completed", "retained session is running"],
+    ["starting", "completed", "retained session is starting"],
+    ["stopped", "running", "retained native turn is running"],
+  ] as const)("refuses unsafe %s OpenCode session state", async (status, turnState, message) => {
+    const calls: string[] = [];
+    await expect(reloadRetainedOpenCodeSession({
+      sandbox: {} as never,
+      signal: new AbortController().signal,
+      threadId: "thread-1",
+      threadExists: true,
+      ...reloadCommandState,
+      dependencies: {
+        requestEnvironment: async <T>(
+          _sandbox: SandboxHandle,
+          request: RuntimeEnvironmentRequest,
+        ) => {
+          calls.push(`${request.method} ${request.path}`);
+          return reloadSnapshot(status, turnState) as T;
+        },
+        wait: async () => {},
+      } satisfies OpenCodeSessionReloadDependencies,
+    })).rejects.toThrow(message);
+    expect(calls).toEqual(["GET /api/orchestration/threads/thread-1"]);
+  });
+
+  test.each(["missing", "unknown"] as const)(
+    "fails closed on a %s retained session shape",
+    async (shape) => {
+      const snapshot = reloadSnapshot("ready") as unknown as {
+        thread: { session?: Record<string, unknown> | null };
+      };
+      if (shape === "missing") delete snapshot.thread.session;
+      else snapshot.thread.session!.status = "future-state";
+
+      await expect(reloadRetainedOpenCodeSession({
+        sandbox: {} as never,
+        signal: new AbortController().signal,
+        threadId: "thread-1",
+        threadExists: true,
+        ...reloadCommandState,
+        dependencies: {
+          requestEnvironment: async <T>() => snapshot as T,
+          wait: async () => {},
+        } satisfies OpenCodeSessionReloadDependencies,
+      })).rejects.toThrow("snapshot is malformed");
+    },
+  );
+
+  test("reuses the stop command after a lost transport response", async () => {
+    const stopCommands: Readonly<Record<string, unknown>>[] = [];
+    const runAttempt = (loseResponse: boolean) => {
+      let reads = 0;
+      return reloadRetainedOpenCodeSession({
+        sandbox: {} as never,
+        signal: new AbortController().signal,
+        threadId: "thread-1",
+        threadExists: true,
+        ...reloadCommandState,
+        dependencies: {
+          requestEnvironment: async <T>(
+            _sandbox: SandboxHandle,
+            request: RuntimeEnvironmentRequest,
+          ) => {
+            if (request.method === "POST") {
+              stopCommands.push(request.payload!);
+              if (loseResponse) throw new Error("transport response lost");
+              return {} as T;
+            }
+            reads += 1;
+            return reloadSnapshot(!loseResponse && reads > 1 ? "stopped" : "ready") as T;
+          },
+          wait: async () => {},
+        } satisfies OpenCodeSessionReloadDependencies,
+      });
+    };
+
+    await expect(runAttempt(true)).rejects.toThrow("transport response lost");
+    await expect(runAttempt(false)).resolves.toBeUndefined();
+    expect(stopCommands).toHaveLength(2);
+    expect(stopCommands[1]).toEqual(stopCommands[0]);
+  });
+
+  test("fails without acknowledgement when the conditional stop observes re-engagement", async () => {
+    let reads = 0;
+    let stopCommand: Readonly<Record<string, unknown>> | undefined;
+    await expect(reloadRetainedOpenCodeSession({
+      sandbox: {} as never,
+      signal: new AbortController().signal,
+      threadId: "thread-1",
+      threadExists: true,
+      ...reloadCommandState,
+      dependencies: {
+        requestEnvironment: async <T>(
+          _sandbox: SandboxHandle,
+          request: RuntimeEnvironmentRequest,
+        ) => {
+          if (request.method === "POST") {
+            stopCommand = request.payload;
+            throw new Error("conditional stop rejected");
+          }
+          reads += 1;
+          return reloadSnapshot(reads === 1 ? "ready" : "running", "completed") as T;
+        },
+        wait: async () => {},
+      } satisfies OpenCodeSessionReloadDependencies,
+    })).rejects.toThrow("reactivated before the conditional stop");
+    expect(stopCommand).toMatchObject({
+      type: "thread.session.stop",
+      onlyIfSettled: true,
+    });
+  });
+
+  test("fails closed on cancellation and stop timeout", async () => {
+    const reason = new Error("turn cancelled");
+    const controller = new AbortController();
+    await expect(reloadRetainedOpenCodeSession({
+      sandbox: {} as never,
+      signal: controller.signal,
+      threadId: "thread-1",
+      threadExists: true,
+      ...reloadCommandState,
+      dependencies: {
+        requestEnvironment: async <T>(
+          _sandbox: SandboxHandle,
+          request: RuntimeEnvironmentRequest,
+        ) => {
+          if (request.method === "POST") controller.abort(reason);
+          return reloadSnapshot("ready") as T;
+        },
+        wait: async () => {},
+      } satisfies OpenCodeSessionReloadDependencies,
+    })).rejects.toBe(reason);
+
+    let dispatches = 0;
+    await expect(reloadRetainedOpenCodeSession({
+      sandbox: {} as never,
+      signal: new AbortController().signal,
+      threadId: "thread-1",
+      threadExists: true,
+      ...reloadCommandState,
+      deadlineMs: 10,
+      dependencies: {
+        requestEnvironment: async <T>(
+          _sandbox: SandboxHandle,
+          request: RuntimeEnvironmentRequest,
+        ) => {
+          if (request.method === "POST") dispatches += 1;
+          return reloadSnapshot("ready") as T;
+        },
+        wait: async (signal) => {
+          await new Promise<void>((_resolve, reject) =>
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+          );
+        },
+      } satisfies OpenCodeSessionReloadDependencies,
+    })).rejects.toThrow("Timed out waiting for the retained OpenCode session to stop");
+    expect(dispatches).toBe(1);
+  });
+
   test("is disabled unless explicitly enabled", () => {
     expect(runtimeAdapterEnabled({})).toBe(false);
     expect(runtimeAdapterEnabled({ RUNTIME_RUN_ADAPTER_ENABLED: "true" })).toBe(true);
@@ -159,6 +456,30 @@ describe("T3 run adapter gate", () => {
     expect(source).toContain("const priorSnapshot = await readThreadSnapshot(ctx, sandbox);");
     expect(source).not.toContain("established.resumed\n          ? await readThreadSnapshot");
     expect(source).toContain("const steerResult = await driver.steer({");
+    const reloadIdx = source.indexOf("await reloadRetainedOpenCodeSession({");
+    const ackIdx = source.indexOf("await providerBridgeLease.ackModelLimitsReload();");
+    const establishIdx = source.indexOf("await establishProviderSession({");
+    const steerIdx = source.indexOf("const steerResult = await driver.steer({");
+    expect(reloadIdx).toBeGreaterThan(-1);
+    expect(ackIdx).toBeGreaterThan(reloadIdx);
+    expect(establishIdx).toBeGreaterThan(ackIdx);
+    expect(steerIdx).toBeGreaterThan(establishIdx);
+    const reloadModuleSource = readFileSync(
+      new URL("./runtime-session-stop.ts", import.meta.url),
+      "utf8",
+    );
+    const reloadFunctionIdx = reloadModuleSource.indexOf(
+      "export async function reloadRetainedOpenCodeSession",
+    );
+    expect(reloadFunctionIdx).toBeGreaterThan(-1);
+    const reloadSource = reloadModuleSource.slice(reloadFunctionIdx);
+    expect(reloadSource.length).toBeGreaterThan(0);
+    expect(reloadSource).not.toContain("restartRuntimeEnvironment");
+    expect(reloadSource).not.toContain("deleteSession");
+    expect(reloadSource).not.toContain("sandbox.delete");
+    expect(reloadSource).not.toContain("driver.cancel");
+    expect(reloadSource).not.toContain("/config");
+    expect(reloadSource).not.toContain("global/dispose");
     expect(source).toContain("metadata: { runtimeMode, createdAt }");
     expect(source).toContain("activityStep(activity, runtimeThreadId(ctx))");
     expect(source).toContain("ctx.publishDelta?.(delta)");

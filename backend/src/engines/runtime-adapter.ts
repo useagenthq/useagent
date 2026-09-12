@@ -60,6 +60,12 @@ import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 import { operatorEnv } from "./runtime-env";
 import { prepareSandboxTurn } from "./sandbox-turn-preparation";
 import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
+import { reloadRetainedOpenCodeSession } from "./runtime-session-stop";
+import { awaitRuntimeOperation } from "./runtime-operation";
+export {
+  reloadRetainedOpenCodeSession,
+  type OpenCodeSessionReloadDependencies,
+} from "./runtime-session-stop";
 
 const RUNTIME_POLL_INTERVAL_MS = 125;
 // T3 can publish root idle just before the final assistant projection. Re-read
@@ -301,48 +307,6 @@ export async function drainRuntimeTerminalOutput(input: {
   }
   input.signal.throwIfAborted();
   return text;
-}
-
-function awaitRuntimeOperation<T>(
-  operation: Promise<T>,
-  signal: AbortSignal,
-  cleanup: () => Promise<void>,
-): Promise<T> {
-  if (signal.aborted) {
-    void cleanup();
-    void operation.then(
-      () => cleanup().catch(() => {}),
-      () => cleanup().catch(() => {}),
-    );
-    return Promise.reject(signal.reason);
-  }
-  return new Promise<T>((resolve, reject) => {
-    let aborted = false;
-    const onAbort = () => {
-      aborted = true;
-      void cleanup();
-      reject(signal.reason);
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    operation.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        if (aborted) {
-          void cleanup();
-          return;
-        }
-        resolve(value);
-      },
-      (error) => {
-        signal.removeEventListener("abort", onAbort);
-        if (aborted) {
-          void cleanup();
-          return;
-        }
-        reject(error);
-      },
-    );
-  });
 }
 
 export function createRuntimeTerminalSessionCleanup(
@@ -627,6 +591,18 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         endShell?.();
         const threadId = runtimeThreadId(ctx);
         const threadExists = shell.threads.some((thread) => thread.id === threadId);
+        if (engine === "opencode") {
+          await reloadRetainedOpenCodeSession({
+            sandbox,
+            signal: ctx.signal,
+            threadId,
+            threadExists,
+            modelLimitsChanged: providerBridgeLease.modelLimitsChanged,
+            modelLimitsRevision: providerBridgeLease.modelLimitsRevision,
+            modelLimitsChangedAt: providerBridgeLease.modelLimitsChangedAt,
+          });
+          await providerBridgeLease.ackModelLimitsReload();
+        }
         const createdAt = new Date().toISOString();
         const runtimeMode = configuredRuntimeMode();
         const negotiatedCapabilities = sessionCapabilities(engine, {
