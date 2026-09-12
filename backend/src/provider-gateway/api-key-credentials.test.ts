@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { sealSecret } from "../secrets/crypto";
 import {
+  gatewayComputerApiKeyConnectionFromRow,
   openGatewayProviderApiKeyCredential,
   type GatewayProviderApiKeyCredentialRow,
 } from "./api-key-credentials";
@@ -59,5 +60,37 @@ describe("gateway provider API-key credentials", () => {
       authMethod: "api_key",
       value: "sk-revoked",
     }, { status: "revoked" }))).toBeNull();
+  });
+
+  test("resolves a computer connection whether updated_at arrives as a Date or as text", () => {
+    const base = rowFor({ authMethod: "api_key", value: "dtn_key" });
+    const asDate = gatewayComputerApiKeyConnectionFromRow({
+      ...base,
+      provider: "daytona",
+      metadata: { snapshotName: "snap" },
+      updated_at: new Date("2026-09-05T12:00:00.000Z"),
+    });
+    expect(asDate).toEqual({
+      provider: "daytona",
+      value: "dtn_key",
+      metadata: { snapshotName: "snap" },
+      updatedAt: "2026-09-05T12:00:00.000Z",
+    });
+
+    const asText = gatewayComputerApiKeyConnectionFromRow({
+      ...base,
+      provider: "box",
+      metadata: null,
+      updated_at: "2026-09-05 12:00:00.000+00",
+    });
+    expect(asText?.updatedAt).toBe("2026-09-05T12:00:00.000Z");
+    expect(asText?.metadata).toEqual({});
+
+    expect(gatewayComputerApiKeyConnectionFromRow({
+      ...rowFor({ authMethod: "api_key", value: "sk-revoked" }, { status: "revoked" }),
+      provider: "daytona",
+      metadata: {},
+      updated_at: new Date(),
+    })).toBeNull();
   });
 });
