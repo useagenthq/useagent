@@ -84,6 +84,68 @@ function requireDnsHostname(value: string, envName: string): string {
   return value;
 }
 
+/** The stages of the readiness probe, in the order the sandbox must pass them. */
+type CubeReadinessStage = "identity" | "workspace" | "preview_dns" | "public_dns" | "command";
+
+const READINESS_STAGE_LABELS: Record<CubeReadinessStage, string> = {
+  identity: "runtime identity (uid, HOME) check",
+  workspace: "workspace directory check",
+  preview_dns: "DNS lookup of the preview host",
+  public_dns: "DNS lookup of the public host",
+  command: "command transport (envd over the data plane)",
+};
+
+export interface CubeReadinessFailure {
+  readonly stage: CubeReadinessStage;
+  readonly detail: string;
+}
+
+/**
+ * The probe prints which stage stopped it so the failure names one thing. The
+ * identity command exits non-zero for identity problems and prints
+ * "workspace" when only the workspace is missing (see identityPreflightCommand).
+ */
+export function cubeReadinessProbeCommand(
+  identityPreflightCommand: string,
+  previewHost: string,
+  publicHost: string,
+): string {
+  return (
+    `out=$( { ${identityPreflightCommand}; } 2>&1 ) || { printf 'STAGE=identity %s' "$out" | head -c 400; exit 10; }; ` +
+    `test -d "$HOME/work" || mkdir -p "$HOME/work" 2>/dev/null || { printf 'STAGE=workspace HOME=%s' "$HOME"; exit 11; }; ` +
+    `getent hosts ${previewHost} >/dev/null 2>&1 || { printf 'STAGE=preview_dns %s' ${JSON.stringify(previewHost)}; exit 12; }; ` +
+    `getent hosts ${publicHost} >/dev/null 2>&1 || { printf 'STAGE=public_dns %s' ${JSON.stringify(publicHost)}; exit 13; }; ` +
+    `printf READY`
+  );
+}
+
+/** Turn one probe outcome (an exit code plus output, or a thrown transport error) into the failing stage. */
+export function classifyCubeReadinessProbe(
+  outcome: { readonly exitCode?: number; readonly result?: string } | { readonly error: unknown },
+): CubeReadinessFailure | null {
+  if ("error" in outcome) {
+    const message = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+    return { stage: "command", detail: message };
+  }
+  const text = (outcome.result ?? "").trim();
+  if (outcome.exitCode === 0) return null;
+  const match = /STAGE=(identity|workspace|preview_dns|public_dns)\s*([\s\S]*)$/.exec(text);
+  if (match) {
+    return { stage: match[1] as CubeReadinessStage, detail: match[2]?.trim() || `exit ${outcome.exitCode ?? "?"}` };
+  }
+  return { stage: "command", detail: `exit ${outcome.exitCode ?? "?"}${text ? `: ${text.slice(0, 200)}` : ""}` };
+}
+
+export function describeCubeReadinessFailure(sandboxId: string, attempts: number, failure: CubeReadinessFailure): string {
+  return (
+    `Cube sandbox ${sandboxId} failed readiness after ${attempts} attempts at the ` +
+    `${READINESS_STAGE_LABELS[failure.stage]}: ${failure.detail}` +
+    (failure.stage === "command"
+      ? " (a backend off the Cube host must trust the data plane's private CA via NODE_EXTRA_CA_CERTS)"
+      : "")
+  );
+}
+
 async function waitForCubeReadiness(
   sandbox: SandboxHandle,
   domain: string,
@@ -102,28 +164,29 @@ async function waitForCubeReadiness(
     process.env.CUBE_READINESS_PUBLIC_HOST?.trim() || "github.com",
     "CUBE_READINESS_PUBLIC_HOST",
   );
+  const command = cubeReadinessProbeCommand(identityPreflightCommand, previewHost, publicHost);
 
+  let last: CubeReadinessFailure = { stage: "command", detail: "probe never ran" };
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    let failure: CubeReadinessFailure | null;
     try {
-      const probe = await sandbox.process.executeCommand(
-        `${identityPreflightCommand} >/dev/null && ` +
-          `getent hosts ${previewHost} >/dev/null 2>&1 && getent hosts ${publicHost} >/dev/null 2>&1`,
-        undefined,
-        undefined,
-        5,
+      failure = classifyCubeReadinessProbe(
+        await sandbox.process.executeCommand(command, undefined, undefined, 5),
       );
-      if (probe.exitCode === 0) return;
-    } catch {
+    } catch (error) {
       // Cube's envd and resolver can become reachable independently; retry both
       // through the next command probe rather than declaring the VM ready.
+      failure = classifyCubeReadinessProbe({ error });
     }
+    if (!failure) return;
+    last = failure;
     if (attempt < attempts) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
-  throw new Error(
-    `Cube sandbox ${sandbox.id} did not reach root identity/workspace and command/DNS readiness`,
-  );
+  const message = describeCubeReadinessFailure(sandbox.id, attempts, last);
+  console.error(`[sandbox-cube] ${message}`);
+  throw new Error(message);
 }
 
 class CubeRuntimeIdentityMismatchError extends Error {}
