@@ -47,6 +47,8 @@ function wire(view: ThreadRelationshipView) {
     engine: view.engine,
     model: view.model,
     latest_run_id: view.latestRunId,
+    latest_summary: view.latestSummary,
+    latest_duration_ms: view.latestDurationMs,
     latest_activity_at: view.latestActivityAt.toISOString(),
     created_at: view.createdAt.toISOString(),
     updated_at: view.updatedAt.toISOString(),

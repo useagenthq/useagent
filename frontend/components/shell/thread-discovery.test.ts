@@ -1,14 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   filterCommandEntries,
-  findRelationshipMatches,
   findThreadMatches,
   rankThreads,
   threadActivityTimestamp,
   threadStatusPresentation,
 } from "./thread-discovery";
 import type { SidebarRun } from "./working-project-status";
-import type { ThreadRelationship } from "@useagent/agent-client";
 
 function run(overrides: Partial<SidebarRun> & Pick<SidebarRun, "id">): SidebarRun {
   return {
@@ -57,26 +55,6 @@ describe("thread discovery search", () => {
     expect(filterCommandEntries(commands, "")).toEqual(commands);
   });
 
-  test("finds product children by title, engine, model, and parent title", () => {
-    const base = {
-      familyThreadId: "root",
-      sourceRunId: "root",
-      sourceExecutionId: null,
-      createdAt: "2026-09-01T00:00:00.000Z",
-      updatedAt: "2026-09-01T00:00:00.000Z",
-      status: "completed",
-      engine: "codex",
-      model: "gpt-5.6-sol",
-      latestActivityAt: "2026-09-01T00:00:00.000Z",
-    } as const;
-    const relationships: ThreadRelationship[] = [
-      { ...base, threadId: "root", parentThreadId: null, kind: "root", title: "Calendar app", latestRunId: "root" },
-      { ...base, threadId: "child", parentThreadId: "root", kind: "delegated", title: "Keyboard design", latestRunId: "child" },
-    ];
-    expect(findRelationshipMatches(relationships, "keyboard").map((item) => item.threadId)).toEqual(["child"]);
-    expect(findRelationshipMatches(relationships, "calendar").map((item) => item.threadId)).toEqual(["child"]);
-    expect(findRelationshipMatches(relationships, "gpt-5.6").map((item) => item.threadId)).toEqual(["child"]);
-  });
 });
 
 describe("thread discovery ordering and status", () => {

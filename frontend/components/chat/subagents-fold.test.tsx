@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createCanonicalThreadStore, type CanonicalThreadEvent } from "@useagent/agent-client";
+import type { ThreadRelationship } from "@useagent/agent-client";
 import type { CanonicalChildEventLike } from "./canonical-children";
 import { EXECUTION_SUMMARY_ROLLOUT_MODE } from "./execution-summary-rollout";
 import { type GatewayChildSession, SubagentsFold } from "./subagents-fold";
@@ -29,6 +30,26 @@ const gatewayChild = (over: Partial<GatewayChildSession> = {}): GatewayChildSess
   model: "claude-sonnet-5",
   status: "queued",
   summary: null,
+  ...over,
+});
+
+const productChild = (over: Partial<ThreadRelationship> = {}): ThreadRelationship => ({
+  threadId: "product-child-1",
+  parentThreadId: "root",
+  familyThreadId: "root",
+  kind: "delegated",
+  title: "Research NVIDIA and Google",
+  sourceRunId: "root",
+  sourceExecutionId: null,
+  createdAt: "2026-09-01T00:00:00.000Z",
+  updatedAt: "2026-09-01T00:01:00.000Z",
+  status: "completed",
+  engine: "codex",
+  model: "gpt-5.6-luna",
+  latestRunId: "product-child-1",
+  latestSummary: "NVIDIA and Google prices are ready.",
+  latestDurationMs: 1_500,
+  latestActivityAt: "2026-09-01T00:01:00.000Z",
   ...over,
 });
 
@@ -136,5 +157,20 @@ describe("subagents fold (inline conversation group)", () => {
     expect(html).toContain("Running");
     expect(html).toContain('href="/session/c1"');
     expect(html).toContain('href="/session/c2"');
+  });
+
+  test("keeps a completed product child visible in the parent without a page link", () => {
+    const html = renderToStaticMarkup(
+      <SubagentsFold
+        steps={[]}
+        live={false}
+        productChildren={[productChild()]}
+      />,
+    );
+    expect(html).toContain("1 subagent");
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain("NVIDIA and Google prices are ready.");
+    expect(html).toContain('aria-label="Inspect child agent: Research NVIDIA and Google"');
+    expect(html).not.toContain('href="/session/product-child-1"');
   });
 });

@@ -251,23 +251,24 @@ export function projectChildTree(input: ProjectChildTreeInput): ChildTreeNode[] 
   const productIds = new Set((input.productChildren ?? []).map((child) => child.threadId));
   for (const [index, child] of (input.productChildren ?? []).entries()) {
     const id = `product:${child.threadId}`;
+    const status = nativeStatus(child.status, false);
     const aliases = [child.threadId, child.latestRunId]
       .filter((value): value is string => Boolean(value));
     flat.set(id, {
       id,
       lane: "product",
       title: child.title,
-      prompt: null,
+      prompt: child.title,
       provider: null,
       engine: child.engine,
       model: child.model,
       role: "Product child",
-      progress: null,
-      result: null,
+      progress: ACTIVE.has(status) ? child.latestSummary : null,
+      result: ACTIVE.has(status) ? null : child.latestSummary,
       lastToolName: null,
-      status: nativeStatus(child.status, false),
+      status,
       usage: null,
-      elapsedMs: null,
+      elapsedMs: child.latestDurationMs,
       aliases,
       nativeCard: null,
       gatewayChild: null,
@@ -277,7 +278,7 @@ export function projectChildTree(input: ProjectChildTreeInput): ChildTreeNode[] 
       productParentThreadId: child.parentThreadId,
       controls: projectChildControls({
         lane: "product",
-        status: nativeStatus(child.status, false),
+        status,
         resumable: true,
         capabilities: null,
       }),

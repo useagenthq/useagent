@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { ExecutionSummarySnapshot } from "@useagent/agent-client";
+import type { ExecutionSummarySnapshot, ThreadRelationship } from "@useagent/agent-client";
 import { LoadingState } from "@/components/ai/loading-state";
 import { Thinking } from "@/components/ai/thinking";
 import type { ApprovalDecision, PendingApproval } from "@/components/chat/approval-state";
@@ -204,6 +204,8 @@ const TurnBlock = memo(function TurnBlock({
   queuePosition,
   onSendNow,
   childSessions,
+  productChildren,
+  onOpenProductChild,
   isLatestTurn = false,
   windowOwnsRunMarker = false,
 }: {
@@ -215,6 +217,9 @@ const TurnBlock = memo(function TurnBlock({
    *  they fold under this turn's subagent group instead of rendering as their
    *  own top-level turns. */
   childSessions?: readonly GatewayChildSession[];
+  /** Durable product children spawned by this exact parent turn. */
+  productChildren?: readonly ThreadRelationship[];
+  onOpenProductChild?: (threadId: string) => void;
   /** True for the thread's final turn - the only one whose follow-up
    *  suggestions render (stale suggestions under history are noise). */
   isLatestTurn?: boolean;
@@ -389,6 +394,8 @@ const TurnBlock = memo(function TurnBlock({
           executionSummary={turn.executionSummary}
           live={live}
           childSessions={childSessions}
+          productChildren={productChildren}
+          onOpenProductChild={onOpenProductChild}
         />
 
 
@@ -533,6 +540,7 @@ export const Conversation = memo(function Conversation({
   runStartedAt,
   prefill,
   repoRevisions, resourceMentions = true, onTurnsNeeded, composerLocked = false, composerLockedMessage,
+  productChildren = [], onOpenProductChild,
 }: {
   turns: Turn[];
   defaultEngine: EngineId;
@@ -587,6 +595,8 @@ export const Conversation = memo(function Conversation({
    *  (outline stub) turns entering the render window, so their island can be
    *  fetched. Absent on fully-loaded threads. */
   onTurnsNeeded?: (runIds: readonly string[]) => void;
+  productChildren?: readonly ThreadRelationship[];
+  onOpenProductChild?: (threadId: string) => void;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
   // stream, but ONLY while the user is already near the bottom — scrolling up
@@ -599,6 +609,9 @@ export const Conversation = memo(function Conversation({
         `${t.steps.length}:${t.liveText.length}:${t.liveReasoning.length}:${t.summary ? 1 : 0}`,
     )
     .join("|");
+  const productChildSignature = productChildren
+    .map((child) => `${child.threadId}:${child.status}:${child.latestActivityAt}`)
+    .join("|");
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
@@ -608,6 +621,7 @@ export const Conversation = memo(function Conversation({
     pendingQuestion?.id,
     pendingApproval?.id,
     gatewayApprovals?.length,
+    productChildSignature,
     turns.length,
   ]);
 
@@ -658,6 +672,15 @@ export const Conversation = memo(function Conversation({
       childSessionsByParent: byParent,
     };
   }, [turns]);
+  const productChildrenByParent = useMemo(() => {
+    const grouped = new Map<string, ThreadRelationship[]>();
+    for (const child of productChildren) {
+      const siblings = grouped.get(child.sourceRunId) ?? [];
+      siblings.push(child);
+      grouped.set(child.sourceRunId, siblings);
+    }
+    return grouped;
+  }, [productChildren]);
 
   // 1-based FIFO position per queued turn: the queued pill states the honest
   // place in line (position 1 waits only on the running turn). Counted over the
@@ -731,6 +754,8 @@ export const Conversation = memo(function Conversation({
                 queuePosition={queuedPositions.get(turn.run.id)}
                 onSendNow={turn.run.id === sendNowFor ? onSendNow : undefined}
                 childSessions={childSessionsByParent.get(turn.run.id)}
+                productChildren={productChildrenByParent.get(turn.run.id)}
+                onOpenProductChild={onOpenProductChild}
                 isLatestTurn={index === renderedTurns.length - 1}
                 windowOwnsRunMarker={windowOwnsRunMarker}
               />

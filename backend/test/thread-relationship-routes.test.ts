@@ -61,13 +61,27 @@ describe("thread relationship routes", () => {
     const childA = await makeChild("Child A", "a");
     const childB = await makeChild("Child B", "b");
     if (childA.status === "conflict" || childB.status === "conflict") throw new Error("child conflict");
+    await db.update(runs).set({
+      summary: "S".repeat(1_100),
+      durationMs: 1_250,
+    }).where(eq(runs.id, childA.child.id));
 
-    const relationship = await json<{ relationship: { thread_id: string; status: string } }>(
+    const relationship = await json<{
+      relationship: {
+        thread_id: string;
+        status: string;
+        latest_summary: string | null;
+        latest_duration_ms: number | null;
+      };
+    }>(
       `/api/threads/${childA.child.threadId}/relationship`,
       { cookies: owner.cookies },
     );
     expect(relationship.status).toBe(200);
     expect(relationship.body.relationship.thread_id).toBe(childA.child.threadId);
+    expect(relationship.body.relationship.latest_summary).toHaveLength(1_000);
+    expect(relationship.body.relationship.latest_summary?.endsWith("…")).toBe(true);
+    expect(relationship.body.relationship.latest_duration_ms).toBe(1_250);
 
     const family = await json<{ children: Array<{ thread_id: string }>; has_more: boolean }>(
       `/api/threads/${parent.threadId}/children?limit=100`,

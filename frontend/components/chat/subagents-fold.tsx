@@ -10,7 +10,11 @@
 // wrappers on the list (matches the context-recall fold shell).
 
 import { RiArrowDownSLine, RiExternalLinkLine, RiRobot2Line } from "@remixicon/react";
-import type { ExecutionSummarySnapshot } from "@useagent/agent-client";
+import type {
+  ExecutionSummarySnapshot,
+  ProductThreadStatus,
+  ThreadRelationship,
+} from "@useagent/agent-client";
 import Link from "next/link";
 import { useMemo } from "react";
 import { childStatusLabel, isChildActive } from "@/components/chat/agents-rail";
@@ -23,7 +27,7 @@ import {
   RUN_CHILD_STATUS,
   RUN_STATUS_LABEL,
 } from "@/components/chat/gateway-children";
-import type { NativeFrame } from "@/components/chat/native-events";
+import type { ChildStatus, NativeFrame } from "@/components/chat/native-events";
 import type { SubagentCard } from "@/components/chat/subagents";
 import { useTurnUiState } from "@/components/chat/turn-ui-state";
 import { type ApiStep, engineLabel } from "@/components/chat/types";
@@ -131,6 +135,58 @@ function GatewayChildRow({ child }: { child: GatewayChildSession }) {
   );
 }
 
+const PRODUCT_CHILD_STATUS: Record<ProductThreadStatus, ChildStatus> = {
+  queued: "pending",
+  waiting: "waiting",
+  running: "running",
+  completed: "completed",
+  failed: "failed",
+  cancelled: "cancelled",
+};
+
+function ProductChildRow({
+  child,
+  onOpen,
+}: {
+  child: ThreadRelationship;
+  onOpen?: (threadId: string) => void;
+}) {
+  const status = PRODUCT_CHILD_STATUS[child.status];
+  const active = isChildActive(status);
+  const state = child.latestSummary ?? childStatusLabel(status);
+  return (
+    <li data-testid="subagent-fold-row">
+      <button
+        type="button"
+        onClick={() => onOpen?.(child.threadId)}
+        aria-label={`Inspect child agent: ${child.title}`}
+        className="hover:bg-background-primary-hover flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left transition-colors"
+      >
+        <StatusDot
+          tone={STATUS_TONE[status]}
+          pulse={active}
+          className="mt-1"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <span className="text-body-2-medium text-text-primary min-w-0 truncate">
+              {child.title}
+            </span>
+            <span className="text-mono-label text-text-tertiary ml-auto shrink-0">
+              {[engineLabel(child.engine), formatSubagentModelLabel(child.model, null)]
+                .filter((value): value is string => value !== null)
+                .join(" · ")}
+            </span>
+          </div>
+          <p className="text-caption-1-regular text-text-tertiary truncate">
+            {firstLine(state)}
+          </p>
+        </div>
+      </button>
+    </li>
+  );
+}
+
 /**
  * "N subagents" fold for one conversation turn. Renders nothing when the turn
  * spawned no children. Open by default while any child is still active (the
@@ -144,6 +200,8 @@ export function SubagentsFold({
   executionSummary = null,
   live,
   childSessions = [],
+  productChildren = [],
+  onOpenProductChild,
 }: {
   steps: readonly ApiStep[];
   frames?: readonly NativeFrame[];
@@ -153,6 +211,8 @@ export function SubagentsFold({
    *  native/canonical status frame (same rule as the Agents rail). */
   live: boolean;
   childSessions?: readonly GatewayChildSession[];
+  productChildren?: readonly ThreadRelationship[];
+  onOpenProductChild?: (threadId: string) => void;
 }) {
   const view = useMemo(
     () => deriveChildrenViewFromExecutionSummary(steps, frames, canonicalEvents, executionSummary),
@@ -160,7 +220,7 @@ export function SubagentsFold({
   );
   const [toggled, setToggled] = useTurnUiState<boolean | null>("subagents", null);
 
-  const count = view.cards.length + childSessions.length;
+  const count = view.cards.length + childSessions.length + productChildren.length;
   if (count === 0) return null;
 
   const runLive = live && !steps.some((s) => s.kind === "done");
@@ -173,12 +233,13 @@ export function SubagentsFold({
   };
   const anyActive =
     childSessions.some((child) => isChildActive(RUN_CHILD_STATUS[child.status])) ||
+    productChildren.some((child) => isChildActive(PRODUCT_CHILD_STATUS[child.status])) ||
     (runLive &&
       view.cards.some((card) => {
         const status = fidelityFor(card)?.status ?? "running";
         return isChildActive(status);
       }));
-  const open = toggled ?? anyActive;
+  const open = toggled ?? (anyActive || productChildren.length > 0);
 
   return (
     <section data-testid="subagents-fold">
@@ -214,6 +275,13 @@ export function SubagentsFold({
           ))}
           {childSessions.map((child) => (
             <GatewayChildRow key={child.id} child={child} />
+          ))}
+          {productChildren.map((child) => (
+            <ProductChildRow
+              key={child.threadId}
+              child={child}
+              onOpen={onOpenProductChild}
+            />
           ))}
         </ul>
       )}

@@ -68,7 +68,14 @@ function productFanoutRoutingRules(
   return "<delegation_routing>\n" +
     "When the user explicitly asks to fan out, delegate, parallelize work across agents, or create " +
     "user-visible child sessions, you MUST use the trusted child_session_create_many tool. Those " +
-    "product child sessions are the durable, independently visible delegation boundary. Native " +
+    "product child sessions are the durable, independently visible delegation boundary. Even when " +
+    "the user does not explicitly request fan-out, use product children when the task has at least " +
+    "two substantial independent workstreams whose parallel execution materially helps and whose " +
+    "progress or result should remain visible and messageable. Keep small, sequential, approval-bound, " +
+    "destructive, or shared-state-conflicting work in the parent. After delegating outcome work, do not " +
+    "claim the overall task is complete until child_session_gather shows the relevant children settled; " +
+    "read their bounded child_session_events and synthesize the results. Do not busy-poll: if children " +
+    "are still running, report that honestly and let their durable UI continue updating. Native " +
     "harness subagents are only for internal decomposition within the current product session and " +
     "must not substitute for requested user-visible fan-out. Use native subagents only when the " +
     "user explicitly requests native/internal subagents or when privately decomposing one product " +

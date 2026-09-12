@@ -36,6 +36,7 @@ import {
   RUN_STATUS_LABEL,
 } from "@/components/chat/gateway-children";
 import type { ChildStatus, NativeFrame } from "@/components/chat/native-events";
+import { ProductChildDetail } from "@/components/chat/product-child-detail";
 import type { SubagentCard } from "@/components/chat/subagents";
 import type { ThreadRelationship } from "@useagent/agent-client";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
@@ -205,7 +206,7 @@ function ChildTreeRow({
   return (
     <AgentPanelRow
       href={node.productRelationship
-        ? `/session/${node.productRelationship.threadId}`
+        ? undefined
         : node.gatewayChild
           ? `/session/${node.gatewayChild.id}`
           : undefined}
@@ -518,8 +519,10 @@ export function AgentsRail({
   executionSummary = null,
   childSessions = [],
   productChildren = [],
+  focusProductThreadId = null,
   focusExecutionId = null,
   focusExecutionRunId = null,
+  onClearProductFocus,
   onClearNativeSessionFocus,
 }: {
   rootRunId?: string | null;
@@ -534,6 +537,9 @@ export function AgentsRail({
   childSessions?: readonly GatewayChildSession[];
   /** Ordinary messageable child threads. These are the primary product lane. */
   productChildren?: readonly ThreadRelationship[];
+  /** Product child selected from the parent conversation. */
+  focusProductThreadId?: string | null;
+  onClearProductFocus?: () => void;
   /** Inspect-only native child selected from the persistent sidebar. */
   focusExecutionId?: string | null;
   focusExecutionRunId?: string | null;
@@ -549,6 +555,7 @@ export function AgentsRail({
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const appliedFocusRef = useRef<string | null>(null);
+  const appliedProductFocusRef = useRef<string | null>(null);
   const [graph, setGraph] = useState<ExecutionGraphResponse | null>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const [activeTreeId, setActiveTreeId] = useState<string | null>(null);
@@ -630,6 +637,25 @@ export function AgentsRail({
     appliedFocusRef.current = focusExecutionId;
     setSelectedId(focusNodeId);
   }, [focusExecutionId, focusNodeId]);
+  const focusProductNodeId = focusProductThreadId
+    ? `product:${focusProductThreadId}`
+    : null;
+  useEffect(() => {
+    if (!focusProductThreadId) {
+      if (appliedProductFocusRef.current !== null) {
+        appliedProductFocusRef.current = null;
+        setSelectedId(null);
+      }
+      return;
+    }
+    if (
+      !focusProductNodeId ||
+      !allNodes.has(focusProductNodeId) ||
+      appliedProductFocusRef.current === focusProductThreadId
+    ) return;
+    appliedProductFocusRef.current = focusProductThreadId;
+    setSelectedId(focusProductNodeId);
+  }, [allNodes, focusProductNodeId, focusProductThreadId]);
   const selectedNode = selectedId ? allNodes.get(selectedId) ?? null : null;
   const selected = selectedNode?.nativeCard ?? (selectedNode?.executionId
     ? {
@@ -697,6 +723,18 @@ export function AgentsRail({
           No subagents in this conversation yet.
         </p>
       </div>
+    );
+  }
+
+  if (selectedNode?.productRelationship) {
+    return (
+      <ProductChildDetail
+        relationship={selectedNode.productRelationship}
+        onBack={() => {
+          setSelectedId(null);
+          if (focusProductThreadId) onClearProductFocus?.();
+        }}
+      />
     );
   }
 
@@ -781,7 +819,9 @@ export function AgentsRail({
           key={item.node.id}
           node={item.node}
           onOpen={() => {
-            if (item.node.nativeCard || item.node.executionId) setSelectedId(item.node.id);
+            if (item.node.productRelationship || item.node.nativeCard || item.node.executionId) {
+              setSelectedId(item.node.id);
+            }
           }}
           treeItem={{
             id: item.node.id,

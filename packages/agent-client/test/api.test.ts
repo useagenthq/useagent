@@ -123,6 +123,7 @@ describe("AgentClient HTTP", () => {
       source_execution_id: null, created_at: "2026-09-01T00:00:00.000Z",
       updated_at: "2026-09-01T00:01:00.000Z", status: "running", engine: "codex",
       model: "gpt-5.6-sol", latest_run_id: "child-1",
+      latest_summary: "Calendar grid complete.", latest_duration_ms: 1_250,
       latest_activity_at: "2026-09-01T00:01:00.000Z",
     };
     const client = createAgentClient({

@@ -32,6 +32,8 @@ export interface ThreadRelationship {
   readonly engine: EngineId;
   readonly model: string;
   readonly latestRunId: string;
+  readonly latestSummary: string | null;
+  readonly latestDurationMs: number | null;
   readonly latestActivityAt: string;
 }
 
@@ -55,6 +57,14 @@ function nullableString(value: unknown): string | null | undefined {
   return value === null ? null : string(value) ?? undefined;
 }
 
+function nullableNonNegativeInteger(value: unknown): number | null | undefined {
+  return value === null
+    ? null
+    : typeof value === "number" && Number.isInteger(value) && value >= 0
+      ? value
+      : undefined;
+}
+
 export function decodeThreadRelationship(value: unknown): ThreadRelationship | null {
   const raw = record(value);
   if (!raw) return null;
@@ -68,6 +78,8 @@ export function decodeThreadRelationship(value: unknown): ThreadRelationship | n
   const updatedAt = string(raw.updated_at);
   const model = string(raw.model);
   const latestRunId = string(raw.latest_run_id);
+  const latestSummary = nullableString(raw.latest_summary);
+  const latestDurationMs = nullableNonNegativeInteger(raw.latest_duration_ms);
   const latestActivityAt = string(raw.latest_activity_at);
   if (
     !threadId ||
@@ -83,6 +95,8 @@ export function decodeThreadRelationship(value: unknown): ThreadRelationship | n
     !(ENGINE_IDS as readonly unknown[]).includes(raw.engine) ||
     !model ||
     !latestRunId ||
+    latestSummary === undefined ||
+    latestDurationMs === undefined ||
     !latestActivityAt
   ) return null;
   return {
@@ -99,6 +113,8 @@ export function decodeThreadRelationship(value: unknown): ThreadRelationship | n
     engine: raw.engine as EngineId,
     model,
     latestRunId,
+    latestSummary,
+    latestDurationMs,
     latestActivityAt,
   };
 }

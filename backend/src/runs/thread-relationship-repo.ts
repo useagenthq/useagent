@@ -35,6 +35,8 @@ export interface ThreadRelationshipView {
   readonly engine: EngineId;
   readonly model: string;
   readonly latestRunId: string;
+  readonly latestSummary: string | null;
+  readonly latestDurationMs: number | null;
   readonly latestActivityAt: Date;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -157,6 +159,8 @@ async function latestViews(
     status: runs.status,
     engine: runs.engine,
     model: runs.model,
+    summary: runs.summary,
+    durationMs: runs.durationMs,
     createdAt: runs.createdAt,
     updatedAt: runs.updatedAt,
     admissionState: runAdmissions.state,
@@ -193,6 +197,12 @@ async function latestViews(
       engine: latest.engine,
       model: latest.model,
       latestRunId: latest.id,
+      latestSummary: !latest.summary
+        ? null
+        : latest.summary.length > 1_000
+          ? `${latest.summary.slice(0, 999)}…`
+          : latest.summary,
+      latestDurationMs: latest.durationMs,
       latestActivityAt: latest.updatedAt,
       createdAt: relationship.createdAt,
       updatedAt: relationship.updatedAt,

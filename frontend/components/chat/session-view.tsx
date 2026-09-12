@@ -569,9 +569,15 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   const [railTabOverride, setRailTabOverride] = useState<SurfaceChoice | "editor" | "workspace" | null>(
     null,
   );
+  const [focusedProductThreadId, setFocusedProductThreadId] = useState<string | null>(null);
   const railTab =
     railTabOverride ??
     (hasSubagents ? "agents" : hasFiles ? "artifacts" : hasCommands ? "terminal" : null);
+  const openProductChild = useCallback((threadId: string) => {
+    setFocusedProductThreadId(threadId);
+    setRailOverride(true);
+    setRailTabOverride("agents");
+  }, []);
   // Sheet grammar: the chooser card grid is a side-by-side surface - the
   // sheet's pill tabs ARE the chooser, so opening on a quiet thread lands on
   // a concrete tab (Files); the pane body's null branch falls back the same way.
@@ -842,6 +848,8 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
             resourceMentions={!isProductChild}
             composerLocked={composerRelationshipBlocked} composerLockedMessage="Verifying child session…"
             onTurnsNeeded={initialOutline ? handleTurnsNeeded : undefined}
+            productChildren={productChildren}
+            onOpenProductChild={openProductChild}
           />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the
               moment the first step streams in (Thinking block takes over).
@@ -1119,6 +1127,8 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
                       executionSummary={snapshot.executionSummary}
                       childSessions={gatewayChildren}
                       productChildren={productChildren}
+                      focusProductThreadId={focusedProductThreadId}
+                      onClearProductFocus={() => setFocusedProductThreadId(null)}
                       focusExecutionId={focusExecutionId}
                       focusExecutionRunId={focusExecutionRunId}
                       onClearNativeSessionFocus={clearAgentFocus}

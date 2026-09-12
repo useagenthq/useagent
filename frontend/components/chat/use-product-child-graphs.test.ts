@@ -20,6 +20,8 @@ const relationship = (threadId: string, latestRunId: string): ThreadRelationship
   engine: "codex",
   model: "gpt-5.6-sol",
   latestRunId,
+  latestSummary: null,
+  latestDurationMs: null,
   latestActivityAt: "2026-09-01T00:00:01.000Z",
 });
 

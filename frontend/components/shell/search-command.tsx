@@ -37,7 +37,6 @@ import {
   effectiveThreadStatus,
   filterCommandEntries,
   findThreadMatches,
-  findRelationshipMatches,
   threadActivityTimestamp,
   threadStatusPresentation,
 } from "./thread-discovery";
@@ -122,16 +121,12 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
   const query = search.trim().toLowerCase();
   const matchingCommands = React.useMemo(() => filterCommandEntries(COMMANDS, query), [query]);
   const matchingThreads = React.useMemo(() => findThreadMatches(runs, query), [runs, query]);
-  const matchingChildren = React.useMemo(
-    () => findRelationshipMatches(relationships, query),
-    [relationships, query],
-  );
   const childIds = React.useMemo(
     () => new Set(relationships.filter((item) => item.parentThreadId).map((item) => item.threadId)),
     [relationships],
   );
   const rootMatches = matchingThreads.filter((run) => !childIds.has(run.id));
-  const matchCount = matchingCommands.length + rootMatches.length + matchingChildren.length;
+  const matchCount = matchingCommands.length + rootMatches.length;
 
   return (
     <>
@@ -210,35 +205,6 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
                               {repo}
                             </span>
                           ) : null}
-                        </span>
-                        <span className="shrink-0 text-caption-1-regular text-text-tertiary tabular-nums">
-                          {meta}
-                        </span>
-                      </CommandMenu.Item>
-                    );
-                  })
-                : null}
-              {group === "Threads"
-                ? matchingChildren.map((child) => {
-                    const status = threadStatusPresentation(child.status);
-                    const parent = relationships.find((item) => item.threadId === child.parentThreadId);
-                    const meta = [status.label, relativeTimeShort(child.latestActivityAt)].join(" · ");
-                    return (
-                      <CommandMenu.Item
-                        key={`child:${child.threadId}`}
-                        value={`${child.title} ${child.engine} ${child.model} ${parent?.title ?? ""}`}
-                        onSelect={() => go(`/session/${child.threadId}`)}
-                        aria-label={`${child.title}, child of ${parent?.title ?? "parent session"}, ${meta}`}
-                        className="bg-transparent text-text-primary data-[selected=true]:bg-background-primary-hover"
-                      >
-                        <span className="flex size-5 shrink-0 items-center justify-center">
-                          {status.dot ? <StatusDot {...status.dot} /> : <RiFileTextLine className="size-4 text-foreground-icon-secondary" aria-hidden />}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate">{child.title}</span>
-                          <span className="block truncate text-caption-1-regular text-text-tertiary">
-                            {parent?.title ?? "Child session"} · {child.engine} · {child.model}
-                          </span>
                         </span>
                         <span className="shrink-0 text-caption-1-regular text-text-tertiary tabular-nums">
                           {meta}

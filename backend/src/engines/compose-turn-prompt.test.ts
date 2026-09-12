@@ -82,6 +82,9 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
   test("routes explicit user-visible fan-out through durable product children when available", () => {
     const out = composeTurnPrompt(ctx(), true, EXECUTION, { PRODUCT_CHILD_THREADS: "on" });
     expect(out).toContain("MUST use the trusted child_session_create_many tool");
+    expect(out).toContain("at least two substantial independent workstreams");
+    expect(out).toContain("child_session_gather shows the relevant children settled");
+    expect(out).toContain("Do not busy-poll");
     expect(out).toContain("Native harness subagents are only for internal decomposition");
   });
 

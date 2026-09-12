@@ -364,6 +364,8 @@ describe("agents rail gateway children", () => {
       engine: "claude",
       model: "claude-sonnet-5",
       latestRunId: "product-child-1",
+      latestSummary: "Calendar grid complete.",
+      latestDurationMs: 1_250,
       latestActivityAt: "2026-09-01T00:00:01.000Z",
     };
     const html = renderToStaticMarkup(createElement(AgentsRail, {
@@ -373,7 +375,8 @@ describe("agents rail gateway children", () => {
     }));
     expect(html).toContain("Build calendar grid");
     expect(html).toContain('data-child-lane="product"');
-    expect(html).toContain('href="/session/product-child-1"');
+    expect(html).not.toContain('href="/session/product-child-1"');
+    expect(html).toContain("Calendar grid complete.");
     expect(html).toContain("Claude Code");
   });
 

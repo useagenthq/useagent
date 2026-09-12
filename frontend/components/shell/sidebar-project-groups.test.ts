@@ -240,11 +240,13 @@ describe("projectSidebarThreadFamilies", () => {
     engine: "codex",
     model: "gpt-5.6-sol",
     latestRunId: threadId,
+    latestSummary: null,
+    latestDurationMs: null,
     latestActivityAt: "2026-09-01T00:00:00.000Z",
     ...over,
   });
 
-  test("keeps roots in project groups and recursively nests ordinary child threads", () => {
+  test("keeps only roots in left navigation and omits durable product children", () => {
     const projected = projectSidebarThreadFamilies(
       [run({ id: "root", repos: ["acme/api"] }), run({ id: "child" }), run({ id: "grandchild" })],
       [
@@ -254,11 +256,9 @@ describe("projectSidebarThreadFamilies", () => {
       ],
     );
     expect(projected.roots.map((item) => item.id)).toEqual(["root"]);
-    expect(projected.byRoot.get("root")?.[0]?.id).toBe("child");
-    expect(projected.byRoot.get("root")?.[0]?.children[0]?.id).toBe("grandchild");
   });
 
-  test("ranks active children before settled siblings using relationship truth", () => {
+  test("does not promote active product children into the left thread list", () => {
     const projected = projectSidebarThreadFamilies(
       [run({ id: "root" }), run({ id: "done" }), run({ id: "working" })],
       [
@@ -267,6 +267,6 @@ describe("projectSidebarThreadFamilies", () => {
         relationship("working", "root", { status: "running" }),
       ],
     );
-    expect(projected.byRoot.get("root")?.map((item) => item.id)).toEqual(["working", "done"]);
+    expect(projected.roots.map((item) => item.id)).toEqual(["root"]);
   });
 });

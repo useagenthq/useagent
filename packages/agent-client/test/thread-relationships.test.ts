@@ -19,6 +19,8 @@ const relationship = {
   engine: "codex",
   model: "gpt-5.6-sol",
   latest_run_id: "child-1",
+  latest_summary: "Calendar grid complete.",
+  latest_duration_ms: 1_250,
   latest_activity_at: "2026-09-01T00:01:00.000Z",
 };
 
@@ -43,6 +45,8 @@ describe("thread relationship wire contract", () => {
       engine: "codex",
       model: "gpt-5.6-sol",
       latestRunId: "child-1",
+      latestSummary: "Calendar grid complete.",
+      latestDurationMs: 1_250,
       latestActivityAt: "2026-09-01T00:01:00.000Z",
     });
   });
@@ -53,6 +57,7 @@ describe("thread relationship wire contract", () => {
     expect(decodeThreadRelationship({ ...relationship, status: "idle" })).toBeNull();
     expect(decodeThreadRelationship({ ...relationship, engine: "unknown" })).toBeNull();
     expect(decodeThreadRelationship({ ...relationship, latest_run_id: null })).toBeNull();
+    expect(decodeThreadRelationship({ ...relationship, latest_duration_ms: -1 })).toBeNull();
   });
 
   test("decodes single and paginated envelopes without accepting partial rows", () => {

@@ -75,6 +75,8 @@ const product = (
   engine: "codex",
   model: "gpt-5.6-sol",
   latestRunId: threadId,
+  latestSummary: null,
+  latestDurationMs: null,
   latestActivityAt: "2026-09-01T09:00:01.000Z",
   ...over,
 });
@@ -173,7 +175,11 @@ describe("projectChildTree", () => {
       gatewayChildren: [],
       productChildren: [
         product("child-a", "root"),
-        product("child-b", "child-a", { status: "completed" }),
+        product("child-b", "child-a", {
+          status: "completed",
+          latestSummary: "Child result ready.",
+          latestDurationMs: 900,
+        }),
       ],
       runLive: true,
     });
@@ -183,6 +189,8 @@ describe("projectChildTree", () => {
       lane: "product",
       title: "Product child-b",
       status: "completed",
+      result: "Child result ready.",
+      elapsedMs: 900,
     });
   });
 

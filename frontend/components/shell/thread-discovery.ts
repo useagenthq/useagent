@@ -1,6 +1,5 @@
 import type { DotTone } from "@/components/shared/status-dot";
 import type { ProductThreadStatus } from "@useagent/agent-client";
-import type { ThreadRelationship } from "@useagent/agent-client";
 import { effectiveSidebarRunStatus, type SidebarRun } from "./working-project-status";
 
 export interface ThreadStatusPresentation {
@@ -90,28 +89,6 @@ export function findThreadMatches(runs: readonly SidebarRun[], query: string): S
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [];
   return rankThreads(runs).filter((run) => searchableThreadText(run).includes(normalized));
-}
-
-export function findRelationshipMatches(
-  relationships: readonly ThreadRelationship[],
-  query: string,
-): ThreadRelationship[] {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return [];
-  const byId = new Map(relationships.map((item) => [item.threadId, item] as const));
-  return relationships
-    .filter((item) => item.parentThreadId !== null)
-    .filter((item) => {
-      const parentTitle = item.parentThreadId ? byId.get(item.parentThreadId)?.title ?? "" : "";
-      return `${item.title} ${item.engine} ${item.model} ${parentTitle}`
-        .toLowerCase()
-        .includes(normalized);
-    })
-    .toSorted((a, b) => {
-      const priority = threadStatusPresentation(a.status).priority - threadStatusPresentation(b.status).priority;
-      if (priority !== 0) return priority;
-      return Date.parse(b.latestActivityAt) - Date.parse(a.latestActivityAt) || a.threadId.localeCompare(b.threadId);
-    });
 }
 
 export function filterCommandEntries<T extends { readonly label: string }>(

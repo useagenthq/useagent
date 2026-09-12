@@ -22,6 +22,8 @@ const relationship = (threadId: string, parentThreadId: string | null): ThreadRe
   engine: "codex",
   model: "gpt-5.6-sol",
   latestRunId: threadId,
+  latestSummary: null,
+  latestDurationMs: null,
   latestActivityAt: "2026-09-01T00:00:00.000Z",
 });
 
@@ -64,6 +66,8 @@ beforeEach(() => {
         engine: item.engine,
         model: item.model,
         latest_run_id: item.latestRunId,
+        latest_summary: item.latestSummary,
+        latest_duration_ms: item.latestDurationMs,
         latest_activity_at: item.latestActivityAt,
       }],
       next_cursor: null,
@@ -113,6 +117,8 @@ test("paginates a family snapshot and preserves explicit truncation metadata", a
         engine: item.engine,
         model: item.model,
         latest_run_id: item.latestRunId,
+        latest_summary: item.latestSummary,
+        latest_duration_ms: item.latestDurationMs,
         latest_activity_at: item.latestActivityAt,
       }],
       next_cursor: second ? null : "next",
@@ -147,6 +153,8 @@ test("paginates the organization relationship index instead of silently dropping
         engine: item.engine,
         model: item.model,
         latest_run_id: item.latestRunId,
+        latest_summary: item.latestSummary,
+        latest_duration_ms: item.latestDurationMs,
         latest_activity_at: item.latestActivityAt,
       }],
       next_cursor: second ? null : "index-next",
@@ -181,6 +189,8 @@ test("marks an index snapshot truncated at the documented collection bound", asy
           engine: item.engine,
           model: item.model,
           latest_run_id: item.latestRunId,
+          latest_summary: item.latestSummary,
+          latest_duration_ms: item.latestDurationMs,
           latest_activity_at: item.latestActivityAt,
         };
       }),
@@ -216,6 +226,8 @@ test("dedupes repeated relationship roots without consuming the unique-row bound
       engine: item.engine,
       model: item.model,
       latest_run_id: item.latestRunId,
+      latest_summary: item.latestSummary,
+      latest_duration_ms: item.latestDurationMs,
       latest_activity_at: item.latestActivityAt,
     });
     return Response.json({

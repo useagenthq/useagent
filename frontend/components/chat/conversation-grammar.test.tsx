@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import type { ThreadRelationship } from "@useagent/agent-client";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
 import type { ApiRun, RunStatus } from "./types";
 
@@ -71,18 +72,17 @@ function makeTurn(
   };
 }
 
-function render(turns: Turn[]): string {
+function render(turns: Turn[], productChildren: readonly ThreadRelationship[] = []): string {
   return renderToStaticMarkup(
-    <>
-      <Conversation
-        turns={turns}
-        defaultEngine="opencode"
-        defaultModel="claude-sonnet-5"
-        defaultMemoryScope="org"
-        pendingReply={null}
-        onReply={async () => {}}
-      />
-    </>,
+    <Conversation
+      turns={turns}
+      defaultEngine="opencode"
+      defaultModel="claude-sonnet-5"
+      defaultMemoryScope="org"
+      pendingReply={null}
+      onReply={async () => {}}
+      productChildren={productChildren}
+    />,
   );
 }
 
@@ -204,6 +204,32 @@ test("a gateway child-session turn folds under its parent, never a second turn b
   expect(html).toContain("Delegated: audit the docs");
   expect(html).toContain("Queued");
   expect(html).toContain('href="/session/run-child"');
+});
+
+test("a product child result stays under its spawning parent without page navigation", () => {
+  const parent = makeTurn("run-parent", "completed");
+  const child: ThreadRelationship = {
+    threadId: "product-child",
+    parentThreadId: "run-parent",
+    familyThreadId: "run-parent",
+    kind: "delegated",
+    title: "Research market prices",
+    sourceRunId: "run-parent",
+    sourceExecutionId: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-01T00:01:00.000Z",
+    status: "completed",
+    engine: "codex",
+    model: "gpt-5.6-luna",
+    latestRunId: "product-child",
+    latestSummary: "NVDA and GOOGL prices are ready.",
+    latestDurationMs: 1_500,
+    latestActivityAt: "2026-09-01T00:01:00.000Z",
+  };
+  const html = render([parent], [child]);
+  expect(html).toContain("Research market prices");
+  expect(html).toContain("NVDA and GOOGL prices are ready.");
+  expect(html).not.toContain('href="/session/product-child"');
 });
 
 test("a reply turn without the child-session mark still renders as its own block", () => {

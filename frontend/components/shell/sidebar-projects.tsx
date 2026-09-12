@@ -23,7 +23,6 @@ import {
   projectSidebarThreadFamilies,
   type ProjectGroup,
   type ProjectRepo,
-  type SidebarThreadFamilyNode,
   runPrimaryRepo,
   UNATTACHED_KEY,
   visibleProjectGroups,
@@ -36,22 +35,6 @@ import { effectiveThreadStatus } from "./thread-discovery";
 const PROJECT_POLL_MS = 30_000;
 const MAX_PROJECTS = 48;
 
-export function projectFamilyNode(
-  node: SidebarThreadFamilyNode,
-  pathname: string,
-): ProjectThread {
-  return {
-    id: node.id,
-    label: node.title,
-    time: relativeTimeShort(node.activityAt),
-    status: node.status,
-    engine: node.engine,
-    model: node.model,
-    isSelected: pathname === `/session/${node.id}`,
-    children: node.children.map((child) => projectFamilyNode(child, pathname)),
-    nativeChildren: node.run ? sidebarNativeAgentRows(node.run) : null,
-  };
-}
 const VISIBLE_PROJECTS = 5;
 // Recent threads stay visible; the rest sit behind a "Show N more" disclosure so
 // a long history never floods the rail (same cap as the previous rail).
@@ -213,15 +196,13 @@ export function SidebarProjects() {
             engine: run.engine,
             model: run.model,
             isSelected: pathname === `/session/${run.id}`,
-            children: (families.byRoot.get(run.id) ?? []).map((node) =>
-              projectFamilyNode(node, pathname)
-            ),
+            children: [],
             nativeChildren: sidebarNativeAgentRows(run),
           };
         }),
       }));
     },
-    [families.byRoot, pathname],
+    [pathname],
   );
 
   // Projects with active threads stay in view; the long tail of empty repos sits
