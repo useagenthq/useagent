@@ -358,14 +358,8 @@ async function runWorker(runId: string): Promise<void> {
     const providerSession = providerSessionState.binding ?? undefined;
     const engineSessionId = providerSession?.nativeSessionId ??
       providerSessionState.legacySessionId ?? undefined;
-    const { turnContext, skillCatalogContext, resourceContext, botContext } = frameTurnContexts({
-      recall,
-      skillCatalogPage,
-      resourceSnapshot,
-      botContext: run.commandName
-        ? ""
-        : await botContextForTurn({ orgId: run.orgId, threadId: run.threadId, engine: run.engine }),
-    });
+    const botContext = run.commandName ? "" : await botContextForTurn({ orgId: run.orgId, threadId: run.threadId, engine: run.engine });
+    const { turnContext, skillCatalogContext, resourceContext } = frameTurnContexts({ recall, skillCatalogPage, resourceSnapshot });
 
     if (turnContext || bootstrapContext || skillContext || skillCatalogContext || resourceContext) {
       console.log(

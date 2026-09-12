@@ -6,7 +6,11 @@ import type { RunCommandInput, RunCommandIntent, RunCommandOutcome } from "./typ
 import { publishRunLifecycleChange } from "../runs/org-signals";
 import {
   assertInternalRunOrigin,
+  assertUnattendedRunOrigin,
+  isInternalRunOrigin,
   type InternalRunOrigin,
+  type TrustedRunOrigin,
+  type UnattendedRunOrigin,
 } from "../runs/origin";
 import { isModelAllowedForEngine, isPersistedModelAllowedForEngine } from "../runs/model-policy";
 import { engineModelReadyForDispatch, persistedEngineModelReadyForDispatch } from "../runs/engine-readiness";
@@ -35,7 +39,7 @@ export class StaleThreadHeadError extends Error {
 function classifyReplay(
   existing: CommandRecord,
   fingerprint: string,
-  origin: InternalRunOrigin | null,
+  origin: TrustedRunOrigin | null,
 ): RunCommandOutcome {
   if (existing.runOrigin !== origin) {
     return { status: "conflict", reason: "origin_mismatch" };
@@ -72,7 +76,7 @@ async function preflightRunCommandReplayWithOrigin(input: {
   readonly orgId: string;
   readonly idempotencyKey: string | null;
   readonly intent: RunCommandIntent;
-  readonly origin: InternalRunOrigin | null;
+  readonly origin: TrustedRunOrigin | null;
   readonly threadRelationship?: RunCommandInput["threadRelationship"];
 }): Promise<RunCommandOutcome | null> {
   if (input.idempotencyKey) {
@@ -105,6 +109,17 @@ export function preflightInternalRunCommandReplay(input: {
   return preflightRunCommandReplayWithOrigin(input);
 }
 
+export function preflightUnattendedRunCommandReplay(input: {
+  readonly orgId: string;
+  readonly idempotencyKey: string | null;
+  readonly intent: RunCommandIntent;
+  readonly origin: UnattendedRunOrigin;
+  readonly threadRelationship?: RunCommandInput["threadRelationship"];
+}): Promise<RunCommandOutcome | null> {
+  assertUnattendedRunOrigin(input.origin);
+  return preflightRunCommandReplayWithOrigin(input);
+}
+
 /**
  * Accept a `run.create` command. Idempotent by (org, idempotencyKey):
  *  - keyed replay with a matching payload → the ORIGINAL run id (no new work);
@@ -117,7 +132,7 @@ export function preflightInternalRunCommandReplay(input: {
  */
 async function acceptRunCommandWithOrigin(
   input: RunCommandInput,
-  origin: InternalRunOrigin | null,
+  origin: TrustedRunOrigin | null,
   priority = 0,
 ): Promise<RunCommandOutcome> {
   const intent = input.intent ?? runIntentFromAcceptedRun(input.run);
@@ -226,7 +241,7 @@ async function acceptRunCommandWithOrigin(
   // Skills Run all accept here, so none grows its own UI notification code. Only
   // fired on a fresh `created`; an idempotent replay returns above and re-signals
   // nothing (no duplicate run signal). IDs only, never secrets/payloads.
-  if (origin === null) {
+  if (!isInternalRunOrigin(origin)) {
     publishRunLifecycleChange({
       orgId: input.orgId,
       threadId: input.run.threadId,
@@ -252,4 +267,14 @@ export function acceptInternalRunCommand(
 ): Promise<RunCommandOutcome> {
   assertInternalRunOrigin(input.origin);
   return acceptRunCommandWithOrigin(input, input.origin, input.priority ?? 0);
+}
+
+/** Server-only product acceptance for unattended automations and bot work. */
+export function acceptUnattendedRunCommand(
+  input: RunCommandInput & {
+    readonly origin: UnattendedRunOrigin;
+  },
+): Promise<RunCommandOutcome> {
+  assertUnattendedRunOrigin(input.origin);
+  return acceptRunCommandWithOrigin(input, input.origin, 0);
 }

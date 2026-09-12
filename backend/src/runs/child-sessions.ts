@@ -5,7 +5,9 @@ import {
   acceptInternalRunCommand,
   acceptRunCommand,
   preflightInternalRunCommandReplay,
+  preflightUnattendedRunCommandReplay,
   preflightRunCommandReplay,
+  acceptUnattendedRunCommand,
 } from "../commands/service";
 import type { RunCommandIntent } from "../commands/types";
 import { countNativeFrames, getNativeFramesSince, type NativeFrame } from "./native-events";
@@ -15,7 +17,7 @@ import {
   legacyParentResources,
   resolveRunIntake,
 } from "../resources/run-intake";
-import { isInternalRunOrigin } from "./origin";
+import { isInternalRunOrigin, type UnattendedRunOrigin } from "./origin";
 import {
   ensureEligiblePublicRootThreadRelationship,
   getThreadRelationship,
@@ -135,6 +137,8 @@ export async function createChildSession(input: {
   readonly repos: readonly string[];
   readonly memoryScope: MemoryScope;
   readonly idempotencyKey: string;
+  /** Server-owned unattended product provenance; never accepted from HTTP. */
+  readonly origin?: UnattendedRunOrigin;
 }): Promise<{ readonly status: "created" | "replayed"; readonly child: ChildSessionSummary } | { readonly status: "conflict" }> {
   const runId = crypto.randomUUID();
   const productChild = productChildThreadsEnabled(input.orgId);
@@ -186,33 +190,17 @@ export async function createChildSession(input: {
     sourceRunId: input.parentRunId,
     sourceExecutionId: input.sourceExecutionId ?? null,
   } : undefined;
-  let accepted = productChild
-    ? internalOrigin
-      ? await preflightInternalRunCommandReplay({
-          orgId: input.orgId,
-          idempotencyKey,
-          intent,
-          origin: internalOrigin,
-          threadRelationship: productRelationship,
-        })
-      : await preflightRunCommandReplay({
-          orgId: input.orgId,
-          idempotencyKey,
-          intent,
-          threadRelationship: productRelationship,
-        })
-    : internalOrigin
-    ? await preflightInternalRunCommandReplay({
-      orgId: input.orgId,
-      idempotencyKey,
-      intent,
-      origin: internalOrigin,
-    })
-    : await preflightRunCommandReplay({
-      orgId: input.orgId,
-      idempotencyKey,
-      intent,
-    });
+  const replayInput = {
+    orgId: input.orgId,
+    idempotencyKey,
+    intent,
+    ...(productRelationship ? { threadRelationship: productRelationship } : {}),
+  };
+  let accepted = internalOrigin
+    ? await preflightInternalRunCommandReplay({ ...replayInput, origin: internalOrigin })
+    : input.origin
+      ? await preflightUnattendedRunCommandReplay({ ...replayInput, origin: input.origin })
+      : await preflightRunCommandReplay(replayInput);
   if (accepted?.status === "conflict") return { status: "conflict" };
 
   if (!accepted) {
@@ -258,6 +246,8 @@ export async function createChildSession(input: {
     };
     accepted = internalOrigin
       ? await acceptInternalRunCommand({ ...commandInput, origin: internalOrigin })
+      : input.origin
+      ? await acceptUnattendedRunCommand({ ...commandInput, origin: input.origin })
       : await acceptRunCommand(commandInput);
   }
   if (accepted.status === "conflict") return { status: "conflict" };

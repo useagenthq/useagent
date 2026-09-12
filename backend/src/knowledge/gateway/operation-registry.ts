@@ -30,6 +30,7 @@ import {
   childSessionToolsEnabled,
   executeChildSessionTool,
   gatewayToolListOptionsFor,
+  BOT_HANDOFF_TOOL,
 } from "./child-session-tools";
 import { CONTEXT_TOOLS, executeContextTool } from "./context-tools";
 import { COMPUTER_USE_TOOLS, executeComputerUseTool } from "./computer-use-tools";
@@ -171,7 +172,9 @@ const BASE_TOOL_FAMILIES = [
   { category: "automations", tools: AUTOMATION_TOOLS, execute: executeAutomationTool },
   { category: "approvals", tools: APPROVAL_REQUEST_TOOLS, execute: executeApprovalRequestTool },
   { category: "blueprints", tools: BLUEPRINT_TOOLS, execute: executeBlueprintTool },
-  { category: "child_sessions", tools: CHILD_SESSION_TOOLS, execute: executeChildSessionTool },
+  // The registry must resolve every tool the family can execute; which of them a
+  // caller sees is decided per org in advertisedChildSessionTools.
+  { category: "child_sessions", tools: [...CHILD_SESSION_TOOLS, BOT_HANDOFF_TOOL], execute: executeChildSessionTool },
   { category: "skills", tools: SKILL_TOOLS, execute: executeSkillTool },
   { category: "tasks", tools: TASK_TOOLS, execute: executeTaskTool },
 ] as const satisfies readonly GatewayToolFamily[];
@@ -225,7 +228,7 @@ function indexAliases(
 const ALL_OPERATIONS = indexFamilies(ALL_TOOL_FAMILIES);
 const TOOL_ALIASES = indexAliases(ALL_TOOL_FAMILIES);
 const CHILD_SESSION_TOOL_NAMES: ReadonlySet<string> = new Set(
-  CHILD_SESSION_TOOLS.map((tool) => tool.name),
+  [...CHILD_SESSION_TOOLS, BOT_HANDOFF_TOOL].map((tool) => tool.name),
 );
 export function baseGatewayToolDescriptors(): readonly GatewayToolDescriptor[] {
   return BASE_TOOL_FAMILIES.flatMap<GatewayToolDescriptor>((family) => [...family.tools]);
@@ -248,7 +251,7 @@ export function gatewayToolCatalogDescriptors(): readonly GatewayToolCatalogDesc
       descriptor,
       condition: family === SLACK_FAMILY
         ? "slack" as const
-        : family.tools === CHILD_SESSION_TOOLS
+        : family.category === "child_sessions"
           ? "child_session" as const
           : "always" as const,
     }))
@@ -260,7 +263,7 @@ export function advertisedGatewayToolDescriptors(
 ): readonly GatewayToolDescriptor[] {
   return [
     ...BASE_TOOL_FAMILIES.flatMap<GatewayToolDescriptor>((family) =>
-      family.tools === CHILD_SESSION_TOOLS
+      family.category === "child_sessions"
         ? (!options.childSessions ? [] : [...advertisedChildSessionTools(options.productChildThreads, options.orgId ?? null)])
         : [...family.tools],
     ),

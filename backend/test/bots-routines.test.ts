@@ -2,8 +2,15 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { runs } from "../src/db/schema";
+import { acceptUnattendedRunCommand, type RunCommandIntent } from "../src/commands";
+import { acceptRunCancel } from "../src/commands/cancel";
+import { botFiringTarget, composeRootPrompt } from "../src/bots/repo";
 import { APPROVAL_REQUEST_TTL_MS, BOT_REQUEST_TTL_MS, createApprovalRequest } from "../src/knowledge/gateway/approval-requests";
-import { createOrgSession, fetchApi, json } from "./helpers";
+import { acceptExistingThreadFollowup } from "../src/runs/thread-followups";
+import { fireScheduleWithOutcome, firingKey } from "../src/schedules/fire";
+import { getScheduleForOrg } from "../src/schedules/repo";
+import { AUTOMATION_RUN_ORIGIN } from "../src/runs/origin";
+import { createOrgSession, fetchApi, json, waitFor } from "./helpers";
 
 const previousFlag = process.env.BOTS;
 beforeAll(() => {
@@ -111,6 +118,129 @@ describe("bot routines", () => {
     expect(crossBot.status).toBe(404);
     const badCron = await fetchApi(`/api/bots/${a.id}/routines`, { method: "POST", cookies, body: { name: "x", cron: "not cron", prompt: "y" } });
     expect(badCron.status).toBe(400);
+  });
+
+  test("a retry recovers the winning home-thread follow-up after a first-fire race", async () => {
+    const { cookies, orgId } = await createOrgSession("bot-routine-retarget-recovery");
+    const bot = await createBot(cookies, "Relay");
+    const opened = await json<{ id: string }>(`/api/bots/${bot.id}/messages`, {
+      method: "POST",
+      cookies,
+      body: { text: "Open the durable home thread." },
+    });
+    expect(opened.status).toBe(201);
+    await waitFor(async () => {
+      const [run] = await db.select({ status: runs.status }).from(runs).where(eq(runs.id, opened.body.id));
+      return run?.status === "completed";
+    });
+
+    const created = await json<{ routine: RoutineBody }>(`/api/bots/${bot.id}/routines`, {
+      method: "POST",
+      cookies,
+      body: { name: "Recover report", cron: "0 8 * * *", prompt: "Build the recovery report." },
+    });
+    expect(created.status).toBe(201);
+    const schedule = await getScheduleForOrg(orgId, created.body.routine.id);
+    if (!schedule) throw new Error("expected routine schedule");
+    const occurrence = new Date("2026-09-02T08:00:00.000Z");
+    const key = firingKey(schedule.id, "cron", occurrence);
+    const target = await botFiringTarget(orgId, bot.id);
+    if (!target?.head) throw new Error("expected bot home thread");
+
+    // Recreate the durable state left by a crash after the losing root was
+    // canceled and its retarget was accepted, but before firing record/pump.
+    const strayId = crypto.randomUUID();
+    const rootPrompt = composeRootPrompt(target.bot, schedule.prompt);
+    const rootIntent: RunCommandIntent = {
+      prompt: rootPrompt,
+      model: schedule.model,
+      engine: schedule.engine,
+      parentRunId: null,
+      requestedRepos: schedule.repos,
+      requestedResources: [],
+      attachmentIds: [],
+      memoryScope: target.bot.memoryScope,
+      skillId: schedule.skillId,
+      skillVersion: schedule.skillVersion,
+      commandName: null,
+      commandProvider: null,
+      commandSessionId: null,
+      commandCatalogRevision: null,
+    };
+    expect(await acceptUnattendedRunCommand({
+      idempotencyKey: key,
+      orgId,
+      actorId: schedule.userId,
+      origin: AUTOMATION_RUN_ORIGIN,
+      acceptedModelPolicy: "persisted",
+      intent: rootIntent,
+      run: {
+        id: strayId,
+        prompt: rootPrompt,
+        model: schedule.model,
+        engine: schedule.engine,
+        parentRunId: null,
+        threadId: strayId,
+        repos: [],
+        resolvedResources: [],
+        memoryScope: target.bot.memoryScope,
+        skillId: schedule.skillId,
+        skillVersion: schedule.skillVersion,
+        skillContentHash: schedule.skillContentHash,
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    })).toMatchObject({ status: "created", runId: strayId });
+    await acceptRunCancel({ orgId, actorId: null, runId: strayId });
+
+    const retargetId = crypto.randomUUID();
+    const followupIntent: RunCommandIntent = {
+      ...rootIntent,
+      prompt: schedule.prompt,
+      parentRunId: target.head.id,
+      requestedRepos: [],
+      skillId: null,
+      skillVersion: null,
+    };
+    expect(await acceptExistingThreadFollowup(orgId, target.head.id, {
+      idempotencyKey: `${key}:retarget`,
+      orgId,
+      actorId: schedule.userId,
+      acceptedModelPolicy: "persisted",
+      intent: followupIntent,
+      run: {
+        id: retargetId,
+        prompt: schedule.prompt,
+        model: schedule.model,
+        engine: schedule.engine,
+        parentRunId: target.head.id,
+        threadId: target.head.threadId,
+        repos: [],
+        resolvedResources: [],
+        memoryScope: target.bot.memoryScope,
+        skillId: null,
+        skillVersion: null,
+        skillContentHash: null,
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    }, AUTOMATION_RUN_ORIGIN)).toMatchObject({ status: "created", runId: retargetId });
+
+    const recovered = await fireScheduleWithOutcome(schedule, "cron", occurrence);
+    expect(recovered).toEqual({ runId: retargetId, created: false, firingRecorded: true });
+    await waitFor(async () => {
+      const [run] = await db.select({ status: runs.status }).from(runs).where(eq(runs.id, retargetId));
+      return run?.status === "completed";
+    });
+    const history = await json<{ firings: { run_id: string }[] }>(
+      `/api/bots/${bot.id}/routines/${schedule.id}/history`,
+      { cookies },
+    );
+    expect(history.body.firings.map((f) => f.run_id)).toEqual([retargetId]);
   });
 
   test("approvals on a bot's home thread wait for a person instead of expiring in minutes", async () => {

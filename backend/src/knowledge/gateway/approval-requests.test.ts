@@ -428,6 +428,43 @@ describe("gateway approval-request lane (#77)", () => {
     expect(denyAfter).toEqual({ ok: false, error: "request_not_pending" });
   });
 
+  test("a denormalized bot thread cannot make a userless non-bot run org-approvable", async () => {
+    const actor = await runningActor();
+    const { request } = await createApprovalRequest({
+      orgId: actor.orgId,
+      runId: actor.runId,
+      threadId: actor.threadId,
+      toolName: "automation_delete",
+      arguments: { id: "automation-spoof" },
+    });
+    const authoritativeThreadId = `thread-${crypto.randomUUID()}`;
+    const botChecks: string[] = [];
+    let minted = false;
+
+    const result = await approveApprovalRequest(
+      { orgId: actor.orgId, requestId: request.id, approvedBy: "org-member" },
+      {
+        findRun: async () => ({
+          userId: null,
+          threadId: authoritativeThreadId,
+          status: "running",
+        }),
+        isBotThread: async (_orgId, threadId) => {
+          botChecks.push(threadId);
+          return threadId === request.threadId;
+        },
+        mint: async () => {
+          minted = true;
+          throw new Error("mint must not run for a spoofed approval request");
+        },
+      },
+    );
+
+    expect(result).toEqual({ ok: false, error: "run_user_mismatch" });
+    expect(botChecks).toEqual([]);
+    expect(minted).toBe(false);
+  });
+
   test("the human API keeps the mint route's exact security shape", async () => {
     const { orgId: devOrgId, userId: devUserId } = getDevContext();
 

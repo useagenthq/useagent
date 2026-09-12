@@ -128,11 +128,10 @@ export const runs = pgTable(
     commandProvider: text("command_provider"),
     commandSessionId: text("command_session_id"),
     commandCatalogRevision: bigint("command_catalog_revision", { mode: "number" }),
-    // First-class INTERNAL-run marker (memory self-improvement item 2). Set only
-    // by server-owned acceptance to an exact trusted `internal:*` origin (see
-    // src/runs/origin.ts). Public identifiers never influence it. Internal
-    // runs (parity canaries, e2e/soak harnesses, QC probes) are excluded from
-    // org-memory capture so evaluation traffic never pollutes team memory.
+    // Server-owned execution provenance (see src/runs/origin.ts). `internal:*`
+    // values isolate evaluation traffic from memory; `product:*` values mark
+    // unattended product execution without discarding the creator's user id.
+    // Public callers can never set this field.
     origin: text("origin"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

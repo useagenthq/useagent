@@ -4,13 +4,15 @@ import { runs } from "../db/schema";
 import {
   acceptInternalRunCommand,
   acceptRunCommand,
+  acceptUnattendedRunCommand,
   preflightInternalRunCommandReplay,
   preflightRunCommandReplay,
+  preflightUnattendedRunCommandReplay,
   StaleThreadHeadError,
 } from "../commands/service";
 import type { RunCommandIntent, RunCommandOutcome } from "../commands/types";
 import { getThreadRelationship } from "./thread-relationship-repo";
-import { isInternalRunOrigin } from "./origin";
+import { isInternalRunOrigin, isUnattendedRunOrigin, type UnattendedRunOrigin } from "./origin";
 import { legacyParentResources, resolveRunIntake } from "../resources/run-intake";
 import { createRunResourceAuthorization } from "../resources/authorization";
 import type { RunCommandInput } from "../commands/types";
@@ -22,6 +24,7 @@ export async function acceptResolvedThreadFollowup(input: {
   readonly command: RunCommandInput;
   readonly requireRelationship: boolean;
   readonly requireCurrentHead: boolean;
+  readonly origin?: UnattendedRunOrigin;
 }): Promise<RunCommandOutcome | { readonly status: "not_found" } | { readonly status: "stale_parent" }> {
   if (input.requireRelationship && !await getThreadRelationship(input.orgId, input.command.run.threadId)) {
     return { status: "not_found" };
@@ -42,9 +45,16 @@ export async function acceptResolvedThreadFollowup(input: {
     ? { ...input.command, expectedThreadHeadRunId: input.expectedParentRunId }
     : input.command;
   try {
-    return isInternalRunOrigin(parent.origin)
-      ? await acceptInternalRunCommand({ ...command, origin: parent.origin })
-      : await acceptRunCommand(command);
+    if (input.origin) {
+      return await acceptUnattendedRunCommand({ ...command, origin: input.origin });
+    }
+    if (isInternalRunOrigin(parent.origin)) {
+      return await acceptInternalRunCommand({ ...command, origin: parent.origin });
+    }
+    if (isUnattendedRunOrigin(parent.origin)) {
+      return await acceptUnattendedRunCommand({ ...command, origin: parent.origin });
+    }
+    return await acceptRunCommand(command);
   } catch (error) {
     if (error instanceof StaleThreadHeadError) return { status: "stale_parent" };
     throw error;
@@ -61,6 +71,7 @@ export async function acceptExistingThreadFollowup(
   orgId: string,
   parentRunId: string,
   command: RunCommandInput,
+  origin?: UnattendedRunOrigin,
 ): Promise<RunCommandOutcome> {
   const outcome = await acceptResolvedThreadFollowup({
     orgId,
@@ -68,6 +79,7 @@ export async function acceptExistingThreadFollowup(
     command,
     requireRelationship: false,
     requireCurrentHead: false,
+    origin,
   });
   if (outcome.status === "not_found") throw new ThreadFollowupTargetError("parent_run_not_found", 404);
   if (outcome.status === "stale_parent") throw new ThreadFollowupTargetError("stale_parent_run", 409);
@@ -111,14 +123,23 @@ export async function acceptThreadFollowup(input: {
       commandSessionId: null,
       commandCatalogRevision: null,
     };
-    return isInternalRunOrigin(existingRun.origin)
-      ? (await preflightInternalRunCommandReplay({
+    if (isInternalRunOrigin(existingRun.origin)) {
+      return (await preflightInternalRunCommandReplay({
           orgId: input.orgId,
           idempotencyKey: input.idempotencyKey,
           intent: replayIntent,
           origin: existingRun.origin,
-        }))!
-      : (await preflightRunCommandReplay({
+        }))!;
+    }
+    if (isUnattendedRunOrigin(existingRun.origin)) {
+      return (await preflightUnattendedRunCommandReplay({
+        orgId: input.orgId,
+        idempotencyKey: input.idempotencyKey,
+        intent: replayIntent,
+        origin: existingRun.origin,
+      }))!;
+    }
+    return (await preflightRunCommandReplay({
           orgId: input.orgId,
           idempotencyKey: input.idempotencyKey,
           intent: replayIntent,

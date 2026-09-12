@@ -17,11 +17,11 @@ describe("bot prompt context", () => {
       { id: "11111111-1111-4111-8111-111111111111", name: "Night Triage", title: "overnight incident triage", engine: "chat" },
       { id: "22222222-2222-4222-8222-222222222222", name: "Nova", title: "", engine: "opencode" },
     ]);
-    expect(out).toContain('"handle": "@bot/11111111-1111-4111-8111-111111111111"');
+    expect(out).toContain('"handle": "@bot/Night Triage"');
     expect(out).toContain('"name": "Night Triage"');
     expect(out).toContain('"engine": "opencode"');
     expect(out).toContain("bot_handoff");
-    expect(out).toContain("Never write as the bot");
+    expect(out).toContain("Never write as a bot you hand work to");
     expect(out).toContain("chat engine has no browsing");
     expect(out.startsWith("<bot_delegation_policy>")).toBe(true);
     expect(out.trimEnd().endsWith("</bot_delegation_policy>")).toBe(true);
@@ -71,17 +71,46 @@ describe("bot prompt context", () => {
     expect(rosterReads).toBe(1);
   });
 
-  test("fails closed with a stable error when ownership or roster evidence is unavailable", async () => {
+  test("degrades to an empty block when ownership or roster evidence is unavailable (never fails the run)", async () => {
     process.env.BOTS = "1";
     process.env.PRODUCT_CHILD_THREADS = "on";
     const input = { orgId: "org", threadId: "parent", engine: "opencode" as const };
-    await expect(botContextForTurn(input, {
+    expect(await botContextForTurn(input, {
       ownsThread: async () => { throw new Error("db down"); },
       list: async () => [],
-    })).rejects.toThrow("bot ownership lookup failed");
-    await expect(botContextForTurn(input, {
+    })).toBe("");
+    expect(await botContextForTurn(input, {
       ownsThread: async () => false,
       list: async () => { throw new Error("db down"); },
-    })).rejects.toThrow("bot roster lookup failed");
+    })).toBe("");
+  });
+});
+
+describe("bot prompt context resilience and identity", () => {
+  const bots = [
+    { id: "b1", name: "Night Triage", title: "overnight triage", engine: "chat" as const },
+    { id: "b2", name: "Nova", title: "", engine: "mock" as const },
+  ];
+
+  test("a lookup failure degrades to no block instead of failing the run", async () => {
+    process.env.BOTS = "1";
+    process.env.PRODUCT_CHILD_THREADS = "on";
+    const out = await botContextForTurn(
+      { orgId: "org-x", threadId: "t1", engine: "mock" },
+      { list: async () => bots, ownsThread: async () => { throw new Error("db down"); } },
+    );
+    expect(out).toBe("");
+  });
+
+  test("a bot-owned turn sees the other bots and is told who it is", async () => {
+    process.env.BOTS = "1";
+    process.env.PRODUCT_CHILD_THREADS = "on";
+    const out = await botContextForTurn(
+      { orgId: "org-x", threadId: "t1", engine: "mock" },
+      { list: async () => bots, ownsThread: async () => true, ownerName: async () => "Nova", ancestorDepth: async () => 1 },
+    );
+    expect(out).toContain("You are \"Nova\" in this thread");
+    expect(out).toContain("@bot/Night Triage");
+    expect(out).not.toContain("@bot/Nova");
   });
 });

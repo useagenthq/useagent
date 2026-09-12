@@ -7,6 +7,7 @@ import {
 } from "@useagent/agent-client";
 import { and, count, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { db } from "../db/client";
+import { promptSafeJson } from "./prompt-safe";
 import { botHandoffs, bots, gatewayApprovalRequests, runs, schedules, type BotRow } from "../db/schema";
 
 type ScheduleRecord = typeof schedules.$inferSelect;
@@ -387,15 +388,18 @@ export async function describeBots(orgId: string, rows: readonly BotRow[]): Prom
   ]);
   return rows.map((row) => {
     const delegated = handoffs.get(row.id) ?? [];
-    const live = delegated.filter((threadId) => {
+    const workThreads = [...(row.homeThreadId ? [row.homeThreadId] : []), ...delegated];
+    // Live wherever the bot works: a running home thread must not read idle because a
+    // delegated thread finished more recently.
+    const live = workThreads.filter((threadId) => {
       const status = heads.get(threadId)?.status;
       return status !== undefined && LIVE_STATUSES.has(status);
     }).length;
     // Approvals wait for a person wherever the bot works: its home thread or a delegated one.
-    const pendingForBot = [...(row.homeThreadId ? [row.homeThreadId] : []), ...delegated]
+    const pendingForBot = workThreads
       .reduce((sum, threadId) => sum + (pending.get(threadId) ?? 0), 0);
     // The bot's latest activity, wherever it worked: its home thread or a delegated one.
-    const newestHead = [...(row.homeThreadId ? [row.homeThreadId] : []), ...delegated]
+    const newestHead = workThreads
       .map((threadId) => heads.get(threadId) ?? null)
       .filter((head): head is ThreadHead => head !== null)
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0] ?? null;
@@ -421,9 +425,7 @@ export async function describeBot(orgId: string, row: BotRow): Promise<BotView> 
  * the standing rules. Native engines carry that context across resumed turns.
  */
 export function composeRootPrompt(bot: Pick<BotInput, "name" | "title" | "rules">, text: string): string {
-  const identity = JSON.stringify({ name: bot.name, title: bot.title }).replace(/[<>&\u2028\u2029]/g, (character) =>
-    `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`
-  );
+  const identity = promptSafeJson({ name: bot.name, title: bot.title });
   const rules = bot.rules.trim() ? bot.rules.trim() : "(none set yet)";
   return [
     text,

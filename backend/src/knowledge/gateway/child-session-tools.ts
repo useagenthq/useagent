@@ -479,12 +479,40 @@ async function handoff(claims: ToolTokenClaims, args: Record<string, unknown>): 
     title: title || undefined,
     idempotencyKey: `${idempotencyKey}:${bot.id}`,
   });
-  if (outcome.status === "conflict") return errorResult("idempotencyKey was already used for a different handoff.");
-  const verb = outcome.status === "created" ? "Handed off to" : outcome.status === "followed_up" ? "Continued the existing handoff to" : "Replayed handoff to";
-  return textResult(
-    `${verb} ${bot.name} in child session ${outcome.threadId}. Do not do the bot's part or write as the bot; read its result with child_session_gather when it settles.`,
-    { status: outcome.status, bot: { id: bot.id, name: bot.name, engine: bot.engine }, child: { id: outcome.threadId } },
-  );
+  switch (outcome.status) {
+    case "conflict":
+      return errorResult("idempotencyKey was already used for a different handoff.");
+    case "refused":
+      return errorResult(
+        outcome.reason === "self"
+          ? `Handoff refused: this thread already belongs to ${bot.name}. Do this part yourself here.`
+          : outcome.reason === "cycle"
+            ? `Handoff refused: ${bot.name} already sits above this thread in the delegation chain. Do this part yourself here.`
+            : outcome.reason === "depth"
+              ? "Handoff refused: this thread is as deep as delegation goes. Do this part yourself here."
+              : `Handoff refused: this thread or ${bot.name} has reached its handoff cap${outcome.retryAfterMs ? ` (retry in about ${Math.max(1, Math.ceil(outcome.retryAfterMs / 60_000))} min)` : ""}. Do this part yourself here.`,
+      );
+    case "busy":
+      return errorResult(`${bot.name}'s delegated thread is busy and your ask was not queued. Say so in your reply; do not retry this turn.`);
+    case "not_found":
+    case "unavailable":
+    case "failed":
+      return errorResult(`Handoff to ${bot.name} failed (${outcome.error ?? outcome.status}). Do this part yourself here.`);
+    case "created":
+    case "followed_up":
+    case "replayed": {
+      // The only successes, listed by name: a new status can never read as one by default.
+      const verb = outcome.status === "created" ? "Handed off to" : outcome.status === "followed_up" ? "Continued the existing handoff to" : "Replayed handoff to";
+      return textResult(
+        `${verb} ${bot.name} in child session ${outcome.threadId}. Do not do the bot's part or write as the bot; read its result with child_session_gather when it settles.`,
+        { status: outcome.status, bot: { id: bot.id, name: bot.name, engine: bot.engine }, child: { id: outcome.threadId } },
+      );
+    }
+    default: {
+      const unhandled: never = outcome.status;
+      return errorResult(`Handoff to ${bot.name} ended in an unexpected state (${String(unhandled)}). Do this part yourself here.`);
+    }
+  }
 }
 
 export async function executeChildSessionToolLocal(

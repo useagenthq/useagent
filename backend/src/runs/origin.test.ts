@@ -2,8 +2,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   assertInternalRunOrigin,
+  assertUnattendedRunOrigin,
+  BOT_HANDOFF_RUN_ORIGIN,
   INTERNAL_RUN_ORIGINS,
   isInternalRunOrigin,
+  isUnattendedRunOrigin,
+  AUTOMATION_RUN_ORIGIN,
 } from "./origin";
 
 describe("isInternalRunOrigin", () => {
@@ -29,6 +33,20 @@ describe("isInternalRunOrigin", () => {
     ]) {
       expect(isInternalRunOrigin(origin)).toBe(false);
       if (origin !== null) expect(() => assertInternalRunOrigin(origin)).toThrow();
+    }
+  });
+});
+
+describe("unattended product origins", () => {
+  test("accepts only server-owned automation and bot provenance", () => {
+    for (const origin of [AUTOMATION_RUN_ORIGIN, BOT_HANDOFF_RUN_ORIGIN]) {
+      expect(isUnattendedRunOrigin(origin)).toBe(true);
+      expect(() => assertUnattendedRunOrigin(origin)).not.toThrow();
+      expect(isInternalRunOrigin(origin)).toBe(false);
+    }
+    for (const origin of [null, "product:web", "product:automation:forged", "internal:canary"]) {
+      expect(isUnattendedRunOrigin(origin)).toBe(false);
+      if (origin !== null) expect(() => assertUnattendedRunOrigin(origin)).toThrow();
     }
   });
 });

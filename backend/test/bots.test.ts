@@ -181,17 +181,13 @@ describe("bots", () => {
     expect(notUuid.status).toBe(404);
   });
 
-  test("the surface is dark unless BOTS is on for the org", async () => {
-    const session = await createOrgSession("bots-dark");
-    process.env.BOTS = "";
+  test("BOTS=off is the kill switch for the whole surface", async () => {
+    const session = await createOrgSession("bots-off");
+    process.env.BOTS = "off";
     try {
       const hidden = await fetchApi("/api/bots", { cookies: session.cookies });
       expect(hidden.status).toBe(404);
-      process.env.BOTS_ORG_IDS = session.orgId;
-      const allowlisted = await fetchApi("/api/bots", { cookies: session.cookies });
-      expect(allowlisted.status).toBe(200);
     } finally {
-      delete process.env.BOTS_ORG_IDS;
       process.env.BOTS = "1";
     }
   });
