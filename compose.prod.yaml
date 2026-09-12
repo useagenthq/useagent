@@ -46,6 +46,7 @@ services:
       - /var/lib/useagent/codex-app-server:/var/lib/useagent/codex-app-server
       - /opt/useagent/pi-runtime:/opt/useagent/pi-runtime
       - ${USEAGENT_HOST_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}:/etc/ssl/certs/ca-certificates.crt:ro
+      - ${USEAGENT_UPLOAD_SCAN_DATABASE_DIR:-/var/lib/clamav}:/var/lib/clamav:ro
     restart: unless-stopped
     stop_grace_period: 30s
 

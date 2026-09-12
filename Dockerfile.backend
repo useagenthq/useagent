@@ -41,14 +41,16 @@ COPY packages/sandbox-box/package.json ./packages/sandbox-box/
 WORKDIR /app/backend
 RUN bun install --frozen-lockfile --production
 
-FROM ${BUN_IMAGE} AS runtime
+FROM ${BUN_IMAGE} AS runtime-base
 USER root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client \
+    && apt-get install -y --no-install-recommends ca-certificates clamav curl git openssh-client \
     && rm -rf /var/lib/apt/lists/* \
     && test -s /etc/ssl/certs/ca-certificates.crt \
+    && clamscan --version \
     && git --version
 
+FROM runtime-base AS runtime
 RUN set -eux; \
     arch="$(uname -m)"; \
     case "$arch" in \
