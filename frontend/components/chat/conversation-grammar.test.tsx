@@ -337,7 +337,9 @@ test("live turn tails with the T3 working indicator and hides the in-flight row"
   // Working indicator with the self-ticking timer and the in-flight step suffix.
   expect(html).toContain('data-session-ui="working-indicator"');
   expect(html).toContain("Working for");
-  expect(html).toContain("· Run");
+  // The in-flight step's suffix is the summarizer's label: for a shell step,
+  // the command line itself (never the "Run - <command>" row grammar).
+  expect(html).toContain("· bun run typecheck");
   expect(html).not.toContain("· Run - bun run typecheck");
   // The old LoadingState "Working" shimmer tail is gone from the timeline (no
   // narration is streaming here, so nothing else may render it either).

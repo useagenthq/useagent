@@ -154,6 +154,6 @@ test("live status keeps only the semantic heading while detail stays in the work
     })),
   ], true);
 
-  expect(projection.workingLabel).toBe("Skill activate");
+  expect(projection.workingLabel).toBe("Activated playbook: design-taste");
   expect(projection.segments).toHaveLength(1);
 });

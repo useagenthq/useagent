@@ -683,16 +683,23 @@ function splitGatewayTool(tool: string): { leaf: string; server: string | null }
   return { leaf: tool, server: null };
 }
 
+/** The bare tool name behind any gateway/MCP/dotted namespace:
+ * `mcp__useagent__memory_search` and `useagent_memory_search` both give
+ * `memory_search`. Shared with the tool summarizer (`./tool-summary`). */
+export function toolLeafName(tool: string): string {
+  return (
+    splitGatewayTool(tool)
+      .leaf.split(/__|[./]/)
+      .filter(Boolean)
+      .pop() ?? tool
+  );
+}
+
 /** Prettify an uncatalogued tool name into a human verb: strip any
  * `mcp__server__` / dotted namespace, spacing out `_`/`-`, Title-case the head.
  * `mcp__github__create_issue` → "Create issue"; falls back to "Tool". */
 function humanizeTool(tool: string): string {
-  const leaf =
-    splitGatewayTool(tool)
-      .leaf.split(/__|[./]/)
-      .filter(Boolean)
-      .pop() ?? tool;
-  const words = leaf.replace(/[_-]+/g, " ").trim();
+  const words = toolLeafName(tool).replace(/[_-]+/g, " ").trim();
   if (!words) return "Tool";
   return words.charAt(0).toUpperCase() + words.slice(1);
 }

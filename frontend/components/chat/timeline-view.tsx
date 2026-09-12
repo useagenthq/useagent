@@ -22,6 +22,12 @@ import { memo, useMemo, useState } from "react";
 import { PlanChecklist } from "@/components/agent-ui/plan-checklist";
 import { Thinking } from "@/components/ai/thinking";
 import { formatArtifactSize } from "@/components/artifacts/model";
+import {
+  botWorkFailureCount,
+  botWorkLabel,
+  splitBotTurn,
+} from "@/components/chat/bot-turn-model";
+import { BotWorkFold } from "@/components/chat/bot-work-fold";
 import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { FollowUpRows } from "@/components/chat/follow-up-rows";
 import { SourceChip } from "@/components/chat/source-chip";
@@ -360,19 +366,72 @@ function TimelineFollowups({ suggestions }: { suggestions: readonly string[] }) 
   return <FollowUpRows suggestions={suggestions} onPick={prefill} />;
 }
 
-export function Timeline({
-  nodes,
-  live,
-  workingSince,
-  showFollowups = false,
-}: {
+interface TimelineProps {
   nodes: TimelineNode[];
   live: boolean;
   workingSince?: string;
   /** Render this turn's follow-up suggestions (the LATEST turn only - stale
    *  suggestions under scrolled-back history are noise). */
   showFollowups?: boolean;
-}) {
+  showSources?: boolean;
+}
+
+/** A bot thread's settled run duration for the "Worked for" label. */
+export interface BotTurnContext {
+  readonly durationMs: number | null;
+}
+
+/**
+ * One turn's timeline. A plain thread renders the interleaved flow; a bot
+ * thread (`bot` set) reads like chat instead: the reply is the block and every
+ * step in between folds behind one line (see ./bot-turn-model).
+ */
+export function Timeline({ bot, ...props }: TimelineProps & { bot?: BotTurnContext }) {
+  return bot ? <BotTurn {...props} bot={bot} /> : <TimelineFlow {...props} />;
+}
+
+function BotTurn({
+  nodes,
+  live,
+  workingSince,
+  showFollowups = false,
+  bot,
+}: TimelineProps & { bot: BotTurnContext }) {
+  const { work, reply, tail } = useMemo(() => splitBotTurn(nodes, live), [nodes, live]);
+  const failures = useMemo(() => botWorkFailureCount(work), [work]);
+  const sources = useMemo(() => (live ? [] : deriveTurnSources(nodes)), [nodes, live]);
+  const label = useMemo(
+    () => botWorkLabel({ live, work, durationMs: bot.durationMs }),
+    [live, work, bot.durationMs],
+  );
+  return (
+    <div className="space-y-3" data-testid="bot-turn">
+      {work.length > 0 && (
+        <BotWorkFold label={label} live={live} failed={failures > 0}>
+          <TimelineFlow nodes={work} live={live} workingSince={workingSince} showSources={false} />
+        </BotWorkFold>
+      )}
+      {reply && (
+        <div data-testid="bot-reply">
+          <TextBurst text={reply} />
+        </div>
+      )}
+      {live && work.length === 0 && !reply && (
+        <WorkingIndicator createdAt={workingSince ?? null} />
+      )}
+      {sources.length > 0 && <TurnSourcesRow sources={sources} />}
+      {tail.length > 0 && <TimelineFlow nodes={tail} live={false} showFollowups={showFollowups} />}
+    </div>
+  );
+}
+
+function TimelineFlow({
+  nodes,
+  live,
+  workingSince,
+  showFollowups = false,
+  showSources = true,
+}: TimelineProps) {
   const { segments, workingLabel } = useMemo(() => segmentTimeline(nodes, live), [nodes, live]);
   // Artifacts are deliverables, not narration: they render AFTER the prose and
   // tool activity so an answer never appears below its own attachment.
@@ -384,7 +443,10 @@ export function Timeline({
   );
   const flowUnits = groupContextRecall(flowSegs);
   // Cited web sources settle with the turn (the live list would churn row by row).
-  const sources = useMemo(() => (live ? [] : deriveTurnSources(nodes)), [nodes, live]);
+  const sources = useMemo(
+    () => (showSources && !live ? deriveTurnSources(nodes) : []),
+    [nodes, live, showSources],
+  );
   return (
     <div className="space-y-3" data-testid="session-timeline">
       {flowUnits.map((unit) =>

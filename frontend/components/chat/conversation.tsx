@@ -1,6 +1,5 @@
 "use client";
 
-
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ExecutionSummarySnapshot, ThreadRelationship } from "@useagent/agent-client";
 import { LoadingState } from "@/components/ai/loading-state";
@@ -112,7 +111,6 @@ export type Turn = {
   pendingOutline?: { readonly stepCount: number; readonly hasSummary: boolean };
 };
 
-
 /** Terminal note for a run that failed before writing a summary. */
 function FailedNote() {
   return (
@@ -183,7 +181,6 @@ function LiveNarration({ text }: { text: string }) {
   );
 }
 
-
 /** Live provider "thinking" surfaced AHEAD of the answer: a subdued, truthful
  *  Thinking disclosure streaming the real reasoning tokens. It fills the
  *  pre-answer gap with real provider output (never a fabricated spinner) and
@@ -251,6 +248,8 @@ const TurnBlock = memo(function TurnBlock({
   assistantIdentity?: AssistantIdentity;
 }) {
   const { run, steps, status, summary, live, liveText, liveReasoning } = turn;
+  // A bot's thread reads like chat: the reply is the block, the work folds away.
+  const botTurn = assistantIdentity ? { durationMs: run.duration_ms } : undefined;
   // Capture whether this turn was streaming when it first mounted, so its
   // summary typewriters in on arrival but settled history renders instantly.
   const [wasLive] = useState(() => live);
@@ -351,7 +350,7 @@ const TurnBlock = memo(function TurnBlock({
 
         {/* Thinking surfaced ahead of the answer: real streamed reasoning tokens
             (not a spinner), yielding the instant answer text starts. */}
-        {live && !answerStarted && liveReasoning && <LiveThinking text={liveReasoning} />}
+        {live && !botTurn && !answerStarted && liveReasoning && <LiveThinking text={liveReasoning} />}
 
         {timeline ? (
           /* Native turn: the interleaved timeline IS the turn — narration bursts
@@ -364,6 +363,7 @@ const TurnBlock = memo(function TurnBlock({
               live={live}
               workingSince={run.created_at}
               showFollowups={isLatestTurn}
+              bot={botTurn}
             />
             {summary && !hasNarration(timeline) && <AgentAnswer summary={summary} />}
             {/* A run whose native frames carry no text (the chat engine streams its
@@ -387,12 +387,14 @@ const TurnBlock = memo(function TurnBlock({
                       nodes={toolNodesFromSteps(activity)}
                       live
                       workingSince={run.created_at}
+                      bot={botTurn}
                     />
                   )
                 : settled.length > 0 && (
                     <Timeline
                       nodes={toolNodesFromSteps(settled)}
                       live={false}
+                      bot={botTurn}
                     />
                   )}
 
@@ -434,7 +436,6 @@ const TurnBlock = memo(function TurnBlock({
           productChildren={productChildren}
           onOpenProductChild={onOpenProductChild}
         />
-
 
         {/* Hover copy on the settled answer (T3 grammar). The durable summary IS
             the answer markdown even when the timeline's final narration burst
