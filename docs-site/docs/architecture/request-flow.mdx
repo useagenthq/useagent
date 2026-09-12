@@ -19,9 +19,23 @@ This is the life of a single agent turn, following the units from
     dispatch serially per thread under a per-thread advisory lock.
   </Step>
   <Step title="A run is created">
-    The backend creates a run inside a thread. A reply reuses the thread's sandbox
-    and working directory; a root run claims a fresh sandbox, preferably from the
-    warm pool.
+    The backend creates a run inside a thread and acquires its sandbox. A reply
+    reuses the thread's retained sandbox and working directory; a root run claims
+    a fresh sandbox, preferably from the warm pool.
+  </Step>
+  <Step title="The sandbox is prepared for this turn">
+    On a fresh sandbox, the backend first installs and verifies only the selected
+    native provider and its stable settings. It then prepares authorized
+    repositories, pull-request resources, and uploaded inputs. Only after those
+    resources finish does it activate run-bound gateway capabilities, relays, or
+    process leases. Short-lived run credentials are therefore not minted before
+    a long clone, and a failed resource preparation creates no activation lease.
+
+    Retained sandboxes keep provider preparation and resource validation in
+    parallel where the runtime ownership contract allows it. Providers that
+    establish a lower-privilege runtime user remain resources-first. This is an
+    ordering change only: Codex, Claude Code, OpenCode, and Pi still use their
+    native drivers, and ACP is not a fallback.
   </Step>
   <Step title="The turn reaches its native engine session">
     The engine registry resolves a `ProviderDriver` for the engine, and the turn
