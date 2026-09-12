@@ -246,7 +246,7 @@ describe("explicit sandbox release", () => {
     }
   });
 
-  test("keeps a recorded env-provider mapping when its provider kind is unsupported", async () => {
+  test("keeps a recorded mapping when its provider kind is unsupported", async () => {
     const { orgId, runId, sandboxId } = await runFixture("completed");
     await setRunSandbox(runId, sandboxId, { kind: "cube", credential: "env" });
     await db
@@ -254,6 +254,13 @@ describe("explicit sandbox release", () => {
       .set({ sandboxProvider: sql`'retired-provider'` })
       .where(eq(runs.id, runId));
 
+    expect(await releaseRunSandbox(orgId, runId)).toEqual({
+      ok: false,
+      reason: "provider_error",
+    });
+    expect(await getThreadSandbox(runId)).toBe(sandboxId);
+
+    await db.update(runs).set({ sandboxCredential: "user" }).where(eq(runs.id, runId));
     expect(await releaseRunSandbox(orgId, runId)).toEqual({
       ok: false,
       reason: "provider_error",

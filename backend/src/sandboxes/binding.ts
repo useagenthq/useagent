@@ -163,7 +163,7 @@ interface RecordedSandbox {
 async function bindingForRecorded(recorded: RecordedSandbox | null, deps: SandboxBindingDeps): Promise<SandboxBinding> {
   if (recorded?.sandboxCredential === "user") {
     if (!recorded.orgId || !recorded.userId || !isComputerKind(recorded.sandboxProvider)) {
-      throw new PersonalSandboxConnectionUnavailableError(
+      throw new Error(
         "this sandbox was created on a personal computer whose owner can no longer be resolved",
       );
     }
