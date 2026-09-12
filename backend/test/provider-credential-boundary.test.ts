@@ -12,16 +12,6 @@ const agentTurnFiles = [
 const sourceFor = (path: string): string =>
   readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-function backendExecutionSource(path: (typeof agentTurnFiles)[number], source: string): string {
-  if (path !== "src/engines/acp-server.ts") return source;
-  const withoutSandboxRelay = source.replace(
-    /export const RELAY_SCRIPT = `[\s\S]*?^`;/m,
-    "",
-  );
-  if (withoutSandboxRelay === source) throw new Error("missing in-sandbox ACP relay source");
-  return withoutSandboxRelay;
-}
-
 function stringLiteralsIn(source: string, declaration: RegExp): string[] {
   const body = declaration.exec(source)?.groups?.body;
   if (body === undefined) throw new Error(`missing source declaration: ${declaration.source}`);
@@ -40,7 +30,9 @@ describe("provider credential trust boundary", () => {
   for (const path of agentTurnFiles) {
     test(`${path} cannot read or inject backend provider credentials`, () => {
       const source = sourceFor(path);
-      const backendSource = backendExecutionSource(path, source);
+      // The in-sandbox relay (which legitimately inherits the sandbox env) lives in
+      // acp-relay-script.ts, so every agent-turn file is scanned whole.
+      const backendSource = source;
       for (const name of providerSecretNames) {
         expect(backendSource).not.toMatch(
           new RegExp(`(?:process\\.env|\\benv)(?:\\.${name}|\\[["']${name}["']\\])`),

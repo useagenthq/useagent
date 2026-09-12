@@ -15,6 +15,7 @@ import {
   claudeAcpConfig,
   codexAcpConfig,
 } from "./acp-server";
+import { CODEX_ACP_FULL_ACCESS_MODE, codexAgentModeRequest } from "./acp-provisioning";
 
 describe("ACP executable provisioning (#127)", () => {
   test("idempotency is keyed on the actual install path, not `command -v`", () => {
@@ -78,6 +79,26 @@ describe("ACP executable provisioning (#127)", () => {
       },
     });
     expect(codexModelSelectionRequest("claude", "session-1", "claude-opus-5")).toBeNull();
+  });
+
+  test("codex: every session is put into full-access mode before it prompts", () => {
+    // codex-acp sends its session mode on each turn/start and defaults to
+    // workspace-write + on-request, which ignores config.toml and stalls every
+    // command inside Daytona behind an escalation approval (audit F6).
+    expect(CODEX_ACP_FULL_ACCESS_MODE).toBe("agent-full-access");
+    expect(codexAgentModeRequest("codex", "session-1")).toEqual({
+      method: "session/set_mode",
+      params: { sessionId: "session-1", modeId: "agent-full-access" },
+    });
+    expect(codexAgentModeRequest("claude", "session-1")).toBeNull();
+  });
+
+  test("codex: writes the agent log where a stalled turn reads it back", () => {
+    expect(codexAcpConfig.agentEnv?.APP_SERVER_LOGS).toBe("$HOME/.codex/acp-logs");
+    expect(codexAcpConfig.agentLogFile).toBe("$HOME/.codex/acp-logs/app-server.log");
+    expect(buildAcpRuntimeEnvExports(codexAcpConfig.agentEnv ?? {})).toBe(
+      'export APP_SERVER_LOGS="$HOME/.codex/acp-logs"; ',
+    );
   });
 
   test("uses product engine names without leaking process residency", () => {

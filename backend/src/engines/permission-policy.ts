@@ -55,6 +55,46 @@ export function decideAcpPermission(
     : { outcome: { outcome: "cancelled" } };
 }
 
+/** An inbound ACP `session/request_permission` JSON-RPC request as the agent sends it. */
+export interface AcpPermissionRequest {
+  id: number;
+  params?: {
+    options?: readonly AcpPermissionOption[];
+    toolCall?: { toolCallId?: string; kind?: string; title?: string };
+  };
+}
+
+/** The `tool_call` update previously recorded for the same tool call id, if any. */
+export interface AcpRecordedToolCall {
+  kind?: unknown;
+  title?: unknown;
+}
+
+/**
+ * Build the complete JSON-RPC response to one ACP permission request through
+ * {@link decideAcpPermission}. The request's own `toolCall.kind` is what the agent
+ * asks to do (codex-acp sends `execute` for a shell escalation even when the
+ * recorded tool_call was presented as `read`), so it wins over the recorded
+ * kind; the title falls back the other way because permission requests from
+ * codex-acp carry none.
+ */
+export function answerAcpPermissionRequest(
+  request: AcpPermissionRequest,
+  recorded?: AcpRecordedToolCall,
+  autoApprove: boolean = acpAutoApprove(),
+): { jsonrpc: "2.0"; id: number; result: AcpPermissionOutcome } {
+  const toolCall = request.params?.toolCall ?? {};
+  const kind = toolCall.kind ??
+    (typeof recorded?.kind === "string" ? recorded.kind : undefined);
+  const title = (typeof recorded?.title === "string" ? recorded.title : undefined) ??
+    toolCall.title;
+  return {
+    jsonrpc: "2.0",
+    id: request.id,
+    result: decideAcpPermission(request.params?.options ?? [], autoApprove, title, kind),
+  };
+}
+
 const TRUSTED_SANDBOX_NATIVE_TOOLS: ReadonlySet<string> = new Set([
   "Agent",
   "Bash",
