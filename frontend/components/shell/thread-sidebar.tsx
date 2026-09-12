@@ -2,9 +2,14 @@
 
 import {
   RiAddLine,
+  RiBook3Line,
   RiBookShelfLine,
+  RiBroadcastLine,
   RiChat3Line,
   RiDashboardLine,
+  RiDatabase2Line,
+  RiKey2Line,
+  RiListCheck2,
   RiRobot2Line,
 } from "@remixicon/react";
 import Link from "next/link";
@@ -61,6 +66,7 @@ function CollapsedThreads() {
 export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
+  const pathname = usePathname();
 
   const routes: Route[] = [
     {
@@ -95,6 +101,24 @@ export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
       tone: "green",
       href: "/skills",
       active: active === "library",
+    },
+    {
+      id: "library",
+      title: "Library",
+      icon: RiBook3Line,
+      tone: "orange",
+      href: "/artifacts",
+      subs: [
+        {
+          title: "Artifacts",
+          href: "/artifacts",
+          icon: RiBroadcastLine,
+          active: pathname === "/artifacts",
+        },
+        { title: "Tasks", href: "/tasks", icon: RiListCheck2, active: pathname === "/tasks" },
+        { title: "Memory", href: "/memory", icon: RiDatabase2Line, active: pathname === "/memory" },
+        { title: "Secrets", href: "/secrets", icon: RiKey2Line, active: pathname === "/secrets" },
+      ],
     },
   ];
 
