@@ -76,8 +76,8 @@ export interface EngineRunContext {
    *  fitting id from it, but still MUST call skill_activate before following any
    *  procedure. Empty when unavailable or unnecessary. */
   skillCatalogContext?: string;
-  /** The workspace's bots and the delegation rule (never answer as a bot). Injected on
-   *  every turn like the skill catalog; empty when bots or handoffs are unavailable. */
+  /** Controller-only bot roster and delegation policy. Empty for bot-owned turns,
+   *  chat-engine turns, commands, and when bots or handoffs are unavailable. */
   botContext?: string;
   /** Trusted descriptors for user uploads claimed by this run. Adapters copy
    * the bytes into sandboxPath before dispatch; only paths and metadata enter

@@ -256,10 +256,10 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
   });
 
   test("carries the workspace bot context on fresh and resumed turns, and never for command turns", () => {
-    const bots = "<bots>\n- Nova (@bot/Nova) on opencode\n</bots>\n";
+    const bots = "<bot_delegation_policy>\n[]\n</bot_delegation_policy>\n";
     expect(composeTurnPrompt(ctx({ botContext: bots }), false, EXECUTION, {})).toContain(bots);
     expect(composeTurnPrompt(ctx({ botContext: bots }), true, EXECUTION, {})).toContain(bots);
-    expect(composeTurnPrompt(ctx({ botContext: bots, commandName: "review" }), true, EXECUTION, {})).not.toContain("<bots>");
-    expect(composeTurnPrompt(ctx(), true, EXECUTION, {})).not.toContain("<bots>");
+    expect(composeTurnPrompt(ctx({ botContext: bots, commandName: "review" }), true, EXECUTION, {})).not.toContain("<bot_delegation_policy>");
+    expect(composeTurnPrompt(ctx(), true, EXECUTION, {})).not.toContain("<bot_delegation_policy>");
   });
 });

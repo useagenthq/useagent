@@ -8,7 +8,7 @@ export interface TurnPromptContext {
   readonly resourceContext?: string;
   readonly skillContext?: string;
   readonly skillCatalogContext?: string;
-  /** Who the workspace's bots are and the delegation rule; see bots/prompt-context. */
+  /** Controller-only bot roster and delegation policy; absent on bot-owned/chat turns. */
   readonly botContext?: string;
   readonly inputContext?: string;
   readonly commandName?: string | null;

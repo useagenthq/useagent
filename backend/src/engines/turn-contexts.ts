@@ -10,10 +10,12 @@ export function frameTurnContexts(input: {
   readonly recall: { readonly rendered?: string } | null | undefined;
   readonly skillCatalogPage: Pick<SkillCatalogPage, "skills" | "nextCursor"> | null | undefined;
   readonly resourceSnapshot: ResourceAccessSnapshot | null | undefined;
-}): { turnContext: string; skillCatalogContext: string; resourceContext: string } {
+  readonly botContext?: string;
+}): { turnContext: string; skillCatalogContext: string; resourceContext: string; botContext: string } {
   return {
     turnContext: input.recall?.rendered ?? "",
     skillCatalogContext: input.skillCatalogPage ? frameSkillCatalogContext(input.skillCatalogPage) : "",
     resourceContext: input.resourceSnapshot ? formatResourceAccessContext(input.resourceSnapshot) : "",
+    botContext: input.botContext ?? "",
   };
 }

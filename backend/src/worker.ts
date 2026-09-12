@@ -42,7 +42,7 @@ import {
   RUN_TIMING_STAGES,
   type RunStageTimer,
 } from "./runs/run-timing";
-import { botContextForOrg } from "./bots/prompt-context";
+import { botContextForTurn } from "./bots/prompt-context";
 import { frameTurnContexts } from "./engines/turn-contexts";
 import { formatInputContext, runInputFiles } from "./uploads/materialize";
 import { CHAT_SYSTEM_PROMPT } from "./chat/prompt";
@@ -358,8 +358,14 @@ async function runWorker(runId: string): Promise<void> {
     const providerSession = providerSessionState.binding ?? undefined;
     const engineSessionId = providerSession?.nativeSessionId ??
       providerSessionState.legacySessionId ?? undefined;
-    const { turnContext, skillCatalogContext, resourceContext } = frameTurnContexts({ recall, skillCatalogPage, resourceSnapshot });
-    const botContext = await botContextForOrg(run.orgId, run.threadId);
+    const { turnContext, skillCatalogContext, resourceContext, botContext } = frameTurnContexts({
+      recall,
+      skillCatalogPage,
+      resourceSnapshot,
+      botContext: run.commandName
+        ? ""
+        : await botContextForTurn({ orgId: run.orgId, threadId: run.threadId, engine: run.engine }),
+    });
 
     if (turnContext || bootstrapContext || skillContext || skillCatalogContext || resourceContext) {
       console.log(

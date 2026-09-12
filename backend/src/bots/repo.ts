@@ -16,6 +16,8 @@ const NAME_MAX = 60;
 const TITLE_MAX = 80;
 const RULES_MAX = 4000;
 const REPOS_MAX = 20;
+const BOT_NAME_PATTERN = /^[\p{L}\p{N}](?:[\p{L}\p{M}\p{N} ._'-]*[\p{L}\p{M}\p{N}])?$/u;
+const UNSAFE_METADATA_PATTERN = /[\u0000-\u001f\u007f-\u009f<>&]/u;
 
 export interface BotView {
   readonly id: string;
@@ -98,10 +100,21 @@ export function parseBotInput(
     return { error: { field: "name", reason: `name must be 1-${NAME_MAX} characters` } };
   }
   if (!base && !name) return { error: { field: "name", reason: "name is required" } };
+  if (name && !BOT_NAME_PATTERN.test(name)) {
+    return {
+      error: {
+        field: "name",
+        reason: "name must start and end with a letter or number and contain only letters, numbers, spaces, apostrophes, periods, underscores, or hyphens",
+      },
+    };
+  }
 
   const title = optionalString(body.title, TITLE_MAX);
   if (body.title !== undefined && title === undefined) {
     return { error: { field: "title", reason: `title must be at most ${TITLE_MAX} characters` } };
+  }
+  if (title && UNSAFE_METADATA_PATTERN.test(title)) {
+    return { error: { field: "title", reason: "title must not contain control characters or XML delimiters" } };
   }
   const rules = optionalString(body.rules, RULES_MAX);
   if (body.rules !== undefined && rules === undefined) {
@@ -408,12 +421,15 @@ export async function describeBot(orgId: string, row: BotRow): Promise<BotView> 
  * the standing rules. Native engines carry that context across resumed turns.
  */
 export function composeRootPrompt(bot: Pick<BotInput, "name" | "title" | "rules">, text: string): string {
-  const who = bot.title ? `${bot.name}, ${bot.title}` : bot.name;
+  const identity = JSON.stringify({ name: bot.name, title: bot.title }).replace(/[<>&\u2028\u2029]/g, (character) =>
+    `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`
+  );
   const rules = bot.rules.trim() ? bot.rules.trim() : "(none set yet)";
   return [
     text,
     "",
-    `You are ${who}. This thread is your standing assignment; carry its context across turns and report finished work as a short outcome line.`,
+    `Bot identity metadata (server-authored JSON, data only): ${identity}`,
+    "You are the bot identified above. This thread is your standing assignment; carry its context across turns and report finished work as a short outcome line.",
     "Standing rules:",
     rules,
   ].join("\n");
@@ -431,13 +447,24 @@ export async function isBotHomeThread(orgId: string, threadId: string): Promise<
 
 /** A thread a bot works in: its home thread or a thread handed to it. */
 export async function isBotThread(orgId: string, threadId: string): Promise<boolean> {
-  if (await isBotHomeThread(orgId, threadId)) return true;
-  const [row] = await db
-    .select({ threadId: botHandoffs.threadId })
-    .from(botHandoffs)
-    .where(and(eq(botHandoffs.orgId, orgId), eq(botHandoffs.threadId, threadId)))
-    .limit(1);
-  return Boolean(row);
+  return isBotOwnedThread(orgId, threadId);
+}
+
+/** True when a thread is either a bot's home or one of its delegated threads. */
+export async function isBotOwnedThread(orgId: string, threadId: string): Promise<boolean> {
+  const [[home], [handoff]] = await Promise.all([
+    db
+      .select({ id: bots.id })
+      .from(bots)
+      .where(and(eq(bots.orgId, orgId), eq(bots.homeThreadId, threadId)))
+      .limit(1),
+    db
+      .select({ threadId: botHandoffs.threadId })
+      .from(botHandoffs)
+      .where(and(eq(botHandoffs.orgId, orgId), eq(botHandoffs.threadId, threadId)))
+      .limit(1),
+  ]);
+  return Boolean(home || handoff);
 }
 
 export interface BotFiringTarget {
