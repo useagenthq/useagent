@@ -91,7 +91,7 @@ terminalRoutes.get(
               return;
             }
             send("\x1b[2m[useAgent] connected to sandbox " + sandboxId.slice(0, 8) + "\x1b[0m\r\n");
-            await pty.sendInput("cd ~/work 2>/dev/null; clear\n");
+            await pty.sendInput("cd ~/work 2>/dev/null || cd ~; printf '\\033[2J\\033[H'\n");
           } catch (err) {
             const message = errorMessage(err);
             // A reaped/absent sandbox is the NORMAL idle state between runs,

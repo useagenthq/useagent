@@ -7,7 +7,9 @@ import {
   boxPreviewLink,
   boxPtyEnv,
   boxPtyHandle,
+  boxPtyKeygenArgv,
   boxPtyLoginArgv,
+  boxPtyReadyGate,
   boxPtySshArgv,
   boxSandboxProvider,
   createBoxPtyHome,
@@ -360,7 +362,25 @@ describe("Box sandbox provider", () => {
     const home = await createBoxPtyHome();
     try {
       expect(boxPtyLoginArgv("box_secret")).toEqual(["box", "login", "box_secret", "--json"]);
-      expect(boxPtySshArgv("bx_123")).toEqual(["box", "ssh", "bx_123", "--", "bash", "-l"]);
+      expect(boxPtySshArgv("bx_123", "READY")).toEqual([
+        "box",
+        "ssh",
+        "bx_123",
+        "--",
+        "bash",
+        "-lc",
+        "export TERM=xterm-256color; cd ~/work 2>/dev/null || cd ~; printf '%s\\n' 'READY'; exec bash -li",
+      ]);
+      expect(boxPtyKeygenArgv(home)).toEqual([
+        "ssh-keygen",
+        "-q",
+        "-t",
+        "ed25519",
+        "-N",
+        "",
+        "-f",
+        join(home, ".ssh", "ascii-box_ed25519"),
+      ]);
       expect(boxPtyEnv(home, { PATH: "/usr/bin", HOME: "/shared" })).toEqual({
         PATH: "/usr/bin",
         HOME: home,
@@ -372,7 +392,7 @@ describe("Box sandbox provider", () => {
       );
       expect((await stat(home)).mode & 0o777).toBe(0o700);
       expect((await stat(join(home, ".config", "ascii", "box", "config.json"))).mode & 0o777).toBe(0o600);
-      expect(JSON.stringify(boxPtySshArgv("bx_123"))).not.toContain("box_secret");
+      expect(JSON.stringify(boxPtySshArgv("bx_123", "READY"))).not.toContain("box_secret");
       expect(JSON.stringify(boxPtyEnv(home, {}))).not.toContain("box_secret");
     } finally {
       await removeBoxPtyHome(home);
@@ -400,6 +420,7 @@ describe("Box sandbox provider", () => {
         resolveExit(143);
       },
     };
+    const ready = Promise.withResolvers<void>();
     const handle = boxPtyHandle(
       {
         write(data) {
@@ -417,8 +438,16 @@ describe("Box sandbox provider", () => {
       async () => {
         cleanups += 1;
       },
+      ready.promise,
     );
-    await handle.waitForConnection();
+    let connected = false;
+    const waiting = handle.waitForConnection().then(() => {
+      connected = true;
+    });
+    await Bun.sleep(0);
+    expect(connected).toBe(false);
+    ready.resolve();
+    await waiting;
     await handle.sendInput("pwd\r");
     await handle.resize(120, 40);
     await handle.disconnect();
@@ -428,6 +457,18 @@ describe("Box sandbox provider", () => {
     expect(kills).toBe(1);
     expect(closes).toBe(1);
     expect(cleanups).toBe(1);
+  });
+
+  test("PTY readiness suppresses first-connection key output and split markers", async () => {
+    const visible: string[] = [];
+    const gate = boxPtyReadyGate("READY", (data) => {
+      visible.push(Buffer.from(data).toString("utf8"));
+    });
+    gate.push(Buffer.from("Generating public/private ed25519 key pair.\nREA"));
+    gate.push(Buffer.from("DY\r\nuser@box:~$ "));
+    await gate.ready;
+    gate.push(Buffer.from("pwd\r\n"));
+    expect(visible).toEqual(["user@box:~$ ", "pwd\r\n"]);
   });
 
   test("a box that never becomes ready is deleted with its label row, and the error surfaces", async () => {

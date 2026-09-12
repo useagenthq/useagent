@@ -162,8 +162,27 @@ export function boxPtyLoginArgv(apiKey: string): string[] {
   return ["box", "login", apiKey, "--json"];
 }
 
-export function boxPtySshArgv(boxId: string): string[] {
-  return ["box", "ssh", boxId, "--", "bash", "-l"];
+export function boxPtyKeygenArgv(home: string): string[] {
+  return [
+    "ssh-keygen",
+    "-q",
+    "-t",
+    "ed25519",
+    "-N",
+    "",
+    "-f",
+    join(home, ".ssh", "ascii-box_ed25519"),
+  ];
+}
+
+export function boxPtySshArgv(boxId: string, readyMarker: string): string[] {
+  const shell = [
+    "export TERM=xterm-256color",
+    "cd ~/work 2>/dev/null || cd ~",
+    `printf '%s\\n' ${q(readyMarker)}`,
+    "exec bash -li",
+  ].join("; ");
+  return ["box", "ssh", boxId, "--", "bash", "-lc", shell];
 }
 
 export function boxPtyEnv(
@@ -203,10 +222,51 @@ interface BoxPtySubprocess {
   kill(): void;
 }
 
+export interface BoxPtyReadyGate {
+  readonly ready: Promise<void>;
+  push(data: Uint8Array): void;
+  fail(error: Error): void;
+}
+
+/** Suppress Box CLI bootstrap chatter until the remote shell prints its marker. */
+export function boxPtyReadyGate(
+  marker: string,
+  onData: (data: Uint8Array) => void | Promise<void>,
+): BoxPtyReadyGate {
+  const markerBytes = Buffer.from(marker);
+  const { promise, resolve, reject } = Promise.withResolvers<void>();
+  let pending = Buffer.alloc(0);
+  let settled = false;
+  return {
+    ready: promise,
+    push(data) {
+      if (settled) {
+        void Promise.resolve(onData(data)).catch(() => {});
+        return;
+      }
+      pending = Buffer.concat([pending, Buffer.from(data)]);
+      const markerAt = pending.indexOf(markerBytes);
+      if (markerAt < 0) return;
+      settled = true;
+      let visible = pending.subarray(markerAt + markerBytes.length);
+      while (visible[0] === 10 || visible[0] === 13) visible = visible.subarray(1);
+      pending = Buffer.alloc(0);
+      resolve();
+      if (visible.length > 0) void Promise.resolve(onData(visible)).catch(() => {});
+    },
+    fail(error) {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    },
+  };
+}
+
 export function boxPtyHandle(
   terminal: BoxPtyTerminal,
   subprocess: BoxPtySubprocess,
   cleanup: () => Promise<void>,
+  ready: Promise<void> = Promise.resolve(),
 ): SandboxPtyHandle {
   let cleanupPromise: Promise<void> | undefined;
   let terminalClosed = false;
@@ -227,7 +287,7 @@ export function boxPtyHandle(
     return cleanOnce();
   }).catch(() => {});
   return {
-    waitForConnection: async () => {},
+    waitForConnection: () => ready,
     sendInput: async (data) => {
       terminal.write(data);
     },
@@ -553,16 +613,38 @@ class BoxProcess implements SandboxProcess {
         throw new Error("Box CLI login failed");
       }
 
+      const sshDir = join(home, ".ssh");
+      await mkdir(sshDir, { recursive: true, mode: 0o700 });
+      const keygen = Bun.spawn(boxPtyKeygenArgv(home), {
+        env,
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      if ((await keygen.exited) !== 0) {
+        throw new Error("Box terminal identity setup failed");
+      }
+
+      const readyMarker = `__USEAGENT_PTY_READY_${crypto.randomUUID()}__`;
+      const gate = boxPtyReadyGate(readyMarker, options.onData);
       const terminal = new Bun.Terminal({
         cols: options.cols,
         rows: options.rows,
         data: (_terminal, data) => {
-          void Promise.resolve(options.onData(data)).catch(() => {});
+          gate.push(data);
         },
       });
       try {
-        const subprocess = Bun.spawn(boxPtySshArgv(this.boxId), { env, terminal });
-        return boxPtyHandle(terminal, subprocess, () => removeBoxPtyHome(home));
+        const subprocess = Bun.spawn(boxPtySshArgv(this.boxId, readyMarker), { env, terminal });
+        void subprocess.exited.then((code) => {
+          gate.fail(new Error(`Box terminal exited before the shell was ready (${code})`));
+        });
+        return boxPtyHandle(
+          terminal,
+          subprocess,
+          () => removeBoxPtyHome(home),
+          gate.ready,
+        );
       } catch (error) {
         terminal.close();
         throw error;
