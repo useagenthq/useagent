@@ -297,6 +297,16 @@ export function boxPtyHandle(
     terminalClosed = true;
     terminal.close();
   };
+  const termination = subprocess.exited.then(
+    (exitCode) => {
+      closeTerminal();
+      return { exitCode };
+    },
+    () => {
+      closeTerminal();
+      return { error: "Box PTY termination failed" };
+    },
+  );
   const stop = async (): Promise<void> => {
     if (subprocess.exitCode === null && !subprocess.killed) subprocess.kill();
     closeTerminal();
@@ -309,6 +319,7 @@ export function boxPtyHandle(
   }).catch(() => {});
   return {
     waitForConnection: () => ready,
+    waitForTermination: () => termination,
     sendInput: async (data) => {
       terminal.write(data);
     },

@@ -50,6 +50,7 @@ function sandboxFixture(
       getSessionCommandLogs: async () => ({}),
       createPty: async () => ({
         waitForConnection: async () => {},
+        waitForTermination: async () => new Promise(() => {}),
         sendInput: async () => {},
         resize: async () => {},
         disconnect: async () => {},

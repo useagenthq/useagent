@@ -27,6 +27,48 @@ describe("native bridge turn settlement", () => {
     })).toBeNull();
   });
 
+  test.each(["completed", "failed"] as const)(
+    "the first terminal evidence wins when closure races a %s turn",
+    async (first) => {
+      const captured: ProviderEventInput[] = [];
+      let listener: ((frame: unknown) => void) | undefined;
+      const completed: NativeBridgeFrameBody = { kind: "turn.completed" };
+      const failed: NativeBridgeFrameBody = { kind: "turn.failed", error: "transport closed" };
+      const turn = runNativeBridgeTurn({
+        ctx: {
+          runId: "run",
+          threadId: "thread",
+          signal: new AbortController().signal,
+        } as never,
+        driver: {
+          steer: async () => {
+            listener?.({ bodies: [first === "completed" ? completed : failed] });
+            // A buffered provider frame and the PTY close microtask may both
+            // arrive before the turn's persistence drain unsubscribes.
+            listener?.({ bodies: [first === "completed" ? failed : completed] });
+            return { status: "ok" };
+          },
+          cancel: async () => ({ status: "ok" }),
+        } as never,
+        session: { nativeSessionId: "parent" } as never,
+        bridge: {
+          sessionFile: "/sessions/pi.jsonl",
+          subscribe: (next) => {
+            listener = next;
+            return () => {};
+          },
+        },
+        prompt: "continue",
+        mapFrame: mappedBodies,
+        redact: { text: (value) => value, unknown: (value) => value },
+      }, async (event) => { captured.push(event); });
+
+      if (first === "completed") await expect(turn).resolves.toBe("");
+      else await expect(turn).rejects.toThrow("transport closed");
+      expect(captured.map((event) => event.eventType)).toEqual([`pi.turn.${first}`]);
+    },
+  );
+
   test("redacts child transcript tool input and output before persistence", () => {
     const secret = "sk-secret-value-that-must-not-persist";
     const frame = new NativeBridgeSequencer("parent", () => 1).frame({

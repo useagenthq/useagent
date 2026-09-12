@@ -14,7 +14,8 @@ import { PI_CODING_AGENT_VERSION, type PreparedPiRuntime } from "./pi-runtime-co
 
 const RPC_REQUEST_TIMEOUT_MS = 30_000;
 const RPC_CHILD_TRANSCRIPT_TIMEOUT_MS = 2_000;
-const ANSI_CSI_SEQUENCE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
+const RPC_TEARDOWN_TIMEOUT_MS = 5_000;
+const LEADING_TERMINAL_CONTROL = /^(?:\u0007|\u001b\[[0-?]*[ -/]*[@-~])/u;
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
@@ -27,6 +28,7 @@ interface PendingRequest {
 }
 
 class PiRpcReadinessTimeoutError extends Error {}
+class PiRpcTeardownTimeoutError extends Error {}
 
 export type PiRpcFrameListener = (frame: unknown) => void;
 type PiRpcCommandInput = RpcCommand extends infer Command
@@ -57,9 +59,21 @@ function objectValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function parsePiRpcFrameLine(line: string): Record<string, unknown> | null {
-  const normalized = line.replace(ANSI_CSI_SEQUENCE, "").trim();
-  if (!normalized.startsWith("{")) return null;
+function parsePiRpcFrameLine(
+  line: string,
+  tolerateShellNoise: boolean,
+): Record<string, unknown> | null {
+  let normalized = line.trim();
+  if (!normalized.startsWith("{")) {
+    while (LEADING_TERMINAL_CONTROL.test(normalized)) {
+      normalized = normalized.replace(LEADING_TERMINAL_CONTROL, "").trimStart();
+    }
+  }
+  if (!normalized) return null;
+  if (!normalized.startsWith("{")) {
+    if (tolerateShellNoise) return null;
+    throw new Error("unexpected non-JSON Pi RPC output");
+  }
   try {
     return JSON.parse(normalized) as Record<string, unknown>;
   } catch (cause) {
@@ -74,22 +88,40 @@ class LivePiBridgeSession implements PiBridgeSession {
   #textEncoder = new TextEncoder();
   #nextId = 0;
   #readyResolve!: () => void;
-  #ready = new Promise<void>((resolve) => {
+  #readyReject!: (error: Error) => void;
+  #ready = new Promise<void>((resolve, reject) => {
     this.#readyResolve = resolve;
+    this.#readyReject = reject;
+  });
+  #failureReject!: (error: Error) => void;
+  #failure = new Promise<never>((_, reject) => {
+    this.#failureReject = reject;
   });
   #pending = new Map<string, PendingRequest>();
   #listeners = new Set<PiRpcFrameListener>();
   #initialFrames: unknown[] = [];
   #childTranscriptCursors = new Map<string, number>();
+  #readySettled = false;
+  #failureSettled = false;
+  #protocolFailed = false;
   #disposed = false;
+  #disposePromise: Promise<void> | undefined;
 
   private constructor(
     private readonly pty: SandboxPtyHandle,
+    private readonly onDisposed: (session: LivePiBridgeSession) => void,
     readonly sandboxId: string,
     readonly fingerprint: string,
     readonly sessionId: string,
     readonly sessionFile: string,
-  ) {}
+  ) {
+    void this.#ready.catch(() => {});
+    void this.#failure.catch(() => {});
+  }
+
+  get disposed(): boolean {
+    return this.#disposed;
+  }
 
   static async start(input: {
     readonly sandbox: SandboxHandle;
@@ -97,6 +129,8 @@ class LivePiBridgeSession implements PiBridgeSession {
     readonly runtime: PreparedPiRuntime;
     readonly resumeSessionFile?: string;
     readonly readinessTimeoutMs?: number;
+    readonly onCreated: (session: LivePiBridgeSession) => void;
+    readonly onDisposed: (session: LivePiBridgeSession) => void;
   }): Promise<LivePiBridgeSession> {
     let instance: LivePiBridgeSession | undefined;
     const pty = await input.sandbox.process.createPty({
@@ -110,38 +144,50 @@ class LivePiBridgeSession implements PiBridgeSession {
     });
     instance = new LivePiBridgeSession(
       pty,
+      input.onDisposed,
       input.sandbox.id,
       input.runtime.fingerprint,
       "pending",
       input.resumeSessionFile ?? "pending",
     );
-    await pty.waitForConnection();
-    const resume = input.resumeSessionFile
-      ? ` --resume ${shellQuote(input.resumeSessionFile)}`
-      : "";
-    const piCommand =
-      `exec env -i HOME=${shellQuote(input.runtime.home)} PATH=/usr/local/bin:/usr/bin:/bin ` +
-      `PI_CODING_AGENT_DIR=${shellQuote(`${input.runtime.home}/agent`)} ` +
-      `${shellQuote(input.runtime.bunExecutable)} ${shellQuote(input.runtime.executable)} ` +
-      `--mode rpc --cwd ${shellQuote(input.workdir)} ` +
-      `--model ${shellQuote(input.runtime.model.selector)} --no-title --no-lsp ` +
-      `--no-extensions --no-skills --no-rules --auto-approve ` +
-      `--tools read,write,bash,task${resume}`;
-    const command = input.runtime.runAsUser
-      ? `stty -echo -onlcr -icanon min 1 time 0; exec su -s /bin/sh ${shellQuote(input.runtime.runAsUser)} ` +
-        `-c ${shellQuote(piCommand)}`
-      : `stty -echo -onlcr -icanon min 1 time 0; ${piCommand}`;
-    await pty.sendInput(`${command}\n`);
+    input.onCreated(instance);
+    instance.observeTermination();
     try {
-      await Promise.race([
-        instance.#ready,
-        new Promise((_, reject) => setTimeout(
+      let readinessTimer: ReturnType<typeof setTimeout> | undefined;
+      const readinessDeadline = new Promise<never>((_, reject) => {
+        readinessTimer = setTimeout(
           () => reject(new PiRpcReadinessTimeoutError(
             `Pi ${PI_CODING_AGENT_VERSION} RPC readiness timed out`,
           )),
           input.readinessTimeoutMs ?? RPC_REQUEST_TIMEOUT_MS,
-        )),
-      ]);
+        );
+      });
+      try {
+        await Promise.race([pty.waitForConnection(), instance.#failure, readinessDeadline]);
+        const resume = input.resumeSessionFile
+          ? ` --resume ${shellQuote(input.resumeSessionFile)}`
+          : "";
+        const piCommand =
+          `exec env -i HOME=${shellQuote(input.runtime.home)} PATH=/usr/local/bin:/usr/bin:/bin ` +
+          `PI_CODING_AGENT_DIR=${shellQuote(`${input.runtime.home}/agent`)} ` +
+          `${shellQuote(input.runtime.bunExecutable)} ${shellQuote(input.runtime.executable)} ` +
+          `--mode rpc --cwd ${shellQuote(input.workdir)} ` +
+          `--model ${shellQuote(input.runtime.model.selector)} --no-title --no-lsp ` +
+          `--no-extensions --no-skills --no-rules --auto-approve ` +
+          `--tools read,write,bash,task${resume}`;
+        const command = input.runtime.runAsUser
+          ? `stty -echo -onlcr -icanon min 1 time 0; exec su -s /bin/sh ${shellQuote(input.runtime.runAsUser)} ` +
+            `-c ${shellQuote(piCommand)}`
+          : `stty -echo -onlcr -icanon min 1 time 0; ${piCommand}`;
+        await Promise.race([
+          pty.sendInput(`${command}\n`),
+          instance.#failure,
+          readinessDeadline,
+        ]);
+        await Promise.race([instance.#ready, readinessDeadline]);
+      } finally {
+        if (readinessTimer) clearTimeout(readinessTimer);
+      }
       const negotiation = await instance.request({ type: "negotiate_protocol", protocolVersion: 2 });
       const negotiationData = "data" in negotiation ? objectValue(negotiation.data) : null;
       if (negotiationData?.protocolVersion !== 2) {
@@ -159,7 +205,7 @@ class LivePiBridgeSession implements PiBridgeSession {
       });
       return instance;
     } catch (error) {
-      await instance.dispose();
+      void instance.dispose().catch(() => {});
       throw error;
     }
   }
@@ -225,16 +271,34 @@ class LivePiBridgeSession implements PiBridgeSession {
   }
 
   async dispose(): Promise<void> {
-    if (this.#disposed) return;
+    if (this.#disposePromise) return this.#disposePromise;
     this.#disposed = true;
+    const error = new Error("Pi RPC session disposed");
+    this.rejectFailure(error);
+    this.rejectReadiness(error);
     for (const pending of this.#pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(new Error("Pi RPC session disposed"));
     }
     this.#pending.clear();
     this.#childTranscriptCursors.clear();
-    await this.pty.kill().catch(() => {});
-    await this.pty.disconnect().catch(() => {});
+    this.#listeners.clear();
+    if (!this.#protocolFailed) this.#initialFrames = [];
+    this.#disposePromise = this.teardown();
+    return this.#disposePromise;
+  }
+
+  private async teardown(): Promise<void> {
+    await this.pty.kill();
+    const termination = await this.pty.waitForTermination();
+    if (
+      typeof termination.exitCode !== "number" ||
+      !Number.isSafeInteger(termination.exitCode)
+    ) {
+      throw new Error("Pi RPC remote exit could not be confirmed");
+    }
+    void this.pty.disconnect().catch(() => {});
+    this.onDisposed(this);
   }
 
   private async reconcileChildMessages(childId: string): Promise<readonly unknown[]> {
@@ -272,8 +336,13 @@ class LivePiBridgeSession implements PiBridgeSession {
       }, timeoutMs);
       this.#pending.set(id, { resolve, reject, timer });
     });
+    void response.catch(() => {});
     try {
-      await this.pty.sendInput(`${JSON.stringify({ ...command, id })}\n`);
+      await Promise.race([
+        this.pty.sendInput(`${JSON.stringify({ ...command, id })}\n`),
+        response,
+        this.#failure,
+      ]);
     } catch (cause) {
       const pending = this.#pending.get(id);
       if (pending) {
@@ -290,8 +359,12 @@ class LivePiBridgeSession implements PiBridgeSession {
   }
 
   private failProtocol(cause: unknown): void {
+    if (this.#protocolFailed || this.#disposed) return;
+    this.#protocolFailed = true;
     const detail = cause instanceof Error ? cause.message : "unknown decoder failure";
     const error = new Error(`Pi RPC frame decode failed: ${detail}`);
+    this.rejectFailure(error);
+    this.rejectReadiness(error);
     for (const pending of this.#pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(error);
@@ -300,7 +373,39 @@ class LivePiBridgeSession implements PiBridgeSession {
     const frame = { type: "rpc_frame_error", error: error.message };
     if (this.#listeners.size === 0) this.#initialFrames = [frame];
     else for (const listener of this.#listeners) this.emitToListener(listener, frame);
-    void this.dispose();
+    void this.dispose().catch(() => {});
+  }
+
+  private observeTermination(): void {
+    void this.pty.waitForTermination().then(
+      (result) => {
+        if (this.#disposed) return;
+        const exitCode = typeof result.exitCode === "number" && Number.isSafeInteger(result.exitCode)
+          ? result.exitCode
+          : undefined;
+        const detail = result.error
+          ? "Pi RPC transport closed with an error"
+          : exitCode === undefined
+            ? "Pi RPC transport closed unexpectedly"
+            : `Pi RPC process exited unexpectedly (code ${exitCode})`;
+        this.failProtocol(new Error(detail));
+      },
+      () => {
+        if (!this.#disposed) this.failProtocol(new Error("Pi RPC transport observation failed"));
+      },
+    );
+  }
+
+  private rejectReadiness(error: Error): void {
+    if (this.#readySettled) return;
+    this.#readySettled = true;
+    this.#readyReject(error);
+  }
+
+  private rejectFailure(error: Error): void {
+    if (this.#failureSettled) return;
+    this.#failureSettled = true;
+    this.#failureReject(error);
   }
 
   private emitToListener(listener: PiRpcFrameListener, frame: unknown): void {
@@ -330,7 +435,7 @@ class LivePiBridgeSession implements PiBridgeSession {
       }
       let parsed: Record<string, unknown> | null;
       try {
-        parsed = parsePiRpcFrameLine(line);
+        parsed = parsePiRpcFrameLine(line, !this.#readySettled);
       } catch (error) {
         this.failProtocol(error);
         return;
@@ -346,6 +451,8 @@ class LivePiBridgeSession implements PiBridgeSession {
       }
       if (!frame) continue;
       if (frame.type === "ready") {
+        if (this.#readySettled) continue;
+        this.#readySettled = true;
         this.#readyResolve();
         continue;
       }
@@ -382,13 +489,17 @@ export interface PiBridgeManager {
     readonly resumeSessionFile?: string;
   }): Promise<PiBridgeSession>;
   get(sessionFile: string): PiBridgeSession | undefined;
+  awaitTeardown(sessionFile: string): Promise<void>;
   remove(sessionFile: string): Promise<void>;
 }
 
 export class DefaultPiBridgeManager implements PiBridgeManager {
-  #sessions = new Map<string, PiBridgeSession>();
+  #sessions = new Map<string, LivePiBridgeSession>();
 
-  constructor(private readonly readinessTimeoutMs = RPC_REQUEST_TIMEOUT_MS) {}
+  constructor(
+    private readonly readinessTimeoutMs = RPC_REQUEST_TIMEOUT_MS,
+    private readonly teardownTimeoutMs = RPC_TEARDOWN_TIMEOUT_MS,
+  ) {}
 
   async ensure(input: {
     readonly sandbox: SandboxHandle;
@@ -396,7 +507,13 @@ export class DefaultPiBridgeManager implements PiBridgeManager {
     readonly runtime: PreparedPiRuntime;
     readonly resumeSessionFile?: string;
   }): Promise<PiBridgeSession> {
-    const existing = input.resumeSessionFile ? this.#sessions.get(input.resumeSessionFile) : undefined;
+    let existing = input.resumeSessionFile
+      ? this.#sessions.get(input.resumeSessionFile)
+      : undefined;
+    if (existing?.disposed) {
+      await this.awaitTeardown(existing.sessionFile);
+      existing = undefined;
+    }
     if (
       existing &&
       existing.sandboxId === input.sandbox.id &&
@@ -405,32 +522,93 @@ export class DefaultPiBridgeManager implements PiBridgeManager {
       return existing;
     }
     if (existing) await this.remove(existing.sessionFile);
-    let session: PiBridgeSession;
+    let session: LivePiBridgeSession;
     try {
-      session = await LivePiBridgeSession.start({
-        ...input,
-        readinessTimeoutMs: this.readinessTimeoutMs,
-      });
+      session = await this.start(input);
     } catch (error) {
       if (!(error instanceof PiRpcReadinessTimeoutError)) throw error;
-      session = await LivePiBridgeSession.start({
-        ...input,
-        readinessTimeoutMs: this.readinessTimeoutMs,
-      });
+      session = await this.start(input);
     }
     this.#sessions.set(session.sessionFile, session);
+    if (session.disposed) {
+      await this.teardown(session);
+      throw new Error("Pi RPC session closed during startup");
+    }
     return session;
   }
 
   get(sessionFile: string): PiBridgeSession | undefined {
-    return this.#sessions.get(sessionFile);
+    const session = this.#sessions.get(sessionFile);
+    return session?.disposed ? undefined : session;
+  }
+
+  async awaitTeardown(sessionFile: string): Promise<void> {
+    const session = this.#sessions.get(sessionFile);
+    if (!session?.disposed) return;
+    await this.teardown(session);
   }
 
   async remove(sessionFile: string): Promise<void> {
     const session = this.#sessions.get(sessionFile);
     if (!session) return;
-    this.#sessions.delete(sessionFile);
-    await session.dispose();
+    await this.teardown(session);
+  }
+
+  private async start(input: {
+    readonly sandbox: SandboxHandle;
+    readonly workdir: string;
+    readonly runtime: PreparedPiRuntime;
+    readonly resumeSessionFile?: string;
+  }): Promise<LivePiBridgeSession> {
+    let created: LivePiBridgeSession | undefined;
+    try {
+      return await LivePiBridgeSession.start({
+        ...input,
+        readinessTimeoutMs: this.readinessTimeoutMs,
+        onCreated: (session) => {
+          created = session;
+        },
+        onDisposed: (disposed) => this.evict(disposed),
+      });
+    } catch (error) {
+      if (created) {
+        if (input.resumeSessionFile) this.#sessions.set(input.resumeSessionFile, created);
+        await this.teardown(created);
+      }
+      throw error;
+    }
+  }
+
+  private async teardown(session: LivePiBridgeSession): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        session.dispose(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new PiRpcTeardownTimeoutError("Pi RPC remote teardown timed out")),
+            this.teardownTimeoutMs,
+          );
+        }),
+      ]);
+    } catch (cause) {
+      if (cause instanceof PiRpcTeardownTimeoutError) {
+        throw new Error("Pi RPC remote teardown timed out; refusing native resume");
+      }
+      if (cause instanceof Error && cause.message === "Pi RPC remote exit could not be confirmed") {
+        throw new Error("Pi RPC remote exit could not be confirmed; refusing native resume");
+      }
+      throw new Error("Pi RPC remote teardown failed; refusing native resume");
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    this.evict(session);
+  }
+
+  private evict(session: LivePiBridgeSession): void {
+    if (this.#sessions.get(session.sessionFile) === session) {
+      this.#sessions.delete(session.sessionFile);
+    }
   }
 }
 

@@ -44,6 +44,7 @@ function sandboxWithResult(result: string, exitCode = 0): SandboxHandle {
       getSessionCommandLogs: async () => ({ output: "", stdout: "", stderr: "" }),
       createPty: async () => ({
         waitForConnection: async () => {},
+        waitForTermination: async () => new Promise(() => {}),
         sendInput: async () => {},
         resize: async () => {},
         disconnect: async () => {},
