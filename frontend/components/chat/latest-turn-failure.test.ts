@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 // The conversation module reads the canonical-timeline flag at load; agree with
 // the other suites before the first import so the module cache stays coherent.
 process.env.NEXT_PUBLIC_CANONICAL_TIMELINE = "1";
-const { latestTurnFailure } = await import("./conversation");
+const { latestTurnFailure } = await import("./thread-failure");
 type Turn = import("./conversation").Turn;
 
 function turn(id: string, status: Turn["status"], summary: string | null): Turn {
