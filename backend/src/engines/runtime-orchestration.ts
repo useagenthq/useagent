@@ -788,6 +788,9 @@ export function runtimeTurnSettled(snapshot: RuntimeThreadSnapshot): boolean {
 }
 
 export function runtimeTurnError(snapshot: RuntimeThreadSnapshot): string | null {
+  if (snapshot.thread.latestTurn?.state === "interrupted") {
+    return snapshot.thread.session?.lastError ?? "The provider turn was interrupted";
+  }
   if (snapshot.thread.latestTurn?.state !== "error") return null;
   return snapshot.thread.session?.lastError ?? "The provider turn failed";
 }

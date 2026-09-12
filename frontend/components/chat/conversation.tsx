@@ -127,8 +127,8 @@ function FailedNote() {
 
 export function UserBubble({ children }: { children: string }) {
   return (
-    <div className="flex justify-end" data-testid="user-message">
-      <div className="bg-background-secondary-default text-text-primary text-body-2-regular max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2.5">
+    <div className="flex min-w-0 justify-end" data-testid="user-message">
+      <div className="bg-background-secondary-default text-text-primary text-body-2-regular min-w-0 max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-3.5 py-2.5">
         {children}
       </div>
     </div>

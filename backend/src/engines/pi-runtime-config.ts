@@ -93,19 +93,16 @@ function mcpConfig(enabled: boolean): Record<string, unknown> {
   } satisfies Record<string, unknown>;
 }
 
-async function uploadPrivateFile(
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+async function uploadPiFile(
   sandbox: SandboxHandle,
   path: string,
   content: string,
 ): Promise<void> {
   await sandbox.fs.uploadFile(Buffer.from(content, "utf8"), path, 60);
-  const secured = await sandbox.process.executeCommand(
-    `chmod 600 -- '${path.replaceAll("'", "'\\''")}'`,
-    undefined,
-    undefined,
-    15,
-  );
-  if ((secured.exitCode ?? 1) !== 0) throw new Error(`failed to secure Pi config ${path}`);
 }
 
 const runtimeFiles = Promise.all([
@@ -168,19 +165,22 @@ export async function ensurePiRuntimeInstalled(input: {
   readonly runtimeManifestDir: string;
   readonly bunExecutable: string;
   readonly executable: string;
+  readonly prepareCommand?: string;
 }): Promise<void> {
   const verificationInput = {
     runtimeRoot: input.runtimeRoot,
     bunExecutable: input.bunExecutable,
     executable: input.executable,
   };
+  const prepare = input.prepareCommand ? `(${input.prepareCommand}) || exit 30; ` : "";
   const cached = await input.process.executeCommand(
-    buildPiRuntimeVerificationCommand({ ...verificationInput, requireCacheLock: true }),
+    prepare + buildPiRuntimeVerificationCommand({ ...verificationInput, requireCacheLock: true }),
     undefined,
     undefined,
     20,
   );
   if ((cached.exitCode ?? 1) === 0) return;
+  if (cached.exitCode === 30) throw new Error("failed to finalize Pi runtime files");
 
   const install = await input.process.executeCommand(
     buildPiRuntimeInstallCommand(input),
@@ -223,13 +223,19 @@ export async function preparePiRuntime(
   const runAsUser = layout.runsAsRoot ? PI_RUNTIME_USER : null;
   const agentDir = `${runtimeHome}/agent`;
   const modelsPath = `${agentDir}/models.json`;
+  const mcpPath = `${workdir}/.mcp.json`;
+  const runtimeManifestDir = `${runtimeRoot}/manifest`;
+  const runtimePackagePath = `${runtimeManifestDir}/package.json`;
+  const runtimeLockPath = `${runtimeManifestDir}/package-lock.json`;
   const directoriesCommand = layout.runsAsRoot
     ? `id -u ${PI_RUNTIME_USER} >/dev/null 2>&1 || ` +
       `useradd --system --create-home --home-dir ${PI_RUNTIME_HOME} --shell /bin/sh ${PI_RUNTIME_USER}; ` +
       `chmod 711 /root && install -d -o ${PI_RUNTIME_USER} -g ${PI_RUNTIME_USER} -m 700 ` +
-      `'${agentDir.replaceAll("'", "'\\''")}' '${workdir.replaceAll("'", "'\\''")}' && ` +
-      `chown -R ${PI_RUNTIME_USER}:${PI_RUNTIME_USER} '${workdir.replaceAll("'", "'\\''")}'`
-    : `install -d -m 700 '${agentDir.replaceAll("'", "'\\''")}' '${workdir.replaceAll("'", "'\\''")}'`;
+      `${shellQuote(agentDir)} ${shellQuote(workdir)} && ` +
+      `chown -R ${PI_RUNTIME_USER}:${PI_RUNTIME_USER} ${shellQuote(workdir)} && ` +
+      `install -d -m 755 ${shellQuote(runtimeManifestDir)}`
+    : `install -d -m 700 ${shellQuote(agentDir)} ${shellQuote(workdir)} && ` +
+      `install -d -m 755 ${shellQuote(runtimeManifestDir)}`;
   const directories = await sandbox.process.executeCommand(
     directoriesCommand,
     undefined,
@@ -237,26 +243,12 @@ export async function preparePiRuntime(
     20,
   );
   if ((directories.exitCode ?? 1) !== 0) throw new Error("failed to prepare Pi config directories");
-  await Promise.all([
-    uploadPrivateFile(sandbox, modelsPath, modelJson),
-    uploadPrivateFile(sandbox, `${workdir}/.mcp.json`, mcpJson),
-  ]);
-  if (layout.runsAsRoot) {
-    const ownership = await sandbox.process.executeCommand(
-      `chown ${PI_RUNTIME_USER}:${PI_RUNTIME_USER} ` +
-        `'${modelsPath.replaceAll("'", "'\\''")}' '${`${workdir}/.mcp.json`.replaceAll("'", "'\\''")}'`,
-      undefined,
-      undefined,
-      15,
-    );
-    if ((ownership.exitCode ?? 1) !== 0) throw new Error("failed to assign Pi runtime configuration");
-  }
   const [runtimePackageJson, runtimeLockJson] = await runtimeFiles;
-  const runtimeManifestDir = `${runtimeRoot}/manifest`;
-  await sandbox.process.executeCommand(`install -d -m 755 '${runtimeManifestDir}'`, undefined, undefined, 15);
   await Promise.all([
-    uploadPrivateFile(sandbox, `${runtimeManifestDir}/package.json`, runtimePackageJson),
-    uploadPrivateFile(sandbox, `${runtimeManifestDir}/package-lock.json`, runtimeLockJson),
+    uploadPiFile(sandbox, modelsPath, modelJson),
+    uploadPiFile(sandbox, mcpPath, mcpJson),
+    uploadPiFile(sandbox, runtimePackagePath, runtimePackageJson),
+    uploadPiFile(sandbox, runtimeLockPath, runtimeLockJson),
   ]);
   if (layout.bunExecutable) {
     await ensureSandboxBun(sandbox, layout, ctx.signal);
@@ -269,6 +261,12 @@ export async function preparePiRuntime(
     runtimeManifestDir,
     bunExecutable,
     executable,
+    prepareCommand:
+      `chmod 600 -- ${shellQuote(modelsPath)} ${shellQuote(mcpPath)} ` +
+      `${shellQuote(runtimePackagePath)} ${shellQuote(runtimeLockPath)}` +
+      (layout.runsAsRoot
+        ? ` && chown ${PI_RUNTIME_USER}:${PI_RUNTIME_USER} ${shellQuote(modelsPath)} ${shellQuote(mcpPath)}`
+        : ""),
   });
   await startPiCredentialBroker({
     sandbox,

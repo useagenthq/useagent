@@ -15,6 +15,7 @@ import {
   readRuntimeTerminalSnapshot,
   reloadRetainedOpenCodeSession,
   RUNTIME_EMPTY_TERMINAL_OUTPUT_ERROR,
+  waitForRuntimeTurn,
   type OpenCodeSessionReloadDependencies,
 } from "./runtime-adapter";
 import {
@@ -26,6 +27,9 @@ import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
 import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
 import type { RuntimeEnvironmentRequest } from "./runtime-environment-client";
 import type { SandboxHandle } from "../sandboxes/provider";
+import { createSecretRedactor } from "../secrets/redact";
+import type { RuntimeThreadStreamItem } from "./runtime-event-stream";
+import type { EngineRunContext } from "./types";
 
 function reloadSnapshot(
   sessionStatus: string | null,
@@ -62,6 +66,35 @@ function reloadSnapshot(
           },
     },
   } as unknown as RuntimeThreadSnapshot;
+}
+
+function turnSnapshot(input: {
+  readonly sequence: number;
+  readonly turnId: string;
+  readonly state: "running" | "completed";
+  readonly text: string;
+  readonly threadId?: string;
+}): RuntimeThreadSnapshot {
+  return {
+    snapshotSequence: input.sequence,
+    thread: {
+      id: input.threadId ?? "skynet-thread-thread-1",
+      latestTurn: {
+        turnId: input.turnId,
+        state: input.state,
+        assistantMessageId: "assistant-1",
+      },
+      messages: [{
+        id: "assistant-1",
+        role: "assistant",
+        text: input.text,
+        turnId: input.turnId,
+        streaming: input.state === "running",
+      }],
+      activities: [],
+      session: null,
+    },
+  };
 }
 
 const reloadCommandState = {
@@ -500,7 +533,7 @@ describe("T3 run adapter gate", () => {
     expect(source).toContain("prepareStableRuntimeProvider(sandbox, ctx, engine)");
     expect(source).toContain('providerAfterResources: engine === "claude"');
     expect(source).toContain('resourceUser: engine === "claude"');
-    expect(source).toContain("prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir)");
+    expect(source).toContain("preparation.stableProviderPrepared");
     expect(source).toContain("closeProvider: (state) => state.close()");
     expect(source).toContain("await prepared.close().catch(() => {})");
     expect(source).not.toContain("await providerBridgeLease?.close()");
@@ -792,7 +825,7 @@ describe("T3 run adapter gate", () => {
     );
     expect(source).toContain("watchdog.observeActivity(activity)");
     expect(source).toContain("watchdog.observeProgress()");
-    expect(source).toContain("AbortSignal.any([ctx.signal, watchdog.signal])");
+    expect(source).toContain("watchdog.signal,");
     expect(source).toContain("if (watchdog.signal.aborted) throw watchdog.signal.reason;");
     expect(source).toContain('await driver.cancel(session, "provider made no progress")');
     // One watchdog owner and no steer replay after the turn may have started.
@@ -822,7 +855,7 @@ describe("T3 run adapter gate", () => {
     expect(source.split("awaitCodexProviderReady(").length - 1).toBe(2);
     // Ordering: barrier after the provider-bridge settings patch; restart after the
     // barrier; both before the provider session is established / the turn is steered.
-    const bridgeIdx = source.indexOf("prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir)");
+    const bridgeIdx = source.indexOf("return await prepareRuntimeProviderBridge(");
     const barrierIdx = source.indexOf(
       "awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS)",
     );
@@ -980,6 +1013,254 @@ describe("T3 run adapter gate", () => {
       "await ctx.saveProviderSession(providerSession, providerBridgeLease.authEpoch)",
     );
     expect(source).not.toContain("ctx.saveProviderSession?.(");
+  });
+
+  test("projects authoritative websocket snapshots without a remote snapshot reread", async () => {
+    const deltas: string[] = [];
+    let reads = 0;
+    const ctx = {
+      runId: "run-stream-snapshot",
+      threadId: "thread-1",
+      signal: new AbortController().signal,
+      emit: async () => undefined,
+      setSummary() {},
+      publishDelta: (delta: string) => deltas.push(delta),
+    } as unknown as EngineRunContext;
+    const prior = turnSnapshot({ sequence: 10, turnId: "turn-prior", state: "completed", text: "old" });
+    const subscribe = async (
+      _sandbox: SandboxHandle,
+      _threadId: string,
+      afterSequence: number | undefined,
+      _signal: AbortSignal,
+      onItem: (item: RuntimeThreadStreamItem) => Promise<boolean>,
+    ) => {
+      expect(afterSequence).toBeUndefined();
+      expect(await onItem({ kind: "snapshot", snapshot: turnSnapshot({
+        sequence: 11, turnId: "turn-current", state: "running", text: "hello",
+      }) })).toBe(true);
+      expect(await onItem({ kind: "snapshot", snapshot: turnSnapshot({
+        sequence: 12, turnId: "turn-current", state: "completed", text: "hello world",
+      }) })).toBe(false);
+    };
+
+    await expect(waitForRuntimeTurn(
+      ctx,
+      {} as SandboxHandle,
+      new Map(),
+      prior,
+      createSecretRedactor([]),
+      {
+        subscribeRuntimeThread: subscribe,
+        readThreadSnapshot: async () => {
+          reads += 1;
+          throw new Error("unexpected REST snapshot read");
+        },
+      },
+    )).resolves.toBe("hello world");
+    expect(reads).toBe(0);
+    expect(deltas).toEqual(["hello", " world"]);
+  });
+
+  test("coalesces duplicate event bursts behind one authoritative snapshot refresh", async () => {
+    let reads = 0;
+    const ctx = {
+      runId: "run-stream-events",
+      threadId: "thread-1",
+      signal: new AbortController().signal,
+      emit: async () => undefined,
+      setSummary() {},
+    } as unknown as EngineRunContext;
+    const prior = turnSnapshot({ sequence: 20, turnId: "turn-prior", state: "completed", text: "old" });
+    const readStarted = Promise.withResolvers<void>();
+    const releaseRead = Promise.withResolvers<void>();
+    const subscribe = async (
+      _sandbox: SandboxHandle,
+      _threadId: string,
+      _afterSequence: number | undefined,
+      signal: AbortSignal,
+      onItem: (item: RuntimeThreadStreamItem) => Promise<boolean>,
+    ) => {
+      expect(await onItem({ kind: "event", event: {
+        sequence: 21, aggregateKind: "thread", aggregateId: "skynet-thread-thread-1",
+      } })).toBe(true);
+      await readStarted.promise;
+      for (const sequence of [22, 22, 23]) {
+        expect(await onItem({ kind: "event", event: {
+          sequence, aggregateKind: "thread", aggregateId: "skynet-thread-thread-1",
+        } })).toBe(true);
+      }
+      releaseRead.resolve();
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), {
+        once: true,
+      }));
+    };
+
+    await expect(waitForRuntimeTurn(
+      ctx,
+      {} as SandboxHandle,
+      new Map(),
+      prior,
+      createSecretRedactor([]),
+      {
+        subscribeRuntimeThread: subscribe,
+        readThreadSnapshot: async () => {
+          reads += 1;
+          readStarted.resolve();
+          await releaseRead.promise;
+          return turnSnapshot({ sequence: 23, turnId: "turn-current", state: "completed", text: "done" });
+        },
+      },
+    )).resolves.toBe("done");
+    expect(reads).toBe(1);
+  });
+
+  test("ignores malformed, foreign-thread, duplicate, and prior-turn websocket snapshots", async () => {
+    const deltas: string[] = [];
+    const ctx = {
+      runId: "run-stream-fence",
+      threadId: "thread-1",
+      signal: new AbortController().signal,
+      emit: async () => undefined,
+      setSummary() {},
+      publishDelta: (delta: string) => deltas.push(delta),
+    } as unknown as EngineRunContext;
+    const prior = turnSnapshot({ sequence: 30, turnId: "turn-prior", state: "completed", text: "old" });
+
+    await expect(waitForRuntimeTurn(
+      ctx,
+      {} as SandboxHandle,
+      new Map(),
+      prior,
+      createSecretRedactor([]),
+      {
+        subscribeRuntimeThread: async (_sandbox, _threadId, _after, _signal, onItem) => {
+          expect(await onItem({
+            kind: "snapshot",
+            snapshot: { snapshotSequence: 31 },
+          } as unknown as RuntimeThreadStreamItem)).toBe(true);
+          expect(await onItem({ kind: "snapshot", snapshot: turnSnapshot({
+            sequence: 31, turnId: "turn-current", state: "running", text: "foreign",
+            threadId: "skynet-thread-other",
+          }) })).toBe(true);
+          expect(await onItem({ kind: "snapshot", snapshot: turnSnapshot({
+            sequence: 31, turnId: "turn-prior", state: "completed", text: "old",
+          }) })).toBe(true);
+          expect(await onItem({ kind: "snapshot", snapshot: turnSnapshot({
+            sequence: 32, turnId: "turn-current", state: "running", text: "new",
+          }) })).toBe(true);
+          expect(await onItem({ kind: "snapshot", snapshot: turnSnapshot({
+            sequence: 32, turnId: "turn-current", state: "running", text: "duplicate",
+          }) })).toBe(true);
+          expect(await onItem({ kind: "snapshot", snapshot: turnSnapshot({
+            sequence: 33, turnId: "turn-current", state: "completed", text: "new done",
+          }) })).toBe(false);
+        },
+        readThreadSnapshot: async () => {
+          throw new Error("unexpected REST snapshot read");
+        },
+      },
+    )).resolves.toBe("new done");
+    expect(deltas).toEqual(["new", " done"]);
+  });
+
+  test("preserves caller cancellation while waiting on the websocket stream", async () => {
+    const controller = new AbortController();
+    const reason = new Error("turn cancelled");
+    const ctx = {
+      runId: "run-stream-cancel",
+      threadId: "thread-1",
+      signal: controller.signal,
+      emit: async () => undefined,
+      setSummary() {},
+    } as unknown as EngineRunContext;
+    const waiting = waitForRuntimeTurn(
+      ctx,
+      {} as SandboxHandle,
+      new Map(),
+      turnSnapshot({ sequence: 40, turnId: "turn-prior", state: "completed", text: "old" }),
+      createSecretRedactor([]),
+      {
+        subscribeRuntimeThread: async (_sandbox, _threadId, _after, signal) => {
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), {
+            once: true,
+          }));
+        },
+        readThreadSnapshot: async () => {
+          throw new Error("unexpected REST snapshot read");
+        },
+      },
+    );
+
+    controller.abort(reason);
+    await expect(waiting).rejects.toBe(reason);
+  });
+
+  test("does not hide a websocket reconnect failure behind terminal fallback", async () => {
+    const connectionError = new Error("provider stream closed before the turn settled");
+    const ctx = {
+      runId: "run-stream-close",
+      threadId: "thread-1",
+      signal: new AbortController().signal,
+      emit: async () => undefined,
+      setSummary() {},
+    } as unknown as EngineRunContext;
+
+    await expect(waitForRuntimeTurn(
+      ctx,
+      {} as SandboxHandle,
+      new Map(),
+      turnSnapshot({ sequence: 50, turnId: "turn-prior", state: "completed", text: "old" }),
+      createSecretRedactor([]),
+      {
+        subscribeRuntimeThread: async () => {
+          throw connectionError;
+        },
+        readThreadSnapshot: async () => {
+          throw new Error("unexpected REST snapshot read");
+        },
+      },
+    )).rejects.toBe(connectionError);
+  });
+
+  test("caller cancellation wins over a terminal refresh racing with a socket failure", async () => {
+    const controller = new AbortController();
+    const reason = new Error("turn cancelled during terminal refresh");
+    const deltas: string[] = [];
+    const readStarted = Promise.withResolvers<void>();
+    const releaseRead = Promise.withResolvers<void>();
+    const ctx = {
+      runId: "run-stream-terminal-cancel",
+      threadId: "thread-1",
+      signal: controller.signal,
+      emit: async () => undefined,
+      setSummary() {},
+      publishDelta: (delta: string) => deltas.push(delta),
+    } as unknown as EngineRunContext;
+
+    await expect(waitForRuntimeTurn(
+      ctx,
+      {} as SandboxHandle,
+      new Map(),
+      turnSnapshot({ sequence: 50, turnId: "turn-prior", state: "completed", text: "old" }),
+      createSecretRedactor([]),
+      {
+        subscribeRuntimeThread: async (_sandbox, _threadId, _after, _signal, onItem) => {
+          await onItem({ kind: "event", event: {
+            sequence: 51, aggregateKind: "thread", aggregateId: "skynet-thread-thread-1",
+          } });
+          await readStarted.promise;
+          controller.abort(reason);
+          releaseRead.resolve();
+          throw new Error("socket closed");
+        },
+        readThreadSnapshot: async () => {
+          readStarted.resolve();
+          await releaseRead.promise;
+          return turnSnapshot({ sequence: 51, turnId: "turn-current", state: "completed", text: "done" });
+        },
+      },
+    )).rejects.toBe(reason);
+    expect(deltas).toEqual([]);
   });
 
   test("drains late text and reads Cube and Daytona synchronous snapshot output", async () => {

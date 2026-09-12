@@ -429,11 +429,20 @@ class BoxApi {
       stderr?: string;
       exitCode?: number | null;
       timedOut?: boolean;
+      stdoutTruncated?: boolean;
+      stderrTruncated?: boolean;
     }>("POST", `/boxes/${encodeURIComponent(id)}/commands`, {
       command,
       timeoutSeconds: Math.min(Math.max(1, Math.round(timeoutSeconds)), SYNC_COMMAND_CAP_SECONDS),
       detached: false,
     });
+    if (payload.stdoutTruncated === true || payload.stderrTruncated === true) {
+      throw new BoxApiError(
+        502,
+        "command_output_truncated",
+        "Box command output was truncated",
+      );
+    }
     return {
       stdout: payload.stdout ?? "",
       stderr: payload.stderr ?? "",
@@ -579,7 +588,7 @@ class BoxProcess implements SandboxProcess {
         }
         await this.api.sleep(LONG_POLL_MS);
       }
-      const log = await this.api.readFile(this.boxId, logPath).catch(() => Buffer.alloc(0));
+      const log = await this.api.readFile(this.boxId, logPath);
       return { exitCode: exitCode ?? 124, result: log.toString("utf8") };
     } finally {
       if (launchAttempted && !completed) {

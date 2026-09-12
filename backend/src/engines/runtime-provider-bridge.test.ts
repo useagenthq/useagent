@@ -3,8 +3,10 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SandboxHandle } from "../sandboxes/provider";
+import { buildSandboxBunProbeCommand } from "./sandbox-bun";
 import {
   awaitRuntimeProviderReady,
+  buildCodexInstallIdentityProbeCommand,
   buildClaudeInstallIdentityProbeCommand,
   buildOpenCodeInstallIdentityProbeCommand,
   buildRuntimeProviderReadyProbeCommand,
@@ -552,8 +554,34 @@ describe("T3 provider bridge", () => {
           await Bun.$`chmod 700 ${packageBin}`;
           await symlink(packageBin, join(bin, engine.binary));
         } else {
-          await Bun.write(join(bin, engine.binary), `#!/bin/sh\necho '${engine.version}'\n`);
-          await Bun.$`chmod 700 ${join(bin, engine.binary)}`;
+          const packageDir = join(
+            home,
+            ".local/share/useagent/native-engines/node_modules/@openai/codex",
+          );
+          const packageBin = join(packageDir, "bin/codex.js");
+          const platform = process.arch === "arm64"
+            ? { alias: "codex-linux-arm64", suffix: "linux-arm64", triple: "aarch64-unknown-linux-musl" }
+            : { alias: "codex-linux-x64", suffix: "linux-x64", triple: "x86_64-unknown-linux-musl" };
+          const platformDir = join(
+            home,
+            `.local/share/useagent/native-engines/node_modules/@openai/${platform.alias}`,
+          );
+          const nativeBin = join(platformDir, `vendor/${platform.triple}/bin/codex`);
+          await mkdir(join(packageDir, "bin"), { recursive: true });
+          await mkdir(join(platformDir, `vendor/${platform.triple}/bin`), { recursive: true });
+          await Bun.write(packageBin, `#!/bin/sh\necho '${engine.version}'\n`);
+          await Bun.write(join(packageDir, "package.json"), JSON.stringify({
+            name: "@openai/codex",
+            version: "0.153.3",
+            bin: { codex: "bin/codex.js" },
+          }));
+          await Bun.write(nativeBin, "native fixture");
+          await Bun.write(join(platformDir, "package.json"), JSON.stringify({
+            name: "@openai/codex",
+            version: `0.153.3-${platform.suffix}`,
+          }));
+          await Bun.$`chmod 700 ${packageBin} ${nativeBin}`;
+          await symlink(packageBin, join(bin, engine.binary));
         }
         const untouched = { enabled: true, binaryPath: "/keep/me" };
         await Bun.write(settingsPath, JSON.stringify({
@@ -922,12 +950,116 @@ exit 17
     expect(commands.some((command) => command.includes("codex-relay"))).toBe(false);
   });
 
+  test("batches retained Codex Bun and package identity validation and repairs tampering", async () => {
+    const commands: string[] = [];
+    let identityValid = true;
+    let bootstraps = 0;
+    const layout = {
+      home: "/home/user",
+      workdir: "/home/user/work",
+      runsAsRoot: false,
+      bunExecutable: "/usr/local/bin/bun",
+    } as const;
+    const identityCommand = buildCodexInstallIdentityProbeCommand(layout);
+    const sandbox = {
+      id: "box-cached-codex-identity",
+      providerKind: "box",
+      process: {
+        executeCommand: async (command: string) => {
+          commands.push(command);
+          if (command.includes('NATIVE_PACKAGE="@openai/codex@0.153.3"')) {
+            bootstraps += 1;
+            identityValid = true;
+            return { exitCode: 0, result: "" };
+          }
+          if (command.includes(identityCommand)) {
+            expect(command).toContain(buildSandboxBunProbeCommand(layout));
+            return { exitCode: identityValid ? 0 : 1, result: "" };
+          }
+          return { exitCode: 0, result: "" };
+        },
+      },
+    } as unknown as SandboxHandle;
+    const context = {
+      runId: "run-box-codex-identity",
+      threadId: "thread-box-codex-identity",
+      prompt: "work",
+      bootstrapContext: "",
+      turnContext: "",
+      workdir: "/home/user/work",
+      orgId: "org-a",
+      userId: "user-a",
+      model: "gpt-5.6-luna",
+      signal: new AbortController().signal,
+      emit: async () => undefined,
+      setSummary: () => undefined,
+    } as const;
+
+    await prepareStableRuntimeProvider(sandbox, context, "codex");
+    const afterCold = commands.length;
+    await prepareStableRuntimeProvider(sandbox, context, "codex");
+    expect(commands.slice(afterCold)).toHaveLength(1);
+    expect(bootstraps).toBe(1);
+
+    identityValid = false;
+    await prepareStableRuntimeProvider(sandbox, context, "codex");
+    expect(bootstraps).toBe(2);
+  });
+
+  test("does not repeat stable bootstrap inside the same fresh turn preparation", async () => {
+    const commands: string[] = [];
+    const sandbox = {
+      id: "fresh-opencode-one-bootstrap",
+      providerKind: "box",
+      process: {
+        executeCommand: async (command: string) => {
+          commands.push(command);
+          return { exitCode: 0, result: "" };
+        },
+      },
+    } as unknown as SandboxHandle;
+    const context = {
+      runId: "run-fresh-one-bootstrap",
+      threadId: "thread-fresh-one-bootstrap",
+      prompt: "work",
+      bootstrapContext: "",
+      turnContext: "",
+      workdir: "/home/user/work",
+      orgId: "org-a",
+      userId: "user-a",
+      model: "openai/gpt-5.6-luna",
+      signal: new AbortController().signal,
+      emit: async () => undefined,
+      setSummary: () => undefined,
+    } as const;
+
+    await prepareStableRuntimeProvider(sandbox, context, "opencode");
+    await prepareRuntimeProviderBridge(
+      sandbox,
+      context,
+      "opencode",
+      "/home/user/work",
+      true,
+    );
+
+    expect(commands.filter((command) => command.includes('NATIVE_PACKAGE="opencode-ai@1.18.7"')))
+      .toHaveLength(1);
+    expect(commands.filter((command) =>
+      command.includes(buildOpenCodeInstallIdentityProbeCommand({
+        home: "/home/user",
+        workdir: "/home/user/work",
+        runsAsRoot: false,
+      }))
+    )).toHaveLength(1);
+  });
+
   test.each(["claude", "opencode"] as const)("revalidates cached %s identity and repairs only after mutation", async (engine) => {
     let identityValid = true;
     let bootstrapSucceeds = true;
     let fullBootstraps = 0;
     let identityProbes = 0;
     let fenceGeneration = 0;
+    let capabilityRefreshes = 0;
     const identityCommand = (engine === "claude"
       ? buildClaudeInstallIdentityProbeCommand
       : buildOpenCodeInstallIdentityProbeCommand)({
@@ -950,9 +1082,18 @@ exit 17
             fenceGeneration += 1;
             return { exitCode: 0, result: "" };
           }
-          if (command === identityCommand) {
+          if (command.includes(identityCommand)) {
             identityProbes += 1;
+            expect(command).toContain(buildSandboxBunProbeCommand({
+              home: "/home/user",
+              workdir: "/home/user/work",
+              runsAsRoot: false,
+              bunExecutable: "/usr/local/bin/bun",
+            }));
             return { exitCode: identityValid ? 0 : 1, result: "" };
+          }
+          if (command.includes("provider-gateway-generation")) {
+            capabilityRefreshes += 1;
           }
           return { exitCode: 0, result: "" };
         },
@@ -1008,6 +1149,7 @@ exit 17
       prepareRuntimeProviderBridge(sandbox, context, engine, "/home/user/work"),
     ).rejects.toThrow(`native ${engine} runtime bootstrap failed`);
     expect(fenceGeneration).toBe(2);
+    expect(capabilityRefreshes).toBe(4);
   });
 
   test("reasserts the Claude access boundary after resources on every retained turn", async () => {

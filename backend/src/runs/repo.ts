@@ -35,9 +35,9 @@ import type { RunResource } from "../resources/types";
 import { ensureProject } from "../projects/repo";
 import { listUploadsForRuns, type RunUploadDescriptor } from "../uploads/repo";
 import { publicRunCondition } from "./visibility";
-import { MODEL_QUALIFICATION_RUN_ORIGIN } from "./origin";
 import type { SandboxProviderKind } from "@useagent/sandbox-contract";
-export { completeRun, pinSkillToActiveRun, setRunStatus } from "./run-state";
+import { getCustomerRunForOrg } from "./run-state";
+export { completeRun, getCustomerRunForOrg, pinSkillToActiveRun, setRunStatus } from "./run-state";
 export {
   getThreadEngineSession,
   getThreadProviderSessionState,
@@ -387,27 +387,6 @@ export async function getRunForOrg(
     .select()
     .from(runs)
     .where(and(eq(runs.id, id), eq(runs.orgId, orgId)))
-    .limit(1);
-  return row ?? null;
-}
-
-/** Customer-facing lookup. Release canaries retain their authenticated direct
- * diagnostics, while autonomous model-qualification runs stay undiscoverable. */
-export async function getCustomerRunForOrg(
-  orgId: string,
-  id: string,
-  exec: Executor = db,
-): Promise<RunRecord | null> {
-  const [row] = await exec
-    .select()
-    .from(runs)
-    .where(
-      and(
-        eq(runs.id, id),
-        eq(runs.orgId, orgId),
-        or(isNull(runs.origin), ne(runs.origin, MODEL_QUALIFICATION_RUN_ORIGIN)),
-      ),
-    )
     .limit(1);
   return row ?? null;
 }

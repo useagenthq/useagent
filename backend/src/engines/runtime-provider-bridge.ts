@@ -27,7 +27,11 @@ import {
   prepareCodexSubscription,
   type CodexSubscriptionLease,
 } from "./codex-subscription-runtime";
-import { ensureSandboxBun, sandboxBunExecutable } from "./sandbox-bun";
+import {
+  buildSandboxBunProbeCommand,
+  ensureSandboxBun,
+  sandboxBunExecutable,
+} from "./sandbox-bun";
 import { prepareOpenCodeGateway } from "./opencode-model-limit-refresh";
 export { openCodeModelLimitsChanged } from "./opencode-model-limit-refresh";
 
@@ -54,6 +58,12 @@ const ROOT_RUNTIME_LAYOUT: SandboxRuntimeLayout = {
   runsAsRoot: true,
 };
 
+const CODEX_INSTALL_IDENTITY_SCRIPT = [
+  'const fs=require("node:fs"),path=require("node:path")',
+  'const binary=process.argv[1],packageDirectory=process.argv[2],expectedVersion=process.argv[3],diagnostic=process.argv[4]==="diagnostic"',
+  'try{const packageRoot=fs.realpathSync(packageDirectory);const manifest=JSON.parse(fs.readFileSync(path.join(packageRoot,"package.json"),"utf8"));const binEntry=typeof manifest.bin==="string"?manifest.bin:manifest.bin?.codex;const binaryReal=fs.realpathSync(binary);const entryReal=fs.realpathSync(path.join(packageRoot,"bin/codex.js"));const target=process.arch==="x64"?{alias:"@openai/codex-linux-x64",suffix:"linux-x64",triple:"x86_64-unknown-linux-musl"}:process.arch==="arm64"?{alias:"@openai/codex-linux-arm64",suffix:"linux-arm64",triple:"aarch64-unknown-linux-musl"}:null;if(!target)throw new Error("unsupported_arch");const nodeModulesRoot=path.resolve(packageRoot,"../..");const platformRoot=fs.realpathSync(path.join(nodeModulesRoot,target.alias));const platformManifest=JSON.parse(fs.readFileSync(path.join(platformRoot,"package.json"),"utf8"));const nativeReal=fs.realpathSync(path.join(platformRoot,"vendor",target.triple,"bin/codex"));const nativeRelative=path.relative(platformRoot,nativeReal);fs.accessSync(binary,fs.constants.X_OK);fs.accessSync(nativeReal,fs.constants.X_OK);if(manifest.name!=="@openai/codex"||manifest.version!==expectedVersion||binEntry!=="bin/codex.js"||binaryReal!==entryReal||!fs.statSync(entryReal).isFile()||platformManifest.name!=="@openai/codex"||platformManifest.version!==expectedVersion+"-"+target.suffix||nativeRelative===""||nativeRelative.startsWith(".."+path.sep)||path.isAbsolute(nativeRelative)||!fs.statSync(nativeReal).isFile())throw new Error("identity_mismatch");process.exit(0)}catch{if(diagnostic)console.error("useagent-native-version-probe: install_identity_mismatch expected="+expectedVersion);process.exit(1)}',
+].join(";");
+
 const CLAUDE_INSTALL_IDENTITY_SCRIPT = [
   'const fs=require("node:fs"),path=require("node:path")',
   'const binary=process.argv[1],packageDirectory=process.argv[2],expectedVersion=process.argv[3],diagnostic=process.argv[4]==="diagnostic"',
@@ -74,6 +84,14 @@ export function buildClaudeInstallIdentityProbeCommand(
   return `node -e ${JSON.stringify(CLAUDE_INSTALL_IDENTITY_SCRIPT)} ${JSON.stringify(`${prefix}/bin/claude`)} ${JSON.stringify(`${prefix}/share/useagent/native-engines/node_modules/@anthropic-ai/claude-code`)} ${JSON.stringify(CLAUDE_CODE_VERSION)} ${diagnostic ? "diagnostic" : "quiet"}`;
 }
 
+export function buildCodexInstallIdentityProbeCommand(
+  layout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT,
+  diagnostic = false,
+): string {
+  const prefix = layout.runsAsRoot ? "/usr/local" : `${layout.home}/.local`;
+  return `node -e ${JSON.stringify(CODEX_INSTALL_IDENTITY_SCRIPT)} ${JSON.stringify(`${prefix}/bin/codex`)} ${JSON.stringify(`${prefix}/share/useagent/native-engines/node_modules/@openai/codex`)} ${JSON.stringify(CODEX_VERSION)} ${diagnostic ? "diagnostic" : "quiet"}`;
+}
+
 export function buildOpenCodeInstallIdentityProbeCommand(
   layout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT,
   diagnostic = false,
@@ -90,8 +108,8 @@ function runtimeBridgeLayout(sandbox: Pick<SandboxHandle, "providerKind">): Sand
 
 // The bootstrap below installs only stable driver paths/settings. Run-bound
 // gateway capabilities are refreshed separately on every turn. Remember the
-// completed stable bootstrap per live sandbox so a warm claim does not pay an
-// extra shell round trip before every first token.
+// completed stable bootstrap per live sandbox so warm revalidation can combine
+// the Bun and provider identity checks in one shell round trip.
 const bootstrapStates = new Map<string | object, Map<string, Promise<void>>>();
 
 type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
@@ -270,7 +288,7 @@ export function buildRuntimeProviderBootstrapCommand(
     `EXPECTED_VERSION=${JSON.stringify(expectedVersion)}`,
     `VERSION_MATCHER=${JSON.stringify(versionMatcher)}`,
     `verify_native_binary() { test -x "$NATIVE_BINARY" && node -e '${verifyScript}' "$NATIVE_BINARY" "$EXPECTED_VERSION" "$VERSION_MATCHER" "$1" "$2"; }`,
-    "if ! verify_native_binary 1 quiet; then",
+    `if ! verify_native_binary 1 quiet || ! ${buildCodexInstallIdentityProbeCommand(layout)}; then`,
     '  test -x "$BUN_EXECUTABLE" || command -v "$BUN_EXECUTABLE" >/dev/null 2>&1',
     `  BUN_CACHE="$(mktemp -d "\${TMPDIR:-/tmp}/useagent-${engine}-bun.XXXXXX")"`,
     '  cleanup_native_bun() { rm -rf -- "$BUN_CACHE"; }',
@@ -280,6 +298,7 @@ export function buildRuntimeProviderBootstrapCommand(
     "  trap - EXIT HUP INT TERM",
     "fi",
     `verify_native_binary ${NATIVE_VERSION_PROBE_ATTEMPTS} diagnostic`,
+    buildCodexInstallIdentityProbeCommand(layout, true),
   ];
 
   if (engine !== "claude") {
@@ -477,6 +496,7 @@ async function ensureRuntimeProviderBootstrap(
   engine: RuntimeEngineId,
   command: string,
   layout: SandboxRuntimeLayout,
+  signal: AbortSignal,
 ): Promise<void> {
   const key: string | object = sandbox.id || sandbox;
   let sandboxStates = bootstrapStates.get(key);
@@ -487,14 +507,21 @@ async function ensureRuntimeProviderBootstrap(
   const current = sandboxStates.get(command);
   if (current) {
     await current;
-    if (engine === "codex") return;
-    const identityCommand = engine === "claude"
-      ? buildClaudeInstallIdentityProbeCommand(layout)
-      : buildOpenCodeInstallIdentityProbeCommand(layout);
-    const identity = await sandbox.process
-      .executeCommand(identityCommand, undefined, undefined, 10)
+    signal.throwIfAborted();
+    const validationCommand = [
+      "set -eu",
+      buildSandboxBunProbeCommand(layout),
+      engine === "codex"
+        ? buildCodexInstallIdentityProbeCommand(layout)
+        : engine === "claude"
+          ? buildClaudeInstallIdentityProbeCommand(layout)
+          : buildOpenCodeInstallIdentityProbeCommand(layout),
+    ].join("\n");
+    const validation = await sandbox.process
+      .executeCommand(validationCommand, undefined, undefined, 10)
       .catch(() => null);
-    if (identity?.exitCode === 0) return;
+    signal.throwIfAborted();
+    if (validation?.exitCode === 0) return;
 
     // The sandbox or retained filesystem changed after bootstrap. Evict only
     // this command's completed memo so the full exact Bun repair runs and
@@ -509,6 +536,8 @@ async function ensureRuntimeProviderBootstrap(
   }
 
   const operation = (async () => {
+    await ensureSandboxBun(sandbox, layout, signal);
+    signal.throwIfAborted();
     const result = await sandbox.process.executeCommand(command, undefined, undefined, 180);
     if ((result.exitCode ?? 1) !== 0) {
       const diagnostic = (result.result ?? "")
@@ -537,13 +566,14 @@ async function ensureSelectedRuntimeProviderBootstrap(
   engine: RuntimeEngineId,
   claudeEnvironment: Readonly<Record<string, string>>,
   layout: SandboxRuntimeLayout,
+  signal: AbortSignal,
 ): Promise<void> {
   const command = buildRuntimeProviderBootstrapCommand(
     engine,
     claudeEnvironment,
     layout,
   );
-  await ensureRuntimeProviderBootstrap(sandbox, engine, command, layout);
+  await ensureRuntimeProviderBootstrap(sandbox, engine, command, layout, signal);
 }
 
 /** Install and verify one selected native provider, including its stable T3
@@ -554,14 +584,13 @@ export async function prepareStableRuntimeProvider(
   engine: RuntimeEngineId,
 ): Promise<void> {
   const layout = runtimeBridgeLayout(sandbox);
-  await ensureSandboxBun(sandbox, layout, ctx.signal);
-  ctx.signal.throwIfAborted();
   const claudeEnvironment = engine === "claude" ? providerGatewayEnv(ctx, "claude") : {};
   await ensureSelectedRuntimeProviderBootstrap(
     sandbox,
     engine,
     claudeEnvironment,
     layout,
+    ctx.signal,
   );
 }
 
@@ -618,10 +647,13 @@ export async function prepareRuntimeProviderBridge(
   ctx: EngineRunContext,
   engine: RuntimeEngineId,
   workdir: string,
+  stableProviderPrepared = false,
 ): Promise<RuntimeProviderBridgeLease> {
   const layout = runtimeBridgeLayout(sandbox);
   const claudeEnvironment = engine === "claude" ? providerGatewayEnv(ctx, "claude") : {};
-  await prepareStableRuntimeProvider(sandbox, ctx, engine);
+  if (!stableProviderPrepared) {
+    await prepareStableRuntimeProvider(sandbox, ctx, engine);
+  }
 
   if (engine === "opencode") {
     const modelLimitRefresh = await prepareOpenCodeGateway(sandbox, ctx);
@@ -697,6 +729,7 @@ export async function prewarmRuntimeProviderBridge(
       engine,
       engine === "claude" ? claudeProviderGatewayEnvironment() : {},
       layout,
+      AbortSignal.timeout(180_000),
     );
   }
 }

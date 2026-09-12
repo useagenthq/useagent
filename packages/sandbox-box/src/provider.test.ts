@@ -52,6 +52,7 @@ function fakeBoxApi(
     desktopProvisioningPolls?: number;
     failDetached?: boolean;
     failWriteSuffix?: string;
+    missingDetachedLog?: boolean;
   } = {},
 ) {
   const boxes = new Map(initial.map((box) => [box.id, { ...box }]));
@@ -60,7 +61,14 @@ function fakeBoxApi(
   let created = 0;
   let archivingPolls = options.archivingPolls ?? 0;
   let desktopProvisioningPolls = options.desktopProvisioningPolls ?? 0;
-  const commandResults = new Map<string, { stdout?: string; stderr?: string; exitCode?: number | null; timedOut?: boolean }>();
+  const commandResults = new Map<string, {
+    stdout?: string;
+    stderr?: string;
+    exitCode?: number | null;
+    timedOut?: boolean;
+    stdoutTruncated?: boolean;
+    stderrTruncated?: boolean;
+  }>();
   const commands: string[] = [];
   const namedSnapshots = new Map<string, { name: string; status: "saving" | "ready"; sourceBoxId: string }>();
 
@@ -175,7 +183,8 @@ function fakeBoxApi(
     }
     if (method === "GET" && sub === "files") {
       const filePath = url.searchParams.get("path") ?? "";
-      const content = files.get(`${box.id}:${filePath}`);
+      const content = files.get(`${box.id}:${filePath}`) ??
+        (!options.missingDetachedLog && filePath.endsWith("/log") ? Buffer.alloc(0) : undefined);
       if (!content) return json(400, { ok: false, code: "invalid_path", message: "missing" });
       return json(200, { ok: true, type: "file", content: content.toString("base64"), encoding: "base64", size: content.length });
     }
@@ -335,6 +344,41 @@ describe("Box sandbox provider", () => {
     expect(await long).toEqual({ exitCode: 0, result: "built\n" });
     expect(api.commands).toContain(`rm -rf '${dir}'`);
     expect(api.commands.some((command) => command.includes("kill -TERM"))).toBe(false);
+  });
+
+  test("sync command truncation is an explicit failure and is never returned as partial success", async () => {
+    const api = fakeBoxApi([{ id: "bx_truncated", state: "ready", vcpu: 4, memoryGB: 8, subdomain: "truncated" }]);
+    const sandbox = await provider(api).provider.get("bx_truncated");
+    for (const stream of ["stdout", "stderr"] as const) {
+      const command = `large ${stream}`;
+      api.commandResults.set(`(${command})`, {
+        stdout: stream === "stdout" ? "partial" : "",
+        stderr: stream === "stderr" ? "partial" : "",
+        exitCode: 0,
+        ...(stream === "stdout" ? { stdoutTruncated: true } : { stderrTruncated: true }),
+      });
+      await expect(sandbox.process.executeCommand(command, undefined, undefined, 10))
+        .rejects.toMatchObject({ code: "command_output_truncated" });
+      expect(api.commands.filter((candidate) => candidate === `(${command})`)).toHaveLength(1);
+    }
+  });
+
+  test("a completed detached command with an unreadable log fails instead of becoming empty success", async () => {
+    const api = fakeBoxApi(
+      [{ id: "bx_missing_log", state: "ready", vcpu: 4, memoryGB: 8, subdomain: "missing-log" }],
+      { missingDetachedLog: true },
+    );
+    const sandbox = await provider(api).provider.get("bx_missing_log");
+    const pending = sandbox.process.executeCommand("build output", undefined, undefined, 300);
+    let runScript = [...api.files.keys()].find((key) => key.endsWith("/run.sh"));
+    for (let attempt = 0; !runScript && attempt < 100; attempt += 1) {
+      await Bun.sleep(1);
+      runScript = [...api.files.keys()].find((key) => key.endsWith("/run.sh"));
+    }
+    const dir = runScript!.replace("bx_missing_log:", "").replace(/\/run\.sh$/, "");
+    api.files.set(`bx_missing_log:${dir}/exit`, Buffer.from("0\n"));
+
+    await expect(pending).rejects.toMatchObject({ code: "invalid_path" });
   });
 
   test("long command timeout stops its process group before cleanup", async () => {
