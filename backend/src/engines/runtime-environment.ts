@@ -1,4 +1,4 @@
-import type { SandboxHandle } from "../sandboxes/provider";
+import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
 import { operatorEnv } from "./runtime-env";
 import { TOOL_GATEWAY_SERVER_NAME } from "../knowledge/gateway/descriptor";
 import {
@@ -73,31 +73,42 @@ export function buildRuntimeEnvironmentReadinessCommand(): string {
   ].join(" && ");
 }
 
-export function buildRuntimeIdentityPreflightCommand(): string {
+export function buildRuntimeIdentityPreflightCommand(
+  layout: SandboxRuntimeLayout = {
+    home: RUNTIME_SANDBOX_HOME,
+    workdir: RUNTIME_ENVIRONMENT_WORKDIR,
+    runsAsRoot: true,
+  },
+): string {
   return [
     "set -eu",
-    'test "$(id -u)" = "0"',
-    `test "${"$HOME"}" = "${RUNTIME_SANDBOX_HOME}"`,
-    `mkdir -p "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
-    `test "$(cd "${RUNTIME_ENVIRONMENT_WORKDIR}" && pwd -P)" = "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
-    `test -w "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
-    `printf '%s\\n' "${RUNTIME_ENVIRONMENT_WORKDIR}"`,
+    ...(layout.runsAsRoot ? ['test "$(id -u)" = "0"'] : ['test "$(id -u)" != "0"']),
+    `test "${"$HOME"}" = "${layout.home}"`,
+    `mkdir -p "${layout.workdir}"`,
+    `test "$(cd "${layout.workdir}" && pwd -P)" = "${layout.workdir}"`,
+    `test -w "${layout.workdir}"`,
+    `printf '%s\\n' "${layout.workdir}"`,
   ].join("\n");
 }
 
 export async function resolveRuntimeWorkspaceRoot(
   sandbox: Pick<RuntimeEnvironmentSandbox, "process">,
+  layout: SandboxRuntimeLayout = {
+    home: RUNTIME_SANDBOX_HOME,
+    workdir: RUNTIME_ENVIRONMENT_WORKDIR,
+    runsAsRoot: true,
+  },
 ): Promise<string> {
   const result = await sandbox.process.executeCommand(
-    buildRuntimeIdentityPreflightCommand(),
+    buildRuntimeIdentityPreflightCommand(layout),
     undefined,
     undefined,
     10,
   );
   const workdir = result.result?.trim();
-  if ((result.exitCode ?? 1) !== 0 || workdir !== RUNTIME_ENVIRONMENT_WORKDIR) {
+  if ((result.exitCode ?? 1) !== 0 || workdir !== layout.workdir) {
     throw new Error(
-      "Sandbox runtime identity contract failed (requires uid=0, HOME=/root, workspaceRoot=/root/work writable)",
+      `Sandbox runtime identity contract failed (requires ${layout.runsAsRoot ? "uid=0" : "non-root uid"}, HOME=${layout.home}, workspaceRoot=${layout.workdir} writable)`,
     );
   }
   return workdir;

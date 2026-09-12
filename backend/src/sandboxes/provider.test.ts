@@ -8,6 +8,7 @@ import {
   sandboxProvider,
   sandboxProviderApiKey,
   sandboxProviderKind,
+  sandboxRuntimeLayout,
   sandboxTemplate,
 } from "./provider";
 
@@ -20,6 +21,24 @@ afterEach(() => {
 describe("sandbox provider selection", () => {
   test("keeps Daytona as the default", () => {
     expect(sandboxProviderKind({})).toBe("daytona");
+  });
+
+  test("derives root and non-root runtime layouts from provider plugins", () => {
+    expect(sandboxRuntimeLayout("daytona")).toEqual({
+      home: "/root",
+      workdir: "/root/work",
+      runsAsRoot: true,
+    });
+    expect(sandboxRuntimeLayout("cube")).toEqual({
+      home: "/root",
+      workdir: "/root/work",
+      runsAsRoot: true,
+    });
+    expect(sandboxRuntimeLayout("box")).toEqual({
+      home: "/home/user",
+      workdir: "/home/user/work",
+      runsAsRoot: false,
+    });
   });
 
   test("constructs the explicit Daytona adapter", () => {

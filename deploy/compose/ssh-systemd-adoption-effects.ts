@@ -15,6 +15,7 @@ import {
 	releaseDirectory,
 	type SshPromotionConfig,
 	SshPromotionEffects,
+	writableMountOwnershipCommand,
 } from "./ssh-promotion-effects";
 import {
 	type LegacyUnitEnablement,
@@ -76,24 +77,6 @@ function unitList(config: SshSystemdAdoptionConfig): string {
 	]
 		.map(shellQuote)
 		.join(" ");
-}
-
-export function writableMountOwnershipCommand(
-	image: string,
-	mounts: ReadonlyArray<{ readonly host: string }>,
-): string {
-	return (
-		`uid=$(docker run --rm --entrypoint id ${shellQuote(image)} -u); ` +
-		`gid=$(docker run --rm --entrypoint id ${shellQuote(image)} -g); ` +
-		`case "$uid:$gid" in :*|*:|*[!0-9:]*) echo 'backend image returned a non-numeric uid/gid' >&2; exit 1;; esac; ` +
-		mounts
-			.map(
-				(mount) =>
-					`install -d -o "$uid" -g "$gid" -m 0770 ${shellQuote(mount.host)}; ` +
-					`chown -R "$uid:$gid" ${shellQuote(mount.host)}`,
-			)
-			.join("; ")
-	);
 }
 
 export class SshSystemdAdoptionEffects implements SystemdAdoptionEffects {
@@ -266,6 +249,10 @@ export class SshSystemdAdoptionEffects implements SystemdAdoptionEffects {
 			{
 				host: "/var/lib/useagent/slack-uploads",
 				container: "/app/backend/.slack-uploads",
+			},
+			{
+				host: `/var/lib/useagent/scratch/${target.color}`,
+				container: `/var/lib/useagent/scratch/${target.color}`,
 			},
 			{
 				host: "/var/lib/useagent/codex-app-server",

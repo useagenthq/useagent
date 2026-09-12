@@ -13,7 +13,7 @@ function sandboxWithBracketedPastePrefix(
     readonly hangChildTranscript?: boolean;
     readonly resetChildAOnce?: boolean;
     readonly negotiatedVersion?: number;
-    readonly control?: { emit?: (data: string) => Promise<void> };
+    readonly control?: { emit?: (data: string) => Promise<void>; sent?: string[] };
     readonly failRequestType?: string;
   } = {},
 ): SandboxHandle {
@@ -34,6 +34,7 @@ function sandboxWithBracketedPastePrefix(
           async waitForConnection() {},
           async sendInput(input: string | Uint8Array) {
             const text = typeof input === "string" ? input : new TextDecoder().decode(input);
+            options.control?.sent?.push(text);
             if (text.startsWith("stty ")) {
               nonCanonicalInput = text.includes(" -icanon min 1 time 0");
               await onData(encoder.encode("\u001b[?2004hroot@box:/work# "));
@@ -150,9 +151,10 @@ function sandboxWithBracketedPastePrefix(
 describe("Pi RPC frame parsing", () => {
   test("becomes ready when Cube prefixes the first RPC frame with terminal control bytes", async () => {
     const requests: Array<Record<string, unknown>> = [];
+    const sent: string[] = [];
     const manager = new DefaultPiBridgeManager();
     const session = await manager.ensure({
-      sandbox: sandboxWithBracketedPastePrefix(requests),
+      sandbox: sandboxWithBracketedPastePrefix(requests, { control: { sent } }),
       workdir: "/work",
       runtime: {
         model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
@@ -167,11 +169,37 @@ describe("Pi RPC frame parsing", () => {
 
     expect(session.sessionId).toBe("pi-session");
     expect(session.sessionFile).toBe("/home/useagent-pi/agent/sessions/pi.jsonl");
+    expect(sent[0]).toContain("exec su -s /bin/sh 'useagent-pi'");
+    expect(sent[0]).toContain("/work");
     expect(requests.slice(0, 3).map((request) => request.type)).toEqual([
       "negotiate_protocol",
       "set_subagent_subscription",
       "get_state",
     ]);
+    await session.dispose();
+  }, 2_000);
+
+  test("launches directly as the current user on a non-root Box runtime", async () => {
+    const sent: string[] = [];
+    const manager = new DefaultPiBridgeManager();
+    const session = await manager.ensure({
+      sandbox: sandboxWithBracketedPastePrefix([], { control: { sent } }),
+      workdir: "/home/user/work",
+      runtime: {
+        model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
+        fingerprint: "box-runtime",
+        knowledgeTools: false,
+        executable: "/home/user/.useagent/pi-runtime/cli.js",
+        bunExecutable: "/home/user/.useagent/pi-runtime/bun",
+        runAsUser: null,
+        home: "/home/user/.useagent/pi",
+      },
+    });
+
+    expect(sent[0]).toContain("--cwd '/home/user/work'");
+    expect(sent[0]).toContain("HOME='/home/user/.useagent/pi'");
+    expect(sent[0]).not.toContain("su -s");
+    expect(sent[0]).not.toContain("/root");
     await session.dispose();
   }, 2_000);
 

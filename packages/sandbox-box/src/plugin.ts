@@ -34,6 +34,7 @@ export const boxPlugin: SandboxProviderPlugin<BoxApiConfig> = {
   // Boxes run as `user`; /root is not writable.
   home: "/home/user",
   runsAsRoot: false,
+  runtime: { home: "/home/user", workdir: "/home/user/work" },
   previewAuthHeaders(token): Record<string, string> {
     // The hosted-port token was exchanged for the port-auth cookie at link time.
     if (!token) return {};

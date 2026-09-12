@@ -11,7 +11,7 @@
  * clone in src/engines/opencode-server.ts.
  */
 import { execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -19,6 +19,39 @@ import type { GithubRepositoryAccess } from "../github/auth";
 
 const exec = promisify(execFile);
 const CLONE_TIMEOUT_MS = 120_000;
+const REPOSITORY_SCRATCH_PREFIXES = [
+  "useagent-wiki-",
+  "useagent-read-",
+  // Clean directories left by releases before the product rename.
+  "skynet-wiki-",
+  "skynet-read-",
+] as const;
+
+export function repositoryScratchRoot(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  return env.SCRATCH_DIR?.trim() || tmpdir();
+}
+
+export async function cleanupRepositoryScratch(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): Promise<{ readonly removed: number; readonly failures: readonly string[] }> {
+  const root = env.SCRATCH_DIR?.trim();
+  if (!root) return { removed: 0, failures: [] };
+  const entries = await readdir(root, { withFileTypes: true });
+  let removed = 0;
+  const failures: string[] = [];
+  for (const entry of entries) {
+    if (!REPOSITORY_SCRATCH_PREFIXES.some((prefix) => entry.name.startsWith(prefix))) continue;
+    try {
+      await rm(join(root, entry.name), { recursive: true, force: true });
+      removed += 1;
+    } catch (error) {
+      failures.push(`${entry.name}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return { removed, failures };
+}
 
 export interface ClonedRepo {
   dir: string;
@@ -87,7 +120,7 @@ export async function cloneRepoToTemp(
 ): Promise<ClonedRepo> {
   if (!isValidRepoRef(repo)) throw new Error(`invalid repo ref: ${repo}`);
   const url = `https://github.com/${repo}.git`;
-  const dir = await mkdtemp(join(tmpdir(), "skynet-wiki-"));
+  const dir = await mkdtemp(join(repositoryScratchRoot(), "useagent-wiki-"));
   const cleanup = async () => {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   };
@@ -166,7 +199,7 @@ export async function readFileAtCommit(
   if (path.includes("..") || path.startsWith("/")) throw new Error(`invalid file path`);
   const url = `https://github.com/${repo}.git`;
   const env = gitAuthEnv(access.token);
-  const dir = await mkdtemp(join(tmpdir(), "skynet-read-"));
+  const dir = await mkdtemp(join(repositoryScratchRoot(), "useagent-read-"));
   const cleanup = async () => {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   };

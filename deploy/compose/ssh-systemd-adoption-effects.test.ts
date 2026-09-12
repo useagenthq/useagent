@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { writableMountOwnershipCommand } from "./ssh-systemd-adoption-effects";
+import { writableMountOwnershipCommand } from "./ssh-promotion-effects";
 
 describe("Compose adoption writable mounts", () => {
 	test("repairs an existing bind mount with the immutable image identity", () => {

@@ -7,7 +7,7 @@ import {
   piProviderGatewayCapability,
   piToolGatewayDescriptor,
 } from "../provider-gateway/sandbox-config";
-import type { SandboxHandle } from "../sandboxes/provider";
+import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
 import type { EngineRunContext } from "./types";
 import { PI_BROKER_PORT, startPiCredentialBroker } from "./pi-credential-broker";
 
@@ -33,7 +33,7 @@ export interface PreparedPiRuntime {
   readonly knowledgeTools: boolean;
   readonly executable: string;
   readonly bunExecutable: string;
-  readonly runAsUser: string;
+  readonly runAsUser: string | null;
   readonly home: string;
 }
 
@@ -118,6 +118,7 @@ export async function preparePiRuntime(
   sandbox: SandboxHandle,
   ctx: EngineRunContext,
   workdir: string,
+  layout: SandboxRuntimeLayout = { home: "/root", workdir: "/root/work", runsAsRoot: true },
 ): Promise<PreparedPiRuntime> {
   const selection = piModelSelection(ctx.model?.trim() || "openai/gpt-5.6-luna");
   const providerCapability = piProviderGatewayCapability(ctx, selection.provider);
@@ -125,14 +126,21 @@ export async function preparePiRuntime(
   const toolCapability = piToolGatewayDescriptor(ctx);
   const modelJson = providerConfig(ctx, selection);
   const mcpJson = JSON.stringify(mcpConfig(toolCapability !== null));
-  const agentDir = `${PI_RUNTIME_HOME}/agent`;
+  const runtimeHome = layout.runsAsRoot ? PI_RUNTIME_HOME : `${layout.home}/.useagent/pi`;
+  const runtimeRoot = layout.runsAsRoot ? PI_RUNTIME_ROOT : `${layout.home}/.useagent/pi-runtime`;
+  const brokerRoot = layout.runsAsRoot ? "/root/.useagent/pi-broker" : `${layout.home}/.useagent/pi-broker`;
+  const runAsUser = layout.runsAsRoot ? PI_RUNTIME_USER : null;
+  const agentDir = `${runtimeHome}/agent`;
   const modelsPath = `${agentDir}/models.json`;
-  const directories = await sandbox.process.executeCommand(
-    `id -u ${PI_RUNTIME_USER} >/dev/null 2>&1 || ` +
+  const directoriesCommand = layout.runsAsRoot
+    ? `id -u ${PI_RUNTIME_USER} >/dev/null 2>&1 || ` +
       `useradd --system --create-home --home-dir ${PI_RUNTIME_HOME} --shell /bin/sh ${PI_RUNTIME_USER}; ` +
       `chmod 711 /root && install -d -o ${PI_RUNTIME_USER} -g ${PI_RUNTIME_USER} -m 700 ` +
       `'${agentDir.replaceAll("'", "'\\''")}' '${workdir.replaceAll("'", "'\\''")}' && ` +
-      `chown -R ${PI_RUNTIME_USER}:${PI_RUNTIME_USER} '${workdir.replaceAll("'", "'\\''")}'`,
+      `chown -R ${PI_RUNTIME_USER}:${PI_RUNTIME_USER} '${workdir.replaceAll("'", "'\\''")}'`
+    : `install -d -m 700 '${agentDir.replaceAll("'", "'\\''")}' '${workdir.replaceAll("'", "'\\''")}'`;
+  const directories = await sandbox.process.executeCommand(
+    directoriesCommand,
     undefined,
     undefined,
     20,
@@ -142,30 +150,32 @@ export async function preparePiRuntime(
     uploadPrivateFile(sandbox, modelsPath, modelJson),
     uploadPrivateFile(sandbox, `${workdir}/.mcp.json`, mcpJson),
   ]);
-  const ownership = await sandbox.process.executeCommand(
-    `chown ${PI_RUNTIME_USER}:${PI_RUNTIME_USER} ` +
-      `'${modelsPath.replaceAll("'", "'\\''")}' '${`${workdir}/.mcp.json`.replaceAll("'", "'\\''")}'`,
-    undefined,
-    undefined,
-    15,
-  );
-  if ((ownership.exitCode ?? 1) !== 0) throw new Error("failed to assign Pi runtime configuration");
+  if (layout.runsAsRoot) {
+    const ownership = await sandbox.process.executeCommand(
+      `chown ${PI_RUNTIME_USER}:${PI_RUNTIME_USER} ` +
+        `'${modelsPath.replaceAll("'", "'\\''")}' '${`${workdir}/.mcp.json`.replaceAll("'", "'\\''")}'`,
+      undefined,
+      undefined,
+      15,
+    );
+    if ((ownership.exitCode ?? 1) !== 0) throw new Error("failed to assign Pi runtime configuration");
+  }
   const [runtimePackageJson, runtimeLockJson] = await runtimeFiles;
-  const runtimeManifestDir = `${PI_RUNTIME_ROOT}/manifest`;
+  const runtimeManifestDir = `${runtimeRoot}/manifest`;
   await sandbox.process.executeCommand(`install -d -m 755 '${runtimeManifestDir}'`, undefined, undefined, 15);
   await Promise.all([
     uploadPrivateFile(sandbox, `${runtimeManifestDir}/package.json`, runtimePackageJson),
     uploadPrivateFile(sandbox, `${runtimeManifestDir}/package-lock.json`, runtimeLockJson),
   ]);
-  const bunExecutable = `${PI_RUNTIME_ROOT}/current/node_modules/.bin/bun`;
-  const executable = `${PI_RUNTIME_ROOT}/current/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`;
+  const bunExecutable = `${runtimeRoot}/current/node_modules/.bin/bun`;
+  const executable = `${runtimeRoot}/current/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`;
   const install = await sandbox.process.executeCommand(
-    `if ! test -f '${PI_RUNTIME_ROOT}/.lock-sha256' || ` +
-      `! grep -Fxq '${PI_RUNTIME_LOCK_SHA256}' '${PI_RUNTIME_ROOT}/.lock-sha256'; then ` +
-      `install -d -m 755 '${PI_RUNTIME_ROOT}/current' && ` +
-      `cp '${runtimeManifestDir}/package.json' '${runtimeManifestDir}/package-lock.json' '${PI_RUNTIME_ROOT}/current/' && ` +
-      `cd '${PI_RUNTIME_ROOT}/current' && npm ci --omit=dev --silent >/dev/null && ` +
-      `printf '%s\\n' '${PI_RUNTIME_LOCK_SHA256}' > '${PI_RUNTIME_ROOT}/.lock-sha256'; fi; ` +
+    `if ! test -f '${runtimeRoot}/.lock-sha256' || ` +
+      `! grep -Fxq '${PI_RUNTIME_LOCK_SHA256}' '${runtimeRoot}/.lock-sha256'; then ` +
+      `install -d -m 755 '${runtimeRoot}/current' && ` +
+      `cp '${runtimeManifestDir}/package.json' '${runtimeManifestDir}/package-lock.json' '${runtimeRoot}/current/' && ` +
+      `cd '${runtimeRoot}/current' && npm ci --omit=dev --silent >/dev/null && ` +
+      `printf '%s\\n' '${PI_RUNTIME_LOCK_SHA256}' > '${runtimeRoot}/.lock-sha256'; fi; ` +
       `'${bunExecutable}' '${executable}' --version | grep -Fq '${PI_CODING_AGENT_VERSION}'`,
     undefined,
     undefined,
@@ -178,10 +188,11 @@ export async function preparePiRuntime(
     sandbox,
     provider: providerCapability,
     tools: toolCapability,
+    root: brokerRoot,
   });
   // Warm runtime sandboxes are intentionally created without a run-scoped
-  // provider capability. Mark the sandbox current only after Pi's root-owned
-  // broker and private capability files are ready. Otherwise the next turn
+  // provider capability. Mark the sandbox current only after Pi's private
+  // broker and capability files are ready. Otherwise the next turn
   // rejects and deletes the retained sandbox as an obsolete credential
   // generation, silently breaking workspace continuity while the JSONL native
   // session still resumes.
@@ -192,7 +203,7 @@ export async function preparePiRuntime(
     knowledgeTools: toolCapability !== null,
     executable,
     bunExecutable,
-    runAsUser: PI_RUNTIME_USER,
-    home: PI_RUNTIME_HOME,
+    runAsUser,
+    home: runtimeHome,
   };
 }

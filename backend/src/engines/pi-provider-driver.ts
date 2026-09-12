@@ -40,7 +40,7 @@ function metadata(value: Record<string, unknown> | undefined): PiStartMetadata |
     typeof runtime?.model?.selector === "string" &&
     typeof runtime?.executable === "string" && runtime.executable.startsWith("/") &&
     typeof runtime?.bunExecutable === "string" && runtime.bunExecutable.startsWith("/") &&
-    typeof runtime?.runAsUser === "string" && runtime.runAsUser.length > 0 &&
+    (runtime?.runAsUser === null || (typeof runtime?.runAsUser === "string" && runtime.runAsUser.length > 0)) &&
     typeof runtime?.home === "string" && runtime.home.startsWith("/")
     ? { workdir, runtime }
     : null;

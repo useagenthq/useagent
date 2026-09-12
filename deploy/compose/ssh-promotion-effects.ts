@@ -49,13 +49,50 @@ export interface PrepareReleaseOptions {
 }
 
 const serviceNames: readonly Service[] = ["backend", "gateway", "frontend"];
-
 function shellQuote(value: string): string {
 	return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 function timeoutSeconds(timeoutMs: number): number {
 	return Math.max(1, Math.ceil(timeoutMs / 1000));
+}
+
+export function writableMountOwnershipCommand(
+	image: string,
+	mounts: ReadonlyArray<{ readonly host: string }>,
+): string {
+	return (
+		`uid=$(docker run --rm --entrypoint id ${shellQuote(image)} -u); ` +
+		`gid=$(docker run --rm --entrypoint id ${shellQuote(image)} -g); ` +
+		`case "$uid:$gid" in :*|*:|*[!0-9:]*) echo 'backend image returned a non-numeric uid/gid' >&2; exit 1;; esac; ` +
+		mounts
+			.map(
+				(mount) =>
+					`install -d -o "$uid" -g "$gid" -m 0770 ${shellQuote(mount.host)}; ` +
+					`chown -R "$uid:$gid" ${shellQuote(mount.host)}`,
+			)
+			.join("; ")
+	);
+}
+
+export function backendScratchPreparationCommands(
+	config: SshPromotionConfig,
+	record: ReleaseRecord,
+): readonly string[] {
+	const backendScratchMount = {
+		host: `/var/lib/useagent/scratch/${record.color}`,
+		container: `/var/lib/useagent/scratch/${record.color}`,
+	};
+	const sentinel = `${backendScratchMount.container}/.useagent-scratch-${record.manifest.commit}`;
+	const probe = `set -eu; : > ${shellQuote(sentinel)}; rm -f ${shellQuote(sentinel)}`;
+	return [
+		writableMountOwnershipCommand(record.manifest.backend, [backendScratchMount]),
+		composePromotionCommand(
+			config,
+			record,
+			`run --rm --no-deps --entrypoint sh backend -c ${shellQuote(probe)}`,
+		),
+	];
 }
 
 async function runProcess(
@@ -412,6 +449,15 @@ export class SshPromotionEffects implements PromotionEffects {
 		);
 	}
 
+	async #prepareBackendScratch(record: ReleaseRecord): Promise<void> {
+		for (const command of backendScratchPreparationCommands(
+			this.#config,
+			record,
+		)) {
+			await this.#remote.run(command);
+		}
+	}
+
 	async prepareRelease(
 		record: ReleaseRecord,
 		options: PrepareReleaseOptions = {},
@@ -465,6 +511,7 @@ export class SshPromotionEffects implements PromotionEffects {
 				);
 			}
 		}
+		await this.#prepareBackendScratch(record);
 		const current = this.#historyAtStart.current;
 		if (current) {
 			const currentFiles = await this.migrationInventory(
