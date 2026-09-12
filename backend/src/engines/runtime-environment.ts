@@ -16,7 +16,7 @@ import {
 export const RUNTIME_ENVIRONMENT_PORT = 37_733;
 export const RUNTIME_GENERATION_LABEL = "useagent.runtime";
 // Native wire/session compatibility, not the application release number. The
-// pinned fork is the same v8 runtime already deployed; exact distribution bytes
+// nightly fork retains the v8 wire/session contract; exact distribution bytes
 // are verified separately. A future incompatible generation needs an explicit
 // workspace-preserving upgrade, never delete-and-recreate of retained threads.
 const DEFAULT_RUNTIME_GENERATION = "useagent-runtime-v8";

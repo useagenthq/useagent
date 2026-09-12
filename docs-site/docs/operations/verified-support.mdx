@@ -50,10 +50,10 @@ unchanged; this ordering change does not introduce ACP.
 
 ## Runtime and pending certification
 
-The runtime artifact pinned by the backend manifest is authoritative for the
-bytes under test: source fingerprint
-`524d46b26f5ac85c82cd41e20f6c709d9f08db9b`. Artifact identity proves
-reproducibility, not engine/provider certification. Runtime release `v0.0.4`
+The evidence recorded here used source fingerprint
+`524d46b26f5ac85c82cd41e20f6c709d9f08db9b`. The backend manifest is authoritative
+for newer build pins; those builds do not inherit this historical verification.
+Artifact identity proves reproducibility, not engine/provider certification. Runtime release `v0.0.4`
 remains uncertified, and the OSS release remains held.
 
 The full Daytona real-backend matrix is still pending provider selection. An
