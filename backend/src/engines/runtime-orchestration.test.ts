@@ -4,6 +4,7 @@ import {
   assistantText,
   hasOpenRuntimeToolCall,
   buildRuntimeProjectCreateCommand,
+  buildRuntimeSessionStopCommand,
   buildRuntimeThreadCreateCommand,
   buildRuntimeTurnStartCommand,
   runtimeActivityProviderEvent,
@@ -27,6 +28,21 @@ const context = { runId: "run/unsafe", threadId: "thread unsafe", model: "gpt-5.
 const baselineRedactor = createSecretRedactor([]);
 
 describe("T3 orchestration projection", () => {
+  test("builds the native retained-session stop command", () => {
+    expect(buildRuntimeSessionStopCommand(
+      "thread-1",
+      "2026-09-05T00:00:00.000Z",
+      "revision-1",
+    ))
+      .toMatchObject({
+        type: "thread.session.stop",
+        commandId: "skynet-session-stop-revision-1-thread-1",
+        threadId: "thread-1",
+        onlyIfSettled: true,
+        createdAt: "2026-09-05T00:00:00.000Z",
+      });
+  });
+
   test("derives stable transport-safe project and thread ids", () => {
     expect(runtimeProjectId(context)).toBe("skynet-project-thread-unsafe");
     expect(runtimeThreadId(context)).toBe("skynet-thread-thread-unsafe");

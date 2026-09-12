@@ -450,6 +450,20 @@ export function buildRuntimeTurnInterruptCommand(
   };
 }
 
+export function buildRuntimeSessionStopCommand(
+  threadId: string,
+  createdAt = new Date().toISOString(),
+  revision: string = crypto.randomUUID(),
+): Readonly<Record<string, unknown>> {
+  return {
+    type: "thread.session.stop",
+    commandId: stableId("skynet-session-stop", `${revision}-${threadId}`),
+    threadId,
+    onlyIfSettled: true,
+    createdAt,
+  };
+}
+
 export function assistantText(snapshot: RuntimeThreadSnapshot): string {
   const latestTurn = snapshot.thread.latestTurn;
   if (!latestTurn) return "";
