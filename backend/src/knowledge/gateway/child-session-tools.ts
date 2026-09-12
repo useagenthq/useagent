@@ -219,7 +219,7 @@ export async function childSessionToolsEnabled(
   });
   return (
     capabilities.gatewayChildSessions &&
-    persistedEngineModelReadyForDispatch(run.engine, run.model)
+    (primaryApiOrigin() !== null || persistedEngineModelReadyForDispatch(run.engine, run.model))
   );
 }
 

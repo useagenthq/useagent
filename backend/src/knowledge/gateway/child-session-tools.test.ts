@@ -23,6 +23,8 @@ const ENV_KEYS = [
   "PROVIDER_HEALTH_OPENAI",
   "PROVIDER_HEALTH_OPENROUTER",
   "PRODUCT_CHILD_THREADS",
+  "GATEWAY_DATABASE_URL",
+  "USEAGENT_API_ORIGIN",
 ] as const;
 
 let savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> =
@@ -160,6 +162,32 @@ describe("child session gateway tools", () => {
     expect(acpCodexBody.result.tools.map((tool) => tool.name)).toContain(
       "child_session_create",
     );
+
+    // The restricted standalone gateway delegates child operations to the
+    // primary API, which owns the authoritative engine-readiness check. It must
+    // not hide child tools merely because provider readiness is intentionally
+    // absent from the gateway environment.
+    process.env.GATEWAY_DATABASE_URL = "postgres://restricted";
+    process.env.USEAGENT_API_ORIGIN = "http://127.0.0.1:3201";
+    process.env.PRODUCT_CHILD_THREADS = "on";
+    delete process.env.ENGINE_READINESS_CODEX;
+    const restrictedGateway = await app.request("/api/mcp/knowledge", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${acpCodexToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/list" }),
+    });
+    const restrictedGatewayBody = (await restrictedGateway.json()) as {
+      result: { tools: Array<{ name: string }> };
+    };
+    expect(restrictedGatewayBody.result.tools.map((tool) => tool.name)).toContain(
+      "child_session_create_many",
+    );
+    delete process.env.GATEWAY_DATABASE_URL;
+    delete process.env.USEAGENT_API_ORIGIN;
+    process.env.PRODUCT_CHILD_THREADS = "off";
 
     // claude is NOT dispatch-ready in this env (absent from ENABLED_ENGINES), so
     // readiness - not engine capability - withholds the tools.
