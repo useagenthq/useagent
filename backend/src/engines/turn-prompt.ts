@@ -8,6 +8,8 @@ export interface TurnPromptContext {
   readonly resourceContext?: string;
   readonly skillContext?: string;
   readonly skillCatalogContext?: string;
+  /** Who the workspace's bots are and the delegation rule; see bots/prompt-context. */
+  readonly botContext?: string;
   readonly inputContext?: string;
   readonly commandName?: string | null;
   readonly orgId?: string | null;
@@ -103,6 +105,7 @@ export function composeTurnPrompt(
     executionCapabilityPrompt(executionCapabilities) +
     AGENT_WORKFLOW_ROUTING_RULES +
     productFanoutRoutingRules(ctx, executionCapabilities, env) +
+    (ctx.botContext ?? "") +
     skillReference +
     (ctx.resourceContext ?? "") +
     (ctx.inputContext ?? "") +

@@ -1,7 +1,9 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { botHandoffs, bots, type BotRow } from "../db/schema";
+import { pumpProductChildThread } from "../runs/child-session-pump";
 import { createChildSession } from "../runs/child-sessions";
+import { acceptThreadFollowup } from "../runs/thread-followups";
 import { defaultModelForEngine } from "../runs/model-policy";
 import { productChildThreadsEnabled } from "../runs/thread-relationship-rollout";
 import { botsEnabled } from "./rollout";
@@ -69,6 +71,7 @@ export function composeHandoffPrompt(bot: Pick<BotRow, "name" | "title" | "rules
     text,
     "",
     `You are ${who}. This thread was handed to you from another thread; do the part addressed to you and end with a short outcome line for whoever handed it over.`,
+    "If the message is a question, answer it. If it names no task, say what you can do from your standing rules and skills instead of waiting.",
     "Standing rules:",
     rules,
   ].join("\n");
@@ -78,9 +81,89 @@ export interface HandoffResult {
   readonly botId: string;
   readonly name: string;
   readonly threadId: string | null;
-  /** `unavailable`: product child threads are off for this org, so a handoff
+  /** `followed_up`: the bot already has a delegated thread under this parent
+   *  thread, so the message became its next turn instead of a second thread.
+   *  `unavailable`: product child threads are off for this org, so a handoff
    *  would degrade to a deferred turn on the parent's engine - refused instead. */
-  readonly status: "created" | "replayed" | "conflict" | "not_found" | "unavailable";
+  readonly status: "created" | "replayed" | "followed_up" | "conflict" | "not_found" | "unavailable";
+}
+
+/** The bot's most recent delegated thread under this parent thread, if any. */
+export async function findOpenHandoffThread(orgId: string, botId: string, parentThreadId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ threadId: botHandoffs.threadId })
+    .from(botHandoffs)
+    .where(and(eq(botHandoffs.orgId, orgId), eq(botHandoffs.botId, botId), eq(botHandoffs.parentThreadId, parentThreadId)))
+    .orderBy(desc(botHandoffs.createdAt))
+    .limit(1);
+  return row?.threadId ?? null;
+}
+
+/** A follow-up into the bot's existing delegated thread: the ask, plus where it came from. */
+export function composeHandoffFollowup(bot: Pick<BotRow, "name">, text: string): string {
+  return `${text}\n\n(Handed to you, ${bot.name}, from the same thread as before; continue there and end with a short outcome line.)`;
+}
+
+/**
+ * Hand one message to one bot. The first mention under a parent thread opens
+ * the bot's delegated child thread; every later mention from that thread
+ * becomes the next turn of the same child, so a conversation with a bot stays
+ * one thread instead of one thread per message.
+ */
+export async function handoffToBot(input: {
+  readonly orgId: string;
+  readonly actorId: string | null;
+  readonly parentRunId: string;
+  readonly threadId: string;
+  readonly bot: BotRow;
+  readonly text: string;
+  readonly title?: string;
+  readonly idempotencyKey: string;
+}): Promise<HandoffResult> {
+  const { bot } = input;
+  const existing = await findOpenHandoffThread(input.orgId, bot.id, input.threadId);
+  if (existing) {
+    const followup = await acceptThreadFollowup({
+      orgId: input.orgId,
+      actorId: input.actorId,
+      threadId: existing,
+      text: composeHandoffFollowup(bot, input.text),
+      attachmentIds: [],
+      idempotencyKey: input.idempotencyKey,
+    });
+    if (followup.status === "created" || followup.status === "replayed") {
+      if (followup.status === "created") {
+        await pumpProductChildThread(existing).catch((error) => {
+          console.error(`[bots] handoff follow-up pump failed for ${existing}:`, error);
+        });
+      }
+      return { botId: bot.id, name: bot.name, threadId: existing, status: "followed_up" };
+    }
+    if (followup.status === "conflict") return { botId: bot.id, name: bot.name, threadId: null, status: "conflict" };
+    // not_found / stale_parent: the old thread is gone; open a fresh one below.
+  }
+  const outcome = await createChildSession({
+    orgId: input.orgId,
+    actorId: input.actorId,
+    parentRunId: input.parentRunId,
+    threadId: input.threadId,
+    prompt: composeHandoffPrompt(bot, input.text),
+    title: input.title || `${bot.name}: ${input.text.replace(/\s+/g, " ").slice(0, 120)}`,
+    engine: bot.engine,
+    model: bot.model ?? defaultModelForEngine(bot.engine),
+    repos: [...bot.repos],
+    memoryScope: bot.memoryScope,
+    idempotencyKey: input.idempotencyKey,
+  });
+  if (outcome.status === "conflict") return { botId: bot.id, name: bot.name, threadId: null, status: "conflict" };
+  await recordBotHandoff({
+    orgId: input.orgId,
+    botId: bot.id,
+    threadId: outcome.child.id,
+    parentThreadId: input.threadId,
+    sourceRunId: input.parentRunId,
+  });
+  return { botId: bot.id, name: bot.name, threadId: outcome.child.id, status: outcome.status };
 }
 
 /** Handoffs are real only as independently messageable product child threads. */
@@ -89,9 +172,10 @@ export function handoffsAvailable(orgId: string | null): boolean {
 }
 
 /**
- * Open one delegated child thread per mentioned bot, on the bot's own preset
- * (engine, model, memory scope) - the cross-harness handoff. Idempotent per
- * (parent run, bot). Missing or archived bots are reported, never fatal.
+ * Hand the message to each mentioned bot on the bot's own preset (engine,
+ * model, memory scope) - the cross-harness handoff. One delegated thread per
+ * (parent thread, bot), reused across messages; idempotent per (parent run,
+ * bot). Missing or archived bots are reported, never fatal.
  */
 export async function dispatchBotHandoffs(input: {
   readonly orgId: string;
@@ -117,31 +201,17 @@ export async function dispatchBotHandoffs(input: {
       results.push({ botId, name: "", threadId: null, status: "not_found" });
       continue;
     }
-    const outcome = await createChildSession({
-      orgId: input.orgId,
-      actorId: input.actorId,
-      parentRunId: input.parentRunId,
-      threadId: input.threadId,
-      prompt: composeHandoffPrompt(bot, input.text),
-      title: `${bot.name}: ${input.text.replace(/\s+/g, " ").slice(0, 120)}`,
-      engine: bot.engine,
-      model: bot.model ?? defaultModelForEngine(bot.engine),
-      repos: [...bot.repos],
-      memoryScope: bot.memoryScope,
-      idempotencyKey: `bot-handoff:${input.parentRunId}:${bot.id}`,
-    });
-    if (outcome.status === "conflict") {
-      results.push({ botId, name: bot.name, threadId: null, status: "conflict" });
-      continue;
-    }
-    await recordBotHandoff({
-      orgId: input.orgId,
-      botId: bot.id,
-      threadId: outcome.child.id,
-      parentThreadId: input.threadId,
-      sourceRunId: input.parentRunId,
-    });
-    results.push({ botId, name: bot.name, threadId: outcome.child.id, status: outcome.status });
+    results.push(
+      await handoffToBot({
+        orgId: input.orgId,
+        actorId: input.actorId,
+        parentRunId: input.parentRunId,
+        threadId: input.threadId,
+        bot,
+        text: input.text,
+        idempotencyKey: `bot-handoff:${input.parentRunId}:${bot.id}`,
+      }),
+    );
   }
   return results;
 }

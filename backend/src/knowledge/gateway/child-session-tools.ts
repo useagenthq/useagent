@@ -15,9 +15,8 @@ import {
 import { acceptProductChildBatch } from "../../runs/child-thread-batch-service";
 import { CHILD_BATCH_LIMIT, CHILD_PROMPT_MAX_CHARS, CHILD_TITLE_MAX_CHARS } from "../../runs/child-session-policy";
 import { productChildThreadsEnabled } from "../../runs/thread-relationship-rollout";
-import { composeHandoffPrompt, handoffsAvailable, recordBotHandoff, resolveBotMention } from "../../bots/handoffs";
+import { handoffToBot, handoffsAvailable, resolveBotMention } from "../../bots/handoffs";
 import { botsEnabled } from "../../bots/rollout";
-import { defaultModelForEngine } from "../../runs/model-policy";
 import { ENGINE_IDS, type EngineId } from "../../db/schema";
 
 const MAX_TEXT_EVENT_LINES = 20;
@@ -457,24 +456,21 @@ async function handoff(claims: ToolTokenClaims, args: Record<string, unknown>): 
   if (prompt.length > CHILD_PROMPT_MAX_CHARS) return errorResult(`bot_handoff prompt exceeds ${CHILD_PROMPT_MAX_CHARS} characters.`);
   const bot = await resolveBotMention(claims.orgId, mention);
   if (!bot) return errorResult(`No bot named ${mention}. Bots are listed in the workspace's Bots page.`);
-  const outcome = await createChildSession({
+  const outcome = await handoffToBot({
     orgId: claims.orgId,
     actorId: claims.userId || null,
     parentRunId: run.id,
     threadId: run.threadId,
-    prompt: composeHandoffPrompt(bot, prompt),
-    title: title || `${bot.name}: ${prompt.slice(0, 120)}`,
-    engine: bot.engine,
-    model: bot.model ?? defaultModelForEngine(bot.engine),
-    repos: [...bot.repos],
-    memoryScope: bot.memoryScope,
+    bot,
+    text: prompt,
+    title: title || undefined,
     idempotencyKey: `${idempotencyKey}:${bot.id}`,
   });
   if (outcome.status === "conflict") return errorResult("idempotencyKey was already used for a different handoff.");
-  await recordBotHandoff({ orgId: claims.orgId, botId: bot.id, threadId: outcome.child.id, parentThreadId: run.threadId, sourceRunId: run.id });
+  const verb = outcome.status === "created" ? "Handed off to" : outcome.status === "followed_up" ? "Continued the existing handoff to" : "Replayed handoff to";
   return textResult(
-    `${outcome.status === "created" ? "Handed off to" : "Replayed handoff to"} ${bot.name} in child session ${outcome.child.id} (${outcome.child.status}).`,
-    { status: outcome.status, bot: { id: bot.id, name: bot.name, engine: bot.engine }, child: outcome.child },
+    `${verb} ${bot.name} in child session ${outcome.threadId}. Do not do the bot's part or write as the bot; read its result with child_session_gather when it settles.`,
+    { status: outcome.status, bot: { id: bot.id, name: bot.name, engine: bot.engine }, child: { id: outcome.threadId } },
   );
 }
 

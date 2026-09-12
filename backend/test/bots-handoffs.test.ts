@@ -97,10 +97,15 @@ describe("bot handoffs (@mentions)", () => {
       body: { prompt: "@bot/Nova also check the UK tier.", parent_run_id: parent.body.id, bot_mentions: [nova.id] },
     });
     expect(followup.status).toBe(201);
-    expect(followup.body.handoffs?.[0]?.status).toBe("created");
-    expect(followup.body.handoffs?.[0]?.threadId).not.toBe(childThreadId);
+    // A later mention from the same thread continues the bot's existing delegated
+    // thread instead of opening a second one: one conversation per bot per thread.
+    expect(followup.body.handoffs?.[0]?.status).toBe("followed_up");
+    expect(followup.body.handoffs?.[0]?.threadId).toBe(childThreadId);
+    const childRuns = await db.select({ id: runs.id, prompt: runs.prompt }).from(runs).where(and(eq(runs.orgId, orgId), eq(runs.threadId, childThreadId)));
+    expect(childRuns.length).toBe(2);
+    expect(childRuns.some((r) => r.prompt.includes("also check the UK tier") && r.prompt.includes("from the same thread as before"))).toBe(true);
     const again = await json<{ bot: BotBody }>(`/api/bots/${nova.id}`, { cookies });
-    expect(again.body.bot.handoffs).toBe(2);
+    expect(again.body.bot.handoffs).toBe(1);
   });
 
   test("mentions are validated, unknown bots are reported, and the flag gates the field", async () => {

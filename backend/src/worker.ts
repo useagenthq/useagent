@@ -43,6 +43,9 @@ import {
   RUN_TIMING_STAGES,
   type RunStageTimer,
 } from "./runs/run-timing";
+import { handoffsAvailable } from "./bots/handoffs";
+import { composeBotContext } from "./bots/prompt-context";
+import { listBotRows } from "./bots/repo";
 import { formatInputContext, runInputFiles } from "./uploads/materialize";
 import { CHAT_SYSTEM_PROMPT } from "./chat/prompt";
 import { retrieveChatContext } from "./chat/retrieve";
@@ -364,6 +367,9 @@ async function runWorker(runId: string): Promise<void> {
     const resourceContext = resourceSnapshot
       ? formatResourceAccessContext(resourceSnapshot)
       : "";
+    const botContext = run.orgId && handoffsAvailable(run.orgId)
+      ? composeBotContext(await listBotRows(run.orgId).catch(() => []))
+      : "";
 
     if (turnContext || bootstrapContext || skillContext || skillCatalogContext || resourceContext) {
       console.log(
@@ -423,6 +429,7 @@ async function runWorker(runId: string): Promise<void> {
         resourceContext,
         skillContext,
         skillCatalogContext,
+        botContext,
         run.threadId,
         engineSessionId,
         providerSession,
@@ -625,6 +632,7 @@ async function runEngine(
   resourceContext: string,
   skillContext: string,
   skillCatalogContext: string,
+  botContext: string,
   threadId: string,
   engineSessionId: string | undefined,
   providerSession: ProviderSessionBinding | undefined,
@@ -721,6 +729,7 @@ async function runEngine(
     resourceContext,
     skillContext,
     skillCatalogContext,
+    botContext,
     workdir,
     threadId,
     timing,
