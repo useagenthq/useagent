@@ -6,6 +6,7 @@ import {
   type BoxProviderOptions,
   boxCliProblem,
   boxPreviewLink,
+  boxPtyBootstrapCommand,
   boxPtyEnv,
   boxPtyHandle,
   boxPtyKeygenArgv,
@@ -463,15 +464,11 @@ describe("Box sandbox provider", () => {
     const home = await createBoxPtyHome();
     try {
       expect(boxPtyLoginArgv("box_secret")).toEqual(["box", "login", "box_secret", "--json"]);
-      expect(boxPtySshArgv("bx_123", "READY")).toEqual([
-        "box",
-        "ssh",
-        "bx_123",
-        "--",
-        "bash",
-        "-lc",
-        "export TERM=xterm-256color; cd ~/work 2>/dev/null || cd ~; printf '%s\\n' 'READY'; exec bash -li",
-      ]);
+      expect(boxPtySshArgv("bx_123")).toEqual(["box", "ssh", "bx_123"]);
+      const bootstrap = boxPtyBootstrapCommand("READY", "/home/user/work with spaces");
+      expect(bootstrap).toContain("cd '/home/user/work with spaces'");
+      expect(bootstrap).toContain(Buffer.from("READY", "utf8").toString("base64"));
+      expect(bootstrap).not.toContain("READY");
       expect(boxPtyKeygenArgv(home)).toEqual([
         "ssh-keygen",
         "-q",
@@ -493,7 +490,7 @@ describe("Box sandbox provider", () => {
       );
       expect((await stat(home)).mode & 0o777).toBe(0o700);
       expect((await stat(join(home, ".config", "ascii", "box", "config.json"))).mode & 0o777).toBe(0o600);
-      expect(JSON.stringify(boxPtySshArgv("bx_123", "READY"))).not.toContain("box_secret");
+      expect(JSON.stringify(boxPtySshArgv("bx_123"))).not.toContain("box_secret");
       expect(JSON.stringify(boxPtyEnv(home, {}))).not.toContain("box_secret");
     } finally {
       await removeBoxPtyHome(home);
