@@ -12,8 +12,22 @@ export function buildAcpInstallClause(packages: { pkg: string; bin: string }[]):
       const seeded = `${PRESEEDED_PROVIDER_BIN_DIR}/${bin}`;
       return (
         `[ -x "$HOME/.local/bin/${bin}" ] || { mkdir -p "$HOME/.local/bin"; ` +
-        `if [ -x "${seeded}" ]; then ln -sfn "${seeded}" "$HOME/.local/bin/${bin}"; ` +
-        `else npm install -g --prefix $HOME/.local --silent "${pkg}" >/dev/null 2>&1; fi; }; `
+        `if [ -x "${seeded}" ]; then ` +
+        `ln -sfn "${seeded}" "$HOME/.local/bin/${bin}" || { ` +
+        `echo "ACP provisioning failed for ${bin}: could not link preseeded executable" >&2; exit 1; }; ` +
+        `else acp_install_log=$(mktemp "\${TMPDIR:-/tmp}/useagent-acp-install.XXXXXX") || { ` +
+        `echo "ACP provisioning failed for ${bin}: could not create install log" >&2; exit 1; }; ` +
+        `if ! npm install -g --prefix $HOME/.local --silent "${pkg}" >"$acp_install_log" 2>&1 || ` +
+        `[ ! -x "$HOME/.local/bin/${bin}" ]; then ` +
+        `if [ -z "$HOME" ] || [ "$HOME" = "/" ] || ! rm -rf -- "$HOME/.npm/_cacache"; then ` +
+        `rm -f "$acp_install_log"; ` +
+        `echo "ACP provisioning failed for ${bin}: could not reset npm cache" >&2; exit 1; fi; ` +
+        `if ! npm install -g --prefix $HOME/.local --silent "${pkg}" >"$acp_install_log" 2>&1 || ` +
+        `[ ! -x "$HOME/.local/bin/${bin}" ]; then rm -f "$acp_install_log"; ` +
+        `echo "ACP provisioning failed for ${bin}: executable missing after cache retry" >&2; exit 1; fi; ` +
+        `fi; rm -f "$acp_install_log"; fi; ` +
+        `[ -x "$HOME/.local/bin/${bin}" ] || { ` +
+        `echo "ACP provisioning failed for ${bin}: executable verification failed" >&2; exit 1; }; }; `
       );
     })
     .join("");

@@ -78,8 +78,9 @@ export async function prepareSandboxTurn<T>(
         end?.();
       }
     };
+    const runtimeLayout = sandboxRuntimeLayout(lease.binding.kind);
     const workdir = await stage("workspace_root", () =>
-      resolveRuntimeWorkspaceRoot(sandbox, sandboxRuntimeLayout(lease.binding.kind))
+      resolveRuntimeWorkspaceRoot(sandbox, runtimeLayout)
     );
     const resourceUser = options.resourceUser;
     if (resourceUser) {
@@ -104,12 +105,13 @@ export async function prepareSandboxTurn<T>(
     const prepareResources = async () => {
       const [changedRepoPaths] = await Promise.all([
         stage("repos", async () => {
-          const changed = await prepareRepos(sandbox, workdir, ctx);
+          const changed = await prepareRepos(sandbox, workdir, ctx, runtimeLayout);
           const pullRequests = await checkoutPullRequestResources(
             sandbox,
             workdir,
             ctx.resolvedResources ?? [],
             ctx,
+            runtimeLayout,
           );
           return [...new Set([...changed, ...pullRequests])];
         }),
@@ -117,7 +119,7 @@ export async function prepareSandboxTurn<T>(
       ]);
       if (resourceUser && changedRepoPaths.length > 0) {
         const markers = changedRepoPaths.map((path) => {
-          const marker = shq(runtimeUserOwnershipMarker(path));
+          const marker = shq(runtimeUserOwnershipMarker(path, runtimeLayout));
           return `printf 'uid=%s gid=%s\n' ${resourceUser.uid} ${resourceUser.gid} > ${marker} && chmod 600 ${marker}`;
         });
         const transferred = await stage("repo_owner", () => sandbox.process.executeCommand(

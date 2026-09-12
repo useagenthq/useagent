@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import type { SandboxHandle } from "../sandboxes/provider";
+import { composeBoxCommand } from "@useagent/sandbox-box";
+import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
 import type { RunResource } from "../resources/types";
 import type { EngineRunContext } from "./types";
 import {
@@ -17,6 +18,12 @@ import { RUN_TIMING_OUTCOMES, RUN_TIMING_STAGES, type TimingSpanEnd } from "../r
 // token redaction, and partial failure are provable without a live sandbox.
 
 const SENTINEL = "ghp_TESTSENTINEL_do_not_log_0000";
+const BOX_LAYOUT: SandboxRuntimeLayout = {
+  home: "/home/user",
+  workdir: "/home/user/work",
+  runsAsRoot: false,
+  bunExecutable: "/usr/local/bin/bun",
+};
 let priorToken: string | undefined;
 beforeAll(() => {
   priorToken = process.env.GITHUB_TOKEN;
@@ -145,7 +152,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(clone?.cmd).toContain("git clone");
     expect(clone?.cmd).toContain("'https://github.com/acme/widget.git'");
     expect(clone?.cmd).toContain("/home/daytona/work/acme/widget"); // <owner>/<name>, not bare <name>
-    expect(clone?.cmd).toContain('STAGE_ROOT=/root/.skynet/repo-staging');
+    expect(clone?.cmd).toContain("STAGE_ROOT='/root/.skynet/repo-staging'");
     expect(clone?.cmd).toContain('mktemp -d "$STAGE_ROOT/clone.XXXXXX"');
     expect(clone?.cmd).not.toContain('mktemp -d "$PARENT/');
     expect(clone?.cmd).toContain('stat -c %u "$PARENT"');
@@ -156,6 +163,49 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(clone?.cmd).toContain("ALLOW=no"); // absent destination -> never replace
     expect(clone?.cmd).toContain("skynet-owned"); // stamps the ownership marker
     expect(emits.some((e) => e.label === "Cloning acme/widget")).toBe(true);
+  });
+
+  test("a fresh non-root repo uses the declared runtime workspace, staging, and ownership receipt", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "absent" });
+    const { ctx } = fakeCtx();
+
+    await ensureRepoClone(sandbox, BOX_LAYOUT.workdir, "acme/widget", ctx, {
+      runtimeLayout: BOX_LAYOUT,
+    });
+
+    const identity = idCmd(calls)?.cmd ?? "";
+    const clone = cloneCmd(calls)?.cmd ?? "";
+    expect(identity).toContain('CURRENT_UID="$(id -u)"');
+    expect(identity).toContain('if [ "$O" = "$CURRENT_UID" ]');
+    expect(identity).toContain("'/home/user/.skynet/repo-runtime-ownership/");
+    expect(clone).toContain("DIR='/home/user/work/acme/widget'");
+    expect(clone).toContain("STAGE_ROOT='/home/user/.skynet/repo-staging'");
+    expect(clone).toContain("OWNERSHIP_ROOT='/home/user/.skynet/repo-runtime-ownership'");
+    expect(clone).toContain('"$(stat -c %u "$PARENT" 2>/dev/null)" != "$CURRENT_UID"');
+    expect(clone).toContain('printf \'uid=%s\n\' "$CURRENT_UID"');
+    expect(`${identity}\n${clone}`).not.toContain("/root");
+    expect(`${identity}\n${clone}`).not.toContain('"$O" = 1000');
+    expect(`${identity}\n${clone}`).not.toContain('"$O" = 0');
+    expect(clone).not.toContain("-o 0");
+    expect(clone).not.toContain('|| [ -f "$DIR/.git/skynet-owned" ]');
+    expect(cloneCmd(calls)?.env).toEqual({});
+    expect(composeBoxCommand(clone, undefined, cloneCmd(calls)?.env)).not.toContain(SENTINEL);
+  });
+
+  test("a retained non-root repo trusts only the current runtime uid and declared receipt", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "reuse" });
+    const { ctx } = fakeCtx();
+
+    expect(await ensureRepoClone(sandbox, BOX_LAYOUT.workdir, "acme/widget", ctx, {
+      runtimeLayout: BOX_LAYOUT,
+    })).toBe(false);
+
+    const identity = idCmd(calls)?.cmd ?? "";
+    expect(identity).toContain('CURRENT_UID="$(id -u)"');
+    expect(identity).toContain('"$O" = "$CURRENT_UID"');
+    expect(identity).toContain("'/home/user/.skynet/repo-runtime-ownership/");
+    expect(identity).not.toContain("/root");
+    expect(cloneCmd(calls)).toBeUndefined();
   });
 
   test("a public gateway clone never injects the organization GitHub credential", async () => {
@@ -266,6 +316,46 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(
       emits.some((event) => event.label === "Checking out acme/widget pull request #42"),
     ).toBe(true);
+  });
+
+  test("a non-root pull request checkout mutates only a current-uid checkout with its declared receipt", async () => {
+    const expectedHead = "0123456789abcdef0123456789abcdef01234567";
+    const { sandbox, calls } = fakeSandbox({
+      pullOut: `pr:ok sha=${expectedHead}`,
+    });
+    const { ctx } = fakeCtx(["acme/widget"]);
+
+    expect(await checkoutPullRequestResources(
+      sandbox,
+      BOX_LAYOUT.workdir,
+      [pullRequestResource(expectedHead)],
+      ctx,
+      BOX_LAYOUT,
+    )).toEqual(["/home/user/work/acme/widget"]);
+
+    const command = pullCmd(calls)?.cmd ?? "";
+    expect(command).toContain('CURRENT_UID="$(id -u)"');
+    expect(command).toContain('"$OWNER" != "$CURRENT_UID"');
+    expect(command).toContain("'/home/user/.skynet/repo-runtime-ownership/");
+    expect(command).toContain('printf \'uid=%s\n\' "$CURRENT_UID"');
+    expect(command).not.toContain("/root");
+    expect(command).not.toContain('"$OWNER" = 1000');
+    expect(command).not.toContain('"$OWNER" != 0');
+    expect(command).not.toContain("! -uid 0");
+    expect(pullCmd(calls)?.env).toEqual({});
+    expect(composeBoxCommand(command, undefined, pullCmd(calls)?.env)).not.toContain(SENTINEL);
+  });
+
+  test("a non-root retained checkout never replaces a forgeable stale marker", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "owned-stale" });
+    const { ctx } = fakeCtx();
+
+    await expect(
+      ensureRepoClone(sandbox, BOX_LAYOUT.workdir, "acme/widget", ctx, {
+        runtimeLayout: BOX_LAYOUT,
+      }),
+    ).rejects.toThrow("start a fresh workspace");
+    expect(cloneCmd(calls)).toBeUndefined();
   });
 
   test("a pull request head SHA mismatch fails before provider execution", async () => {

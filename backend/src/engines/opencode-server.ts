@@ -1,5 +1,6 @@
 import {
   sandboxPreviewHeaders,
+  sandboxRuntimeLayout,
   type SandboxHandle,
   type PreviewLinkBase,
   previewLinkBase,
@@ -1177,12 +1178,14 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const prepareRepositories = async (): Promise<void> => {
         const endReposSpan = ctx.timing?.begin("repos");
         try {
-          await prepareRepos(box, runtimeServer.workdir, ctx);
+          const runtimeLayout = sandboxRuntimeLayout(effectiveBinding.kind);
+          await prepareRepos(box, runtimeServer.workdir, ctx, runtimeLayout);
           await checkoutPullRequestResources(
             box,
             runtimeServer.workdir,
             ctx.resolvedResources ?? [],
             ctx,
+            runtimeLayout,
           );
         } finally {
           endReposSpan?.();

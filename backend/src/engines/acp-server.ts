@@ -1,5 +1,6 @@
 import {
   sandboxPreviewHeaders,
+  sandboxRuntimeLayout,
   type SandboxHandle,
   type PreviewLinkBase,
   previewLinkBase,
@@ -724,12 +725,14 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // starts, so the resident agent works INSIDE them. Shared, engine-neutral preparer -
         // same secure clone as OpenCode; idempotent on a warm sandbox (fast skips).
         const endReposSpan = ctx.timing?.begin("repos");
-        await prepareRepos(box, `${home}/work`, ctx);
+        const runtimeLayout = sandboxRuntimeLayout(effectiveBinding.kind);
+        await prepareRepos(box, runtimeLayout.workdir, ctx, runtimeLayout);
         await checkoutPullRequestResources(
           box,
-          `${home}/work`,
+          runtimeLayout.workdir,
           ctx.resolvedResources ?? [],
           ctx,
+          runtimeLayout,
         );
         endReposSpan?.();
         // EFFECTIVE working directory: a single-repo thread starts the session INSIDE that

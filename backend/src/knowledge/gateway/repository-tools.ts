@@ -9,6 +9,7 @@ import { getRunForOrg } from "../../runs/repo";
 import { executeGithubBackedOperation } from "./github-operation-bridge";
 import type { ToolTokenClaims } from "./token";
 import { resolveSandboxBindingForThread } from "../../sandboxes/binding";
+import { sandboxRuntimeLayout } from "../../sandboxes/provider";
 
 interface ToolResult {
   readonly content: readonly { type: "text"; text: string }[];
@@ -207,7 +208,9 @@ const productionService: RepositoryService = {
       );
     }
     if (!run.sandboxId) throw new Error("no sandbox is attached to this run");
-    const sandbox = await (await resolveSandboxBindingForThread(claims.orgId, run.threadId)).provider.get(run.sandboxId);
+    const binding = await resolveSandboxBindingForThread(claims.orgId, run.threadId);
+    const sandbox = await binding.provider.get(run.sandboxId);
+    const runtimeLayout = sandboxRuntimeLayout(binding.kind);
     const fullName = target.fullName;
     if (target.revision && branch && target.revision !== branch) {
       throw new Error(
@@ -218,12 +221,15 @@ const productionService: RepositoryService = {
     const entry = formatRepoRef(fullName, requestedRevision);
     await ensureRepoClone(
       sandbox,
-      "/root/work",
+      runtimeLayout.workdir,
       entry,
       { emit: async () => undefined, orgId: claims.orgId },
-      { useGithubCredential: target.useGithubCredential },
+      {
+        useGithubCredential: target.useGithubCredential,
+        runtimeLayout,
+      },
     );
-    const path = `/root/work/${fullName}`;
+    const path = `${runtimeLayout.workdir}/${fullName}`;
     const revision = await sandbox.process.executeCommand(
       `git -c safe.directory=${shq(path)} -C ${shq(path)} rev-parse HEAD && ` +
         `git -c safe.directory=${shq(path)} -C ${shq(path)} rev-parse --abbrev-ref HEAD`,
@@ -288,7 +294,7 @@ export const REPOSITORY_TOOLS = [
     description:
       "Resolve one repository attached to the current run, or accept an exact public https://github.com/owner/repo URL, and clone it into the current sandbox. " +
       "Private repository authentication is supplied one-shot by the trusted gateway and is never returned. " +
-      "Public URL clones never receive organization credentials. The fixed destination is /root/work/<owner>/<repo>.",
+      "Public URL clones never receive organization credentials. The destination is the current sandbox runtime workspace under <owner>/<repo>.",
     inputSchema: {
       type: "object",
       properties: {
