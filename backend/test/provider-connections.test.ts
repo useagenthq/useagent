@@ -1071,6 +1071,7 @@ describe("provider connections", () => {
     });
     expect(childEnv).toEqual({
       CODEX_HOME: "/srv/skynet/codex-home/auth-only",
+      HOME: "/srv/skynet/codex-home/auth-only",
       PATH: "/usr/local/bin:/usr/bin:/bin",
     });
   });

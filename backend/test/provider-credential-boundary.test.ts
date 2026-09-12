@@ -104,7 +104,7 @@ describe("provider credential trust boundary", () => {
       "account/read",
       "account/logout",
     ]);
-    expect(inheritedKeys).toEqual(["PATH"]);
+    expect(inheritedKeys).toEqual(["PATH", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"]);
     expect(source).toMatch(
       /spawn\("codex", \["app-server", "--stdio"\], \{[\s\S]*?env: codexAppServerChildEnvironment\(input\.codexHome\),/,
     );
@@ -114,7 +114,8 @@ describe("provider credential trust boundary", () => {
       /export function codexAppServerChildEnvironment\([\s\S]*?\n\}/,
     )?.[0];
     expect(childEnvironment).toBeDefined();
-    expect(childEnvironment).toContain("{ CODEX_HOME: codexHome }");
+    expect(childEnvironment).toContain("CODEX_HOME: codexHome");
+    expect(childEnvironment).toContain("HOME: codexHome");
     expect(childEnvironment).toContain("for (const key of CODEX_APP_SERVER_ENV_KEYS)");
     expect(childEnvironment).not.toMatch(/\.\.\.(?:process\.env|env)\b/);
 

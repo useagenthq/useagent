@@ -27,7 +27,7 @@ const CODEX_APP_SERVER_ACCOUNT_METHODS = [
   "account/logout",
 ] as const;
 const CODEX_APP_SERVER_ACCOUNT_METHOD_SET = new Set<string>(CODEX_APP_SERVER_ACCOUNT_METHODS);
-const CODEX_APP_SERVER_ENV_KEYS = ["PATH"] as const;
+const CODEX_APP_SERVER_ENV_KEYS = ["PATH", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"] as const;
 
 export function isCodexAppServerAccountMethod(method: string): method is CodexAppServerAccountMethod {
   return CODEX_APP_SERVER_ACCOUNT_METHOD_SET.has(method);
@@ -37,7 +37,7 @@ export function codexAppServerChildEnvironment(
   codexHome: string,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): Record<string, string> {
-  const childEnv: Record<string, string> = { CODEX_HOME: codexHome };
+  const childEnv: Record<string, string> = { CODEX_HOME: codexHome, HOME: codexHome };
   for (const key of CODEX_APP_SERVER_ENV_KEYS) {
     const value = env[key];
     if (value) childEnv[key] = value;

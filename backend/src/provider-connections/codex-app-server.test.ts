@@ -9,6 +9,7 @@ import {
   CodexAppServerAuthError,
   CodexAppServerRpcClient,
   ManagedCodexAppServerClientPool,
+  codexAppServerChildEnvironment,
   type CodexAppServerAccountMethod,
   type CodexChatGptRefreshRequest,
   type CodexChatGptRefreshResponse,
@@ -73,6 +74,23 @@ async function initialize(child: FakeAppServerProcess): Promise<void> {
 }
 
 describe("Codex app-server JSON-RPC transport", () => {
+  test("keeps trusted login state and CA access inside the scoped home", () => {
+    expect(
+      codexAppServerChildEnvironment("/var/lib/useagent/codex-app-server/scope", {
+        PATH: "/usr/local/bin:/usr/bin",
+        NODE_EXTRA_CA_CERTS: "/etc/ssl/certs/ca-certificates.crt",
+        SSL_CERT_FILE: "/etc/ssl/certs/ca-certificates.crt",
+        OPENAI_API_KEY: "must-not-cross-boundary",
+      }),
+    ).toEqual({
+      CODEX_HOME: "/var/lib/useagent/codex-app-server/scope",
+      HOME: "/var/lib/useagent/codex-app-server/scope",
+      PATH: "/usr/local/bin:/usr/bin",
+      NODE_EXTRA_CA_CERTS: "/etc/ssl/certs/ca-certificates.crt",
+      SSL_CERT_FILE: "/etc/ssl/certs/ca-certificates.crt",
+    });
+  });
+
   test("rejects forged non-account methods before they reach the child", async () => {
     const child = new FakeAppServerProcess();
     const client = createClient(child);

@@ -42,6 +42,13 @@ FROM ${BUN_IMAGE} AS runtime
 ARG RELEASE_COMMIT
 RUN echo "${RELEASE_COMMIT}" | grep -Eq '^[0-9a-f]{40}$'
 
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates git \
+    && rm -rf /var/lib/apt/lists/* \
+    && test -s /etc/ssl/certs/ca-certificates.crt \
+    && git --version
+
 LABEL org.opencontainers.image.source="https://github.com/useagenthq/useagent" \
       org.opencontainers.image.revision="${RELEASE_COMMIT}" \
       org.opencontainers.image.title="useAgent backend"

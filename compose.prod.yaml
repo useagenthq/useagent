@@ -21,6 +21,8 @@ services:
       SLACK_UPLOAD_STAGING_ROOT: /app/backend/.slack-uploads
       SCRATCH_DIR: /tmp
       CODEX_APP_SERVER_HOME_ROOT: /var/lib/useagent/codex-app-server
+      NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
       GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL:?set the sandbox-reachable HTTPS gateway origin}
       PROVIDER_GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL}
     healthcheck:
@@ -38,6 +40,7 @@ services:
       - /var/lib/useagent/slack-uploads:/app/backend/.slack-uploads
       - /var/lib/useagent/codex-app-server:/var/lib/useagent/codex-app-server
       - /opt/useagent/pi-runtime:/opt/useagent/pi-runtime
+      - ${USEAGENT_HOST_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}:/etc/ssl/certs/ca-certificates.crt:ro
     restart: unless-stopped
     stop_grace_period: 30s
 
@@ -55,6 +58,8 @@ services:
       GATEWAY_PORT: ${USEAGENT_GATEWAY_PORT:?set the inactive-color gateway port}
       USEAGENT_BIND_HOST: 127.0.0.1
       USEAGENT_RELEASE_COMMIT: ${USEAGENT_RELEASE_COMMIT:?set the exact release commit}
+      NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
       GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL:?set the sandbox-reachable HTTPS gateway origin}
       PROVIDER_GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL}
     healthcheck:
@@ -66,6 +71,8 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=128m,mode=1777
+    volumes:
+      - ${USEAGENT_HOST_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}:/etc/ssl/certs/ca-certificates.crt:ro
     restart: unless-stopped
     stop_grace_period: 30s
 
