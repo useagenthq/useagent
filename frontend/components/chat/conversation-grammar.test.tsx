@@ -185,6 +185,17 @@ test("fan-out turn rows always render a visible heading", () => {
   expect(html).toContain("Child session create");
 });
 
+test("capture degradation is disclosed in canonical and fallback turns", () => {
+  for (const canonical of [undefined, settledEvents()]) {
+    const turn = makeTurn("run-1", "completed", canonical);
+    const clean = render([turn]);
+    expect(clean).not.toContain("data-capture-degraded");
+    const degraded = render([{ ...turn, canonicalDegraded: true }]);
+    expect(degraded.match(/data-capture-degraded/g)).toHaveLength(1);
+    expect(degraded).toContain("Part of this run&#x27;s activity was not recorded. What is shown is complete as saved.");
+  }
+});
+
 test("a gateway child-session turn folds under its parent, never a second turn block", () => {
   const parent = makeTurn("run-parent", "completed");
   const child = makeTurn("run-child", "queued");

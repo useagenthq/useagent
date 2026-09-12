@@ -52,6 +52,7 @@ import {
   withTransientLiveReasoning,
 } from "@/components/chat/turn-trace-model";
 import { TurnWindow } from "@/components/chat/turn-window";
+import { CaptureDegradedNote, FailedNote } from "@/components/chat/turn-notices";
 
 export { AgentAnswer } from "@/components/chat/agent-answer";
 export {
@@ -119,15 +120,6 @@ export type Turn = {
    *  replaces the whole Turn, dropping this. */
   pendingOutline?: { readonly stepCount: number; readonly hasSummary: boolean };
 };
-
-/** Terminal note for a run that failed before writing a summary. */
-function FailedNote() {
-  return (
-    <p className="text-body-2-regular text-text-error-primary">
-      This run failed before producing a summary.
-    </p>
-  );
-}
 
 export function UserBubble({ children }: { children: string }) {
   return (
@@ -333,12 +325,7 @@ const TurnBlock = memo(function TurnBlock({
           !timelineOwnsReasoning &&
           liveReasoning && <LiveThinking text={liveReasoning} />}
 
-        {/* A degraded seal is disclosed whichever branch renders the turn below. */}
-        {turn.canonicalDegraded && (
-          <p className="text-text-tertiary text-caption-1-regular" data-capture-degraded="">
-            Part of this run's activity was not recorded. What is shown is complete as saved.
-          </p>
-        )}
+        {turn.canonicalDegraded && <CaptureDegradedNote />}
 
         {timeline ? (
           /* Native turn: the interleaved timeline IS the turn — narration bursts
