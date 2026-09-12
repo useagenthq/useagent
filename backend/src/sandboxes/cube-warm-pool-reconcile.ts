@@ -2,8 +2,17 @@ import { db } from "../db/client";
 import { reconcileQueue } from "../db/schema";
 import { listCurrentRetainedSandboxMappings } from "../fleet/lease-repo";
 import type { SandboxCreateOptions, SandboxHandle, SandboxProvider } from "./provider";
+import {
+  CANONICAL_SANDBOX_GENERATION_LABEL,
+  CANONICAL_SANDBOX_RUN_LABEL,
+  LEGACY_SANDBOX_RUN_LABEL,
+  LEGACY_SANDBOX_GENERATION_LABEL,
+  readCompatibleSandboxLabel,
+} from "../provider-gateway/sandbox-config";
 
-export const USEAGENT_WARM_POOL_TEMPLATE_LABEL = "skynet-warm-pool-template";
+export const LEGACY_WARM_POOL_TEMPLATE_LABEL = "skynet-warm-pool-template";
+export const USEAGENT_WARM_POOL_TEMPLATE_LABEL = LEGACY_WARM_POOL_TEMPLATE_LABEL;
+export const CANONICAL_WARM_POOL_TEMPLATE_LABEL = "useagent-warm-pool-template";
 
 const CUBE_TEMPLATE_LABELS = [
   "cube.master.appsnapshot.template.id",
@@ -111,18 +120,48 @@ function matchesPoolLabels(
 ): boolean {
   if (!expected || Object.keys(expected).length === 0) return false;
   const labels = sandbox.labels ?? {};
+  const templateLabel = readCompatibleSandboxLabel(
+    labels,
+    CANONICAL_WARM_POOL_TEMPLATE_LABEL,
+    LEGACY_WARM_POOL_TEMPLATE_LABEL,
+  );
+  if (templateLabel.conflict) return false;
   const poolLabels = Object.entries(expected).filter(
-    ([key]) => key !== USEAGENT_WARM_POOL_TEMPLATE_LABEL,
+    ([key]) => key !== LEGACY_WARM_POOL_TEMPLATE_LABEL &&
+      key !== CANONICAL_WARM_POOL_TEMPLATE_LABEL,
   );
   if (poolLabels.length === 0) return false;
-  return poolLabels.every(([key, value]) => labels[key] === value);
+  return poolLabels.every(([key, value]) => {
+    if (key === LEGACY_SANDBOX_RUN_LABEL || key === CANONICAL_SANDBOX_RUN_LABEL) {
+      const label = readCompatibleSandboxLabel(
+        labels,
+        CANONICAL_SANDBOX_RUN_LABEL,
+        LEGACY_SANDBOX_RUN_LABEL,
+      );
+      return !label.conflict && label.value === value;
+    }
+    if (key === LEGACY_SANDBOX_GENERATION_LABEL || key === CANONICAL_SANDBOX_GENERATION_LABEL) {
+      const label = readCompatibleSandboxLabel(
+        labels,
+        CANONICAL_SANDBOX_GENERATION_LABEL,
+        LEGACY_SANDBOX_GENERATION_LABEL,
+      );
+      return !label.conflict && label.value === value;
+    }
+    return labels[key] === value;
+  });
 }
 
 function matchesSnapshot(sandbox: SandboxHandle, snapshot: string | undefined): boolean {
   if (!snapshot) return true;
   const labels = sandbox.labels ?? {};
-  const ownedTemplate = labels[USEAGENT_WARM_POOL_TEMPLATE_LABEL];
-  if (ownedTemplate) return ownedTemplate === snapshot;
+  const ownedTemplate = readCompatibleSandboxLabel(
+    labels,
+    CANONICAL_WARM_POOL_TEMPLATE_LABEL,
+    LEGACY_WARM_POOL_TEMPLATE_LABEL,
+  );
+  if (ownedTemplate.conflict) return false;
+  if (ownedTemplate.value) return ownedTemplate.value === snapshot;
   const exposedTemplate = CUBE_TEMPLATE_LABELS.map((key) => labels[key]).find(Boolean);
   return exposedTemplate === snapshot;
 }

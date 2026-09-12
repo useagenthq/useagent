@@ -883,12 +883,24 @@ describe("CubeWarmPool", () => {
 
   test("ignores retained thread sandboxes with non-pool run labels", async () => {
     const retained = sandbox("cube-retained-thread");
+    const conflicted = sandbox("cube-conflicted-labels");
+    const templateConflict = sandbox("cube-conflicted-template");
     const warm = sandbox("cube-warm");
-    const fakeProvider = provider([], [retained, warm]);
+    const fakeProvider = provider([], [retained, conflicted, templateConflict, warm]);
     retained.labels = { "skynet-run": "run-123" };
-    warm.labels = {
+    conflicted.labels = {
       "skynet-run": "warm-pool",
-      "cube.master.appsnapshot.template.id": "tpl-opencode",
+      "useagent-run": "run-conflict",
+      "useagent-warm-pool-template": "tpl-opencode",
+    };
+    templateConflict.labels = {
+      "useagent-run": "warm-pool",
+      "skynet-warm-pool-template": "tpl-old",
+      "useagent-warm-pool-template": "tpl-opencode",
+    };
+    warm.labels = {
+      "useagent-run": "warm-pool",
+      "useagent-warm-pool-template": "tpl-opencode",
     };
 
     const pool = new CubeWarmPool({
@@ -912,6 +924,8 @@ describe("CubeWarmPool", () => {
     pool.start();
     await waitFor(() => pool.status().ready, 1);
     expect(retained.deleted).toBe(false);
+    expect(conflicted.deleted).toBe(false);
+    expect(templateConflict.deleted).toBe(false);
     expect((await pool.claim())?.id).toBe("cube-warm");
   });
 
