@@ -114,6 +114,7 @@ export interface RuntimeProviderReadiness {
 const NOOP_PROVIDER_BRIDGE_LEASE: RuntimeProviderBridgeLease = {
   authPath: null,
   authEpoch: null,
+  hasCurrentEpochThreadBinding: false,
   readiness: null,
   modelLimitsChanged: false,
   modelLimitsRevision: null,
@@ -125,6 +126,7 @@ const NOOP_PROVIDER_BRIDGE_LEASE: RuntimeProviderBridgeLease = {
 const CODEX_GATEWAY_BRIDGE_LEASE: RuntimeProviderBridgeLease = {
   authPath: "provider_gateway",
   authEpoch: null,
+  hasCurrentEpochThreadBinding: false,
   readiness: null,
   modelLimitsChanged: false,
   modelLimitsRevision: null,
@@ -626,6 +628,7 @@ export async function prepareRuntimeProviderBridge(
     return {
       authPath: null,
       authEpoch: null,
+      hasCurrentEpochThreadBinding: false,
       readiness: null,
       modelLimitsChanged: modelLimitRefresh.changed,
       modelLimitsRevision: modelLimitRefresh.revision,
@@ -650,6 +653,7 @@ export async function prepareRuntimeProviderBridge(
       return {
         authPath: "subscription",
         authEpoch: lease.authEpoch,
+        hasCurrentEpochThreadBinding: lease.hasCurrentEpochThreadBinding,
         readiness: null,
         modelLimitsChanged: false,
         modelLimitsRevision: null,
@@ -666,6 +670,7 @@ export async function prepareRuntimeProviderBridge(
     return {
       authPath: null,
       authEpoch: null,
+      hasCurrentEpochThreadBinding: false,
       readiness: claudeProviderReadiness(claudeEnvironment),
       modelLimitsChanged: false,
       modelLimitsRevision: null,

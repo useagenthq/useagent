@@ -6,6 +6,7 @@ import {
   runtimeAdapterMode,
   runtimeAdapterSelected,
   runtimeRunSnapshot,
+  runtimeSessionHasAuthoritativeHistory,
   configuredRuntimeMode,
   createRuntimeTerminalSessionCleanup,
   drainRuntimeTerminalOutput,
@@ -16,6 +17,8 @@ import {
   RUNTIME_EMPTY_TERMINAL_OUTPUT_ERROR,
   type OpenCodeSessionReloadDependencies,
 } from "./runtime-adapter";
+import { composeTurnPrompt } from "./turn-prompt";
+import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
 import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
 import type { RuntimeEnvironmentRequest } from "./runtime-environment-client";
 import type { SandboxHandle } from "../sandboxes/provider";
@@ -450,8 +453,9 @@ describe("T3 run adapter gate", () => {
   test("keeps semantic prompt composition and native T3 activity projection", () => {
     const source = readFileSync(new URL("./runtime-adapter.ts", import.meta.url), "utf8");
     expect(source).toContain(
-      "composeTurnPrompt(ctx, established.resumed, executionCapabilities)",
+      "runtimeSessionHasAuthoritativeHistory(established.resumed, providerBridgeLease)",
     );
+    expect(source).toContain("const prompt = composeTurnPrompt(");
     expect(source).toContain("await establishProviderSession({");
     expect(source).toContain("const priorSnapshot = await readThreadSnapshot(ctx, sandbox);");
     expect(source).not.toContain("established.resumed\n          ? await readThreadSnapshot");
@@ -499,6 +503,50 @@ describe("T3 run adapter gate", () => {
     expect(source).not.toContain('runtimeKind: "managed_codex_app_server"');
     expect(source).not.toContain("prompt.includes(");
     expect(source).not.toContain("keyword");
+  });
+
+  test("includes canonical history when T3 resumed metadata but the current auth epoch is unbound", () => {
+    const ctx = {
+      prompt: "continue",
+      bootstrapContext: "CANONICAL PRIOR THREAD HISTORY\n\n",
+      turnContext: "",
+      threadId: "thread-1",
+      orgId: "org-1",
+      origin: null,
+    };
+    const executionCapabilities = buildExecutionCapabilitySnapshot({
+      runtime: "sandbox",
+      workspaceRoot: "/root/work",
+      gatewayAvailable: true,
+      desktopAvailability: "on_demand",
+    });
+
+    const afterFailedNewEpochRun = composeTurnPrompt(
+      ctx,
+      runtimeSessionHasAuthoritativeHistory(true, {
+        authPath: "subscription",
+        hasCurrentEpochThreadBinding: false,
+      }),
+      executionCapabilities,
+      {},
+    );
+    expect(afterFailedNewEpochRun).toContain("CANONICAL PRIOR THREAD HISTORY");
+
+    const boundResume = composeTurnPrompt(
+      ctx,
+      runtimeSessionHasAuthoritativeHistory(true, {
+        authPath: "subscription",
+        hasCurrentEpochThreadBinding: true,
+      }),
+      executionCapabilities,
+      {},
+    );
+    expect(boundResume).not.toContain("CANONICAL PRIOR THREAD HISTORY");
+
+    expect(runtimeSessionHasAuthoritativeHistory(true, {
+      authPath: "provider_gateway",
+      hasCurrentEpochThreadBinding: false,
+    })).toBe(true);
   });
 
   test("keeps desktop/noVNC readiness off the ordinary T3 turn critical path", () => {
