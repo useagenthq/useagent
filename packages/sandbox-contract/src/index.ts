@@ -111,9 +111,10 @@ export interface SandboxPreviewLink {
   /** Origin (no path, no query); callers append paths to it. */
   url: string;
   token?: string;
-  /** Query parameters every request to this link must carry (Box hosted ports
-   *  authenticate through `_token`). Apply with `previewRequestUrl`. */
-  query?: Readonly<Record<string, string>>;
+  /** Request headers every request to this link must carry: the provider's
+   *  token header (Daytona, Cube) or Box's port-auth cookie. Providers fill
+   *  this; consumers send it as-is. */
+  headers?: Readonly<Record<string, string>>;
 }
 
 export interface SandboxHandle {

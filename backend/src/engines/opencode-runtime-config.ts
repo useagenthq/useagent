@@ -64,7 +64,7 @@ function managedMcpServers(config: JsonObject): JsonObject {
 
 function authHeaders(server: OpenCodeRuntimeServer): Record<string, string> {
   return {
-    ...sandboxPreviewHeaders(server.token),
+    ...server.headers,
     "content-type": "application/json",
   };
 }

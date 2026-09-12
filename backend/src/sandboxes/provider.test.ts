@@ -82,8 +82,8 @@ describe("Box provider selection", () => {
     expect(() => boxApiConfig("k", { BOX_MACHINE_TYPE: "huge" })).toThrow(/BOX_MACHINE_TYPE/);
   });
 
-  test("Box preview links carry their token in the URL, never in headers", () => {
-    expect(sandboxPreviewHeaders("tok", "box")).toEqual({});
+  test("Box preview auth is the port-auth cookie, never a token header", () => {
+    expect(sandboxPreviewHeaders("tok", "box")).toEqual({ cookie: "_port_auth=tok" });
   });
 });
 

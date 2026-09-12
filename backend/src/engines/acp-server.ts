@@ -3,7 +3,6 @@ import {
   type SandboxHandle,
   type PreviewLinkBase,
   previewLinkBase,
-  previewRequestUrl,
 } from "../sandboxes/provider";
 import { bindingRecord, bindingSnapshot, resolveSandboxBindingForRun } from "../sandboxes/binding";
 import type { EngineAdapter, EngineRunContext } from "./types";
@@ -276,8 +275,8 @@ export function forgetAcpThreadRelays(threadId: string): void {
 }
 
 export { sendSessionCancel } from "./acp-cancel";
-function authHeaders(token: string): Record<string, string> {
-  return sandboxPreviewHeaders(token);
+function authHeaders(relay: PreviewLinkBase): Record<string, string> {
+  return { ...relay.headers };
 }
 
 /** Targeted native ACP cancel for the CONTROL adapter (HarnessAdapter.cancel): find the live
@@ -891,9 +890,9 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         const sseAbort = new AbortController();
 
         const post = async (msg: Record<string, unknown>): Promise<void> => {
-          const res = await fetch(previewRequestUrl(live, `${live.baseUrl}/send`), {
+          const res = await fetch(`${live.baseUrl}/send`, {
             method: "POST",
-            headers: { ...authHeaders(live.token), "content-type": "application/json" },
+            headers: { ...authHeaders(live), "content-type": "application/json" },
             body: JSON.stringify(msg),
             signal: sseAbort.signal,
           });
@@ -1189,8 +1188,8 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         for (let i = 0; i < 10; i++) {
           let warm = false;
           try {
-            const response = await fetch(previewRequestUrl(live, `${live.baseUrl}/health`), {
-              headers: authHeaders(live.token),
+            const response = await fetch(`${live.baseUrl}/health`, {
+              headers: authHeaders(live),
               signal: sseAbort.signal,
             });
             warm = response.ok;
@@ -1203,8 +1202,8 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         }
 
         const pump = (async () => {
-          const res = await fetch(previewRequestUrl(live, `${live.baseUrl}/events`), {
-            headers: authHeaders(live.token),
+          const res = await fetch(`${live.baseUrl}/events`, {
+            headers: authHeaders(live),
             signal: sseAbort.signal,
           });
           if (!res.ok || !res.body) throw new Error(`relay events failed: HTTP ${res.status}`);

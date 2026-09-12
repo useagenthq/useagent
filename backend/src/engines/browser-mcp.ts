@@ -1,6 +1,5 @@
 import {
-  previewRequestUrl,
-  sandboxPreviewHeaders,
+  previewLinkBase,
   type SandboxHandle,
 } from "../sandboxes/provider";
 import {
@@ -140,10 +139,10 @@ async function visibleCdpConnection(sandbox: SandboxHandle): Promise<CdpConnecti
   ]);
   const baseUrl = link.url.replace(/\/+$/, "");
   const headers = {
-    ...sandboxPreviewHeaders(link.token ?? ""),
+    ...previewLinkBase(link).headers,
     authorization: `Bearer ${relayToken}`,
   };
-  const response = await fetch(previewRequestUrl(link, `${baseUrl}/json/list`), {
+  const response = await fetch(`${baseUrl}/json/list`, {
     headers,
     signal: AbortSignal.timeout(CDP_TIMEOUT_MS),
   });
@@ -159,7 +158,7 @@ async function visibleCdpConnection(sandbox: SandboxHandle): Promise<CdpConnecti
     let candidate: CdpConnection | null = null;
     try {
       candidate = await CdpConnection.connect(
-        new URL(previewRequestUrl(link, externalCdpUrl(baseUrl, target.webSocketDebuggerUrl).toString())),
+        externalCdpUrl(baseUrl, target.webSocketDebuggerUrl),
         headers,
       );
       const state = await candidate.request("Runtime.evaluate", {

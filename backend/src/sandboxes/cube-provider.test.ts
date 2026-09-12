@@ -145,6 +145,7 @@ describe("Cube sandbox provider", () => {
     expect(commandOptions).toEqual({ cwd: "/work", envs: { A: "1" }, timeoutMs: 12_000 });
     expect(await handle.getPreviewLink(4096)).toEqual({
       token: "traffic-token",
+      headers: { "cube-traffic-access-token": "traffic-token", "e2b-traffic-access-token": "traffic-token" },
       url: "https://4096-cube-1.sandbox.example.com",
     });
 

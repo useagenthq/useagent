@@ -1,6 +1,6 @@
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
-  sandboxPreviewHeaders,
+  previewLinkBase,
   sandboxProviderKind,
 } from "../sandboxes/provider";
 import { openCodexExecServerBridge } from "../provider-connections/codex-exec-server-bridge";
@@ -91,7 +91,7 @@ export async function prepareCodexSubscription(input: {
     execBridge = dependencies.openExecBridge({
       upstreamUrl,
       expectedUpstreamHost: new URL(upstreamUrl).host,
-      headers: sandboxPreviewHeaders(preview.token ?? "", sandboxKind),
+      headers: { ...previewLinkBase(preview).headers },
     });
     const binding: CodexSubscriptionRelayBinding = {
       orgId,

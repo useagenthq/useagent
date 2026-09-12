@@ -3,11 +3,11 @@ import {
   type BoxApiConfig,
   boxPreviewLink,
   boxSandboxProvider,
+  parsePortAuthCookie,
   boxSandboxState,
   boxTtlSeconds,
   composeBoxCommand,
 } from "./box-provider";
-import { previewRequestUrl } from "./provider";
 import { sandboxProviderConformance } from "./provider-conformance.test-support";
 import { memorySandboxLabelStore } from "./sandbox-labels";
 
@@ -40,6 +40,12 @@ function fakeBoxApi(initial: FakeBox[] = [], options: { pageSize?: number; archi
 
   const fetchImpl = async (input: string, init: RequestInit): Promise<Response> => {
     const url = new URL(input);
+    if (url.host.endsWith(".on.ascii.dev")) {
+      // hosted port: the _token visit answers 302 + the port-auth cookie; anything else is refused
+      const port = url.host.split(".")[0]!.split("-").at(-1);
+      if (url.searchParams.get("_token") !== `tok-${port}`) return new Response("Access denied", { status: 403 });
+      return new Response('<a href="/">Found</a>', { status: 302, headers: { location: "/", "set-cookie": `_port_auth=cookie-${port}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=None` } });
+    }
     const path = url.pathname.replace("/api/box/v1", "");
     const method = init.method ?? "GET";
     const body = typeof init.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : undefined;
@@ -77,6 +83,7 @@ function fakeBoxApi(initial: FakeBox[] = [], options: { pageSize?: number; archi
       return json(200, { ok: true, type: "box.resumed", box });
     }
     if (method === "DELETE" && sub === "") {
+      if (headers["X-Ascii-Confirm-Delete"] !== box.id) return json(409, { ok: false, code: "delete_confirmation_required", message: "Set X-Ascii-Confirm-Delete" });
       boxes.delete(box.id);
       return json(200, { ok: true, type: "box.deleted" });
     }
@@ -108,7 +115,8 @@ function fakeBoxApi(initial: FakeBox[] = [], options: { pageSize?: number; archi
   return { fetchImpl, requests, boxes, files, commandResults, commands };
 }
 
-const noSleep = async (): Promise<void> => {};
+// Yields to the event loop (so test timers fire) without waiting for real poll intervals.
+const noSleep = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 function provider(api: ReturnType<typeof fakeBoxApi>, overrides: Partial<BoxApiConfig> = {}, labels = memorySandboxLabelStore()) {
   return { provider: boxSandboxProvider({ ...config, ...overrides }, { fetchImpl: api.fetchImpl, labels, sleep: noSleep }), labels };
@@ -208,7 +216,7 @@ describe("Box sandbox provider", () => {
     expect(await long).toEqual({ exitCode: 0, result: "built\n" });
   });
 
-  test("files round-trip as base64, and hosted ports become origin links whose token rides as a query", async () => {
+  test("files round-trip as base64, and hosted ports become origin links carrying the port-auth cookie", async () => {
     const api = fakeBoxApi([{ id: "bx_f", state: "ready", vcpu: 4, memoryGB: 8, subdomain: "slug" }]);
     const sandbox = await provider(api).provider.get("bx_f");
     await sandbox.fs.uploadFile(Buffer.from("héllo\n"), "/home/user/work/a.txt");
@@ -216,23 +224,26 @@ describe("Box sandbox provider", () => {
     api.commandResults.set("stat -c %s '/home/user/work/a.txt'", { stdout: "7\n", exitCode: 0 });
     expect(await sandbox.fs.getFileDetails("/home/user/work/a.txt")).toEqual({ size: 7 });
     const link = await sandbox.getPreviewLink(4096);
-    expect(link).toEqual({ url: "https://slug-4096.on.ascii.dev", token: "tok-4096", query: { _token: "tok-4096" } });
-    // the way every consumer builds a request: base + path + its own query, then the link's query
-    expect(previewRequestUrl(link, `${link.url}/global/health`)).toBe("https://slug-4096.on.ascii.dev/global/health?_token=tok-4096");
-    expect(previewRequestUrl(link, `${link.url}/session?directory=%2Fhome%2Fuser%2Fwork`)).toBe(
-      "https://slug-4096.on.ascii.dev/session?directory=%2Fhome%2Fuser%2Fwork&_token=tok-4096",
-    );
-    expect(previewRequestUrl({}, "https://d.example/x?y=1")).toBe("https://d.example/x?y=1");
-    expect(boxPreviewLink("https://slug-80.on.ascii.dev")).toEqual({ url: "https://slug-80.on.ascii.dev" });
+    // the _token is exchanged once for the port-auth cookie; consumers send only the cookie header
+    expect(link).toEqual({ url: "https://slug-4096.on.ascii.dev", token: "cookie-4096", headers: { cookie: "_port_auth=cookie-4096" } });
+    const visit = api.requests.length; // the exchange is not an API request
+    expect(api.requests.slice(visit - 1)[0]?.path).toBe("/boxes/bx_f/host");
+    expect(parsePortAuthCookie("_port_auth=abc; Path=/; HttpOnly")).toBe("abc");
+    expect(parsePortAuthCookie("other=1, _port_auth=def; Path=/")).toBe("def");
+    expect(parsePortAuthCookie(null)).toBeNull();
+    expect(boxPreviewLink("https://slug-80.on.ascii.dev", null)).toEqual({ url: "https://slug-80.on.ascii.dev" });
   });
 
   test("session commands run detached in their own process group and deleteSession kills by pid; PTYs are unsupported", async () => {
     const api = fakeBoxApi([{ id: "bx_s", state: "ready", vcpu: 4, memoryGB: 8, subdomain: "s" }]);
     const sandbox = await provider(api).provider.get("bx_s");
     const started = await sandbox.process.executeSessionCommand("sess-1", { command: "echo hi", runAsync: true });
-    const launcher = api.commands.find((c) => c.includes(`USEAGENT_COMMAND_ID=${started.cmdId}`))!;
-    expect(launcher).toContain("setsid sh");
-    expect(launcher).toContain(`echo $! >'/home/user/.useagent/sessions/sess-1/${started.cmdId}.pid'`);
+    const base = `/home/user/.useagent/sessions/sess-1/${started.cmdId}`;
+    expect(api.commands.at(-1)).toBe(`nohup setsid sh '${base}.launch.sh' </dev/null >'${base}.log' 2>&1 &`);
+    expect(api.files.get(`bx_s:${base}.launch.sh`)?.toString("utf8")).toBe(
+      `echo $$ >'${base}.pid'\nexport USEAGENT_SESSION_ID='sess-1' USEAGENT_COMMAND_ID='${started.cmdId}'\nexec sh '${base}.sh'\n`,
+    );
+    expect(api.files.get(`bx_s:${base}.sh`)?.toString("utf8")).toBe("echo hi");
     api.commandResults.set("ls '/home/user/.useagent/sessions/sess-1' 2>/dev/null", { stdout: `${started.cmdId}.pid\n${started.cmdId}.sh\n${started.cmdId}.log\n`, exitCode: 0 });
     expect((await sandbox.process.getSession("sess-1")).commands).toEqual([{ id: started.cmdId }]);
     api.files.set(`bx_s:/home/user/.useagent/sessions/sess-1/${started.cmdId}.log`, Buffer.from("hi\n"));

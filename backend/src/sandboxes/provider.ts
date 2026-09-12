@@ -1,4 +1,7 @@
 import type { SandboxPreviewLink, SandboxProvider, SandboxProviderKind } from "@useagent/sandbox-contract";
+import { type PreviewLinkBase, previewAuthHeaders, previewLinkBase as previewLinkBaseFor } from "./preview-auth";
+
+export type { PreviewLinkBase } from "./preview-auth";
 import { BOX_API_URL, BOX_MACHINE_TYPES, type BoxApiConfig, type BoxMachineType, boxSandboxProvider } from "./box-provider";
 import { cubeSandboxProvider } from "./cube-provider";
 import { daytonaSandboxProvider } from "./daytona-provider";
@@ -45,47 +48,16 @@ export function sandboxProviderApiKey(
   return env.DAYTONA_API_KEY?.trim() || undefined;
 }
 
-/** What every preview consumer keeps from a link: origin, header token, mandatory query. */
-export interface PreviewLinkBase {
-  readonly baseUrl: string;
-  readonly token: string;
-  readonly query?: Readonly<Record<string, string>>;
-}
-
-export function previewLinkBase(link: SandboxPreviewLink): PreviewLinkBase {
-  return { baseUrl: link.url.replace(/\/+$/, ""), token: link.token ?? "", query: link.query };
-}
-
-/**
- * The request URL for a preview link: the link's mandatory query (Box's
- * `_token`) merged into whatever the caller built. Daytona and Cube links
- * carry no query, so the URL comes back untouched.
- */
-export function previewRequestUrl(
-  link: Pick<SandboxPreviewLink, "query"> | null | undefined,
-  url: string,
-): string {
-  const query = link?.query;
-  if (!query || Object.keys(query).length === 0) return url;
-  const target = new URL(url);
-  for (const [name, value] of Object.entries(query)) target.searchParams.set(name, value);
-  return target.toString();
-}
-
 export function sandboxPreviewHeaders(
   token: string,
   provider?: SandboxProviderKind,
 ): Record<string, string> {
-  if (!token) return {};
-  const kind = provider ?? sandboxProviderKind();
-  // Box hosted ports carry their access token in the URL itself.
-  if (kind === "box") return {};
-  return kind === "daytona"
-    ? { "x-daytona-preview-token": token }
-    : {
-        "cube-traffic-access-token": token,
-        "e2b-traffic-access-token": token,
-      };
+  return previewAuthHeaders(token, provider ?? sandboxProviderKind());
+}
+
+/** A link's base for consumers; links without headers fall back to this deployment's provider. */
+export function previewLinkBase(link: SandboxPreviewLink): PreviewLinkBase {
+  return previewLinkBaseFor(link, sandboxProviderKind());
 }
 
 export function sandboxTemplate(

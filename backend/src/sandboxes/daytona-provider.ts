@@ -1,3 +1,4 @@
+import { previewAuthHeaders } from "./preview-auth";
 import { Daytona } from "@daytona/sdk";
 import type {
   DaytonaApiConfig,
@@ -218,6 +219,7 @@ export class DaytonaSandboxHandle implements SandboxHandle {
     return {
       url: link.url,
       token: link.token,
+      headers: previewAuthHeaders(link.token ?? "", "daytona"),
     };
   }
 }

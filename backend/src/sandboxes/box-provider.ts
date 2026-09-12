@@ -105,15 +105,19 @@ export function composeBoxCommand(
 }
 
 /**
- * A hosted-port URL authenticates through its `_token` query parameter. The
- * link exposes the origin as `url` (callers append paths to it) and the token
- * as `query`, which callers add to every request via `previewRequestUrl`.
+ * A hosted port's `_token` is not accepted per request: the first visit
+ * answers 302 + a `_port_auth` cookie, and every later request needs that
+ * cookie. The link therefore carries the cookie value as its token and the
+ * cookie header as its headers; `url` is the bare origin.
  */
-export function boxPreviewLink(hostedUrl: string): SandboxPreviewLink {
-  const url = new URL(hostedUrl);
-  const token = url.searchParams.get("_token");
-  const origin = `${url.protocol}//${url.host}`;
-  return token ? { url: origin, token, query: { _token: token } } : { url: origin };
+export function boxPreviewLink(origin: string, portAuthCookie: string | null): SandboxPreviewLink {
+  return portAuthCookie
+    ? { url: origin, token: portAuthCookie, headers: { cookie: `_port_auth=${portAuthCookie}` } }
+    : { url: origin };
+}
+
+export function parsePortAuthCookie(setCookie: string | null): string | null {
+  return /(?:^|,\s*)_port_auth=([^;,\s]+)/.exec(setCookie ?? "")?.[1] ?? null;
 }
 
 /** Box's absolute ttlSeconds from the contract's minutes; null disables auto-archive. */
@@ -223,6 +227,19 @@ class BoxApi {
     return Buffer.from(payload.content ?? "", payload.encoding === "utf8" ? "utf8" : "base64");
   }
 
+  /** Visit the hosted URL once with its `_token`; the 302 carries the port-auth cookie. */
+  async portAuth(hostedUrl: string): Promise<SandboxPreviewLink> {
+    const url = new URL(hostedUrl);
+    const token = url.searchParams.get("_token");
+    const origin = `${url.protocol}//${url.host}`;
+    if (!token) return boxPreviewLink(origin, null);
+    const response = await this.fetchImpl(`${origin}/?_token=${encodeURIComponent(token)}`, { method: "GET", redirect: "manual" });
+    await response.text().catch(() => "");
+    const cookie = parsePortAuthCookie(response.headers.get("set-cookie"));
+    if (!cookie) throw new BoxApiError(502, "port_auth_missing", `Box hosted port did not issue a port-auth cookie (${response.status})`);
+    return boxPreviewLink(origin, cookie);
+  }
+
   async writeFile(id: string, path: string, content: Buffer): Promise<void> {
     await this.request("PUT", `/boxes/${encodeURIComponent(id)}/files`, {
       path,
@@ -322,12 +339,23 @@ class BoxProcess implements SandboxProcess {
     }
     const commandId = crypto.randomUUID();
     const dir = this.sessionDir(sessionId);
-    await this.api.writeFile(this.boxId, `${dir}/${commandId}.sh`, Buffer.from(request.command));
-    // setsid makes the script a process-group leader; the pid file lets deleteSession kill the whole group.
-    await this.api.detach(
+    const base = `${dir}/${commandId}`;
+    await this.api.writeFile(this.boxId, `${base}.sh`, Buffer.from(request.command));
+    // The launcher records its own pid from inside the new session (setsid may fork, so
+    // the caller's $! is not reliable); that pid is the group deleteSession kills.
+    await this.api.writeFile(
       this.boxId,
-      `USEAGENT_SESSION_ID=${sessionId} USEAGENT_COMMAND_ID=${commandId} nohup setsid sh ${q(`${dir}/${commandId}.sh`)} </dev/null >${q(`${dir}/${commandId}.log`)} 2>&1 & echo $! >${q(`${dir}/${commandId}.pid`)}`,
+      `${base}.launch.sh`,
+      Buffer.from(
+        [
+          `echo $$ >${q(`${base}.pid`)}`,
+          `export USEAGENT_SESSION_ID=${q(sessionId)} USEAGENT_COMMAND_ID=${q(commandId)}`,
+          `exec sh ${q(`${base}.sh`)}`,
+          "",
+        ].join("\n"),
+      ),
     );
+    await this.api.detach(this.boxId, `nohup setsid sh ${q(`${base}.launch.sh`)} </dev/null >${q(`${base}.log`)} 2>&1 &`);
     return { cmdId: commandId, exitCode: 0 };
   }
 
@@ -401,7 +429,8 @@ class BoxSandboxHandle implements SandboxHandle {
   }
 
   async delete(): Promise<void> {
-    await this.api.request("DELETE", `/boxes/${encodeURIComponent(this.id)}`);
+    // Box refuses a delete unless the target id is echoed in this header.
+    await this.api.request("DELETE", `/boxes/${encodeURIComponent(this.id)}`, undefined, { "X-Ascii-Confirm-Delete": this.id });
     await this.labelStore.remove(this.id).catch(() => {});
     this.state = "deleted";
   }
@@ -409,7 +438,7 @@ class BoxSandboxHandle implements SandboxHandle {
   async getPreviewLink(port: number): Promise<SandboxPreviewLink> {
     const payload = await this.api.request<{ url?: string }>("POST", `/boxes/${encodeURIComponent(this.id)}/host`, { port });
     if (!payload.url) throw new BoxApiError(502, "host_url_missing", `Box did not return a hosted URL for port ${port}`);
-    return boxPreviewLink(payload.url);
+    return this.api.portAuth(payload.url);
   }
 }
 

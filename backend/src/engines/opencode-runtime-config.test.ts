@@ -8,6 +8,7 @@ import {
 const server: OpenCodeRuntimeServer = {
   baseUrl: "https://sandbox.example.test",
   token: "preview-token",
+  headers: {},
   workdir: "/root/work",
 };
 

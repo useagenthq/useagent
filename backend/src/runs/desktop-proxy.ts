@@ -98,7 +98,7 @@ desktopProxyRoutes.get(
             // Bun's WebSocket client takes custom headers (browsers can't) — this
             // is how the Daytona preview token rides the upstream socket.
             const sock = new WebSocket(wsUrl, {
-              headers: sandboxPreviewHeaders(ep.token),
+              headers: { ...ep.headers },
               protocols: ["binary"],
             });
             sock.binaryType = "arraybuffer";
@@ -221,7 +221,7 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
   const forward = async (ep: PreviewEndpoint): Promise<Response> =>
     fetch(`${ep.baseUrl}${subpath}${url.search}`, {
       method,
-      headers: buildForwardHeaders(c.req.raw.headers, ep.token),
+      headers: buildForwardHeaders(c.req.raw.headers, ep.headers),
       body,
       redirect: "manual",
       signal: c.req.raw.signal,

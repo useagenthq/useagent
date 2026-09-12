@@ -25,8 +25,8 @@ export interface PreviewEndpoint {
   sandboxId: string;
   baseUrl: string;
   token: string;
-  /** Query every upstream request must carry (Box `_token`); see previewRequestUrl. */
-  query?: Readonly<Record<string, string>>;
+  /** Auth headers every upstream request must carry (provider token header or Box's port-auth cookie). */
+  headers: Readonly<Record<string, string>>;
 }
 
 /** Per (thread, port) preview endpoint cache. A thread now exposes several ports
@@ -123,12 +123,12 @@ export function invalidatePreviewEndpoint(threadId: string, port: number): void 
   endpoints.delete(`${threadId}:${port}`);
 }
 
-export function buildForwardHeaders(src: Headers, token: string): Headers {
+export function buildForwardHeaders(src: Headers, auth: Readonly<Record<string, string>>): Headers {
   const headers = new Headers();
   src.forEach((value, key) => {
     if (!STRIP_REQUEST.has(key.toLowerCase())) headers.set(key, value);
   });
-  for (const [name, value] of Object.entries(sandboxPreviewHeaders(token))) {
+  for (const [name, value] of Object.entries(auth)) {
     headers.set(name, value);
   }
   return headers;

@@ -1,3 +1,4 @@
+import { previewAuthHeaders } from "./preview-auth";
 import {
   Sandbox as E2BSandbox,
   type CommandHandle,
@@ -14,7 +15,7 @@ import type {
   SandboxPtyHandle,
   SandboxSession,
 } from "./provider";
-import type { SandboxInventory } from "@useagent/sandbox-contract";
+import type { SandboxInventory, SandboxPreviewLink } from "@useagent/sandbox-contract";
 import { buildRuntimeIdentityPreflightCommand } from "../engines/runtime-environment";
 
 interface CubeConnectionOptions {
@@ -385,12 +386,13 @@ class CubeSandboxHandle implements SandboxHandle {
     this.state = "deleted";
   }
 
-  async getPreviewLink(port: number): Promise<{ url: string; token?: string }> {
+  async getPreviewLink(port: number): Promise<SandboxPreviewLink> {
     const sandbox = await this.connected();
     const scheme = this.connection.debug ? "http" : "https";
     return {
       url: `${scheme}://${sandbox.getHost(port)}`,
       token: sandbox.trafficAccessToken,
+      headers: previewAuthHeaders(sandbox.trafficAccessToken ?? "", "cube"),
     };
   }
 }

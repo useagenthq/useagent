@@ -1,7 +1,7 @@
 import { getOpenCodeThreadServer } from "./opencode-runtime";
 import { resolvePreviewSandbox } from "../runs/preview-proxy";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
-import { previewLinkBase, previewRequestUrl, sandboxPreviewHeaders } from "../sandboxes/provider";
+import { previewLinkBase, sandboxPreviewHeaders } from "../sandboxes/provider";
 import type { SecretRedactor } from "../secrets/redact";
 import {
   ProviderQuestionError,
@@ -80,7 +80,7 @@ export function parseOpenCodeQuestionRequest(value: unknown): ProviderQuestionRe
 async function resolveControl(threadId: string): Promise<{
   baseUrl: string;
   token: string;
-  query?: Readonly<Record<string, string>>;
+  headers: Readonly<Record<string, string>>;
   workdir: string;
 }> {
   const cached = getOpenCodeThreadServer(threadId);
@@ -116,9 +116,9 @@ export async function replyToOpenCodeQuestion(input: {
   if (await providerEventExists(resolvedEventId)) return { alreadyAnswered: true };
 
   const control = await resolveControl(input.threadId);
-  const headers = sandboxPreviewHeaders(control.token);
+  const headers = control.headers;
   const directory = `?directory=${encodeURIComponent(control.workdir)}`;
-  const list = await fetch(previewRequestUrl(control, `${control.baseUrl}/question${directory}`), {
+  const list = await fetch(`${control.baseUrl}/question${directory}`, {
     headers,
     signal: AbortSignal.any([input.signal, AbortSignal.timeout(15_000)]),
   }).catch(() => null);
@@ -148,7 +148,7 @@ export async function replyToOpenCodeQuestion(input: {
   }
   const answers = validateProviderQuestionAnswers(request, input.answers);
   const response = await fetch(
-    previewRequestUrl(control, `${control.baseUrl}/question/${encodeURIComponent(request.id)}/reply${directory}`),
+    `${control.baseUrl}/question/${encodeURIComponent(request.id)}/reply${directory}`,
     {
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },

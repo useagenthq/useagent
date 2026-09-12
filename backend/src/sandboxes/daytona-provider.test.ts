@@ -212,6 +212,7 @@ describe("Daytona sandbox provider", () => {
     });
     expect(await handle.getPreviewLink(3000)).toEqual({
       token: "daytona-token",
+      headers: { "x-daytona-preview-token": "daytona-token" },
       url: "https://3000-daytona-created.example.com",
     });
     expect(calls).toEqual([

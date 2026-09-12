@@ -123,7 +123,7 @@ liveProxyRoutes.all("/:threadId/*", async (c) => {
   const forward = async (ep: PreviewEndpoint): Promise<Response> =>
     fetch(`${ep.baseUrl}${subpath}${url.search}`, {
       method,
-      headers: buildForwardHeaders(c.req.raw.headers, ep.token),
+      headers: buildForwardHeaders(c.req.raw.headers, ep.headers),
       body,
       redirect: "manual",
       signal: c.req.raw.signal,

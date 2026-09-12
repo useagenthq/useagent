@@ -3,7 +3,6 @@ import {
   type SandboxHandle,
   type PreviewLinkBase,
   previewLinkBase,
-  previewRequestUrl,
 } from "../sandboxes/provider";
 import {
   providerEventExists,
@@ -157,8 +156,8 @@ export function buildOpencodeConfigWriteCommand(encodedConfig: string): string {
   );
 }
 
-function authHeaders(token: string): Record<string, string> {
-  return sandboxPreviewHeaders(token);
+function authHeaders(server: PreviewLinkBase): Record<string, string> {
+  return { ...server.headers };
 }
 
 function modelBody(model: string): { providerID: string; modelID: string } {
@@ -362,8 +361,8 @@ async function opencodeHealthStatus(
   signal: AbortSignal,
 ): Promise<number | null> {
   try {
-    const response = await fetch(previewRequestUrl(server, `${server.baseUrl}/global/health`), {
-      headers: authHeaders(server.token),
+    const response = await fetch(`${server.baseUrl}/global/health`, {
+      headers: authHeaders(server),
       signal: AbortSignal.any([signal, AbortSignal.timeout(5_000)]),
     });
     const status = response.status;
@@ -723,8 +722,8 @@ export async function reconcileOpencodeRun(input: {
     const server = await openResidentServer(input.sandboxId);
     if (!server) return { outcome: "unreachable" };
     const res = await fetch(
-      previewRequestUrl(server, `${server.baseUrl}/session/${input.sessionId}/message${server.dirQ}`),
-      { headers: authHeaders(server.token), signal: ac.signal },
+      `${server.baseUrl}/session/${input.sessionId}/message${server.dirQ}`,
+      { headers: authHeaders(server), signal: ac.signal },
     );
     if (!res.ok) return { outcome: "unreachable" };
 
@@ -856,9 +855,9 @@ export function makeOpenCodeProviderDriver(
         );
       }
       try {
-        const res = await fetcher(previewRequestUrl(server, `${server.baseUrl}/session${server.dirQ}`), {
+        const res = await fetcher(`${server.baseUrl}/session${server.dirQ}`, {
           method: "POST",
-          headers: { ...authHeaders(server.token), "content-type": "application/json" },
+          headers: { ...authHeaders(server), "content-type": "application/json" },
           body: JSON.stringify({}),
           signal: operationSignal(request.signal, 9_000),
         });
@@ -901,9 +900,9 @@ export function makeOpenCodeProviderDriver(
       }
       try {
         const res = await fetcher(
-          previewRequestUrl(server, `${server.baseUrl}/session/${encodeURIComponent(request.session.nativeSessionId)}${server.dirQ}`),
+          `${server.baseUrl}/session/${encodeURIComponent(request.session.nativeSessionId)}${server.dirQ}`,
           {
-            headers: authHeaders(server.token),
+            headers: authHeaders(server),
             signal: operationSignal(request.signal, 9_000),
           },
         );
@@ -983,10 +982,10 @@ export function makeOpenCodeProviderDriver(
       try {
         const model = request.input.model?.trim() || DEFAULT_MODEL;
         const res = await fetcher(
-          previewRequestUrl(server, `${server.baseUrl}/session/${encodeURIComponent(request.session.nativeSessionId)}/message${server.dirQ}`),
+          `${server.baseUrl}/session/${encodeURIComponent(request.session.nativeSessionId)}/message${server.dirQ}`,
           {
             method: "POST",
-            headers: { ...authHeaders(server.token), "content-type": "application/json" },
+            headers: { ...authHeaders(server), "content-type": "application/json" },
             body: JSON.stringify({
               model: modelBody(model),
               parts: [{ type: "text", text: request.input.text }],
@@ -1026,10 +1025,10 @@ export function makeOpenCodeProviderDriver(
       }
       try {
         const res = await fetcher(
-          previewRequestUrl(server, `${server.baseUrl}/session/${encodeURIComponent(session.nativeSessionId)}/abort${server.dirQ}`),
+          `${server.baseUrl}/session/${encodeURIComponent(session.nativeSessionId)}/abort${server.dirQ}`,
           {
             method: "POST",
-            headers: authHeaders(server.token),
+            headers: authHeaders(server),
             signal: operationSignal(undefined, 9_000),
           },
         );
@@ -1392,17 +1391,18 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       };
       await stagesTogether([activateRuntime, prepareRepositories]);
 
-      const { baseUrl, token, query: previewQuery, workdir } = runtimeServer;
+      const { baseUrl, token, headers: previewHeaders, workdir } = runtimeServer;
       if (ctx.threadId) {
         rememberOpenCodeThreadServer(ctx.threadId, {
           sandboxId: box.id,
           baseUrl,
           token,
+          headers: previewHeaders,
           workdir,
         });
         retainForThread = true;
       }
-      const headers = { ...authHeaders(token), "content-type": "application/json" };
+      const headers = { ...previewHeaders, "content-type": "application/json" };
       const dirQ = `?directory=${encodeURIComponent(workdir)}`;
 
       const negotiatedCapabilities = sessionCapabilities("opencode", {
@@ -1450,8 +1450,8 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         if (ctx.signal.aborted) return null;
         try {
           const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(8_000)]);
-          const res = await fetch(previewRequestUrl({ query: previewQuery }, `${baseUrl}/command${dirQ}`), {
-            headers: authHeaders(token),
+          const res = await fetch(`${baseUrl}/command${dirQ}`, {
+            headers: previewHeaders,
             signal,
           });
           if (!res.ok) return null;
@@ -1528,7 +1528,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         signal: AbortSignal,
       ): Promise<Array<Record<string, unknown> & { id: string }> | null> => {
         try {
-          const res = await fetch(previewRequestUrl({ query: previewQuery }, `${baseUrl}/session/${sessionId}/children${dirQ}`), {
+          const res = await fetch(`${baseUrl}/session/${sessionId}/children${dirQ}`, {
             headers,
             signal,
           });
@@ -1753,8 +1753,8 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         // workspace instance's bus and hears nothing from this session (probe:
         // 1 frame vs 39 for the same activity). This — not proxy buffering —
         // was the live-dead-air culprit; the poller stays as belt-and-braces.
-        const res = await fetch(previewRequestUrl({ query: previewQuery }, `${baseUrl}/event${dirQ}`), {
-          headers: authHeaders(token),
+        const res = await fetch(`${baseUrl}/event${dirQ}`, {
+          headers: previewHeaders,
           signal: sseAbort.signal,
           // Disable Bun's 5-min fetch idle timeout (BUN_CONFIG_HTTP_IDLE_TIMEOUT,
           // fixed to be overridable in Bun PR #33647) - this SSE is held open for
@@ -1867,7 +1867,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       if (resumed) {
         try {
           const [hres, kids] = await Promise.all([
-            fetch(previewRequestUrl({ query: previewQuery }, `${baseUrl}/session/${sessionId}/message${dirQ}`), { headers, signal: ctx.signal }),
+            fetch(`${baseUrl}/session/${sessionId}/message${dirQ}`, { headers, signal: ctx.signal }),
             fetchChildSessions(ctx.signal),
           ]);
           if (hres.ok) {
@@ -1908,7 +1908,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
               }
             }
             for (const id of [sessionId, ...childSessions]) {
-              const res = await fetch(previewRequestUrl({ query: previewQuery }, `${baseUrl}/session/${id}/message${dirQ}`), {
+              const res = await fetch(`${baseUrl}/session/${id}/message${dirQ}`, {
                 headers,
                 signal: pollAbort.signal,
               });
@@ -1943,7 +1943,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const turnStartMs = Date.now();
       const waitForCompletion = async (): Promise<typeof reply> => {
         while (!ctx.signal.aborted) {
-          const r = await fetch(previewRequestUrl({ query: previewQuery }, `${baseUrl}/session/${sessionId}/message${dirQ}`), {
+          const r = await fetch(`${baseUrl}/session/${sessionId}/message${dirQ}`, {
             headers,
             signal: ctx.signal,
           }).catch(() => null);
@@ -2009,7 +2009,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         reply = await waitForCompletion();
       } catch (err) {
         // Best-effort: tell the engine to stop the turn we abandoned.
-        void fetch(previewRequestUrl({ query: previewQuery }, `${baseUrl}/session/${sessionId}/abort${dirQ}`), { method: "POST", headers }).catch(() => {});
+        void fetch(`${baseUrl}/session/${sessionId}/abort${dirQ}`, { method: "POST", headers }).catch(() => {});
         throw err instanceof Error && err.name === "AbortError"
           ? new Error("opencode run aborted (timeout)")
           : err;
@@ -2040,7 +2040,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const reconcileSession = async (id: string, child: boolean): Promise<void> => {
         if (child) childSessions.add(id);
         try {
-          const res = await fetch(previewRequestUrl({ query: previewQuery }, `${baseUrl}/session/${id}/message${dirQ}`), { headers, signal: ctx.signal });
+          const res = await fetch(`${baseUrl}/session/${id}/message${dirQ}`, { headers, signal: ctx.signal });
           if (!res.ok) return;
           const msgs = (await res.json()) as {
             info?: { id?: string };
