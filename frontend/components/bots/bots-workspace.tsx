@@ -1,3 +1,6 @@
+"use client";
+
+import { useRef } from "react";
 import type { ThreadView } from "@/components/chat/load-thread-view";
 import { cx } from "@/utils/cx";
 import { BotThreadHeader } from "./bot-details";
@@ -5,6 +8,7 @@ import { BotThreadPane } from "./bot-thread-pane";
 import { BotsRoster } from "./bots-roster";
 import { FirstMessage } from "./first-message";
 import { BotsOnboarding } from "./onboarding";
+import { ROSTER_DEFAULT, RosterResizer, useRosterWidth } from "./roster-resizer";
 import type { ApiBot } from "./types";
 
 /**
@@ -12,6 +16,8 @@ import type { ApiBot } from "./types";
  * Below md only one shows: the roster at /bots, the thread at /bots/[id] with
  * a back link in its header. The thread is the real SessionView (windowed like
  * any long session); the bot's details live behind the info button in the header.
+ * A grip between the two panes drags the roster wider or narrower, like the
+ * session rail's grip on the other side of the thread.
  */
 export function BotsWorkspace({
   bots,
@@ -22,9 +28,25 @@ export function BotsWorkspace({
   selected: ApiBot | null;
   thread: ThreadView | null;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const asideRef = useRef<HTMLElement>(null);
+  const roster = useRosterWidth({ containerRef, asideRef });
   return (
-    <div className="flex h-full min-h-0">
-      <BotsRoster initialBots={bots} selectedId={selected?.id ?? null} className={selected ? "hidden md:flex" : "flex"} />
+    <div ref={containerRef} className="flex h-full min-h-0">
+      <BotsRoster
+        ref={asideRef}
+        initialBots={bots}
+        selectedId={selected?.id ?? null}
+        style={roster.width !== null ? ({ "--roster-w": `${roster.width}px` } as React.CSSProperties) : undefined}
+        className={selected ? "hidden md:flex" : "flex"}
+      />
+      <RosterResizer
+        value={roster.width ?? ROSTER_DEFAULT}
+        onMove={roster.resizeFromPointer}
+        onCommit={roster.commit}
+        onKeyDown={roster.resizeWithKeyboard}
+        onReset={roster.reset}
+      />
       <div className={cx("min-h-0 min-w-0 flex-1 flex-col", selected ? "flex" : "hidden md:flex")}>
         {!selected ? (
           <BotsOnboarding />

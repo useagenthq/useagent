@@ -82,16 +82,22 @@ function ContactRow({ bot, selected, now }: { bot: ApiBot; selected: boolean; no
  * Left pane: every bot, needs-you first, one line each - the bot's own words
  * for what it last finished. Polls so a bot that starts working or asks for
  * approval moves up without a reload; the server-rendered list is the first paint.
- * Full width below md (the only pane at /bots); a 320px column beside the thread above it.
+ * Full width below md (the only pane at /bots); beside the thread above it, a
+ * column at the dragged `--roster-w` (the workspace's grip writes it), 320px
+ * by default.
  */
 export function BotsRoster({
   initialBots,
   selectedId,
   className = "flex",
+  style,
+  ref,
 }: {
   initialBots: ApiBot[];
   selectedId: string | null;
   className?: string;
+  style?: React.CSSProperties;
+  ref?: React.Ref<HTMLElement>;
 }) {
   const [bots, setBots] = useState(initialBots);
   const [creating, setCreating] = useState(false);
@@ -121,7 +127,14 @@ export function BotsRoster({
   }, []);
 
   return (
-    <aside className={cx("w-full shrink-0 flex-col border-r border-border-button-default md:w-80", className)}>
+    <aside
+      ref={ref}
+      style={style}
+      className={cx(
+        "w-full shrink-0 flex-col border-r border-border-button-default md:w-[var(--roster-w,20rem)]",
+        className,
+      )}
+    >
       <div className="flex items-center justify-between px-5 pt-5 pb-3">
         <h1 className="text-display-sm text-text-primary">Bots</h1>
         <Button variant="ghost" size="small" iconOnly leadingIcon={RiAddLine} aria-label="New bot" onClick={() => setCreating(true)} />
