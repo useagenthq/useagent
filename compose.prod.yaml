@@ -15,6 +15,12 @@ services:
       CODEX_APP_SERVER_HOME_ROOT: /var/lib/useagent/codex-app-server
       GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL:?set the sandbox-reachable HTTPS gateway origin}
       PROVIDER_GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL}
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||'3201')+'/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      start_period: 15s
+      retries: 12
     read_only: true
     tmpfs:
       - /tmp:size=256m,mode=1777
@@ -39,6 +45,12 @@ services:
       USEAGENT_RELEASE_COMMIT: ${USEAGENT_RELEASE_COMMIT:?set the exact release commit}
       GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL:?set the sandbox-reachable HTTPS gateway origin}
       PROVIDER_GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL}
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:'+(process.env.GATEWAY_PORT||'3202')+'/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 12
     read_only: true
     tmpfs:
       - /tmp:size=128m,mode=1777
@@ -54,6 +66,12 @@ services:
       PORT: ${USEAGENT_FRONTEND_PORT:?set the inactive-color frontend port}
       USEAGENT_API_ORIGIN: http://127.0.0.1:${USEAGENT_BACKEND_PORT}
       NEXT_PUBLIC_USEAGENT_RELEASE_COMMIT: ${USEAGENT_RELEASE_COMMIT}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||'3400')+'/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      start_period: 15s
+      retries: 12
     read_only: true
     tmpfs:
       - /tmp:size=128m,mode=1777

@@ -2,16 +2,23 @@
 ARG BUN_IMAGE=oven/bun:1.3.14-slim@sha256:d56a2534ffd262e92c12fd3249d3924d296d97086da773f821d7d0477435ea04
 
 FROM ${BUN_IMAGE} AS codex-cli
+ARG TARGETARCH
 ARG NODE_VERSION=24.19.0
-ARG NODE_SHA256=14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647
+ARG NODE_SHA256_AMD64=14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647
+ARG NODE_SHA256_ARM64=01443c1e1a29e531ccad5a46fefa6df490d2189c49f7955904aecdbb0fe86fdc
 ARG CODEX_CLI_VERSION=0.147.0
 USER root
-RUN apt-get update \
+RUN case "$TARGETARCH" in \
+      amd64) node_arch=x64; node_sha="$NODE_SHA256_AMD64" ;; \
+      arm64) node_arch=arm64; node_sha="$NODE_SHA256_ARM64" ;; \
+      *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+    && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
     && rm -rf /var/lib/apt/lists/* \
     && curl -fsSLo /tmp/node.tar.xz \
-      "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
-    && printf '%s  %s\n' "$NODE_SHA256" /tmp/node.tar.xz | sha256sum -c - \
+      "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${node_arch}.tar.xz" \
+    && printf '%s  %s\n' "$node_sha" /tmp/node.tar.xz | sha256sum -c - \
     && tar -xJf /tmp/node.tar.xz --strip-components=1 -C /usr/local \
     && rm /tmp/node.tar.xz \
     && npm install --global "@openai/codex@${CODEX_CLI_VERSION}" \

@@ -38,6 +38,36 @@ env:
   NEXT_TELEMETRY_DISABLED: "1"
 
 jobs:
+  compose-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      RELEASE_COMMIT: ${{ github.sha }}
+      BETTER_AUTH_SECRET: ci-auth-0123456789abcdef0123456789abcdef
+      SECRETS_ENCRYPTION_KEY: "1111111111111111111111111111111122222222222222222222222222222222"
+      USEAGENT_OPERATOR_SECRET: ci-operator-0123456789abcdef0123456789abcdef
+      PROVIDER_GATEWAY_SECRET: ci-provider-0123456789abcdef0123456789abcdef
+      TOOL_GATEWAY_SECRET: ci-tool-0123456789abcdef0123456789abcdef0123
+      GATEWAY_PUBLIC_URL: https://gateway.invalid
+      SANDBOX_PROVIDER: daytona
+      COMPOSE_BAKE: "true"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Start the local stack and wait for health
+        run: docker compose -f compose.local.yaml up --build --wait --wait-timeout 300
+      - name: Probe all service health routes
+        run: >-
+          node -e "Promise.all([
+          fetch('http://127.0.0.1:3201/api/health'),
+          fetch('http://127.0.0.1:3202/health'),
+          fetch('http://127.0.0.1:3400/healthz')
+          ]).then(rs => { if (rs.some(r => !r.ok)) process.exit(1) })"
+      - name: Stop the local stack
+        if: always()
+        run: docker compose -f compose.local.yaml down --volumes --remove-orphans
+
   # ── Types across both apps (root `typecheck` = frontend tsc + backend tsc) ────
   typecheck:
     runs-on: ubuntu-latest
