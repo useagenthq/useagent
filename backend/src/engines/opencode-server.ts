@@ -76,8 +76,9 @@ import { materializeRunInputs } from "../uploads/materialize";
 import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
 import {
   markProviderGatewaySandboxCurrent,
-  providerGatewaySandboxLabels,
+  mergeOpenCodeProviderConfig,
   opencodeProviderGatewayOptions,
+  providerGatewaySandboxLabels,
   providerGatewayWired,
 } from "../provider-gateway/sandbox-config";
 import { opencodeAssistantError } from "./opencode-message";
@@ -341,15 +342,11 @@ export async function prepareOpencodeSandboxConfig(
         ? (cfg.provider as Record<string, unknown>)
         : {};
     for (const [provider, options] of Object.entries(providerOptions)) {
-      const existing =
-        typeof providers[provider] === "object" && providers[provider]
-          ? (providers[provider] as Record<string, unknown>)
-          : {};
-      const existingOptions =
-        typeof existing.options === "object" && existing.options
-          ? (existing.options as Record<string, unknown>)
-          : {};
-      providers[provider] = { ...existing, options: { ...existingOptions, ...options } };
+      providers[provider] = mergeOpenCodeProviderConfig(
+        provider,
+        providers[provider],
+        options,
+      );
     }
     if (Object.keys(providerOptions).length > 0) cfg.provider = providers;
     console.log(

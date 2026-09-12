@@ -100,6 +100,7 @@ export function engineLabel(id: EngineId): string {
 // The model catalog (paid per-engine sets + the Free lane) lives in
 // ./model-catalog; re-exported here so this module's many consumers keep one path.
 export {
+  CEREBRAS_MODELS,
   CHAT_MODELS,
   CODEX_MODELS,
   FREE_MODELS,

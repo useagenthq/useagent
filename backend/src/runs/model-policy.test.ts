@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CEREBRAS_GEMMA_MODEL,
   CODEX_ALLOWED_MODELS,
   DEFAULT_CODEX_MODEL,
   DEFAULT_OPENCODE_MODEL,
@@ -34,6 +35,7 @@ describe("paid model policy", () => {
 
   test("allows only the curated OpenCode and Claude catalogs", () => {
     expect(DEEPSEEK_V4_FLASH_MODEL).toBe("deepseek/deepseek-v4-flash");
+    expect(CEREBRAS_GEMMA_MODEL).toBe("cerebras/gemma-4-31b");
     for (const model of Object.values(OPENCODE_ALLOWED_MODELS).flat()) {
       expect(isModelAllowedForEngine("opencode", model)).toBe(true);
     }
@@ -125,7 +127,11 @@ describe("paid model policy", () => {
       ...FREE_MODEL_LANE_SEED,
     ]);
     expect(allowedModelsForEngine("pi", {})).toEqual(
-      Object.values(OPENCODE_ALLOWED_MODELS).flat(),
+      [
+        ...OPENCODE_ALLOWED_MODELS.anthropic,
+        ...OPENCODE_ALLOWED_MODELS.openai,
+        ...OPENCODE_ALLOWED_MODELS.openrouter,
+      ],
     );
     expect(allowedModelsForEngine("acp", {})).toEqual([]);
   });

@@ -13,6 +13,7 @@ export const PROVIDER_DISPLAY_NAMES: Record<ProviderId, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   openrouter: "OpenRouter",
+  cerebras: "Cerebras",
 };
 
 export function providerCredentialMissingMessage(engine: string, provider: ProviderId): string {

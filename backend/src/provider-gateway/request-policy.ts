@@ -9,8 +9,10 @@ export type ProviderBodyPolicyResult =
 function requestModelMatchesRun(run: GatewayRun, requested: unknown): boolean {
   if (requested === run.model) return true;
   return (run.engine === "opencode" || run.engine === "pi") &&
-    run.model.startsWith("openai/") &&
-    requested === run.model.slice("openai/".length);
+    ((run.model.startsWith("openai/") && requested === run.model.slice("openai/".length)) ||
+      (run.engine === "opencode" &&
+        run.model.startsWith("cerebras/") &&
+        requested === run.model.slice("cerebras/".length)));
 }
 
 /**

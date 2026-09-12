@@ -241,6 +241,10 @@ describe("engine readiness advertisement", () => {
     expect(engineModelReadyForDispatch("opencode", "claude-opus-5", env)).toBe(false);
     expect(engineModelReadyForDispatch("opencode", "openai/gpt-5.6-sol", env)).toBe(true);
     expect(engineModelReadyForDispatch("opencode", "made-up/provider-model", env)).toBe(false);
+    expect(engineModelReadyForDispatch("opencode", "cerebras/gemma-4-31b", {
+      ...env,
+      PROVIDER_HEALTH_CEREBRAS: "verified",
+    })).toBe(true);
     expect(engineModelsForConfiguredEngines(env).opencode).not.toContain("claude-opus-5");
     expect(modelProviderReadinessErrorBody("opencode", "claude-opus-5", env)).toMatchObject({
       error: "model_provider_not_ready",

@@ -31,6 +31,10 @@ export const MODELS: { value: string; label: string; tint: string }[] = [
   { value: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
 ];
 
+export const CEREBRAS_MODELS: ModelOption[] = [
+  { value: "cerebras/gemma-4-31b", label: "Gemma 4 31B · Cerebras", tint: "text-amber-500" },
+];
+
 /** The Free lane SEED: curated labels for the backend's fallback lane and the
  * offline picker default. The lane itself is DYNAMIC - the backend derives it
  * from OpenRouter's public catalog and advertises it via the manifest; Free
@@ -101,7 +105,11 @@ export const CHAT_MODELS: { value: string; label: string; tint: string }[] = [
 export type ModelOption = { value: string; label: string; tint: string };
 
 // Stable reference so per-render callers never see a fresh array identity.
-const OPENCODE_SELECTABLE_MODELS: ModelOption[] = [...MODELS, ...FREE_MODELS];
+const OPENCODE_SELECTABLE_MODELS: ModelOption[] = [
+  ...MODELS,
+  ...CEREBRAS_MODELS,
+  ...FREE_MODELS,
+];
 
 export function selectableModelsForEngine(engine: EngineId): ModelOption[] {
   const normalized = normalizeEngine(engine);

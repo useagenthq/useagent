@@ -1,6 +1,6 @@
 import type { EngineId } from "../db/schema";
 
-export const PROVIDER_IDS = ["anthropic", "openai", "openrouter"] as const;
+export const PROVIDER_IDS = ["anthropic", "openai", "openrouter", "cerebras"] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 export function providerForEngine(engine: EngineId, model: string): ProviderId | null {
@@ -9,6 +9,7 @@ export function providerForEngine(engine: EngineId, model: string): ProviderId |
     case "daytona":
     case "pi":
       if (model.startsWith("openai/")) return "openai";
+      if (model.startsWith("cerebras/")) return "cerebras";
       return model.includes("/") ? "openrouter" : "anthropic";
     case "claude":
     case "claude-sdk":
@@ -31,6 +32,8 @@ export function providerCredentialName(provider: ProviderId): string {
       return "OPENAI_API_KEY";
     case "openrouter":
       return "OPENROUTER_API_KEY";
+    case "cerebras":
+      return "CEREBRAS_API_KEY";
   }
 }
 

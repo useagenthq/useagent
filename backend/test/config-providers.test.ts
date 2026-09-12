@@ -9,10 +9,15 @@ afterEach(() => {
 });
 
 test("deploymentProvidedProviders names each provider the server keys serve, never a value", () => {
-  expect(deploymentProvidedProviders({})).toEqual({ anthropic: false, openai: false, openrouter: false });
+  expect(deploymentProvidedProviders({})).toEqual({
+    anthropic: false,
+    openai: false,
+    openrouter: false,
+    cerebras: false,
+  });
   expect(
     deploymentProvidedProviders({ OPENAI_API_KEY: "sk-live", ANTHROPIC_API_KEY: "   " }),
-  ).toEqual({ anthropic: false, openai: true, openrouter: false });
+  ).toEqual({ anthropic: false, openai: true, openrouter: false, cerebras: false });
 });
 
 test("GET /api/config reports the deployment-provided providers and follows the env", async () => {

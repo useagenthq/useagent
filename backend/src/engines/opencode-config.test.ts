@@ -78,6 +78,20 @@ describe("OpenCode generated config placement", () => {
     expect(mcp[LEGACY_TOOL_GATEWAY_SERVER_NAME]).toBeUndefined();
     const claims = verifyToolToken(token, before);
 
+    expect(prepared?.config.provider).toMatchObject({
+      cerebras: {
+        npm: "@ai-sdk/cerebras",
+        name: "Cerebras",
+        options: { baseURL: "https://gateway.example.test/api/provider/cerebras/v1" },
+        models: {
+          "gemma-4-31b": {
+            name: "Gemma 4 31B",
+            limit: { context: 131_072, output: 40_960 },
+          },
+        },
+      },
+    });
+
     expect(claims).not.toBeNull();
     expect(claims!.exp).toBeGreaterThanOrEqual(before + 60_000);
     expect(claims!.exp).toBeLessThanOrEqual(after + 60_000);
