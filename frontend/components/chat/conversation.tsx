@@ -364,6 +364,9 @@ const TurnBlock = memo(function TurnBlock({
               showFollowups={isLatestTurn}
             />
             {summary && !hasNarration(timeline) && <AgentAnswer summary={summary} />}
+            {/* A run whose native frames carry no text (the chat engine streams its
+                answer as deltas only) still narrates live from the delta channel. */}
+            {narrating && !summary && !hasNarration(timeline) && <LiveNarration text={liveText} />}
             {failed && !summary && !hasNarration(timeline) && <FailedNote />}
           </div>
         ) : (
