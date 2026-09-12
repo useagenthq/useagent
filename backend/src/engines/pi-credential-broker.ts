@@ -57,6 +57,8 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+/** The caller must create `root` with mode 0700 and runtime-appropriate ownership
+ * before any broker capability is uploaded. */
 export async function startPiCredentialBroker(input: {
   readonly sandbox: SandboxHandle;
   readonly provider: PiBrokerProviderCapability;
@@ -76,13 +78,6 @@ export async function startPiCredentialBroker(input: {
       ? { mcp: { url: input.tools.url, authorization: input.tools.authorizationHeader } }
       : {}),
   });
-  const prepared = await input.sandbox.process.executeCommand(
-    `install -d -m 700 ${shellQuote(root)}`,
-    undefined,
-    undefined,
-    15,
-  );
-  if ((prepared.exitCode ?? 1) !== 0) throw new Error("failed to prepare Pi credential broker");
   await Promise.all([
     input.sandbox.fs.uploadFile(Buffer.from(BROKER_SCRIPT), scriptPath, 60),
     input.sandbox.fs.uploadFile(Buffer.from(config), configPath, 60),
