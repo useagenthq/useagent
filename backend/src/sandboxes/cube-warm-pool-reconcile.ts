@@ -11,8 +11,8 @@ import {
 } from "./label-compat";
 
 export const LEGACY_WARM_POOL_TEMPLATE_LABEL = "skynet-warm-pool-template";
-export const USEAGENT_WARM_POOL_TEMPLATE_LABEL = LEGACY_WARM_POOL_TEMPLATE_LABEL;
 export const CANONICAL_WARM_POOL_TEMPLATE_LABEL = "useagent-warm-pool-template";
+export const USEAGENT_WARM_POOL_TEMPLATE_LABEL = CANONICAL_WARM_POOL_TEMPLATE_LABEL;
 
 const CUBE_TEMPLATE_LABELS = [
   "cube.master.appsnapshot.template.id",

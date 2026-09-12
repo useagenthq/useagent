@@ -88,7 +88,7 @@ export function mergeOpenCodeProviderConfig(
 // from surviving a compatibility -> gateway-only transition.
 export const SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-gateway-only-secrets";
 const COMPATIBILITY_SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-compatibility-secrets";
-export const SANDBOX_GENERATION_LABEL = LEGACY_SANDBOX_GENERATION_LABEL;
+export const SANDBOX_GENERATION_LABEL = CANONICAL_SANDBOX_GENERATION_LABEL;
 const SANDBOX_MARKER = "$HOME/.skynet/provider-gateway-generation";
 const OPENAI_TOKEN_FILE = "$HOME/.skynet/provider-openai.token";
 export const CLAUDE_CONFIG_DIR = "/tmp/skynet-claude-config";
@@ -338,7 +338,7 @@ export function providerGatewayWired(): boolean {
  * trust anchor used for warm reuse. */
 export function providerGatewaySandboxLabels(runId: string): Record<string, string> {
   return {
-    [LEGACY_SANDBOX_RUN_LABEL]: runId,
+    [CANONICAL_SANDBOX_RUN_LABEL]: runId,
     ...(providerGatewayWired()
       ? { [SANDBOX_GENERATION_LABEL]: sandboxGeneration() }
       : {}),

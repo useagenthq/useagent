@@ -127,7 +127,7 @@ try {
 
   const provisionStartedAt = Date.now();
   sandbox = await daytona.create({
-    labels: { "skynet-run": runId, "skynet-purpose": "artifact-live-e2e" },
+    labels: { "useagent-run": runId, "useagent-purpose": "artifact-live-e2e" },
     autoStopInterval: 30,
     autoDeleteInterval: 60,
   });
