@@ -113,6 +113,7 @@ import {
   setRunAdmission,
 } from "./commands/admission";
 import { getRunWithSteps } from "./runs/repo";
+import { deploymentProvidedProviders } from "./provider-gateway/provider";
 import { uploadRoutes } from "./uploads/routes";
 import { startUploadCleanup } from "./uploads/cleanup";
 import { internalAutomationRoutes } from "./schedules/internal-routes";
@@ -337,6 +338,8 @@ app.get("/api/config", (c) => {
     models,
     configuredModels,
     sandbox: { provider: sandboxProviderKind(), userComputers: userComputersEnabled() },
+    // Per model provider: served from this deployment's own key (a name, never a value).
+    providers: deploymentProvidedProviders(),
     capabilities: {
       github: githubConfigured(),
       slack: slackConfig() !== null,

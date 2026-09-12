@@ -79,9 +79,17 @@ export interface ScheduleRecord {
   approval_policy: Record<string, unknown> | null;
   enablement_policy: Record<string, unknown> | null;
   enabled: boolean;
+  /** The cron loop's last tick; null for an automation only ever run by hand. */
   last_fired_at: string | null;
+  /** When it last ran by any trigger, cron or Run now (newest firing in the log). */
+  last_run_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** The moment an automation last ran, whichever trigger fired it. */
+export function lastRunAt(schedule: Pick<ScheduleRecord, "last_run_at" | "last_fired_at">): string | null {
+  return schedule.last_run_at ?? schedule.last_fired_at;
 }
 
 const WEEKDAY_NAMES = [

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
-import { embeddingsEnabled, embedOne } from "./embed";
+import { embeddingsEnabled, embeddingsUnavailableReason, embedOne } from "./embed";
 import {
   DocumentExtractionError,
   extractDocumentText,
@@ -159,7 +159,14 @@ knowledgeRoutes.get("/", async (c) => {
   const q = c.req.query("q");
   try {
     const rows = await listRecords({ orgId: c.get("orgId"), q });
-    return c.json({ records: rows.map(toApi), embeddings: embeddingsEnabled() });
+    // `embeddings` is the observed truth (key present AND the provider answered
+    // last time); `search_note` explains a keyword-only state to the page.
+    const unavailable = embeddingsUnavailableReason();
+    return c.json({
+      records: rows.map(toApi),
+      embeddings: unavailable === null,
+      search_note: unavailable === null ? null : `Search is keyword-only: ${unavailable}.`,
+    });
   } catch (e) {
     console.error("[knowledge] list error:", (e as Error).message);
     return c.json({ error: "list failed" }, 500);

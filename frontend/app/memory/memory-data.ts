@@ -16,7 +16,8 @@ import { RiTeamLine, RiUser3Line, type RemixiconComponentType } from "@remixicon
 
 export type MemoryScope = "org" | "personal";
 
-/** The two scope tabs, mirroring the composer's MemoryScopePicker grammar. */
+/** The two scope tabs. Product runs use organization memory; personal memory is
+ *  written only by API callers that set memory_scope to personal. */
 export const SCOPE_META: Record<
   MemoryScope,
   { label: string; short: string; hint: string; tag: string; icon: RemixiconComponentType }

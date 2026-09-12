@@ -44,6 +44,14 @@ describe("thread discovery search", () => {
     expect(findThreadMatches([run({ id: "empty", prompt: "" })], "untitled")).toHaveLength(1);
   });
 
+  test("matches every query word in any order, not only the contiguous phrase", () => {
+    const heater = [run({ id: "heater", prompt: "Orbital H-200 heater warranty" })];
+    expect(findThreadMatches(heater, "orbital heater").map((item) => item.id)).toEqual(["heater"]);
+    expect(findThreadMatches(heater, "heater   orbital").map((item) => item.id)).toEqual(["heater"]);
+    expect(findThreadMatches(heater, "orbital cooler")).toEqual([]);
+    expect(filterCommandEntries(commands, "thread new").map((c) => c.label)).toEqual(["New thread"]);
+  });
+
   test("returns no thread rows for blank or unmatched searches", () => {
     expect(findThreadMatches(runs, "")).toEqual([]);
     expect(findThreadMatches(runs, "does-not-exist")).toEqual([]);

@@ -23,7 +23,18 @@ import { relTime } from "./relative-time";
 
 const MASK = "••••••••";
 
-function StatusPill({ connection }: { connection: ProviderConnectionMeta | null }) {
+function StatusPill({
+  connection,
+  deploymentProvided = false,
+}: {
+  connection: ProviderConnectionMeta | null;
+  deploymentProvided?: boolean;
+}) {
+  // No org connection of its own, but the server's key serves this provider:
+  // the product works, so say who is providing it rather than "Not connected".
+  if (deploymentProvided && !isActiveConnection(connection)) {
+    return <ConnectionStatusChip status="completed">Provided by this deployment</ConnectionStatusChip>;
+  }
   const revoked = connection?.status === "revoked";
   return (
     <ConnectionStatusChip
@@ -45,12 +56,15 @@ export function ProviderConnectionPanel({
   connection,
   oauthConnection,
   codexSandboxExecutionEnabled,
+  deploymentProvided = false,
   onSaved,
 }: {
   provider: ProviderConnectionProvider;
   connection: ProviderConnectionMeta | null;
   oauthConnection: ProviderConnectionMeta | null;
   codexSandboxExecutionEnabled: boolean | null;
+  /** The server's own key serves this provider, so runs work without an org key. */
+  deploymentProvided?: boolean;
   onSaved: () => Promise<void>;
 }) {
   const labels = PROVIDER_LABELS[provider];
@@ -115,8 +129,16 @@ export function ProviderConnectionPanel({
             {labels.scope}
           </span>
         </div>
-        <StatusPill connection={providerStatusConnection(connection, oauthConnection)} />
+        <StatusPill
+          connection={providerStatusConnection(connection, oauthConnection)}
+          deploymentProvided={deploymentProvided}
+        />
       </div>
+      {deploymentProvided && !isActiveConnection(providerStatusConnection(connection, oauthConnection)) && (
+        <p className="border-b border-separator-border py-2 text-caption-1-regular text-text-tertiary">
+          Runs use this deployment&rsquo;s {labels.name} key. Connect your own to bill your account instead.
+        </p>
+      )}
 
       {provider === "openai" ? (
         <CodexChatGptPath

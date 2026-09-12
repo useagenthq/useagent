@@ -22,9 +22,11 @@ import {
 import { Switch } from "@/components/base/switch/switch";
 import { REVEAL_ON_HOVER } from "@/components/customize/list-row";
 import { cx } from "@/utils/cx";
+import { InlineDeleteConfirm } from "@/components/shared/inline-delete-confirm";
 import { relativeTime } from "@/utils/format";
 import {
   cadenceLabel,
+  lastRunAt,
   engineLabel,
   scheduleZone,
   type ScheduleRecord,
@@ -62,6 +64,7 @@ export function AutomationCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const busy = running || mutating;
   const cadence = cadenceLabel(schedule.cron);
+  const lastRun = lastRunAt(schedule);
 
   return (
     <article className="group/customize relative border-b border-border-button-default bg-background-primary-default transition-colors last:border-b-0 hover:bg-background-secondary-default/50">
@@ -113,7 +116,7 @@ export function AutomationCard({
             <span>{engineLabel(schedule.engine)}</span>
             <span aria-hidden>·</span>
             <span>
-              {schedule.last_fired_at ? `Ran ${relativeTime(schedule.last_fired_at)}` : "Not run yet"}
+              {lastRun ? `Ran ${relativeTime(lastRun)}` : "Not run yet"}
             </span>
           </p>
         </div>
@@ -218,27 +221,13 @@ export function AutomationCard({
       )}
 
       {confirmingDelete && (
-        <div className="flex flex-col gap-3 border-t border-border-button-default bg-background-tertiary-error px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <div>
-            <p className="text-body-2-medium text-text-primary">Delete this automation?</p>
-            <p className="mt-0.5 text-caption-1-regular text-text-secondary">
-              Existing runs stay in Active runs. The cadence and its history are removed.
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button variant="secondary" size="small" onClick={() => setConfirmingDelete(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              size="small"
-              disabled={mutating}
-              onClick={() => void onDelete(schedule.id)}
-            >
-              Delete
-            </Button>
-          </div>
-        </div>
+        <InlineDeleteConfirm
+          question="Delete this automation?"
+          consequence="Existing runs stay in Active runs. The cadence and its history are removed."
+          busy={mutating}
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={() => void onDelete(schedule.id)}
+        />
       )}
     </article>
   );

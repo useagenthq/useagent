@@ -15,11 +15,20 @@ import {
 
 const jsonHeaders = { "content-type": "application/json" } as const;
 
-export async function fetchKnowledgeItems(): Promise<KnowledgeItem[]> {
+export interface KnowledgeIndex {
+  items: KnowledgeItem[];
+  /** Backend explanation when search runs keyword-only (embeddings off or failing); null when hybrid. */
+  searchNote: string | null;
+}
+
+export async function fetchKnowledge(): Promise<KnowledgeIndex> {
   const res = await backendFetch("/api/knowledge", { cache: "no-store" });
   if (!res.ok) throw new Error(`knowledge ${res.status}`);
-  const data = (await res.json()) as { records?: KnowledgeRecord[] };
-  return (data.records ?? []).map(recordToItem);
+  const data = (await res.json()) as { records?: KnowledgeRecord[]; search_note?: unknown };
+  return {
+    items: (data.records ?? []).map(recordToItem),
+    searchNote: typeof data.search_note === "string" ? data.search_note : null,
+  };
 }
 
 export interface IngestInput {

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/shell/app-shell";
 import { LibrarySidebar } from "@/components/shell/library-sidebar";
-import { fetchKnowledgeItems } from "./knowledge-api";
+import { fetchKnowledge } from "./knowledge-api";
 import { mockKnowledgeItems } from "./knowledge-data";
 import { KnowledgeGallery } from "./knowledge-gallery";
 
@@ -15,10 +15,13 @@ export default async function KnowledgePage() {
   // `initialError` (a distinct, retryable error state) — NOT swallowed into the
   // empty seed, so an outage never reads as "no knowledge yet".
   let initialItems = mockKnowledgeItems;
+  let initialSearchNote: string | null = null;
   let initialLive = false;
   let initialError = false;
   try {
-    initialItems = await fetchKnowledgeItems();
+    const index = await fetchKnowledge();
+    initialItems = index.items;
+    initialSearchNote = index.searchNote;
     initialLive = true;
   } catch {
     initialError = true;
@@ -28,6 +31,7 @@ export default async function KnowledgePage() {
     <AppShell sidebar={<LibrarySidebar active="knowledge" />}>
       <KnowledgeGallery
         initialItems={initialItems}
+        initialSearchNote={initialSearchNote}
         initialLive={initialLive}
         initialError={initialError}
       />
