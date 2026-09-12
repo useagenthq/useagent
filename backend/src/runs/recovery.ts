@@ -383,9 +383,14 @@ async function ingestReconciliationEvents(
 // ---------------------------------------------------------------------------
 // Adaptive background reconcile loop (#63). Re-probes parked runs on a short
 // backoff within their budget: adopt the finished session, honest-fail after the
-// deadline, else reschedule. Single-flight (one tick at a time) — single-replica
-// scope, so no row locking. Never throws; a tick error is logged.
+// deadline, else reschedule. Single-flight with a watchdog; because the watchdog can
+// resurrect a tick over one that is merely slow, every claim is a leased row lock
+// (reconcile-queue.ts), so two ticks in flight never probe the same run. Never throws;
+// a tick error is logged.
 // ---------------------------------------------------------------------------
+
+/** Parked runs one tick processes at most. */
+const RECONCILE_BATCH = 20;
 
 /** One reconcile tick: process every DUE parked run. Returns counts for
  *  tests/telemetry. The probe is injectable (tests). Never throws. */
@@ -393,13 +398,17 @@ export async function runDueReconciles(
   reconcile: ReconcileProbe = defaultReconcile,
   cleanup: RestartTransportCleanup = defaultRestartTransportCleanup,
 ): Promise<{ adopted: number; failed: number; retried: number; dropped: number; eventsRecovered: number }> {
-  const due = await claimDueReconciles();
   let adopted = 0;
   let failed = 0;
   let retried = 0;
   let dropped = 0;
   let eventsRecovered = 0;
-  for (const entry of due) {
+  // Claim ONE leased row at a time: the lease then covers exactly the entry being probed,
+  // so a batch that outlives one lease never re-exposes a row it has yet to reach, and a
+  // tick running alongside this one claims disjoint rows.
+  for (let claimed = 0; claimed < RECONCILE_BATCH; claimed++) {
+    const [entry] = await claimDueReconciles(1);
+    if (!entry) break;
    // PER-ENTRY ISOLATION: a throw on ONE entry (a stuck finalize, a DB error)
    // must not abort the whole batch and leave every other parked run stranded.
    // Combined with the tick watchdog in startReconcileLoop, a single wedged
@@ -571,39 +580,57 @@ async function settleAndPump(runId: string, threadId: string): Promise<void> {
 }
 
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
-let reconcileTicking = false;
-let reconcileTickStartedAt = 0;
+
+export interface TickStart { readonly generation: number; readonly resurrected: boolean }
+
+/** Single-flight guard with a watchdog and tick OWNERSHIP. `start` hands out a generation
+ *  when a tick may run: nothing is in flight, or the in-flight tick is past the watchdog
+ *  and is treated as lost. `settle` frees the guard only for the generation that holds
+ *  it, so a lost tick that finally settles cannot free the guard from under its
+ *  replacement (which would let the next interval start a third tick over the second).
+ *  Pure, so it is tested without timers. */
+export function createTickGuard(watchdogMs: number) {
+  let generation = 0;
+  let inFlight: { generation: number; startedAt: number } | null = null;
+  return {
+    start(now: number): TickStart | null {
+      if (inFlight && now - inFlight.startedAt < watchdogMs) return null;
+      const resurrected = inFlight !== null;
+      inFlight = { generation: ++generation, startedAt: now };
+      return { generation: inFlight.generation, resurrected };
+    },
+    settle(gen: number): void {
+      if (inFlight?.generation === gen) inFlight = null;
+    },
+  };
+}
 
 /** Start the adaptive reconcile loop (idempotent). Single-flight: a slow tick is
  *  never overlapped by the next. `RECONCILE_TICK_MS` overrides the interval
  *  (tests go fast). Best-effort — a tick failure is logged, never thrown.
  *
  *  WATCHDOG: single-flight used to be permanent - if a tick's promise never
- *  settled (an unbounded DB await wedged), `reconcileTicking` stayed true and
- *  every later interval early-returned, killing the reconciler for good (the
- *  2026-08-20 25-minute idle). Now a tick still in flight past the watchdog
- *  window is treated as lost: the flag is cleared and the next interval runs a
- *  fresh tick. `runDueReconciles` is idempotent (it re-claims due rows), so an
- *  overlapping resurrected tick is safe. */
+ *  settled (an unbounded DB await wedged), the flag stayed set and every later
+ *  interval early-returned, killing the reconciler for good (the 2026-08-20
+ *  25-minute idle). A tick still in flight past the watchdog window is treated as
+ *  lost and a fresh tick starts. The guard tracks which tick owns the flag, so the
+ *  lost tick settling late does not free it, and the leased claims in
+ *  reconcile-queue.ts keep the two ticks off the same rows in the meantime. */
 export function startReconcileLoop(
   intervalMs = Number(process.env.RECONCILE_TICK_MS ?? 15_000),
 ): void {
   if (reconcileTimer) return;
   const watchdogMs = Math.max(intervalMs * 8, 120_000);
+  const guard = createTickGuard(watchdogMs);
   reconcileTimer = setInterval(() => {
-    if (reconcileTicking) {
-      if (Date.now() - reconcileTickStartedAt < watchdogMs) return;
-      console.error(
-        `[reconcile] tick exceeded ${watchdogMs}ms watchdog; resetting single-flight`,
-      );
+    const tick = guard.start(Date.now());
+    if (!tick) return;
+    if (tick.resurrected) {
+      console.error(`[reconcile] tick exceeded ${watchdogMs}ms watchdog; starting a fresh tick`);
     }
-    reconcileTicking = true;
-    reconcileTickStartedAt = Date.now();
     void runDueReconciles()
       .catch((err) => console.error("[reconcile] tick failed:", err))
-      .finally(() => {
-        reconcileTicking = false;
-      });
+      .finally(() => guard.settle(tick.generation));
   }, intervalMs);
   if (typeof reconcileTimer.unref === "function") reconcileTimer.unref();
 }

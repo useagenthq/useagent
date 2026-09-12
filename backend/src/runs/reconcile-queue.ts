@@ -78,24 +78,46 @@ export async function enqueueReconcile(input: {
   return inserted.length > 0;
 }
 
-/** Claim due parked rows (next_attempt_at <= now), oldest first, up to `limit`.
- *  Single-replica scope: the loop is single-flight, so no row-locking is needed. */
-export async function claimDueReconciles(limit = 20): Promise<ReconcileEntry[]> {
-  const rows = await db
-    .select()
-    .from(reconcileQueue)
-    .where(lte(reconcileQueue.nextAttemptAt, sql`now()`))
-    .orderBy(asc(reconcileQueue.nextAttemptAt))
-    .limit(limit);
-  return rows.map((r) => ({
-    runId: r.runId,
-    threadId: r.threadId,
-    sandboxId: r.sandboxId,
-    sessionId: r.sessionId,
-    sinceMs: r.sinceAt.getTime(),
-    attempts: r.attempts,
-    deadlineMs: r.deadline.getTime(),
-  }));
+/** How long a claimed row stays invisible to other claims while its tick probes it: the
+ *  probe race budget (11 s) plus finalize headroom. A tick that dies mid-flight simply lets
+ *  the lease expire, so a crash never strands a parked run; the lease is not an attempt. */
+export const RECONCILE_CLAIM_LEASE_MS = 60_000;
+
+/** Claim due parked rows (next_attempt_at <= now), oldest first, up to `limit`, and LEASE
+ *  them: the same statement pushes next_attempt_at past the lease, so an overlapping tick
+ *  (the watchdog can resurrect one) cannot claim a row that is already being probed. The
+ *  select locks its rows with SKIP LOCKED, so two claims running at once split the due set
+ *  instead of sharing it. Due is checked against the DB clock, like the outbox primitive. */
+export async function claimDueReconciles(
+  limit = 20,
+  leaseMs = RECONCILE_CLAIM_LEASE_MS,
+): Promise<ReconcileEntry[]> {
+  const rows = (await db.execute(sql`
+    with due as (
+      select run_id, next_attempt_at as due_at from reconcile_queue
+      where next_attempt_at <= now()
+      order by next_attempt_at asc
+      limit ${limit}
+      for update skip locked
+    )
+    update reconcile_queue q
+    set next_attempt_at = now() + (${leaseMs}::int * interval '1 millisecond')
+    from due where q.run_id = due.run_id
+    returning q.run_id, q.thread_id, q.sandbox_id, q.session_id, q.since_at, q.attempts, q.deadline, due.due_at`)) as unknown as Array<{
+    run_id: string; thread_id: string; sandbox_id: string; session_id: string;
+    since_at: string | Date; attempts: number | string; deadline: string | Date; due_at: string | Date;
+  }>;
+  return rows
+    .toSorted((a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime())
+    .map((r) => ({
+      runId: r.run_id,
+      threadId: r.thread_id,
+      sandboxId: r.sandbox_id,
+      sessionId: r.session_id,
+      sinceMs: new Date(r.since_at).getTime(),
+      attempts: Number(r.attempts),
+      deadlineMs: new Date(r.deadline).getTime(),
+    }));
 }
 
 /** Schedule the next re-probe (attempts += 1, next_attempt_at = backoff). */

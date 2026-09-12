@@ -92,3 +92,25 @@ describe("reconcile queue repo", () => {
     expect(await getReconcile(runId)).toBeNull();
   });
 });
+
+describe("claims are leased and never shared", () => {
+  test("a claimed row is invisible to a second claim until its lease expires, and a lease is not an attempt", async () => {
+    const runId = uid("run");
+    await enqueueReconcile(parkInput(runId));
+    expect((await claimDueReconciles(20, 60_000)).map((c) => c.runId)).toContain(runId);
+    expect((await claimDueReconciles(20, 60_000)).map((c) => c.runId)).not.toContain(runId);
+    expect((await getReconcile(runId))?.attempts).toBe(0);
+    // The tick that held the lease died: expiry re-exposes the row.
+    await db.execute(sql`update reconcile_queue set next_attempt_at = now() - interval '1 second' where run_id = ${runId}`);
+    expect((await claimDueReconciles(20, 60_000)).map((c) => c.runId)).toContain(runId);
+  });
+
+  test("two claims running at once split the due rows instead of sharing them", async () => {
+    const ids = Array.from({ length: 6 }, () => uid("run"));
+    for (const id of ids) await enqueueReconcile(parkInput(id));
+    const [a, b] = await Promise.all([claimDueReconciles(3), claimDueReconciles(3)]);
+    const seen = [...a, ...b].map((c) => c.runId);
+    expect(new Set(seen).size).toBe(seen.length);
+    expect(seen.toSorted()).toEqual(ids.toSorted());
+  });
+});

@@ -7,6 +7,7 @@ import type { HarnessInterimEvent } from "../src/engines/types";
 import { acceptRunCommand } from "../src/commands";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../src/commands/cancel";
 import {
+  createTickGuard,
   recoverStaleRuns,
   runDueReconciles,
   RUN_RECONCILING,
@@ -447,5 +448,39 @@ describe("survives the reconciler's own restart", () => {
     const second = await getReconcile(runId);
     expect(second!.deadline.getTime()).toBe(originalDeadline); // budget NOT extended
     expect((await getRun(runId))?.status).toBe("running"); // still parked, not failed
+  });
+});
+
+describe("overlapping ticks", () => {
+  test("two ticks in flight at once probe each parked run once and do not inflate attempts", async () => {
+    const runs = [await seedRunning(), await seedRunning(), await seedRunning()];
+    for (const r of runs) await park(r.runId, r.threadId);
+    const probed: string[] = [];
+    const slowProbe: ReconcileProbe = async (_handle, opts) => {
+      probed.push(opts.eventContext.runId);
+      await new Promise((r) => setTimeout(r, 40));
+      return { status: "unreachable" };
+    };
+
+    const [a, b] = await Promise.all([runDueReconciles(slowProbe), runDueReconciles(slowProbe)]);
+
+    expect(probed.toSorted()).toEqual(runs.map((r) => r.runId).toSorted());
+    expect(a.retried + b.retried).toBe(3);
+    for (const r of runs) expect((await getReconcile(r.runId))?.attempts).toBe(1);
+    // Settle the parked runs so a later file's boot recovery does not find them dispatched.
+    for (const r of runs) await finalizeRun(r.runId, "failed", "test teardown", 0);
+  });
+
+  test("tick guard: a lost tick that settles late cannot free the guard from under its replacement", () => {
+    const guard = createTickGuard(1_000);
+    const a = guard.start(0);
+    expect(a).toEqual({ generation: 1, resurrected: false });
+    expect(guard.start(500)).toBeNull(); // single-flight inside the watchdog window
+    const b = guard.start(1_000); // A is past the watchdog: treated as lost, B starts
+    expect(b).toEqual({ generation: 2, resurrected: true });
+    guard.settle(a!.generation); // A settles late
+    expect(guard.start(1_100)).toBeNull(); // B still owns the guard: no third tick over it
+    guard.settle(b!.generation);
+    expect(guard.start(1_200)).toEqual({ generation: 3, resurrected: false });
   });
 });
