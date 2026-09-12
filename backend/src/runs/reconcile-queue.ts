@@ -156,13 +156,17 @@ export async function deleteReconcile(runId: string, lease?: Date, exec: Executo
   return rows.length > 0;
 }
 
-/** Whether the row still carries exactly this claim's lease: the cheap ownership check a
- *  tick makes before writing anything that is not itself fenced (recovered events). */
-export async function reconcileClaimHeld(runId: string, lease: Date): Promise<boolean> {
-  const [row] = await db
+/** Lock the claim row and report whether it still carries exactly this claim's lease. Run
+ *  on the transaction of a write that must be conditional on ownership (recovered events):
+ *  the row lock is held until that transaction ends, so a competing claim (which locks
+ *  with SKIP LOCKED) cannot take the row mid-write, and a claim that already moved on
+ *  (a different lease) matches nothing. */
+export async function reconcileClaimHeldForUpdate(runId: string, lease: Date, exec: Executor): Promise<boolean> {
+  const [row] = await exec
     .select({ runId: reconcileQueue.runId })
     .from(reconcileQueue)
     .where(claimedRow(runId, lease))
+    .for("update")
     .limit(1);
   return !!row;
 }

@@ -11,6 +11,8 @@ import type {
 import { getLastStepAt, getRun, STALE_SUMMARY } from "./repo";
 import { finalizeRun, resolveDurableFinalizationOutcome } from "./finalize";
 import {
+  CaptureFenceError,
+  type WriteFence,
   providerEventExists,
   recordProviderEvent,
   scopedProviderEventId,
@@ -19,7 +21,7 @@ import { orgSecretRedactor } from "../secrets/store";
 import {
   bumpReconcile,
   claimDueReconciles,
-  reconcileClaimHeld,
+  reconcileClaimHeldForUpdate,
   deleteReconcile,
   enqueueReconcile,
   nextReconcileAction,
@@ -298,7 +300,7 @@ async function parkRunningRun(
     deadline: new Date(now + RECONCILE_PARK_BUDGET_MS),
   });
   if (newlyParked) {
-    recordReconcilingMarker(cmd.runId, cmd.threadId, {
+    void recordReconcilingMarker(cmd.runId, cmd.threadId, {
       reason: "boot-restart",
       sinceMs: (lastStepAt ?? new Date(now)).getTime(),
       deadlineMs: now + RECONCILE_PARK_BUDGET_MS,
@@ -324,15 +326,21 @@ interface ReconcilingMarkerPayload {
  *  marker that keeps advancing (each upsert mints a fresh seq → SSE subscribers
  *  see a live heartbeat) instead of a frozen frame or a pile of duplicate rows.
  *  Fire-and-forget; never throws. */
-function recordReconcilingMarker(runId: string, threadId: string, payload: ReconcilingMarkerPayload): void {
-  void recordProviderEvent({
+function recordReconcilingMarker(
+  runId: string,
+  threadId: string,
+  payload: ReconcilingMarkerPayload,
+  fence?: WriteFence,
+): Promise<void> {
+  // A heartbeat from a tick that lost its claim is fenced out like any other write.
+  return recordProviderEvent({
     id: `reconciling_${runId}`,
     runId,
     threadId,
     provider: "skynet",
     eventType: RUN_RECONCILING,
     payload,
-  }).catch(() => {});
+  }, fence ? { fence, required: true } : {}).catch(() => {});
 }
 
 /** Append native events a reconciliation surfaced to the canonical run, so SSE
@@ -348,7 +356,7 @@ async function ingestReconciliationEvents(
   redact: Awaited<ReturnType<typeof orgSecretRedactor>>,
   events: readonly HarnessInterimEvent[],
   strict = false,
-  owned?: () => Promise<boolean>,
+  fence?: WriteFence,
 ): Promise<number> {
   let recovered = 0;
   for (const ev of events) {
@@ -356,9 +364,6 @@ async function ingestReconciliationEvents(
       if (ev.runScopedId && !ev.id.startsWith(`pe_${entry.runId}_`)) {
         throw new Error(`Recovered event id does not match run ${entry.runId}`);
       }
-      // Ownership is re-checked right before each write: the window in which a tick
-      // that just lost its claim can still land one stale upsert is one round trip.
-      if (owned && !(await owned())) throw new LostClaimError(entry.runId);
       const eventId = ev.runScopedId ? ev.id : scopedProviderEventId(entry.runId, ev.id);
       await recordProviderEvent({
           id: eventId,
@@ -373,12 +378,14 @@ async function ingestReconciliationEvents(
           nativeCallId: ev.callId ?? null,
           payload: redact.unknown(ev.payload),
         },
-        { critical: strict, required: strict },
+        // A fenced write is required so the fence loss reaches this loop instead of the log.
+        { critical: strict, required: strict || fence !== undefined, fence },
       );
       if (await providerEventExists(eventId)) recovered++;
       else if (strict) throw new Error(`Recovered event ${eventId} was not durable`);
     } catch (error) {
-      if (strict || error instanceof LostClaimError) throw error;
+      if (error instanceof CaptureFenceError) throw new LostClaimError(entry.runId);
+      if (strict) throw error;
       /* a single malformed event must never abort the probe */
     }
   }
@@ -407,13 +414,20 @@ function lostClaim(entry: ReconcileEntry): void {
     `[reconcile] entry ${entry.runId} outlived its lease and was re-claimed by another tick; leaving the row to it`,
   );
 }
-async function settleEntry(entry: ReconcileEntry): Promise<void> {
-  if (!(await deleteReconcile(entry.runId, entry.leaseUntil))) lostClaim(entry);
+async function settleEntry(entry: ReconcileEntry): Promise<boolean> {
+  const held = await deleteReconcile(entry.runId, entry.leaseUntil);
+  if (!held) lostClaim(entry);
+  return held;
 }
-async function rescheduleEntry(entry: ReconcileEntry): Promise<void> {
+async function rescheduleEntry(entry: ReconcileEntry): Promise<boolean> {
   const next = reconcileBackoffAt(Date.now(), entry.attempts);
-  if (!(await bumpReconcile(entry.runId, next, entry.leaseUntil))) lostClaim(entry);
+  const held = await bumpReconcile(entry.runId, next, entry.leaseUntil);
+  if (!held) lostClaim(entry);
+  return held;
 }
+/** The fence every write this tick makes for the run carries: its claim row, locked. */
+const claimFence = (entry: ReconcileEntry): WriteFence =>
+  (tx) => reconcileClaimHeldForUpdate(entry.runId, entry.leaseUntil, tx);
 
 /** Thrown when a tick finds, before writing recovered events, that its claim is gone. */
 class LostClaimError extends Error {
@@ -477,8 +491,8 @@ export async function runDueReconciles(
     // worker took the thread, a cancel, a prior tick), just drop the parked row.
     const run = await getRun(entry.runId);
     if (!run || run.status !== "running") {
-      await settleEntry(entry);
-      dropped++;
+      if (await settleEntry(entry)) dropped++;
+      else lost++;
       continue;
     }
     if (run.engine === "pi") {
@@ -509,12 +523,10 @@ export async function runDueReconciles(
     let recovered = 0;
     try {
       // Recovered events are upserts on stable ids, so a tick that stalled and lost its
-      // claim must not write them over its replacement's newer payloads: the ownership
-      // check runs before the batch and again before every write.
-      const owned = () => reconcileClaimHeld(entry.runId, entry.leaseUntil);
-      if (recoveredEvents?.length && !(await owned())) throw new LostClaimError(entry.runId);
+      // claim must not write them over its replacement's newer payloads: every write is
+      // fenced on the locked claim row inside its own transaction.
       recovered = recoveredEvents?.length
-        ? await ingestReconciliationEvents(entry, redact, recoveredEvents, result.status !== "in_progress", owned)
+        ? await ingestReconciliationEvents(entry, redact, recoveredEvents, result.status !== "in_progress", claimFence(entry))
         : 0;
     } catch (error) {
       if (error instanceof LostClaimError) {
@@ -530,8 +542,8 @@ export async function runDueReconciles(
         else failed++;
         continue;
       }
-      await rescheduleEntry(entry);
-      retried++;
+      if (await rescheduleEntry(entry)) retried++;
+      else lost++;
       continue;
     }
     eventsRecovered += recovered;
@@ -558,16 +570,18 @@ export async function runDueReconciles(
       // ONLY when we actually reached the session (in_progress / no_change). An
       // unreachable probe learns nothing, so it must not fake a heartbeat.
       if (result.status === "in_progress" || result.status === "no_change") {
-        recordReconcilingMarker(entry.runId, entry.threadId, {
+        // Awaited: the fenced heartbeat must land while this tick's lease is still the
+        // row's, which the reschedule below replaces.
+        await recordReconcilingMarker(entry.runId, entry.threadId, {
           reason: "reprobe",
           sinceMs: entry.sinceMs,
           deadlineMs: entry.deadlineMs,
           lastProbeAt: Date.now(),
           eventsRecovered: recovered,
-        });
+        }, claimFence(entry));
       }
-      await rescheduleEntry(entry);
-      retried++;
+      if (await rescheduleEntry(entry)) retried++;
+      else lost++;
     }
    } catch (err) {
      // Bump this entry's next attempt so a persistently failing one backs off

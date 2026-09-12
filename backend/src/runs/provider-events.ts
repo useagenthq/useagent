@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { db } from "../db/client";
+import { db, type Executor } from "../db/client";
 import { providerEvents } from "../db/schema";
 import { makeNativeFrame, publishNativeFrame } from "./native-events";
 import { errorMessage } from "../util/error-message";
@@ -156,11 +156,13 @@ async function highestSeq(runId: string): Promise<number> {
  * earlier one in the run's chain) has persisted or been logged-and-swallowed.
  * `{ required: true }` returns the unswallowed attempt to its authoritative
  * caller while the stored sequencer chain still catches the failure and remains
- * usable for later events.
+ * usable for later events. `fence` makes the write conditional on an ownership check
+ * run inside the write's own transaction (see WriteFence); a fenced write is always
+ * `required`, since the caller must learn that its claim is gone.
  */
 export function recordProviderEvent(
   input: ProviderEventInput,
-  opts: { critical?: boolean; required?: boolean } = {},
+  opts: { critical?: boolean; required?: boolean; fence?: WriteFence } = {},
 ): Promise<void> {
   let seq = runSequencers.get(input.runId);
   if (!seq) {
@@ -168,8 +170,10 @@ export function recordProviderEvent(
     runSequencers.set(input.runId, seq);
   }
   const entry = seq;
-  const attempt = entry.chain.then(() => persistAndPublish(input, entry));
+  const fence = opts.fence;
+  const attempt = entry.chain.then(() => fence ? persistFencedAndPublish(input, entry, fence) : persistAndPublish(input, entry));
   const done = attempt.catch((err) => {
+      if (err instanceof CaptureFenceError) return; // the fenced caller sees the rejection; nothing was written
       const msg = errorMessage(err);
       // The chain must stay resolved (a rejected link stalls the run's later captures), so
       // failures are logged, not thrown. `critical` raises the level so an authoritative frame
@@ -273,7 +277,49 @@ async function persistAndPublishIfAbsent(
   return true;
 }
 
+/** Thrown by a fenced write whose fence no longer holds: the caller's claim on the run is
+ *  gone, so nothing was written. Propagated to the caller (fenced writes are `required`). */
+export class CaptureFenceError extends Error {
+  constructor(runId: string) {
+    super(`capture fence lost for run ${runId}`);
+  }
+}
+
+/** Ownership predicate a fenced write runs INSIDE its own transaction, before the row is
+ *  written; it should lock what it checks (a `select ... for update` on the claim row) so
+ *  ownership and persistence are one atomic step. */
+export type WriteFence = (tx: Executor) => Promise<boolean>;
+
 async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): Promise<void> {
+  const frame = await persistFrame(input, seq, db);
+  publishNativeFrame(input.runId, frame);
+}
+
+/** A write whose durability is conditional on `fence` holding at the moment of the write:
+ *  the fence and the upsert share one transaction, so a competing claim on the fenced row
+ *  either waits behind the lock or has already moved on, and a stale writer cannot land
+ *  anything. The frame is published only after the transaction commits. */
+async function persistFencedAndPublish(
+  input: ProviderEventInput,
+  seq: RunSequencer,
+  fence: WriteFence,
+): Promise<void> {
+  const frame = await db.transaction(async (tx) => {
+    if (!(await fence(tx))) throw new CaptureFenceError(input.runId);
+    return persistFrame(input, seq, tx);
+  });
+  publishNativeFrame(input.runId, frame);
+}
+
+/** Persist one frame (idempotent upsert by native identity, then the additive graph write)
+ *  on `exec` and return the frame to publish. Live-push happens in the caller AFTER the
+ *  persist has committed, so a subscriber never sees a frame that isn't durable; inside the
+ *  serial chain, so frames go out in ascending seq order (the reconnect cursor's guarantee). */
+async function persistFrame(
+  input: ProviderEventInput,
+  seq: RunSequencer,
+  exec: Executor,
+): Promise<ReturnType<typeof makeNativeFrame>> {
   if (seq.nextSeq === null) seq.nextSeq = (await highestSeq(input.runId)) + 1;
   const assignedSeq = seq.nextSeq++;
 
@@ -281,7 +327,7 @@ async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): 
   if (input.payload !== undefined) {
     payload = serializeProviderPayload(input.payload, providerPayloadCapBytes(input));
   }
-  await db
+  await exec
     .insert(providerEvents)
     .values({
       id: input.id,
@@ -320,26 +366,19 @@ async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): 
   // Graph writes are additive and fail-open. They happen only after the native
   // event is durable and before live publication, preserving one observed order.
   if (executionGraphWriteEnabled()) {
-    await shadowWriteExecutionGraph(input, assignedSeq);
+    await shadowWriteExecutionGraph(input, assignedSeq, exec);
   }
 
-  // Live-push the versioned native frame to any SSE subscriber (north star
-  // "Canonical Events"). AFTER the persist, so a subscriber never sees a frame
-  // that isn't durable; and inside the serial chain, so frames go out in ascending
-  // seq order — the guarantee the reconnect cursor relies on.
-  publishNativeFrame(
-    input.runId,
-    makeNativeFrame({
-      eventId: input.id,
-      seq: assignedSeq,
-      provider: input.provider,
-      eventType: input.eventType,
-      sessionId: input.nativeSessionId ?? null,
-      parentSessionId: input.nativeParentSessionId ?? null,
-      messageId: input.nativeMessageId ?? null,
-      partId: input.nativePartId ?? null,
-      callId: input.nativeCallId ?? null,
-      payloadText: payload,
-    }),
-  );
+  return makeNativeFrame({
+    eventId: input.id,
+    seq: assignedSeq,
+    provider: input.provider,
+    eventType: input.eventType,
+    sessionId: input.nativeSessionId ?? null,
+    parentSessionId: input.nativeParentSessionId ?? null,
+    messageId: input.nativeMessageId ?? null,
+    partId: input.nativePartId ?? null,
+    callId: input.nativeCallId ?? null,
+    payloadText: payload,
+  });
 }

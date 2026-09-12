@@ -136,6 +136,17 @@ describe("claims are leased and never shared", () => {
     expect(row?.attempts).toBe(1);
   });
 
+  test("a fenced delete inside a transaction that rolls back leaves the row parked", async () => {
+    const runId = uid("run");
+    await enqueueReconcile(parkInput(runId));
+    const [c] = await claimDueReconciles(1);
+    await expect(db.transaction(async (tx) => {
+      expect(await deleteReconcile(runId, c!.leaseUntil, tx)).toBe(true);
+      throw new Error("finalization aborted");
+    })).rejects.toThrow("finalization aborted");
+    expect(await getReconcile(runId)).not.toBeNull();
+  });
+
   test("two claims running at once split the due rows instead of sharing them", async () => {
     const ids = Array.from({ length: 6 }, () => uid("run"));
     for (const id of ids) await enqueueReconcile(parkInput(id));
