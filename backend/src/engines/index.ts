@@ -32,6 +32,9 @@ import type { RuntimeEngineId } from "./runtime-orchestration";
 import { sessionCapabilities } from "./capabilities";
 import { piAdapter } from "./pi-adapter";
 import { piHarness, piProviderDriver } from "./pi-provider-driver";
+import type { SandboxProviderKind } from "@useagent/sandbox-contract";
+import { resolveSandboxBindingForRun } from "../sandboxes/binding";
+import { sandboxPlugin } from "../sandboxes/plugins";
 
 // Build the ACP compatibility adapters before registering them beside native
 // ProviderDriver execution. `mock` is NOT registered here — it
@@ -202,6 +205,7 @@ export function resolveProviderDriver(
   provider: string,
   ctx?: Pick<EngineRunContext, "runId" | "threadId">,
   env: Readonly<Record<string, string | undefined>> = process.env,
+  sandboxKind?: SandboxProviderKind,
 ): ProviderDriver | undefined {
   const registration = resolveProviderRegistration(provider);
   if (!registration) return undefined;
@@ -209,7 +213,8 @@ export function resolveProviderDriver(
   return ctx &&
     isRuntimeEngineId(canonicalProvider) &&
     runtimeAdapterEngineSelected(canonicalProvider, env) &&
-    runtimeAdapterSelected(ctx, env)
+    runtimeAdapterSelected(ctx, env) &&
+    (sandboxKind === undefined || sandboxPlugin(sandboxKind).runsAsRoot)
     ? t3ProviderDrivers[canonicalProvider]
     : registration.driver;
 }
@@ -249,7 +254,17 @@ export async function runProviderTurn(
   ctx: EngineRunContext,
 ): Promise<boolean> {
   const registration = resolveProviderRegistration(provider);
-  const driver = resolveProviderDriver(provider, ctx);
+  const selected = resolveProviderDriver(provider, ctx);
+  // The resident T3 image is a root-runtime capability, not an engine trait.
+  // Non-root computers use the provider-native adapter that discovers $HOME.
+  const driver = selected?.descriptor.protocol.name === "t3-orchestration"
+    ? resolveProviderDriver(
+        provider,
+        ctx,
+        process.env,
+        (await resolveSandboxBindingForRun(ctx)).kind,
+      )
+    : selected;
   if (!registration || !driver) return false;
 
   if (driver.descriptor.protocol.name === "t3-orchestration") {

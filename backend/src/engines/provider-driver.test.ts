@@ -202,6 +202,26 @@ describe("production provider registry", () => {
     expect(validateProviderDriver(driver)).toEqual({ status: "ok" });
   });
 
+  test("keeps non-root sandbox providers on their provider-native driver", () => {
+    const ctx = { runId: "run-provider-layout", threadId: "thread-provider-layout" };
+    const env = {
+      T3_RUN_ADAPTER_ENABLED: "true",
+      T3_RUN_ADAPTER_MODE: "all",
+      T3_RUN_ADAPTER_ENGINES: "claude,codex,opencode",
+    };
+
+    for (const engine of ["claude", "codex", "opencode"] as const) {
+      expect(
+        resolveProviderDriver(engine, ctx, env, "box")?.descriptor.protocol.name,
+      ).not.toBe("t3-orchestration");
+      for (const kind of ["cube", "daytona"] as const) {
+        expect(
+          resolveProviderDriver(engine, ctx, env, kind)?.descriptor.protocol.name,
+        ).toBe("t3-orchestration");
+      }
+    }
+  });
+
   test("selects Claude's runtime driver while preserving ACP as the config rollback", () => {
     const ctx = { runId: "run-claude", threadId: "thread-claude" };
     const enabled = resolveProviderDriver("claude", ctx, {
