@@ -36,6 +36,7 @@ export interface CapabilityCatalogOptions {
   readonly gcsConfigured?: boolean;
   readonly childSessionsConfigured?: boolean;
   readonly productChildThreadsConfigured?: boolean;
+  readonly botsConfigured?: boolean;
 }
 
 export interface CapabilityCatalogModel {
@@ -110,6 +111,8 @@ export interface CapabilityCatalogTool {
 export interface CapabilityCatalog {
   readonly version: typeof CAPABILITY_CATALOG_VERSION;
   readonly scope: "pre_run";
+  /** Bots surface (preset + home thread) is on for this org. */
+  readonly bots: boolean;
   readonly engines: readonly CapabilityCatalogEngine[];
   readonly tools: {
     readonly gatewayConfigured: boolean;
@@ -221,6 +224,7 @@ export function buildCapabilityCatalog(options: CapabilityCatalogOptions): Capab
   return {
     version: CAPABILITY_CATALOG_VERSION,
     scope: "pre_run",
+    bots: options.botsConfigured === true,
     engines: USER_FACING_ENGINES.map((engine) =>
       buildEngine(engine, env, options.gatewayConfigured),
     ),

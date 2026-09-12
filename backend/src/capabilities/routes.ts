@@ -5,6 +5,7 @@ import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { gcsConfiguredForOrg } from "../knowledge/gateway/gcs-tools";
 import { providerGatewayConfig } from "../provider-gateway/config";
 import { productChildThreadsEnabled } from "../runs/thread-relationship-rollout";
+import { botsEnabled } from "../bots/rollout";
 import { orgScope } from "../middleware/org";
 import { buildCapabilityCatalog, type CapabilityCatalog } from "./catalog";
 
@@ -28,6 +29,7 @@ export function createCapabilityCatalogRoutes(
       gcsConfigured: await gcsConfiguredForOrg(c.get("orgId")),
       childSessionsConfigured: gatewayConfigured,
       productChildThreadsConfigured: productChildThreadsEnabled(c.get("orgId")),
+      botsConfigured: botsEnabled(c.get("orgId")),
     }));
   });
   return routes;

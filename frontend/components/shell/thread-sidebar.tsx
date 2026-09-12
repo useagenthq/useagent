@@ -1,5 +1,6 @@
 import { RiAddLine, RiBookShelfLine, RiDashboardLine, RiSettings3Line } from "@remixicon/react";
 
+import { BotsNavItem } from "./bots-nav-item";
 import { SearchCommand } from "./search-command";
 import { SidebarBrand } from "./sidebar-brand";
 import { Sidebar, SidebarNavItem } from "./sidebar-nav";
@@ -8,7 +9,7 @@ import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 import { WorkingProjectStatus } from "./working-project-status";
 
-export type ThreadSidebarActive = "new" | "dashboard" | "library" | "settings";
+export type ThreadSidebarActive = "new" | "dashboard" | "bots" | "library" | "settings";
 
 function ThreadSidebarFooter({ active }: { active?: ThreadSidebarActive }) {
   return (
@@ -50,6 +51,7 @@ export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
         active={active === "dashboard"}
         trailing={<WorkingProjectStatus />}
       />
+      <BotsNavItem active={active === "bots"} />
       <SidebarNavItem
         href="/skills"
         icon={RiBookShelfLine}
