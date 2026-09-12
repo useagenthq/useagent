@@ -150,7 +150,10 @@ describe("shared theme tokens", () => {
   test("Dusk participates in every shared dark-theme behavior", () => {
     expectSharedDarkRuleIncludesDusk(".dark,", ".dusk");
     expectSharedDarkRuleIncludesDusk(".dark .bg-halftone,", ".dusk .bg-halftone");
-    expectSharedDarkRuleIncludesDusk(".dark .shiki,", ".dusk .shiki");
+    // Dusk deliberately leaves the shared shiki swap: its ramp is Tokyo Night,
+    // so it carries a dedicated `--shiki-dusk` palette rule instead.
+    expect(extractSelectorList(".dusk .shiki,")).toContain(".dusk .shiki span");
+    expect(extractBlock(".dusk .shiki,")).toContain("var(--shiki-dusk)");
     expectSharedDarkRuleIncludesDusk("html.dark,", "html.dusk");
     expectSharedDarkRuleIncludesDusk(".dark .theme-logo-light,", ".dusk .theme-logo-light");
     expectSharedDarkRuleIncludesDusk(".dark .theme-asset-light,", ".dusk .theme-asset-light");
@@ -174,6 +177,37 @@ describe("shared theme tokens", () => {
       "waitlist",
     ]) {
       expectSharedDarkRuleIncludesDusk(`.dark .shadow-${shadow},`, `.dusk .shadow-${shadow}`);
+    }
+  });
+
+  test("Dusk status chips clear AA on the raised panel", () => {
+    // Chip text sits on a 12% tint of itself over the raised panel (#252838).
+    // The ramp's 24% alpha put red / purple / yellow under 4.5:1.
+    // `.dusk {` appears twice (ramp block, then component overlay): take the
+    // overlay, the block that actually defines the status tokens.
+    const duskComponentTokens = extractBlocks(".dusk {")
+      .map(parseTokens)
+      .find((tokens) => tokens["--color-status-lime-background"]);
+    expect(duskComponentTokens).toBeDefined();
+    const panel = "#252838";
+    const blend = (hex: string, alpha: number): string => {
+      const channel = (offset: number): string => {
+        const fg = parseInt(hex.slice(offset, offset + 2), 16);
+        const bg = parseInt(panel.slice(offset, offset + 2), 16);
+        return Math.round(fg * alpha + bg * (1 - alpha)).toString(16).padStart(2, "0");
+      };
+      return `#${channel(1)}${channel(3)}${channel(5)}`;
+    };
+    for (const [token, hex] of [
+      ["--color-status-lime-background", "#9ece6a"],
+      ["--color-status-rose-background", "#f7768e"],
+      ["--color-status-yellow-background", "#e0af68"],
+      ["--color-status-blue-background", "#8ec5ff"],
+      ["--color-status-cyan-background", "#7dcfff"],
+      ["--color-status-purple-background", "#bb9af7"],
+    ] as const) {
+      expect(duskComponentTokens?.[token]).toMatch(/\/ 12%\)$/);
+      expect(contrast(hex, blend(hex, 0.12))).toBeGreaterThanOrEqual(4.5);
     }
   });
 

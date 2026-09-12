@@ -2367,43 +2367,46 @@ html {
   --color-button-ghost-disabled:            hsl(var(--neutral-700));
   --color-button-ghost-disabled-foreground: hsl(var(--neutral-300));
 
-  /* Table status chips (lime->green, rose->red, cyan->sky, indigo->purple) */
-  --color-status-lime-background:   hsl(var(--green-alpha-24));
+  /* Table status chips (lime->green, rose->red, cyan->sky, indigo->purple).
+   * Tints are the TEXT color at 12%, not the ramp's 24% alpha: Dusk's red /
+   * purple / yellow text fell under 4.5:1 on a 24% tint of themselves
+   * (3.7 / 4.0 / 4.4 on the raised panel); 12% clears AA for every pair. */
+  --color-status-lime-background:   hsl(var(--green-400) / 12%);
   --color-status-lime-text:         hsl(var(--green-400));
-  --color-status-rose-background:   hsl(var(--red-alpha-24));
+  --color-status-rose-background:   hsl(var(--red-400) / 12%);
   --color-status-rose-text:         hsl(var(--red-400));
-  --color-status-yellow-background: hsl(var(--yellow-alpha-24));
+  --color-status-yellow-background: hsl(var(--yellow-400) / 12%);
   --color-status-yellow-text:       hsl(var(--yellow-400));
-  --color-status-blue-background:   hsl(var(--blue-alpha-24));
+  --color-status-blue-background:   hsl(var(--blue-300) / 12%);
   --color-status-blue-text:         hsl(var(--blue-300));
-  --color-status-cyan-background:   hsl(var(--sky-alpha-24));
+  --color-status-cyan-background:   hsl(var(--sky-400) / 12%);
   --color-status-cyan-text:         hsl(var(--sky-400));
-  --color-status-purple-background: hsl(var(--purple-alpha-24));
+  --color-status-purple-background: hsl(var(--purple-400) / 12%);
   --color-status-purple-text:       hsl(var(--purple-400));
   --color-status-dot-green-halo:    hsl(var(--green-alpha-24));
   --color-status-dot-indigo-halo:   hsl(var(--purple-alpha-24));
   --color-status-dot-yellow-halo:   hsl(var(--yellow-alpha-24));
 
-  --color-notification-error-background:       hsl(var(--red-alpha-24));
+  --color-notification-error-background:       hsl(var(--red-400) / 12%);
   --color-notification-error-foreground:       hsl(var(--red-400));
   --color-notification-information-background: color-mix(in srgb, hsl(var(--blue-800)) 50%, transparent);
   --color-notification-information-foreground: hsl(var(--blue-300));
-  --color-notification-success-background:     hsl(var(--green-alpha-24));
+  --color-notification-success-background:     hsl(var(--green-400) / 12%);
   --color-notification-success-foreground:     hsl(var(--green-400));
 
-  --color-calendar-event-blue-background:    hsl(var(--blue-alpha-24));
+  --color-calendar-event-blue-background:    hsl(var(--blue-300) / 12%);
   --color-calendar-event-blue-time:          hsl(var(--blue-300));
   --color-calendar-event-blue-title:         hsl(var(--blue-300));
-  --color-calendar-event-emerald-background: hsl(var(--teal-alpha-24));
+  --color-calendar-event-emerald-background: hsl(var(--teal-400) / 12%);
   --color-calendar-event-emerald-time:       hsl(var(--teal-400));
   --color-calendar-event-emerald-title:      hsl(var(--teal-400));
-  --color-calendar-event-lime-background:    hsl(var(--green-alpha-24));
+  --color-calendar-event-lime-background:    hsl(var(--green-400) / 12%);
   --color-calendar-event-lime-time:          hsl(var(--green-400));
   --color-calendar-event-lime-title:         hsl(var(--green-400));
-  --color-calendar-event-pink-background:    hsl(var(--pink-alpha-24));
+  --color-calendar-event-pink-background:    hsl(var(--pink-400) / 12%);
   --color-calendar-event-pink-time:          hsl(var(--pink-400));
   --color-calendar-event-pink-title:         hsl(var(--pink-400));
-  --color-calendar-event-purple-background:  hsl(var(--purple-alpha-24));
+  --color-calendar-event-purple-background:  hsl(var(--purple-400) / 12%);
   --color-calendar-event-purple-time:        hsl(var(--purple-400));
   --color-calendar-event-purple-title:       hsl(var(--purple-400));
 
