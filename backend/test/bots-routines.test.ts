@@ -8,7 +8,9 @@ import { botFiringTarget, composeRootPrompt } from "../src/bots/repo";
 import { APPROVAL_REQUEST_TTL_MS, BOT_REQUEST_TTL_MS, createApprovalRequest } from "../src/knowledge/gateway/approval-requests";
 import { acceptExistingThreadFollowup } from "../src/runs/thread-followups";
 import { fireScheduleWithOutcome, firingKey } from "../src/schedules/fire";
-import { getScheduleForOrg } from "../src/schedules/repo";
+import { getScheduleForOrg, listEnabledSchedules } from "../src/schedules/repo";
+import { tick } from "../src/schedules/scheduler";
+import { fireScheduleForOrg } from "../src/schedules/service";
 import { AUTOMATION_RUN_ORIGIN } from "../src/runs/origin";
 import { createOrgSession, fetchApi, json, waitFor } from "./helpers";
 
@@ -102,6 +104,38 @@ describe("bot routines", () => {
     expect(removed.status).toBe(204);
     const gone = await json<{ routines: RoutineBody[] }>(`/api/bots/${bot.id}/routines`, { cookies });
     expect(gone.body.routines).toEqual([]);
+  });
+
+  test("BOTS=off stops routines from firing until the switch flips back", async () => {
+    const { cookies, orgId } = await createOrgSession("bot-routines-off");
+    const bot = await createBot(cookies, "Sentry");
+    const created = await json<{ routine: RoutineBody }>(`/api/bots/${bot.id}/routines`, {
+      method: "POST",
+      cookies,
+      body: { name: "Every minute", cron: "* * * * *", prompt: "Check the queue." },
+    });
+    expect(created.status).toBe(201);
+    const record = (await listEnabledSchedules()).find((s) => s.id === created.body.routine.id);
+    expect(record).toBeTruthy();
+
+    process.env.BOTS = "off";
+    try {
+      await tick(new Date());
+      const whileOff = await db.select({ id: runs.id }).from(runs).where(eq(runs.orgId, orgId));
+      expect(whileOff).toEqual([]);
+      await expect(fireScheduleForOrg(record!, "manual")).rejects.toMatchObject({
+        status: 409,
+        body: { error: "bots_disabled" },
+      });
+    } finally {
+      process.env.BOTS = "1";
+    }
+
+    await tick(new Date());
+    const afterOn = await db.select({ threadId: runs.threadId }).from(runs).where(eq(runs.orgId, orgId));
+    expect(afterOn).toHaveLength(1);
+    const after = await json<{ bot: BotBody }>(`/api/bots/${bot.id}`, { cookies });
+    expect(after.body.bot.homeThreadId).toBe(afterOn[0]?.threadId ?? null);
   });
 
   test("routines are scoped to their bot and validated like automations", async () => {

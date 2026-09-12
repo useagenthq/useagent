@@ -11,3 +11,12 @@ export function botsEnabled(
   const value = (env.BOTS ?? "").trim().toLowerCase();
   return !(value === "off" || value === "0" || value === "false");
 }
+
+/** A bot routine asked to fire while bots are switched off. */
+export class BotsDisabledError extends Error {
+  readonly code = "bots_disabled" as const;
+  constructor(scheduleId: string) {
+    super(`bot routine ${scheduleId} does not fire while BOTS=off`);
+    this.name = "BotsDisabledError";
+  }
+}

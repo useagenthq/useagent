@@ -27,6 +27,7 @@ import {
   composeRootPrompt,
   setBotHomeThread,
 } from "../bots/repo";
+import { BotsDisabledError, botsEnabled } from "../bots/rollout";
 import { acceptExistingThreadFollowup } from "../runs/thread-followups";
 import type { MemoryScope } from "../memory/scope";
 import { getRunForOrg } from "../runs/repo";
@@ -84,6 +85,9 @@ export async function fireScheduleWithOutcome(
   trigger: ScheduleTrigger,
   occurrence: Date = new Date(),
 ): Promise<ScheduleFireOutcome> {
+  // The kill switch covers routines: with bots off, a bot's schedule does not
+  // run at all (not even as a plain root), so "off" also means no spend.
+  if (schedule.botId && !botsEnabled(schedule.orgId)) throw new BotsDisabledError(schedule.id);
   await resolveExecutableSkillPin(
     {
       skillId: schedule.skillId,
