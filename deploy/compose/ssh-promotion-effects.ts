@@ -21,6 +21,7 @@ export interface SshPromotionConfig {
 	readonly sshHost: string;
 	readonly sshKey: string | null;
 	readonly sshConfig: string | null;
+	readonly sshControlPath: string;
 	readonly appDomain: string;
 	readonly gatewayDomain: string;
 	readonly publicGatewayUrl: string;
@@ -125,9 +126,11 @@ export class RemoteHost {
 			"-o",
 			"ServerAliveInterval=15",
 			"-o",
-			"ControlMaster=no",
+			"ControlMaster=auto",
 			"-o",
-			"ControlPath=none",
+			"ControlPersist=60",
+			"-o",
+			`ControlPath=${this.#config.sshControlPath}`,
 			this.#config.sshHost,
 		];
 	}
@@ -148,7 +151,7 @@ export class RemoteHost {
 			`${timeoutSeconds(timeoutMs)}s sh -c ${shellQuote(command)}`;
 		return runProcess([...this.sshArgs(), bounded], {
 			...options,
-			timeoutMs,
+			timeoutMs: Math.min(remainingMs, timeoutMs + 5_000),
 		});
 	}
 
@@ -225,7 +228,7 @@ export class RemoteHost {
 			const exited = await Promise.race([
 				child.exited.then(() => true),
 				new Promise<false>((resolve) => {
-					timer = setTimeout(() => resolve(false), 5_000);
+					timer = setTimeout(() => resolve(false), 1_000);
 				}),
 			]).finally(() => {
 				if (timer) clearTimeout(timer);
