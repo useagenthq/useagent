@@ -4,6 +4,21 @@
  * Manual because it creates one Daytona sandbox:
  *   LIVE_ARTIFACT_E2E=1 bun test/e2e/artifact-delivery-live.ts
  *
+ * Environment:
+ *   DAYTONA_API_KEY (+ DAYTONA_TARGET)  the sandbox provider; the default
+ *                                       snapshot is used unless DAYTONA_SNAPSHOT is set
+ *   TEST_ADMIN_URL                      admin connection for CREATE/DROP DATABASE
+ *                                       (default postgres://postgres@localhost:5432/postgres);
+ *                                       the throwaway database lives on this server
+ *   LIVE_ARTIFACT_DATABASE              throwaway database name (default
+ *                                       useagent_artifact_live_<random>); it is
+ *                                       created here and dropped on exit
+ *   LIVE_ARTIFACT_PORT                  backend port (default a random 35xxx port)
+ *
+ * The proof writes its source file under the artifact workspace root the publish
+ * capability enforces (ARTIFACT_WORKSPACE_ROOT in src/artifacts/publish.ts); any
+ * other sandbox path is refused by design, so the path is taken from that constant.
+ *
  * Safety: the journey owns a uniquely named throwaway database, a temporary
  * artifact directory, and exactly one labeled sandbox. Cleanup deletes and
  * API-verifies only those resources, even after a failed assertion.
@@ -23,8 +38,11 @@ if (process.env.LIVE_ARTIFACT_E2E !== "1") {
 }
 
 const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-const databaseName = `useagent_artifact_live_${suffix}`;
-const port = 35_000 + Math.floor(Math.random() * 500);
+const databaseName = process.env.LIVE_ARTIFACT_DATABASE?.trim() || `useagent_artifact_live_${suffix}`;
+if (!/^[a-z_][a-z0-9_]{0,62}$/i.test(databaseName)) {
+  throw new Error(`LIVE_ARTIFACT_DATABASE must be a plain database identifier, got "${databaseName}"`);
+}
+const port = Number(process.env.LIVE_ARTIFACT_PORT ?? 35_000 + Math.floor(Math.random() * 500));
 const baseUrl = `http://127.0.0.1:${port}`;
 const adminUrl = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
 const databaseUrl = new URL(adminUrl);
@@ -115,10 +133,14 @@ try {
   });
   check(Date.now() - provisionStartedAt < 30_000, "Daytona sandbox provisioned within 30 seconds");
 
-  const sourcePath = "/home/daytona/work/outputs/daytona-proof.txt";
+  // Publish refuses any path outside the workspace root, so write where the
+  // capability can read (imported after DATABASE_URL is set, like the tools).
+  const { ARTIFACT_WORKSPACE_ROOT } = await import("../../src/artifacts/publish");
+  const sourceDir = `${ARTIFACT_WORKSPACE_ROOT}/outputs`;
+  const sourcePath = `${sourceDir}/daytona-proof.txt`;
   const encoded = expected.toString("base64");
   const write = await sandbox.process.executeCommand(
-    `mkdir -p /home/daytona/work/outputs && printf %s ${encoded} | base64 -d > ${sourcePath}`,
+    `mkdir -p ${sourceDir} && printf %s ${encoded} | base64 -d > ${sourcePath}`,
     undefined,
     undefined,
     20,
@@ -134,6 +156,8 @@ try {
     userId: null,
     parentRunId: null,
     threadId: runId,
+    repos: [],
+    memoryScope: "org",
   });
   await setRunSandbox(runId, sandbox.id);
 
@@ -143,6 +167,7 @@ try {
     userId: "user-skynet-dev",
     threadId: runId,
     runId,
+    scope: "run",
     exp: Date.now() + 60_000,
   };
   const published = await executeArtifactTool(claims, "artifact_publish", {
@@ -211,6 +236,7 @@ try {
     updateMessage: async () => ({ ok: true }),
     addReaction: async () => ({ ok: true }),
     setSessionStatus: async () => ({ ok: true }),
+    setThreadStatus: async () => ({ ok: true }),
     startStream: async () => ({ ok: true, ts: "stream.1" }),
     appendStream: async () => ({ ok: true }),
     stopStream: async () => ({ ok: true }),

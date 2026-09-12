@@ -8,6 +8,16 @@
  *
  *   bun run test/e2e/thread-stream-proof.ts
  *
+ * Environment (defaults in parentheses):
+ *   TEST_ADMIN_URL   admin connection for CREATE/DROP DATABASE; the throwaway
+ *                    database is created on this same server and the backend is
+ *                    pointed at it there (postgres://postgres@localhost:5432/postgres)
+ *   TS_BE_PORT       backend port (3577)
+ *   TS_FE_PORT       frontend port (3477)
+ *   TS_SHOTS         screenshot directory (/tmp/thread-e2e-shots/)
+ *   The frontend is booted with USEAGENT_PREVIEW_OPEN=1 so /session/:id renders
+ *   without a login redirect; the backend has ALLOW_DEV_ORG=1 for the same reason.
+ *
  * Isolation + safety (never the shared `useagent` DB or the shared :3401/:3501 servers):
  *   - PREFLIGHT: both ports must be FREE before any DB mutation or spawn; if either
  *     is occupied the run aborts WITHOUT killing anything (it never assumes the PID
@@ -43,6 +53,9 @@ const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5
 // Per-run unique db so concurrent runs never collide and a DROP can only ever hit
 // this run's own database.
 const DB = `skynet_thread_e2e_${crypto.randomUUID().slice(0, 8).replace(/-/g, "")}`;
+// The backend connects to the database on the SAME server the admin URL created
+// it on; only the path differs.
+const DB_URL = (() => { const url = new URL(ADMIN_URL); url.pathname = `/${DB}`; return url.toString(); })();
 const SHOTS = process.env.TS_SHOTS ?? "/tmp/thread-e2e-shots/";
 const backendRoot = join(import.meta.dir, "..", "..");
 const frontendRoot = join(backendRoot, "..", "frontend");
@@ -337,7 +350,7 @@ async function main(): Promise<void> {
   backend = Bun.spawn(["bun", "run", "src/index.ts"], {
     cwd: backendRoot,
     env: childEnv({
-      DATABASE_URL: `postgres://postgres@localhost:5432/${DB}`,
+      DATABASE_URL: DB_URL,
       PORT: String(BE_PORT),
       WORKER_STEP_DELAY_MS: "1000",
       ALLOW_DEV_ORG: "1",
@@ -353,7 +366,9 @@ async function main(): Promise<void> {
   console.log(`[thread-stream-proof] booting frontend :${FE_PORT} (next dev -> :${BE_PORT})`);
   frontend = Bun.spawn(["bunx", "next", "dev", "-p", String(FE_PORT)], {
     cwd: frontendRoot,
-    env: childEnv({ USEAGENT_API_ORIGIN: BE, PORT: String(FE_PORT) }),
+    // USEAGENT_PREVIEW_OPEN keeps /session/:id from redirecting to /login on the
+    // dev-org stack this proof drives anonymously.
+    env: childEnv({ USEAGENT_API_ORIGIN: BE, PORT: String(FE_PORT), USEAGENT_PREVIEW_OPEN: "1" }),
     stdout: Bun.file("/tmp/thread-e2e-frontend.log"),
     stderr: Bun.file("/tmp/thread-e2e-frontend.log"),
   });
