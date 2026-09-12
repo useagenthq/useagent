@@ -73,8 +73,11 @@ export const RUNTIME_EMPTY_TERMINAL_OUTPUT_ERROR = "provider completed without a
 // steering; if it does not land in time, fall back to a deterministic restart.
 const CODEX_BARRIER_DEADLINE_MS = 5_000;
 const CODEX_VERIFY_DEADLINE_MS = 8_000;
-const CLAUDE_BARRIER_DEADLINE_MS = 5_000;
-const CLAUDE_VERIFY_DEADLINE_MS = 8_000;
+// T3's authoritative Claude health check includes a 4s CLI version probe and
+// a prompt-free SDK initialization bounded at 25s. Leave scheduling margin
+// without adding a second CLI retry loop in Pro.
+const CLAUDE_BARRIER_DEADLINE_MS = 35_000;
+const CLAUDE_VERIFY_DEADLINE_MS = 35_000;
 
 interface RuntimeProviderBarrierDependencies {
   readonly awaitReady: typeof awaitRuntimeProviderReady;

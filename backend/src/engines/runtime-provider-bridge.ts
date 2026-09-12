@@ -41,6 +41,7 @@ const RUNTIME_CLAUDE_WRAPPER = `${RUNTIME_BIN_DIRECTORY}/claude`;
 const RUNTIME_CLAUDE_ACCESS_HELPER = `${RUNTIME_BIN_DIRECTORY}/prepare-claude-access`;
 const RUNTIME_CLAUDE_WRAPPER_PLACEHOLDER = "__USEAGENT_T3_CLAUDE_WRAPPER__";
 const CLAUDE_STATUS_CACHE_PATH = `${RUNTIME_ENVIRONMENT_HOME}/caches/claudeAgent.json`;
+const CLAUDE_BOOTSTRAP_MARKER_PATH = `${RUNTIME_ENVIRONMENT_HOME}/caches/useagent-claude-bootstrap`;
 const CLAUDE_READY_POLL_MS = 150;
 const NATIVE_VERSION_PROBE_ATTEMPTS = 3;
 const NATIVE_VERSION_PROBE_DELAYS_MS = [250, 500] as const;
@@ -56,6 +57,20 @@ const ROOT_RUNTIME_LAYOUT: SandboxRuntimeLayout = {
   workdir: RUNTIME_ENVIRONMENT_WORKDIR,
   runsAsRoot: true,
 };
+
+const CLAUDE_INSTALL_IDENTITY_SCRIPT = [
+  'const fs=require("node:fs"),path=require("node:path")',
+  'const binary=process.argv[1],packageDirectory=process.argv[2],expectedVersion=process.argv[3],diagnostic=process.argv[4]==="diagnostic"',
+  'try{const packageRoot=fs.realpathSync(packageDirectory);const manifest=JSON.parse(fs.readFileSync(path.join(packageRoot,"package.json"),"utf8"));const binEntry=typeof manifest.bin==="string"?manifest.bin:manifest.bin?.claude;const binaryReal=fs.realpathSync(binary);const nodeModulesRoot=path.resolve(packageRoot,"../..");const isPlatformPackage=name=>name.startsWith("@anthropic-ai/claude-code-darwin-")||name.startsWith("@anthropic-ai/claude-code-linux-")||name.startsWith("@anthropic-ai/claude-code-win32-");const allowedRoots=[packageRoot,...Object.entries(manifest.optionalDependencies??{}).filter(([name,version])=>isPlatformPackage(name)&&version===expectedVersion).flatMap(([name])=>{try{const root=fs.realpathSync(path.join(nodeModulesRoot,name));const dependency=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));return dependency.name===name&&dependency.version===expectedVersion?[root]:[]}catch{return []}})];const contained=allowedRoots.some(root=>{const relative=path.relative(root,binaryReal);return relative!==""&&!relative.startsWith(".."+path.sep)&&!path.isAbsolute(relative)});fs.accessSync(binary,fs.constants.X_OK);if(manifest.name!=="@anthropic-ai/claude-code"||manifest.version!==expectedVersion||binEntry!=="bin/claude.exe"||!contained)throw new Error("identity_mismatch");process.exit(0)}catch{if(diagnostic)console.error("useagent-native-version-probe: install_identity_mismatch expected="+expectedVersion);process.exit(1)}',
+].join(";");
+
+export function buildClaudeInstallIdentityProbeCommand(
+  layout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT,
+  diagnostic = false,
+): string {
+  const prefix = layout.runsAsRoot ? "/usr/local" : `${layout.home}/.local`;
+  return `node -e ${JSON.stringify(CLAUDE_INSTALL_IDENTITY_SCRIPT)} ${JSON.stringify(`${prefix}/bin/claude`)} ${JSON.stringify(`${prefix}/share/useagent/native-engines/node_modules/@anthropic-ai/claude-code`)} ${JSON.stringify(CLAUDE_CODE_VERSION)} ${diagnostic ? "diagnostic" : "quiet"}`;
+}
 
 function runtimeBridgeLayout(sandbox: Pick<SandboxHandle, "providerKind">): SandboxRuntimeLayout {
   if (!sandbox.providerKind) return ROOT_RUNTIME_LAYOUT;
@@ -190,7 +205,23 @@ export function buildRuntimeProviderBootstrapCommand(
         }
       : null;
 
-  const installAndVerify = [
+  const installAndVerify = engine === "claude" ? [
+    `NATIVE_PREFIX=${JSON.stringify(prefix)}`,
+    `NATIVE_BINARY=${JSON.stringify(nativeBinary)}`,
+    `NATIVE_GLOBAL_DIR=${JSON.stringify(nativeGlobalDirectory)}`,
+    `NATIVE_PACKAGE=${JSON.stringify(nativePackage)}`,
+    `BUN_EXECUTABLE=${JSON.stringify(bunExecutable)}`,
+    `if ! ${buildClaudeInstallIdentityProbeCommand(layout)}; then`,
+    '  test -x "$BUN_EXECUTABLE" || command -v "$BUN_EXECUTABLE" >/dev/null 2>&1',
+    `  BUN_CACHE="$(mktemp -d "\${TMPDIR:-/tmp}/useagent-${engine}-bun.XXXXXX")"`,
+    '  cleanup_native_bun() { rm -rf -- "$BUN_CACHE"; }',
+    "  trap cleanup_native_bun EXIT HUP INT TERM",
+    '  BUN_INSTALL_CACHE_DIR="$BUN_CACHE" BUN_INSTALL_GLOBAL_DIR="$NATIVE_GLOBAL_DIR" BUN_INSTALL_BIN="$NATIVE_PREFIX/bin" "$BUN_EXECUTABLE" add --global --exact --no-progress "$NATIVE_PACKAGE"',
+    "  cleanup_native_bun",
+    "  trap - EXIT HUP INT TERM",
+    "fi",
+    buildClaudeInstallIdentityProbeCommand(layout, true),
+  ] : [
     `NATIVE_PREFIX=${JSON.stringify(prefix)}`,
     `NATIVE_BINARY=${JSON.stringify(nativeBinary)}`,
     `NATIVE_GLOBAL_DIR=${JSON.stringify(nativeGlobalDirectory)}`,
@@ -308,7 +339,8 @@ export function buildRuntimeProviderBootstrapCommand(
     `CLAUDE_WRAPPER="${RUNTIME_CLAUDE_WRAPPER}"`,
     `CLAUDE_ACCESS_HELPER="${RUNTIME_CLAUDE_ACCESS_HELPER}"`,
     `CLAUDE_CONFIG_DIR=${JSON.stringify(safeClaudeConfigDir)}`,
-    'install -d -m 700 "$BIN_DIR" "$(dirname "$SETTINGS")"',
+    `CLAUDE_BOOTSTRAP_MARKER=${JSON.stringify(CLAUDE_BOOTSTRAP_MARKER_PATH)}`,
+    'install -d -m 700 "$BIN_DIR" "$(dirname "$SETTINGS")" "$(dirname "$CLAUDE_BOOTSTRAP_MARKER")"',
     'if [ -L "$CLAUDE_CONFIG_DIR" ]; then rm -f -- "$CLAUDE_CONFIG_DIR"; fi',
     ...(layout.runsAsRoot
       ? [`install -d -o ${CLAUDE_RUNTIME_UID} -g ${CLAUDE_RUNTIME_GID} -m 700 "$CLAUDE_CONFIG_DIR"`]
@@ -317,16 +349,16 @@ export function buildRuntimeProviderBootstrapCommand(
     `printf %s '${encode(accessHelper)}' | base64 -d > "$CLAUDE_ACCESS_HELPER"`,
     'chmod 700 "$CLAUDE_WRAPPER" "$CLAUDE_ACCESS_HELPER"',
     `"$CLAUDE_ACCESS_HELPER" ${JSON.stringify(layout.workdir)}`,
+    `node -e 'require("node:fs").writeFileSync(process.argv[1],String(Date.now()),{mode:0o600})' "$CLAUDE_BOOTSTRAP_MARKER"`,
     `export PATCH_B64='${encode(JSON.stringify(settingsPatch))}'`,
     `node -e 'const fs=require("node:fs");const path=process.argv[1];const wrapper=process.argv[2];const patch=JSON.parse(Buffer.from(process.env.PATCH_B64,"base64").toString("utf8"));patch.config.binaryPath=wrapper;patch.instance.config.binaryPath=wrapper;let current={};try{current=JSON.parse(fs.readFileSync(path,"utf8"))}catch{};current.providers={...(current.providers??{}),[patch.provider]:patch.config};current.providerInstances={...(current.providerInstances??{}),[patch.provider]:patch.instance};const tmp=path+".tmp";fs.writeFileSync(tmp,JSON.stringify(current));fs.chmodSync(tmp,0o600);fs.renameSync(tmp,path)' "$SETTINGS" "$CLAUDE_WRAPPER"`,
   ].join("\n");
 }
 
-/** Probe the status cache rather than settings.json: the settings file only
- * proves that Pro wrote the gateway instance, while this marker proves T3
- * reconciled and published that exact instance. This is intentionally not a
- * provider-health gate: Claude's valid capability probe can take up to 29s,
- * and session startup owns that health/error path. */
+/** Probe T3's authoritative status cache rather than settings.json. The
+ * bootstrap marker is written immediately before the settings patch, so a
+ * matching cache entry must come from T3's post-bootstrap CLI + SDK health
+ * check rather than boot hydration of an older ready snapshot. */
 export function buildRuntimeProviderReadyProbeCommand(
   readiness: RuntimeProviderReadiness,
 ): string {
@@ -334,11 +366,15 @@ export function buildRuntimeProviderReadyProbeCommand(
     'const fs=require("node:fs")',
     "let v",
     'try{v=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch{process.exit(1)}',
-    `process.exit(v&&v.instanceId===${JSON.stringify(readiness.instanceId)}&&v.driver===${JSON.stringify(readiness.driver)}&&v.displayName===${JSON.stringify(readiness.displayName)}&&v.enabled===true&&v.availability!=="unavailable"?0:1)`,
+    'let marker',
+    'try{marker=Number(fs.readFileSync(process.argv[2],"utf8"))}catch{process.exit(1)}',
+    `const current=v&&v.instanceId===${JSON.stringify(readiness.instanceId)}&&v.driver===${JSON.stringify(readiness.driver)}&&v.displayName===${JSON.stringify(readiness.displayName)}&&v.enabled===true&&(v.availability===undefined||v.availability==="available")`,
+    'const fresh=current&&Number.isFinite(marker)&&Number.isFinite(Date.parse(v.checkedAt))&&Date.parse(v.checkedAt)>marker',
+    `process.exit(fresh&&v.installed===true&&v.version===${JSON.stringify(CLAUDE_CODE_VERSION)}&&v.status==="ready"&&v.auth?.status==="authenticated"?0:1)`,
   ].join(";");
   return [
     "set -eu",
-    `node -e ${JSON.stringify(script)} ${JSON.stringify(CLAUDE_STATUS_CACHE_PATH)}`,
+    `node -e ${JSON.stringify(script)} ${JSON.stringify(CLAUDE_STATUS_CACHE_PATH)} ${JSON.stringify(CLAUDE_BOOTSTRAP_MARKER_PATH)}`,
   ].join("\n");
 }
 
@@ -400,6 +436,7 @@ async function ensureRuntimeProviderBootstrap(
   sandbox: SandboxHandle,
   engine: RuntimeEngineId,
   command: string,
+  layout: SandboxRuntimeLayout,
 ): Promise<void> {
   const key: string | object = sandbox.id || sandbox;
   let sandboxStates = bootstrapStates.get(key);
@@ -408,7 +445,24 @@ async function ensureRuntimeProviderBootstrap(
     bootstrapStates.set(key, sandboxStates);
   }
   const current = sandboxStates.get(command);
-  if (current) return await current;
+  if (current) {
+    await current;
+    if (engine !== "claude") return;
+    const identity = await sandbox.process
+      .executeCommand(buildClaudeInstallIdentityProbeCommand(layout), undefined, undefined, 10)
+      .catch(() => null);
+    if (identity?.exitCode === 0) return;
+
+    // The sandbox or retained filesystem changed after bootstrap. Evict only
+    // this command's completed memo so the full exact Bun repair runs and
+    // writes a new health freshness fence before any provider dispatch.
+    const latest = sandboxStates.get(command);
+    if (latest !== current) {
+      if (latest) return await latest;
+    } else {
+      sandboxStates.delete(command);
+    }
+  }
 
   const operation = (async () => {
     const result = await sandbox.process.executeCommand(command, undefined, undefined, 180);
@@ -417,7 +471,7 @@ async function ensureRuntimeProviderBootstrap(
         .split(/\r?\n/)
         .find((line) => line.startsWith(NATIVE_VERSION_PROBE_DIAGNOSTIC_PREFIX));
       const safeDiagnostic = diagnostic?.match(
-        /^useagent-native-version-probe: (?:version_mismatch expected=[A-Za-z0-9 .+_-]{1,80}|probe_failed attempts=3 last_status=(?:-?\d+|none) error=[A-Za-z0-9._-]{1,40})$/,
+        /^useagent-native-version-probe: (?:install_identity_mismatch expected=[A-Za-z0-9.+_-]{1,80}|version_mismatch expected=[A-Za-z0-9 .+_-]{1,80}|probe_failed attempts=3 last_status=(?:-?\d+|none) error=[A-Za-z0-9._-]{1,40})$/,
       )?.[0];
       throw new Error(
         `the native ${engine} runtime bootstrap failed${safeDiagnostic ? `: ${safeDiagnostic}` : ""}`,
@@ -525,7 +579,7 @@ export async function prepareRuntimeProviderBridge(
     const authPath = codexBridgeAuthPath(subscription !== null);
     if (authPath === "subscription") {
       if (!subscription) throw new Error("codex_subscription_runtime_missing");
-      await ensureRuntimeProviderBootstrap(sandbox, engine, command);
+      await ensureRuntimeProviderBootstrap(sandbox, engine, command, layout);
       const lease = await prepareCodexSubscription({ sandbox, ctx, workdir, runtime: subscription });
       return {
         authPath: "subscription",
@@ -537,7 +591,7 @@ export async function prepareRuntimeProviderBridge(
     await prepareProviderGatewaySandbox(sandbox, ctx, engine);
   }
 
-  await ensureRuntimeProviderBootstrap(sandbox, engine, command);
+  await ensureRuntimeProviderBootstrap(sandbox, engine, command, layout);
   if (engine === "claude") {
     await prepareClaudeRuntimeAccess(sandbox, workdir);
     return {
@@ -565,7 +619,7 @@ export async function prewarmRuntimeProviderBridge(
       engine === "claude" ? claudeProviderGatewayEnvironment() : {},
       layout,
     );
-    await ensureRuntimeProviderBootstrap(sandbox, engine, command);
+    await ensureRuntimeProviderBootstrap(sandbox, engine, command, layout);
   }
 }
 
