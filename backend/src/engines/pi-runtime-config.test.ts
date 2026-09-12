@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -20,6 +20,7 @@ import {
   SANDBOX_GENERATION,
   SANDBOX_GENERATION_LABEL,
 } from "../provider-gateway/sandbox-config";
+import { buildSandboxBunInstallCommand, SANDBOX_BUN_VERSION } from "./sandbox-bun";
 
 const saved = { ...process.env };
 afterEach(() => {
@@ -48,19 +49,22 @@ describe("Pi runtime configuration", () => {
     });
   });
 
-  test("accepts an ambiguous install only after exact runtime verification", async () => {
+  test("repairs missing declared Cube Bun before accepting an ambiguous Pi install", async () => {
     const root = await mkdtemp(join(tmpdir(), "useagent-pi-install-"));
     const manifest = join(root, "manifest");
     const current = join(root, "current");
     const fakeBin = join(root, "bin");
-    const bunExecutable = join(fakeBin, "bun");
+    const uploaded = join(root, "uploaded-bun");
+    const bunExecutable = join(root, "usr/local/bin/bun");
     const executable = join(current, "pi.js");
     const lock = join(root, ".lock-sha256");
+    const hostArch = process.arch === "arm64" ? "arm64" : "x64";
     try {
       await Promise.all([
         mkdir(manifest),
         mkdir(current),
         mkdir(fakeBin),
+        mkdir(join(root, "usr/local/bin"), { recursive: true }),
       ]);
       await Promise.all([
         writeFile(
@@ -74,14 +78,37 @@ describe("Pi runtime configuration", () => {
         writeFile(executable, "current runtime\n"),
         writeFile(join(fakeBin, "npm"), "#!/bin/sh\nexit 42\n"),
         writeFile(
-          bunExecutable,
-          "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 1.3.14; else echo omp/18.0.3; fi\n",
+          uploaded,
+          `#!/bin/sh\nif [ "$1" = --version ]; then echo ${SANDBOX_BUN_VERSION}; else echo omp/${PI_CODING_AGENT_VERSION}; fi\n`,
         ),
+        writeFile(join(fakeBin, "uname"), [
+          "#!/bin/sh",
+          `test "$1" = -s && echo Linux || echo ${hostArch === "arm64" ? "aarch64" : "x86_64"}`,
+          "",
+        ].join("\n")),
+        writeFile(join(fakeBin, "stat"), [
+          "#!/bin/sh",
+          "for path do :; done",
+          "if /usr/bin/stat -c %a -- \"$path\" >/dev/null 2>&1; then exec /usr/bin/stat -c %a -- \"$path\"; fi",
+          "exec /usr/bin/stat -f %Lp \"$path\"",
+          "",
+        ].join("\n")),
       ]);
       await Promise.all([
         chmod(join(fakeBin, "npm"), 0o755),
-        chmod(bunExecutable, 0o755),
+        chmod(join(fakeBin, "uname"), 0o700),
+        chmod(join(fakeBin, "stat"), 0o700),
+        chmod(uploaded, 0o700),
       ]);
+
+      const sha256 = createHash("sha256").update(await readFile(uploaded)).digest("hex");
+      const layout = { home: root, workdir: join(root, "work"), runsAsRoot: true, bunExecutable };
+      expect(await Bun.file(bunExecutable).exists()).toBe(false);
+      const repaired = Bun.spawnSync(
+        ["sh", "-c", buildSandboxBunInstallCommand(layout, uploaded, hostArch, sha256)],
+        { env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` } },
+      );
+      expect(repaired.exitCode).toBe(0);
 
       const commands: string[] = [];
       await ensurePiRuntimeInstalled({
@@ -107,6 +134,8 @@ describe("Pi runtime configuration", () => {
           runtimeManifestDir: manifest,
         }),
       );
+      expect((await stat(bunExecutable)).mode & 0o777).toBe(0o755);
+      expect(commands[2]).toContain(`'${bunExecutable}' --version`);
       expect(await readFile(lock, "utf8")).toBe(`${PI_RUNTIME_LOCK_SHA256}\n`);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -350,6 +379,7 @@ describe("Pi runtime configuration", () => {
         userId: "user",
         model: "openai/gpt-5.6-sol",
         prompt: "clean user prompt",
+        signal: new AbortController().signal,
       } as never,
       "/home/user/work",
       {
@@ -372,6 +402,12 @@ describe("Pi runtime configuration", () => {
     const commandText = commands.join("\n");
     expect(commandText).toContain("/home/user/work");
     expect(commandText).toContain("/home/user/.useagent/pi-runtime");
+    expect(commandText).toContain(
+      "test -x '/usr/local/bin/bun' && test \"$(stat -c %a -- '/usr/local/bin/bun')\" = '755'",
+    );
+    expect(commandText.indexOf("test -x '/usr/local/bin/bun'")).toBeLessThan(
+      commandText.indexOf("/home/user/.useagent/pi-runtime/.lock-sha256"),
+    );
     expect(commandText).toContain("'/usr/local/bin/bun' --version | grep -Fxq '1.3.14'");
     expect(commandText.lastIndexOf(".lock-sha256")).toBeGreaterThan(
       commandText.indexOf("--version | grep -Fq '18.0.3'"),

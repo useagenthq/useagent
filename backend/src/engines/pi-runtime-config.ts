@@ -8,6 +8,7 @@ import {
   piToolGatewayDescriptor,
 } from "../provider-gateway/sandbox-config";
 import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
+import { ensureSandboxBun } from "./sandbox-bun";
 import type { EngineRunContext } from "./types";
 import { PI_BROKER_PORT, startPiCredentialBroker } from "./pi-credential-broker";
 
@@ -257,6 +258,9 @@ export async function preparePiRuntime(
     uploadPrivateFile(sandbox, `${runtimeManifestDir}/package.json`, runtimePackageJson),
     uploadPrivateFile(sandbox, `${runtimeManifestDir}/package-lock.json`, runtimeLockJson),
   ]);
+  if (layout.bunExecutable) {
+    await ensureSandboxBun(sandbox, layout, ctx.signal);
+  }
   const bunExecutable = layout.bunExecutable ?? `${runtimeRoot}/current/node_modules/.bin/bun`;
   const executable = `${runtimeRoot}/current/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`;
   await ensurePiRuntimeInstalled({
