@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { sandboxLeases } from "../db/schema";
 import type { WorkloadTier } from "../db/schema/fleet";
+import type { SandboxProviderKind } from "@useagent/sandbox-contract";
 
 // ---------------------------------------------------------------------------
 // Sandbox lease persistence. A lease is a durable capacity RESERVATION: it holds
@@ -156,12 +157,13 @@ export async function oldestReclaimableRetainedSandbox(
 /**
  * Clear retained mappings that a successful authoritative provider listing did
  * not return. Callers must not invoke this after a failed or partial listing.
- * The listing comes from the deployment's own provider, so only mappings
- * created with the deployment credential are cleared; a sandbox on a user's
- * personal computer is not in that listing and is reconciled when it is used.
+ * The listing comes from the deployment's current default provider. It is
+ * authoritative only for that provider's env mappings and legacy untyped
+ * mappings, never another recorded provider or a personal computer.
  */
 export async function clearMissingRetainedSandboxMappings(
   liveSandboxIds: ReadonlySet<string>,
+  deploymentProviderKind: SandboxProviderKind,
   exec: Executor = db,
 ): Promise<number> {
   const current = await listCurrentRetainedSandboxMappings(exec);
@@ -176,6 +178,7 @@ export async function clearMissingRetainedSandboxMappings(
     set sandbox_id = null, updated_at = now()
     where sandbox_id in (${sql.join(missing.map((id) => sql`${id}`), sql`, `)})
       and (sandbox_credential is null or sandbox_credential = 'env')
+      and (sandbox_provider is null or sandbox_provider = ${deploymentProviderKind})
     returning id`);
   return rows.length;
 }

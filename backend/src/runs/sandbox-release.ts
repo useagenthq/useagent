@@ -11,7 +11,10 @@ import {
 } from "./repo";
 import { withThreadLifecycleLock } from "./thread-lifecycle-lock";
 import { parseProviderSessionBinding } from "@useagent/agent-harness/canonical";
-import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
+import {
+  PersonalSandboxConnectionUnavailableError,
+  resolveSandboxBindingForSandbox,
+} from "../sandboxes/binding";
 
 export type SandboxReleaseResult =
   | { ok: true; released: false; reason: "no_sandbox" }
@@ -52,7 +55,10 @@ export async function releaseRunSandbox(
     let provider: SandboxProvider;
     try {
       provider = deps.provider ?? (await resolveSandboxBindingForSandbox(sandboxId)).provider;
-    } catch {
+    } catch (error) {
+      if (!(error instanceof PersonalSandboxConnectionUnavailableError)) {
+        return { ok: false as const, reason: "provider_error" as const };
+      }
       // The personal connection that created it is gone: nothing can delete it, but the
       // thread must not stay pinned to an unreachable sandbox.
       const cleared = await clearThreadSandbox(orgId, lockedRun.threadId, sandboxId, tx);

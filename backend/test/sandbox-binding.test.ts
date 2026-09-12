@@ -10,6 +10,7 @@ import { runs } from "../src/db/schema";
 import { eq, sql } from "drizzle-orm";
 import {
   bindingSnapshot,
+  envSandboxBinding,
   resolveSandboxBindingForRun,
   resolveSandboxBindingForSandbox,
   resolveSandboxBindingForThread,
@@ -31,6 +32,19 @@ async function userIdForCookies(cookies: string): Promise<string> {
 }
 
 describe("sandbox binding", () => {
+  test("env binding builds the provider selected by the injected environment", () => {
+    const previous = process.env.SANDBOX_PROVIDER;
+    process.env.SANDBOX_PROVIDER = "daytona";
+    try {
+      const binding = envSandboxBinding({ SANDBOX_PROVIDER: "cube", CUBE_API_KEY: "cube_injected" });
+      expect(binding?.kind).toBe("cube");
+      expect(binding?.provider.constructor.name).toBe("CubeProvider");
+    } finally {
+      if (previous === undefined) delete process.env.SANDBOX_PROVIDER;
+      else process.env.SANDBOX_PROVIDER = previous;
+    }
+  });
+
   test("USER_COMPUTERS is off by default and the server's provider is the fallback", async () => {
     expect(userComputersEnabled({})).toBe(false);
     expect(userComputersEnabled({ USER_COMPUTERS: "on" })).toBe(true);
@@ -62,7 +76,7 @@ describe("sandbox binding", () => {
 
     const built: string[] = [];
     const deps = {
-      env: { USER_COMPUTERS: "on" },
+      env: { USER_COMPUTERS: "on", DAYTONA_API_KEY: "daytona_server" },
       envProvider: () => envBinding,
       providers: {
         box: (key: string) => { built.push(`box:${key}`); return fakeProvider("box"); },
@@ -104,6 +118,65 @@ describe("sandbox binding", () => {
     const legacyRun = await json<{ id: string }>("/api/runs", { method: "POST", cookies, body: { prompt: "Legacy.", engine: "mock" } });
     await setRunSandbox(legacyRun.body.id, "legacy_1");
     expect((await resolveSandboxBindingForSandbox("legacy_1", deps)).credential).toBe("env");
+  });
+
+  test("retained env sandboxes keep their recorded provider when the deployment default changes", async () => {
+    const { cookies } = await createOrgSession("binding-retained-env");
+    const createRun = async (prompt: string) => {
+      const created = await json<{ id: string }>("/api/runs", { method: "POST", cookies, body: { prompt, engine: "mock" } });
+      expect(created.status).toBe(201);
+      return created.body.id;
+    };
+    const built: string[] = [];
+    let defaultProviderCalls = 0;
+    const providers = {
+      cube: (key: string) => { built.push(`cube:${key}`); return fakeProvider("cube"); },
+      daytona: (key: string) => { built.push(`daytona:${key}`); return fakeProvider("daytona"); },
+    };
+
+    const daytonaRun = await createRun("Recorded Daytona.");
+    await setRunSandbox(daytonaRun, "dtn_retained", { kind: "daytona", credential: "env" });
+    const recordedDaytona = await resolveSandboxBindingForSandbox("dtn_retained", {
+      env: { SANDBOX_PROVIDER: "cube", CUBE_API_KEY: "cube_current", DAYTONA_API_KEY: "daytona_recorded" },
+      envProvider: () => { defaultProviderCalls += 1; return { ...envBinding, kind: "cube" }; },
+      providers,
+    });
+    expect(recordedDaytona.kind).toBe("daytona");
+    expect(recordedDaytona.credential).toBe("env");
+    expect(built).toEqual(["daytona:daytona_recorded"]);
+    expect(defaultProviderCalls).toBe(0);
+
+    built.length = 0;
+    const cubeRun = await createRun("Recorded Cube.");
+    await setRunSandbox(cubeRun, "cube_retained", { kind: "cube", credential: "env" });
+    const recordedCube = await resolveSandboxBindingForSandbox("cube_retained", {
+      env: { SANDBOX_PROVIDER: "daytona", DAYTONA_API_KEY: "daytona_current", CUBE_API_KEY: "cube_recorded" },
+      envProvider: () => { defaultProviderCalls += 1; return envBinding; },
+      providers,
+    });
+    expect(recordedCube.kind).toBe("cube");
+    expect(built).toEqual(["cube:cube_recorded"]);
+    expect(defaultProviderCalls).toBe(0);
+
+    built.length = 0;
+    await expect(resolveSandboxBindingForSandbox("dtn_retained", {
+      env: { SANDBOX_PROVIDER: "cube", CUBE_API_KEY: "cube_current" },
+      envProvider: () => { defaultProviderCalls += 1; return { ...envBinding, kind: "cube" }; },
+      providers,
+    })).rejects.toThrow(/credentials are unavailable for recorded daytona sandbox/);
+    expect(built).toEqual([]);
+    expect(defaultProviderCalls).toBe(0);
+
+    const legacyRun = await createRun("Legacy binding.");
+    await setRunSandbox(legacyRun, "legacy_retained");
+    const legacyDefault = { ...envBinding, kind: "cube" as const };
+    const legacy = await resolveSandboxBindingForSandbox("legacy_retained", {
+      env: { SANDBOX_PROVIDER: "cube", CUBE_API_KEY: "cube_current" },
+      envProvider: () => { defaultProviderCalls += 1; return legacyDefault; },
+      providers,
+    });
+    expect(legacy).toBe(legacyDefault);
+    expect(defaultProviderCalls).toBe(1);
   });
 
   test("the restricted gateway resolves personal computers through its filtered credential view", async () => {
@@ -202,7 +275,7 @@ describe("sandbox binding", () => {
 
     // The deployment provider's authoritative listing returned neither id (everything else stays live).
     const others = (await listCurrentRetainedSandboxMappings()).map((m) => m.sandboxId).filter((id) => id !== "srv_gone" && id !== "bx_personal");
-    await clearMissingRetainedSandboxMappings(new Set(others));
+    await clearMissingRetainedSandboxMappings(new Set(others), "daytona");
 
     const [server] = await db.select({ sandboxId: runs.sandboxId }).from(runs).where(eq(runs.id, serverRun.body.id));
     const [personal] = await db.select({ sandboxId: runs.sandboxId }).from(runs).where(eq(runs.id, userRun.body.id));
