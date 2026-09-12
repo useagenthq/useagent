@@ -1,6 +1,6 @@
 "use client";
 
-import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { type RefObject, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { cx } from "@/utils/cx";
 
 /** The roster must always fit a name, an outcome line and a time. */
@@ -27,6 +27,23 @@ export function rosterWidthFor({
 }): number {
   const spare = Math.max(minimum, Math.min(maximum, containerWidth - THREAD_FLOOR));
   return Math.round(Math.min(Math.max(wanted, minimum), spare));
+}
+
+export function rosterMaximumFor(containerWidth: number): number {
+  return rosterWidthFor({ wanted: ROSTER_MAX, containerWidth });
+}
+
+export function rosterLayoutFor({
+  preferredWidth,
+  containerWidth,
+}: {
+  readonly preferredWidth: number | null;
+  readonly containerWidth: number;
+}): { readonly width: number; readonly maximum: number } {
+  return {
+    width: rosterWidthFor({ wanted: preferredWidth ?? ROSTER_DEFAULT, containerWidth }),
+    maximum: rosterMaximumFor(containerWidth),
+  };
 }
 
 /** The roster sits on the LEFT, so its width is the pointer's distance from the container's left edge. */
@@ -59,7 +76,9 @@ export function rosterWidthForKey({
 }
 
 /**
- * Roster width in px, persisted per browser; null means the CSS default.
+ * The preferred roster width persists per browser; null means the CSS default.
+ * The effective width is separately clamped to the space currently available,
+ * so a temporary viewport contraction does not erase the user's preference.
  * Same mechanics as the session rail: the drag writes `--roster-w` on the
  * aside imperatively per animation frame and React state commits once on
  * pointer up, so nothing re-renders per move.
@@ -71,35 +90,74 @@ export function useRosterWidth({
   containerRef: RefObject<HTMLDivElement | null>;
   asideRef: RefObject<HTMLElement | null>;
 }) {
-  const [width, setWidth] = useState<number | null>(null);
-  useEffect(() => {
-    let saved = Number.NaN;
-    try {
-      saved = Number(localStorage.getItem(STORAGE_KEY));
-    } catch {
-      return;
-    }
-    if (!Number.isFinite(saved) || saved < ROSTER_MIN) return;
-    const bounds = containerRef.current?.getBoundingClientRect();
-    setWidth(rosterWidthFor({ wanted: saved, containerWidth: bounds?.width ?? ROSTER_MAX + THREAD_FLOOR }));
-  }, [containerRef]);
+  const [preferredWidth, setPreferredWidth] = useState<number | null>(null);
+  const [width, setWidth] = useState(ROSTER_DEFAULT);
+  const [maximum, setMaximum] = useState(ROSTER_MAX);
+  const preferredWidthRef = useRef<number | null>(null);
+  const containerWidthRef = useRef(ROSTER_MAX + THREAD_FLOOR);
   const boundsRef = useRef<DOMRect | null>(null);
   const dragWidthRef = useRef<number | null>(null);
-  const persist = (next: number | null) => {
-    setWidth(next);
+  const persistPreferredWidth = useCallback((next: number | null) => {
+    preferredWidthRef.current = next;
+    setPreferredWidth(next);
     try {
       if (next === null) localStorage.removeItem(STORAGE_KEY);
       else localStorage.setItem(STORAGE_KEY, String(next));
     } catch {
       // Storage can be unavailable; the width still applies for this page.
     }
-  };
+  }, []);
+  const applyEffectiveWidth = useCallback(
+    (containerWidth: number) => {
+      containerWidthRef.current = containerWidth;
+      const layout = rosterLayoutFor({
+        preferredWidth: preferredWidthRef.current,
+        containerWidth,
+      });
+      setMaximum((current) => (current === layout.maximum ? current : layout.maximum));
+      setWidth((current) => (current === layout.width ? current : layout.width));
+      asideRef.current?.style.setProperty("--roster-w", `${layout.width}px`);
+    },
+    [asideRef],
+  );
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const bounds = container.getBoundingClientRect();
+    let saved = Number.NaN;
+    try {
+      saved = Number(localStorage.getItem(STORAGE_KEY));
+    } catch {
+      // Storage can be unavailable; container observation still works.
+    }
+    if (Number.isFinite(saved) && saved >= ROSTER_MIN) {
+      persistPreferredWidth(
+        rosterWidthFor({ wanted: saved, containerWidth: ROSTER_MAX + THREAD_FLOOR }),
+      );
+    }
+    applyEffectiveWidth(bounds.width);
+
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const containerWidth = entries.at(-1)?.contentRect.width;
+      if (containerWidth === undefined) return;
+      boundsRef.current = null;
+      applyEffectiveWidth(containerWidth);
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [applyEffectiveWidth, containerRef, persistPreferredWidth]);
   const resizeFromPointer = useCallback(
     (pointerX: number) => {
       boundsRef.current ??= containerRef.current?.getBoundingClientRect() ?? null;
       const bounds = boundsRef.current;
       if (!bounds) return;
-      const next = rosterWidthFromPointer({ containerLeft: bounds.left, containerWidth: bounds.width, pointerX });
+      const next = rosterWidthFromPointer({
+        containerLeft: bounds.left,
+        containerWidth: bounds.width,
+        pointerX,
+      });
       dragWidthRef.current = next;
       asideRef.current?.style.setProperty("--roster-w", `${next}px`);
     },
@@ -109,21 +167,25 @@ export function useRosterWidth({
     boundsRef.current = null;
     const next = dragWidthRef.current;
     dragWidthRef.current = null;
-    if (next !== null) persist(next);
-  }, []);
+    if (next === null) return;
+    persistPreferredWidth(next);
+    applyEffectiveWidth(containerWidthRef.current);
+  }, [applyEffectiveWidth, persistPreferredWidth]);
   const reset = useCallback(() => {
     boundsRef.current = null;
     dragWidthRef.current = null;
-    asideRef.current?.style.removeProperty("--roster-w");
-    persist(null);
-  }, [asideRef]);
+    persistPreferredWidth(null);
+    applyEffectiveWidth(containerWidthRef.current);
+  }, [applyEffectiveWidth, persistPreferredWidth]);
   const resizeWithKeyboard = (key: string) => {
     const bounds = containerRef.current?.getBoundingClientRect();
     const containerWidth = bounds?.width ?? ROSTER_MAX + THREAD_FLOOR;
-    const next = rosterWidthForKey({ key, current: width ?? ROSTER_DEFAULT, containerWidth });
-    if (next !== null) persist(next);
+    const next = rosterWidthForKey({ key, current: width, containerWidth });
+    if (next === null) return;
+    persistPreferredWidth(next);
+    applyEffectiveWidth(containerWidth);
   };
-  return { width, resizeFromPointer, commit, reset, resizeWithKeyboard };
+  return { preferredWidth, width, maximum, resizeFromPointer, commit, reset, resizeWithKeyboard };
 }
 
 /**
@@ -133,12 +195,14 @@ export function useRosterWidth({
  */
 export function RosterResizer({
   value,
+  maximum,
   onMove,
   onCommit,
   onKeyDown,
   onReset,
 }: {
   readonly value: number;
+  readonly maximum: number;
   readonly onMove: (pointerX: number) => void;
   readonly onCommit: () => void;
   readonly onKeyDown: (key: string) => void;
@@ -162,7 +226,8 @@ export function RosterResizer({
     setDragging(false);
     if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
     flush();
-    if (pointerId !== undefined && element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
+    if (pointerId !== undefined && element.hasPointerCapture(pointerId))
+      element.releasePointerCapture(pointerId);
     onCommit();
   };
 
@@ -174,7 +239,7 @@ export function RosterResizer({
       aria-orientation="vertical"
       aria-label="Resize the bots list; double-click to reset"
       aria-valuemin={ROSTER_MIN}
-      aria-valuemax={ROSTER_MAX}
+      aria-valuemax={maximum}
       aria-valuenow={value}
       aria-valuetext={`${value} pixels`}
       onPointerDown={(event) => {
@@ -202,7 +267,8 @@ export function RosterResizer({
         "before:absolute before:inset-y-3 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:content-['']",
         "after:border-border-button-default after:bg-background-primary-default after:shadow-card after:absolute after:left-1/2 after:top-1/2 after:h-12 after:w-3 after:-translate-x-1/2 after:-translate-y-1/2 after:rounded-full after:border after:transition-[border-color,background-color,box-shadow,transform] after:content-['']",
         "hover:before:bg-border-button-hover hover:after:border-accent-500 focus-visible:before:bg-accent-500 focus-visible:after:border-accent-500 focus-visible:after:ring-2 focus-visible:after:ring-accent-500/15",
-        dragging && "before:bg-accent-500 after:scale-110 after:border-accent-500 after:bg-accent-500/10",
+        dragging &&
+          "before:bg-accent-500 after:scale-110 after:border-accent-500 after:bg-accent-500/10",
       )}
     />
   );

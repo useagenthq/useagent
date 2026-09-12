@@ -8,7 +8,7 @@ import { BotThreadPane } from "./bot-thread-pane";
 import { BotsRoster } from "./bots-roster";
 import { FirstMessage } from "./first-message";
 import { BotsOnboarding } from "./onboarding";
-import { ROSTER_DEFAULT, RosterResizer, useRosterWidth } from "./roster-resizer";
+import { RosterResizer, useRosterWidth } from "./roster-resizer";
 import type { ApiBot } from "./types";
 
 /**
@@ -37,11 +37,12 @@ export function BotsWorkspace({
         ref={asideRef}
         initialBots={bots}
         selectedId={selected?.id ?? null}
-        style={roster.width !== null ? ({ "--roster-w": `${roster.width}px` } as React.CSSProperties) : undefined}
+        style={{ "--roster-w": `${roster.width}px` } as React.CSSProperties}
         className={selected ? "hidden md:flex" : "flex"}
       />
       <RosterResizer
-        value={roster.width ?? ROSTER_DEFAULT}
+        value={roster.width}
+        maximum={roster.maximum}
         onMove={roster.resizeFromPointer}
         onCommit={roster.commit}
         onKeyDown={roster.resizeWithKeyboard}

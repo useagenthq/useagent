@@ -7,6 +7,8 @@ import {
   ROSTER_MAX,
   ROSTER_MIN,
   RosterResizer,
+  rosterLayoutFor,
+  rosterMaximumFor,
   rosterWidthFor,
   rosterWidthForKey,
   rosterWidthFromPointer,
@@ -16,7 +18,9 @@ const read = (file: string) => readFileSync(join(import.meta.dir, file), "utf8")
 
 describe("roster width", () => {
   test("measures from the container's LEFT edge, since the roster is the left pane", () => {
-    expect(rosterWidthFromPointer({ containerLeft: 100, containerWidth: 1400, pointerX: 460 })).toBe(360);
+    expect(
+      rosterWidthFromPointer({ containerLeft: 100, containerWidth: 1400, pointerX: 460 }),
+    ).toBe(360);
   });
 
   test("clamps to the range and leaves the thread its floor", () => {
@@ -26,6 +30,29 @@ describe("roster width", () => {
     expect(rosterWidthFor({ wanted: 900, containerWidth: 900 })).toBe(420);
     // Too narrow to honor both: the roster minimum wins.
     expect(rosterWidthFor({ wanted: 400, containerWidth: 600 })).toBe(ROSTER_MIN);
+    expect(rosterMaximumFor(900)).toBe(420);
+  });
+
+  test("restores the default after a temporary viewport clamp", () => {
+    expect(rosterLayoutFor({ preferredWidth: null, containerWidth: 760 })).toEqual({
+      width: 280,
+      maximum: 280,
+    });
+    expect(rosterLayoutFor({ preferredWidth: null, containerWidth: 1200 })).toEqual({
+      width: ROSTER_DEFAULT,
+      maximum: ROSTER_MAX,
+    });
+  });
+
+  test("restores a custom preference after a temporary viewport clamp", () => {
+    expect(rosterLayoutFor({ preferredWidth: 560, containerWidth: 760 })).toEqual({
+      width: 280,
+      maximum: 280,
+    });
+    expect(rosterLayoutFor({ preferredWidth: 560, containerWidth: 1200 })).toEqual({
+      width: 560,
+      maximum: ROSTER_MAX,
+    });
   });
 
   test("arrow keys move 16px the natural way for a left pane; Home and End hit the ends", () => {
@@ -45,13 +72,20 @@ describe("roster width", () => {
 describe("RosterResizer", () => {
   test("is a keyboard-reachable vertical separator with the rail grip's grammar", () => {
     const html = renderToStaticMarkup(
-      <RosterResizer value={320} onMove={() => {}} onCommit={() => {}} onKeyDown={() => {}} onReset={() => {}} />,
+      <RosterResizer
+        value={320}
+        maximum={420}
+        onMove={() => {}}
+        onCommit={() => {}}
+        onKeyDown={() => {}}
+        onReset={() => {}}
+      />,
     );
     expect(html).toContain('data-testid="roster-resize-grip"');
     expect(html).toContain('aria-orientation="vertical"');
     expect(html).toContain('aria-label="Resize the bots list; double-click to reset"');
     expect(html).toContain(`aria-valuemin="${ROSTER_MIN}"`);
-    expect(html).toContain(`aria-valuemax="${ROSTER_MAX}"`);
+    expect(html).toContain('aria-valuemax="420"');
     expect(html).toContain('aria-valuenow="320"');
     expect(html).toContain('tabindex="0"');
     expect(html).toContain("cursor-col-resize");
