@@ -227,6 +227,27 @@ describe("release configuration", () => {
 		expect(rewritten).toContain(
 			"registry.example.com { reverse_proxy 127.0.0.1:5000 }",
 		);
+		const migrated = rewriteCaddyUpstreams(
+			[
+				"app.example.com {",
+				"  @useagent_api path /api/*",
+				"  handle @useagent_api {",
+				"    # useagent-release: backend",
+				"    reverse_proxy 127.0.0.1:3201",
+				"  }",
+				"  # useagent-release: frontend",
+				"  reverse_proxy 127.0.0.1:3400",
+				"}",
+				"gateway.example.com {",
+				"  # useagent-release: gateway",
+				"  reverse_proxy 127.0.0.1:3202",
+				"}",
+			].join("\n"),
+			{ backend: "127.0.0.1:3211", gateway: "127.0.0.1:3212", frontend: "127.0.0.1:3410" },
+		);
+		expect(migrated.indexOf("@useagent_gateway path /api/mcp/* /api/provider/*"))
+			.toBeLessThan(migrated.indexOf("@useagent_api path /api/*"));
+		expect(migrated).toContain("reverse_proxy 127.0.0.1:3212");
 		expect(() =>
 			rewriteCaddyUpstreams(
 				source.replace("# useagent-release: gateway\n", ""),
