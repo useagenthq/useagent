@@ -25,7 +25,7 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-header.sticky.top-0 {
+[data-blume-header] {
   border-bottom: 1px solid var(--blume-border);
 }
 
@@ -153,9 +153,11 @@ aside[data-blume-toc] blume-toc a[aria-current="location"] {
 }
 
 .prose figcaption {
+  margin-block-start: 0.625rem;
   color: var(--blume-muted-foreground) !important;
   font-size: 0.8125rem !important;
   line-height: 1.5;
+  text-align: center;
 }
 
 blume-tabs [data-blume-tablist] button[role="tab"][aria-selected="true"] {

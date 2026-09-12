@@ -26,12 +26,14 @@ semantics:
   flight at a time, so replies and child sessions queue instead of racing one
   sandbox (`backend/src/commands/dispatch.ts`).
 
-## Runs survive backend restarts
+## Supported sessions survive backend restarts
 
-The sandbox executes independently of the backend, so a backend bounce does
-not kill a live run.
+The sandbox executes independently of the backend. When the exact native driver
+and provider session advertise reconciliation, a backend bounce does not have to
+discard the live work.
 
-<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "16px", margin: "1.5rem 0" }}>
+<figure>
+<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "16px" }}>
   <img
     src="/diagrams/run-survives-backend-restart.svg"
     alt="Two lanes over time: the sandbox keeps executing through a backend crash while boot recovery and the adaptive reconcile loop adopt the finished result"
@@ -39,13 +41,12 @@ not kill a live run.
     width="940"
     height="512"
   />
-  <p style={{ margin: "12px 4px 0", fontSize: "13px", color: "#737373" }}>
-    The sandbox lane never stops: a one-shot boot pass settles the commands
-    mailbox, then an adaptive loop re-probes the live session with visible
-    reconciling heartbeats until it adopts the real result or fails honestly
-    at a bounded deadline (backend/src/runs/recovery.ts).
-  </p>
 </div>
+<figcaption>
+  For a session with reconciliation support, the retained sandbox can continue
+  while the backend restarts and later adopts the provider's durable result.
+</figcaption>
+</figure>
 
 The recovered run **adopts the finished result** rather than discarding work
 that actually completed, and failure at the deadline is an explicit, classified

@@ -18,7 +18,7 @@ truth: the frontend renders them but never invents them.
       height="424"
     />
   </div>
-  <figcaption style={{ marginTop: "0.5rem", fontSize: "0.8125rem", color: "#737373", textAlign: "center" }}>
+  <figcaption>
     The run lifecycle: every channel enters through one durable command door, the Postgres event log is the source of truth, and a reply re-enters with parent_run_id.
   </figcaption>
 </figure>
@@ -120,9 +120,9 @@ describe a run and can be replayed. The UI reduces them into the session
 timeline.
 
 :::note
-A run **survives a backend restart**. The sandbox keeps executing; on restart a
-recovery loop re-probes the session, streams the interim events into the timeline
-with a visible heartbeat, and adopts the real result rather than failing work
-that actually completed. See [Restart
+A run with a reconciliation-capable native session can **survive a backend
+restart**. The sandbox keeps executing; on restart a recovery loop re-probes the
+session, streams interim events into the timeline, and adopts the real result.
+Other combinations fail honestly rather than claiming recovery. See [Restart
 reconciliation](/concepts/sandboxes-and-desktop#restart-reconciliation).
 :::

@@ -15,6 +15,7 @@ This page is the spec. The source of truth is a single pure-types module,
 `packages/agent-harness/src/canonical.ts`, deliberately free of provider SDKs,
 sandbox code, and behavior.
 
+<figure>
 <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "12px" }}>
   <img
     src="/diagrams/canonical-event-flow.svg"
@@ -24,12 +25,12 @@ sandbox code, and behavior.
     height="500"
   />
 </div>
-
-<p style={{ color: "#737373", fontSize: "13px", marginTop: "8px" }}>
+<figcaption>
   The contract in motion: native engine output is durably stored, sealed, and
   translated into canonical events, which are persisted before any subscriber
   sees them.
-</p>
+</figcaption>
+</figure>
 
 ## The envelope
 

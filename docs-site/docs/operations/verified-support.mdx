@@ -14,19 +14,34 @@ This page separates three claims that should not be collapsed:
   snapshot.
 
 The authoritative runtime answer for a signed-in actor is
-`GET /api/capabilities`. This page records the broader verification boundary at
-commit `70b111622bb3a96e43964bd20f072d78c2cc17e5`.
+`GET /api/capabilities`.
 
-## Current evidence
+## Current implementation track
 
-| Path | Code state | Current evidence |
+Pro commit `e1649e5ed` is deployed. A deployment identifies the code and
+environment under test; it does not certify every engine, model route,
+repository path, or sandbox capability. Current evidence must still name the
+journey it exercised.
+
+## Current environment evidence at e1649e5ed
+
+| Journey | Result | Boundary |
 | --- | --- | --- |
-| Codex on Box | Implemented | Cold start, retained resume, child isolation, and replay are verified. |
-| OpenCode on Box | Implemented | Cold execution, child isolation, and replay are verified. |
-| Pi on Box | Implemented | Cold execution, child isolation, and replay are verified. |
-| Claude Code on Box | Implemented | Cold-readiness repair is still under development; do not treat this combination as certified. |
-| Cube runtime template | Implemented | Rebuilt template is ready and cold fork/boot has proof, but it is not activated or fully engine-certified. |
-| Daytona matrix | Implemented | No fresh full engine/provider matrix is recorded for this snapshot. |
+| Claude Code cold turn on Box | Passed | Basic native cold execution only; broader resume, repository, child, and artifact journeys are not implied. |
+| Pi basic turn on Box | Passed | Basic native execution only; broader provider certification is not implied. |
+| User-scoped real-repository clone on Box | **Failing (P0)** | Do not claim repository-backed Box work is ready for users. |
+| Direct Cerebras model route | **Failing (P0)** | Do not advertise direct Cerebras dispatch as ready. |
+
+## Historical evidence at 70b1116
+
+| Path | Code state at 70b1116 | Historical evidence at 70b1116 |
+| --- | --- | --- |
+| Codex on Box | Implemented | Cold start, retained resume, child isolation, and replay were verified at this fingerprint. |
+| OpenCode on Box | Implemented | Cold execution, child isolation, and replay were verified at this fingerprint. |
+| Pi on Box | Implemented | Cold execution, child isolation, and replay were verified at this historical fingerprint. |
+| Claude Code on Box | Earlier implementation | The later native-health repair is not covered by this historical fingerprint. |
+| Cube runtime template | Implemented | The rebuilt template was ready and cold fork/boot had proof, but it was not activated or fully engine-certified at this fingerprint. |
+| Daytona matrix | Implemented | No fresh full engine/provider matrix was recorded for this fingerprint. |
 
 ## Conditions that still apply
 
@@ -44,11 +59,12 @@ sandbox provider, or a reduced lifecycle.
 
 ## Children and replay
 
-The verified Box rows include isolated provider-native child evidence and
-durable replay. That does not make every native child messageable. Product child
-threads are messageable because they are admitted useAgent threads. A
-provider-native child remains read-only until its exact driver and persisted
-session authority support a follow-up.
+The historical 70b1116 Box rows included isolated provider-native child evidence
+and durable replay. That evidence is not e1649e5ed certification and does not
+make every native child messageable. Product child threads are messageable
+because they are admitted useAgent threads. A provider-native child remains
+read-only until its exact driver and persisted session authority support a
+follow-up.
 
 ## How to refresh this page
 

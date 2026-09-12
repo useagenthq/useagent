@@ -8,6 +8,7 @@ sidebar:
 The event log is the product. This page covers what an event is, why there are
 two shapes of it, and how events reach the UI.
 
+<figure>
 <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "12px" }}>
   <img
     src="/diagrams/canonical-event-flow.svg"
@@ -17,12 +18,12 @@ two shapes of it, and how events reach the UI.
     height="500"
   />
 </div>
-
-<p style={{ color: "#737373", fontSize: "13px", marginTop: "8px" }}>
+<figcaption>
   From engine output to the browser: raw provider events are claimed, sealed, and
   translated by the canonical lane, persisted to canonical_events, then streamed
   per thread and merged by the UI reducer.
-</p>
+</figcaption>
+</figure>
 
 ## Canonical event
 

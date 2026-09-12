@@ -60,8 +60,9 @@ selected Box, Cube, or Daytona sandbox.*
 
 The consequences are concrete:
 
-- A run **survives a backend restart**, because its truth is the log, not a
-  process' memory.
+- A reconciliation-capable run can **survive a backend restart** because its
+  durable truth is outside process memory and its native session can be
+  re-probed.
 - Four native engines render through **one UI contract**, because their
   native output is durably stored first, then translated into one
   provider-neutral canonical schema by a post-finalize outbox worker, and

@@ -42,15 +42,14 @@ also carries Editor and Workspace tabs:
 
 <CardGroup cols={2}>
   <Card title="Browser" icon="monitor">
-    The sandbox desktop over noVNC (Xvfb, XFCE, x11vnc, noVNC), bridged through
-    the authenticated `/api/desktop-proxy` so the preview token never reaches
-    the browser. For runs that drive a GUI.
+    The configured provider's desktop through the authenticated
+    `/api/desktop-proxy`. It appears only when the current sandbox/runtime
+    capability is ready; upstream preview credentials stay server-side.
   </Card>
   <Card title="Terminal" icon="square-terminal">
-    The run's command steps stream as `$ command` lines with their captured
-    output. While the thread is live, an interactive shell attaches to the
-    thread's sandbox PTY over `WS /api/runs/:id/terminal`, so you type into the
-    same filesystem the agent works in.
+    Recorded command steps remain in the timeline. When the provider's
+    interactive-terminal prerequisite is ready, a live shell attaches over
+    `WS /api/runs/:id/terminal`. The live PTY is not reconstructed from events.
   </Card>
   <Card title="Files" icon="folder-tree">
     A streaming list of the files and artifacts the run produces, with

@@ -84,7 +84,7 @@ with the product entirely through `http://localhost:3400`.
   </Step>
   <Step title="Frontend is up">
     `http://localhost:3400` loads the chat surface. A live chat turn needs
-    `OPENROUTER_API_KEY`.
+    a configured chat-model provider.
   </Step>
   <Step title="A run streams">
     Start an agent run and watch steps arrive live in the session timeline.
@@ -102,8 +102,8 @@ bun run dev:frontend     # Next.js UI on :3400
 bun run typecheck        # frontend, backend, and every checked shared package
 ```
 
-`bun run typecheck` must pass before any change is considered done. The remaining
-root scripts (`release:hosted`, `canary:hosted-release`,
-`release:provider-connection-bootstrap`, `stage:t3-dist`) are deploy-lane tooling
-covered in [Operations](/operations/deployment). For the full test and operations
-toolset, see [Verification](/operations/verification).
+`bun run typecheck` must pass before any change is considered done. App-specific
+commands live in each package. For example, use `(cd backend && bun run test)`,
+`(cd backend && bun run e2e)`, or `(cd backend && bun run e2e:real)` from the
+repository root. See [Verification](/operations/verification) before running a
+live-provider journey.
