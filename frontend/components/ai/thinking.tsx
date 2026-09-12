@@ -18,8 +18,8 @@ export interface ThinkingProps {
   /** Controlled expanded state; pair with `onExpandedChange`. */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
-  /** While true, the label runs the shimmer sweep and the pixel loader closes
-   *  the pill in place of the chevron. Default true. */
+  /** While true, the leading status slot shows the pixel loader and the label
+   *  runs the shimmer sweep; the chevron is absent. Default true. */
   active?: boolean;
   /** Tint the settled label as a failure (a trace with failed steps). */
   failed?: boolean;
@@ -28,11 +28,14 @@ export interface ThinkingProps {
 
 /**
  * Collapsible "Thinking" disclosure: one rounded pill reading the label, a
- * muted detail and, at its end, the chevron (or the pixel loader while the
- * agent is still working), over the steps region behind a hairline connector.
- * No leading glyph in any state. The region mounts only while expanded, so a
- * long trace never hits the DOM behind a closed header. Ported from the
- * beautiful-ui Thinking demo onto our semantic tokens.
+ * muted detail and, at its end, the chevron, over the steps region behind a
+ * hairline connector. A fixed leading status slot holds the pixel loader while
+ * the agent is working and stays reserved once settled, so the label never
+ * shifts when the loader disappears. The settled chevron remains at the end.
+ * No star or sparkle in any state. The
+ * region mounts only while expanded, so a long trace never hits the DOM behind
+ * a closed header. Ported from the beautiful-ui Thinking demo onto our
+ * semantic tokens.
  */
 export function Thinking({
   label = "Thinking",
@@ -71,6 +74,13 @@ export function Thinking({
           hasSteps ? "cursor-pointer hover:bg-background-secondary-hover" : "cursor-default",
         )}
       >
+        <span
+          aria-hidden
+          data-testid="thinking-status-slot"
+          className="flex size-4 shrink-0 items-center justify-center"
+        >
+          {active && <PixelLoader className="text-text-secondary" />}
+        </span>
         {active ? (
           <span className="agent-progress-loading-text shrink-0 text-body-2-medium">{label}</span>
         ) : (
@@ -88,18 +98,14 @@ export function Thinking({
             {detail}
           </span>
         )}
-        {active ? (
-          <PixelLoader className="text-text-secondary" />
-        ) : (
-          hasSteps && (
-            <RiArrowDownSLine
-              className={cx(
-                "size-3.5 shrink-0 text-text-tertiary transition-transform duration-300",
-                expanded && "rotate-180",
-              )}
-              aria-hidden
-            />
-          )
+        {!active && hasSteps && (
+          <RiArrowDownSLine
+            className={cx(
+              "size-3.5 shrink-0 text-text-tertiary transition-transform duration-300",
+              expanded && "rotate-180",
+            )}
+            aria-hidden
+          />
         )}
       </button>
 
