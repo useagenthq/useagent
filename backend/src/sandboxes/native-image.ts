@@ -37,7 +37,7 @@ import { claudeProviderGatewayEnvironment } from "../provider-gateway/sandbox-co
 import { DESKTOP_REQUIRED_BINARIES } from "../engines/desktop-workstation";
 
 /** Bump when a step changes in a way the fingerprinted inputs cannot express. */
-const NATIVE_IMAGE_RECIPE_VERSION = 1;
+const NATIVE_IMAGE_RECIPE_VERSION = 2;
 /** Box accepts uploads of a few MB; larger files travel in parts and are joined in the sandbox. */
 const UPLOAD_PART_BYTES = 3 * 1024 * 1024;
 const NATIVE_ENGINES = ["codex", "claude", "opencode"] as const;

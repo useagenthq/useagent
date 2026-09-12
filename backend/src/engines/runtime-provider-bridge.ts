@@ -33,6 +33,10 @@ import {
   sandboxBunExecutable,
 } from "./sandbox-bun";
 import { prepareOpenCodeGateway } from "./opencode-model-limit-refresh";
+import {
+  buildAttachmentTreeAccessCommand,
+  buildRootTraversalAccessCommand,
+} from "./runtime-user-permissions";
 export { openCodeModelLimitsChanged } from "./opencode-model-limit-refresh";
 
 const RUNTIME_SETTINGS_PATH = `${RUNTIME_ENVIRONMENT_HOME}/userdata/settings.json`;
@@ -330,19 +334,23 @@ export function buildRuntimeProviderBootstrapCommand(
     "set -eu",
     `CLAUDE_UID=${CLAUDE_RUNTIME_UID}`,
     `CLAUDE_GID=${CLAUDE_RUNTIME_GID}`,
-    `CLAUDE_ATTACHMENTS=${JSON.stringify(attachmentsDir)}`,
     'CLAUDE_WORKDIR="${1:?Claude workspace is required}"',
-    'command -v setfacl >/dev/null',
-    'test "$(id -u user)" = "$CLAUDE_UID"',
+    buildRootTraversalAccessCommand({
+      paths: ["/root", "/root/.skynet", "/root/.skynet/t3", "/root/.skynet/t3/userdata"],
+      uid: CLAUDE_RUNTIME_UID,
+      gid: CLAUDE_RUNTIME_GID,
+    }),
     'test -d "$CLAUDE_WORKDIR"',
-    'setfacl -m "u:$CLAUDE_UID:x" /root',
-    'chown root:root "$CLAUDE_WORKDIR"',
-    'chmod 1777 "$CLAUDE_WORKDIR"',
-    'if [ -d "$CLAUDE_ATTACHMENTS" ]; then',
-    '  setfacl -m "u:$CLAUDE_UID:x" /root/.skynet /root/.skynet/t3 /root/.skynet/t3/userdata',
-    '  setfacl -Rm "u:$CLAUDE_UID:rwx" "$CLAUDE_ATTACHMENTS"',
-    '  setfacl -Rdm "u:$CLAUDE_UID:rwx" "$CLAUDE_ATTACHMENTS"',
-    "fi",
+    'test ! -L "$CLAUDE_WORKDIR"',
+    'test "$(realpath -e -- "$CLAUDE_WORKDIR")" = "$CLAUDE_WORKDIR"',
+    'chown root:root -- "$CLAUDE_WORKDIR"',
+    'chmod 1777 -- "$CLAUDE_WORKDIR"',
+    'test "$(stat -c \'%u:%g:%a\' -- "$CLAUDE_WORKDIR")" = "0:0:1777"',
+    buildAttachmentTreeAccessCommand({
+      root: attachmentsDir,
+      uid: CLAUDE_RUNTIME_UID,
+      gid: CLAUDE_RUNTIME_GID,
+    }),
     "",
   ].join("\n") : [
     "#!/bin/sh",

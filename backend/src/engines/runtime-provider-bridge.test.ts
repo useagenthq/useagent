@@ -377,10 +377,23 @@ describe("T3 provider bridge", () => {
     expect(wrapper).toContain('--mcp-config "/tmp/useagent-claude-capability/useagent-mcp.json"');
     expect(wrapper).toContain('test "$(id -u user)" = "$CLAUDE_UID"');
     expect(command).toContain('"$CLAUDE_ACCESS_HELPER" "/root/work"');
-    expect(accessHelper).toContain('setfacl -m "u:$CLAUDE_UID:x" /root');
-    expect(accessHelper).toContain('chown root:root "$CLAUDE_WORKDIR"');
-    expect(accessHelper).toContain('chmod 1777 "$CLAUDE_WORKDIR"');
+    expect(accessHelper).toContain('test "$(id -u user)" = "1000"');
+    expect(accessHelper).toContain('test "$(id -g user)" = "1000"');
+    expect(accessHelper).toContain('if LC_ALL=C setfacl -m "u:1000:x"');
+    expect(accessHelper).toContain('elif acl_failure_is_only_unsupported "$ACL_ERROR"');
+    expect(accessHelper).toContain('chown root:1000 -- "$ACCESS_PATH"');
+    expect(accessHelper).toContain('chmod 0710 -- "$ACCESS_PATH"');
+    expect(accessHelper).toContain('test ! -L "$ACCESS_PATH"');
+    expect(accessHelper).toContain('test "$(realpath -e -- "$ACCESS_PATH")" = "$ACCESS_PATH"');
+    expect(accessHelper).toContain('chown root:root -- "$CLAUDE_WORKDIR"');
+    expect(accessHelper).toContain('chmod 1777 -- "$CLAUDE_WORKDIR"');
+    expect(accessHelper).toContain('test ! -L "$ATTACHMENTS_ROOT"');
+    expect(accessHelper).toContain('find -P "$ATTACHMENTS_ROOT" -xdev -type d -exec chmod 2770');
+    expect(accessHelper).toContain('find -P "$ATTACHMENTS_ROOT" -xdev -type f -exec chmod g+rw,o-rwx');
+    expect(accessHelper).not.toContain('chmod 0755');
+    expect(accessHelper).not.toContain('chmod 0711');
     expect(accessHelper).not.toContain('chown -R "$CLAUDE_UID:$CLAUDE_GID" "$CLAUDE_WORKDIR"');
+    expect(Bun.spawnSync(["bash", "-n", "-c", accessHelper]).exitCode).toBe(0);
     expect(accessHelper).not.toContain("nonroot-access-v1");
     expect(wrapper).toContain(
       'setpriv --reuid="$CLAUDE_UID" --regid="$CLAUDE_GID" --clear-groups --no-new-privs',
