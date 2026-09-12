@@ -2,6 +2,7 @@
 // a peer tool runs an asyncio timer that periodically fires due, enabled jobs;
 // this is the Postgres-backed translation — a plain 60s interval tick.
 
+import { botsEnabled } from "../bots/rollout";
 import { cronMatches } from "./cron";
 import { listEnabledSchedules, markFired } from "./repo";
 import { fireScheduleForOrg } from "./service";
@@ -39,6 +40,9 @@ export async function tick(now: Date = new Date()): Promise<void> {
   for (const s of due) {
     if (!cronMatches(s.cron, now, s.timezone)) continue;
     if (s.lastFiredAt && sameMinute(new Date(s.lastFiredAt), now)) continue;
+    // Bot routines sit out while bots are switched off; they resume on the next
+    // matching minute after the switch flips back.
+    if (s.botId && !botsEnabled(s.orgId)) continue;
     try {
       // Pass the tick time as the occurrence so the firing's idempotency key
       // buckets to this minute — the durable safety net that makes fire-then-

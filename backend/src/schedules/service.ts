@@ -25,6 +25,7 @@ import {
 import { resolveSkillSelection } from "../skills/repo";
 import { RunIntakeError } from "../resources/run-intake";
 import { RunAdmissionClosedError } from "../commands";
+import { BotsDisabledError } from "../bots/rollout";
 import {
   assertRunPromptLimit,
   RunPromptTooLargeError,
@@ -468,6 +469,9 @@ export async function fireScheduleForOrg(
   try {
     fired = await fireScheduleWithOutcome(schedule, trigger, occurrence);
   } catch (error) {
+    if (error instanceof BotsDisabledError) {
+      throw new ScheduleServiceError(409, { error: error.code, retryable: false });
+    }
     if (error instanceof SkillPinIntegrityError) {
       throw new ScheduleServiceError(error.code === "invalid_skill_pin" ? 400 : 409, {
         error: error.code,
