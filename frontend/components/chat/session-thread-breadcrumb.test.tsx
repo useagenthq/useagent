@@ -20,9 +20,11 @@ const relationship = (threadId: string, parentThreadId: string | null, title: st
   latestSummary: null,
   latestDurationMs: null,
   latestActivityAt: "2026-09-01T00:00:00.000Z",
+  bot: null,
+  followUpRunIds: [],
 });
 
-test("a product child keeps its parent and own title visible", () => {
+test("a product child links to its parent by a fixed word and keeps the titles in tooltips", () => {
   const html = renderToStaticMarkup(
     <SessionThreadBreadcrumb
       relationship={relationship("child", "root", "Build calendar grid")}
@@ -30,9 +32,24 @@ test("a product child keeps its parent and own title visible", () => {
     />,
   );
   expect(html).toContain('href="/session/root"');
-  expect(html).toContain("Calendar app");
+  expect(html).toContain(">Parent thread<");
+  expect(html).toContain('title="Calendar app"');
   expect(html).toContain("Build calendar grid");
   expect(html).toContain('aria-label="Back to Calendar app"');
+});
+
+test("a bot thread's own crumb is the bot's name", () => {
+  const html = renderToStaticMarkup(
+    <SessionThreadBreadcrumb
+      relationship={{
+        ...relationship("child", "root", "Nova: @bot/Nova compare the EU tiers"),
+        bot: { id: "bot-1", name: "Nova" },
+      }}
+      parent={relationship("root", null, "@bot/Nova compare the EU tiers")}
+    />,
+  );
+  expect(html).toContain(">Nova<");
+  expect(html).not.toContain(">Nova: @bot/Nova compare the EU tiers<");
 });
 
 test("an ordinary root keeps the compact session label", () => {

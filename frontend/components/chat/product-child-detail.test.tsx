@@ -21,6 +21,8 @@ const relationship: ThreadRelationship = {
   latestSummary: "NVDA and GOOGL prices are ready.",
   latestDurationMs: 1_500,
   latestActivityAt: "2026-09-01T00:01:00.000Z",
+  bot: null,
+  followUpRunIds: [],
 };
 
 const run: ApiRun = {
@@ -52,16 +54,26 @@ const run: ApiRun = {
   steps: [],
 };
 
-test("renders a completed child answer and an in-place message composer", () => {
+test("renders a completed child answer with a one-line status and links to the thread", () => {
+  const html = renderToStaticMarkup(
+    <ProductChildDetailBody initialRun={run} relationship={relationship} onBack={() => {}} />,
+  );
+  expect(html).toContain("NVDA and GOOGL prices are ready.");
+  expect(html).toContain("Completed · child thread · Codex · gpt-5.6-luna");
+  expect(html).toContain("Open thread to reply");
+  expect(html.match(/href="\/session\/child-1"/g)).toHaveLength(2);
+  expect(html).not.toContain("Message this child");
+  expect(html).not.toContain("Product child");
+});
+
+test("a bot thread is named after its bot", () => {
   const html = renderToStaticMarkup(
     <ProductChildDetailBody
       initialRun={run}
-      relationship={relationship}
+      relationship={{ ...relationship, bot: { id: "bot-1", name: "Nova" } }}
       onBack={() => {}}
-      onRunAccepted={() => {}}
     />,
   );
-  expect(html).toContain("NVDA and GOOGL prices are ready.");
-  expect(html).toContain("Message this child…");
-  expect(html).not.toContain('href="/session/child-1"');
+  expect(html).toContain("Completed · Nova · bot thread · Codex · gpt-5.6-luna");
+  expect(html).toContain('aria-label="Open bot thread: Research NVIDIA and Google"');
 });

@@ -62,7 +62,7 @@ export function WorkingIndicator({
               Working for <WorkingTimer createdAt={createdAt} />
             </>
           ) : (
-            "Working..."
+            "Working…"
           )}
         </span>
         {stepLabel ? (

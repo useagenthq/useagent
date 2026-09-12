@@ -262,7 +262,7 @@ export function projectChildTree(input: ProjectChildTreeInput): ChildTreeNode[] 
       provider: null,
       engine: child.engine,
       model: child.model,
-      role: "Product child",
+      role: null,
       progress: ACTIVE.has(status) ? child.latestSummary : null,
       result: ACTIVE.has(status) ? null : child.latestSummary,
       lastToolName: null,

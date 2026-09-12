@@ -92,7 +92,7 @@ export function GatewayApprovalCard({
       <div className="border-border-button-default bg-background-secondary-default space-y-3 rounded-2xl border p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="bg-yellow-500/10 text-yellow-600 flex size-7 shrink-0 items-center justify-center rounded-full">
+            <span className="bg-warning-lighter text-warning-base flex size-7 shrink-0 items-center justify-center rounded-full">
               <RiShieldCheckLine className="size-4" aria-hidden />
             </span>
             <div className="min-w-0">
@@ -134,7 +134,7 @@ export function GatewayApprovalCard({
             the record resolves (e.g. the 409 refetch landed) the resolved line
             is the whole truth. */}
         {status === "pending" && error && (
-          <p className="text-caption-1-regular text-red-500">{error}</p>
+          <p className="text-caption-1-regular text-text-error-primary">{error}</p>
         )}
       </div>
 

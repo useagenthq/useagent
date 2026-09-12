@@ -50,6 +50,8 @@ const productChild = (over: Partial<ThreadRelationship> = {}): ThreadRelationshi
   latestSummary: "NVIDIA and Google prices are ready.",
   latestDurationMs: 1_500,
   latestActivityAt: "2026-09-01T00:01:00.000Z",
+  bot: null,
+  followUpRunIds: [],
   ...over,
 });
 
@@ -104,7 +106,7 @@ describe("subagents fold (inline conversation group)", () => {
       />,
     );
     expect(html).toContain('data-testid="subagents-fold"');
-    expect(html).toContain("2 subagents");
+    expect(html).toContain("1 subagent, 1 spawned session");
     // Native child row: title, agent-type, model, tokens, live state.
     expect(html).toContain("Verify checkout");
     expect(html).toContain("verifier");
@@ -137,7 +139,7 @@ describe("subagents fold (inline conversation group)", () => {
         childSessions={[gatewayChild({ status: "completed", summary: "Wiki summarized." })]}
       />,
     );
-    expect(html).toContain("2 subagents");
+    expect(html).toContain("1 subagent, 1 spawned session");
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("Suite green.");
   });
@@ -159,7 +161,7 @@ describe("subagents fold (inline conversation group)", () => {
     expect(html).toContain('href="/session/c2"');
   });
 
-  test("keeps a completed product child visible in the parent without a page link", () => {
+  test("keeps a completed product child visible in the parent with a link to its thread", () => {
     const html = renderToStaticMarkup(
       <SubagentsFold
         steps={[]}
@@ -167,10 +169,55 @@ describe("subagents fold (inline conversation group)", () => {
         productChildren={[productChild()]}
       />,
     );
-    expect(html).toContain("1 subagent");
+    expect(html).toContain("1 child thread");
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain("NVIDIA and Google prices are ready.");
-    expect(html).toContain('aria-label="Inspect child agent: Research NVIDIA and Google"');
-    expect(html).not.toContain('href="/session/product-child-1"');
+    expect(html).toContain('aria-label="Inspect child thread: Research NVIDIA and Google"');
+    expect(html).toContain('href="/session/product-child-1"');
+    expect(html).toContain("Codex · gpt-5.6-luna");
+  });
+
+  test("a bot's thread is named after the bot and counted apart from subagents", () => {
+    const html = renderToStaticMarkup(
+      <SubagentsFold
+        steps={[]}
+        live
+        canonicalEvents={[canonicalChild(), canonicalChild({ childId: "ses_other", launchToolCallId: "call-2", title: "Check pricing" })]}
+        productChildren={[
+          productChild({
+            threadId: "nova-thread",
+            title: "Nova: compare the EU tiers",
+            status: "running",
+            latestSummary: null,
+            bot: { id: "bot-nova", name: "Nova" },
+          }),
+        ]}
+      />,
+    );
+    expect(html).toContain("2 subagents, 1 bot thread");
+    expect(html).toContain("Nova · bot thread");
+    expect(html).toContain('aria-label="Inspect bot thread: Nova: compare the EU tiers"');
+    expect(html).toContain('aria-label="Open bot thread: Nova: compare the EU tiers"');
+    expect(html).toContain('href="/session/nova-thread"');
+    expect(html).not.toContain("Product");
+  });
+
+  test("a failed bot thread says Failed in words, not only in the dot colour", () => {
+    const html = renderToStaticMarkup(
+      <SubagentsFold
+        steps={[]}
+        live={false}
+        productChildren={[
+          productChild({
+            status: "failed",
+            latestSummary: "The pricing page timed out.",
+            bot: { id: "bot-nova", name: "Nova" },
+          }),
+        ]}
+      />,
+    );
+    expect(html).toContain("Failed · The pricing page timed out.");
+    expect(html).toContain('<span class="sr-only">Failed</span>');
+    expect(html).toContain("text-text-error-primary");
   });
 });

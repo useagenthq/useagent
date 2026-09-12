@@ -66,7 +66,7 @@ export function BackgroundStatusPill({
       className="flex items-center gap-2 rounded-full border border-border-button-default bg-background-secondary-default px-3 py-1.5 text-[12px] leading-5 text-text-primary shadow-card"
     >
       <span
-        className="ai-loading-pixel size-1.5 shrink-0 rounded-full bg-lime-500"
+        className="ai-loading-pixel size-1.5 shrink-0 rounded-full bg-success-base"
         aria-hidden
       />
       <span className="min-w-0 truncate font-medium">{label}</span>

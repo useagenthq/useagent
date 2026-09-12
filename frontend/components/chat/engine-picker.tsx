@@ -268,13 +268,16 @@ export function ModelPicker({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
+        title={`Model: ${modelLabel(model, engine)}`}
         className="text-text-primary hover:bg-background-primary-hover flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-body-2-medium transition-colors"
       >
         {/* Engine chip glyph — the AsteriskMark is useAgent's brand, not an
-            engine's; match the composer's neutral cpu icon instead. */}
+            engine's; match the composer's neutral cpu icon instead. Below sm the
+            label folds into the accessible name so the reply placeholder keeps
+            one line at phone width. */}
         <RiCpuLine className="text-text-secondary size-4" aria-hidden />
-        <span>{modelLabel(model, engine)}</span>
-        <RiArrowDownSLine className="text-text-tertiary size-4" aria-hidden />
+        <span className="max-sm:sr-only">{modelLabel(model, engine)}</span>
+        <RiArrowDownSLine className="text-text-tertiary size-4 max-sm:hidden" aria-hidden />
       </button>
 
       {open && (

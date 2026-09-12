@@ -15,6 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  RiAlertFill,
   RiCheckboxCircleFill,
   RiErrorWarningFill,
   RiInformationFill,
@@ -26,7 +27,7 @@ import { Button, type ButtonProps } from "@/components/base/buttons/button";
 import { CloseButton } from "@/components/base/buttons/close-button";
 import { cx, sortCx } from "@/utils/cx";
 
-export type NotificationStatus = "neutral" | "information" | "success" | "error";
+export type NotificationStatus = "neutral" | "information" | "success" | "warning" | "error";
 
 export type NotificationPosition =
   | "top-left"
@@ -106,6 +107,7 @@ const STATUS_ICON: Record<NotificationStatus, IconComponent> = {
   neutral: RiNotification3Fill,
   information: RiInformationFill,
   success: RiCheckboxCircleFill,
+  warning: RiAlertFill,
   error: RiErrorWarningFill,
 };
 
@@ -130,6 +132,7 @@ const styles = sortCx({
       "bg-notification-information-background text-notification-information-foreground",
     success:
       "bg-notification-success-background text-notification-success-foreground",
+    warning: "bg-warning-lighter text-warning-base",
     error:
       "bg-notification-error-background text-notification-error-foreground",
   },

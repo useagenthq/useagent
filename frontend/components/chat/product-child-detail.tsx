@@ -1,69 +1,49 @@
 "use client";
 
-import { RiArrowLeftLine, RiRobot2Line } from "@remixicon/react";
+import { RiArrowLeftLine, RiArrowRightLine, RiExternalLinkLine, RiRobot2Line } from "@remixicon/react";
 import { decodeApiRun, type ThreadRelationship } from "@useagent/agent-client";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { LoadingState } from "@/components/ai/loading-state";
-import { Composer } from "@/components/chat/composer";
+import { childKindLabel } from "@/components/chat/child-labels";
+import { RUN_STATUS_LABEL } from "@/components/chat/gateway-children";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
-import { type ApiRun, engineLabel } from "@/components/chat/types";
+import type { ApiRun } from "@/components/chat/types";
 import { useRunStream } from "@/components/chat/use-run-stream";
 import { StatusDot } from "@/components/shared/status-dot";
-import { STATUS_TONE } from "@/components/session-ui/agent-panel-row";
+import {
+  CHILD_META_CLASS,
+  formatChildEngineModel,
+  STATUS_TONE,
+} from "@/components/session-ui/agent-panel-row";
 import { backendFetch } from "@/lib/backend-fetch";
-import { createThreadMessage, runCreateFailureMessage } from "@/lib/create-run";
+import { cx as cn } from "@/utils/cx";
 
 const runTone = (status: ApiRun["status"]) =>
   STATUS_TONE[status === "queued" ? "pending" : status];
 
+/** The rail detail is inspect-only: replies happen in the thread itself. */
 export function ProductChildDetailBody({
   initialRun,
   relationship,
   onBack,
-  onRunAccepted,
 }: {
   initialRun: ApiRun;
   relationship: ThreadRelationship;
   onBack: () => void;
-  onRunAccepted: (run: ApiRun) => void;
 }) {
   const { steps, status, summary, live, liveText } = useRunStream(initialRun);
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
   const activity = steps.filter((step) => step.kind !== "done");
-
-  const send = async (
-    text: string,
-    _engine: ApiRun["engine"],
-    _model: string,
-    idempotencyKey: string,
-  ) => {
-    setSending(true);
-    setSendError(null);
-    try {
-      const response = await createThreadMessage(
-        relationship.threadId,
-        { text },
-        idempotencyKey,
-      );
-      if (!response.ok) {
-        throw new Error(await runCreateFailureMessage(response, "Could not message this child"));
-      }
-      const body = (await response.json()) as { id?: unknown };
-      if (typeof body.id !== "string" || !body.id) {
-        throw new Error("Child message response did not include a run");
-      }
-      const nextResponse = await backendFetch(`/api/runs/${encodeURIComponent(body.id)}`);
-      if (!nextResponse.ok) throw new Error(`backend ${nextResponse.status}`);
-      const nextRun = decodeApiRun(await nextResponse.json());
-      if (!nextRun) throw new Error("Child run response was invalid");
-      onRunAccepted(nextRun);
-    } catch (error) {
-      setSendError(error instanceof Error ? error.message : "Could not message this child");
-    } finally {
-      setSending(false);
-    }
-  };
+  const href = `/session/${relationship.threadId}`;
+  const kind = relationship.bot ? "bot_thread" : "child_thread";
+  // One truncating line: status word, what this is, engine and model.
+  const caption = [
+    RUN_STATUS_LABEL[status],
+    childKindLabel(kind, relationship.bot?.name),
+    formatChildEngineModel(initialRun.engine, initialRun.model),
+  ]
+    .filter((value): value is string => value !== null)
+    .join(" · ");
 
   return (
     <div className="flex h-full flex-col">
@@ -80,16 +60,22 @@ export function ProductChildDetailBody({
           <RiRobot2Line className="size-3.5" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-body-2-medium text-text-primary min-w-0 flex-1 truncate">
-              {relationship.title}
-            </span>
+          <span className="text-body-2-medium text-text-primary block truncate">
+            {relationship.title}
+          </span>
+          <p className={cn(CHILD_META_CLASS, "mt-0.5 flex items-center gap-1.5")}>
             <StatusDot tone={runTone(status)} pulse={live} />
-          </div>
-          <p className="text-mono-label text-text-tertiary mt-0.5">
-            Product child · {engineLabel(initialRun.engine)} · {initialRun.model} · {status}
+            <span className="min-w-0 truncate">{caption}</span>
           </p>
         </div>
+        <Link
+          href={href}
+          aria-label={`Open ${childKindLabel(kind)}: ${relationship.title}`}
+          title="Open thread"
+          className="text-text-secondary hover:bg-background-secondary-hover mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+        >
+          <RiExternalLinkLine className="size-4" aria-hidden />
+        </Link>
       </header>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
@@ -120,26 +106,16 @@ export function ProductChildDetailBody({
             {live ? "Waiting for the first activity…" : "No child activity recorded."}
           </p>
         ) : null}
-
-        {sendError ? (
-          <p role="alert" className="text-caption-1-regular text-text-error-primary">
-            {sendError}
-          </p>
-        ) : null}
       </div>
 
       <div className="border-border-button-default shrink-0 border-t p-3">
-        <Composer
-          variant="compact"
-          placeholder="Message this child…"
-          defaultEngine={initialRun.engine}
-          defaultModel={initialRun.model}
-          enableAgentCommand={false}
-          enableModelPicker={false}
-          pending={sending}
-          draftKey={`product-child:${relationship.threadId}`}
-          onSubmit={send}
-        />
+        <Link
+          href={href}
+          className="text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-body-2-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+        >
+          Open thread to reply
+          <RiArrowRightLine className="size-4 shrink-0" aria-hidden />
+        </Link>
       </div>
     </div>
   );
@@ -196,7 +172,6 @@ export function ProductChildDetail({
       initialRun={run}
       relationship={relationship}
       onBack={onBack}
-      onRunAccepted={setRun}
     />
   );
 }

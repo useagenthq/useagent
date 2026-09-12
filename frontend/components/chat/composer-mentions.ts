@@ -226,3 +226,56 @@ export function mentionsReducer(state: Mention[], action: MentionAction): Mentio
 export function mentionedBotIds(mentions: readonly Mention[]): string[] {
   return [...new Set(mentions.flatMap((m) => (m.kind === "bot" ? [m.id] : [])))];
 }
+
+/**
+ * `@bot/...` tokens in the text that no chip backs. The backend hands off ONLY
+ * from `bot_mentions` (the chips), so such a token would send as plain text and
+ * no bot would be involved - the composer warns before that happens.
+ */
+export function unlinkedBotTokens(text: string, mentions: readonly Mention[]): string[] {
+  const linked = new Set(
+    mentions.flatMap((m) => (m.kind === "bot" ? [m.token.toLowerCase()] : [])),
+  );
+  const tokens = text.match(/(?<=^|\s)@bot\/\S+/g) ?? [];
+  return [...new Set(tokens.filter((token) => !linked.has(token.toLowerCase())))];
+}
+
+// ---------------------------------------------------------------------------
+// Draft persistence (the chips ride along with the textarea draft)
+// ---------------------------------------------------------------------------
+
+const MENTION_KINDS: ReadonlySet<string> = new Set(["skill", "thread", "pr", "file", "bot"]);
+
+function isMention(value: unknown): value is Mention {
+  if (typeof value !== "object" || value === null) return false;
+  const m = value as Record<string, unknown>;
+  if (typeof m.kind !== "string" || !MENTION_KINDS.has(m.kind) || typeof m.token !== "string") {
+    return false;
+  }
+  switch (m.kind) {
+    case "skill":
+    case "bot":
+      return typeof m.id === "string" && typeof m.name === "string";
+    case "thread":
+      return typeof m.id === "string" && typeof m.shortId === "string" && typeof m.title === "string";
+    case "pr":
+      return typeof m.repo === "string" && typeof m.number === "number" && typeof m.title === "string";
+    default:
+      return (
+        typeof m.repo === "string" &&
+        typeof m.path === "string" &&
+        (m.revision === null || typeof m.revision === "string")
+      );
+  }
+}
+
+/** Mentions saved with a draft; anything malformed decodes to no chips. */
+export function parseDraftMentions(raw: string | null): Mention[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(isMention) : [];
+  } catch {
+    return [];
+  }
+}

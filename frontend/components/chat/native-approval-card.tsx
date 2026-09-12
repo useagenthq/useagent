@@ -29,7 +29,7 @@ export function NativeApprovalCard({
       data-testid="native-approval-card"
     >
       <div className="flex items-start gap-2">
-        <span className="bg-yellow-500/10 text-yellow-600 flex size-7 shrink-0 items-center justify-center rounded-full">
+        <span className="bg-warning-lighter text-warning-base flex size-7 shrink-0 items-center justify-center rounded-full">
           <RiShieldCheckLine className="size-4" aria-hidden />
         </span>
         <div className="min-w-0">
@@ -41,7 +41,7 @@ export function NativeApprovalCard({
           )}
         </div>
       </div>
-      {error && <p className="text-caption-1-regular text-red-500">{error}</p>}
+      {error && <p className="text-caption-1-regular text-text-error-primary">{error}</p>}
       <div className="flex flex-wrap justify-end gap-2">
         <Button
           variant="ghost"
@@ -52,7 +52,7 @@ export function NativeApprovalCard({
           Cancel turn
         </Button>
         <Button
-          variant="danger"
+          variant="secondary"
           size="small"
           disabled={submitting}
           onClick={() => void onRespond("decline")}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ThreadRelationship } from "@useagent/agent-client";
+import type { ProductThreadStatus, ThreadRelationship } from "@useagent/agent-client";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import type { OrgChange } from "@/lib/org-changes";
 import type { InitialThreadRelationshipHint } from "@/lib/thread-relationship-hint";
@@ -26,6 +26,18 @@ export interface ThreadFamilyState extends ThreadFamilySnapshot {
 }
 
 export type ThreadSubmissionLane = "root" | "child" | "blocked";
+
+/** While a child is still working, the family re-reads itself on this cadence.
+ *  The org-change stream is the fast path; this is the floor, so a child's
+ *  settled status never sits stale in the parent until a reload. */
+export const ACTIVE_CHILD_POLL_MS = 5_000;
+const ACTIVE_CHILD_STATUSES: ReadonlySet<ProductThreadStatus> = new Set(["queued", "waiting", "running"]);
+
+export function threadFamilyHasActiveChild(
+  children: readonly Pick<ThreadRelationship, "status">[],
+): boolean {
+  return children.some((child) => ACTIVE_CHILD_STATUSES.has(child.status));
+}
 
 export function threadSubmissionLane(
   state: Pick<ThreadFamilyState, "ready" | "isProductChild">,
@@ -103,6 +115,13 @@ export function useThreadFamily(threadId: string): ThreadFamilyState {
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);
+
+  const childActive = threadFamilyHasActiveChild(state.children);
+  useEffect(() => {
+    if (!childActive) return;
+    const id = setInterval(() => void load(), ACTIVE_CHILD_POLL_MS);
+    return () => clearInterval(id);
+  }, [childActive, load]);
 
   return {
     ...state,

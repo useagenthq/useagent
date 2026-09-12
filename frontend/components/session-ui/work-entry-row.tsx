@@ -13,7 +13,7 @@
 // - T3 shadcn tokens -> BoardUI semantic tokens (secondary-label -> text-text-secondary,
 //   icon-muted -> text-text-tertiary, foreground -> text-text-primary, destructive -> error red,
 //   accent hover -> background-primary-hover, border -> border-button-default). No hardcoded palette.
-// - Their Tooltip -> BoardUI tooltip (react-aria; plain triggers wrapped in Focusable).
+// - Their status Tooltip -> a plain labelled glyph (role="img" + title): nothing to activate, so no tab stop.
 // - runtime.warning chrome dropped (no sourceActivityKind in our canonical lane yet).
 
 import {
@@ -34,8 +34,6 @@ import {
   RiToolsLine,
 } from "@remixicon/react";
 import { type KeyboardEvent, memo, useState } from "react";
-import { Focusable } from "react-aria-components";
-import { Tooltip, TooltipTrigger } from "@/components/base/tooltip/tooltip";
 import { cx as cn } from "@/utils/cx";
 import {
   buildToolCallExpandedBody,
@@ -81,18 +79,16 @@ function StatusIndicator({ entry, turnSettled }: { entry: WorkEntry; turnSettled
   const [Icon, iconClass, label] = failed
     ? ([RiCloseLine, "text-text-error-primary", "Failed"] as const)
     : showSuccess
-      ? ([RiCheckLine, "text-lime-600", "Completed"] as const)
+      ? ([RiCheckLine, "text-success-base", "Completed"] as const)
       : ([RiSubtractLine, "opacity-70", "Empty"] as const);
 
+  // Plain glyph, not a focusable control: there is nothing to activate, and a
+  // 16px tab stop with no action only adds a keystroke. The label stays readable
+  // for assistive tech and as a native tooltip.
   return (
-    <TooltipTrigger delay={200}>
-      <Focusable>
-        <span className="flex size-4 items-center justify-center" aria-label={label}>
-          <Icon className={cn("block size-3 shrink-0", iconClass)} aria-hidden />
-        </span>
-      </Focusable>
-      <Tooltip size="sm">{label}</Tooltip>
-    </TooltipTrigger>
+    <span className="flex size-4 items-center justify-center" role="img" aria-label={label} title={label}>
+      <Icon className={cn("block size-3 shrink-0", iconClass)} aria-hidden />
+    </span>
   );
 }
 

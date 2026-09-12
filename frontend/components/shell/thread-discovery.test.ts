@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   filterCommandEntries,
+  findChildThreadMatches,
   findThreadMatches,
   rankThreads,
   threadActivityTimestamp,
@@ -46,6 +47,40 @@ describe("thread discovery search", () => {
   test("returns no thread rows for blank or unmatched searches", () => {
     expect(findThreadMatches(runs, "")).toEqual([]);
     expect(findThreadMatches(runs, "does-not-exist")).toEqual([]);
+  });
+
+  test("delegated child threads match on their own title and never on a root", () => {
+    const relationship = (threadId: string, parentThreadId: string | null, title: string, at: string) => ({
+      threadId,
+      parentThreadId,
+      familyThreadId: "root",
+      kind: parentThreadId ? ("delegated" as const) : ("root" as const),
+      title,
+      sourceRunId: "root",
+      sourceExecutionId: null,
+      createdAt: at,
+      updatedAt: at,
+      status: "completed" as const,
+      engine: "opencode" as const,
+      model: "claude-opus-5",
+      latestRunId: threadId,
+      latestSummary: null,
+      latestDurationMs: null,
+      latestActivityAt: at,
+      bot: null,
+      followUpRunIds: [],
+    });
+    const relationships = [
+      relationship("root", null, "Cheapest tier research", "2026-09-01T00:00:00.000Z"),
+      relationship("nova", "root", "Nova: find the cheapest tier", "2026-09-01T00:01:00.000Z"),
+      relationship("atlas", "root", "Atlas: cheapest tier in the UK", "2026-09-01T00:02:00.000Z"),
+    ];
+    expect(findChildThreadMatches(relationships, "cheapest tier").map((item) => item.threadId)).toEqual([
+      "atlas",
+      "nova",
+    ]);
+    expect(findChildThreadMatches(relationships, "")).toEqual([]);
+    expect(findChildThreadMatches(relationships, "research")).toEqual([]);
   });
 
   test("static commands continue to coexist with thread results", () => {

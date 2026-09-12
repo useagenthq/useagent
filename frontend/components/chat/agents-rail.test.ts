@@ -363,6 +363,8 @@ describe("agents rail gateway children", () => {
       latestSummary: "Calendar grid complete.",
       latestDurationMs: 1_250,
       latestActivityAt: "2026-09-01T00:00:01.000Z",
+      bot: null,
+      followUpRunIds: [],
     };
     const html = renderToStaticMarkup(createElement(AgentsRail, {
       steps: [],

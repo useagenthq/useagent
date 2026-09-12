@@ -35,16 +35,30 @@ export interface ProjectGroup {
 /** Bucket key for threads that carry no repo. */
 export const UNATTACHED_KEY = "__unattached__";
 
-/** Keep durable product children out of the left navigation. Their hierarchy,
- * status, transcript, and composer live in the parent session's Agents rail. */
+/** Durable product children never appear as flat siblings in the left
+ * navigation: only roots do, and each root nests its delegated children (bot
+ * threads and the like) beneath it, grouped here by parent thread id. */
 export function projectSidebarThreadFamilies(
   runs: readonly SidebarRun[],
   relationships: readonly ThreadRelationship[],
-): { readonly roots: readonly SidebarRun[] } {
+): {
+  readonly roots: readonly SidebarRun[];
+  readonly childrenByParent: ReadonlyMap<string, readonly ThreadRelationship[]>;
+} {
   const relationshipById = new Map(relationships.map((item) => [item.threadId, item] as const));
   const childIds = new Set(
     relationships.flatMap((item) => item.parentThreadId ? [item.threadId] : []),
   );
+  const childrenByParent = new Map<string, ThreadRelationship[]>();
+  for (const item of relationships) {
+    if (!item.parentThreadId) continue;
+    const siblings = childrenByParent.get(item.parentThreadId) ?? [];
+    siblings.push(item);
+    childrenByParent.set(item.parentThreadId, siblings);
+  }
+  for (const siblings of childrenByParent.values()) {
+    siblings.sort((a, b) => Date.parse(b.latestActivityAt) - Date.parse(a.latestActivityAt));
+  }
   const roots = rankThreads(runs.filter((run) => !childIds.has(run.id)).map((run) => {
     const relationship = relationshipById.get(run.id);
     if (!relationship) return run;
@@ -62,7 +76,7 @@ export function projectSidebarThreadFamilies(
       latest_updated_at: relationship.latestActivityAt,
     } satisfies SidebarRun;
   }));
-  return { roots };
+  return { roots, childrenByParent };
 }
 
 /** Primary repo of a typed run summary (repo_specs > repos > legacy repo).

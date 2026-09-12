@@ -24,18 +24,16 @@ import {
 } from "@/components/chat/approval-state";
 import { ArtifactsRail } from "@/components/chat/artifacts-rail";
 import {
-  type CanonicalCommandView,
-  resolveCommandCatalog,
   selectActiveSessionId,
   selectSessionCapabilities,
   selectSessionCommandCatalog,
-  selectSessionCommands,
 } from "@/components/chat/canonical-timeline";
 import { type AssistantIdentity, Conversation } from "@/components/chat/conversation";
 import { DesktopPane } from "@/components/chat/desktop-pane";
 import { DiffPane } from "@/components/chat/diff-pane";
 import { EditorPane } from "@/components/chat/editor-pane";
 import { gatewayApprovalSignature } from "@/components/chat/gateway-approval-state";
+import { decodeRunAccepted, type HandoffReceipt, handoffNotice } from "@/components/chat/handoff-receipts";
 import {
   type GatewayApprovalSignal,
   useGatewayApprovals,
@@ -48,7 +46,6 @@ import {
   useRailWidth,
   useSplitTooNarrow,
 } from "@/components/chat/rail-resizer";
-import type { SlashCommand } from "@/components/chat/slash-command";
 import { SubagentChips } from "@/components/chat/subagent-pane";
 import {
   railTabLabelFor,
@@ -79,6 +76,7 @@ import {
   supportsPreSessionModelSelection,
 } from "@/components/chat/types";
 import { shouldRetireOptimistic, useThreadStream } from "@/components/chat/use-thread-stream";
+import { useReplyCommandCatalog } from "@/components/chat/use-reply-command-catalog";
 import { useWindowedThread } from "@/components/chat/use-windowed-thread";
 import type { ApiThreadOutlineTurn } from "@/components/chat/windowed-thread";
 import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
@@ -129,6 +127,13 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   const [questionError, setQuestionError] = useState<string | null>(null);
   const [answeringApproval, setAnsweringApproval] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
+  // What each accepted reply's @mentioned bots did (POST /api/runs `handoffs[]`), keyed by
+  // run id, plus the composer notice for the ones that did NOT get the message.
+  const [handoffs, setHandoffs] = useState<{
+    byRun: ReadonlyMap<string, readonly HandoffReceipt[]>;
+    notice: string | null;
+  }>({ byRun: new Map(), notice: null });
+  const dismissHandoffNotice = useCallback(() => setHandoffs((h) => ({ ...h, notice: null })), []);
   // ONE realtime subscription for the whole conversation, keyed by the ROOT thread
   // id for the page lifetime (final_fix.md): creating/queueing/starting/settling/
   // cancelling a run never resets the store or reconnects. Every run's projection
@@ -378,7 +383,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
       // Native-question replies resume the blocked provider turn instead of enqueueing a run.
       if (activeQuestion && composerCanAnswerQuestion) {
         if (attachmentIds.length > 0 || resources.length > 0 || botMentions.length > 0) {
-          throw new Error("Resources cannot be added while answering a native question");
+          throw new Error("You can't attach files or mention bots while answering a question");
         }
         const accepted = await submitQuestionAnswers(activeQuestion, [[text]]);
         if (!accepted) throw new Error("question reply failed");
@@ -386,9 +391,9 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
       }
       setPending({ text, runId: null });
       try {
-        if (composerRelationshipBlocked) throw new Error("Child-session identity is still being verified. Try again in a moment.");
+        if (composerRelationshipBlocked) throw new Error("Checking this thread. Try again in a moment.");
         if (isProductChild && (command || resources.length > 0 || botMentions.length > 0)) {
-          throw new Error("Commands and linked resources are not available in child follow-ups yet");
+          throw new Error("Commands, linked context and bots aren't available in this child thread yet");
         }
         const res = submissionLane === "child"
           ? await createThreadMessage(rootId, {
@@ -401,9 +406,15 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
           }), idempotencyKey);
         if (!res.ok) throw new Error(await runCreateFailureMessage(res, `backend ${res.status}`));
         // Keep the accepted run visible until SSE/reconcile observes its durable id.
-        const body = (await res.json().catch(() => ({}))) as { id?: unknown };
-        const runId = typeof body.id === "string" ? body.id : null;
+        const accepted = decodeRunAccepted(await res.json().catch(() => ({})));
+        const runId = accepted.runId;
         setPending((p) => (p ? { ...p, runId } : { text, runId }));
+        if (runId && accepted.handoffs.length > 0) {
+          setHandoffs((h) => ({
+            byRun: new Map(h.byRun).set(runId, accepted.handoffs),
+            notice: handoffNotice(accepted.handoffs),
+          }));
+        }
         void reconcile();
       } catch (err) {
         // A failed POST restores the draft and explicit retry state.
@@ -653,80 +664,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [surfacesSheet, sheetSurfacesOpen]);
 
-  // Slash-command catalog for the reply composer's "/" autocomplete - the SELECTED engine's
-  // real native commands, capability-driven (no provider-name gate). Authoritative source is
-  // the DURABLE canonical stream's per-session `commands.updated`, SESSION-SCOPED to the current
-  // native session so a historical or other-session snapshot can NEVER mask the active session
-  // (a restarted/new session that has not re-advertised falls back to the pre-session priming
-  // fetch rather than showing stale commands). The live session snapshot always wins; the priming
-  // fetch (GET /api/commands, keyed by engine - one path for OpenCode/Claude/Codex, no per-engine
-  // side channel) only primes until this session advertises. `resolveCommandCatalog` folds both
-  // into one honest state (loading / unavailable / error / ready[+stale]).
-  const engine = normalizeEngine(newest.engine);
-  const durableCommands = useMemo(
-    () => selectSessionCommands([...snapshot.byId.values()], engineSessionId),
-    [snapshot.byId, engineSessionId],
-  );
-  const hasDurable = durableCommands !== null;
-  const [fetchState, setFetchState] = useState<{
-    phase: "loading" | "done" | "error";
-    commands: CanonicalCommandView[];
-  }>({
-    phase: "loading",
-    commands: [],
-  });
-  useEffect(() => {
-    if (hasDurable) return; // the durable session catalog wins; no priming fetch needed
-    let cancelled = false;
-    // Clear-on-change: reset immediately so a prior engine's commands never linger while loading.
-    setFetchState({ phase: "loading", commands: [] });
-    void (async () => {
-      const fail = () => !cancelled && setFetchState({ phase: "error", commands: [] });
-      try {
-        // ONE pre-session priming path for every engine: the org/snapshot catalog via GET
-        // /api/commands (keyed by engine). The durable per-session `commands.updated` (now emitted
-        // by opencode too, C5) is authoritative and supersedes this the moment the session advertises.
-        const res = await backendFetch(`/api/commands?engine=${encodeURIComponent(engine)}`);
-        if (!res.ok) return fail();
-        const list =
-          (
-            (await res.json()) as {
-              commands?: { name?: string; description?: string; input?: string }[];
-            }
-          ).commands ?? [];
-        if (cancelled) return;
-        if (!Array.isArray(list)) return fail();
-        setFetchState({
-          phase: "done",
-          commands: list
-            .filter((c): c is { name: string; description?: string; input?: string } => !!c.name)
-            .map((c) => ({
-              name: c.name,
-              description: c.description ?? null,
-              input: typeof c.input === "string" ? c.input : null,
-            })),
-        });
-      } catch {
-        fail();
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [engine, hasDurable]);
-  // Memoized so the memoized Conversation sees stable prop identities between
-  // catalog changes (a re-render here must not re-render the whole timeline).
-  const catalogState = useMemo(
-    () => resolveCommandCatalog(durableCommands, fetchState, engine),
-    [durableCommands, fetchState, engine],
-  );
-  const commands: SlashCommand[] = useMemo(
-    () =>
-      catalogState.status === "ready"
-        ? catalogState.commands.map((c) => ({ name: c.name, description: c.description ?? null }))
-        : [],
-    [catalogState],
-  );
+  const { catalogState, commands } = useReplyCommandCatalog(snapshot.byId, engineSessionId, newest.engine);
 
   return (
     <WorkspaceOpenProvider value={openWorkpiece}>
@@ -834,6 +772,9 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
             onTurnsNeeded={initialOutline ? handleTurnsNeeded : undefined}
             productChildren={productChildren}
             onOpenProductChild={openProductChild}
+            handoffReceipts={handoffs.byRun}
+            handoffNotice={handoffs.notice}
+            onDismissHandoffNotice={dismissHandoffNotice}
           />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the
               moment the first step streams in (Thinking block takes over).

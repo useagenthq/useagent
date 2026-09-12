@@ -14,6 +14,7 @@ import {
   type ProjectGroup as TreeProjectGroup,
 } from "@/components/session-ui/project-thread-tree";
 import { threadRowTimestamp } from "@/components/session-ui/thread-row";
+import type { ThreadRelationship } from "@useagent/agent-client";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { useSession } from "@/lib/auth";
 import { backendFetch } from "@/lib/backend-fetch";
@@ -183,9 +184,21 @@ export function SidebarProjects() {
 
   // Fold a data group into the native tree view model: a title, the clean repo
   // name for the actions menu, and each thread's label + real relative-time chip
-  // + active-state from the current route.
+  // + active-state from the current route. Delegated children (a bot's thread
+  // under the turn that handed it work) nest under their parent row.
   const toTree = useCallback(
     (list: readonly ProjectGroup[]): TreeProjectGroup[] => {
+      const childRows = (parentId: string): ProjectThread[] =>
+        (families.childrenByParent.get(parentId) ?? []).map((child: ThreadRelationship) => ({
+          id: child.threadId,
+          label: child.title,
+          time: relativeTimeShort(child.latestActivityAt),
+          status: child.status,
+          engine: child.engine,
+          model: child.model,
+          isSelected: pathname === `/session/${child.threadId}`,
+          children: childRows(child.threadId),
+        }));
       return list.map((group) => ({
         key: group.key,
         label: group.name,
@@ -199,13 +212,13 @@ export function SidebarProjects() {
             engine: run.engine,
             model: run.model,
             isSelected: pathname === `/session/${run.id}`,
-            children: [],
+            children: childRows(run.id),
             nativeChildren: sidebarNativeAgentRows(run),
           };
         }),
       }));
     },
-    [pathname],
+    [families.childrenByParent, pathname],
   );
 
   // Projects with active threads stay in view; the long tail of empty repos sits

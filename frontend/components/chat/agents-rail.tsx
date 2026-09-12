@@ -34,6 +34,7 @@ import type { ThreadRelationship } from "@useagent/agent-client";
 import { type ApiStep } from "@/components/chat/types";
 import { useProductChildGraphs } from "@/components/chat/use-product-child-graphs";
 import { formatDuration } from "@/utils/format";
+import type { ChildKind } from "@/components/chat/child-labels";
 import {
   AgentPanelRow,
 } from "@/components/session-ui/agent-panel-row";
@@ -122,6 +123,9 @@ function ChildTreeRow({
       ? RUN_STATUS_LABEL[node.gatewayChild?.status ?? "running"]
       : gatewaySummary
     : node.result;
+  const kind: ChildKind = node.lane === "product"
+    ? node.productRelationship?.bot ? "bot_thread" : "child_thread"
+    : node.lane === "gateway" ? "spawned_session" : "subagent";
 
   return (
     <AgentPanelRow
@@ -150,6 +154,8 @@ function ChildTreeRow({
         elapsed: elapsed !== null ? formatDuration(elapsed) : null,
         lane: node.lane,
         childCount: node.childCount,
+        kind,
+        botName: node.productRelationship?.bot?.name ?? null,
       }}
       onOpen={onOpen}
       treeItem={treeItem}

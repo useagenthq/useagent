@@ -1,6 +1,6 @@
 import type { DotTone } from "@/components/shared/status-dot";
 import { cleanPrompt } from "@/components/chat/types";
-import type { ProductThreadStatus } from "@useagent/agent-client";
+import type { ProductThreadStatus, ThreadRelationship } from "@useagent/agent-client";
 import { effectiveSidebarRunStatus, type SidebarRun } from "./working-project-status";
 
 export interface ThreadStatusPresentation {
@@ -90,6 +90,19 @@ export function findThreadMatches(runs: readonly SidebarRun[], query: string): S
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [];
   return rankThreads(runs).filter((run) => searchableThreadText(run).includes(normalized));
+}
+
+/** Delegated child threads (bot threads and the like) whose title matches the
+ *  query. They live under a parent, so a search is the other way to reach them. */
+export function findChildThreadMatches(
+  relationships: readonly ThreadRelationship[],
+  query: string,
+): ThreadRelationship[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return [];
+  return relationships
+    .filter((item) => item.parentThreadId !== null && item.title.toLowerCase().includes(normalized))
+    .toSorted((a, b) => Date.parse(b.latestActivityAt) - Date.parse(a.latestActivityAt));
 }
 
 export function filterCommandEntries<T extends { readonly label: string }>(

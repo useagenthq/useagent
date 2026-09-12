@@ -1,7 +1,9 @@
-import { and, asc, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, inArray, like, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { alias } from "drizzle-orm/pg-core";
 import {
+  botHandoffs,
+  bots,
   commands,
   runAdmissions,
   runs,
@@ -9,6 +11,7 @@ import {
   type EngineId,
   type ThreadRelationshipKind,
 } from "../db/schema";
+import { FOLLOWUP_KEY_PATTERN, mentionFollowupSourceRunId } from "../bots/handoff-keys";
 import { boundedChildTitle } from "./child-session-policy";
 import { projectProductThreadStatus, type ProductThreadStatus } from "./thread-status";
 
@@ -40,6 +43,12 @@ export interface ThreadRelationshipView {
   readonly latestActivityAt: Date;
   readonly createdAt: Date;
   readonly updatedAt: Date;
+  /** The bot this delegated thread was handed to through an @mention; null for
+   *  roots and for children the agent opened itself. */
+  readonly bot: { readonly id: string; readonly name: string } | null;
+  /** Parent-thread runs whose later @mention became a turn of this thread
+   *  (the creating run is `sourceRunId`, not listed here). */
+  readonly followUpRunIds: readonly string[];
 }
 
 export interface ThreadRelationshipCursor {
@@ -177,6 +186,27 @@ async function latestViews(
     .orderBy(asc(runs.threadId), desc(runs.createdAt), desc(runs.id));
   const latestByThread = new Map<string, (typeof runRows)[number]>();
   for (const row of runRows) if (!latestByThread.has(row.threadId)) latestByThread.set(row.threadId, row);
+  const handoffRows = await exec.select({ threadId: botHandoffs.threadId, botId: bots.id, botName: bots.name })
+    .from(botHandoffs)
+    .innerJoin(bots, and(eq(bots.orgId, botHandoffs.orgId), eq(bots.id, botHandoffs.botId)))
+    .where(and(eq(botHandoffs.orgId, orgId), inArray(botHandoffs.threadId, threadIds)));
+  const botByThread = new Map(handoffRows.map((row) => [row.threadId, { id: row.botId, name: row.botName }] as const));
+  const followUpRows = await exec.select({ threadId: runs.threadId, key: commands.idempotencyKey })
+    .from(commands)
+    .innerJoin(runs, eq(runs.id, commands.runId))
+    .where(and(
+      eq(commands.orgId, orgId),
+      inArray(runs.threadId, threadIds),
+      like(commands.idempotencyKey, FOLLOWUP_KEY_PATTERN),
+    ));
+  const followUpsByThread = new Map<string, string[]>();
+  for (const row of followUpRows) {
+    const sourceRunId = row.key ? mentionFollowupSourceRunId(row.key) : null;
+    if (!sourceRunId) continue;
+    const list = followUpsByThread.get(row.threadId) ?? [];
+    if (!list.includes(sourceRunId)) list.push(sourceRunId);
+    followUpsByThread.set(row.threadId, list);
+  }
   return relationships.flatMap((relationship) => {
     const latest = latestByThread.get(relationship.threadId);
     if (!latest) return [];
@@ -206,6 +236,8 @@ async function latestViews(
       latestActivityAt: latest.updatedAt,
       createdAt: relationship.createdAt,
       updatedAt: relationship.updatedAt,
+      bot: botByThread.get(relationship.threadId) ?? null,
+      followUpRunIds: followUpsByThread.get(relationship.threadId) ?? [],
     }];
   });
 }
@@ -300,10 +332,16 @@ export async function listOrgThreadRelationships(input: {
     cursorCreatedAtMicros: sql<string>`((extract(epoch from ${threadRelationships.createdAt}) * 1000000)::bigint)::text`,
   }).from(threadRelationships).where(and(
     eq(threadRelationships.orgId, input.orgId),
+    // The same customer boundary as getPublicThreadRelationshipView: the FAMILY
+    // anchor must be an ordinary root run. Judging each row by its own run hid
+    // every bot handoff child (their runs carry the bot-handoff origin) from the
+    // sidebar and the palette while /children still listed them.
     sql`exists (
       select 1 from runs relationship_root
       where relationship_root.org_id = ${input.orgId}
-        and relationship_root.id = ${threadRelationships.threadId}
+        and relationship_root.id = ${threadRelationships.familyThreadId}
+        and relationship_root.thread_id = ${threadRelationships.familyThreadId}
+        and relationship_root.parent_run_id is null
         and relationship_root.origin is null
     )`,
     input.after

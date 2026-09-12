@@ -200,13 +200,13 @@ test("a gateway child-session turn folds under its parent, never a second turn b
   // Its truth lives in the parent's subagent fold: honest serial Queued state
   // plus the open-as-own-session affordance.
   expect(html).toContain('data-testid="subagents-fold"');
-  expect(html).toContain("1 subagent");
+  expect(html).toContain("1 spawned session");
   expect(html).toContain("Delegated: audit the docs");
   expect(html).toContain("Queued");
   expect(html).toContain('href="/session/run-child"');
 });
 
-test("a product child result stays under its spawning parent without page navigation", () => {
+test("a product child result stays under its spawning parent and links to its thread", () => {
   const parent = makeTurn("run-parent", "completed");
   const child: ThreadRelationship = {
     threadId: "product-child",
@@ -225,11 +225,50 @@ test("a product child result stays under its spawning parent without page naviga
     latestSummary: "NVDA and GOOGL prices are ready.",
     latestDurationMs: 1_500,
     latestActivityAt: "2026-09-01T00:01:00.000Z",
+    bot: null,
+    followUpRunIds: [],
   };
   const html = render([parent], [child]);
   expect(html).toContain("Research market prices");
   expect(html).toContain("NVDA and GOOGL prices are ready.");
-  expect(html).not.toContain('href="/session/product-child"');
+  expect(html).toContain('href="/session/product-child"');
+  // The agent opened this child itself: no bot, so no handoff receipt under the turn.
+  expect(html).not.toContain('data-testid="handoff-receipts"');
+});
+
+test("a bot's thread leaves a receipt under the turn that handed it work and under every follow-up", () => {
+  const first = makeTurn("run-first", "completed");
+  const second = makeTurn("run-second", "completed");
+  const child: ThreadRelationship = {
+    threadId: "nova-thread",
+    parentThreadId: "run-first",
+    familyThreadId: "run-first",
+    kind: "delegated",
+    title: "Nova: compare the EU tiers",
+    sourceRunId: "run-first",
+    sourceExecutionId: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-01T00:01:00.000Z",
+    status: "running",
+    engine: "opencode",
+    model: "claude-opus-5",
+    latestRunId: "nova-thread",
+    latestSummary: null,
+    latestDurationMs: null,
+    latestActivityAt: "2026-09-01T00:01:00.000Z",
+    bot: { id: "bot-nova", name: "Nova" },
+    followUpRunIds: ["run-second"],
+  };
+  const html = render([first, second], [child]);
+  expect(html).toContain('data-handoff-status="created"');
+  expect(html).toContain("Handed to Nova.");
+  expect(html).toContain('data-handoff-status="followed_up"');
+  expect(html).toContain("Sent to Nova&#x27;s existing thread.");
+  expect(html.match(/href="\/session\/nova-thread"/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  // The fold names it by what happened, not by the lane id.
+  expect(html).toContain("1 bot thread");
+  expect(html).toContain("Nova · bot thread");
+  expect(html).not.toContain("Product child");
 });
 
 test("a reply turn without the child-session mark still renders as its own block", () => {

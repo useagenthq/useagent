@@ -3,6 +3,7 @@
 // for skills, threads, pulls, bots, repos and the repo tree. UI-free so the
 // picker component only renders and the hook only sequences.
 // ---------------------------------------------------------------------------
+import { BOT_STATES, type BotState } from "@useagent/agent-client";
 import {
   RiArrowLeftLine,
   RiArrowRightSLine,
@@ -57,7 +58,7 @@ export type ThreadItem = { id: string; title: string; meta: string };
 export type PullItem = { repo: string; number: number; title: string };
 export type RepoItem = { full_name: string; private: boolean; default_branch: string | null };
 export type TreeItem = { path: string; name: string; type: "file" | "dir" };
-export type BotItem = { id: string; name: string; title: string };
+export type BotItem = { id: string; name: string; title: string; state: BotState };
 
 export { firstLine } from "./types";
 
@@ -96,8 +97,15 @@ export async function fetchPulls(): Promise<PullItem[]> {
 export async function fetchBots(): Promise<BotItem[]> {
   const res = await backendFetch("/api/bots");
   if (!res.ok) throw new Error(`bots ${res.status}`);
-  const data = (await res.json()) as { bots?: { id: string; name: string; title: string; archived?: boolean }[] };
-  return (data.bots ?? []).filter((b) => !b.archived).map((b) => ({ id: b.id, name: b.name, title: b.title }));
+  const data = (await res.json()) as {
+    bots?: { id: string; name: string; title: string; archived?: boolean; state?: unknown }[];
+  };
+  return (data.bots ?? []).filter((b) => !b.archived).map((b) => ({
+    id: b.id,
+    name: b.name,
+    title: b.title,
+    state: (BOT_STATES as readonly unknown[]).includes(b.state) ? (b.state as BotState) : "idle",
+  }));
 }
 
 export async function fetchRepos(): Promise<RepoItem[]> {
