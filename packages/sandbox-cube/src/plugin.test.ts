@@ -13,6 +13,10 @@ describe("Cube plugin", () => {
     expect(cubePlugin.configFromEnv("key", { CUBE_API_URL: "http://127.0.0.1:3000" })).toEqual({ apiKey: "key" });
   });
 
+  test("uses the pinned Bun path baked into Cube root images", () => {
+    expect(cubePlugin.runtime.bunExecutable).toBe("/usr/local/bin/bun");
+  });
+
   test("previewAuthHeaders carries the traffic token in both Cube and E2B headers", () => {
     expect(cubePlugin.previewAuthHeaders("tok")).toEqual({
       "cube-traffic-access-token": "tok",
