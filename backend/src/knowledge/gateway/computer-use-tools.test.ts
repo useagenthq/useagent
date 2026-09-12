@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import sharp from "sharp";
 import type { ArtifactDescriptor } from "../../artifacts/repo";
 import type { SandboxHandle } from "../../sandboxes/provider";
 import { setSandboxArtifactPublisherForTest } from "./artifact-tools";
@@ -15,6 +16,7 @@ import {
   x11KeyCommand,
   x11KeyName,
 } from "./computer-use-tools";
+import { MODEL_SCREENSHOT_MAX_BYTES } from "./screenshot-compression";
 import type { ToolTokenClaims } from "./token";
 
 const claims: ToolTokenClaims = {
@@ -114,10 +116,25 @@ function textAt(content: readonly ComputerToolContent[], index: number): string 
   return item.text;
 }
 
+async function desktopPng(): Promise<Buffer> {
+  const width = 1920;
+  const height = 1080;
+  const pixels = Buffer.allocUnsafe(width * height * 3);
+  let state = 0x12345678;
+  for (let index = 0; index < pixels.length; index += 1) {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    pixels[index] = state & 0xff;
+  }
+  return await sharp(pixels, { raw: { width, height, channels: 3 } }).png().toBuffer();
+}
+
 describe("computer-use gateway tools", () => {
-  test("captures provider-owned desktops through the file API without truncating base64 output", async () => {
+  test("keeps the full desktop PNG while returning a bounded model JPEG", async () => {
     const commands: string[] = [];
     let downloaded = "";
+    const original = await desktopPng();
     const sandbox = {
       id: "box-native",
       providerKind: "box",
@@ -139,7 +156,7 @@ describe("computer-use gateway tools", () => {
       fs: {
         downloadFile: async (path: string) => {
           downloaded = path;
-          return Buffer.from("png");
+          return original;
         },
       },
     } as unknown as SandboxHandle;
@@ -151,11 +168,15 @@ describe("computer-use gateway tools", () => {
     expect(downloaded).toMatch(
       /^\/home\/user\/work\/screenshots\/screenshot-\d+\.png$/,
     );
-    expect(response.content[0]).toEqual({
-      type: "image",
-      data: "cG5n",
-      mimeType: "image/png",
-    });
+    const image = response.content[0];
+    expect(image?.type).toBe("image");
+    if (image?.type !== "image") throw new Error("expected a model screenshot");
+    const modelBytes = Buffer.from(image.data, "base64");
+    expect(image.mimeType).toBe("image/jpeg");
+    expect(modelBytes.byteLength).toBeLessThanOrEqual(MODEL_SCREENSHOT_MAX_BYTES);
+    expect(modelBytes.byteLength).toBeLessThan(original.byteLength);
+    expect(image.data.length * 6).toBeLessThan(8 * 1024 * 1024);
+    expect(response.structuredContent?.path).toBe(downloaded);
   });
 
   test("gives every harness the exact secure handoff for requested screenshot proof", () => {
