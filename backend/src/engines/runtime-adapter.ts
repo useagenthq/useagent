@@ -67,6 +67,15 @@ export {
   type OpenCodeSessionReloadDependencies,
 } from "./runtime-session-stop";
 
+export function runtimeSessionHasAuthoritativeHistory(
+  resumed: boolean,
+  lease: Pick<RuntimeProviderBridgeLease, "authPath" | "hasCurrentEpochThreadBinding">,
+): boolean {
+  return resumed && (
+    lease.authPath !== "subscription" || lease.hasCurrentEpochThreadBinding
+  );
+}
+
 const RUNTIME_POLL_INTERVAL_MS = 125;
 // T3 can publish root idle just before the final assistant projection. Re-read
 // for two seconds so that ordering gap is tolerated without accepting no output.
@@ -650,7 +659,11 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         // HTTP orchestration dispatch validates thread.turn.start against an
         // already-projected thread. ProviderDriver.start creates it explicitly instead of
         // relying on the websocket-only bootstrap normalization path.
-        const prompt = composeTurnPrompt(ctx, established.resumed, executionCapabilities);
+        const prompt = composeTurnPrompt(
+          ctx,
+          runtimeSessionHasAuthoritativeHistory(established.resumed, providerBridgeLease),
+          executionCapabilities,
+        );
         await recordProviderSessionStarted(ctx, session, {
           provider: "t3",
           source: engine,

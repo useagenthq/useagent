@@ -10,6 +10,7 @@ import {
   type CodexSubscriptionRelayBinding,
 } from "../provider-connections/codex-subscription-relay";
 import type { CodexSubscriptionRuntimeSelection } from "../provider-connections/service";
+import { findProviderThreadBinding } from "../provider-connections/repo";
 import { DEFAULT_CODEX_MODEL } from "../runs/model-policy";
 import {
   codexToolGatewayDescriptor,
@@ -52,17 +53,20 @@ function codexExecutable(layout: SandboxRuntimeLayout): string {
 
 export interface CodexSubscriptionLease {
   readonly authEpoch: string | null;
+  readonly hasCurrentEpochThreadBinding: boolean;
   close(): Promise<void>;
 }
 
 interface SubscriptionDependencies {
   readonly openExecBridge: typeof openCodexExecServerBridge;
   readonly issueRelay: typeof issueCodexSubscriptionRelayCapability;
+  readonly loadThreadBinding: typeof findProviderThreadBinding;
 }
 
 const defaultDependencies: SubscriptionDependencies = {
   openExecBridge: openCodexExecServerBridge,
   issueRelay: issueCodexSubscriptionRelayCapability,
+  loadThreadBinding: findProviderThreadBinding,
 };
 
 export async function prepareCodexSubscription(input: {
@@ -76,6 +80,14 @@ export async function prepareCodexSubscription(input: {
   const dependencies = input.dependencies ?? defaultDependencies;
   const orgId = requiredIdentity(ctx.orgId, "organization");
   const userId = requiredIdentity(ctx.userId, "user");
+  const productThreadId = ctx.threadId ?? ctx.runId;
+  const hasCurrentEpochThreadBinding = Boolean(await dependencies.loadThreadBinding({
+    orgId,
+    userId,
+    productThreadId,
+    connectionId: runtime.connectionId,
+    authEpoch: runtime.authEpoch,
+  }));
   const environmentId = codexExecutionEnvironmentId(ctx.runId, sandbox.id);
   const layout = codexRuntimeLayout(sandbox);
   let execBridge: ReturnType<typeof openCodexExecServerBridge> | undefined;
@@ -118,7 +130,7 @@ export async function prepareCodexSubscription(input: {
     const binding: CodexSubscriptionRelayBinding = {
       orgId,
       userId,
-      threadId: ctx.threadId ?? ctx.runId,
+      threadId: productThreadId,
       runId: ctx.runId,
       connectionId: runtime.connectionId,
       authEpoch: runtime.authEpoch,
@@ -154,6 +166,7 @@ export async function prepareCodexSubscription(input: {
   let closed = false;
   return {
     authEpoch: runtime.authEpoch,
+    hasCurrentEpochThreadBinding,
     async close() {
       if (closed) return;
       closed = true;

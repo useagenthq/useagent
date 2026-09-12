@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { SandboxHandle, SandboxExecuteResult } from "../sandboxes/provider";
 import type { CodexSubscriptionRelayBinding } from "../provider-connections/codex-subscription-relay";
 import type { CodexSubscriptionRuntimeSelection } from "../provider-connections/service";
+import type { ProviderThreadBindingScope } from "../provider-connections/repo";
 import type { EngineRunContext } from "./types";
 import {
   awaitCodexProviderReady,
@@ -35,6 +36,7 @@ describe("T3 Codex subscription lease", () => {
     let relayBinding: CodexSubscriptionRelayBinding | undefined;
     let relayRuntime: CodexSubscriptionRuntimeSelection | undefined;
     let relayExecServerUrl: string | undefined;
+    let threadBindingScope: ProviderThreadBindingScope | undefined;
 
     const lease = await prepareCodexSubscription({
       sandbox: harness.sandbox,
@@ -42,6 +44,10 @@ describe("T3 Codex subscription lease", () => {
       workdir: "/root/work",
       runtime: runtime(),
       dependencies: {
+        loadThreadBinding: async (scope) => {
+          threadBindingScope = scope;
+          return "provider-thread-1";
+        },
         openExecBridge: (input) => {
           expect(input).toEqual({
             upstreamUrl: "wss://preview.example.test/",
@@ -84,6 +90,14 @@ describe("T3 Codex subscription lease", () => {
     expect(relayRuntime).toEqual(runtime());
     expect(relayExecServerUrl).toBe("ws://127.0.0.1:43111/grant");
     expect(lease.authEpoch).toBe("credential-generation-123");
+    expect(lease.hasCurrentEpochThreadBinding).toBe(true);
+    expect(threadBindingScope).toEqual({
+      orgId: "org-1",
+      userId: "user-1",
+      productThreadId: "thread-1",
+      connectionId: "connection-1",
+      authEpoch: "credential-generation-123",
+    });
 
     const providerPatch = harness.commands.find(({ command }) =>
       command.includes("CODEX_INSTANCE_B64"),
@@ -117,6 +131,7 @@ describe("T3 Codex subscription lease", () => {
       workdir: "/home/user/work",
       runtime: runtime(),
       dependencies: {
+        loadThreadBinding: async () => null,
         openExecBridge: () => ({
           url: "ws://127.0.0.1:43111/grant",
           close() {},
@@ -132,6 +147,7 @@ describe("T3 Codex subscription lease", () => {
       'exec "/home/user/.local/bin/codex" exec-server',
     );
     expect(harness.sessionCommands[0]?.command).not.toContain("exec codex ");
+    expect(lease.hasCurrentEpochThreadBinding).toBe(false);
 
     const patch = buildCodexProviderInstanceCommand({
       relayUrl: "wss://useagent.example.test/api/internal/codex-relay/opaque",
@@ -162,6 +178,7 @@ describe("T3 Codex subscription lease", () => {
       workdir: "/root/work",
       runtime: runtime(),
       dependencies: {
+        loadThreadBinding: async () => null,
         openExecBridge: () => ({
           url: "ws://127.0.0.1:43111/grant",
           close: () => closed.push("bridge"),
@@ -190,6 +207,7 @@ describe("T3 Codex subscription lease", () => {
       workdir: "/root/work",
       runtime: runtime(),
       dependencies: {
+        loadThreadBinding: async () => null,
         openExecBridge: () => {
           throw new Error("bridge must not open");
         },
@@ -217,6 +235,9 @@ describe("T3 Codex subscription lease", () => {
       workdir: "/root/work",
       runtime: runtime(),
       dependencies: {
+        loadThreadBinding: async () => {
+          throw new Error("thread binding lookup must not run");
+        },
         openExecBridge: () => ({
           url: "ws://127.0.0.1:43111/grant",
           close() {},
