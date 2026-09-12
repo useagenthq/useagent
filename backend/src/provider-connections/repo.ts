@@ -133,7 +133,7 @@ export async function setProviderSnapshotIfUnset(
   const [row] = await db
     .update(providerConnections)
     .set({
-      metadata: sql`${providerConnections.metadata} || jsonb_build_object('snapshotName', ${scope.snapshotName})`,
+      metadata: sql`${providerConnections.metadata} || jsonb_build_object('snapshotName', ${scope.snapshotName}::text)`,
       updatedAt: new Date(),
     })
     .where(and(
