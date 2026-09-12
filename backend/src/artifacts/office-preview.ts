@@ -5,7 +5,7 @@ import {
   PPTX_CONTENT_TYPE,
   XLSX_CONTENT_TYPE,
 } from "@useagent/artifact-workspace";
-import { sandboxProvider, sandboxProviderApiKey } from "../sandboxes/provider";
+import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 
 /** The Office binary content types LibreOffice can render to a PDF preview. */
 const OFFICE_PREVIEW_CONTENT_TYPES = new Set([
@@ -46,9 +46,7 @@ function shellQuote(value: string): string {
 const PREVIEW_OUTDIR = "/tmp/skynet-office-preview";
 
 async function providerConvert(input: OfficePreviewInput): Promise<Uint8Array | null> {
-  const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) return null;
-  const provider = sandboxProvider(apiKey);
+  const provider = (await resolveSandboxBindingForSandbox(input.sandboxId)).provider;
   const sandbox = await provider.get(input.sandboxId);
   const stem = basename(input.sourcePath).replace(/\.[^.]+$/, "") || "preview";
   const outPath = `${PREVIEW_OUTDIR}/${stem}.pdf`;

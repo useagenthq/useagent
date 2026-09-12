@@ -139,6 +139,12 @@ export const PROVIDER_LABELS: Record<
     keyHint: "Daytona API key",
     keyPlaceholder: "Daytona API key",
   },
+  box: {
+    name: "Box",
+    scope: "Personal cloud computers (box.ascii.dev)",
+    keyHint: "Box API key",
+    keyPlaceholder: "Box API key",
+  },
 };
 
 export function providerConnectionViews(
@@ -220,6 +226,17 @@ export function safeDaytonaMetadata(input: {
     return null;
   }
   return { snapshotName };
+}
+
+/** Daytona needs a snapshot; Box may start from its base image. */
+export function safeComputerMetadata(
+  provider: "daytona" | "box",
+  input: { snapshotName: string },
+): { snapshotName?: string } | null {
+  if (provider === "daytona") return safeDaytonaMetadata(input);
+  const snapshotName = input.snapshotName.trim();
+  if (!snapshotName) return {};
+  return safeDaytonaMetadata({ snapshotName });
 }
 
 export function safeExternalAuthUrl(value: string): string | null {

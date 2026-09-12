@@ -1,12 +1,10 @@
 import { ensureSandboxDesktopView } from "../../engines/desktop";
 import { getRunForOrg } from "../../runs/repo";
-import {
-  sandboxProvider,
-  sandboxProviderApiKey,
-  type SandboxHandle,
-} from "../../sandboxes/provider";
+import { sandboxPlugin } from "../../sandboxes/plugins";
+import { type SandboxHandle, sandboxProviderKind } from "../../sandboxes/provider";
 import { executeArtifactTool, type ToolResult } from "./artifact-tools";
 import type { ToolTokenClaims } from "./token";
+import { resolveSandboxBindingForThread } from "../../sandboxes/binding";
 
 export type ComputerToolContent =
   | { type: "text"; text: string }
@@ -330,9 +328,7 @@ async function computerSandbox(claims: ToolTokenClaims): Promise<SandboxHandle> 
   const run = await getRunForOrg(claims.orgId, claims.runId);
   if (!run || run.threadId !== claims.threadId) throw new Error("run is not active in this thread");
   if (!run.sandboxId) throw new Error("no sandbox is attached to this run");
-  const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) throw new Error("sandbox provider credentials are not set");
-  return await sandboxProvider(apiKey).get(run.sandboxId);
+  return await (await resolveSandboxBindingForThread(claims.orgId, run.threadId)).provider.get(run.sandboxId);
 }
 
 async function readySandbox(claims: ToolTokenClaims): Promise<SandboxHandle> {
@@ -444,7 +440,9 @@ function buttonNumber(button: Button): number {
 }
 
 async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<ComputerToolResult> {
-  const path = `${sandbox.computerUse ? "/home/daytona" : "/root"}/work/screenshots/screenshot-${Date.now()}.png`;
+  const plugin = sandboxPlugin(sandbox.providerKind ?? sandboxProviderKind());
+  const base = sandbox.computerUse ? "/home/daytona" : plugin.runsAsRoot ? "/root" : plugin.home;
+  const path = `${base}/work/screenshots/screenshot-${Date.now()}.png`;
   let data: string;
   if (sandbox.computerUse) {
     const captured = await sandbox.computerUse.screenshot.takeFullScreen(true);

@@ -1,10 +1,11 @@
 import {
   sandboxPreviewHeaders,
-  sandboxProvider,
-  sandboxProviderApiKey,
-  sandboxTemplate,
   type SandboxHandle,
+  type PreviewLinkBase,
+  previewLinkBase,
 } from "../sandboxes/provider";
+import { bindingRecord, bindingSnapshot, resolveSandboxBindingForRun } from "../sandboxes/binding";
+import { reviveRetainedSandbox } from "./thread-sandbox";
 import type { EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import {
@@ -50,14 +51,12 @@ import {
   providerGatewayEnv,
   providerGatewayWired,
   prepareProviderGatewaySandbox,
-  providerGatewaySandboxIsCurrent,
   providerGatewaySandboxLabels,
 } from "../provider-gateway/sandbox-config";
 import { CLAUDE_ACP_PRE_RELAY, CLAUDE_ACP_WRAPPER } from "./claude-acp-launch";
 import { extractAcpToolOutput } from "./acp-content";
 import {
   forgetLiveThreadSandbox,
-  getLiveThreadSandbox,
   rememberLiveThreadSandbox,
 } from "./sandbox-runtime";
 import {
@@ -238,10 +237,8 @@ export interface AcpGatewayDescriptorState {
   mcpTokenExpiresAt: number | null;
 }
 
-interface ThreadRelay extends AcpGatewayDescriptorState {
+interface ThreadRelay extends AcpGatewayDescriptorState, PreviewLinkBase {
   sandboxId: string;
-  baseUrl: string;
-  token: string;
   workdir: string;
   /** ACP session id LIVE in the current agent process (also persisted to the
    *  DB; a dead process/sandbox invalidates it and we session/new again). */
@@ -277,8 +274,8 @@ export function forgetAcpThreadRelays(threadId: string): void {
 }
 
 export { sendSessionCancel } from "./acp-cancel";
-function authHeaders(token: string): Record<string, string> {
-  return sandboxPreviewHeaders(token);
+function authHeaders(relay: PreviewLinkBase): Record<string, string> {
+  return { ...relay.headers };
 }
 
 /** Targeted native ACP cancel for the CONTROL adapter (HarnessAdapter.cancel): find the live
@@ -289,7 +286,7 @@ function authHeaders(token: string): Record<string, string> {
 export async function cancelAcpSession(sandboxId: string, sessionId: string): Promise<boolean> {
   for (const relay of threadRelays.values()) {
     if (relay.sandboxId === sandboxId && relay.sessionId === sessionId) {
-      return sendSessionCancel(relay.baseUrl, relay.token, sessionId);
+      return sendSessionCancel(relay, sessionId);
     }
   }
   return false;
@@ -500,13 +497,14 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
     id: cfg.id,
 
     async run(ctx: EngineRunContext): Promise<void> {
-      const apiKey = sandboxProviderApiKey();
-      if (apiKey === undefined) throw new Error(`${cfg.id} engine needs sandbox provider credentials`);
       if (!providerGatewayWired()) {
         throw new Error(`${cfg.id} engine requires a configured provider gateway`);
       }
       const startedAt = Date.now();
-      const provider = sandboxProvider(apiKey);
+      const binding = await resolveSandboxBindingForRun(ctx);
+      const provider = binding.provider;
+      // Recorded next to the sandbox id: the binding that actually produced the sandbox.
+      let effectiveBinding = binding;
       const budgetMs = resolveAcpTurnTimeoutMs();
       const gateway = toolGatewayConfig();
       if (
@@ -537,7 +535,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);
-      const snapshot = sandboxTemplate("DAYTONA_ACP_SNAPSHOT", "skynet-acp-v3");
+      const snapshot = bindingSnapshot(binding, "DAYTONA_ACP_SNAPSHOT", "skynet-acp-v3");
       const resourceTarget = resolveSandboxResourceTarget();
 
       const key = ctx.threadId ? relayKey(ctx.threadId, cfg.id) : null;
@@ -550,26 +548,15 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // ── sandbox: reuse the thread's, else provision ─────────────────────
         const endSandboxSpan = ctx.timing?.begin("sandbox");
         if (relay) {
+          const activeRelay = relay;
           try {
-            const cachedSandbox = ctx.threadId ? getLiveThreadSandbox(ctx.threadId) : null;
-            const prior =
-              cachedSandbox?.id === relay.sandboxId
-                ? cachedSandbox
-                : await provider.get(relay.sandboxId);
-            const state = (prior as { state?: string }).state;
-            if (state === "stopped" || state === "paused" || state === "archived") {
-              await ctx.emit({ kind: "task", label: `Resuming thread sandbox ${prior.id.slice(0, 8)}…`, chip: cfg.id });
-              await prior.start();
-              relay.sessionId = null; // agent process died with the stop
-            } else if (state !== "started") {
-              throw new Error(`unusable state: ${state}`);
-            }
-            if (!(await providerGatewaySandboxIsCurrent(prior))) {
-              await prior.delete().catch(() => {});
-              throw new Error("legacy sandbox credential generation");
-            }
-            sandbox = prior;
+            const revived = await reviveRetainedSandbox(ctx, activeRelay.sandboxId, {
+              chip: cfg.id,
+              onResume: () => { activeRelay.sessionId = null; }, // agent process died with the stop
+            });
+            sandbox = revived.sandbox;
             retainForThread = true;
+            effectiveBinding = revived.binding;
           } catch {
             if (key) threadRelays.delete(key);
             if (ctx.threadId) forgetLiveThreadSandbox(ctx.threadId, relay.sandboxId);
@@ -585,24 +572,10 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           const priorId = await getThreadSandbox(ctx.threadId).catch(() => null);
           if (priorId) {
             try {
-              const cachedSandbox = getLiveThreadSandbox(ctx.threadId);
-              const prior =
-                cachedSandbox?.id === priorId
-                  ? cachedSandbox
-                  : await provider.get(priorId);
-              const state = (prior as { state?: string }).state;
-              if (state === "stopped" || state === "paused" || state === "archived") {
-                await ctx.emit({ kind: "task", label: `Resuming thread sandbox ${prior.id.slice(0, 8)}…`, chip: cfg.id });
-                await prior.start();
-              } else if (state !== "started") {
-                throw new Error(`unusable state: ${state}`);
-              }
-              if (!(await providerGatewaySandboxIsCurrent(prior))) {
-                await prior.delete().catch(() => {});
-                throw new Error("legacy sandbox credential generation");
-              }
-              sandbox = prior;
+              const revived = await reviveRetainedSandbox(ctx, priorId, { chip: cfg.id });
+              sandbox = revived.sandbox;
               retainForThread = true;
+              effectiveBinding = revived.binding;
             } catch {
               forgetLiveThreadSandbox(ctx.threadId, priorId);
               sandbox = null; // persisted sandbox is gone/unusable — provision fresh
@@ -666,7 +639,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             runId: ctx.runId,
             sandboxId: box.id,
             reused: retainForThread,
-            persist: setRunSandbox,
+            persist: (runId, sandboxId) => setRunSandbox(runId, sandboxId, bindingRecord(effectiveBinding)),
             deleteFreshSandbox: () => box.delete(),
           });
           if (ctx.threadId) rememberLiveThreadSandbox(ctx.threadId, box);
@@ -855,8 +828,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           const link = await box.getPreviewLink(cfg.port);
           relay = {
             sandboxId: box.id,
-            baseUrl: link.url.replace(/\/+$/, ""),
-            token: link.token ?? "",
+            ...previewLinkBase(link),
             workdir: `${home}/work`,
             sessionId: null,
             initialized: false,
@@ -896,7 +868,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         const post = async (msg: Record<string, unknown>): Promise<void> => {
           const res = await fetch(`${live.baseUrl}/send`, {
             method: "POST",
-            headers: { ...authHeaders(live.token), "content-type": "application/json" },
+            headers: { ...authHeaders(live), "content-type": "application/json" },
             body: JSON.stringify(msg),
             signal: sseAbort.signal,
           });
@@ -916,7 +888,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // is wired + request-level tested; a live in-flight proof keeps the engines gated.
         const onParentAbort = () => {
           const sid = live.sessionId;
-          if (sid) void sendSessionCancel(live.baseUrl, live.token, sid);
+          if (sid) void sendSessionCancel(live, sid);
           rpc.failAll("cancelled", "run cancelled");
           sseAbort.abort();
         };
@@ -1193,7 +1165,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           let warm = false;
           try {
             const response = await fetch(`${live.baseUrl}/health`, {
-              headers: authHeaders(live.token),
+              headers: authHeaders(live),
               signal: sseAbort.signal,
             });
             warm = response.ok;
@@ -1207,7 +1179,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
         const pump = (async () => {
           const res = await fetch(`${live.baseUrl}/events`, {
-            headers: authHeaders(live.token),
+            headers: authHeaders(live),
             signal: sseAbort.signal,
           });
           if (!res.ok || !res.body) throw new Error(`relay events failed: HTTP ${res.status}`);

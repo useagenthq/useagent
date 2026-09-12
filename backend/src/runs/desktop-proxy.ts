@@ -10,6 +10,7 @@ import {
   resolvePreviewEndpoint,
   resolvePreviewSandbox,
   type PreviewEndpoint,
+  isStalePreviewResponse,
 } from "./preview-proxy";
 import { ensureSandboxDesktopView } from "../engines/desktop";
 import { sandboxPreviewHeaders } from "../sandboxes/provider";
@@ -98,7 +99,7 @@ desktopProxyRoutes.get(
             // Bun's WebSocket client takes custom headers (browsers can't) — this
             // is how the Daytona preview token rides the upstream socket.
             const sock = new WebSocket(wsUrl, {
-              headers: sandboxPreviewHeaders(ep.token),
+              headers: { ...ep.headers },
               protocols: ["binary"],
             });
             sock.binaryType = "arraybuffer";
@@ -221,7 +222,7 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
   const forward = async (ep: PreviewEndpoint): Promise<Response> =>
     fetch(`${ep.baseUrl}${subpath}${url.search}`, {
       method,
-      headers: buildForwardHeaders(c.req.raw.headers, ep.token),
+      headers: buildForwardHeaders(c.req.raw.headers, ep.headers),
       body,
       redirect: "manual",
       signal: c.req.raw.signal,
@@ -236,8 +237,9 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
       upstream = new Response(null, { status: 502 });
     }
     // A stale preview link (sandbox stopped/rotated since we cached it) surfaces
-    // as a transport failure or a 5xx — re-resolve once (wakes the box) and retry.
-    if (upstream.status === 502 || upstream.status === 503) {
+    // as a transport failure or a 5xx, a stale credential (expired Box port
+    // cookie) as a 401/403 — re-resolve once (wakes the box, fresh auth) and retry.
+    if (isStalePreviewResponse(upstream)) {
       invalidateDesktopPreview(threadId);
       await ensureDesktopPreview(threadId);
       invalidatePreviewEndpoint(threadId, DESKTOP_PORT);

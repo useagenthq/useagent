@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { Sandbox as E2BSandbox, type SandboxInfo } from "e2b";
-import { cubeSandboxProvider } from "./cube-provider";
+import { cubeSandboxProvider } from "./provider";
 
 const originalEnv = { ...process.env };
+/** The control plane supplies the identity probe; these tests only need one that passes or one that checks root. */
+const ready = { identityPreflightCommand: "true" };
+const rootCheck = { identityPreflightCommand: 'test "$(id -u)" = "0"' };
 
 afterEach(() => {
   process.env = { ...originalEnv };
@@ -68,7 +71,7 @@ describe("Cube sandbox provider", () => {
     const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
     const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
 
-    const handle = await cubeSandboxProvider("cube-key").create({
+    const handle = await cubeSandboxProvider("cube-key", ready).create({
       autoStopInterval: 15,
       envVars: {
         BASH_ENV: "/tmp/skynet.env",
@@ -111,7 +114,7 @@ describe("Cube sandbox provider", () => {
     const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
     const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
 
-    await cubeSandboxProvider("cube-key").create({ snapshot: "agent-template" });
+    await cubeSandboxProvider("cube-key", ready).create({ snapshot: "agent-template" });
 
     expect(create).toHaveBeenCalledWith(
       "agent-template",
@@ -136,7 +139,7 @@ describe("Cube sandbox provider", () => {
     });
     const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
     const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
-    const handle = await cubeSandboxProvider("").create({ snapshot: "agent-template" });
+    const handle = await cubeSandboxProvider("", ready).create({ snapshot: "agent-template" });
 
     expect(await handle.process.executeCommand("false", "/work", { A: "1" }, 12)).toEqual({
       exitCode: 7,
@@ -145,6 +148,7 @@ describe("Cube sandbox provider", () => {
     expect(commandOptions).toEqual({ cwd: "/work", envs: { A: "1" }, timeoutMs: 12_000 });
     expect(await handle.getPreviewLink(4096)).toEqual({
       token: "traffic-token",
+      headers: { "cube-traffic-access-token": "traffic-token", "e2b-traffic-access-token": "traffic-token" },
       url: "https://4096-cube-1.sandbox.example.com",
     });
 
@@ -168,7 +172,7 @@ describe("Cube sandbox provider", () => {
     });
     const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
     const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
-    const handle = await cubeSandboxProvider("").create({ snapshot: "agent-template" });
+    const handle = await cubeSandboxProvider("", ready).create({ snapshot: "agent-template" });
 
     await expect(handle.process.executeCommand("false")).resolves.toEqual({
       exitCode: 7,
@@ -189,7 +193,7 @@ describe("Cube sandbox provider", () => {
     });
     const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
     const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
-    const handle = await cubeSandboxProvider("").create({ snapshot: "agent-template" });
+    const handle = await cubeSandboxProvider("", ready).create({ snapshot: "agent-template" });
 
     const pty = await handle.process.createPty({
       id: "terminal-1",
@@ -208,7 +212,7 @@ describe("Cube sandbox provider", () => {
   test("rejects a non-standard public proxy port the E2B client cannot address", () => {
     process.env.CUBE_PROXY_SCHEME = "https";
     process.env.CUBE_PROXY_PORT_HTTP = "8443";
-    expect(() => cubeSandboxProvider("")).toThrow(
+    expect(() => cubeSandboxProvider("", ready)).toThrow(
       "Cube E2B adapter requires the public proxy on https port 443; got 8443",
     );
   });
@@ -233,7 +237,7 @@ describe("Cube sandbox provider", () => {
     const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
     const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
 
-    const handle = await cubeSandboxProvider("").create({ snapshot: "agent-template" });
+    const handle = await cubeSandboxProvider("", ready).create({ snapshot: "agent-template" });
 
     expect(handle.id).toBe("cube-1");
     expect(probes).toBe(3);
@@ -255,7 +259,7 @@ describe("Cube sandbox provider", () => {
     const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
     const kill = spyOn(E2BSandbox, "kill").mockResolvedValue(true);
 
-    await expect(cubeSandboxProvider("").create({ snapshot: "agent-template" })).rejects.toThrow(
+    await expect(cubeSandboxProvider("", rootCheck).create({ snapshot: "agent-template" })).rejects.toThrow(
       "did not reach root identity/workspace",
     );
     expect(kill).toHaveBeenCalledWith("cube-1", expect.any(Object));
@@ -277,7 +281,7 @@ describe("Cube sandbox provider", () => {
     const connect = spyOn(E2BSandbox, "connect").mockResolvedValue(sandbox);
     const kill = spyOn(E2BSandbox, "kill").mockResolvedValue(true);
 
-    await expect(cubeSandboxProvider("").get("cube-1")).rejects.toThrow(
+    await expect(cubeSandboxProvider("", rootCheck).get("cube-1")).rejects.toThrow(
       "did not reach root identity/workspace",
     );
     expect(connect).toHaveBeenCalledWith("cube-1", expect.any(Object));
@@ -302,7 +306,7 @@ describe("Cube sandbox provider", () => {
     const connect = spyOn(E2BSandbox, "connect").mockResolvedValue(sandbox);
     const kill = spyOn(E2BSandbox, "kill").mockResolvedValue(true);
 
-    await expect(cubeSandboxProvider("").get("cube-1")).rejects.toThrow(
+    await expect(cubeSandboxProvider("", ready).get("cube-1")).rejects.toThrow(
       "envd temporarily unavailable",
     );
     expect(probes).toBe(2);
@@ -335,7 +339,7 @@ describe("Cube sandbox provider", () => {
     });
     const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
     const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
-    const handle = await cubeSandboxProvider("").create({ snapshot: "agent-template" });
+    const handle = await cubeSandboxProvider("", ready).create({ snapshot: "agent-template" });
 
     const result = await handle.process.executeSessionCommand("resident", {
       command: "exec opencode serve",
@@ -386,7 +390,7 @@ describe("Cube sandbox provider", () => {
     });
     const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
     const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
-    const handle = await cubeSandboxProvider("").create({ snapshot: "agent-template" });
+    const handle = await cubeSandboxProvider("", ready).create({ snapshot: "agent-template" });
 
     expect(await handle.process.getSession("legacy-session")).toEqual({
       commands: [{ id: "legacy-command" }],
@@ -419,7 +423,7 @@ describe("Cube sandbox provider", () => {
       allocatable: { cpuMilli: 3_000, memoryMB: 12_000 },
     }]), { status: 200 }));
 
-    await expect(cubeSandboxProvider("").inventory?.()).resolves.toMatchObject({
+    await expect(cubeSandboxProvider("", ready).inventory?.()).resolves.toMatchObject({
       activeSandboxes: 1,
       nodes: [{
         id: "node-a",

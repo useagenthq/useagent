@@ -18,7 +18,7 @@ import { t3ProviderDrivers } from "./t3-provider-driver";
 
 const residentServer = {
   baseUrl: "https://opencode.test",
-  token: "preview-token",
+  token: "preview-token", headers: {},
   dirQ: "?directory=%2Fworkspace",
 };
 

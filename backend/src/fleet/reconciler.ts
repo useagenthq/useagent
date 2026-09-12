@@ -1,3 +1,4 @@
+import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 import { fleetCapacityConfig } from "../env";
 import type { SandboxProvider } from "../sandboxes/provider";
 import {
@@ -174,9 +175,8 @@ async function reconcileRetainedMappingsIfDue(force = false): Promise<number> {
 }
 
 async function deleteSandbox(sandboxId: string): Promise<void> {
-  const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) throw new Error("sandbox provider is not configured");
-  const provider = sandboxProvider(apiKey);
+  // The sandbox belongs to whichever provider created it (deployment or a user's computer).
+  const { provider } = await resolveSandboxBindingForSandbox(sandboxId);
   const sandbox = await provider.get(sandboxId);
   await sandbox.delete();
 }

@@ -34,6 +34,9 @@ COPY packages/agent-harness/package.json ./packages/agent-harness/
 COPY packages/artifact-formats/package.json ./packages/artifact-formats/
 COPY packages/artifact-workspace/package.json ./packages/artifact-workspace/
 COPY packages/sandbox-contract/package.json ./packages/sandbox-contract/
+COPY packages/sandbox-daytona/package.json ./packages/sandbox-daytona/
+COPY packages/sandbox-cube/package.json ./packages/sandbox-cube/
+COPY packages/sandbox-box/package.json ./packages/sandbox-box/
 
 WORKDIR /app/backend
 RUN bun install --frozen-lockfile --production
@@ -68,10 +71,13 @@ COPY packages/agent-harness ./packages/agent-harness
 COPY packages/artifact-formats ./packages/artifact-formats
 COPY packages/artifact-workspace ./packages/artifact-workspace
 COPY packages/sandbox-contract ./packages/sandbox-contract
+COPY packages/sandbox-daytona ./packages/sandbox-daytona
+COPY packages/sandbox-cube ./packages/sandbox-cube
+COPY packages/sandbox-box ./packages/sandbox-box
 
 RUN ln -s backend/node_modules /app/node_modules \
     && ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
-    && for package in agent-client agent-harness artifact-formats artifact-workspace sandbox-contract; do \
+    && for package in agent-client agent-harness artifact-formats artifact-workspace sandbox-contract sandbox-daytona sandbox-cube sandbox-box; do \
       rm -rf "/app/backend/node_modules/@useagent/${package}"; \
       ln -s "../../../packages/${package}" "/app/backend/node_modules/@useagent/${package}"; \
     done \

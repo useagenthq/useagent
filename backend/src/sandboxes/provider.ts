@@ -1,11 +1,19 @@
-import type { SandboxProvider, SandboxProviderKind } from "@useagent/sandbox-contract";
-import { cubeSandboxProvider } from "./cube-provider";
-import { daytonaSandboxProvider } from "./daytona-provider";
+import type {
+  SandboxEnv,
+  SandboxPreviewLink,
+  SandboxProvider,
+  SandboxProviderKind,
+  SandboxProviderPorts,
+} from "@useagent/sandbox-contract";
+import { type DaytonaApiConfig, daytonaApiConfig as daytonaApiConfigFor } from "@useagent/sandbox-daytona";
+import { buildRuntimeIdentityPreflightCommand } from "../engines/runtime-environment";
+import { SANDBOX_PROVIDER_KINDS, isSandboxProviderKind, sandboxPlugin } from "./plugins";
+import { dbSandboxLabelStore } from "./sandbox-labels";
 
-// The provider-neutral sandbox contract now lives in @useagent/sandbox-contract.
-// Re-export every symbol so existing importers of this module keep their paths
-// unchanged; the env-coupled selectors and the Daytona/Cube adapter wiring stay
-// here in the backend.
+// The provider-neutral sandbox contract lives in @useagent/sandbox-contract and
+// every vendor is a plugin package (see ./plugins). This module is the
+// env-coupled selector layer the rest of the backend imports; it never names
+// a vendor itself.
 export type {
   SandboxComputerUse,
   SandboxCreateOptions,
@@ -20,71 +28,68 @@ export type {
   SandboxRecording,
   SandboxSession,
 } from "@useagent/sandbox-contract";
+export { boxApiConfig } from "@useagent/sandbox-box";
+export type { DaytonaApiConfig };
 
-export function sandboxProviderKind(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): SandboxProviderKind {
+export function sandboxProviderKind(env: SandboxEnv = process.env): SandboxProviderKind {
   const value = env.SANDBOX_PROVIDER?.trim().toLowerCase() || "daytona";
-  if (value !== "daytona" && value !== "cube") {
-    throw new Error("SANDBOX_PROVIDER must be daytona or cube");
+  if (!isSandboxProviderKind(value)) {
+    throw new Error(`SANDBOX_PROVIDER must be ${SANDBOX_PROVIDER_KINDS.join(", ")}`);
   }
   return value;
 }
 
-export function sandboxProviderApiKey(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): string | undefined {
-  if (sandboxProviderKind(env) === "cube") {
-    return env.CUBE_API_KEY?.trim() ?? "";
-  }
-  return env.DAYTONA_API_KEY?.trim() || undefined;
+export function sandboxProviderApiKey(env: SandboxEnv = process.env): string | undefined {
+  const plugin = sandboxPlugin(sandboxProviderKind(env));
+  const value = env[plugin.credentialEnv]?.trim();
+  // A provider that works without a key (local Cube) still gets an empty string.
+  return value || (plugin.credentialRequired ? undefined : "");
 }
 
-export function sandboxPreviewHeaders(
-  token: string,
-  provider?: SandboxProviderKind,
-): Record<string, string> {
-  if (!token) return {};
-  return (provider ?? sandboxProviderKind()) === "daytona"
-    ? { "x-daytona-preview-token": token }
-    : {
-        "cube-traffic-access-token": token,
-        "e2b-traffic-access-token": token,
-      };
+/** Headers a preview token travels in, for this deployment's provider unless a kind is given. */
+export function sandboxPreviewHeaders(token: string, provider?: SandboxProviderKind): Record<string, string> {
+  return sandboxPlugin(provider ?? sandboxProviderKind()).previewAuthHeaders(token);
 }
 
-export function sandboxTemplate(
-  daytonaEnvName: string,
-  daytonaFallback: string,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): string {
-  if (sandboxProviderKind(env) === "cube") {
-    const template = env.CUBE_TEMPLATE_ID?.trim();
-    if (!template) throw new Error("CUBE_TEMPLATE_ID is required when SANDBOX_PROVIDER=cube");
-    return template;
-  }
-  return env[daytonaEnvName]?.trim() || daytonaFallback;
+/** What every preview consumer keeps from a link: origin, token, auth headers. */
+export interface PreviewLinkBase {
+  readonly baseUrl: string;
+  readonly token: string;
+  readonly headers: Readonly<Record<string, string>>;
 }
 
-const daytonaTarget = (): string => process.env.DAYTONA_TARGET ?? "us";
-const daytonaApiUrl = (): string =>
-  process.env.DAYTONA_API_URL?.trim() || "https://app.daytona.io/api";
+/** A link's base for consumers; a link without headers falls back to this deployment's provider. */
+export function previewLinkBase(link: SandboxPreviewLink): PreviewLinkBase {
+  const token = link.token ?? "";
+  return { baseUrl: link.url.replace(/\/+$/, ""), token, headers: link.headers ?? sandboxPreviewHeaders(token) };
+}
+
+export function sandboxTemplate(daytonaEnvName: string, daytonaFallback: string, env: SandboxEnv = process.env): string {
+  return sandboxPlugin(sandboxProviderKind(env)).template(env, { envName: daytonaEnvName, value: daytonaFallback });
+}
+
+/** The control-plane ports a provider of `kind` gets: durable labels and the runtime readiness probe. */
+export function sandboxProviderPorts(kind: SandboxProviderKind): SandboxProviderPorts {
+  return { labels: dbSandboxLabelStore(kind), identityPreflightCommand: buildRuntimeIdentityPreflightCommand() };
+}
+
+/** A provider of `kind` for a given key (env or a user's stored credential). */
+export function sandboxProviderFor(kind: SandboxProviderKind, apiKey: string, env: SandboxEnv = process.env): SandboxProvider {
+  const plugin = sandboxPlugin(kind);
+  return plugin.createProvider(plugin.configFromEnv(apiKey, env), sandboxProviderPorts(kind));
+}
 
 export function sandboxProvider(apiKey = sandboxProviderApiKey()): SandboxProvider {
-  if (sandboxProviderKind() === "cube") return cubeSandboxProvider(apiKey ?? "");
-  if (!apiKey) throw new Error("DAYTONA_API_KEY is required when SANDBOX_PROVIDER=daytona");
-  return daytonaSandboxProvider(daytonaApiConfig(apiKey));
+  const kind = sandboxProviderKind();
+  if (apiKey === undefined) {
+    throw new Error(`${sandboxPlugin(kind).credentialEnv} is required when SANDBOX_PROVIDER=${kind}`);
+  }
+  return sandboxProviderFor(kind, apiKey);
 }
 
 /** Backward-compatible name for external callers while the internal call sites migrate. */
 export const daytonaProvider = sandboxProvider;
 
-export interface DaytonaApiConfig {
-  apiKey: string;
-  apiUrl: string;
-  target: string;
-}
-
 export function daytonaApiConfig(apiKey: string): DaytonaApiConfig {
-  return { apiKey, apiUrl: daytonaApiUrl(), target: daytonaTarget() };
+  return daytonaApiConfigFor(apiKey, process.env);
 }

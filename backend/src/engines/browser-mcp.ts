@@ -1,5 +1,5 @@
 import {
-  sandboxPreviewHeaders,
+  previewLinkBase,
   type SandboxHandle,
 } from "../sandboxes/provider";
 import {
@@ -139,7 +139,7 @@ async function visibleCdpConnection(sandbox: SandboxHandle): Promise<CdpConnecti
   ]);
   const baseUrl = link.url.replace(/\/+$/, "");
   const headers = {
-    ...sandboxPreviewHeaders(link.token ?? ""),
+    ...previewLinkBase(link).headers,
     authorization: `Bearer ${relayToken}`,
   };
   const response = await fetch(`${baseUrl}/json/list`, {

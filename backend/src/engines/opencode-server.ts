@@ -1,10 +1,8 @@
 import {
   sandboxPreviewHeaders,
-  sandboxProvider,
-  sandboxProviderApiKey,
-  sandboxProviderKind,
-  sandboxTemplate,
   type SandboxHandle,
+  type PreviewLinkBase,
+  previewLinkBase,
 } from "../sandboxes/provider";
 import {
   providerEventExists,
@@ -80,7 +78,6 @@ import {
   markProviderGatewaySandboxCurrent,
   providerGatewaySandboxLabels,
   opencodeProviderGatewayOptions,
-  providerGatewaySandboxIsCurrent,
   providerGatewayWired,
 } from "../provider-gateway/sandbox-config";
 import { opencodeAssistantError } from "./opencode-message";
@@ -105,9 +102,9 @@ import {
 } from "./opencode-runtime-config";
 import {
   forgetLiveThreadSandbox,
-  getLiveThreadSandbox,
   rememberLiveThreadSandbox,
 } from "./sandbox-runtime";
+import { reviveRetainedSandbox } from "./thread-sandbox";
 import {
   assertSandboxResources,
   resolveSandboxResourceTarget,
@@ -116,6 +113,7 @@ import {
 import { claimCubeWarmSandbox } from "../sandboxes/cube-warm-pool";
 import { errorMessage } from "../util/error-message";
 import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
+import { bindingRecord, bindingSnapshot, resolveSandboxBindingForRun, resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -157,8 +155,8 @@ export function buildOpencodeConfigWriteCommand(encodedConfig: string): string {
   );
 }
 
-function authHeaders(token: string): Record<string, string> {
-  return sandboxPreviewHeaders(token);
+function authHeaders(server: PreviewLinkBase): Record<string, string> {
+  return { ...server.headers };
 }
 
 function modelBody(model: string): { providerID: string; modelID: string } {
@@ -264,10 +262,7 @@ async function ensureServer(
   );
   if ((homeResult.exitCode ?? 1) !== 0) throw new Error("opencode workspace preparation failed");
   const home = homeResult.result?.trim() || "/home/daytona";
-  const link = await sandbox.getPreviewLink(SERVE_PORT);
-  const baseUrl = link.url.replace(/\/+$/, "");
-  const token = link.token ?? "";
-  const server = { baseUrl, token, workdir: `${home}/work` };
+  const server = { ...previewLinkBase(await sandbox.getPreviewLink(SERVE_PORT)), workdir: `${home}/work` };
 
   // A healthy resident process survives turns and is always reused: the liveness
   // probe here already proves it is serving, so return immediately and skip the
@@ -366,7 +361,7 @@ async function opencodeHealthStatus(
 ): Promise<number | null> {
   try {
     const response = await fetch(`${server.baseUrl}/global/health`, {
-      headers: authHeaders(server.token),
+      headers: authHeaders(server),
       signal: AbortSignal.any([signal, AbortSignal.timeout(5_000)]),
     });
     const status = response.status;
@@ -683,19 +678,15 @@ type OcMessage = {
  *  unconfigured, gone, or NOT already `started` — we never wake a stopped
  *  sandbox just to read/cancel (north star: don't wake to read history). Shared
  *  by reconcile + cancel; never throws. */
-interface ResidentOpenCodeServer {
-  baseUrl: string;
-  token: string;
+interface ResidentOpenCodeServer extends PreviewLinkBase {
   dirQ: string;
 }
 
 async function openResidentServer(
   sandboxId: string,
 ): Promise<ResidentOpenCodeServer | null> {
-  const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) return null;
   try {
-    const provider = sandboxProvider(apiKey);
+    const provider = (await resolveSandboxBindingForSandbox(sandboxId)).provider;
     const sandbox = await provider.get(sandboxId).catch(() => null);
     if (!sandbox) return null;
     if ((sandbox as { state?: string }).state !== "started") return null;
@@ -706,7 +697,7 @@ async function openResidentServer(
     const home = homeRes?.result?.trim() || "/home/daytona";
     const dirQ = `?directory=${encodeURIComponent(`${home}/work`)}`;
     const link = await sandbox.getPreviewLink(SERVE_PORT);
-    return { baseUrl: link.url.replace(/\/+$/, ""), token: link.token ?? "", dirQ };
+    return { ...previewLinkBase(link), dirQ };
   } catch {
     return null;
   }
@@ -731,7 +722,7 @@ export async function reconcileOpencodeRun(input: {
     if (!server) return { outcome: "unreachable" };
     const res = await fetch(
       `${server.baseUrl}/session/${input.sessionId}/message${server.dirQ}`,
-      { headers: authHeaders(server.token), signal: ac.signal },
+      { headers: authHeaders(server), signal: ac.signal },
     );
     if (!res.ok) return { outcome: "unreachable" };
 
@@ -865,7 +856,7 @@ export function makeOpenCodeProviderDriver(
       try {
         const res = await fetcher(`${server.baseUrl}/session${server.dirQ}`, {
           method: "POST",
-          headers: { ...authHeaders(server.token), "content-type": "application/json" },
+          headers: { ...authHeaders(server), "content-type": "application/json" },
           body: JSON.stringify({}),
           signal: operationSignal(request.signal, 9_000),
         });
@@ -910,7 +901,7 @@ export function makeOpenCodeProviderDriver(
         const res = await fetcher(
           `${server.baseUrl}/session/${encodeURIComponent(request.session.nativeSessionId)}${server.dirQ}`,
           {
-            headers: authHeaders(server.token),
+            headers: authHeaders(server),
             signal: operationSignal(request.signal, 9_000),
           },
         );
@@ -993,7 +984,7 @@ export function makeOpenCodeProviderDriver(
           `${server.baseUrl}/session/${encodeURIComponent(request.session.nativeSessionId)}/message${server.dirQ}`,
           {
             method: "POST",
-            headers: { ...authHeaders(server.token), "content-type": "application/json" },
+            headers: { ...authHeaders(server), "content-type": "application/json" },
             body: JSON.stringify({
               model: modelBody(model),
               parts: [{ type: "text", text: request.input.text }],
@@ -1036,7 +1027,7 @@ export function makeOpenCodeProviderDriver(
           `${server.baseUrl}/session/${encodeURIComponent(session.nativeSessionId)}/abort${server.dirQ}`,
           {
             method: "POST",
-            headers: authHeaders(server.token),
+            headers: authHeaders(server),
             signal: operationSignal(undefined, 9_000),
           },
         );
@@ -1060,13 +1051,14 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
     id: "opencode",
 
     async run(ctx: EngineRunContext): Promise<void> {
-    const apiKey = sandboxProviderApiKey();
-    if (apiKey === undefined) throw new Error("opencode engine needs sandbox provider credentials");
     if (!providerGatewayWired()) {
       throw new Error("opencode engine requires a configured provider gateway");
     }
     const startedAt = Date.now();
-    const provider = sandboxProvider(apiKey);
+    const binding = await resolveSandboxBindingForRun(ctx);
+    const provider = binding.provider;
+    // Recorded next to the sandbox id: the binding that actually produced the sandbox.
+    let effectiveBinding = binding;
     const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 600_000);
 
     // Gateway-only mode keeps org secrets out of the sandbox. Compatibility mode
@@ -1085,7 +1077,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
     const secretSourceCommand = sandboxSecretSourceCommand(secretInjection.mode);
     const redact = createSecretRedactor(secretInjection.redactionValues);
 
-    const snapshot = sandboxTemplate("DAYTONA_SNAPSHOT", "skynet-agent-v17");
+    const snapshot = bindingSnapshot(binding, "DAYTONA_SNAPSHOT", "skynet-agent-v17");
     const resourceTarget = resolveSandboxResourceTarget();
     let sandbox: SandboxHandle | null = null;
     let npxFallback = false;
@@ -1101,24 +1093,10 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         (ctx.threadId ? await getThreadSandbox(ctx.threadId) : null);
       if (rememberedId) {
         try {
-          const cachedSandbox = ctx.threadId ? getLiveThreadSandbox(ctx.threadId) : null;
-          const prior =
-            cachedSandbox?.id === rememberedId
-              ? cachedSandbox
-              : await provider.get(rememberedId);
-          const state = (prior as { state?: string }).state;
-          if (state === "stopped" || state === "paused" || state === "archived") {
-            await ctx.emit({ kind: "task", label: `Resuming thread sandbox ${prior.id.slice(0, 8)}…`, chip: "opencode" });
-            await prior.start();
-          } else if (state !== "started") {
-            throw new Error(`unusable state: ${state}`);
-          }
-          if (!(await providerGatewaySandboxIsCurrent(prior))) {
-            await prior.delete().catch(() => {});
-            throw new Error("legacy sandbox credential generation");
-          }
-          sandbox = prior;
+          const revived = await reviveRetainedSandbox(ctx, rememberedId, { chip: "opencode" });
+          sandbox = revived.sandbox;
           retainForThread = true;
+          effectiveBinding = revived.binding;
         } catch {
           if (ctx.threadId) {
             forgetOpenCodeThreadServer(ctx.threadId);
@@ -1151,7 +1129,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const provisionedFresh = !sandbox;
       if (provisionedFresh) {
         await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: "opencode" });
-        if (sandboxProviderKind() === "cube") {
+        if (binding.kind === "cube" && binding.credential === "env") {
           sandbox = await claimCubeWarmSandbox();
           if (sandbox) {
             await ctx.emit({
@@ -1204,7 +1182,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
           runId: ctx.runId,
           sandboxId: box.id,
           reused: retainForThread,
-          persist: setRunSandbox,
+          persist: (runId, sandboxId) => setRunSandbox(runId, sandboxId, bindingRecord(effectiveBinding)),
           deleteFreshSandbox: () => box.delete(),
         });
       } catch (error) {
@@ -1400,17 +1378,18 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       };
       await stagesTogether([activateRuntime, prepareRepositories]);
 
-      const { baseUrl, token, workdir } = runtimeServer;
+      const { baseUrl, token, headers: previewHeaders, workdir } = runtimeServer;
       if (ctx.threadId) {
         rememberOpenCodeThreadServer(ctx.threadId, {
           sandboxId: box.id,
           baseUrl,
           token,
+          headers: previewHeaders,
           workdir,
         });
         retainForThread = true;
       }
-      const headers = { ...authHeaders(token), "content-type": "application/json" };
+      const headers = { ...previewHeaders, "content-type": "application/json" };
       const dirQ = `?directory=${encodeURIComponent(workdir)}`;
 
       const negotiatedCapabilities = sessionCapabilities("opencode", {
@@ -1459,7 +1438,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         try {
           const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(8_000)]);
           const res = await fetch(`${baseUrl}/command${dirQ}`, {
-            headers: authHeaders(token),
+            headers: previewHeaders,
             signal,
           });
           if (!res.ok) return null;
@@ -1762,7 +1741,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         // 1 frame vs 39 for the same activity). This — not proxy buffering —
         // was the live-dead-air culprit; the poller stays as belt-and-braces.
         const res = await fetch(`${baseUrl}/event${dirQ}`, {
-          headers: authHeaders(token),
+          headers: previewHeaders,
           signal: sseAbort.signal,
           // Disable Bun's 5-min fetch idle timeout (BUN_CONFIG_HTTP_IDLE_TIMEOUT,
           // fixed to be overridable in Bun PR #33647) - this SSE is held open for

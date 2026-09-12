@@ -153,6 +153,9 @@ export async function oldestReclaimableRetainedSandbox(
 /**
  * Clear retained mappings that a successful authoritative provider listing did
  * not return. Callers must not invoke this after a failed or partial listing.
+ * The listing comes from the deployment's own provider, so only mappings
+ * created with the deployment credential are cleared; a sandbox on a user's
+ * personal computer is not in that listing and is reconciled when it is used.
  */
 export async function clearMissingRetainedSandboxMappings(
   liveSandboxIds: ReadonlySet<string>,
@@ -169,6 +172,7 @@ export async function clearMissingRetainedSandboxMappings(
     update runs
     set sandbox_id = null, updated_at = now()
     where sandbox_id in (${sql.join(missing.map((id) => sql`${id}`), sql`, `)})
+      and (sandbox_credential is null or sandbox_credential = 'env')
     returning id`);
   return rows.length;
 }

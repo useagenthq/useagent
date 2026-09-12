@@ -82,4 +82,4 @@ test("a deployed 0073 database upgrades through typed sessions and Slack receipt
     await admin.end();
     await rm(partialFolder, { recursive: true, force: true });
   }
-});
+}, 60_000); // replays every migration since 0073 on a fresh database; CI runners need more than the 5 s default

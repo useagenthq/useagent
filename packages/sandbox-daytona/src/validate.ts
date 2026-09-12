@@ -7,21 +7,7 @@ import {
   DaytonaServiceUnavailableError,
   DaytonaTimeoutError,
 } from "@daytona/sdk";
-
-export type DaytonaConnectionValidationCode =
-  | "authentication_failed"
-  | "forbidden"
-  | "snapshot_not_found"
-  | "snapshot_not_active"
-  | "rate_limited"
-  | "provider_unavailable";
-
-export class DaytonaConnectionValidationError extends Error {
-  constructor(readonly code: DaytonaConnectionValidationCode) {
-    super(code);
-    this.name = "DaytonaConnectionValidationError";
-  }
-}
+import { type SandboxCredentialCode, SandboxCredentialError, sandboxCredentialStatus } from "@useagent/sandbox-contract";
 
 export interface DaytonaConnectionValidatorClient {
   readonly snapshot: {
@@ -30,26 +16,25 @@ export interface DaytonaConnectionValidatorClient {
   readonly [Symbol.asyncDispose]?: () => Promise<void>;
 }
 
+const fail = (code: SandboxCredentialCode, message?: string): SandboxCredentialError =>
+  new SandboxCredentialError(code, sandboxCredentialStatus(code), message);
+
 function normalizeDaytonaValidationError(error: unknown): unknown {
-  if (error instanceof DaytonaConnectionValidationError) return error;
-  if (error instanceof DaytonaAuthenticationError) {
-    return new DaytonaConnectionValidationError("authentication_failed");
-  }
-  if (error instanceof DaytonaForbiddenError) {
-    return new DaytonaConnectionValidationError("forbidden");
-  }
-  if (error instanceof DaytonaNotFoundError) {
-    return new DaytonaConnectionValidationError("snapshot_not_found");
-  }
-  if (error instanceof DaytonaRateLimitError) {
-    return new DaytonaConnectionValidationError("rate_limited");
-  }
+  if (error instanceof SandboxCredentialError) return error;
+  if (error instanceof DaytonaAuthenticationError) return fail("authentication_failed");
+  if (error instanceof DaytonaForbiddenError) return fail("forbidden");
+  if (error instanceof DaytonaNotFoundError) return fail("snapshot_not_found");
+  if (error instanceof DaytonaRateLimitError) return fail("rate_limited");
   if (error instanceof DaytonaTimeoutError || error instanceof DaytonaServiceUnavailableError) {
-    return new DaytonaConnectionValidationError("provider_unavailable");
+    return fail("provider_unavailable");
   }
   return error;
 }
 
+/**
+ * Prove a Daytona key works and that the named snapshot is the one it can
+ * run from (exact name, active). Never creates a sandbox.
+ */
 export async function validateDaytonaConnection(
   input: { readonly apiKey: string; readonly snapshotName: string },
   deps: {
@@ -70,7 +55,9 @@ export async function validateDaytonaConnection(
   try {
     const snapshot = await client.snapshot.get(input.snapshotName);
     if (snapshot.name !== input.snapshotName || snapshot.state !== "active") {
-      throw new DaytonaConnectionValidationError("snapshot_not_active");
+      // A snapshot that is not active cannot start a sandbox; the shared codes
+      // treat it like a missing one.
+      throw fail("snapshot_not_found", "Daytona snapshot is not active");
     }
   } catch (error) {
     validationError = normalizeDaytonaValidationError(error);
@@ -78,27 +65,8 @@ export async function validateDaytonaConnection(
   try {
     await client[Symbol.asyncDispose]?.();
   } catch {
-    console.warn("[provider-connections] Daytona validation client cleanup failed");
-    validationError ??= new DaytonaConnectionValidationError("provider_unavailable");
+    console.warn("[sandbox-daytona] validation client cleanup failed");
+    validationError ??= fail("provider_unavailable");
   }
   if (validationError) throw validationError;
-}
-
-export function daytonaValidationHttpStatus(
-  code: DaytonaConnectionValidationCode,
-): 401 | 403 | 404 | 409 | 429 | 503 {
-  switch (code) {
-    case "authentication_failed":
-      return 401;
-    case "forbidden":
-      return 403;
-    case "snapshot_not_found":
-      return 404;
-    case "snapshot_not_active":
-      return 409;
-    case "rate_limited":
-      return 429;
-    case "provider_unavailable":
-      return 503;
-  }
 }

@@ -22,6 +22,22 @@ export async function fetchProviderConnections(): Promise<ProviderConnectionMeta
   return safeProviderConnections(data.connections);
 }
 
+export interface SandboxConfig {
+  readonly provider: string | null;
+  /** True when a connected personal computer runs that user's work. */
+  readonly userComputers: boolean;
+}
+
+export async function fetchSandboxConfig(): Promise<SandboxConfig> {
+  const res = await backendFetch("/api/config", { cache: "no-store" });
+  if (!res.ok) throw new Error(`sandbox-config ${res.status}`);
+  const data = (await res.json()) as { sandbox?: { provider?: unknown; userComputers?: unknown } };
+  return {
+    provider: typeof data.sandbox?.provider === "string" ? data.sandbox.provider : null,
+    userComputers: data.sandbox?.userComputers === true,
+  };
+}
+
 export async function fetchEnabledSandboxEngines(): Promise<string[]> {
   const res = await backendFetch("/api/config", { cache: "no-store" });
   if (!res.ok) throw new Error(`sandbox-engines ${res.status}`);

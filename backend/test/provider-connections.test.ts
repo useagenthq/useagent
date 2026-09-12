@@ -23,7 +23,7 @@ import {
   type ManagedCodexAppServerClient,
 } from "../src/provider-connections/codex-app-server";
 import { createProviderConnectionsRoutes, type CodexChatGptOAuthLifecycle } from "../src/provider-connections/routes";
-import { DaytonaConnectionValidationError } from "../src/provider-connections/daytona";
+import { SandboxCredentialError } from "@useagent/sandbox-contract";
 import {
   getCurrentUserProviderConnection,
   getCodexSubscriptionRuntimeSelection,
@@ -140,7 +140,7 @@ describe("provider connections", () => {
     const app = new Hono<AppEnv>().route(
       "/api/provider-connections",
       createProviderConnectionsRoutes({
-        validateDaytona: async (input) => {
+        validateCredential: async (_kind, input) => {
           validations.push(input);
         },
       }),
@@ -205,8 +205,8 @@ describe("provider connections", () => {
     const app = new Hono<AppEnv>().route(
       "/api/provider-connections",
       createProviderConnectionsRoutes({
-        validateDaytona: async () => {
-          throw new DaytonaConnectionValidationError("snapshot_not_found");
+        validateCredential: async () => {
+          throw new SandboxCredentialError("snapshot_not_found", 404);
         },
       }),
     );
@@ -1298,5 +1298,68 @@ describe("provider connections", () => {
     expect(serialized).not.toContain("accessToken");
     expect(serialized).not.toContain("refreshToken");
     expect(serialized).not.toContain("codexHome");
+  });
+
+  test("Box key is tenant-scoped, write-only, and the snapshot is optional", async () => {
+    const session = await createOrgSession("pc-box");
+    const userId = await userIdForEmail(session.email);
+    const apiKey = `box_${crypto.randomUUID()}`;
+    const validations: Array<{ apiKey: string; snapshotName?: string }> = [];
+    const app = new Hono<AppEnv>().route(
+      "/api/provider-connections",
+      createProviderConnectionsRoutes({
+        validateCredential: async (_kind, input) => {
+          validations.push(input);
+        },
+      }),
+    );
+    const connected = await customJson<{ connection: ProviderConnectionMeta }>(
+      app,
+      "/api/provider-connections/box/api-key",
+      { method: "PUT", cookies: session.cookies, body: { apiKey, metadata: { email: "must-not-survive@example.com" } } },
+    );
+    expect(connected.status).toBe(200);
+    expect(connected.body.connection).toMatchObject({ provider: "box", authMethod: "api_key", status: "connected", metadata: {} });
+    assertNoCredentialMaterial(connected.body, apiKey);
+    expect(validations).toEqual([{ apiKey }]);
+    expect(await getTrustedProviderCredential({ orgId: session.orgId, userId, provider: "box", authMethod: "api_key" }))
+      .toEqual({ authMethod: "api_key", value: apiKey });
+
+    const withSnapshot = await customJson<{ connection: ProviderConnectionMeta }>(
+      app,
+      "/api/provider-connections/box/api-key",
+      { method: "PUT", cookies: session.cookies, body: { apiKey, metadata: { snapshotName: "useagent-runtime" } } },
+    );
+    expect(withSnapshot.status).toBe(200);
+    expect(withSnapshot.body.connection.metadata).toEqual({ snapshotName: "useagent-runtime" });
+    expect(validations.at(-1)).toEqual({ apiKey, snapshotName: "useagent-runtime" });
+
+    const invalid = await customJson(
+      app,
+      "/api/provider-connections/box/api-key",
+      { method: "PUT", cookies: session.cookies, body: { apiKey, metadata: { snapshotName: "bad snapshot" } } },
+    );
+    expect(invalid).toEqual({ status: 400, body: { error: "Box snapshotName must be a valid snapshot name" } });
+  });
+
+  test("Box validation failure persists no connection or credential material", async () => {
+    const session = await createOrgSession("pc-box-invalid");
+    const userId = await userIdForEmail(session.email);
+    const apiKey = `box_invalid_${crypto.randomUUID()}`;
+    const app = new Hono<AppEnv>().route(
+      "/api/provider-connections",
+      createProviderConnectionsRoutes({
+        validateCredential: async () => {
+          throw new SandboxCredentialError("authentication_failed", 401);
+        },
+      }),
+    );
+    const response = await customJson(
+      app,
+      "/api/provider-connections/box/api-key",
+      { method: "PUT", cookies: session.cookies, body: { apiKey } },
+    );
+    expect(response).toEqual({ status: 401, body: { error: "authentication_failed" } });
+    expect(await getTrustedProviderCredential({ orgId: session.orgId, userId, provider: "box", authMethod: "api_key" })).toBeNull();
   });
 });

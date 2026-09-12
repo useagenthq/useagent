@@ -122,3 +122,17 @@ export function assertManagedCodexAppServerSession(
   }
   return session;
 }
+
+export interface BoxConnectionMetadata {
+  /** Optional snapshot to create boxes from; absent means the base image. */
+  readonly snapshotName?: string;
+}
+
+/** Box: the snapshot is optional, but when present it must be a sane name. */
+export function readBoxConnectionMetadata(value: unknown): BoxConnectionMetadata | null {
+  const metadata = decodeProviderConnectionMetadata(value);
+  const snapshotName = metadata.snapshotName?.trim() ?? "";
+  if (!snapshotName) return {};
+  if (snapshotName.length > 200 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(snapshotName)) return null;
+  return { snapshotName };
+}

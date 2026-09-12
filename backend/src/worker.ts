@@ -43,8 +43,7 @@ import {
   RUN_TIMING_STAGES,
   type RunStageTimer,
 } from "./runs/run-timing";
-import { listRunUploads } from "./uploads/repo";
-import { formatInputContext, sandboxInputPath } from "./uploads/materialize";
+import { formatInputContext, runInputFiles } from "./uploads/materialize";
 import { CHAT_SYSTEM_PROMPT } from "./chat/prompt";
 import { retrieveChatContext } from "./chat/retrieve";
 import { streamChat, type ChatMessage } from "./chat/stream";
@@ -390,15 +389,7 @@ async function runWorker(runId: string): Promise<void> {
     }
     endContext?.();
 
-    const inputFiles: RunInputFile[] = (await listRunUploads(run.id)).map((upload) => ({
-      id: upload.id,
-      name: upload.name,
-      contentType: upload.contentType,
-      sizeBytes: upload.sizeBytes,
-      sha256: upload.sha256,
-      storageKey: upload.storageKey,
-      sandboxPath: sandboxInputPath(upload.id, upload.name),
-    }));
+    const inputFiles = await runInputFiles(run);
 
     // The completed-turn capture is enqueued by runs/finalize.ts (transactionally,
     // from the run row's scope) — not here — so it survives a crash in the old

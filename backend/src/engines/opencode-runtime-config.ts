@@ -1,8 +1,7 @@
+import type { PreviewLinkBase } from "../sandboxes/provider";
 import { sandboxPreviewHeaders } from "../sandboxes/provider";
 
-export interface OpenCodeRuntimeServer {
-  readonly baseUrl: string;
-  readonly token: string;
+export interface OpenCodeRuntimeServer extends PreviewLinkBase {
   readonly workdir: string;
 }
 
@@ -65,7 +64,7 @@ function managedMcpServers(config: JsonObject): JsonObject {
 
 function authHeaders(server: OpenCodeRuntimeServer): Record<string, string> {
   return {
-    ...sandboxPreviewHeaders(server.token),
+    ...server.headers,
     "content-type": "application/json",
   };
 }

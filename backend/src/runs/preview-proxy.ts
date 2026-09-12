@@ -1,8 +1,7 @@
 import {
   sandboxPreviewHeaders,
-  sandboxProvider,
-  sandboxProviderApiKey,
   type SandboxHandle,
+  previewLinkBase,
 } from "../sandboxes/provider";
 import {
   forgetLiveThreadSandbox,
@@ -10,6 +9,7 @@ import {
   rememberLiveThreadSandbox,
 } from "../engines/sandbox-runtime";
 import { getThreadSandbox } from "./repo";
+import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 
 // ---------------------------------------------------------------------------
 // PREVIEW PROXY — shared machinery for the same-origin bridges that expose a
@@ -21,10 +21,21 @@ import { getThreadSandbox } from "./repo";
 // requests with the token injected server-side.
 // ---------------------------------------------------------------------------
 
+/** Cached preview auth is re-minted after this long even without an error (Box port cookies expire). */
+const PREVIEW_ENDPOINT_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** Upstream answers that mean the cached link or its credential is stale, not the app. */
+export function isStalePreviewResponse(upstream: Response): boolean {
+  return upstream.status === 401 || upstream.status === 403 || upstream.status === 502 || upstream.status === 503;
+}
+
 export interface PreviewEndpoint {
   sandboxId: string;
   baseUrl: string;
   token: string;
+  /** Auth headers every upstream request must carry (provider token header or Box's port-auth cookie). */
+  headers: Readonly<Record<string, string>>;
+  resolvedAt: number;
 }
 
 /** Per (thread, port) preview endpoint cache. A thread now exposes several ports
@@ -60,7 +71,7 @@ export async function resolvePreviewEndpoint(
   const key = `${threadId}:${port}`;
   if (!force) {
     const cached = endpoints.get(key);
-    if (cached) return cached;
+    if (cached && Date.now() - cached.resolvedAt < PREVIEW_ENDPOINT_TTL_MS) return cached;
   }
   let sandbox = await resolvePreviewSandbox(threadId);
   let link: Awaited<ReturnType<SandboxHandle["getPreviewLink"]>>;
@@ -76,8 +87,8 @@ export async function resolvePreviewEndpoint(
   }
   const ep: PreviewEndpoint = {
     sandboxId: sandbox.id,
-    baseUrl: link.url.replace(/\/+$/, ""),
-    token: link.token ?? "",
+    ...previewLinkBase(link),
+    resolvedAt: Date.now(),
   };
   endpoints.set(key, ep);
   return ep;
@@ -104,13 +115,10 @@ export async function resolvePreviewSandbox(threadId: string): Promise<SandboxHa
     }
   }
 
-  const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) throw new Error("preview proxy needs sandbox provider credentials");
-
   const sandboxId = await getThreadSandbox(threadId);
   if (!sandboxId) throw new Error("no-sandbox");
 
-  const provider = sandboxProvider(apiKey);
+  const provider = (await resolveSandboxBindingForSandbox(sandboxId)).provider;
   const sandbox = await provider.get(sandboxId);
   const state = (sandbox as { state?: string }).state;
   if (state === "stopped" || state === "paused" || state === "archived") {
@@ -125,12 +133,12 @@ export function invalidatePreviewEndpoint(threadId: string, port: number): void 
   endpoints.delete(`${threadId}:${port}`);
 }
 
-export function buildForwardHeaders(src: Headers, token: string): Headers {
+export function buildForwardHeaders(src: Headers, auth: Readonly<Record<string, string>>): Headers {
   const headers = new Headers();
   src.forEach((value, key) => {
     if (!STRIP_REQUEST.has(key.toLowerCase())) headers.set(key, value);
   });
-  for (const [name, value] of Object.entries(sandboxPreviewHeaders(token))) {
+  for (const [name, value] of Object.entries(auth)) {
     headers.set(name, value);
   }
   return headers;

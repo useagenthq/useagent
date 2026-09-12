@@ -1,6 +1,7 @@
 import type { SandboxHandle } from "../sandboxes/provider";
+import { sandboxPlugin } from "../sandboxes/plugins";
 import {
-  sandboxPreviewHeaders,
+  previewLinkBase,
   sandboxProviderKind,
 } from "../sandboxes/provider";
 import { openCodexExecServerBridge } from "../provider-connections/codex-exec-server-bridge";
@@ -85,11 +86,12 @@ export async function prepareCodexSubscription(input: {
     }
 
     const preview = await sandbox.getPreviewLink(CODEX_EXEC_SERVER_PORT);
-    const upstreamUrl = previewWebSocketUrl(preview.url, sandboxProviderKind());
+    const sandboxKind = sandbox.providerKind ?? sandboxProviderKind();
+    const upstreamUrl = previewWebSocketUrl(preview.url, sandboxKind);
     execBridge = dependencies.openExecBridge({
       upstreamUrl,
       expectedUpstreamHost: new URL(upstreamUrl).host,
-      headers: sandboxPreviewHeaders(preview.token ?? "", sandboxProviderKind()),
+      headers: { ...previewLinkBase(preview).headers },
     });
     const binding: CodexSubscriptionRelayBinding = {
       orgId,
@@ -299,41 +301,10 @@ function assertTrustedPreviewHost(
   if (url.username || url.password) {
     throw new Error("Codex exec-server preview cannot contain URL credentials");
   }
-  const hostname = url.hostname.toLowerCase();
-  if (provider === "cube") {
-    const domain = env.CUBE_SANDBOX_DOMAIN?.trim().toLowerCase() || "cube.app";
-    if (hostname !== domain && !hostname.endsWith(`.${domain}`)) {
-      throw new Error("Codex exec-server preview is outside the Cube sandbox domain");
-    }
-    return;
-  }
-  if (env.NODE_ENV !== "test" && url.protocol !== "https:") {
-    throw new Error("Daytona exec-server preview must use HTTPS");
-  }
-  if (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local") ||
-    hostname === "metadata.google.internal" ||
-    isPrivateIpLiteral(hostname)
-  ) {
-    throw new Error("Codex exec-server preview host is unavailable");
-  }
+  const problem = sandboxPlugin(provider).previewHostProblem(url, env);
+  if (problem) throw new Error(problem);
 }
 
-function isPrivateIpLiteral(hostname: string): boolean {
-  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
-  if (!match) return hostname === "::1" || hostname.startsWith("fe80:") || hostname.startsWith("fc") || hostname.startsWith("fd");
-  const octets = match.slice(1).map(Number);
-  if (octets.some((value) => value > 255)) return true;
-  const first = octets[0];
-  const second = octets[1];
-  if (first === undefined || second === undefined) return true;
-  return first === 0 || first === 10 || first === 127 ||
-    (first === 169 && second === 254) ||
-    (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 168);
-}
 
 function codexExecutionEnvironmentId(runId: string, sandboxId: string): string {
   const suffix = `${sandboxId}-${runId}`

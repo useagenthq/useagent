@@ -168,6 +168,7 @@ describe("OpenCode native questions", () => {
       sandboxId: "sandbox-test",
       baseUrl: server.url.toString().replace(/\/$/, ""),
       token: "preview-token",
+      headers: { "x-daytona-preview-token": "preview-token" },
       workdir: "/workspace",
     });
 
@@ -250,6 +251,7 @@ describe("OpenCode native questions", () => {
       sandboxId: "sandbox-test",
       baseUrl: server.url.toString().replace(/\/$/, ""),
       token: "preview-token",
+      headers: { "x-daytona-preview-token": "preview-token" },
       workdir: "/workspace",
     });
 

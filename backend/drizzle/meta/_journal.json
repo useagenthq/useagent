@@ -554,6 +554,27 @@
       "when": 1791900000000,
       "tag": "0080_bot_handoffs",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1792000000000,
+      "tag": "0081_box_provider_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1792100000000,
+      "tag": "0082_run_sandbox_binding",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1792200000000,
+      "tag": "0083_sandbox_labels",
+      "breakpoints": true
     }
   ]
 }

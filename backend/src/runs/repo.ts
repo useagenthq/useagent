@@ -35,6 +35,7 @@ import { ensureProject } from "../projects/repo";
 import { listUploadsForRuns, type RunUploadDescriptor } from "../uploads/repo";
 import { publicRunCondition } from "./visibility";
 import { MODEL_QUALIFICATION_RUN_ORIGIN } from "./origin";
+import type { SandboxProviderKind } from "@useagent/sandbox-contract";
 export { completeRun, pinSkillToActiveRun, setRunStatus } from "./run-state";
 export {
   getThreadEngineSession,
@@ -263,10 +264,17 @@ export async function getRun(id: string): Promise<RunRecord | null> {
  * the updated row id; THROWS if no run row matched (a zero-row UPDATE must not read as
  * success - the control plane would then believe the association was recorded when it
  * was not). Callers await this BEFORE executing so a missing row fails the turn closed. */
-export async function setRunSandbox(id: string, sandboxId: string): Promise<void> {
+export async function setRunSandbox(
+  id: string,
+  sandboxId: string,
+  binding?: { readonly kind: SandboxProviderKind; readonly credential: "env" | "user" },
+): Promise<void> {
   const updated = await db
     .update(runs)
-    .set({ sandboxId })
+    .set({
+      sandboxId,
+      ...(binding ? { sandboxProvider: binding.kind, sandboxCredential: binding.credential } : {}),
+    })
     .where(eq(runs.id, id))
     .returning({ id: runs.id });
   if (updated.length === 0) {

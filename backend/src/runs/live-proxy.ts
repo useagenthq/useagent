@@ -7,6 +7,7 @@ import {
   buildForwardHeaders,
   buildProxyResponse,
   invalidatePreviewEndpoint,
+  isStalePreviewResponse,
   resolvePreviewEndpoint,
   type PreviewEndpoint,
 } from "./preview-proxy";
@@ -123,7 +124,7 @@ liveProxyRoutes.all("/:threadId/*", async (c) => {
   const forward = async (ep: PreviewEndpoint): Promise<Response> =>
     fetch(`${ep.baseUrl}${subpath}${url.search}`, {
       method,
-      headers: buildForwardHeaders(c.req.raw.headers, ep.token),
+      headers: buildForwardHeaders(c.req.raw.headers, ep.headers),
       body,
       redirect: "manual",
       signal: c.req.raw.signal,
@@ -138,9 +139,10 @@ liveProxyRoutes.all("/:threadId/*", async (c) => {
       upstream = new Response(null, { status: 502 });
     }
     // A stale preview link (sandbox stopped/rotated since we cached it) surfaces
-    // as a transport failure or a 5xx from Daytona's proxy — re-resolve once
-    // (which wakes the box) and retry before giving up.
-    if (upstream.status === 502 || upstream.status === 503) {
+    // as a transport failure or a 5xx from the provider's proxy, and a stale
+    // preview credential (an expired Box port cookie) as a 401/403 — re-resolve
+    // once (which wakes the box and mints fresh auth) and retry before giving up.
+    if (isStalePreviewResponse(upstream)) {
       ep = await resolvePreviewEndpoint(threadId, SERVE_PORT, true);
       upstream = await forward(ep);
     }

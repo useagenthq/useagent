@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { SandboxCreateOptions, SandboxProvider } from "./provider";
+import type { SandboxCreateOptions, SandboxProvider } from "../src/index";
 
 export interface SandboxProviderConformanceFixture {
   provider: SandboxProvider;

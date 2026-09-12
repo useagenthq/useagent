@@ -29,6 +29,7 @@ export * from "./schema/executions";
 export * from "./schema/finished-work";
 export * from "./schema/artifact-quality";
 export * from "./schema/thread-relationships";
+export * from "./schema/sandbox-labels";
 export * from "./schema/bots";
 export * from "./schema/bot-handoffs";
 

@@ -16,14 +16,13 @@ import {
   upsertApiKeyProviderConnection,
   type ProviderConnectionMeta,
 } from "./service";
-import {
-  DaytonaConnectionValidationError,
-  daytonaValidationHttpStatus,
-  validateDaytonaConnection,
-} from "./daytona";
+import { type SandboxCredentialInput, isSandboxCredentialError } from "@useagent/sandbox-contract";
+import { sandboxPlugin } from "../sandboxes/plugins";
+import type { ComputerProviderKind } from "../sandboxes/binding";
 import {
   isProviderConnectionAuthMethod,
   isProviderConnectionProvider,
+  readBoxConnectionMetadata,
   readDaytonaConnectionMetadata,
   readModelProviderMetadata,
   type ProviderConnectionAuthMethod,
@@ -55,11 +54,18 @@ const defaultCodexChatGptOAuthLifecycle: CodexChatGptOAuthLifecycle = {
 
 export function createProviderConnectionsRoutes(input: {
   codexChatGptOAuth?: CodexChatGptOAuthLifecycle;
-  validateDaytona?: typeof validateDaytonaConnection;
+  /** Test seam: computer-provider credential validation (default: the provider plugin's). */
+  validateCredential?: (kind: ComputerProviderKind, input: SandboxCredentialInput) => Promise<void>;
 } = {}): Hono<AppEnv> {
   const providerConnectionsRoutes = new Hono<AppEnv>();
   const codexChatGptOAuth = input.codexChatGptOAuth ?? defaultCodexChatGptOAuthLifecycle;
-  const validateDaytona = input.validateDaytona ?? validateDaytonaConnection;
+  const validateCredential =
+    input.validateCredential ??
+    (async (kind: ComputerProviderKind, credential: SandboxCredentialInput) => {
+      const validate = sandboxPlugin(kind).validateCredential;
+      if (!validate) throw new Error(`${kind} does not support stored credentials`);
+      await validate(credential);
+    });
 
   providerConnectionsRoutes.use("*", orgScope);
 
@@ -165,14 +171,17 @@ export function createProviderConnectionsRoutes(input: {
     if (provider === "daytona" && !daytonaMetadata) {
       return c.json({ error: "valid Daytona snapshotName is required" }, 400);
     }
-    const metadata = daytonaMetadata ?? readModelProviderMetadata(body.metadata);
-    if (provider === "daytona") {
+    const boxMetadata = provider === "box" ? readBoxConnectionMetadata(body.metadata) : null;
+    if (provider === "box" && !boxMetadata) {
+      return c.json({ error: "Box snapshotName must be a valid snapshot name" }, 400);
+    }
+    const metadata = daytonaMetadata ?? boxMetadata ?? readModelProviderMetadata(body.metadata);
+    if (provider === "box" || provider === "daytona") {
+      const snapshotName = (daytonaMetadata?.snapshotName ?? boxMetadata?.snapshotName)?.trim();
       try {
-        await validateDaytona({ apiKey, snapshotName: daytonaMetadata!.snapshotName });
+        await validateCredential(provider, { apiKey, ...(snapshotName ? { snapshotName } : {}) });
       } catch (error) {
-        if (error instanceof DaytonaConnectionValidationError) {
-          return c.json({ error: error.code }, daytonaValidationHttpStatus(error.code));
-        }
+        if (isSandboxCredentialError(error)) return c.json({ error: error.code }, error.httpStatus);
         throw error;
       }
     }
