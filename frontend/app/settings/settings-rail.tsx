@@ -20,7 +20,7 @@ export const SETTINGS_SECTIONS = [
   { id: "team", label: "Team" },
 ] as const;
 
-export function SettingsRail() {
+export function SettingsRail({ className }: { className?: string }) {
   const [active, setActive] = useState<string>(SETTINGS_SECTIONS[0].id);
   const visible = useRef(new Map<string, boolean>());
 
@@ -50,7 +50,7 @@ export function SettingsRail() {
   }, []);
 
   return (
-    <nav aria-label="Settings sections" className="flex flex-col gap-0.5">
+    <nav aria-label="Settings sections" className={cx("flex flex-col gap-0.5", className)}>
       {SETTINGS_SECTIONS.map(({ id, label }) => {
         const selected = active === id;
         return (
@@ -59,7 +59,7 @@ export function SettingsRail() {
             href={`#${id}`}
             aria-current={selected ? "true" : undefined}
             className={cx(
-              "rounded-2lg px-3 py-1.5 text-body-2-medium transition-colors duration-150",
+              "whitespace-nowrap rounded-2lg px-3 py-1.5 text-body-2-medium transition-colors duration-150",
               "outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring",
               selected
                 ? "bg-linear-to-b from-accent-500 to-accent-600 text-white shadow-nav-selected"

@@ -4,7 +4,7 @@ import { RiSidebarFoldLine, RiSidebarUnfoldLine } from "@remixicon/react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useIsTabletBand } from "@/hooks/use-is-mobile";
+import { useIsMobile, useIsTabletBand } from "@/hooks/use-is-mobile";
 import { cx } from "@/utils/cx";
 import { AuroraBackdrop } from "./aurora-backdrop";
 import { CompactSidebarRail } from "./compact-sidebar-rail";
@@ -39,13 +39,18 @@ export function AppShell({ sidebar, children, collapseSidebarAtTablet = false }:
   const previousWorking = useRef(working);
   const sidebarContainerRef = useRef<HTMLDivElement>(null);
   const sidebarRestoreRef = useRef<HTMLButtonElement>(null);
+  const mobileSidebarRef = useRef<HTMLDivElement>(null);
+  const mobileOpenButtonRef = useRef<HTMLButtonElement>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const collapseSidebar = useCallback(() => {
+  // The collapse button sits outside the sidebar, so pressing it would drop
+  // focus to <body>; it asks for the restore explicitly. Programmatic
+  // collapses only move focus when it was about to vanish with the sidebar.
+  const collapseSidebar = useCallback((restoreFocus = false) => {
     const focusWasInside = sidebarContainerRef.current?.contains(document.activeElement) ?? false;
     setSidebarCollapsed(true);
-    if (focusWasInside) requestAnimationFrame(() => sidebarRestoreRef.current?.focus());
+    if (restoreFocus || focusWasInside) requestAnimationFrame(() => sidebarRestoreRef.current?.focus());
   }, []);
 
   useEffect(() => {
@@ -62,13 +67,26 @@ export function AppShell({ sidebar, children, collapseSidebarAtTablet = false }:
     previousBand.current = tabletBand;
   }, [collapseSidebar, collapseSidebarAtTablet, tabletBand]);
 
+  // The drawer only exists below md; leaving the band (a rotation) must not
+  // leave the page column inert behind a drawer that CSS no longer shows.
+  const isMobile = useIsMobile();
+  useEffect(() => {
+    if (!isMobile) setMobileOpen(false);
+  }, [isMobile]);
+
+  // Modal drawer contract: focus enters the navigation on open, the page
+  // column is inert behind the scrim, and focus returns to the trigger on close.
   useEffect(() => {
     if (!mobileOpen) return;
+    mobileSidebarRef.current?.querySelector<HTMLElement>("a[href], button")?.focus();
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setMobileOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      mobileOpenButtonRef.current?.focus();
+    };
   }, [mobileOpen]);
 
   return (
@@ -77,6 +95,14 @@ export function AppShell({ sidebar, children, collapseSidebarAtTablet = false }:
         className="group/shell relative flex h-dvh w-full overflow-hidden bg-background-full"
         data-sidebar-collapsed={sidebarCollapsed ? "" : undefined}
       >
+        {/* First focusable element on every page: lets keyboard users jump
+            past the navigation to the main landmark. */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-full focus:bg-background-primary-default focus:px-3 focus:py-1.5 focus:text-body-2-medium focus:text-text-primary focus:shadow-dropdown focus:outline-none focus:ring-2 focus:ring-border-focus-ring"
+        >
+          Skip to content
+        </a>
         <AuroraBackdrop />
         <div
           ref={sidebarContainerRef}
@@ -98,7 +124,7 @@ export function AppShell({ sidebar, children, collapseSidebarAtTablet = false }:
         ) : (
           <button
             type="button"
-            onClick={collapseSidebar}
+            onClick={() => collapseSidebar(true)}
             aria-label="Collapse navigation"
             className="absolute left-[13.5rem] top-[8px] z-40 hidden size-8 items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none transition-colors hover:bg-background-secondary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring md:flex"
           >
@@ -106,19 +132,31 @@ export function AppShell({ sidebar, children, collapseSidebarAtTablet = false }:
           </button>
         )}
         {mobileOpen ? (
-          <div className="fixed inset-0 z-50 flex md:hidden">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation"
+            className="fixed inset-0 z-50 flex md:hidden"
+          >
             <button
               type="button"
               aria-label="Close navigation"
               onClick={() => setMobileOpen(false)}
               className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             />
-            <div className="relative h-full w-64">{sidebar}</div>
+            <div ref={mobileSidebarRef} className="relative h-full w-64">
+              {sidebar}
+            </div>
           </div>
         ) : null}
-        <div className="relative flex min-w-0 flex-1 flex-col">
+        <div
+          className="relative flex min-w-0 flex-1 flex-col"
+          aria-hidden={mobileOpen}
+          inert={mobileOpen}
+        >
           <div className="flex h-12 shrink-0 items-center px-2 md:hidden">
             <button
+              ref={mobileOpenButtonRef}
               type="button"
               onClick={() => setMobileOpen(true)}
               aria-label="Open navigation"
@@ -127,7 +165,11 @@ export function AppShell({ sidebar, children, collapseSidebarAtTablet = false }:
               <RiSidebarUnfoldLine className="size-4" aria-hidden />
             </button>
           </div>
-          <main className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto">
+          <main
+            id="main-content"
+            tabIndex={-1}
+            className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto outline-none"
+          >
             {children}
           </main>
         </div>

@@ -13,8 +13,8 @@ import { Badge } from '@/components/base/badges/badge';
 import {
   Dropdown,
   DropdownDivider,
-  DropdownItem,
-  DropdownPopover,
+  DropdownMenu,
+  DropdownMenuItem,
   DropdownTrigger,
 } from '@/components/base/dropdown/dropdown';
 import { Avatar } from '@/components/base/avatar/avatar';
@@ -22,7 +22,7 @@ import { signOut, useSession } from '@/lib/auth';
 
 /**
  * Account affordance in the sidebar clusters: an avatar that opens a BoardUI
- * base dropdown — identity header, Settings / Apps, sign-in/out. Identity is
+ * base dropdown menu - identity header, Settings / Apps, sign-in/out. Identity is
  * the live better-auth session (lib/auth.ts); when there is none (the open
  * dev-org path) it invites sign-in. Theme switching lives in the shell
  * ThemeMenu, not here.
@@ -55,6 +55,7 @@ export function UserMenu() {
     <Dropdown isOpen={open} onOpenChange={setOpen}>
       <DropdownTrigger
         aria-label='Open account menu'
+        aria-haspopup='menu'
         className='rounded-full focus-visible:ring-offset-2'
       >
         <Avatar
@@ -66,46 +67,52 @@ export function UserMenu() {
         />
       </DropdownTrigger>
 
-      <DropdownPopover aria-label='Account menu' placement='bottom end' className='w-72'>
-        <div className='flex items-center gap-3 px-2 py-1.5'>
-          <Avatar
-            size='lg'
-            color='pink'
-            src={image ?? undefined}
-            alt={name}
-            initials={initial}
-          />
-          <div className='min-w-0'>
-            <p className='truncate text-body-2-medium text-text-primary'>{name}</p>
-            <p className='truncate text-caption-1-regular text-text-secondary'>
-              {email}
-            </p>
-          </div>
-        </div>
-
-        <DropdownDivider />
-
-        <DropdownItem onSelect={() => go('/settings')} className='px-2 py-1.5'>
+      <DropdownMenu
+        aria-label='Account menu'
+        placement='bottom end'
+        className='w-72'
+        header={
+          <>
+            <div className='flex items-center gap-3 px-2 py-1.5'>
+              <Avatar
+                size='lg'
+                color='pink'
+                src={image ?? undefined}
+                alt={name}
+                initials={initial}
+              />
+              <div className='min-w-0'>
+                <p className='truncate text-body-2-medium text-text-primary'>{name}</p>
+                <p className='truncate text-caption-1-regular text-text-secondary'>
+                  {email}
+                </p>
+              </div>
+            </div>
+            <DropdownDivider />
+          </>
+        }
+      >
+        <DropdownMenuItem id='settings' textValue='Settings' onAction={() => go('/settings')}>
           <RiSettings3Line className='size-5 shrink-0 text-foreground-icon-secondary' aria-hidden />
           <span className='text-body-2-medium'>Settings</span>
-        </DropdownItem>
-        <DropdownItem onSelect={() => go('/apps')} className='px-2 py-1.5'>
+        </DropdownMenuItem>
+        <DropdownMenuItem id='apps' textValue='Apps' onAction={() => go('/apps')}>
           <RiApps2Line className='size-5 shrink-0 text-foreground-icon-secondary' aria-hidden />
           <span className='min-w-0 flex-1 truncate text-body-2-medium'>Apps</span>
           <Badge className='bg-badge-new-background text-badge-new-text'>New</Badge>
-        </DropdownItem>
+        </DropdownMenuItem>
         {signedIn ? (
-          <DropdownItem onSelect={() => void handleSignOut()} className='px-2 py-1.5'>
+          <DropdownMenuItem id='sign-out' textValue='Log out' onAction={() => void handleSignOut()}>
             <RiLogoutBoxRLine className='size-5 shrink-0 text-foreground-icon-secondary' aria-hidden />
             <span className='text-body-2-medium'>Log out</span>
-          </DropdownItem>
+          </DropdownMenuItem>
         ) : (
-          <DropdownItem onSelect={() => go('/login')} className='px-2 py-1.5'>
+          <DropdownMenuItem id='sign-in' textValue='Sign in' onAction={() => go('/login')}>
             <RiLoginBoxLine className='size-5 shrink-0 text-foreground-icon-secondary' aria-hidden />
             <span className='text-body-2-medium'>Sign in</span>
-          </DropdownItem>
+          </DropdownMenuItem>
         )}
-      </DropdownPopover>
+      </DropdownMenu>
     </Dropdown>
   );
 }

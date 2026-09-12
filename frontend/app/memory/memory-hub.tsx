@@ -221,7 +221,7 @@ export function MemoryHub({
       <div className="mt-6">
         <SegmentedControl
           aria-label="Memory scope"
-          className="w-[320px]"
+          className="w-full max-w-[320px]"
           selectedKeys={[scope]}
           onSelectionChange={(keys) => {
             const next = [...(keys as Set<string>)][0];
@@ -241,7 +241,7 @@ export function MemoryHub({
         <PersonalSignInNeeded />
       ) : memoryDisabled ? (
         <p className="mt-8 text-body-2-regular text-text-secondary">
-          Team memory is not configured on this deployment.
+          Team memory is not configured on this deployment. Set MEMORY_API_URL on the server to enable it.
         </p>
       ) : (
         <>

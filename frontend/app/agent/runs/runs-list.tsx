@@ -324,7 +324,7 @@ export function RunsList({
       <div className='flex items-center justify-between'>
         <div>
           <p className='text-mono-label text-text-tertiary'>Agent</p>
-          <h1 className='mt-1 text-display-4-medium text-text-primary'>Active runs</h1>
+          <h1 className='mt-1 text-display-4-medium text-text-primary'>All threads</h1>
         </div>
         {runs.length > 0 && (
           <div className='flex items-center gap-2 text-caption-1-regular text-text-tertiary'>
@@ -417,7 +417,7 @@ export function RunsList({
 
           <div className='mt-2'>
             <Table
-              aria-label='Active runs'
+              aria-label='All threads'
               className='min-w-[900px]'
               sortDescriptor={sortDescriptor}
               onSortChange={(descriptor) => {

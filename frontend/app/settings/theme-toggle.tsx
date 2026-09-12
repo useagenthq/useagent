@@ -17,7 +17,7 @@ export function ThemeToggle() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const active = THEME_OPTIONS.find((o) => o.value === theme) ??
+  const active = (mounted ? THEME_OPTIONS.find((o) => o.value === theme) : undefined) ??
     THEME_OPTIONS.find((o) => o.value === "dark")!;
 
   return (

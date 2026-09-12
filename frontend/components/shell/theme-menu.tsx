@@ -6,9 +6,8 @@ import { RiCheckLine } from '@remixicon/react';
 
 import {
   Dropdown,
-  DropdownGroup,
-  DropdownItem,
-  DropdownPopover,
+  DropdownMenu,
+  DropdownMenuItem,
   DropdownTrigger,
   type DropdownPopoverProps,
 } from '@/components/base/dropdown/dropdown';
@@ -55,13 +54,32 @@ export function ThemeSwatch({ swatch, className }: { swatch: string; className?:
 }
 
 /**
+ * Flip the theme with every CSS transition suppressed for one frame. Shell
+ * chrome carries 150ms color transitions, which smear a theme change instead
+ * of snapping it; styles are recalculated under the new theme while the
+ * override is in place, then it is released on the next frame.
+ */
+function applyThemeWithoutTransitions(setTheme: (value: string) => void, value: string) {
+  const style = document.createElement('style');
+  style.textContent = '*{transition:none!important}';
+  document.head.append(style);
+  setTheme(value);
+  requestAnimationFrame(() => {
+    void document.documentElement.offsetHeight;
+    style.remove();
+  });
+}
+
+/**
  * Theme picker menu (Light / Dark / Midnight / Dusk / Aura / Dark Green / Light
- * Green / Light Red / Dark Red / Slate) on the BoardUI base Dropdown. The caller supplies the trigger CONTENT via `children` plus
- * `triggerClassName`/`triggerAriaLabel` (the trigger button itself is the
- * React Aria pressable, so callers must not nest their own <button>).
- * Selection persists through next-themes (localStorage); the active row is
- * only marked once mounted to avoid a hydration mismatch against the
- * server-rendered theme.
+ * Green / Light Red / Dark Red / Slate) on the BoardUI base Dropdown's menu
+ * variant, so the rows are `menuitemradio`s with arrow-key navigation and the
+ * menu closes on select. The caller supplies the trigger CONTENT via
+ * `children` plus `triggerClassName`/`triggerAriaLabel` (the trigger button
+ * itself is the React Aria pressable, so callers must not nest their own
+ * <button>). Selection persists through next-themes (localStorage); the
+ * active row is only marked once mounted to avoid a hydration mismatch
+ * against the server-rendered theme.
  */
 export function ThemeMenu({
   children,
@@ -80,27 +98,33 @@ export function ThemeMenu({
 
   return (
     <Dropdown>
-      <DropdownTrigger aria-label={triggerAriaLabel} className={triggerClassName}>
+      <DropdownTrigger aria-label={triggerAriaLabel} aria-haspopup='menu' className={triggerClassName}>
         {children}
       </DropdownTrigger>
-      <DropdownPopover aria-label='Theme' placement={placement} className='w-44'>
-        <DropdownGroup label='Theme'>
-          {THEME_OPTIONS.map((opt) => (
-            <DropdownItem
-              key={opt.value}
-              selected={mounted && theme === opt.value}
-              onSelect={() => setTheme(opt.value)}
-              className='px-2 py-1.5'
-            >
-              <ThemeSwatch swatch={opt.swatch} />
-              <span className='flex-1 text-body-2-medium'>{opt.label}</span>
-              {mounted && theme === opt.value && (
-                <RiCheckLine className='size-4 shrink-0 text-foreground-icon-primary' aria-hidden />
-              )}
-            </DropdownItem>
-          ))}
-        </DropdownGroup>
-      </DropdownPopover>
+      <DropdownMenu
+        aria-label='Theme'
+        placement={placement}
+        className='w-44'
+        header={<span className='px-2 pt-1 pb-0.5 text-body-2-medium text-text-secondary'>Theme</span>}
+        selectionMode='single'
+        disallowEmptySelection
+        selectedKeys={mounted && theme ? [theme] : []}
+        onSelectionChange={(keys) => {
+          if (keys === 'all') return;
+          const next = [...keys][0];
+          if (typeof next === 'string') applyThemeWithoutTransitions(setTheme, next);
+        }}
+      >
+        {THEME_OPTIONS.map((opt) => (
+          <DropdownMenuItem key={opt.value} id={opt.value} textValue={opt.label} className='px-2 py-1.5'>
+            <ThemeSwatch swatch={opt.swatch} />
+            <span className='flex-1 text-body-2-medium'>{opt.label}</span>
+            {mounted && theme === opt.value && (
+              <RiCheckLine className='size-4 shrink-0 text-foreground-icon-primary' aria-hidden />
+            )}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenu>
     </Dropdown>
   );
 }

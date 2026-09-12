@@ -110,7 +110,12 @@ describe("provider connection presentation", () => {
     expect(codexAccountLabel(status, stored)).toBe("gpt@example.com");
     expect(codexAuthStatusLabel(status, stored)).toBe("Connected");
     expect(codexAccountLabel(null, stored)).toBe("older@example.com");
+    // With nothing stored, the server's "needs OpenAI auth" flag means not
+    // connected yet; "Reauth required" is reserved for a stored connection.
     expect(codexAuthStatusLabel({ account: null, requiresOpenaiAuth: true }, null)).toBe(
+      "Not connected",
+    );
+    expect(codexAuthStatusLabel(null, { ...stored, status: "reauth_required" })).toBe(
       "Reauth required",
     );
     expect(codexAuthStatusLabel(null, { ...stored, status: "revoked" })).toBe("Revoked");

@@ -58,7 +58,12 @@ export default function SettingsPage() {
   return (
     <AppShell sidebar={<ThreadSidebar active="settings" />}>
       <div className="w-full min-w-0 px-6 py-8 lg:px-10">
-        <h1 className="text-display-4-medium text-text-primary">Settings</h1>
+        <h1 className="text-display-sm text-text-primary">Settings</h1>
+
+        {/* Below lg the section rail becomes a scrolling row above the cards */}
+        <div className="mt-6 overflow-x-auto lg:hidden">
+          <SettingsRail className="flex-row gap-1" />
+        </div>
 
         <div className="mt-8 flex gap-8">
           {/* Sticky section rail */}

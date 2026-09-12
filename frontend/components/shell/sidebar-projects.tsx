@@ -1,5 +1,6 @@
 "use client";
 
+import { RiArrowDownSLine } from "@remixicon/react";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -16,6 +17,7 @@ import { threadRowTimestamp } from "@/components/session-ui/thread-row";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { useSession } from "@/lib/auth";
 import { backendFetch } from "@/lib/backend-fetch";
+import { cx } from "@/utils/cx";
 import { relativeTimeShort } from "@/utils/format";
 import { SidebarSectionLabel } from "./sidebar-nav";
 import {
@@ -264,8 +266,9 @@ export function SidebarProjects() {
         <button
           type="button"
           onClick={() => setShowEmptyProjects((value) => !value)}
-          className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
+          className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-secondary transition-colors hover:bg-background-secondary-hover hover:text-text-primary"
         >
+          <RiArrowDownSLine aria-hidden className={cx("size-3.5 shrink-0", showEmptyProjects && "rotate-180")} />
           {showEmptyProjects ? "Show fewer" : `Show ${emptyProjectVisibility.hiddenCount} more`}
         </button>
       ) : null}
@@ -289,8 +292,9 @@ export function SidebarProjects() {
                 <button
                   type="button"
                   onClick={() => setShowAllThreads((value) => !value)}
-                  className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
+                  className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-secondary transition-colors hover:bg-background-secondary-hover hover:text-text-primary"
                 >
+                  <RiArrowDownSLine aria-hidden className={cx("size-3.5 shrink-0", showAllThreads && "rotate-180")} />
                   {showAllThreads ? "Show fewer" : `Show ${threadOverflow} more`}
                 </button>
               </li>

@@ -187,6 +187,24 @@ export function statusLabel(connection: ProviderConnectionMeta | null): string {
   return "Revoked";
 }
 
+/** Footer line under a computer provider form: whether a stored key changes
+ *  where this user's threads run on this server. */
+export function computerFooterCopy(
+  name: string,
+  userComputers: boolean | null,
+  connected: boolean,
+): string {
+  if (userComputers === null) {
+    return "Checking whether personal computers run your work on this server...";
+  }
+  if (!userComputers) {
+    return "Stored for now. Runs stay on the server's computer until USER_COMPUTERS=on is set.";
+  }
+  return connected
+    ? `Connected. ${name} runs your threads on your own account.`
+    : `Once a key is stored, ${name} runs your threads on your own account instead of the server's computer.`;
+}
+
 /** Quiet, consistent tone for a status chip. "Connected" is the only positive
  *  (green) state; "Reauth required" keeps a subdued attention tone; every other
  *  state - "Not connected" (a normal, expected state) and "Revoked" (a quiet
@@ -273,9 +291,9 @@ export function codexAuthStatusLabel(
   if (connection?.status === "connected" || status?.account?.authMode === "chatgpt") {
     return "Connected";
   }
-  if (connection?.status === "reauth_required" || status?.requiresOpenaiAuth) {
-    return "Reauth required";
-  }
+  // "Reauth required" is a state of a STORED connection; with nothing stored,
+  // the server's "needs OpenAI auth" flag just means not connected yet.
+  if (connection?.status === "reauth_required") return "Reauth required";
   if (connection?.status === "revoked") return "Revoked";
   return "Not connected";
 }
@@ -287,6 +305,6 @@ export function codexAuthBadgeStatus(
   connection: ProviderConnectionMeta | null,
 ): ConnectionBadgeStatus {
   if (isActiveConnection(connection) || status?.account?.authMode === "chatgpt") return "completed";
-  if (connection?.status === "reauth_required" || status?.requiresOpenaiAuth) return "pending";
+  if (connection?.status === "reauth_required") return "pending";
   return "disabled";
 }

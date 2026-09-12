@@ -8,8 +8,10 @@ import {
   RiKey2Line,
   RiPlugLine,
   RiSlackFill,
+  RiToolsLine,
 } from "@remixicon/react";
 import type { ComponentType } from "react";
+import { ConnectionStatusChip } from "@/app/settings/connection-status-chip";
 import { Chip } from "@/components/base/badges/chip";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 
@@ -51,11 +53,11 @@ function CapabilityRow({
       <Icon className="text-text-secondary size-5 shrink-0" aria-hidden />
       <span className="min-w-0 flex-1">
         <span className="text-body-2-medium text-text-primary block">{name}</span>
-        <span className="text-caption-1-regular text-text-tertiary block truncate">{detail}</span>
+        <span className="text-caption-1-regular text-text-tertiary block">{detail}</span>
       </span>
-      <Chip color={enabled ? "lime" : "gray"}>
+      <ConnectionStatusChip status={enabled ? "completed" : "disabled"}>
         {enabled ? "Enabled" : "Not configured"}
-      </Chip>
+      </ConnectionStatusChip>
     </div>
   );
 }
@@ -125,7 +127,13 @@ export function PluginsPanel() {
         <CapabilityRow
           icon={RiPlugLine}
           name={`${config?.sandbox?.provider === "cube" ? "Cube" : config?.sandbox?.provider === "daytona" ? "Daytona" : config?.sandbox?.provider === "box" ? "Box" : "Sandbox"} runtime`}
-          detail="Deployment-wide sandbox provider; knowledge and memory tools enabled"
+          detail="Deployment-wide sandbox provider every run starts in"
+          enabled={Boolean(config?.sandbox?.provider)}
+        />
+        <CapabilityRow
+          icon={RiToolsLine}
+          name="Knowledge and memory tools"
+          detail="Tool gateway that lets agents read knowledge and recall memory from inside a run"
           enabled={caps?.toolGateway ?? false}
         />
         <CapabilityRow
