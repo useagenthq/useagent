@@ -226,10 +226,11 @@ export async function ensureRepoClone(
     `rm -f ${shq(runtimeOwnershipMarker)}; ` +
     `TMP="$(mktemp -d "$STAGE_ROOT/clone.XXXXXX")"; ` + cloneLog +
     `if ! git clone ${branchArg}${shq(url)} "$TMP" >"$L" 2>&1; then ` +
-    `if grep -Fq 'Clone succeeded, but checkout failed.' "$L" && [ -d "$TMP/.git" ] && ` +
+    `if grep -Fq 'Clone succeeded, but checkout failed.' "$L" && ` +
+    `grep -Fq 'this operation must be run in a work tree' "$L" && [ -d "$TMP/.git" ] && ` +
     `git --git-dir="$TMP/.git" config core.bare false && ` +
     `git --git-dir="$TMP/.git" --work-tree="$TMP" checkout --force HEAD >>"$L" 2>&1; ` +
-    `then echo clone:checkout-recovered >>"$L"; ` +
+    `then echo clone:checkout-recovered; ` +
     `else echo clone:failed; tail -c 1200 "$L"; rm -rf "$TMP" "$L"; exit 1; fi; fi; ` +
     `RU="$(git -C "$TMP" remote get-url origin 2>/dev/null)"; ` +
     `if [ "$RU" != ${shq(url)} ]; then echo clone:badorigin; rm -rf "$TMP" "$L"; exit 1; fi; ` +

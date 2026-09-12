@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { composeBoxCommand } from "@useagent/sandbox-box";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
@@ -191,9 +191,6 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(`${identity}\n${clone}`).not.toContain('"$O" = 0');
     expect(clone).not.toContain("-o 0");
     expect(clone).not.toContain('|| [ -f "$DIR/.git/skynet-owned" ]');
-    expect(clone).toContain("Clone succeeded, but checkout failed.");
-    expect(clone).toContain('git --git-dir="$TMP/.git" config core.bare false');
-    expect(clone).toContain('git --git-dir="$TMP/.git" --work-tree="$TMP" checkout --force HEAD');
     expect(cloneCmd(calls)?.env).toEqual({});
     expect(composeBoxCommand(clone, undefined, cloneCmd(calls)?.env)).not.toContain(SENTINEL);
   });
@@ -221,6 +218,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     async () => {
       const root = await mkdtemp(join(tmpdir(), "useagent-repo-shell-"));
       const source = join(root, "source");
+      const bin = join(root, "bin");
       const runtimeLayout: SandboxRuntimeLayout = {
         home: join(root, "home"),
         workdir: join(root, "unused"),
@@ -230,31 +228,62 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
         stdout: "pipe",
         stderr: "pipe",
       });
-      const shellSandbox = (injectRace: boolean): SandboxHandle => ({
-        process: {
-          async executeCommand(command: string, _cwd?: string, env?: Record<string, string>) {
-            const localCommand = command.includes("git clone")
-              ? command
-                  .replaceAll(shq("https://github.com/acme/widget.git"), shq(source))
-                  .replace(
-                    'if [ -e "$DIR" ]; then ',
-                    `${injectRace ? 'printf protected > "$DIR/appeared.txt"; ' : ""}if [ -e "$DIR" ]; then `,
-                  )
-              : command;
-            const result = Bun.spawnSync(["/bin/sh", "-c", localCommand], {
-              env: { ...process.env, ...env },
-              stdout: "pipe",
-              stderr: "pipe",
-            });
-            return {
-              exitCode: result.exitCode,
-              result: `${result.stdout.toString()}${result.stderr.toString()}`,
-            };
+      type ShellMode = "normal" | "race" | "exact-checkout-failure" | "unrelated-checkout-failure";
+      const shellSandbox = (mode: ShellMode): { sandbox: SandboxHandle; outputs: string[] } => {
+        const outputs: string[] = [];
+        const sandbox = ({
+          process: {
+            async executeCommand(command: string, _cwd?: string, env?: Record<string, string>) {
+              const localCommand = command.includes("git clone")
+                ? command
+                    .replaceAll(shq("https://github.com/acme/widget.git"), shq(source))
+                    .replace(
+                      'if [ -e "$DIR" ]; then ',
+                      `${mode === "race" ? 'printf protected > "$DIR/appeared.txt"; ' : ""}if [ -e "$DIR" ]; then `,
+                    )
+                : command;
+              const result = Bun.spawnSync(["/bin/sh", "-c", localCommand], {
+                env: {
+                  ...process.env,
+                  ...env,
+                  PATH: `${bin}:${process.env.PATH ?? ""}`,
+                  REAL_GIT: Bun.which("git") ?? "git",
+                  ...(mode.endsWith("checkout-failure") ? { SIMULATE_CLONE_FAILURE: mode } : {}),
+                },
+                stdout: "pipe",
+                stderr: "pipe",
+              });
+              const output = `${result.stdout.toString()}${result.stderr.toString()}`;
+              outputs.push(output);
+              return { exitCode: result.exitCode, result: output };
+            },
           },
-        },
-      }) as unknown as SandboxHandle;
+        }) as unknown as SandboxHandle;
+        return { sandbox, outputs };
+      };
       try {
         await mkdir(source);
+        await mkdir(bin);
+        await writeFile(join(bin, "git"), [
+          "#!/bin/sh",
+          "set -eu",
+          "if [ -n \"${SIMULATE_CLONE_FAILURE:-}\" ] && [ \"${1:-}\" = clone ]; then",
+          "  shift",
+          "  \"$REAL_GIT\" clone --no-checkout \"$@\"",
+          "  for destination in \"$@\"; do :; done",
+          "  \"$REAL_GIT\" --git-dir=\"$destination/.git\" config core.bare true",
+          "  echo 'warning: Clone succeeded, but checkout failed.' >&2",
+          "  if [ \"$SIMULATE_CLONE_FAILURE\" = exact-checkout-failure ]; then",
+          "    echo 'fatal: this operation must be run in a work tree' >&2",
+          "  else",
+          "    echo 'fatal: unable to create working tree file' >&2",
+          "  fi",
+          "  exit 1",
+          "fi",
+          "exec \"$REAL_GIT\" \"$@\"",
+          "",
+        ].join("\n"));
+        await chmod(join(bin, "git"), 0o700);
         expect(runGit(["-C", source, "init", "-q", "--initial-branch=main"]).exitCode).toBe(0);
         await writeFile(join(source, "tracked.txt"), "real generated-shell checkout\n");
         expect(runGit(["-C", source, "add", "tracked.txt"]).exitCode).toBe(0);
@@ -268,7 +297,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
         const successWorkdir = join(root, "success", "work");
         const successDir = join(successWorkdir, "acme", "widget");
         await mkdir(successDir, { recursive: true });
-        expect(await ensureRepoClone(shellSandbox(false), successWorkdir, "acme/widget", fakeCtx().ctx, {
+        expect(await ensureRepoClone(shellSandbox("normal").sandbox, successWorkdir, "acme/widget", fakeCtx().ctx, {
           runtimeLayout,
         })).toBe(true);
         expect(await readFile(join(successDir, "tracked.txt"), "utf8"))
@@ -277,10 +306,31 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
         const racedWorkdir = join(root, "raced", "work");
         const racedDir = join(racedWorkdir, "acme", "widget");
         await mkdir(racedDir, { recursive: true });
-        await expect(ensureRepoClone(shellSandbox(true), racedWorkdir, "acme/widget", fakeCtx().ctx, {
+        await expect(ensureRepoClone(shellSandbox("race").sandbox, racedWorkdir, "acme/widget", fakeCtx().ctx, {
           runtimeLayout,
         })).rejects.toThrow("occupied by unowned content during preparation");
         expect(await readFile(join(racedDir, "appeared.txt"), "utf8")).toBe("protected");
+
+        const recoveredWorkdir = join(root, "recovered", "work");
+        await mkdir(join(recoveredWorkdir, "acme", "widget"), { recursive: true });
+        const recovered = shellSandbox("exact-checkout-failure");
+        expect(await ensureRepoClone(recovered.sandbox, recoveredWorkdir, "acme/widget", fakeCtx().ctx, {
+          runtimeLayout,
+        })).toBe(true);
+        expect(await readFile(join(recoveredWorkdir, "acme", "widget", "tracked.txt"), "utf8"))
+          .toBe("real generated-shell checkout\n");
+        expect(recovered.outputs.some((output) => output.includes("clone:checkout-recovered"))).toBe(true);
+
+        const unrelatedWorkdir = join(root, "unrelated", "work");
+        await mkdir(join(unrelatedWorkdir, "acme", "widget"), { recursive: true });
+        await expect(ensureRepoClone(
+          shellSandbox("unrelated-checkout-failure").sandbox,
+          unrelatedWorkdir,
+          "acme/widget",
+          fakeCtx().ctx,
+          { runtimeLayout },
+        )).rejects.toThrow("fatal: unable to create working tree file");
+        expect(await readdir(join(unrelatedWorkdir, "acme", "widget"))).toEqual([]);
       } finally {
         await chmod(root, 0o700).catch(() => {});
         await rm(root, { recursive: true, force: true });
