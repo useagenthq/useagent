@@ -483,6 +483,27 @@ export function rewriteCaddyUpstreams(
 	upstreams: Pick<CaddyUpstreams, "frontend" | "backend" | "gateway">,
 ): string {
 	const lines = config.split("\n");
+	const hasGatewayRoute = lines.some((line) =>
+		/^\s*@\S+\s+path\s+\/api\/mcp\/\*\s+\/api\/provider\/\*\s*$/.test(line),
+	);
+	if (!hasGatewayRoute) {
+		const apiIndex = lines.findIndex((line) =>
+			/^\s*@\S+\s+path\s+\/api\/\*\s*$/.test(line),
+		);
+		if (apiIndex >= 0) {
+			const indent = lines[apiIndex]?.match(/^\s*/)?.[0] ?? "";
+			lines.splice(
+				apiIndex,
+				0,
+				`${indent}@useagent_gateway path /api/mcp/* /api/provider/*`,
+				`${indent}handle @useagent_gateway {`,
+				`${indent}\t# useagent-release: gateway`,
+				`${indent}\treverse_proxy ${upstreams.gateway}`,
+				`${indent}}`,
+				"",
+			);
+		}
+	}
 	for (const service of releaseServices) {
 		const value = upstreams[service];
 		validateCaddyUpstream(value, service);
