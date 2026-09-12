@@ -1127,11 +1127,26 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
               }
             } else {
               await memoryCorrection();
-              await verifyOpenCodeRuntimeConfig({
-                server: runtimeServer,
-                config: preparedConfig.config,
-                signal: ctx.signal,
-              });
+              try {
+                await verifyOpenCodeRuntimeConfig({
+                  server: runtimeServer,
+                  config: preparedConfig.config,
+                  signal: ctx.signal,
+                });
+              } catch (error) {
+                console.warn(
+                  "[opencode] fresh runtime config was not active; restarting resident server:",
+                  error instanceof Error ? error.message : "unknown activation error",
+                );
+                await writeOpencodeSandboxConfig(box, preparedConfig.config);
+                await stopServerForConfigReload(box, runtimeServer, ctx.signal);
+                runtimeServer = await ensureServer(box, launcher, ctx.signal, secretSourceCommand);
+                await verifyOpenCodeRuntimeConfig({
+                  server: runtimeServer,
+                  config: preparedConfig.config,
+                  signal: ctx.signal,
+                });
+              }
             }
             // Record only after the config is PROVEN active (either lane above threw
             // otherwise), so the fast path can never trust an unproven config.

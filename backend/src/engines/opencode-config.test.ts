@@ -123,6 +123,7 @@ describe("OpenCode generated config placement", () => {
     expect(source).toContain("await stagesTogether([activateRuntime, prepareRepositories])");
     expect(source).toContain("await stopServerForConfigReload(box, runtimeServer, ctx.signal)");
     expect(source).toContain("await verifyOpenCodeRuntimeConfig({");
+    expect(source).toContain("fresh runtime config was not active; restarting resident server");
     expect(source).not.toContain(
       "await sandbox.process.deleteSession(SERVER_PROCESS_SESSION).catch(() => {});\n      }",
     );
