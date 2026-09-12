@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ArtifactDescriptor } from "../../artifacts/repo";
+import type { SandboxHandle } from "../../sandboxes/provider";
 import { setSandboxArtifactPublisherForTest } from "./artifact-tools";
 import {
   buildCubeSequenceCommand,
+  captureSandboxScreenshot,
   COMPUTER_USE_TOOL_NAMES,
   COMPUTER_USE_TOOLS,
   type ComputerToolContent,
@@ -113,6 +115,49 @@ function textAt(content: readonly ComputerToolContent[], index: number): string 
 }
 
 describe("computer-use gateway tools", () => {
+  test("captures provider-owned desktops through the file API without truncating base64 output", async () => {
+    const commands: string[] = [];
+    let downloaded = "";
+    const sandbox = {
+      id: "box-native",
+      providerKind: "box",
+      cpu: 2,
+      memory: 4,
+      desktop: {
+        display: ":0",
+        home: "/home/user",
+        workdir: "/home/user/work",
+        browserExecutable: null,
+        start: async () => {},
+      },
+      process: {
+        executeCommand: async (command: string) => {
+          commands.push(command);
+          return { exitCode: 0, result: "" };
+        },
+      },
+      fs: {
+        downloadFile: async (path: string) => {
+          downloaded = path;
+          return Buffer.from("png");
+        },
+      },
+    } as unknown as SandboxHandle;
+
+    const response = await captureSandboxScreenshot(sandbox);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toContain("export DISPLAY=:0");
+    expect(commands[0]).not.toContain("base64 -w0");
+    expect(downloaded).toMatch(
+      /^\/home\/user\/work\/screenshots\/screenshot-\d+\.png$/,
+    );
+    expect(response.content[0]).toEqual({
+      type: "image",
+      data: "cG5n",
+      mimeType: "image/png",
+    });
+  });
+
   test("gives every harness the exact secure handoff for requested screenshot proof", () => {
     const path = "/root/work/screenshots/proof.png";
     const message = screenshotArtifactHandoff(path);
