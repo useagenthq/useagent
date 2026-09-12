@@ -83,6 +83,8 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
     const out = composeTurnPrompt(ctx(), true, EXECUTION, { PRODUCT_CHILD_THREADS: "on" });
     expect(out).toContain("MUST use the trusted child_session_create_many tool");
     expect(out).toContain("at least two substantial independent workstreams");
+    expect(out).toContain("you MUST use child_session_create_many");
+    expect(out).toContain("multi-subject research or comparison requests");
     expect(out).toContain("child_session_gather shows the relevant children settled");
     expect(out).toContain("Do not busy-poll");
     expect(out).toContain("Native harness subagents are only for internal decomposition");

@@ -69,9 +69,10 @@ function productFanoutRoutingRules(
     "When the user explicitly asks to fan out, delegate, parallelize work across agents, or create " +
     "user-visible child sessions, you MUST use the trusted child_session_create_many tool. Those " +
     "product child sessions are the durable, independently visible delegation boundary. Even when " +
-    "the user does not explicitly request fan-out, use product children when the task has at least " +
-    "two substantial independent workstreams whose parallel execution materially helps and whose " +
-    "progress or result should remain visible and messageable. Keep small, sequential, approval-bound, " +
+    "the user does not explicitly request fan-out, you MUST use child_session_create_many when the " +
+    "request has at least two substantial independent workstreams whose concurrent execution materially " +
+    "helps and whose progress or result should remain visible and messageable. This includes multi-subject " +
+    "research or comparison requests where each subject requires its own sourced analysis. Keep small, sequential, approval-bound, " +
     "destructive, or shared-state-conflicting work in the parent. After delegating outcome work, do not " +
     "claim the overall task is complete until child_session_gather shows the relevant children settled; " +
     "read their bounded child_session_events and synthesize the results. Do not busy-poll: if children " +
