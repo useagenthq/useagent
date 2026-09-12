@@ -32,7 +32,11 @@ export interface SandboxTurnPreparationOptions<T> {
     readonly uid: number;
     readonly gid: number;
     readonly home: string;
-  };
+  } | ((binding: SandboxBinding) => {
+    readonly uid: number;
+    readonly gid: number;
+    readonly home: string;
+  } | undefined);
   readonly prepareProvider: (
     sandbox: SandboxHandle,
     workdir: string,
@@ -82,7 +86,9 @@ export async function prepareSandboxTurn<T>(
     const workdir = await stage("workspace_root", () =>
       resolveRuntimeWorkspaceRoot(sandbox, runtimeLayout)
     );
-    const resourceUser = options.resourceUser;
+    const resourceUser = typeof options.resourceUser === "function"
+      ? options.resourceUser(lease.binding)
+      : options.resourceUser;
     if (resourceUser) {
       const owned = await stage("workspace_owner", () => sandbox.process.executeCommand(
         `command -v setfacl >/dev/null && ` +

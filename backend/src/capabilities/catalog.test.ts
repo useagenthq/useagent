@@ -24,6 +24,20 @@ const READY_ENV = {
 } satisfies Record<string, string>;
 
 describe("capability catalog", () => {
+  test("native lifecycle capabilities do not depend on stale rollout settings", () => {
+    for (const enabled of ["false", "true"]) {
+      const catalog = buildCapabilityCatalog({
+        env: { ...READY_ENV, RUNTIME_RUN_ADAPTER_ENABLED: enabled,
+          RUNTIME_RUN_ADAPTER_MODE: "removed-mode", RUNTIME_RUN_ADAPTER_ENGINES: "codex,claude" },
+        gatewayConfigured: true,
+        slackConfigured: false,
+      });
+      for (const engine of ["codex", "claude"] as const) {
+        expect(catalog.engines.find((value) => value.id === engine)?.session.declared)
+          .toEqual(t3ProviderDrivers[engine].descriptor.capabilities);
+      }
+    }
+  });
   test("separates configuration, readiness, and model dispatchability", () => {
     const catalog = buildCapabilityCatalog({
       env: READY_ENV,
@@ -48,7 +62,7 @@ describe("capability catalog", () => {
     });
     expect(codex?.runtime.kind).toBe("t3");
     expect(catalog.engines.find((engine) => engine.id === "claude")?.runtime).toEqual({
-      kind: "acp_compat",
+      kind: "t3",
       label: "Anthropic agent · cloud sandbox",
     });
     expect(catalog.engines.find((engine) => engine.id === "pi")?.runtime.kind).toBe("native");
@@ -159,7 +173,7 @@ describe("capability catalog", () => {
     );
   });
 
-  test("keeps ACP compatibility capabilities when Claude is not selected for T3", () => {
+  test("keeps Claude on its resident native driver despite legacy engine filters", () => {
     const catalog = buildCapabilityCatalog({
       env: READY_ENV,
       gatewayConfigured: true,
@@ -170,5 +184,6 @@ describe("capability catalog", () => {
         resolveProviderRegistration("claude")!.driver.descriptor.capabilities,
       ),
     );
+    expect(catalog.engines.find((engine) => engine.id === "claude")?.runtime.kind).toBe("t3");
   });
 });

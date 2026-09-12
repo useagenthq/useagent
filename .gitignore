@@ -6,6 +6,8 @@ node_modules/
 
 # backend per-run isolated workdirs
 backend/.runs/
+backend/runtime-assets/*.tar.gz
+backend/runtime-assets/*.tar.gz.tmp-*
 
 # build artifacts
 dist/

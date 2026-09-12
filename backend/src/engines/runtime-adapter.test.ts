@@ -105,7 +105,7 @@ describe("T3 run adapter gate", () => {
     expect(() => runtimeRunSnapshot({
       SANDBOX_PROVIDER: "cube",
       CUBE_TEMPLATE_ID: "production-v7",
-      USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v9",
+      USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v10",
     })).toThrow("requires a dedicated RUNTIME_CUBE_TEMPLATE_ID");
     expect(runtimeRunSnapshot({
       SANDBOX_PROVIDER: "cube",

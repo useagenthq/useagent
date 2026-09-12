@@ -3,7 +3,11 @@ import { sql } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { acceptRunCommand } from "../src/commands";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../src/commands/cancel";
-import { recoverStaleRuns, type ReconcileProbe } from "../src/runs/recovery";
+import {
+  INCOMPATIBLE_PROVIDER_SESSION_SUMMARY,
+  recoverStaleRuns,
+  type ReconcileProbe,
+} from "../src/runs/recovery";
 import { finalizeRun } from "../src/runs/finalize";
 import {
   createRun,
@@ -16,6 +20,8 @@ import {
   STALE_SUMMARY,
 } from "../src/runs/repo";
 import { providerSessionBinding } from "@useagent/agent-harness/canonical";
+import { providerProtocolIdentity } from "@useagent/agent-harness/control";
+import { t3ProviderDrivers } from "../src/engines/t3-provider-driver";
 import type { EngineId, RunStatus } from "../src/db/schema";
 import { waitFor } from "./helpers"; // side-effect: imports src/index → migrate + seed
 
@@ -269,5 +275,79 @@ describe("command-lane restart recovery", () => {
 
     expect(probed).toBe(false);
     expect((await getRun(runId))?.status).toBe("failed");
+  });
+
+  test("settles an old ACP session before reconcile and immediately releases its queued turn", async () => {
+    const runId = crypto.randomUUID();
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "codex",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "legacy-acp-session",
+      sandbox: "legacy-acp-sandbox",
+    });
+    await setRunProviderSession(runId, providerSessionBinding({
+      provider: "codex",
+      nativeSessionId: "legacy-acp-session",
+      protocolVersion: "acp/1",
+      runtime: { kind: "sandbox", id: "legacy-acp-sandbox" },
+      capabilities: {} as never,
+      generation: 1,
+    }));
+    const queued = await seed({
+      threadId: runId,
+      parentRunId: runId,
+      engine: "mock",
+      runStatus: "queued",
+      commandState: "queued",
+    });
+    let probed = false;
+
+    const result = await recoverStaleRuns(async () => {
+      probed = true;
+      return { status: "unreachable" };
+    });
+
+    expect(probed).toBe(false);
+    expect(result.parked).toBe(0);
+    expect((await getRun(runId))?.status).toBe("failed");
+    expect((await getRun(runId))?.summary).toBe(INCOMPATIBLE_PROVIDER_SESSION_SUMMARY);
+    await waitFor(() => isDone(queued));
+  });
+
+  test("keeps a valid native session parked during a transient provider outage", async () => {
+    const runId = crypto.randomUUID();
+    const driver = t3ProviderDrivers.codex;
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "codex",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "native-t3-session",
+      sandbox: "native-t3-sandbox",
+    });
+    await setRunProviderSession(runId, providerSessionBinding({
+      provider: "codex",
+      nativeSessionId: "native-t3-session",
+      protocolVersion: providerProtocolIdentity(driver.descriptor.protocol),
+      runtime: { kind: "sandbox", id: "native-t3-sandbox" },
+      capabilities: driver.descriptor.capabilities,
+      generation: driver.descriptor.sessionGeneration as number,
+    }));
+    let probes = 0;
+
+    const result = await recoverStaleRuns(async () => {
+      probes += 1;
+      return { status: "unreachable" };
+    });
+
+    expect(probes).toBe(1);
+    expect(result.parked).toBeGreaterThanOrEqual(1);
+    expect((await getRun(runId))?.status).toBe("running");
   });
 });

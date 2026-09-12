@@ -1,9 +1,10 @@
 # @useagent/agent-harness
 
-Server-side agent-harness contracts. Translates native harnesses (OpenCode, Claude ACP,
-Codex ACP, future) into ONE provider-neutral canonical event vocabulary and exposes a
-typed control seam. Knows provider protocols; knows nothing about the useAgent backend,
-database, Daytona, or the React UI.
+Server-side agent-harness contracts. Translates provider-native harness events
+(OpenCode, Claude Code, Codex, and Pi) plus explicitly registered future
+compatibility protocols into ONE provider-neutral canonical event vocabulary
+and exposes a typed control seam. Knows provider protocols; knows nothing about
+the useAgent backend, database, sandbox vendor, or React UI.
 
 `private: true`. No build step - raw TypeScript consumed via `file:` links.
 
@@ -19,13 +20,19 @@ database, Daytona, or the React UI.
 ## Where it fits
 
 ```
-OpenCode native ─┐
-Claude ACP ───────┼─> @useagent/agent-harness -> CanonicalAgentEvent -> useAgent backend
-Codex ACP ────────┘        (translate + control)   (persist -> thread SSE)
+OpenCode native ─────┐
+Claude Code native ──┤
+Codex native ────────┼─> @useagent/agent-harness -> CanonicalAgentEvent -> useAgent backend
+Pi native ───────────┤        (translate + control)   (persist -> thread SSE)
+Future compatibility ┘
 ```
 
-useAgent keeps the trusted control plane (execution, Daytona, auth/policy, DB/outbox, memory
-/KB, the thread stream). This package is only the translation + control CONTRACT.
+useAgent keeps the trusted control plane (execution, sandbox orchestration,
+auth/policy, DB/outbox, memory/KB, and the thread stream). This package is only
+the translation + control CONTRACT.
+Canonical translation does not replace a native engine protocol. ACP may be
+registered for a future engine without a native driver, but it is never a
+fallback for OpenCode, Claude Code, Codex, or Pi.
 
 ## Provider driver contract
 

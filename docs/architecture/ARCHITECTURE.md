@@ -17,7 +17,7 @@ The product has two user-facing execution lanes over one durable run/thread mode
 
 | Lane | Execution | Durable and live delivery |
 |---|---|---|
-| Agent engines (`opencode`, `claude`, `codex`, `pi`) | A resident engine runs inside a per-thread Cube or Daytona sandbox; the backend dispatches one provider turn. | Runs, steps, raw provider events, and sealed canonical events are stored in Postgres. The browser also receives process-local live frames. |
+| Agent engines (`opencode`, `claude`, `codex`, `pi`) | A provider-native engine runs inside a per-thread Cube, Daytona, or Box sandbox; the backend dispatches one provider turn. | Runs, steps, raw provider events, and sealed canonical events are stored in Postgres. The browser also receives process-local live frames. |
 | Direct Chat (`chat`) | The worker retrieves read-only knowledge/memory context and streams an OpenRouter completion directly. It does **not** create or use a sandbox. | It uses the same run, command, step, transient-delta, finalization, and thread-SSE paths as agent turns. |
 
 The Chat split is explicit in the worker: `chat` branches before agent context and adapter setup
@@ -31,6 +31,25 @@ but the current new-thread engine picker excludes it from explicit choices
 
 The frontend is Next.js/React, the backend is Bun/Hono/Postgres/Drizzle, and shared code is in
 seven private `@useagent/*` packages linked with `file:` dependencies rather than a workspace.
+
+### 1.1 Native engine boundary
+
+Codex, Claude Code, OpenCode, and Pi are native engines, not ACP compatibility
+registrations. Each keeps its own driver, wire protocol, native session identity,
+event grammar, lifecycle controls, approval and question behavior, and child-event
+semantics. The canonical event layer translates those native events for durable
+storage and UI projection; it does not replace the engine protocol.
+
+Cube, Daytona, and Box are execution substrates only. Selecting a sandbox
+provider may change its runtime layout, credentials, preview transport, or
+resource capabilities, but it must not select a different engine transport or
+rewrite native session behavior. ACP is reserved for an explicitly registered
+future compatibility engine that lacks a native driver. It is never a fallback
+for the four native engines.
+
+An engine/provider pair that cannot boot the engine's native runtime is
+unsupported. Admission and readiness must fail closed before a turn starts;
+the system must not fall back to ACP, another engine, or a reduced lifecycle.
 
 ## 2. Ingress and transport scope
 
@@ -227,6 +246,24 @@ current capability values (`backend/src/engines/capabilities.test.ts:L1-L76`).
 Do not infer live provider readiness from this map. New work also passes the engine/model readiness
 gate at acceptance and again at worker dispatch (`backend/src/commands/service.ts:L134-L147`,
 `backend/src/worker.ts:L809-L823`).
+
+### Native-harness release evidence
+
+A sandbox-provider or engine change is not releasable until evidence proves:
+
+- registry tests select the same native protocol identity for Codex, Claude
+  Code, OpenCode, and Pi on Cube, Daytona, and Box, and reject ACP fallback;
+- each engine's lifecycle and translator tests cover native start, session
+  identity, resume/reconnect, cancellation, approvals or questions where
+  supported, child events, and canonical projection;
+- each sandbox plugin passes its provider conformance tests; and
+- live certification exercises every advertised engine/provider pair and
+  records the selected sandbox provider, native protocol and session identity,
+  terminal result, and cleanup result.
+
+Missing or contradictory evidence keeps that engine/provider pair unavailable.
+Certification may run outside the critical deploy path, but the product must
+not advertise the pair until it passes.
 
 ## 10. Licensing inventory
 

@@ -65,7 +65,7 @@ describe("T3 Codex subscription lease", () => {
     expect(harness.createdSessions).toEqual(["skynet-codex-exec-server"]);
     expect(harness.sessionCommands).toHaveLength(1);
     expect(harness.sessionCommands[0]?.command).toContain(
-      "codex exec-server --listen ws://0.0.0.0:37734",
+      '"/usr/local/bin/codex" exec-server --listen ws://0.0.0.0:37734',
     );
     expect(harness.previewPorts).toEqual([37_734]);
     expect(relayBinding).toEqual({
@@ -77,7 +77,7 @@ describe("T3 Codex subscription lease", () => {
       authEpoch: "credential-generation-123",
       model: "gpt-5.5",
       sandboxId: "sandbox-1",
-      sandboxGeneration: "useagent-runtime-v8",
+      sandboxGeneration: "useagent-runtime-v9",
       environmentId: "skynet-sandbox-1-run-1",
       cwd: "/root/work",
     });
@@ -107,6 +107,49 @@ describe("T3 Codex subscription lease", () => {
     expect(harness.commands.at(-1)?.command).toContain(
       "delete current.providerInstances.codex",
     );
+  });
+
+  test("launches Box Codex through the installed absolute binary", async () => {
+    const harness = fakeSandbox({ providerKind: "box" });
+    const lease = await prepareCodexSubscription({
+      sandbox: harness.sandbox,
+      ctx: context(),
+      workdir: "/home/user/work",
+      runtime: runtime(),
+      dependencies: {
+        openExecBridge: () => ({
+          url: "ws://127.0.0.1:43111/grant",
+          close() {},
+        }),
+        issueRelay: () => ({
+          url: "wss://useagent.example.test/api/internal/codex-relay/opaque",
+          close() {},
+        }),
+      },
+    });
+
+    expect(harness.sessionCommands[0]?.command).toContain(
+      'exec "/home/user/.local/bin/codex" exec-server',
+    );
+    expect(harness.sessionCommands[0]?.command).not.toContain("exec codex ");
+
+    const patch = buildCodexProviderInstanceCommand({
+      relayUrl: "wss://useagent.example.test/api/internal/codex-relay/opaque",
+      environmentId: "skynet-run-1",
+      workdir: "/home/user/work",
+    }, {
+      home: "/home/user",
+      workdir: "/home/user/work",
+      runsAsRoot: false,
+      bunExecutable: "/usr/local/bin/bun",
+    });
+    const encoded = patch.match(/CODEX_INSTANCE_B64='([^']+)'/)?.[1] ?? "";
+    const instance = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
+      config?: { binaryPath?: string };
+    };
+    expect(instance.config?.binaryPath).toBe("/home/user/.local/bin/codex");
+
+    await lease.close();
   });
 
   test("unwinds the exec server and bridges when provider configuration fails", async () => {
@@ -164,8 +207,11 @@ describe("T3 Codex subscription lease", () => {
   });
 
   test("builds shell-safe commands with no host credential material", () => {
-    expect(buildCodexExecServerCommand("skynet-run-1")).toContain(
-      "--environment-id skynet-run-1",
+    expect(buildCodexExecServerCommand("skynet-run-1")).toBe(
+      [
+        "set -eu",
+        'exec "/usr/local/bin/codex" exec-server --listen ws://0.0.0.0:37734 --environment-id skynet-run-1',
+      ].join("\n"),
     );
     expect(() => buildCodexExecServerCommand("unsafe; touch /tmp/pwned")).toThrow(
       "environment id is unsafe",
@@ -289,7 +335,10 @@ function runtime(): CodexSubscriptionRuntimeSelection {
   };
 }
 
-function fakeSandbox(options: { failProviderPatch?: boolean } = {}) {
+function fakeSandbox(options: {
+  failProviderPatch?: boolean;
+  providerKind?: "box" | "cube" | "daytona";
+} = {}) {
   const commands: Array<{ command: string; result: SandboxExecuteResult }> = [];
   const createdSessions: string[] = [];
   const deletedSessions: string[] = [];
@@ -297,6 +346,7 @@ function fakeSandbox(options: { failProviderPatch?: boolean } = {}) {
   const previewPorts: number[] = [];
   const sandbox = {
     id: "sandbox-1",
+    ...(options.providerKind ? { providerKind: options.providerKind } : {}),
     cpu: 2,
     memory: 4,
     process: {
@@ -319,7 +369,12 @@ function fakeSandbox(options: { failProviderPatch?: boolean } = {}) {
     },
     async getPreviewLink(port: number) {
       previewPorts.push(port);
-      return { url: "https://preview.example.test", token: "preview-secret" };
+      return {
+        url: options.providerKind === "box"
+          ? "https://sandbox-37734.on.ascii.dev"
+          : "https://preview.example.test",
+        token: "preview-secret",
+      };
     },
   } as unknown as SandboxHandle;
   return {

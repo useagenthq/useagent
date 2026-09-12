@@ -54,13 +54,17 @@ describe("T3 provider bridge", () => {
   });
 
   test("uses private dynamic provider files instead of persisted credentials", () => {
-    const command = buildRuntimeProviderBootstrapCommand(claudeEnvironment);
+    const command = buildRuntimeProviderBootstrapCommand("claude", claudeEnvironment);
     const payloads = [...command.matchAll(/printf %s '([^']+)' \| base64 -d/g)];
     const wrapper = Buffer.from(payloads[0]![1]!, "base64").toString("utf8");
     const accessHelper = Buffer.from(payloads[1]![1]!, "base64").toString("utf8");
 
     expect(command).toContain("userdata/settings.json");
     expect(command).toContain("skynet-bin/claude");
+    expect(command).toContain('useagent-claude-bun.XXXXXX');
+    expect(command).toContain('BUN_INSTALL_GLOBAL_DIR="$NATIVE_GLOBAL_DIR"');
+    expect(command).toContain('BUN_INSTALL_BIN="$NATIVE_PREFIX/bin"');
+    expect(command).toContain('@anthropic-ai/claude-code@2.1.226');
     expect(wrapper).toContain('--settings "/tmp/useagent-claude-capability/useagent-settings.json"');
     expect(wrapper).toContain('--mcp-config "/tmp/useagent-claude-capability/useagent-mcp.json"');
     expect(wrapper).toContain('test "$(id -u user)" = "$CLAUDE_UID"');
@@ -82,9 +86,32 @@ describe("T3 provider bridge", () => {
     expect(command).not.toContain("Bearer ");
   });
 
+  test("uses a same-user Claude wrapper and private package prefix on Box", () => {
+    const command = buildRuntimeProviderBootstrapCommand("claude", claudeEnvironment, {
+      home: "/home/user",
+      workdir: "/home/user/work",
+      runsAsRoot: false,
+      bunExecutable: "/usr/local/bin/bun",
+    });
+    const payloads = [...command.matchAll(/printf %s '([^']+)' \| base64 -d/g)];
+    const wrapper = Buffer.from(payloads[0]![1]!, "base64").toString("utf8");
+    const accessHelper = Buffer.from(payloads[1]![1]!, "base64").toString("utf8");
+
+    expect(command).toContain('export HOME="/home/user"');
+    expect(command).toContain('NATIVE_PREFIX="/home/user/.local"');
+    expect(command).toContain('"$CLAUDE_ACCESS_HELPER" "/home/user/work"');
+    expect(command).not.toContain("/root");
+    expect(command).not.toContain("setfacl");
+    expect(wrapper).toContain('exec "/home/user/.local/bin/claude" "$@"');
+    expect(wrapper).not.toContain("setpriv");
+    expect(accessHelper).toContain('test "$(id -u)" != "0"');
+    expect(accessHelper).toContain('test -w "$CLAUDE_WORKDIR"');
+    expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
+  });
+
   test("rejects non-HTTP provider endpoints", () => {
     expect(() =>
-      buildRuntimeProviderBootstrapCommand({
+      buildRuntimeProviderBootstrapCommand("claude", {
         ANTHROPIC_BASE_URL: "file:///tmp/provider",
         CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config",
       }),
@@ -93,7 +120,7 @@ describe("T3 provider bridge", () => {
 
   test("requires the managed Claude config directory", () => {
     expect(() =>
-      buildRuntimeProviderBootstrapCommand({
+      buildRuntimeProviderBootstrapCommand("claude", {
         ANTHROPIC_BASE_URL: "https://gateway.example.test/provider/anthropic",
       }),
     ).toThrow("incomplete");
@@ -102,19 +129,31 @@ describe("T3 provider bridge", () => {
   test("materializes an absolute executable path and preserves unrelated settings", async () => {
     const home = await mkdtemp(join(tmpdir(), "skynet-t3-provider-"));
     try {
+      const bin = join(home, ".local/bin");
+      const workdir = join(home, "work");
       const settingsPath = join(home, ".skynet/t3/userdata/settings.json");
       await mkdir(join(home, ".skynet/t3/userdata"), { recursive: true });
-      await Bun.write(settingsPath, JSON.stringify({ enableProviderUpdateChecks: false }));
+      await mkdir(bin, { recursive: true });
+      await mkdir(workdir, { recursive: true });
+      await Bun.write(join(bin, "claude"), "#!/bin/sh\necho '2.1.226 (Claude Code)'\n");
+      await Bun.$`chmod 700 ${join(bin, "claude")}`;
+      const existingCodex = { enabled: true, binaryPath: "/custom/codex" };
+      const existingOpenCode = { enabled: true, binaryPath: "/custom/opencode" };
+      const existingInstance = { driver: "codex", displayName: "Custom Codex" };
+      await Bun.write(settingsPath, JSON.stringify({
+        enableProviderUpdateChecks: false,
+        providers: { codex: existingCodex, opencode: existingOpenCode },
+        providerInstances: { codex: existingInstance },
+      }));
       const environment = {
         ...claudeEnvironment,
         CLAUDE_CONFIG_DIR: join(home, "claude-config"),
       };
-      const command = buildRuntimeProviderBootstrapCommand(environment)
-        .replace(
-          "install -d -o 1000 -g 1000 -m 700 \"$CLAUDE_CONFIG_DIR\"",
-          "install -d -m 700 \"$CLAUDE_CONFIG_DIR\"",
-        )
-        .replace('"$CLAUDE_ACCESS_HELPER" "/root/work"', ":");
+      const command = buildRuntimeProviderBootstrapCommand("claude", environment, {
+        home,
+        workdir,
+        runsAsRoot: false,
+      });
       const readiness = claudeProviderReadiness(environment);
       const result = Bun.spawnSync(["/bin/sh", "-c", command], {
         env: { ...process.env, HOME: home },
@@ -122,10 +161,14 @@ describe("T3 provider bridge", () => {
 
       expect(result.exitCode).toBe(0);
       const settings = JSON.parse(await readFile(settingsPath, "utf8")) as {
-        enableAgentBrowserAccess: boolean;
         enableProviderUpdateChecks: boolean;
-        providers: { claudeAgent: { binaryPath: string } };
+        providers: {
+          codex: typeof existingCodex;
+          opencode: typeof existingOpenCode;
+          claudeAgent: { binaryPath: string };
+        };
         providerInstances: {
+          codex: typeof existingInstance;
           claudeAgent: {
             driver: string;
             displayName: string;
@@ -140,8 +183,10 @@ describe("T3 provider bridge", () => {
           };
         };
       };
-      expect(settings.enableAgentBrowserAccess).toBe(false);
       expect(settings.enableProviderUpdateChecks).toBe(false);
+      expect(settings.providers.codex).toEqual(existingCodex);
+      expect(settings.providers.opencode).toEqual(existingOpenCode);
+      expect(settings.providerInstances.codex).toEqual(existingInstance);
       expect(settings.providers.claudeAgent.binaryPath).toBe(
         join(home, ".skynet/t3/skynet-bin/claude"),
       );
@@ -156,6 +201,99 @@ describe("T3 provider bridge", () => {
           customModels: [],
           launchArgs: "",
         },
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  test("bootstraps only the selected native engine and preserves other providers", async () => {
+    const engines = [
+      {
+        id: "codex" as const,
+        package: "@openai/codex@0.147.0",
+        binary: "codex",
+        version: "codex-cli 0.147.0",
+      },
+      {
+        id: "opencode" as const,
+        package: "opencode-ai@1.18.7",
+        binary: "opencode",
+        version: "1.18.7",
+      },
+    ];
+    for (const engine of engines) {
+      const home = await mkdtemp(join(tmpdir(), `useagent-${engine.id}-bootstrap-`));
+      try {
+        const bin = join(home, ".local/bin");
+        const settingsPath = join(home, ".skynet/t3/userdata/settings.json");
+        await mkdir(bin, { recursive: true });
+        await mkdir(join(home, ".skynet/t3/userdata"), { recursive: true });
+        await Bun.write(join(bin, engine.binary), `#!/bin/sh\necho '${engine.version}'\n`);
+        await Bun.$`chmod 700 ${join(bin, engine.binary)}`;
+        const untouched = { enabled: true, binaryPath: "/keep/me" };
+        await Bun.write(settingsPath, JSON.stringify({
+          providers: { claudeAgent: untouched },
+          providerInstances: { claudeAgent: { driver: "claudeAgent" } },
+        }));
+
+        const command = buildRuntimeProviderBootstrapCommand(engine.id, {}, {
+          home,
+          workdir: join(home, "work"),
+          runsAsRoot: false,
+        });
+        const result = Bun.spawnSync(["/bin/sh", "-c", command], {
+          env: { ...process.env, HOME: home },
+        });
+
+        expect(result.exitCode).toBe(0);
+        expect(command).toContain(engine.package);
+        for (const otherPackage of [
+          "@openai/codex@0.147.0",
+          "@anthropic-ai/claude-code@2.1.226",
+          "opencode-ai@1.18.7",
+        ]) {
+          if (otherPackage !== engine.package) expect(command).not.toContain(otherPackage);
+        }
+        const settings = JSON.parse(await readFile(settingsPath, "utf8")) as {
+          providers: Record<string, { binaryPath: string }>;
+          providerInstances: Record<string, unknown>;
+        };
+        expect(settings.providers[engine.id]?.binaryPath).toBe(join(bin, engine.binary));
+        expect(settings.providers.claudeAgent).toEqual(untouched);
+        expect(settings.providerInstances.claudeAgent).toEqual({ driver: "claudeAgent" });
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
+    }
+  });
+
+  test("fails closed when a selected engine install fails", async () => {
+    const home = await mkdtemp(join(tmpdir(), "useagent-native-install-failure-"));
+    try {
+      const bin = join(home, ".local/bin");
+      const fakeTools = join(home, "fake-tools");
+      const settingsPath = join(home, ".skynet/t3/userdata/settings.json");
+      await mkdir(bin, { recursive: true });
+      await mkdir(fakeTools, { recursive: true });
+      await mkdir(join(home, ".skynet/t3/userdata"), { recursive: true });
+      await Bun.write(join(bin, "codex"), "#!/bin/sh\necho 'codex-cli 0.1.0'\n");
+      await Bun.write(join(fakeTools, "bun"), "#!/bin/sh\nexit 42\n");
+      await Bun.$`chmod 700 ${join(bin, "codex")} ${join(fakeTools, "bun")}`;
+      await Bun.write(settingsPath, JSON.stringify({ providers: { keep: { enabled: true } } }));
+      const command = buildRuntimeProviderBootstrapCommand("codex", {}, {
+        home,
+        workdir: join(home, "work"),
+        runsAsRoot: false,
+      });
+
+      const result = Bun.spawnSync(["/bin/sh", "-c", command], {
+        env: { ...process.env, HOME: home, PATH: `${fakeTools}:${process.env.PATH}` },
+      });
+
+      expect(result.exitCode).toBe(42);
+      expect(JSON.parse(await readFile(settingsPath, "utf8"))).toEqual({
+        providers: { keep: { enabled: true } },
       });
     } finally {
       await rm(home, { recursive: true, force: true });
@@ -278,7 +416,10 @@ describe("T3 provider bridge", () => {
     await prewarmRuntimeProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" });
     await prewarmRuntimeProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" });
 
-    expect(commands).toHaveLength(1);
+    expect(commands).toHaveLength(3);
+    expect(commands[0]).toContain("@openai/codex@0.147.0");
+    expect(commands[1]).toContain("@anthropic-ai/claude-code@2.1.226");
+    expect(commands[2]).toContain("opencode-ai@1.18.7");
   });
 
   test("reasserts the Claude access boundary after resources on every retained turn", async () => {
@@ -325,6 +466,48 @@ describe("T3 provider bridge", () => {
     )).toBe(true);
   });
 
+  test("prepares Box Claude capability and wrapper without root ownership operations", async () => {
+    const commands: string[] = [];
+    const sandbox = {
+      id: "box-provider-claude",
+      providerKind: "box",
+      process: {
+        executeCommand: async (command: string) => {
+          commands.push(command);
+          return { exitCode: 0, result: "" };
+        },
+      },
+    } as unknown as SandboxHandle;
+    const context = {
+      runId: "run-box-claude",
+      threadId: "thread-box-claude",
+      prompt: "work",
+      bootstrapContext: "",
+      turnContext: "",
+      workdir: "/home/user/work",
+      orgId: "org-a",
+      userId: "user-a",
+      model: "claude-sonnet-5",
+      signal: new AbortController().signal,
+      emit: async () => undefined,
+      setSummary: () => undefined,
+    } as const;
+
+    await prepareRuntimeProviderBridge(
+      sandbox,
+      context,
+      "claude",
+      "/home/user/work",
+    );
+
+    expect(commands.some((command) => command.includes("chown 0:1000"))).toBe(false);
+    expect(commands.some((command) => command.includes('export HOME="/home/user"'))).toBe(true);
+    expect(commands.some((command) =>
+      command.startsWith("$HOME/.skynet/t3/skynet-bin/prepare-claude-access ") &&
+      command.includes('"/home/user/work"')
+    )).toBe(true);
+  });
+
   test("evicts a failed bootstrap so a later attempt can recover", async () => {
     let attempts = 0;
     const sandbox = {
@@ -343,11 +526,11 @@ describe("T3 provider bridge", () => {
     await expect(
       prewarmRuntimeProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" }),
     ).resolves.toBeUndefined();
-    expect(attempts).toBe(2);
+    expect(attempts).toBe(4);
   });
 
   test("does not materialize ChatGPT OAuth through sandbox bootstrap", () => {
-    const command = buildRuntimeProviderBootstrapCommand({
+    const command = buildRuntimeProviderBootstrapCommand("claude", {
       ANTHROPIC_BASE_URL: "https://gateway.example.test/provider/anthropic",
       CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config",
     });

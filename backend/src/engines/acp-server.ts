@@ -86,15 +86,12 @@ export {
 export { RELAY_SCRIPT } from "./acp-relay-script";
 
 // ---------------------------------------------------------------------------
-// Resident claude/codex via ACP — the opencode-server equivalent for the other
-// two engines. Each thread sandbox runs a PERSISTENT ACP agent (claude:
-// @agentclientprotocol/claude-agent-acp holding Claude Agent SDK sessions in
-// memory; codex: @agentclientprotocol/codex-acp wrapping codex's server) behind
-// a tiny dependency-free HTTP relay (POST /send → agent stdin, GET /events SSE
-// ← agent stdout), reached through the sandbox preview link. One session per
-// conversation (`session/new` once, `session/prompt` per turn) — engine boot
-// cost is paid once per sandbox; a turn is one JSON-RPC request with streamed
-// `session/update` events translated live into steps + deltas.
+// Explicit ACP compatibility transport. Each thread sandbox holds one resident
+// ACP agent behind a dependency-free HTTP relay reached through its preview.
+// One session per conversation pays boot once and streams `session/update`
+// events into steps and deltas. Native Codex and Claude use their own drivers.
+// The compatibility engine alone selects this adapter and its ACP grammar.
+// Session creation and prompting remain JSON-RPC requests to the resident agent.
 // ---------------------------------------------------------------------------
 
 export const CLAUDE_ACP_PKG = "@agentclientprotocol/claude-agent-acp@0.66.0";

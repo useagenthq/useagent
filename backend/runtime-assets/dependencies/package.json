@@ -1,0 +1,11 @@
+{
+  "name": "@useagent/native-runtime-dependencies",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "t3": "0.0.33"
+  },
+  "trustedDependencies": [
+    "node-pty"
+  ]
+}

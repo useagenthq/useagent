@@ -1,4 +1,8 @@
-import { resolveHarness, resolveProviderRegistration } from "../engines";
+import {
+  resolveHarness,
+  resolveProviderDriverForSession,
+  resolveProviderRegistration,
+} from "../engines";
 import type {
   HarnessCheckpoint,
   HarnessInterimEvent,
@@ -49,6 +53,8 @@ import { providerSessionAuthIsCurrent } from "../engines/provider-session-author
 /** The event type for the durable "reconciling after restart" marker. Distinct
  *  from the terminal events so the timeline can show a run is being re-probed. */
 export const RUN_RECONCILING = "run.reconciling";
+export const INCOMPATIBLE_PROVIDER_SESSION_SUMMARY =
+  "This run stopped after an engine protocol upgrade. Retry the turn to start a fresh native session.";
 
 // ---------------------------------------------------------------------------
 // Restart recovery of the durable command lane (north star Phase 3 "Restart
@@ -166,14 +172,27 @@ async function recoverRunningRun(
         userId: cmd.userId,
       })
     : false;
-  const candidate = Boolean(
+  const identityCurrent = Boolean(
     binding &&
     authCurrent &&
     binding.runtime.kind === "sandbox" &&
     binding.runtime.id === cmd.sandboxId &&
     binding.nativeSessionId === cmd.engineSessionId,
   );
-  if (!candidate) {
+  const driver = binding && identityCurrent
+    ? resolveProviderDriverForSession(cmd.engine, binding, binding.authEpoch)
+    : undefined;
+  if (identityCurrent && !driver) {
+    const finalized = await finalizeRun(
+      cmd.runId,
+      "failed",
+      INCOMPATIBLE_PROVIDER_SESSION_SUMMARY,
+      0,
+    );
+    const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
+    return durable?.status === "completed" ? "reconciled" : "failed";
+  }
+  if (!identityCurrent) {
     const finalized = await finalizeRun(cmd.runId, "failed", STALE_SUMMARY, 0);
     const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
     return durable?.status === "completed" ? "reconciled" : "failed";

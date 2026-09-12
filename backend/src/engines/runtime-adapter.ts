@@ -37,6 +37,7 @@ import {
   sandboxProviderKind,
   type SandboxHandle,
 } from "../sandboxes/provider";
+import { sandboxPlugin } from "../sandboxes/plugins";
 import { recordProviderEvent } from "../runs/provider-events";
 import type { ProviderDriver } from "@useagent/agent-harness/control";
 import { sessionCapabilities } from "./capabilities";
@@ -202,6 +203,9 @@ export function runtimeRunSnapshot(
       );
     }
     return template;
+  }
+  if (sandboxProviderKind(env) === "box") {
+    return env.BOX_SNAPSHOT?.trim() || "";
   }
   return (
     operatorEnv(env, "RUNTIME_DAYTONA_SNAPSHOT", "T3_DAYTONA_SNAPSHOT")?.trim() ||
@@ -537,7 +541,9 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         requiredLabels: { [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION },
         providerAfterResources: engine === "claude",
         resourceUser: engine === "claude"
-          ? { uid: 1000, gid: 1000, home: "/home/user" }
+          ? (binding) => sandboxPlugin(binding.kind).runsAsRoot
+            ? { uid: 1000, gid: 1000, home: "/home/user" }
+            : undefined
           : undefined,
         // Frozen timing prefix: hosted cutover canaries read these values.
         timingPrefix: "t3",
