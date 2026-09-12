@@ -17,6 +17,33 @@ afterAll(() => {
 });
 
 describe("Pi adapter", () => {
+  test("wires bridge cleanup into the pre-resource sandbox fence", async () => {
+    const calls: string[] = [];
+    const adapter = makePiAdapter({
+      bridges: {
+        prepare: async (sandbox) => { calls.push(`fence:${sandbox.id}`); },
+        ensure: async () => { throw new Error("not reached"); },
+        get: () => undefined,
+        awaitTeardown: async () => {},
+        remove: async () => {},
+      },
+      prepareTurn: (async (_ctx: unknown, options: {
+        prepareSandbox?: (sandbox: { id: string }) => Promise<void>;
+      }) => {
+        calls.push("prepare:start");
+        await options.prepareSandbox?.({ id: "retained" });
+        calls.push("resources:would-start");
+        throw new Error("stop after fence");
+      }) as never,
+    });
+
+    await expect(adapter.run({
+      emit: async () => undefined,
+      signal: new AbortController().signal,
+    } as never)).rejects.toThrow("stop after fence");
+    expect(calls).toEqual(["prepare:start", "fence:retained", "resources:would-start"]);
+  });
+
   test("fences pending native teardown before sandbox preparation", async () => {
     const calls: string[] = [];
     const adapter = makePiAdapter({

@@ -113,4 +113,7 @@ process.env.SLACK_DEFAULT_ENGINE = process.env.SLACK_DEFAULT_ENGINE ?? "mock";
 // far out so it never races a test's explicit processDue(); tiny backoff base so
 // any live-timed retry is fast.
 process.env.SLACK_OUTBOX_TICK_MS = process.env.SLACK_OUTBOX_TICK_MS ?? "3600000";
+// Memory tests drain explicitly. A background delivery would race their
+// process-global fetch fixtures and attribute another run's writes to this test.
+process.env.MEMORY_OUTBOX_TICK_MS = process.env.MEMORY_OUTBOX_TICK_MS ?? "3600000";
 process.env.SLACK_OUTBOX_BASE_MS = process.env.SLACK_OUTBOX_BASE_MS ?? "20";

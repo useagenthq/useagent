@@ -1,7 +1,7 @@
 import type { SandboxProviderKind } from "@useagent/sandbox-contract";
 import { sandboxPlugin } from "../sandboxes/plugins";
 import { type SandboxHandle, sandboxProviderKind } from "../sandboxes/provider";
-import type { RunInputFile } from "../engines/types";
+import type { EngineRunContext, RunInputFile } from "../engines/types";
 import { artifactStorage } from "../artifacts/storage";
 import { resolveSandboxBindingForRun } from "../sandboxes/binding";
 import { listRunUploads } from "./repo";
@@ -62,11 +62,16 @@ export async function materializeRunInputs(
     readonly process: Pick<SandboxHandle["process"], "executeCommand">;
     readonly fs: Pick<SandboxHandle["fs"], "uploadFile">;
   },
-  files: readonly RunInputFile[] | undefined,
+  ctx: Pick<EngineRunContext, "inputFiles" | "inputContext">,
   owner?: { readonly uid: number; readonly gid: number },
 ): Promise<void> {
+  const files = ctx.inputFiles;
   if (!files?.length) return;
   const root = sandboxInputRoot(sandbox.providerKind);
+  const rebasedFiles = files.map((file) => ({
+    ...file,
+    sandboxPath: sandboxInputPath(file.id, file.name, sandbox.providerKind),
+  }));
   const prepared = await sandbox.process.executeCommand(
     `mkdir -p ${root} && chmod 700 ${root}` +
       (owner ? ` && chown ${owner.uid}:${owner.gid} ${root}` : ""),
@@ -75,7 +80,7 @@ export async function materializeRunInputs(
     30,
   );
   if ((prepared.exitCode ?? 1) !== 0) throw new Error("failed to prepare sandbox inputs");
-  for (const file of files) {
+  for (const file of rebasedFiles) {
     const bytes = await artifactStorage().read(file.storageKey);
     if (bytes.byteLength !== file.sizeBytes) throw new Error(`upload bytes unavailable: ${file.id}`);
     const digest = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
@@ -90,4 +95,6 @@ export async function materializeRunInputs(
     );
     if ((secured.exitCode ?? 1) !== 0) throw new Error(`failed to secure sandbox input: ${file.id}`);
   }
+  ctx.inputFiles = rebasedFiles;
+  ctx.inputContext = formatInputContext(rebasedFiles);
 }

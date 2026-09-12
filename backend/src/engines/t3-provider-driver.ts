@@ -30,7 +30,10 @@ import {
   type RuntimeMode,
   type RuntimeThreadSnapshot,
 } from "./runtime-orchestration";
-import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
+import {
+  PersonalSandboxConnectionUnavailableError,
+  resolveSandboxBindingForSandbox,
+} from "../sandboxes/binding";
 
 const RUNTIME_POLL_INTERVAL_MS = 125;
 export const T3_SESSION_GENERATION = 2;
@@ -83,11 +86,7 @@ function driverError(code: string, message: string): {
 
 async function resolveRuntime(runtime: HarnessRuntime): Promise<SandboxHandle | null> {
   if (runtime.kind !== "sandbox") return null;
-  try {
-    return await (await resolveSandboxBindingForSandbox(runtime.id)).provider.get(runtime.id);
-  } catch {
-    return null;
-  }
+  return await (await resolveSandboxBindingForSandbox(runtime.id)).provider.get(runtime.id);
 }
 
 interface T3ProviderDriverDependencies {
@@ -99,6 +98,18 @@ const defaultT3ProviderDriverDependencies = {
   resolveRuntime,
   requestEnvironment: requestRuntimeEnvironment,
 } satisfies T3ProviderDriverDependencies;
+
+async function resolveDriverRuntime(
+  dependencies: T3ProviderDriverDependencies,
+  runtime: HarnessRuntime,
+): Promise<SandboxHandle | null> {
+  try {
+    return await dependencies.resolveRuntime(runtime);
+  } catch (error) {
+    if (error instanceof PersonalSandboxConnectionUnavailableError) throw error;
+    throw new Error("The provider runtime sandbox could not be resolved", { cause: error });
+  }
+}
 
 async function waitForShellState(
   sandbox: SandboxHandle,
@@ -138,7 +149,7 @@ async function readThreadSnapshot(
   currentSession: HarnessSession,
   signal: AbortSignal,
 ): Promise<{ readonly sandbox: SandboxHandle; readonly snapshot: RuntimeThreadSnapshot } | null> {
-  const sandbox = await dependencies.resolveRuntime(currentSession.runtime);
+  const sandbox = await resolveDriverRuntime(dependencies, currentSession.runtime);
   if (!sandbox) return null;
   const snapshot = await dependencies.requestEnvironment<RuntimeThreadSnapshot>(
     sandbox,
@@ -232,11 +243,13 @@ export function makeT3ProviderDriver(
           "The provider runtime start requires workspaceRoot, runtimeMode, and createdAt metadata",
         );
       }
-      const sandbox = await dependencies.resolveRuntime(request.runtime);
-      if (!sandbox) return driverError("runtime_unreachable", "The provider runtime sandbox is unreachable");
       const signal = request.signal ?? AbortSignal.timeout(30_000);
       const ctx = { runId: request.runId, threadId: request.threadId, model: request.model };
       try {
+        const sandbox = await resolveDriverRuntime(dependencies, request.runtime);
+        if (!sandbox) {
+          return driverError("runtime_unreachable", "The provider runtime sandbox is unreachable");
+        }
         const shell = await dependencies.requestEnvironment<RuntimeShellSnapshot>(
           sandbox,
           { method: "GET", path: "/api/orchestration/shell" },
@@ -374,9 +387,11 @@ export function makeT3ProviderDriver(
           "The provider runtime currently accepts prompt steering through this seam",
         );
       }
-      const sandbox = await dependencies.resolveRuntime(request.session.runtime);
-      if (!sandbox) return driverError("runtime_unreachable", "The provider runtime sandbox is unreachable");
       try {
+        const sandbox = await resolveDriverRuntime(dependencies, request.session.runtime);
+        if (!sandbox) {
+          return driverError("runtime_unreachable", "The provider runtime sandbox is unreachable");
+        }
         await dependencies.requestEnvironment(
           sandbox,
           {

@@ -49,6 +49,8 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { providerEvents } from "../db/schema";
 import { providerSessionAuthIsCurrent } from "../engines/provider-session-authority";
+import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
+import { piBridgeManager } from "../engines/pi-rpc-bridge";
 
 /** The event type for the durable "reconciling after restart" marker. Distinct
  *  from the terminal events so the timeline can show a run is being re-probed. */
@@ -97,6 +99,19 @@ const defaultReconcile: ReconcileProbe = (handle, checkpoint) => {
     : Promise.resolve({ status: "unreachable" } as HarnessReconciliation);
 };
 
+export type RestartTransportCleanup = (input: {
+  readonly engine: string;
+  readonly sandboxId: string | null;
+}) => Promise<void>;
+
+const defaultRestartTransportCleanup: RestartTransportCleanup = async (input) => {
+  if (input.engine !== "pi") return;
+  if (!input.sandboxId) throw new Error("Pi restart cleanup has no sandbox identity");
+  const binding = await resolveSandboxBindingForSandbox(input.sandboxId);
+  const sandbox = await binding.provider.get(input.sandboxId);
+  await piBridgeManager.prepare(sandbox);
+};
+
 export interface RecoveryResult {
   readonly reconciled: number;
   readonly failed: number;
@@ -108,13 +123,14 @@ export interface RecoveryResult {
 
 export async function recoverStaleRuns(
   reconcile: ReconcileProbe = defaultReconcile,
+  cleanup: RestartTransportCleanup = defaultRestartTransportCleanup,
 ): Promise<RecoveryResult> {
   const active = await listActiveCommands();
 
   // Phase 1 — resolve in-flight commands (concurrent; different threads are
   // independent, and a thread has at most one dispatched command).
   const dispatched = active.filter((c) => c.state === "dispatched");
-  const resolutions = await Promise.all(dispatched.map((c) => resolveDispatched(c, reconcile)));
+  const resolutions = await Promise.all(dispatched.map((c) => resolveDispatched(c, reconcile, cleanup)));
   const reconciled = resolutions.filter((r) => r === "reconciled").length;
   const parked = resolutions.filter((r) => r === "parked").length;
   let failed = resolutions.filter((r) => r === "failed").length;
@@ -140,7 +156,11 @@ type DispatchedResolution = "reconciled" | "failed" | "parked" | "settled";
 async function resolveDispatched(
   cmd: ActiveCommand,
   reconcile: ReconcileProbe,
+  cleanup: RestartTransportCleanup,
 ): Promise<DispatchedResolution> {
+  if (cmd.engine === "pi") {
+    await cleanup({ engine: cmd.engine, sandboxId: cmd.sandboxId });
+  }
   let outcome: DispatchedResolution = "settled";
   if (cmd.runStatus === "running") {
     outcome = await recoverRunningRun(cmd, reconcile);
@@ -421,6 +441,7 @@ async function ingestReconciliationEvents(
  *  tests/telemetry. The probe is injectable (tests). Never throws. */
 export async function runDueReconciles(
   reconcile: ReconcileProbe = defaultReconcile,
+  cleanup: RestartTransportCleanup = defaultRestartTransportCleanup,
 ): Promise<{ adopted: number; failed: number; retried: number; dropped: number; eventsRecovered: number }> {
   const due = await claimDueReconciles();
   let adopted = 0;
@@ -443,6 +464,9 @@ export async function runDueReconciles(
       await deleteReconcile(entry.runId);
       dropped++;
       continue;
+    }
+    if (run.engine === "pi") {
+      await cleanup({ engine: run.engine, sandboxId: run.sandboxId });
     }
     if (run.orgId && await hasRunCancelIntent(run.orgId, run.id)) {
       const finalized = await finalizeRun(entry.runId, "failed", CANCEL_SUMMARY, 0);

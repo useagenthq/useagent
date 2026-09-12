@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { Sandbox as E2BSandbox, type SandboxInfo } from "e2b";
+import {
+  Sandbox as E2BSandbox,
+  SandboxNotFoundError as E2BSandboxNotFoundError,
+  type SandboxInfo,
+} from "e2b";
+import { SandboxNotFoundError } from "@useagent/sandbox-contract";
 import {
   classifyCubeReadinessProbe,
   cubeReadinessProbeCommand,
@@ -72,6 +77,31 @@ function fakeSandbox(options: {
 }
 
 describe("Cube sandbox provider", () => {
+  test("translates only missing top-level metadata into the neutral absence error", async () => {
+    const getInfo = spyOn(E2BSandbox, "getInfo").mockRejectedValue(
+      new E2BSandboxNotFoundError("sandbox missing"),
+    );
+
+    await expect(cubeSandboxProvider("", ready).get("cube-missing")).rejects
+      .toBeInstanceOf(SandboxNotFoundError);
+
+    getInfo.mockRestore();
+  });
+
+  test("does not translate an envd not-found after metadata lookup succeeds", async () => {
+    process.env.CUBE_IDENTITY_PROBE_ATTEMPTS = "1";
+    const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
+    const vendorError = new E2BSandboxNotFoundError("envd unavailable");
+    const connect = spyOn(E2BSandbox, "connect").mockRejectedValue(vendorError);
+
+    const error = await cubeSandboxProvider("", ready).get("cube-1").catch((cause) => cause);
+    expect(error).toBe(vendorError);
+    expect(error).not.toBeInstanceOf(SandboxNotFoundError);
+
+    getInfo.mockRestore();
+    connect.mockRestore();
+  });
+
   test("maps useAgent create options onto the E2B-compatible Cube API", async () => {
     process.env.CUBE_API_URL = "http://127.0.0.1:3000";
     process.env.CUBE_PROXY_SCHEME = "https";

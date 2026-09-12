@@ -48,6 +48,7 @@ export function makePiAdapter(dependencies: PiAdapterDependencies = defaults): E
         requiredLabels: { [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION },
         timingPrefix: "pi",
         providerAfterResources: true,
+        prepareSandbox: (sandbox) => dependencies.bridges.prepare?.(sandbox) ?? Promise.resolve(),
         prepareProvider: (sandbox, workdir, binding) =>
           preparePiRuntime(sandbox, ctx, workdir, sandboxRuntimeLayout(binding.kind)),
       });

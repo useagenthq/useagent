@@ -2,11 +2,14 @@ import { type SandboxEnv, SandboxCredentialError, type SandboxProviderPlugin } f
 import { type DaytonaApiConfig, daytonaPreviewAuthHeaders, daytonaSandboxProvider } from "./provider";
 import { validateDaytonaConnection } from "./validate";
 
+const DAYTONA_REQUEST_TIMEOUT_MS = 15_000;
+
 export function daytonaApiConfig(apiKey: string, env: SandboxEnv): DaytonaApiConfig {
   return {
     apiKey,
     apiUrl: env.DAYTONA_API_URL?.trim() || "https://app.daytona.io/api",
     target: env.DAYTONA_TARGET ?? "us",
+    requestTimeoutMs: DAYTONA_REQUEST_TIMEOUT_MS,
   };
 }
 

@@ -1021,7 +1021,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
             ),
           ),
         () => prepareStage("base_config", () => readOpencodeSandboxConfig(box)),
-        () => prepareStage("inputs", () => materializeRunInputs(box, ctx.inputFiles)),
+        () => prepareStage("inputs", () => materializeRunInputs(box, ctx)),
       ]);
 
       // Fresh servers read this run-scoped config at boot; warm servers apply
