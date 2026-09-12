@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { captureLossForRun } from "../src/runs/capture-loss";
 import {
+  CaptureFenceError,
   providerEventExists,
   recordProviderEvent,
   recordProviderEventIfAbsent,
@@ -10,6 +11,57 @@ import { getNativeFramesSince, subscribeNative } from "../src/runs/native-events
 import { createRun } from "../src/runs/repo";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import "./helpers";
+
+test("a stale fence rejects once without recording capture loss", async () => {
+  const runId = crypto.randomUUID();
+  let fenceCalls = 0;
+  await expect(recordProviderEvent({
+    id: `${runId}:stale-fence`,
+    runId,
+    threadId: runId,
+    provider: "test",
+    eventType: "session.started",
+    payload: {},
+  }, {
+    fence: async () => {
+      fenceCalls++;
+      return false;
+    },
+  })).rejects.toBeInstanceOf(CaptureFenceError);
+  expect(fenceCalls).toBe(1);
+  expect(await captureLossForRun(runId)).toBeNull();
+});
+
+test("a fenced invalid write retries as required without recording capture loss", async () => {
+  const runId = crypto.randomUUID();
+  await createRun({
+    id: runId,
+    prompt: "fenced invalid provider event",
+    model: "test-model",
+    engine: "mock",
+    orgId: DEV_ORG_ID,
+    userId: DEV_USER_ID,
+    parentRunId: null,
+    threadId: runId,
+    repos: [],
+    memoryScope: "org",
+  });
+  let fenceCalls = 0;
+  await expect(recordProviderEvent({
+    id: `${runId}:invalid-fenced-write`,
+    runId,
+    threadId: runId,
+    provider: "test",
+    eventType: null as never,
+  }, {
+    fence: async () => {
+      fenceCalls++;
+      return true;
+    },
+  })).rejects.toThrow();
+  expect(fenceCalls).toBe(3);
+  expect(await captureLossForRun(runId)).toBeNull();
+});
 
 test("required provider events propagate failure without poisoning the run sequencer", async () => {
   const runId = crypto.randomUUID();
