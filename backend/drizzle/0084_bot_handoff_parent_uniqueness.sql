@@ -1,5 +1,7 @@
--- fast-deploy: requires-reconciliation
+-- fast-deploy: expansion-safe
 -- Keep the earliest attribution if a pre-constraint race created duplicates.
+-- This is backward compatible with the active reader, which already chooses
+-- the earliest attribution as the canonical delegated thread.
 DELETE FROM "bot_handoffs" AS duplicate
 USING "bot_handoffs" AS winner
 WHERE duplicate."org_id" = winner."org_id"
