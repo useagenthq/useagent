@@ -15,7 +15,8 @@ import { publishCanonicalizationComplete } from "./canonical-events";
 // then corrects it: `complete` becomes `complete_degraded` in the same transaction as
 // the ledger rows, and the completion is announced again after commit. A flush that
 // fails, or whose acknowledgement is lost, keeps its frames pending and is retried on a
-// timer; landing is idempotent, so a retry can never double count.
+// timer; landing is idempotent, so a retry can never double count. An announcement that
+// fails after its correction committed is tracked on its own and retried the same way.
 //
 // The memory copy is process-local (single-replica scope, like the drain barrier) and
 // only bridges the gap until the durable rows land. A process restart before an
@@ -24,8 +25,14 @@ import { publishCanonicalizationComplete } from "./canonical-events";
 // closing it needs a durable per-run capture-open marker, a separate change.
 // ---------------------------------------------------------------------------
 
-/** Delay before an unflushed loss is retried after a failed ledger write. */
-const FLUSH_RETRY_MS = 5_000;
+/** Delay before an unflushed loss or an unsent announcement is retried. */
+const DEFAULT_RETRY_MS = 5_000;
+let retryMs = DEFAULT_RETRY_MS;
+
+/** Namespace of the per-run advisory lock, in the two-key lock space, so it never
+ *  collides with the single-key thread locks the command lane takes (a root run's
+ *  thread id is its run id). */
+const CAPTURE_LOSS_LOCK_NAMESPACE = 0x4c_4f_53_53;
 
 interface LostFrame {
   readonly eventId: string;
@@ -42,6 +49,10 @@ interface CaptureLossEntry {
 }
 
 const captureLosses = new Map<string, CaptureLossEntry>();
+/** Runs whose degraded seal still has to be announced (the correction committed, the
+ *  announcement did not go out yet). Independent of the pending ledger rows. */
+const pendingAnnouncements = new Set<string>();
+const announceRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export interface CaptureLoss {
   readonly lostFrames: number;
@@ -51,7 +62,7 @@ export interface CaptureLoss {
 /** The per-run advisory lock the ledger flush and the seal transaction both take, so
  *  their reads and writes serialize. Transaction-scoped: released at commit or rollback. */
 export function captureLossLock(runId: string): SQL {
-  return sql`select pg_advisory_xact_lock(hashtext(${runId}))`;
+  return sql`select pg_advisory_xact_lock(${CAPTURE_LOSS_LOCK_NAMESPACE}::int, hashtext(${runId}))`;
 }
 
 /** Record one lost frame for a run and start landing it durably. */
@@ -77,11 +88,13 @@ export function noteCaptureLoss(
  *  so a loss noted during a flush is carried by the same call; one flush in flight per
  *  run. A frame leaves the pending set only after its transaction is known to have
  *  committed, so a failure or a lost acknowledgement keeps it for the timed retry, and
- *  the idempotent insert makes that retry harmless. After a batch lands, a degraded seal
- *  is announced (again, if need be: the announcement is idempotent for readers). */
+ *  the idempotent insert makes that retry harmless. Once the rows are down, the degraded
+ *  seal is announced; with nothing pending, a call only retries an unsent announcement. */
 export function flushCaptureLoss(runId: string): Promise<void> {
   const entry = captureLosses.get(runId);
-  if (!entry || entry.pending.size === 0) return Promise.resolve();
+  if (!entry || entry.pending.size === 0) {
+    return pendingAnnouncements.has(runId) ? announceDegradedSeal(runId) : Promise.resolve();
+  }
   if (entry.flushing) return entry.flushing;
   if (entry.retryTimer) {
     clearTimeout(entry.retryTimer);
@@ -103,18 +116,21 @@ export function flushCaptureLoss(runId: string): Promise<void> {
           update canonicalization_outbox set state = 'complete_degraded', updated_at = now()
           where run_id = ${runId} and state = 'complete'`);
       });
-      if (lostAcknowledgementForTest.delete(runId)) throw new Error("simulated lost acknowledgement");
+      if (consumeSimulatedFailure(lostAcknowledgementsForTest, runId)) throw new Error("simulated lost acknowledgement");
       for (const f of batch) entry.pending.delete(f.eventId);
     }
     captureLosses.delete(runId);
+    pendingAnnouncements.add(runId);
     await announceDegradedSeal(runId);
   })()
     .catch((err) => {
-      entry.retryTimer = setTimeout(() => {
-        entry.retryTimer = null;
-        void flushCaptureLoss(runId).catch(() => {});
-      }, FLUSH_RETRY_MS);
-      entry.retryTimer.unref?.();
+      if (entry.pending.size > 0) {
+        entry.retryTimer = setTimeout(() => {
+          entry.retryTimer = null;
+          void flushCaptureLoss(runId).catch(() => {});
+        }, retryMs);
+        entry.retryTimer.unref?.();
+      }
       throw err;
     })
     .finally(() => {
@@ -142,31 +158,81 @@ export async function captureLossForRun(runId: string): Promise<CaptureLoss | nu
 
 /** Publish the completion for a run whose seal is degraded, with the current loss count.
  *  Idempotent for readers: the thread stream admits one clean-to-degraded correction per
- *  connection and drops repeats; the client store never clears a degraded mark. */
-async function announceDegradedSeal(runId: string): Promise<void> {
-  const [row] = (await db.execute(sql`
-    select thread_id, source_frame_max, source_step_count from canonicalization_outbox
-    where run_id = ${runId} and state = 'complete_degraded'`)) as unknown as Array<{
-    thread_id: string; source_frame_max: number | null; source_step_count: number | null;
-  }>;
-  if (!row) return; // not sealed yet: canonicalizeRun reads the ledger inside its transaction
-  const loss = await captureLossForRun(runId);
-  publishCanonicalizationComplete({
-    runId,
-    threadId: row.thread_id,
-    sourceFrameMax: Number(row.source_frame_max ?? -1),
-    sourceStepCount: Number(row.source_step_count ?? 0),
-    degraded: true,
-    lostFrames: loss?.lostFrames ?? 1,
+ *  connection and drops repeats; the client store never clears a degraded mark. A run
+ *  not sealed yet needs nothing (canonicalizeRun reads the ledger inside its transaction
+ *  and publishes the seal it writes). A failure keeps the announcement pending and
+ *  retries it on the timer. */
+function announceDegradedSeal(runId: string): Promise<void> {
+  const timer = announceRetryTimers.get(runId);
+  if (timer) {
+    clearTimeout(timer);
+    announceRetryTimers.delete(runId);
+  }
+  return (async () => {
+    if (consumeSimulatedFailure(announcementFailuresForTest, runId)) throw new Error("simulated announcement failure");
+    const [row] = (await db.execute(sql`
+      select thread_id, source_frame_max, source_step_count from canonicalization_outbox
+      where run_id = ${runId} and state = 'complete_degraded'`)) as unknown as Array<{
+      thread_id: string; source_frame_max: number | null; source_step_count: number | null;
+    }>;
+    if (row) {
+      const rows = (await db.execute(sql`
+        select count(*)::int as n from run_capture_loss where run_id = ${runId}`)) as unknown as Array<{ n: number | string }>;
+      publishCanonicalizationComplete({
+        runId,
+        threadId: row.thread_id,
+        sourceFrameMax: Number(row.source_frame_max ?? -1),
+        sourceStepCount: Number(row.source_step_count ?? 0),
+        degraded: true,
+        lostFrames: Math.max(1, Number(rows[0]?.n ?? 0)),
+      });
+    }
+    pendingAnnouncements.delete(runId);
+  })().catch((err) => {
+    const retry = setTimeout(() => {
+      announceRetryTimers.delete(runId);
+      void announceDegradedSeal(runId).catch(() => {});
+    }, retryMs);
+    retry.unref?.();
+    announceRetryTimers.set(runId, retry);
+    throw err;
   });
 }
 
-const lostAcknowledgementForTest = new Set<string>();
+// ── Test hooks ───────────────────────────────────────────────────────────────
 
-/** Tests only: make the run's next flush behave as if its transaction committed but the
- *  acknowledgement was lost, so the frames stay pending and the retry must be idempotent. */
-export function simulateLostFlushAcknowledgementForTest(runId: string): void {
-  lostAcknowledgementForTest.add(runId);
+const lostAcknowledgementsForTest = new Map<string, number>();
+const announcementFailuresForTest = new Map<string, number>();
+
+function consumeSimulatedFailure(map: Map<string, number>, runId: string): boolean {
+  const left = map.get(runId) ?? 0;
+  if (left <= 0) return false;
+  if (left === 1) map.delete(runId);
+  else map.set(runId, left - 1);
+  return true;
+}
+
+/** Tests only: make the run's next `times` flushes behave as if their transaction
+ *  committed but the acknowledgement was lost, so the frames stay pending and the retry
+ *  must be idempotent. */
+export function simulateLostFlushAcknowledgementForTest(runId: string, times = 1): void {
+  lostAcknowledgementsForTest.set(runId, times);
+}
+
+/** Tests only: make the run's next `times` announcements fail after their correction
+ *  committed, so the announcement must be retried on its own. */
+export function simulateAnnouncementFailureForTest(runId: string, times = 1): void {
+  announcementFailuresForTest.set(runId, times);
+}
+
+/** Tests only: shorten the retry timer. */
+export function setCaptureLossRetryDelayForTest(ms: number): void {
+  retryMs = ms;
+}
+
+/** Tests only: lost frames still pending in memory for the run. */
+export function pendingCaptureLossForTest(runId: string): number {
+  return captureLosses.get(runId)?.pending.size ?? 0;
 }
 
 /** Tests only: forget the in-memory ledger, as a process restart would. */
@@ -174,5 +240,11 @@ export function resetCaptureLossMemoryForTest(): void {
   for (const entry of captureLosses.values()) {
     if (entry.retryTimer) clearTimeout(entry.retryTimer);
   }
+  for (const timer of announceRetryTimers.values()) clearTimeout(timer);
   captureLosses.clear();
+  pendingAnnouncements.clear();
+  announceRetryTimers.clear();
+  lostAcknowledgementsForTest.clear();
+  announcementFailuresForTest.clear();
+  retryMs = DEFAULT_RETRY_MS;
 }
