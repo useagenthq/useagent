@@ -17,8 +17,8 @@ import {
   RiPlugLine,
   RiStackLine,
 } from "@remixicon/react";
+import { useRailFolded } from "@/components/shell/rail-folded";
 
-import { useSidebar } from "@/components/sidebar-kit/sidebar";
 import { AppSidebarFrame, NavRoutes, type Route } from "./app-sidebar-frame";
 import { SidebarSectionLabel } from "./sidebar-nav";
 
@@ -66,8 +66,7 @@ const LIBRARY_ITEMS: {
 
 /** The Customize rail, in the same frame as the thread rail. */
 export function LibrarySidebar({ active }: { active?: LibrarySidebarActive }) {
-  const { state } = useSidebar();
-  const isCollapsed = state === "collapsed";
+  const isCollapsed = useRailFolded();
 
   const back: Route[] = [
     { id: "all-threads", title: "All threads", icon: RiStackLine, href: "/agent/runs" },

@@ -57,15 +57,13 @@ describe("turn trace", () => {
     expect(html).toContain("Thought for 3m 12s");
     expect(html).toContain(">2 tool calls<");
     expect(html).toContain('aria-expanded="false"');
-    // The header is one pill: reserved status slot, label, muted count,
-    // chevron. No star and no loader once settled.
+    // The header is one pill: label, muted count, chevron. No star, and once
+    // settled no loader and no empty loader slot padding the left edge.
     const header = html.split('data-testid="thinking-header"')[1]?.split("</button>")[0] ?? "";
     expect(header).toContain("rounded-full");
     expect(header).not.toContain("M12 2l2.4");
     expect(header).not.toContain("data-pattern");
-    expect(header.indexOf('data-testid="thinking-status-slot"')).toBeLessThan(
-      header.indexOf("Thought for"),
-    );
+    expect(header).not.toContain('data-testid="thinking-status-slot"');
     expect(header.indexOf("Thought for")).toBeLessThan(header.indexOf("<svg"));
     // The reply is the primary block, outside the trace.
     expect(html).toContain('data-testid="agent-answer"');
@@ -162,7 +160,7 @@ describe("turn trace", () => {
     expect(html).not.toContain('data-session-ui="working-indicator"');
   });
 
-  test("the Thinking label keeps the same leading slot after a turn settles", () => {
+  test("the loader slot leads the live label and is gone once the turn settles", () => {
     const live = renderToStaticMarkup(
       <Timeline nodes={NODES.slice(0, 3)} live trace={PLAIN} workingSince="2026-09-03T09:00:00Z" />,
     );
@@ -176,10 +174,10 @@ describe("turn trace", () => {
       'data-testid="thinking-status-slot" class="flex size-4 shrink-0 items-center justify-center"';
 
     expect(liveHeader).toContain(slot);
-    expect(settledHeader).toContain(slot);
     expect(liveHeader.indexOf(slot)).toBeLessThan(liveHeader.indexOf("Thinking"));
-    expect(settledHeader.indexOf(slot)).toBeLessThan(settledHeader.indexOf("Thought for"));
     expect(liveHeader).toContain('data-pattern="dots"');
+    // Settled, nothing pads the label from the left: no slot, no loader.
+    expect(settledHeader).not.toContain('data-testid="thinking-status-slot"');
     expect(settledHeader).not.toContain("data-pattern");
   });
 

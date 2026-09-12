@@ -15,6 +15,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { Avatar } from "@/components/base/avatar/avatar";
 import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
+import { useRailFolded } from "@/components/shell/rail-folded";
 import {
   Collapsible,
   CollapsibleContent,
@@ -29,7 +30,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarTrigger,
-  useSidebar,
 } from "@/components/sidebar-kit/sidebar";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -109,8 +109,7 @@ function NavGroup({ route }: { route: Route }) {
 /** The rail's nav rows: the product's SidebarNavItem when expanded, tinted
  * icon buttons with tooltips when folded. */
 export function NavRoutes({ routes }: { routes: Route[] }) {
-  const { state } = useSidebar();
-  const isCollapsed = state === "collapsed";
+  const isCollapsed = useRailFolded();
 
   return (
     <SidebarMenu className={cn("gap-0", isCollapsed && "items-center gap-1")}>
@@ -171,8 +170,7 @@ export function NavRoutes({ routes }: { routes: Route[] }) {
  * Settings, Apps, Log out), so it opens exactly as before. */
 export function UserFooter() {
   const { session } = useSession();
-  const { state } = useSidebar();
-  const isCollapsed = state === "collapsed";
+  const isCollapsed = useRailFolded();
   const name = session?.user.name?.trim() || session?.user.email || "Guest";
   const email = session?.user.email ?? "Not signed in";
   const image = session?.user.image ?? null;
@@ -230,8 +228,7 @@ export function AppSidebarFrame({
   label?: string;
   children: ReactNode;
 }) {
-  const { state } = useSidebar();
-  const isCollapsed = state === "collapsed";
+  const isCollapsed = useRailFolded();
   const working = useWorkingSignal();
 
   return (
