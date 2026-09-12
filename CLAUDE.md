@@ -27,6 +27,13 @@ Architecture references: `README.md`, `backend/README.md`, `frontend/README.md`,
   `cd frontend && bun test components`.
 - Settled decisions - do not re-litigate: no engine-UI iframes; the trusted
   control plane stays outside the sandbox; threading is backend truth.
+- NATIVE HARNESS INVARIANT: Codex, Claude Code, OpenCode, and Pi keep their
+  provider-native driver, protocol, session identity, lifecycle, and event
+  grammar on Cube, Daytona, and Box. Sandbox selection changes only the
+  execution substrate. ACP is reserved for an explicitly registered future
+  compatibility engine and must never be a fallback for these four. If a
+  provider cannot host a native runtime, mark that engine/provider pair
+  unsupported and stop rather than changing its protocol or lifecycle.
 - Drizzle migration trap: the boot migrator applies only entries with journal
   `when` GREATER than the last applied - always stamp strictly above the
   journal tail.

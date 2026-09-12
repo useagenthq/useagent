@@ -80,21 +80,18 @@ function engineRuntime(
     return "native Pi harness · cloud sandbox";
   })();
   if (engine === "chat") return { kind: "direct", label };
+  if (engine === "codex" || engine === "claude") {
+    return { kind: "t3", label };
+  }
   if (
+    engine === "opencode" &&
     runtimeAdapterEnabled(env) &&
-    runtimeAdapterMode(env) === "all" &&
-    runtimeAdapterEngineSelected(engine, env)
+    runtimeAdapterEngineSelected(engine, env) &&
+    runtimeAdapterMode(env) === "all"
   ) {
     return { kind: "t3", label };
   }
-  if (engine === "opencode") {
-    return { kind: "native", label };
-  }
-  if (engine === "pi") return { kind: "native", label };
-  if (env.ENGINE_TRANSPORT === "cli") {
-    return { kind: "native", label };
-  }
-  return { kind: "acp_compat", label };
+  return { kind: "native", label };
 }
 
 export interface CapabilityCatalogTool {
@@ -131,10 +128,10 @@ function declaredSessionCapabilities(
 ): NegotiatedCapabilities {
   if (engine === "chat") return normalizeNegotiatedCapabilities({ streamingText: true });
   if (
-    engine !== "pi" &&
+    engine === "opencode" &&
     runtimeAdapterEnabled(env) &&
-    runtimeAdapterMode(env) === "all" &&
-    runtimeAdapterEngineSelected(engine, env)
+    runtimeAdapterEngineSelected(engine, env) &&
+    runtimeAdapterMode(env) === "all"
   ) {
     return t3ProviderDrivers[engine].descriptor.capabilities;
   }

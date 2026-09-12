@@ -1,4 +1,4 @@
-import type { SandboxHandle } from "../sandboxes/provider";
+import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
 import { sandboxPlugin } from "../sandboxes/plugins";
 import {
   previewLinkBase,
@@ -16,7 +16,12 @@ import {
   markProviderGatewaySandboxCurrent,
 } from "../provider-gateway/sandbox-config";
 import type { EngineRunContext } from "./types";
-import { RUNTIME_ENVIRONMENT_HOME, RUNTIME_GENERATION } from "./runtime-environment";
+import {
+  RUNTIME_ENVIRONMENT_HOME,
+  RUNTIME_ENVIRONMENT_WORKDIR,
+  RUNTIME_GENERATION,
+  RUNTIME_SANDBOX_HOME,
+} from "./runtime-environment";
 
 const CODEX_EXEC_SERVER_PORT = 37_734;
 const CODEX_EXEC_SERVER_SESSION = "skynet-codex-exec-server";
@@ -28,6 +33,22 @@ const RUNTIME_SETTINGS_PATH = `${RUNTIME_ENVIRONMENT_HOME}/userdata/settings.jso
 export const CODEX_SUBSCRIPTION_DISPLAY_NAME = "Codex subscription";
 const CODEX_STATUS_CACHE_PATH = `${RUNTIME_ENVIRONMENT_HOME}/caches/codex.json`;
 const CODEX_READY_POLL_MS = 150;
+const ROOT_RUNTIME_LAYOUT: SandboxRuntimeLayout = {
+  home: RUNTIME_SANDBOX_HOME,
+  workdir: RUNTIME_ENVIRONMENT_WORKDIR,
+  runsAsRoot: true,
+};
+
+function codexRuntimeLayout(sandbox: Pick<SandboxHandle, "providerKind">): SandboxRuntimeLayout {
+  if (!sandbox.providerKind) return ROOT_RUNTIME_LAYOUT;
+  const plugin = sandboxPlugin(sandbox.providerKind);
+  return { ...plugin.runtime, runsAsRoot: plugin.runsAsRoot };
+}
+
+function codexExecutable(layout: SandboxRuntimeLayout): string {
+  const prefix = layout.runsAsRoot ? "/usr/local" : `${layout.home}/.local`;
+  return `${prefix}/bin/codex`;
+}
 
 export interface CodexSubscriptionLease {
   readonly authEpoch: string | null;
@@ -56,6 +77,7 @@ export async function prepareCodexSubscription(input: {
   const orgId = requiredIdentity(ctx.orgId, "organization");
   const userId = requiredIdentity(ctx.userId, "user");
   const environmentId = codexExecutionEnvironmentId(ctx.runId, sandbox.id);
+  const layout = codexRuntimeLayout(sandbox);
   let execBridge: ReturnType<typeof openCodexExecServerBridge> | undefined;
   let relay: ReturnType<typeof issueCodexSubscriptionRelayCapability> | undefined;
 
@@ -64,7 +86,7 @@ export async function prepareCodexSubscription(input: {
   const launch = await sandbox.process.executeSessionCommand(
     CODEX_EXEC_SERVER_SESSION,
     {
-      command: buildCodexExecServerCommand(environmentId),
+      command: buildCodexExecServerCommand(environmentId, layout),
       runAsync: true,
       suppressInputEcho: true,
     },
@@ -116,7 +138,7 @@ export async function prepareCodexSubscription(input: {
       relayUrl: relay.url,
       environmentId,
       workdir,
-    });
+    }, layout);
     // Retained-sandbox validation requires both the immutable control-plane
     // generation label and this on-disk marker. Subscription-backed Codex does
     // not materialize the provider-gateway model config, so it must stamp the
@@ -143,11 +165,14 @@ export async function prepareCodexSubscription(input: {
   };
 }
 
-export function buildCodexExecServerCommand(environmentId: string): string {
+export function buildCodexExecServerCommand(
+  environmentId: string,
+  layout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT,
+): string {
   assertSafeEnvironmentId(environmentId);
   return [
     "set -eu",
-    `exec codex exec-server --listen ws://0.0.0.0:${CODEX_EXEC_SERVER_PORT} --environment-id ${environmentId}`,
+    `exec ${JSON.stringify(codexExecutable(layout))} exec-server --listen ws://0.0.0.0:${CODEX_EXEC_SERVER_PORT} --environment-id ${environmentId}`,
   ].join("\n");
 }
 
@@ -169,7 +194,7 @@ export function buildCodexProviderInstanceCommand(input: {
   readonly relayUrl: string;
   readonly environmentId: string;
   readonly workdir: string;
-}): string {
+}, layout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT): string {
   const providerInstance = {
     driver: "codex",
     displayName: CODEX_SUBSCRIPTION_DISPLAY_NAME,
@@ -190,7 +215,7 @@ export function buildCodexProviderInstanceCommand(input: {
     ],
     config: {
       enabled: true,
-      binaryPath: "codex",
+      binaryPath: codexExecutable(layout),
       homePath: "~/.codex",
       shadowHomePath: "",
       launchArgs: "",
@@ -258,9 +283,10 @@ function buildRemoveCodexProviderInstanceCommand(): string {
 async function patchCodexProviderInstance(
   sandbox: SandboxHandle,
   input: Parameters<typeof buildCodexProviderInstanceCommand>[0],
+  layout: SandboxRuntimeLayout,
 ): Promise<void> {
   const result = await sandbox.process.executeCommand(
-    buildCodexProviderInstanceCommand(input),
+    buildCodexProviderInstanceCommand(input, layout),
     undefined,
     undefined,
     10,

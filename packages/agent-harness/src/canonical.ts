@@ -1,8 +1,8 @@
 /**
  * Canonical useAgent agent-event vocabulary.
  *
- * ONE provider-neutral wire grammar that every harness (OpenCode, Claude ACP,
- * Codex ACP, Anthropic Managed Agents, future) is translated INTO by a backend
+ * ONE provider-neutral wire grammar that every native harness (OpenCode,
+ * Claude Code, Codex, Pi) is translated INTO by a backend
  * translator. The existing thread SSE + React components consume only this, plus
  * capability flags - never a provider's private schema. Provider-native events
  * stay as a bounded raw sidecar (`provider_events` / NativeFrame) for debugging.
@@ -29,7 +29,8 @@ export function toolServerDisplayName(value: string): string {
 }
 
 /** Stable provider tag. Not an enum - a future harness adds a string, no code
- *  change here. Known today: opencode, claude-acp, codex-acp, claude-managed. */
+ *  change here. Native providers: opencode, claude, codex, pi. Persisted legacy
+ *  compatibility tags remain readable without selecting those drivers. */
 export type ProviderId = string;
 
 /** Where a session's native ids come from. Kept generic so React can show a Raw
@@ -334,19 +335,17 @@ export interface NegotiatedCapabilities {
    *  child.started/updated/completed). Real only where the provider actually emits child
    *  sessions (OpenCode protocol, canonical runtime adapter). */
   nativeChildProjection: boolean;
-  /** The useAgent gateway `child_session_*` tools. These spawn DEFERRED serial thread turns
-   *  through the product command lane - engine-independent, so ACP claude/codex sessions are
-   *  granted them too (they never require a native child-session emitter). */
+  /** Product child-session tools, independent of native child-event projection.
+   *  Their durable product-thread lifecycle does not change the parent engine's protocol. */
   gatewayChildSessions: boolean;
   approvals: boolean;
   questions: boolean;
   usage: boolean;
-  /** The engine lets the user choose the model per turn (opencode any-model sandbox); false for
-   *  engines that run a fixed provider model (ACP claude/codex) - the model picker is hidden. */
+  /** The selected native driver supports choosing a model per turn. */
   modelSelection: boolean;
   commands: boolean;
   directTerminal: boolean;
-  /** ACP session/resume (reconnect live) and session/load (rebuild after restart). */
+  /** Native session reconnect and history reconstruction after restart. */
   resume: boolean;
   load: boolean;
   close: boolean;

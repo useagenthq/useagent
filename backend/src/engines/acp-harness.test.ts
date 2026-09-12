@@ -62,13 +62,25 @@ describe("harness registry resolves control adapters by provider", () => {
     expect(resolveHarness("daytona")?.provider).toBe(opencodeHarness.provider);
     expect(resolveHarness("opencode")?.capabilities()).toEqual(opencodeHarness.capabilities());
   });
-  test("claude/claude-sdk/codex preserve the legacy provider capabilities", () => {
-    expect(resolveHarness("claude")?.provider).toBe(claudeHarness.provider);
-    expect(resolveHarness("claude-sdk")?.provider).toBe(claudeHarness.provider);
-    expect(resolveHarness("codex")?.provider).toBe(codexHarness.provider);
+  test("claude/claude-sdk/codex expose resident native capabilities, not ACP", () => {
+    expect(resolveHarness("claude")?.provider).toBe("claude");
+    expect(resolveHarness("claude-sdk")?.provider).toBe("claude");
+    expect(resolveHarness("codex")?.provider).toBe("codex");
     expect(resolveHarness("pi")?.provider).toBe("pi");
-    expect(resolveHarness("claude")?.capabilities()).toEqual(claudeHarness.capabilities());
-    expect(resolveHarness("codex")?.capabilities()).toEqual(codexHarness.capabilities());
+    for (const engine of ["claude", "codex"] as const) {
+      expect(resolveHarness(engine)?.capabilities()).toMatchObject({
+        resume: true,
+        cancel: true,
+        authoritativeHistory: true,
+        childSessions: true,
+        approvals: true,
+        questions: true,
+        reasoning: true,
+        todos: true,
+        patches: true,
+        usage: true,
+      });
+    }
   });
 
   test("Pi recovery route is registered but does not claim restart reconcile", async () => {

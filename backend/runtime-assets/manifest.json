@@ -1,0 +1,8 @@
+{
+  "archiveName": "native-runtime-524d46b26f5a.tar.gz",
+  "archiveSha256": "f20170ce28d50f8d9bd2f53c45897a7fc7657674320fbd2bf0299ff01872637f",
+  "manifestSha256": "8defe2c7133e178fefd2a7e41f8e30c03839af1a4cce7684d3dc22f125d7cb66",
+  "sourceCommit": "524d46b26f5ac85c82cd41e20f6c709d9f08db9b",
+  "dependencyVersion": "0.0.33",
+  "dependencyLockSha256": "d5b2cb4e29a3d135d5e26af849a09a7153b1b84ca4ccf4500f2f5d06268f2815"
+}

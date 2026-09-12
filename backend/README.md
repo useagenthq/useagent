@@ -23,7 +23,7 @@ The backend is the control plane for useAgent. It listens on `:3201` by default 
 1. The frontend posts a run to `POST /api/runs`.
 2. The backend resolves org and user server-side, then validates the request against the current org, engine policy, repos, branches, uploads, and skill selection.
 3. The run and its durable command record are written atomically.
-4. The worker resolves the selected engine through the production provider registry. Native OpenCode and selected T3 routes receive a concrete `ProviderDriver`; explicitly marked ACP compatibility registrations continue through their existing adapter.
+4. The worker resolves the selected engine through the production provider registry. Codex, Claude Code, OpenCode, and Pi receive their provider-native `ProviderDriver`; sandbox selection never changes the engine protocol.
 5. The thread SSE endpoint multiplexes snapshots, runs, steps, live deltas, native frames, and canonical events to the frontend. A reconnect receives a fresh authoritative snapshot. The separate `/api/runs/changes` stream carries live org invalidations only; it has no replay log.
 6. Finalization records the terminal run state and enqueues follow-up work such as memory capture, Slack delivery, and canonicalization.
 
@@ -66,23 +66,25 @@ a subscription-only Codex release.
 ## Engine Adapters
 
 `src/engines/index.ts` is the production provider registry, and
-`src/worker.ts` dispatches real turns through `runProviderTurn`. For `claude`,
-`codex`, and `opencode`, an enabled T3 route resolves a native T3
-`ProviderDriver` before compatibility execution. The table below describes the
-non-T3 route.
+`src/worker.ts` dispatches real turns through `runProviderTurn`. Runtime
+orchestration may provision or supervise an engine, but it does not replace the
+engine's native driver, protocol, session identity, lifecycle, or event grammar.
 
 | Adapter | Where it runs | Notes |
 |---|---|---|
 | `opencode` | Resident `opencode serve` inside the thread sandbox | Uses the native OpenCode `ProviderDriver` for start, resume, steer, and cancel. |
-| `claude` | Resident ACP relay or CLI fallback | Used when T3 routing is not selected. Its registration declares start, resume, and steer as compatibility-owned rather than pretending the portable lifecycle is native. |
-| `codex` | Resident ACP relay or CLI fallback | Used when T3 routing is not selected; it has the same explicit compatibility boundary as Claude, with provider-specific model handling. |
+| `claude` | Resident Claude Code runtime inside the thread sandbox | Uses the native Claude Code driver and event grammar for start, resume, steer, approvals, questions, and cancel where supported. |
+| `codex` | Resident Codex runtime inside the thread sandbox | Uses the native Codex driver and event grammar for start, resume, steer, approvals, questions, and cancel where supported. |
+| `pi` | Resident Pi runtime inside the thread sandbox | Uses the native Pi driver and event grammar. |
+| `acp` | Explicit future compatibility engines only | Never a fallback for Codex, Claude Code, OpenCode, or Pi. |
 | `daytona` | Alias for the OpenCode path | Keeps old thread rows and replies readable after the provider rename. |
 | `mock` | Scripted worker path | Used for deterministic local runs and tests. |
 
-Selected T3 routes for Codex, Claude, and OpenCode use native T3 lifecycle
-drivers. `ENGINE_TRANSPORT=cli` selects the legacy per-turn CLI poll-tail fallback for
-the non-T3 Claude and Codex routes. It does not disable an independently enabled
-T3 route. `daytona` and `claude-sdk` remain aliases for older rows.
+Cube, Daytona, and Box change only the execution substrate. If one cannot host
+an engine's native runtime, readiness reports that engine/provider pair as
+unsupported and stops before the turn starts. It must not silently select ACP,
+another engine, or a reduced lifecycle. `daytona` and `claude-sdk` remain
+aliases for older rows, but aliases resolve to the same native engine contract.
 
 ### Capability Notes
 
@@ -91,7 +93,7 @@ T3 route. `daytona` and `claude-sdk` remain aliases for older rows.
 - Streaming text, tool progress, commands, and the sandbox terminal are available for every engine.
 - File diffs, child sessions, reasoning, plans, and usage are honest only where the adapter really supports them.
 - Desktop and knowledge tools are runtime resources, not pure protocol negotiation. They are only true when the session actually has them.
-- The T3 orchestration path exposes the fullest capability set, including approvals and authoritative history.
+- Runtime orchestration may expose approvals and authoritative history only when the selected native driver proves those capabilities.
 
 ## Sandbox Provider Plugins
 
@@ -230,7 +232,7 @@ The important variables are:
 - Single-backend operation is enforced with a database lock.
 - Runs, SSE, canonicalization, uploads, artifacts, native artifact export, memory capture, and connector delivery are all wired.
 - The provider gateway and knowledge gateway are real backend services, not placeholders.
-- The worker routes production turns through the provider registry. OpenCode and selected T3 turns use native `ProviderDriver` lifecycles; non-T3 Claude/Codex remain explicit compatibility execution.
+- The worker routes production turns through the provider registry. Codex, Claude Code, OpenCode, and Pi retain their native `ProviderDriver` lifecycles on every supported sandbox provider.
 - Cube and Daytona both run real sandboxes, but with different provider-specific capabilities.
 - Desktop readiness and repair cover noVNC, RFB, the XFCE process set, browser CDP, and the restricted CDP relays. Failure degrades the advertised capability instead of failing the coding run.
 
@@ -240,7 +242,7 @@ The important variables are:
 - The org-change SSE bus must move to durable pub/sub or outbox fanout before multi-replica operation.
 - The sandbox provider interface still lacks explicit pause, checkpoint, and snapshot operations.
 - Hosted Daytona credentials, preview isolation, deletion, and latency still require release-gate evidence.
-- Legacy ACP restart reconciliation is weaker than the OpenCode and T3 paths.
+- Explicit future ACP compatibility engines require their own restart-reconciliation evidence before release.
 - Artifact storage is still local to the backend node.
 - Rich Office/PDF binary round-trip editors, PDF import, and shared object
   storage remain future work. The current presentation and PDF editors operate

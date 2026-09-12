@@ -1,10 +1,18 @@
-import type { SandboxExecuteResult, SandboxHandle } from "../sandboxes/provider";
+import {
+  sandboxRuntimeLayout,
+  type SandboxExecuteResult,
+  type SandboxHandle,
+  type SandboxRuntimeLayout,
+} from "../sandboxes/provider";
 import {
   ensureRuntimeEnvironment,
   RUNTIME_ENVIRONMENT_HOME,
   RUNTIME_ENVIRONMENT_PORT,
   RUNTIME_GENERATION,
+  RUNTIME_ENVIRONMENT_WORKDIR,
+  RUNTIME_SANDBOX_HOME,
 } from "./runtime-environment";
+import { nativeRuntimeExecutable } from "./native-runtime-artifact";
 
 const RUNTIME_AUTH_DIRECTORY = `${RUNTIME_ENVIRONMENT_HOME}/skynet-auth`;
 const RUNTIME_COOKIE_JAR = `${RUNTIME_AUTH_DIRECTORY}/session.cookies`;
@@ -109,12 +117,19 @@ export function buildRuntimeEnvironmentSessionProbeCommand(): string {
 }
 
 /**
- * Mint and consume a one-time T3 pairing credential entirely inside the Cube.
+ * Mint and consume a one-time T3 pairing credential inside the sandbox.
  * The credential is redirected to a private temporary file, piped directly to
  * the loopback auth endpoint, and consumed by T3. Only the resulting HttpOnly
  * session cookie remains in the sandbox; neither secret reaches the backend.
  */
-export function buildRuntimeEnvironmentAuthenticationCommand(): string {
+export function buildRuntimeEnvironmentAuthenticationCommand(
+  layout: SandboxRuntimeLayout = {
+    home: RUNTIME_SANDBOX_HOME,
+    workdir: RUNTIME_ENVIRONMENT_WORKDIR,
+    runsAsRoot: true,
+  },
+): string {
+  const runtimeExecutable = nativeRuntimeExecutable(layout);
   return [
     "set -eu",
     `RUNTIME_HOME="${RUNTIME_ENVIRONMENT_HOME}"`,
@@ -127,7 +142,7 @@ export function buildRuntimeEnvironmentAuthenticationCommand(): string {
     'COOKIE_TMP="$(mktemp "$AUTH_DIR/session.XXXXXX")"',
     'cleanup() { rm -f "$PAIRING" "$COOKIE_TMP"; }',
     "trap cleanup EXIT HUP INT TERM",
-    't3 auth pairing create --base-dir "$RUNTIME_HOME" --ttl 24h --label skynet-control-plane --json >"$PAIRING"',
+    `${JSON.stringify(runtimeExecutable)} auth pairing create --base-dir "$RUNTIME_HOME" --ttl 24h --label skynet-control-plane --json >"$PAIRING"`,
     [
       `node -e 'const fs=require("node:fs");const v=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(JSON.stringify({credential:v.credential}))' "$PAIRING"`,
       `curl -fsS -m 10 -c "$COOKIE_TMP" -H 'content-type: application/json' --data-binary @- ${runtimeLoopbackUrl("/api/auth/browser-session")} >/dev/null`,
@@ -182,8 +197,15 @@ async function authenticateRuntimeEnvironment(
       .catch(() => null);
     if (authenticated?.exitCode === 0) return;
     if (signal.aborted) throw new Error("Provider runtime authentication aborted");
+    const layout = sandbox.providerKind
+      ? sandboxRuntimeLayout(sandbox.providerKind)
+      : {
+          home: RUNTIME_SANDBOX_HOME,
+          workdir: RUNTIME_ENVIRONMENT_WORKDIR,
+          runsAsRoot: true,
+        };
     const result = await sandbox.process.executeCommand(
-      buildRuntimeEnvironmentAuthenticationCommand(),
+      buildRuntimeEnvironmentAuthenticationCommand(layout),
       undefined,
       undefined,
       30,

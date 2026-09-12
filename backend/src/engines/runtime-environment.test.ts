@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { SandboxProcess } from "../sandboxes/provider";
 import {
   RUN_TIMING_OUTCOMES,
@@ -23,6 +26,7 @@ import {
   runtimeGeneration,
   resolveRuntimeWorkspaceRoot,
 } from "./runtime-environment";
+import { NATIVE_RUNTIME_ARTIFACT, nativeRuntimeExecutable } from "./native-runtime-artifact";
 
 type RuntimeTestProcess = Pick<
   SandboxProcess,
@@ -40,6 +44,13 @@ function runtimeSandbox(
       deleteSession: async () => {},
       executeSessionCommand: async () => ({ cmdId: "unused" }),
       ...process,
+      executeCommand: async (...args) => {
+        // Model a verified artifact; these tests exercise resident lifecycle.
+        if (args[0].includes("# native-runtime-verified")) return { exitCode: 0, result: "" };
+        if (args[0].startsWith("curl -fsS -m 3 -o /dev/null")) return { exitCode: 1, result: "" };
+        if (args[0].includes("[t]3 serve") && !id.includes("restart")) return { exitCode: 0, result: "" };
+        return process.executeCommand(...args);
+      },
     },
   };
 }
@@ -52,7 +63,7 @@ describe("T3 Cube environment", () => {
   });
 
   test("uses the operator runtime generation as the single source of truth", () => {
-    expect(runtimeGeneration({})).toBe("useagent-runtime-v8");
+    expect(runtimeGeneration({})).toBe("useagent-runtime-v9");
     expect(runtimeGeneration({ USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v9" }))
       .toBe("useagent-runtime-v9");
     expect(() => runtimeGeneration({ USEAGENT_RUNTIME_GENERATION: "useagent-runtime-v8-candidate" }))
@@ -129,15 +140,17 @@ describe("T3 Cube environment", () => {
       RUNTIME_CODEX_CHILD_EVENT_FORWARDING: "true",
     });
 
-    expect(command).toContain('export T3CODE_HOME="$HOME/.skynet/t3"');
+    expect(command).toContain('export T3CODE_HOME="/root/.skynet/t3"');
+    expect(command).toContain(NATIVE_RUNTIME_ARTIFACT.archiveSha256);
+    expect(command).not.toContain("npm install");
     expect(command).toContain("export T3CODE_HOST=0.0.0.0");
     expect(command).toContain(`export T3CODE_PORT=${RUNTIME_ENVIRONMENT_PORT}`);
     expect(command).toContain("export T3_CODEX_REQUIRED_MCP_SERVERS=useagent");
-    expect(command).toContain('printf \'%s\\n\' "useagent" > "$HOME/.skynet/t3/.useagent-required-mcp"');
+    expect(command).toContain('printf \'%s\\n\' "useagent" > "/root/.skynet/t3/.useagent-required-mcp"');
     expect(command).toContain("export RUNTIME_CODEX_CHILD_EVENT_FORWARDING=true");
     expect(command).toContain("export T3_CODEX_CHILD_EVENT_FORWARDING=true");
     expect(command).toContain("export T3CODE_NO_BROWSER=true");
-    expect(command).toContain('exec t3 serve --host 0.0.0.0 --port 37733 --base-dir "$T3CODE_HOME"');
+    expect(command).toContain('/bin/t3" serve --host 0.0.0.0 --port 37733 --base-dir "$T3CODE_HOME"');
     expect(command).toContain('"/root/work"');
     expect(command).not.toContain("/home/user/work");
     expect(command).not.toContain("@latest");
@@ -151,6 +164,63 @@ describe("T3 Cube environment", () => {
     expect(buildRuntimeEnvironmentLaunchCommand({})).not.toContain(
       "T3_CODEX_CHILD_EVENT_FORWARDING",
     );
+  });
+
+  test("boots the same pinned runtime in a Box-owned home without root paths", () => {
+    const command = buildRuntimeEnvironmentLaunchCommand({}, {
+      home: "/home/user",
+      workdir: "/home/user/work",
+      runsAsRoot: false,
+      bunExecutable: "/usr/local/bin/bun",
+    });
+
+    expect(command).toContain('export HOME="/home/user"');
+    expect(command).toContain('export PATH="/home/user/.local/bin:$PATH"');
+    expect(command).toContain('export T3CODE_HOME="/home/user/.skynet/t3"');
+    expect(command).toContain('/home/user/.local/share/useagent/native-runtime/');
+    expect(command).toContain('--no-browser "/home/user/work"');
+    expect(command).not.toContain("/root");
+    expect(command).not.toContain("@latest");
+    expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
+  });
+
+  test("launches only the staged runtime in a clean non-root home", async () => {
+    const root = await mkdtemp(join(tmpdir(), "useagent-box-runtime-"));
+    const home = join(root, "home");
+    const workdir = join(home, "work");
+    const fakeBin = join(root, "bin");
+    try {
+      await mkdir(fakeBin, { recursive: true });
+      await mkdir(home, { recursive: true });
+      const executable = nativeRuntimeExecutable({ home, workdir, runsAsRoot: false });
+      await mkdir(join(executable, ".."), { recursive: true });
+      await Bun.write(executable, [
+        "#!/bin/sh",
+        "set -eu",
+        'printf \'%s\\n\' "$@" > "$HOME/t3-serve-args"',
+        "",
+      ].join("\n"));
+      await Bun.$`chmod 700 ${executable}`;
+      const command = buildRuntimeEnvironmentLaunchCommand({}, {
+        home,
+        workdir,
+        runsAsRoot: false,
+      });
+      const result = Bun.spawnSync(["/bin/bash", "-c", command], {
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:/usr/bin:/bin`,
+          TMPDIR: root,
+        },
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(await readFile(join(home, "t3-serve-args"), "utf8")).toContain(workdir);
+      expect(await readFile(join(home, ".skynet/t3/.useagent-required-mcp"), "utf8"))
+        .toBe("useagent\n");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("uses a loopback readiness probe", () => {
@@ -204,11 +274,36 @@ describe("T3 Cube environment", () => {
     await expect(
       ensureRuntimeEnvironment(sandbox, new AbortController().signal),
     ).resolves.toMatchObject({ sandboxId: "cube-t3-cold", port: RUNTIME_ENVIRONMENT_PORT });
-    expect(deleted).toEqual(["skynet-t3-environment"]);
+    expect(deleted).toEqual(["skynet-t3-environment", "skynet-t3-environment"]);
     expect(created).toEqual(["skynet-t3-environment"]);
     expect(launched).toHaveLength(1);
-    expect(launched[0]).toContain("exec t3 serve");
+    expect(launched[0]).toContain('/bin/t3" serve');
     expect(probes).toBe(2);
+  });
+
+  test("derives a non-root launch layout from the sandbox provider handle", async () => {
+    const launched: string[] = [];
+    let probes = 0;
+    const sandbox = {
+      ...runtimeSandbox("box-t3-cold", {
+        executeCommand: async () => ({ exitCode: probes++ === 0 ? 1 : 0, result: "" }),
+        executeSessionCommand: async (_name: string, request: { command: string }) => {
+          launched.push(request.command);
+          return { cmdId: "t3-command", exitCode: 0 };
+        },
+      }),
+      providerKind: "box" as const,
+    };
+
+    await expect(
+      ensureRuntimeEnvironment(sandbox, new AbortController().signal),
+    ).resolves.toMatchObject({
+      home: "/home/user/.skynet/t3",
+      workdir: "/home/user/work",
+    });
+    expect(launched).toHaveLength(1);
+    expect(launched[0]).toContain('export HOME="/home/user"');
+    expect(launched[0]).not.toContain("/root");
   });
 
   test("restarts a healthy environment so it reloads settings, then proves readiness", async () => {
@@ -255,7 +350,7 @@ describe("T3 Cube environment", () => {
     expect(deleted).toContain("skynet-t3-environment");
     expect(created).toEqual(["skynet-t3-environment"]);
     expect(launched).toHaveLength(1);
-    expect(launched[0]).toContain("exec t3 serve");
+    expect(launched[0]).toContain('/bin/t3" serve');
   });
 
   test("fails closed when a restart is aborted before the environment stops", async () => {

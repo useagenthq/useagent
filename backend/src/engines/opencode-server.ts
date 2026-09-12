@@ -865,16 +865,10 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
     let effectiveBinding = binding;
     const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 600_000);
 
-    // Gateway-only mode keeps org secrets out of the sandbox. Compatibility mode
-    // materializes the historical protected dotenv after the sandbox exists and
-    // explicitly sources it at boot. The create passes NO custom env, which
-    // makes an OpenCode create eligible for a Daytona warm pool (a pool serves
-    // only creates that use the snapshot's default user with no custom env,
-    // volumes, or secrets). The BASH_ENV compatibility path is baked into the
-    // snapshot image instead (built by the sandbox-image ops tooling). Raw provider
-    // credentials are never placed in an untrusted sandbox regardless - the
-    // generated OpenCode provider config points only at the trusted gateway. The
-    // names-only marker is recorded only after the files are materialized.
+    // Provider credentials stay behind the gateway. Compatibility secrets use
+    // the protected dotenv, while an env-free create remains warm-pool eligible.
+    // Record only names after their files are materialized successfully.
+    // The generated provider config points only at the trusted gateway.
     const secretInjection = await composeSecretEnv(ctx, {
       excludeNames: PROVIDER_SECRET_NAMES,
     });
@@ -976,11 +970,8 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       }
       if (ctx.signal.aborted) throw new Error("opencode run aborted (timeout)");
 
-      // Durable thread→sandbox mapping BEFORE we boot the server / run tools: the DB row
-      // survives restarts (the in-memory map is just a preview cache). AWAITED + FAIL-CLOSED
-      // (same invariant as ACP): if the association cannot be recorded we abort the turn
-      // rather than run in a box the terminal/preview/file/cleanup routes can't resolve, and
-      // a box we JUST provisioned is torn down (a reused resident box is kept for the thread).
+      // Persist the thread sandbox before execution so every control surface can
+      // resolve it after restart; failure tears down only a freshly created box.
       try {
         await persistSandboxBeforeExecution({
           runId: ctx.runId,
@@ -1016,12 +1007,9 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         }
       };
 
-      // These probes are independent on a warm sandbox. Run them together so
-      // Daytona control-plane latency is paid once rather than serially. The
-      // cached server is only trusted after a live health response from the same
-      // sandbox; if it is absent/unhealthy, ensureServer starts it AFTER the
-      // current secret files are materialized so a resumed process cannot inherit
-      // stale or revoked credentials.
+      // Run independent warm probes together. Trust a cached server only after
+      // live health; a replacement starts after current secrets are materialized.
+      // This prevents resumed processes from retaining revoked credentials.
       const [cachedRuntimeServer, secretState, baseOpenCodeConfig] = await stagesTogether([
         () =>
           prepareStage("resident_probe", () =>
@@ -1038,9 +1026,8 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         () => prepareStage("inputs", () => materializeRunInputs(box, ctx.inputFiles)),
       ]);
 
-      // Prepare run-scoped gateways. A fresh server
-      // reads this config from disk at boot; a warm server applies the same
-      // immutable payload through OpenCode's runtime config API below.
+      // Fresh servers read this run-scoped config at boot; warm servers apply
+      // the same immutable payload through the runtime API.
       const preparedConfig = await prepareStage("config_merge", () =>
         prepareOpencodeSandboxConfig(box, ctx, baseOpenCodeConfig),
       );
@@ -1058,11 +1045,8 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         );
       }
 
-      // Replace the snapshot's false-persistence memory skill with text that
-      // matches the capability actually negotiated for this turn. It is not an
-      // authorization boundary, so it can run alongside warm runtime activation.
-      // Lazy + memoized so the serial-startup rollback flag genuinely sequences
-      // it (an eagerly-started promise would still race under the flag).
+      // Correct the snapshot's memory text lazily so serial startup can sequence
+      // it while the normal path overlaps warm runtime activation.
       let memoryCorrectionStarted: Promise<void> | null = null;
       const memoryCorrection = (): Promise<void> =>
         (memoryCorrectionStarted ??= correctMemorySkillText(box, gatewayState.knowledge));
@@ -1072,11 +1056,8 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const endRuntimeSpan = ctx.timing?.begin("runtime");
 
       // ── persistent server + preview endpoint ────────────────────────────────
-      // A resident process sourced the org secret dotenv when it launched, so a
-      // dotenv that changed since (a secret added or rotated) means that process
-      // no longer carries the org's secrets: relaunch it before the turn. The
-      // names-only marker is recorded only once the process running the turn
-      // exists with the current values.
+      // Relaunch a resident process when its sourced secret set changed, then
+      // record the names marker only after the current process exists.
       const secretsChanged = secretState.changed;
       let runtimeServer =
         cachedRuntimeServer && !secretsChanged
@@ -1088,11 +1069,8 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const activateRuntime = async (): Promise<void> => {
         try {
           if (preparedConfig?.required) {
-            // Run-invariant fast path: thread-scoped memoized tokens make the warm
-            // config byte-stable, so when its hash matches the last SUCCESSFUL
-            // activation on this exact thread+sandbox, skip the PATCH + rebuild
-            // poll and only run one verify (fast when already active). Any
-            // mismatch or verify failure takes the full activate/restart path.
+            // A matching last-successful config needs one live verify; any
+            // mismatch or failure takes the full activate/restart path.
             const desiredHash = configHash(preparedConfig.config);
             const hashKey = ctx.threadId ? `${ctx.threadId}:${box.id}` : null;
             const configUnchanged =
@@ -1294,11 +1272,9 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       // their tool activity renders (↳-tagged) instead of being filtered out.
       const childSessions = new Set<string>();
 
-      // Durable child registration, shared by the SSE fast path and the REST
-      // reconciliation lane: track the session so its parts pass the live gate
-      // below, AND persist the lifecycle frame (upsert-idempotent id) that
-      // canonicalization derives child.started + per-child usage from. SSE alone
-      // is not enough — the Daytona preview proxy can buffer /event away.
+      // Both SSE and REST register children through this idempotent lifecycle
+      // frame so canonical replay keeps identity and usage when SSE is buffered.
+      // Track the session before accepting its child-owned parts.
       const registerChildSession = (
         info: Record<string, unknown> & { id: string },
         eventType: string,
@@ -1317,10 +1293,9 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         });
       };
 
-      // The pinned opencode (1.18.x) DOES serve GET /session/:id/children (verified
-      // against the SDK types and a live 1.18 server) — it stays the REST discovery
-      // lane for child sessions the SSE stream missed. A failure degrades child
-      // capture to SSE-only: log that ONCE per turn, never swallow it silently.
+      // The pinned OpenCode children endpoint recovers sessions missed by SSE.
+      // Failure degrades to SSE-only and logs once per turn.
+      // REST results still pass through the shared registration path above.
       let childrenFetchWarned = false;
       const fetchChildSessions = async (
         signal: AbortSignal,
