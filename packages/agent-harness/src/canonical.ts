@@ -168,7 +168,14 @@ export interface ExecutionCapabilitySnapshot {
 /** useAgent-generated context markers (memory/knowledge/skill/playbook/rule) that
  *  render identically for every engine because they originate in useAgent's lane,
  *  not the provider's. */
-export type ContextMarkerKind = "memory" | "knowledge" | "skill" | "playbook" | "rule" | "reconciling";
+export type ContextMarkerKind =
+  | "memory"
+  | "knowledge"
+  | "skill"
+  | "playbook"
+  | "rule"
+  | "reconciling"
+  | "approval";
 
 /**
  * The versioned, provider-neutral event union. Discriminated on `kind`; every

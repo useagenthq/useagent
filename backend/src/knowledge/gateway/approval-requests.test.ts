@@ -580,4 +580,63 @@ describe("gateway approval-request lane (#77)", () => {
     });
     expect(Object.keys(summary)).not.toContain("capability");
   });
+
+  test("the list route serves the thread's resolved requests next to pending ones", async () => {
+    const { orgId: devOrgId, userId: devUserId } = getDevContext();
+    const actor = await runningActor({ orgId: devOrgId, userId: devUserId });
+    const sibling = await runningActor({ orgId: devOrgId, userId: devUserId });
+    const raise = (runId: string, id: string) =>
+      createApprovalRequest({
+        orgId: devOrgId,
+        runId,
+        threadId: actor.threadId,
+        toolName: "automation_delete",
+        arguments: { id },
+      });
+    const { request: approvedRequest } = await raise(actor.runId, "automation-list-a");
+    const { request: deniedRequest } = await raise(actor.runId, "automation-list-b");
+    const { request: pendingRequest } = await raise(sibling.runId, "automation-list-c");
+    const approved = await approveApprovalRequest({
+      orgId: devOrgId,
+      requestId: approvedRequest.id,
+      approvedBy: devUserId,
+    });
+    expect(approved.ok).toBe(true);
+    const denied = await denyApprovalRequest({
+      orgId: devOrgId,
+      requestId: deniedRequest.id,
+      deniedBy: devUserId,
+    });
+    expect(denied.ok).toBe(true);
+
+    // The whole thread, every status, resolver and time included (reload truth).
+    const byThread = await api(`/api/gateway/approvals/requests?threadId=${actor.threadId}`);
+    expect(byThread.status).toBe(200);
+    const threadBody = (await byThread.json()) as { requests: Record<string, unknown>[] };
+    const byId = new Map(threadBody.requests.map((row) => [row.id, row]));
+    expect(byId.get(approvedRequest.id)).toMatchObject({
+      status: "approved",
+      resolved_by: devUserId,
+      run_id: actor.runId,
+    });
+    expect(typeof byId.get(approvedRequest.id)?.resolved_at).toBe("string");
+    expect(byId.get(deniedRequest.id)).toMatchObject({ status: "denied", resolved_by: devUserId });
+    expect(byId.get(pendingRequest.id)).toMatchObject({ status: "pending", resolved_at: null });
+    for (const row of threadBody.requests) expect(Object.keys(row)).not.toContain("capability");
+
+    // One run's history, and the pending-only narrowing the live lane may ask for.
+    const byRun = await api(`/api/gateway/approvals/requests?runId=${actor.runId}`);
+    const runBody = (await byRun.json()) as { requests: { id: string }[] };
+    expect(runBody.requests.map((row) => row.id).toSorted()).toEqual(
+      [approvedRequest.id, deniedRequest.id].toSorted(),
+    );
+    const pendingOnly = await api(
+      `/api/gateway/approvals/requests?threadId=${actor.threadId}&status=pending`,
+    );
+    const pendingBody = (await pendingOnly.json()) as { requests: { id: string }[] };
+    expect(pendingBody.requests.map((row) => row.id)).toEqual([pendingRequest.id]);
+    expect(
+      (await api(`/api/gateway/approvals/requests?threadId=${actor.threadId}&status=denied`)).status,
+    ).toBe(400);
+  });
 });

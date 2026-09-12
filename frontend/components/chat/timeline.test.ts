@@ -342,6 +342,49 @@ describe("run.reconciling marker (adaptive re-probe park)", () => {
     });
   });
 
+  test("gateway approval frames render as approval rows at the seq where they happened", () => {
+    const s = turnStore();
+    const gatewayFrame = (eventId: string, seq: number, eventType: string, payload: unknown) => ({
+      ...frame(eventId, seq, eventType, {}, payload),
+      provider: "skynet-gateway",
+    });
+    s.ingestNative(
+      gatewayFrame("pe_run-1_gwappr_r1_requested", 150, "gateway.approval.requested", {
+        requestId: "r1",
+        toolName: "automation_delete",
+        arguments: { id: "auto-1" },
+        status: "pending",
+        expiresAt: "2026-09-02T15:21:51.000Z",
+      }),
+      0,
+    );
+    s.ingestNative(
+      gatewayFrame("pe_run-1_gwappr_r1_resolved", 151, "gateway.approval.resolved", {
+        requestId: "r1",
+        toolName: "automation_delete",
+        arguments: { id: "auto-1" },
+        status: "approved",
+        expiresAt: "2026-09-02T15:21:51.000Z",
+        resolvedBy: "user-useagent-dev",
+      }),
+      0,
+    );
+    const nodes = buildTimeline(s.getSnapshot(), false)!;
+    const markers = nodes.filter((n) => n.kind === "marker");
+    expect(markers).toHaveLength(2);
+    expect(markers[0]).toMatchObject({
+      kind: "marker",
+      marker: { kind: "approval", state: "requested", toolName: "automation_delete", status: "pending", resolvedBy: null },
+    });
+    expect(markers[1]).toMatchObject({
+      kind: "marker",
+      marker: { kind: "approval", state: "resolved", status: "approved", resolvedBy: "user-useagent-dev" },
+    });
+    // Not a leading context marker: both rows sit after the earlier narration and tools.
+    const firstApproval = nodes.findIndex((n) => n.kind === "marker" && n.marker.kind === "approval");
+    expect(nodes.slice(0, firstApproval).some((n) => n.kind === "tool")).toBe(true);
+  });
+
   test("legacy ISO-deadline payload still parses safely (deadlineMs null)", () => {
     const s = createNativeStore();
     s.reset([], 0);

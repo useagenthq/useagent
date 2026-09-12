@@ -10,7 +10,7 @@ import {
   approvalRequestSummary,
   approveApprovalRequest,
   denyApprovalRequest,
-  listPendingApprovalRequests,
+  listApprovalRequests,
   type ApprovalResolutionError,
 } from "./approval-requests";
 import { gatewayToolRequiresApproval } from "./operation-registry";
@@ -149,15 +149,21 @@ export function createGatewayApprovalRoutes(
   // approval_poll. Same boundary as the mint route above - an org member's
   // session, and resolution additionally requires the target run to be ACTIVE
   // and belong to that member. The parked capability is never exposed here; it
-  // reaches only the requesting run through approval_poll.
+  // reaches only the requesting run through approval_poll. Resolved requests
+  // are served alongside pending ones (status, resolved_by, resolved_at) so a
+  // reloaded thread still shows what was approved or denied and by whom;
+  // `?status=pending` narrows to the actionable set.
   routes.get("/requests", async (c) => {
     const runId = c.req.query("runId")?.trim() ?? "";
     const threadId = c.req.query("threadId")?.trim() ?? "";
     if (!runId && !threadId) return c.json({ error: "run_or_thread_required" }, 400);
-    const requests = await listPendingApprovalRequests({
+    const status = c.req.query("status")?.trim();
+    if (status && status !== "pending") return c.json({ error: "invalid_status" }, 400);
+    const requests = await listApprovalRequests({
       orgId: c.get("orgId"),
       ...(runId ? { runId } : {}),
       ...(threadId ? { threadId } : {}),
+      ...(status === "pending" ? { status } : {}),
     });
     return c.json({ requests: requests.map(approvalRequestSummary) });
   });

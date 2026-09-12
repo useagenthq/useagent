@@ -232,17 +232,14 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
     return null;
   }, [turns]);
 
-  // Gateway approvals (#77): same seam as the question card - the run's OWN
-  // projection decides. A live turn whose timeline carries an approval step /
-  // provider event signals this lane, which then fetches the authoritative
-  // records from GET /api/gateway/approvals. The SIGNATURE (not a poll) drives
-  // revalidation: a new approval event arriving on the thread SSE re-projects
-  // the turn, changes the signature, and triggers exactly one refetch. Settled
-  // turns are excluded like questions: history never re-raises a card.
+  // Gateway approvals (#77): the thread's durable requests, pending AND resolved
+  // (history keeps its cards across reloads), come from GET /api/gateway/approvals.
+  // The SIGNATURE (not a poll) drives revalidation: an approval event arriving on
+  // the thread SSE re-projects its turn, changes the signature, and triggers
+  // exactly one refetch.
   const gatewayApprovalSignals = useMemo(() => {
     const signals: GatewayApprovalSignal[] = [];
     for (const turn of turns) {
-      if (!isLiveStatus(turn.status)) continue;
       const signature = gatewayApprovalSignature(
         turn.steps,
         turn.native?.nativeFrames ?? [],
@@ -253,7 +250,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
     return signals;
   }, [turns]);
   const { approvals: gatewayApprovals, refresh: refreshGatewayApprovals } =
-    useGatewayApprovals(gatewayApprovalSignals);
+    useGatewayApprovals(rootId, gatewayApprovalSignals);
 
   const submitQuestionAnswers = useCallback(
     async (target: { runId: string; request: PendingQuestion }, answers: string[][]) => {

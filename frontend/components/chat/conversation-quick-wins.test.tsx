@@ -85,6 +85,31 @@ function render(turns: Turn[], extra: Partial<ConversationProps> = {}): string {
   );
 }
 
+test("a resolved gateway approval renders inside the turn that raised it, so reload keeps the decision", () => {
+  const approval = {
+    id: "appr-1",
+    runId: "run-1",
+    toolName: "automation_delete",
+    arguments: { id: "auto-1" },
+    status: "approved" as const,
+    requestedAt: "2026-09-02T15:06:51Z",
+    resolvedAt: "2026-09-02T15:06:53Z",
+    resolvedBy: "dana",
+  };
+  const orphan = { ...approval, id: "appr-2", runId: "run-folded-child", status: "denied" as const };
+  const html = render([makeTurn("run-1", "completed", []), makeTurn("run-2", "completed", [])], {
+    gatewayApprovals: [approval, orphan],
+  });
+  const turnOne = html.slice(html.indexOf('data-run-id="run-1"'), html.indexOf('data-run-id="run-2"'));
+  expect(turnOne).toContain('data-testid="gateway-approval-card"');
+  expect(turnOne).toContain("Approved by dana");
+  expect(turnOne).not.toContain(">Approve<");
+  // A card whose run is not a rendered turn still shows, below the thread.
+  const afterTurns = html.slice(html.indexOf('data-run-id="run-2"'));
+  expect(afterTurns).toContain(">Denied<");
+  expect(html.match(/data-testid="gateway-approval-card"/g)).toHaveLength(2);
+});
+
 function liveEvents(): StoredCanonicalEvent[] {
   return [
     ev("tool.started", {

@@ -3,11 +3,11 @@
 // backend drift reconciles in this single file.
 //
 // Contract (reconciled against the landed backend, approval-routes.ts):
-//   GET  /api/gateway/approvals/requests?runId=<id>
+//   GET  /api/gateway/approvals/requests?threadId=<id>  (or ?runId=<id>)
 //     -> { requests: [{ id, run_id, thread_id, tool_name, arguments (object),
 //          status: "pending"|"approved"|"denied"|"expired", requested_at,
-//          expires_at, resolved_at, resolved_by }] }  (PENDING rows only; a
-//          resolved row leaves the list - the POST response carries its state)
+//          expires_at, resolved_at, resolved_by }] }  (every status: resolved
+//          rows stay listed so a reloaded thread keeps its approval history)
 //   POST /api/gateway/approvals/requests/:id/approve -> { id, status }  (409 race, 403 non-member)
 //   POST /api/gateway/approvals/requests/:id/deny    -> { id, status }
 
@@ -77,9 +77,10 @@ export class GatewayApprovalRequestError extends Error {
   }
 }
 
-export async function fetchGatewayApprovals(runId: string): Promise<GatewayApproval[]> {
+/** Every approval the thread ever raised, pending and resolved alike. */
+export async function fetchGatewayApprovals(threadId: string): Promise<GatewayApproval[]> {
   const response = await backendFetch(
-    `/api/gateway/approvals/requests?runId=${encodeURIComponent(runId)}`,
+    `/api/gateway/approvals/requests?threadId=${encodeURIComponent(threadId)}`,
   );
   if (!response.ok) {
     throw new GatewayApprovalRequestError(response.status, `backend ${response.status}`);

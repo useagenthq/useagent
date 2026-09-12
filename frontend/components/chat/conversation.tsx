@@ -223,6 +223,8 @@ const TurnBlock = memo(function TurnBlock({
   productChildren,
   onOpenProductChild,
   handoffs,
+  approvals,
+  onGatewayApprovalResolved,
   isLatestTurn = false,
   windowOwnsRunMarker = false,
   assistantIdentity,
@@ -231,6 +233,10 @@ const TurnBlock = memo(function TurnBlock({
   /** 1-based place among this thread's queued turns (queued rendering only). */
   queuePosition?: number;
   onSendNow?: () => void;
+  /** Gateway approvals (#77) this run raised: a pending card is actionable,
+   *  a resolved one stays as the turn's durable record of who decided what. */
+  approvals?: readonly GatewayApproval[];
+  onGatewayApprovalResolved?: () => void;
   /** Gateway child sessions THIS turn spawned (deferred serial thread turns) -
    *  they fold under this turn's subagent group instead of rendering as their
    *  own top-level turns. */
@@ -407,6 +413,14 @@ const TurnBlock = memo(function TurnBlock({
           </div>
         )}
 
+        {approvals?.map((approval) => (
+          <GatewayApprovalCard
+            key={approval.id}
+            approval={approval}
+            onResolved={onGatewayApprovalResolved}
+          />
+        ))}
+
         {/* This turn's subagents: native task fan-out (same projection as the
             Agents rail) plus gateway child sessions it spawned - one fold, real
             per-child status/model/tokens. Renders nothing when none exist. */}
@@ -505,7 +519,7 @@ export const Conversation = memo(function Conversation({
   answeringApproval?: boolean;
   approvalError?: string | null;
   onAnswerApproval?: (decision: ApprovalDecision) => void | Promise<void>;
-  /** Gateway approvals (#77) for the thread's live runs - pending ones render
+  /** Gateway approvals (#77) for the thread's runs - pending ones render
    * as Approve/Deny cards (stacked when several are pending); each card owns
    * its own optimistic resolve against /api/gateway/approvals. */
   gatewayApprovals?: readonly GatewayApproval[];
@@ -634,6 +648,24 @@ export const Conversation = memo(function Conversation({
   const queuedPositions = new Map(
     turns.filter((t) => t.status === "queued").map((t, i) => [t.run.id, i + 1] as const),
   );
+  // Each approval card renders under the turn whose run raised it; one whose run
+  // is not a rendered turn (a folded child session) falls through to the lane
+  // below the thread so it is never lost.
+  const { approvalsByRun, orphanApprovals } = useMemo(() => {
+    const byRun = new Map<string, GatewayApproval[]>();
+    const orphans: GatewayApproval[] = [];
+    const rendered = new Set(renderedTurns.map((t) => t.run.id));
+    for (const approval of gatewayApprovals ?? []) {
+      if (!rendered.has(approval.runId)) {
+        orphans.push(approval);
+        continue;
+      }
+      const list = byRun.get(approval.runId);
+      if (list) list.push(approval);
+      else byRun.set(approval.runId, [approval]);
+    }
+    return { approvalsByRun: byRun, orphanApprovals: orphans };
+  }, [gatewayApprovals, renderedTurns]);
 
   // Thread-error banner: the newest FAILED run's real summary, dismissible for
   // the session (a NEW error re-appears because the key includes the message).
@@ -703,6 +735,8 @@ export const Conversation = memo(function Conversation({
                 productChildren={productChildrenByParent.get(turn.run.id)}
                 onOpenProductChild={onOpenProductChild}
                 handoffs={handoffReceipts?.get(turn.run.id) ?? durableHandoffs.get(turn.run.id)}
+                approvals={approvalsByRun.get(turn.run.id)}
+                onGatewayApprovalResolved={onGatewayApprovalResolved}
                 isLatestTurn={index === renderedTurns.length - 1}
                 windowOwnsRunMarker={windowOwnsRunMarker}
                 assistantIdentity={assistantIdentity}
@@ -727,7 +761,7 @@ export const Conversation = memo(function Conversation({
               onRespond={onAnswerApproval}
             />
           )}
-          {gatewayApprovals?.map((approval) => (
+          {orphanApprovals.map((approval) => (
             <GatewayApprovalCard
               key={approval.id}
               approval={approval}

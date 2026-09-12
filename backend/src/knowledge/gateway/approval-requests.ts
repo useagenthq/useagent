@@ -186,16 +186,24 @@ export async function createApprovalRequest(
   return { request, created: true };
 }
 
-/** Pending requests for one run or thread (org-scoped, lazily expired). */
-export async function listPendingApprovalRequests(
-  scope: {
-    readonly orgId: string;
-    readonly runId?: string;
-    readonly threadId?: string;
-  },
+export interface ApprovalListScope {
+  readonly orgId: string;
+  readonly runId?: string;
+  readonly threadId?: string;
+  /** Default: every status, so a reloaded thread keeps its resolved cards. */
+  readonly status?: "pending";
+}
+
+/** Requests for one run or thread (org-scoped, lazily expired). Serves resolved
+ *  rows too: approvals are part of the thread's history, not only its live state. */
+export async function listApprovalRequests(
+  scope: ApprovalListScope,
   now = new Date(),
 ): Promise<readonly ApprovalRequestRecord[]> {
   if (!scope.runId && !scope.threadId) return [];
+  const inScope = scope.runId
+    ? eq(gatewayApprovalRequests.runId, scope.runId)
+    : eq(gatewayApprovalRequests.threadId, scope.threadId ?? "");
   await db
     .update(gatewayApprovalRequests)
     .set({ status: "expired", resolvedAt: now })
@@ -204,9 +212,7 @@ export async function listPendingApprovalRequests(
         eq(gatewayApprovalRequests.orgId, scope.orgId),
         eq(gatewayApprovalRequests.status, "pending"),
         lte(gatewayApprovalRequests.expiresAt, now),
-        scope.runId
-          ? eq(gatewayApprovalRequests.runId, scope.runId)
-          : eq(gatewayApprovalRequests.threadId, scope.threadId ?? ""),
+        inScope,
       ),
     );
   return db
@@ -215,10 +221,8 @@ export async function listPendingApprovalRequests(
     .where(
       and(
         eq(gatewayApprovalRequests.orgId, scope.orgId),
-        eq(gatewayApprovalRequests.status, "pending"),
-        scope.runId
-          ? eq(gatewayApprovalRequests.runId, scope.runId)
-          : eq(gatewayApprovalRequests.threadId, scope.threadId ?? ""),
+        inScope,
+        ...(scope.status ? [eq(gatewayApprovalRequests.status, scope.status)] : []),
       ),
     )
     .orderBy(desc(gatewayApprovalRequests.requestedAt))
