@@ -4,7 +4,7 @@ import { db } from "../src/db/client";
 import { runs } from "../src/db/schema";
 import { acceptUnattendedRunCommand, type RunCommandIntent } from "../src/commands";
 import { acceptRunCancel } from "../src/commands/cancel";
-import { botFiringTarget, composeRootPrompt } from "../src/bots/repo";
+import { botFiringTarget } from "../src/bots/repo";
 import { APPROVAL_REQUEST_TTL_MS, BOT_REQUEST_TTL_MS, createApprovalRequest } from "../src/knowledge/gateway/approval-requests";
 import { acceptExistingThreadFollowup } from "../src/runs/thread-followups";
 import { fireScheduleWithOutcome, firingKey } from "../src/schedules/fire";
@@ -71,8 +71,8 @@ describe("bot routines", () => {
     const afterFirst = await json<{ bot: BotBody }>(`/api/bots/${bot.id}`, { cookies });
     expect(afterFirst.body.bot.homeThreadId).toBe(first.body.runId);
     const rootRun = await json<{ prompt: string; parent_run_id: string | null }>(`/api/runs/${first.body.runId}`, { cookies });
-    expect(rootRun.body.prompt.startsWith("Build the weekly metrics workbook.")).toBe(true);
-    expect(rootRun.body.prompt).toContain("Numbers come from the warehouse.");
+    // The routine's own text is the stored prompt; the bot's rules travel as turn context.
+    expect(rootRun.body.prompt).toBe("Build the weekly metrics workbook.");
 
     // Second firing: a follow-up under the home thread, not a new root.
     const second = await json<{ runId: string }>(`/api/bots/${bot.id}/routines/${routineId}/run-now`, { method: "POST", cookies });
@@ -184,9 +184,8 @@ describe("bot routines", () => {
     // Recreate the durable state left by a crash after the losing root was
     // canceled and its retarget was accepted, but before firing record/pump.
     const strayId = crypto.randomUUID();
-    const rootPrompt = composeRootPrompt(target.bot, schedule.prompt);
     const rootIntent: RunCommandIntent = {
-      prompt: rootPrompt,
+      prompt: schedule.prompt,
       model: schedule.model,
       engine: schedule.engine,
       parentRunId: null,
@@ -210,7 +209,7 @@ describe("bot routines", () => {
       intent: rootIntent,
       run: {
         id: strayId,
-        prompt: rootPrompt,
+        prompt: schedule.prompt,
         model: schedule.model,
         engine: schedule.engine,
         parentRunId: null,

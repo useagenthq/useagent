@@ -27,6 +27,7 @@ import type { ComponentType } from "react";
 import * as React from "react";
 
 import { Kbd } from "@/components/base/kbd/kbd";
+import { runTitle } from "@/components/chat/types";
 import * as CommandMenu from "@/components/session-ui/command-palette";
 import { StatusDot } from "@/components/shared/status-dot";
 import { cx } from "@/utils/cx";
@@ -178,7 +179,7 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
                     const status = threadStatusPresentation(effectiveThreadStatus(run));
                     const repo = runPrimaryRepo(run);
                     const timestamp = threadActivityTimestamp(run);
-                    const title = run.prompt || "Untitled run";
+                    const title = runTitle(run.prompt);
                     const meta = [status.label, relativeTimeShort(timestamp)].join(" · ");
                     return (
                       <CommandMenu.Item

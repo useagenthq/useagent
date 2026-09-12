@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { sidebarNativeAgentRows } from "@/components/session-ui/native-agent-rows";
+import { runTitle } from "@/components/chat/types";
 import {
   type ProjectMenuControl,
   ProjectThreadList,
@@ -190,7 +191,7 @@ export function SidebarProjects() {
         threads: group.threads.map((run): ProjectThread => {
           return {
             id: run.id,
-            label: run.prompt || "Untitled run",
+            label: runTitle(run.prompt),
             time: relativeTimeShort(threadRowTimestamp(run)),
             status: effectiveThreadStatus(run),
             engine: run.engine,

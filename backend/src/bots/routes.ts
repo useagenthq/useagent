@@ -11,7 +11,6 @@ import { resolveSkillSelection } from "../skills/repo";
 import {
   type BotInput,
   changedPresetFields,
-  composeRootPrompt,
   createBotRow,
   describeBot,
   describeBots,
@@ -166,11 +165,13 @@ botsRoutes.patch("/:id", async (c) => {
 });
 
 /**
- * Message the bot. First message: a root run with the preset and the
- * standing-rules preamble, which becomes the home thread. Later messages:
- * plain follow-ups chained under the thread head (engine, model, skills,
- * repos and scope are inherited from the thread, never re-sent). Returns the
- * run-create response unchanged (201 accepted, 200 idempotent replay, 4xx).
+ * Message the bot. First message: a root run with the preset, which becomes
+ * the home thread. Later messages: plain follow-ups chained under the thread
+ * head (engine, model, skills, repos and scope are inherited from the thread,
+ * never re-sent). The stored prompt is only what the person typed; identity
+ * and standing rules reach the model as turn context (see prompt-context.ts).
+ * Returns the run-create response unchanged (201 accepted, 200 idempotent
+ * replay, 4xx).
  */
 botsRoutes.post("/:id/messages", async (c) => {
   const orgId = c.get("orgId");
@@ -190,7 +191,7 @@ botsRoutes.post("/:id/messages", async (c) => {
 
   const skillId = row.skillIds[0];
   const runBody: RunCreateBody = {
-    prompt: composeRootPrompt(row, text),
+    prompt: text,
     engine: row.engine,
     memory_scope: row.memoryScope,
     ...(row.model ? { model: row.model } : {}),

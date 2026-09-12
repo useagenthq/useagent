@@ -1,4 +1,5 @@
 import type { DotTone } from "@/components/shared/status-dot";
+import { cleanPrompt } from "@/components/chat/types";
 import type { ProductThreadStatus } from "@useagent/agent-client";
 import { effectiveSidebarRunStatus, type SidebarRun } from "./working-project-status";
 
@@ -82,7 +83,7 @@ function searchableThreadText(run: SidebarRun): string {
     ...run.repos,
     ...(run.repo ? [run.repo] : []),
   ];
-  return `${run.prompt || "Untitled run"} ${repos.join(" ")}`.toLowerCase();
+  return `${cleanPrompt(run.prompt) || "Untitled run"} ${repos.join(" ")}`.toLowerCase();
 }
 
 export function findThreadMatches(runs: readonly SidebarRun[], query: string): SidebarRun[] {

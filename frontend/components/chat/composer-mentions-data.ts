@@ -27,6 +27,7 @@ import {
   useState,
 } from "react";
 import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
+import { runTitle } from "@/components/chat/types";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cx as cn } from "@/utils/cx";
 import { relativeTime } from "@/utils/format";
@@ -58,10 +59,7 @@ export type RepoItem = { full_name: string; private: boolean; default_branch: st
 export type TreeItem = { path: string; name: string; type: "file" | "dir" };
 export type BotItem = { id: string; name: string; title: string };
 
-export function firstLine(text: string): string {
-  const line = (text ?? "").split("\n").find((l) => l.trim().length > 0) ?? "";
-  return line.trim();
-}
+export { firstLine } from "./types";
 
 export async function fetchThreads(): Promise<ThreadItem[]> {
   const res = await backendFetch("/api/runs?view=summary&limit=50");
@@ -76,7 +74,7 @@ export async function fetchThreads(): Promise<ThreadItem[]> {
     )
     .map((r) => ({
       id: r.id,
-      title: firstLine(r.prompt ?? "") || "Untitled thread",
+      title: runTitle(r.prompt),
       meta: relativeTime(r.created_at ?? r.createdAt ?? null),
     }));
 }

@@ -24,7 +24,6 @@ import {
 import { resolveExecutableSkillPin } from "../skills/pins";
 import {
   botFiringTarget,
-  composeRootPrompt,
   setBotHomeThread,
 } from "../bots/repo";
 import { BotsDisabledError, botsEnabled } from "../bots/rollout";
@@ -104,14 +103,10 @@ export async function fireScheduleWithOutcome(
     ? await botFiringTarget(schedule.orgId, schedule.botId)
     : null;
   const home = target?.head ?? null;
-  const prompt =
-    target && !home
-      ? composeRootPrompt(target.bot, schedule.prompt)
-      : schedule.prompt;
   const threadId = home ? home.threadId : runId;
   const memoryScope: MemoryScope = target ? target.bot.memoryScope : "org";
   const intent: RunCommandIntent = {
-    prompt,
+    prompt: schedule.prompt,
     model: schedule.model,
     engine: schedule.engine,
     parentRunId: home?.id ?? null,
@@ -158,7 +153,6 @@ export async function fireScheduleWithOutcome(
       origin: AUTOMATION_RUN_ORIGIN,
       intent: {
         ...intent,
-        prompt: composeRootPrompt(target.bot, schedule.prompt),
         parentRunId: null,
         requestedRepos: schedule.repos,
         skillId: schedule.skillId,
@@ -174,7 +168,6 @@ export async function fireScheduleWithOutcome(
         idempotencyKey,
         intent: {
           ...intent,
-          prompt: composeRootPrompt(target.bot, schedule.prompt),
           parentRunId: null,
           requestedRepos: schedule.repos,
           skillId: schedule.skillId,
@@ -211,7 +204,7 @@ export async function fireScheduleWithOutcome(
       intent,
       run: {
         id: runId,
-        prompt,
+        prompt: schedule.prompt,
         model: schedule.model,
         engine: schedule.engine,
         parentRunId: home?.id ?? null,
