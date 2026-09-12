@@ -736,6 +736,26 @@ describe("T3 orchestration projection", () => {
     expect(assistantText(snapshot)).toBe(exactOutput);
   });
 
+  test("classifies an externally interrupted live turn as failed", () => {
+    const snapshot = {
+      snapshotSequence: 12,
+      thread: {
+        id: "skynet-thread-thread-1",
+        latestTurn: {
+          turnId: "turn-interrupted",
+          state: "interrupted",
+          assistantMessageId: null,
+        },
+        messages: [],
+        activities: [],
+        session: { status: "ready", lastError: null },
+      },
+    } satisfies RuntimeThreadSnapshot;
+
+    expect(runtimeTurnSettled(snapshot)).toBe(true);
+    expect(runtimeTurnError(snapshot)).toBe("The provider turn was interrupted");
+  });
+
   test("never republishes a prior assistant answer while a resumed turn is starting", () => {
     const snapshot: RuntimeThreadSnapshot = {
       snapshotSequence: 13,

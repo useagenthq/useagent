@@ -5,6 +5,7 @@ import {
   type SandboxRuntimeLayout,
 } from "../sandboxes/provider";
 import {
+  buildRuntimeEnvironmentReadinessCommand,
   ensureRuntimeEnvironment,
   RUNTIME_ENVIRONMENT_HOME,
   RUNTIME_ENVIRONMENT_PORT,
@@ -12,7 +13,10 @@ import {
   RUNTIME_ENVIRONMENT_WORKDIR,
   RUNTIME_SANDBOX_HOME,
 } from "./runtime-environment";
-import { nativeRuntimeExecutable } from "./native-runtime-artifact";
+import {
+  buildNativeRuntimeArtifactProbe,
+  nativeRuntimeExecutable,
+} from "./native-runtime-artifact";
 
 const RUNTIME_AUTH_DIRECTORY = `${RUNTIME_ENVIRONMENT_HOME}/skynet-auth`;
 const RUNTIME_COOKIE_JAR = `${RUNTIME_AUTH_DIRECTORY}/session.cookies`;
@@ -179,6 +183,23 @@ export function buildRuntimeEnvironmentRequestCommand(request: RuntimeEnvironmen
   return ["set -eu", `${curl.join(" ")} ${runtimeLoopbackUrl(request.path)}`].join("\n");
 }
 
+export function buildRuntimeEnvironmentFirstAccessCommand(
+  request: RuntimeEnvironmentRequest,
+  layout: SandboxRuntimeLayout = {
+    home: RUNTIME_SANDBOX_HOME,
+    workdir: RUNTIME_ENVIRONMENT_WORKDIR,
+    runsAsRoot: true,
+  },
+): string {
+  return [
+    "set -eu",
+    buildNativeRuntimeArtifactProbe(layout),
+    buildRuntimeEnvironmentReadinessCommand(),
+    buildRuntimeEnvironmentSessionProbeCommand(),
+    buildRuntimeEnvironmentRequestCommand(request),
+  ].join("\n");
+}
+
 async function authenticateRuntimeEnvironment(
   sandbox: SandboxHandle,
   signal: AbortSignal,
@@ -234,6 +255,14 @@ export async function prewarmRuntimeEnvironmentAccess(
   await ensureRuntimeEnvironmentAccess(sandbox, signal);
 }
 
+async function establishRuntimeEnvironmentAccess(
+  sandbox: SandboxHandle,
+  signal: AbortSignal,
+): Promise<void> {
+  await ensureRuntimeEnvironment(sandbox, signal);
+  await authenticateRuntimeEnvironment(sandbox, signal);
+}
+
 async function ensureRuntimeEnvironmentAccess(
   sandbox: SandboxHandle,
   signal: AbortSignal,
@@ -246,7 +275,7 @@ async function ensureRuntimeEnvironmentAccess(
   const previous = accessOperations.get(key);
   if (previous && !force) {
     await previous;
-    return;
+    if (validatedAccess.has(key)) return;
   }
 
   const operation = (async () => {
@@ -255,8 +284,7 @@ async function ensureRuntimeEnvironmentAccess(
     } catch {
       // A failed predecessor must not poison the sandbox's access queue.
     }
-    await ensureRuntimeEnvironment(sandbox, signal);
-    await authenticateRuntimeEnvironment(sandbox, signal);
+    await establishRuntimeEnvironmentAccess(sandbox, signal);
     validatedAccess.add(key);
   })();
   accessOperations.set(key, operation);
@@ -279,6 +307,58 @@ async function executeRuntimeEnvironmentRequest(
     undefined,
     RUNTIME_REQUEST_TIMEOUT_SECONDS + 2,
   );
+}
+
+async function executeRuntimeEnvironmentFirstAccess(
+  sandbox: SandboxHandle,
+  request: RuntimeEnvironmentRequest,
+  signal: AbortSignal,
+): Promise<SandboxExecuteResult | null> {
+  const key = runtimeEnvironmentAccessKey(sandbox);
+  if (validatedAccess.has(key) || accessOperations.has(key)) return null;
+  let result: SandboxExecuteResult | null = null;
+  const operation = (async () => {
+    signal.throwIfAborted();
+    const layout = sandbox.providerKind
+      ? sandboxRuntimeLayout(sandbox.providerKind)
+      : {
+          home: RUNTIME_SANDBOX_HOME,
+          workdir: RUNTIME_ENVIRONMENT_WORKDIR,
+          runsAsRoot: true,
+        };
+    try {
+      result = await sandbox.process.executeCommand(
+        buildRuntimeEnvironmentFirstAccessCommand(request, layout),
+        undefined,
+        undefined,
+        RUNTIME_REQUEST_TIMEOUT_SECONDS + 2,
+      );
+      const response = parseRuntimeEnvironmentResponse(result);
+      if (!runtimeEnvironmentRequestFailed(result, response)) {
+        validatedAccess.add(key);
+      } else {
+        const error = runtimeEnvironmentRequestError(request, response);
+        if (isRuntimeEnvironmentMissingSessionError(error)) {
+          validatedAccess.add(key);
+          return;
+        }
+      }
+    } catch {
+      // A transport failure takes the same fail-closed repair path as a probe failure.
+    }
+    if (validatedAccess.has(key)) return;
+    result = null;
+    await establishRuntimeEnvironmentAccess(sandbox, signal);
+    validatedAccess.add(key);
+  })();
+  accessOperations.set(key, operation);
+  try {
+    await operation;
+  } finally {
+    if (accessOperations.get(key) === operation) accessOperations.delete(key);
+  }
+  signal.throwIfAborted();
+  return result;
 }
 
 interface RuntimeEnvironmentResponse {
@@ -339,9 +419,12 @@ export async function requestRuntimeEnvironment<T>(
   request: RuntimeEnvironmentRequest,
   signal: AbortSignal,
 ): Promise<T> {
-  await ensureRuntimeEnvironmentAccess(sandbox, signal);
-  if (signal.aborted) throw new Error("Provider runtime request aborted");
-  let result = await executeRuntimeEnvironmentRequest(sandbox, request);
+  let result = await executeRuntimeEnvironmentFirstAccess(sandbox, request, signal);
+  if (!result) {
+    await ensureRuntimeEnvironmentAccess(sandbox, signal);
+    if (signal.aborted) throw new Error("Provider runtime request aborted");
+    result = await executeRuntimeEnvironmentRequest(sandbox, request);
+  }
   let response = parseRuntimeEnvironmentResponse(result);
   if (runtimeEnvironmentRequestFailed(result, response)) {
     const error = runtimeEnvironmentRequestError(request, response);

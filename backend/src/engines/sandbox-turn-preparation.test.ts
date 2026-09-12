@@ -115,6 +115,7 @@ describe("sandbox turn provider cleanup", () => {
 
   test("finishes fresh stable setup and slow resources before run-bound activation", async () => {
     const order: string[] = [];
+    let stableProviderPrepared: boolean | undefined;
     const fresh = sandboxFixture({
       async onCommand(command) {
         if (command.includes("echo state:absent") && !command.includes("git clone")) {
@@ -136,7 +137,8 @@ describe("sandbox turn provider cleanup", () => {
           await Bun.sleep(5);
           order.push("stable:end");
         },
-        async prepareProvider() {
+        async prepareProvider(_sandbox, _workdir, _binding, preparation) {
+          stableProviderPrepared = preparation.stableProviderPrepared;
           order.push("activation");
           return {};
         },
@@ -151,10 +153,12 @@ describe("sandbox turn provider cleanup", () => {
       "resources:end",
       "activation",
     ]);
+    expect(stableProviderPrepared).toBe(true);
   });
 
   test("retained repository validation keeps its existing overlap with provider setup", async () => {
     const order: string[] = [];
+    let stableProviderPrepared: boolean | undefined;
     const repoValidated = Promise.withResolvers<void>();
     const retained = sandboxFixture({
       state: "reuse",
@@ -172,7 +176,8 @@ describe("sandbox turn provider cleanup", () => {
         snapshot: "runtime",
         chip: "runtime:codex",
         timingPrefix: "runtime",
-        async prepareProvider() {
+        async prepareProvider(_sandbox, _workdir, _binding, preparation) {
+          stableProviderPrepared = preparation.stableProviderPrepared;
           order.push("provider:start");
           await repoValidated.promise;
           order.push("provider:end");
@@ -183,6 +188,7 @@ describe("sandbox turn provider cleanup", () => {
     );
 
     expect(order).toEqual(["provider:start", "repo:identity", "provider:end"]);
+    expect(stableProviderPrepared).toBe(false);
   });
 
   test("explicit resources-first providers keep their ordering on a fresh sandbox", async () => {

@@ -54,6 +54,7 @@ export interface SandboxTurnPreparationOptions<T> {
     sandbox: SandboxHandle,
     workdir: string,
     binding: SandboxBinding,
+    preparation: { readonly stableProviderPrepared: boolean },
   ) => Promise<T>;
   readonly closeProvider?: (state: T) => Promise<void>;
 }
@@ -143,10 +144,12 @@ export async function prepareSandboxTurn<T>(
       ),
     );
     const prepareStableProvider = options.prepareStableProvider;
+    let stableProviderPrepared = false;
     if (!lease.reused && prepareStableProvider) {
       await stage("provider_bootstrap", () =>
         prepareStableProvider(sandbox, workdir, lease.binding)
       );
+      stableProviderPrepared = true;
       ctx.signal.throwIfAborted();
     }
     const prepareResources = async () => {
@@ -183,7 +186,9 @@ export async function prepareSandboxTurn<T>(
       }
     };
     const prepareProvider = () => stage("provider_bridge", async () => {
-      const state = await options.prepareProvider(sandbox, workdir, lease.binding);
+      const state = await options.prepareProvider(sandbox, workdir, lease.binding, {
+        stableProviderPrepared,
+      });
       providerState = state;
       providerPrepared = true;
       return state;

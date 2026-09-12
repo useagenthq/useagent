@@ -16,7 +16,10 @@ import {
   requestRuntimeEnvironment,
 } from "./runtime-environment-client";
 import { awaitCodexProviderReady } from "./codex-subscription-runtime";
-import { subscribeRuntimeThread } from "./runtime-event-stream";
+import {
+  followRuntimeThreadSnapshots,
+  subscribeRuntimeThread,
+} from "./runtime-event-stream";
 import {
   activityStep,
   assistantText,
@@ -257,6 +260,7 @@ export function configuredRuntimeMode(
 async function readThreadSnapshot(
   ctx: EngineRunContext,
   sandbox: Awaited<ReturnType<typeof acquireThreadSandbox>>["sandbox"],
+  signal: AbortSignal = ctx.signal,
 ): Promise<RuntimeThreadSnapshot> {
   return await requestRuntimeEnvironment<RuntimeThreadSnapshot>(
     sandbox,
@@ -264,28 +268,8 @@ async function readThreadSnapshot(
       method: "GET",
       path: `/api/orchestration/threads/${encodeURIComponent(runtimeThreadId(ctx))}`,
     },
-    ctx.signal,
+    signal,
   );
-}
-
-async function waitForNewRuntimeTurnSnapshot(
-  ctx: EngineRunContext,
-  sandbox: Awaited<ReturnType<typeof acquireThreadSandbox>>["sandbox"],
-  priorTurnId: string | null,
-): Promise<RuntimeThreadSnapshot> {
-  const deadline = Date.now() + runtimeFirstActivityTimeoutMs();
-  while (!ctx.signal.aborted) {
-    const snapshot = await readThreadSnapshot(ctx, sandbox).catch(() => null);
-    const latestTurnId = snapshot?.thread.latestTurn?.turnId ?? null;
-    if (snapshot && latestTurnId !== null && latestTurnId !== priorTurnId) {
-      return snapshot;
-    }
-    if (Date.now() >= deadline) {
-      throw new RuntimeFirstActivityTimeoutError(runtimeFirstActivityTimeoutMs());
-    }
-    await Bun.sleep(RUNTIME_POLL_INTERVAL_MS);
-  }
-  throw ctx.signal.reason ?? new Error("Turn projection aborted");
 }
 
 export async function drainRuntimeTerminalOutput(input: {
@@ -395,12 +379,23 @@ export function projectRuntimeAssistantText(
   };
 }
 
-async function waitForRuntimeTurn(
+interface RuntimeTurnWaitDependencies {
+  readonly readThreadSnapshot: typeof readThreadSnapshot;
+  readonly subscribeRuntimeThread: typeof subscribeRuntimeThread;
+}
+
+const runtimeTurnWaitDependencies: RuntimeTurnWaitDependencies = {
+  readThreadSnapshot,
+  subscribeRuntimeThread,
+};
+
+export async function waitForRuntimeTurn(
   ctx: EngineRunContext,
   sandbox: Awaited<ReturnType<typeof acquireThreadSandbox>>["sandbox"],
   preExistingActivities: ReadonlyMap<string, string>,
-  priorTurnId: string | null,
+  priorSnapshot: RuntimeThreadSnapshot,
   redact: ReturnType<typeof createSecretRedactor>,
+  dependencies: RuntimeTurnWaitDependencies = runtimeTurnWaitDependencies,
 ): Promise<string> {
   const activityRevisions = new Map(preExistingActivities);
   const activitySteps = new Map<string, string>();
@@ -422,6 +417,20 @@ async function waitForRuntimeTurn(
   toolHeartbeat.unref?.();
   let publishedText = "";
   let finalText = "";
+  const threadId = runtimeThreadId(ctx);
+  const priorTurnId = priorSnapshot.thread.latestTurn?.turnId ?? null;
+  let currentTurnObserved = false;
+  const firstActivityDeadline = new AbortController();
+  const firstActivityTimer = setTimeout(
+    () => firstActivityDeadline.abort(),
+    runtimeFirstActivityTimeoutMs(),
+  );
+  firstActivityTimer.unref?.();
+  const streamSignal = AbortSignal.any([
+    ctx.signal,
+    watchdog.signal,
+    firstActivityDeadline.signal,
+  ]);
   const applySnapshot = async (snapshot: RuntimeThreadSnapshot): Promise<boolean> => {
     toolInFlight = hasOpenRuntimeToolCall(snapshot.thread.activities);
     for (const activity of snapshot.thread.activities) {
@@ -465,29 +474,46 @@ async function waitForRuntimeTurn(
     if (error) throw new Error(redact.text(error));
     return !settled;
   };
-  // Dispatch commits before the read projection necessarily observes the new
-  // turn. Poll only this short projection hand-off; all subsequent updates use
-  // T3's native replayable websocket stream.
-  try {
-    const initial = await waitForNewRuntimeTurnSnapshot(ctx, sandbox, priorTurnId);
-    if (await applySnapshot(initial)) {
-      await subscribeRuntimeThread(
-        sandbox,
-        runtimeThreadId(ctx),
-        initial.snapshotSequence,
-        AbortSignal.any([ctx.signal, watchdog.signal]),
-        async (item) => {
-          if (item.kind === "synchronized") return true;
-          return await applySnapshot(await readThreadSnapshot(ctx, sandbox));
-        },
-      );
+  const acceptSnapshot = async (snapshot: RuntimeThreadSnapshot): Promise<boolean> => {
+    const latestTurnId = snapshot.thread.latestTurn?.turnId ?? null;
+    if (!currentTurnObserved) {
+      if (latestTurnId === null || latestTurnId === priorTurnId) return true;
+      currentTurnObserved = true;
+      clearTimeout(firstActivityTimer);
     }
+    return await applySnapshot(snapshot);
+  };
+
+  // Snapshot mode lets T3 attach live delivery before it reads the authoritative
+  // projection, closing the dispatch-to-subscribe race without an initial REST
+  // poll. Event-only bursts schedule at most one authoritative refresh at a time.
+  let streamError: unknown;
+  try {
+    await followRuntimeThreadSnapshots({
+      sandbox,
+      threadId,
+      initialSequence: priorSnapshot.snapshotSequence,
+      signal: streamSignal,
+      readSnapshot: (signal) => dependencies.readThreadSnapshot(ctx, sandbox, signal),
+      applySnapshot: acceptSnapshot,
+      subscribe: dependencies.subscribeRuntimeThread,
+    });
+  } catch (error) {
+    streamError = error;
   } finally {
+    clearTimeout(firstActivityTimer);
     clearInterval(toolHeartbeat);
     watchdog.dispose();
   }
   if (watchdog.signal.aborted) throw watchdog.signal.reason;
   ctx.signal.throwIfAborted();
+  if (firstActivityDeadline.signal.aborted && !currentTurnObserved) {
+    throw new RuntimeFirstActivityTimeoutError(runtimeFirstActivityTimeoutMs());
+  }
+  if (streamError) throw streamError;
+  if (!currentTurnObserved) {
+    throw new Error("Provider thread subscription ended before the dispatched turn was observed");
+  }
   return await drainRuntimeTerminalOutput({
     initialText: finalText,
     fallbackText: publishedText,
@@ -529,8 +555,14 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         prepareStableProvider(sandbox) {
           return prepareStableRuntimeProvider(sandbox, ctx, engine);
         },
-        async prepareProvider(sandbox, workdir) {
-          return await prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir);
+        async prepareProvider(sandbox, workdir, _binding, preparation) {
+          return await prepareRuntimeProviderBridge(
+            sandbox,
+            ctx,
+            engine,
+            workdir,
+            preparation.stableProviderPrepared,
+          );
         },
         closeProvider: (state) => state.close(),
       });
@@ -650,13 +682,13 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         // turn before steering so an initialization greeting cannot be mistaken
         // for the response to this run.
         const priorSnapshot = await readThreadSnapshot(ctx, sandbox);
+        const priorTurnId = priorSnapshot.thread.latestTurn?.turnId ?? null;
         const preExistingActivities = new Map(
           priorSnapshot?.thread.activities.map((activity) => [
             activity.id,
             runtimeActivityRevision(activity),
           ]) ?? [],
         );
-        const priorTurnId = priorSnapshot?.thread.latestTurn?.turnId ?? null;
 
         // HTTP orchestration dispatch validates thread.turn.start against an
         // already-projected thread. ProviderDriver.start creates it explicitly instead of
@@ -699,7 +731,7 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
             ctx,
             sandbox,
             preExistingActivities,
-            priorTurnId,
+            priorSnapshot,
             redact,
           );
           await ctx.emit({ kind: "done", label: "Done", chip: null });

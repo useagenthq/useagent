@@ -269,7 +269,23 @@ describe("Pi runtime configuration", () => {
     );
   });
 
-  test("keeps signed credentials behind the root broker and installs from the immutable lock", async () => {
+  test("accepts a current runtime with one verification RPC", async () => {
+    const executeCommand = mock(async (_command: string) => ({ exitCode: 0, result: "" }));
+
+    await ensurePiRuntimeInstalled({
+      process: { executeCommand },
+      runtimeRoot: "/runtime",
+      runtimeManifestDir: "/runtime/manifest",
+      bunExecutable: "/usr/local/bin/bun",
+      executable: "/runtime/current/pi.js",
+    });
+
+    expect(executeCommand).toHaveBeenCalledTimes(1);
+    expect(executeCommand.mock.calls[0]?.[0]).toContain("grep -Fxq");
+    expect(executeCommand.mock.calls[0]?.[0]).not.toContain("npm ci");
+  });
+
+  test("refreshes per-turn config while keeping a warm current setup to five command RPCs", async () => {
     process.env.SANDBOX_SECRET_MODE = "gateway_only";
     process.env.PROVIDER_GATEWAY_PUBLIC_URL = "https://gateway.example.test";
     process.env.PROVIDER_GATEWAY_SECRET = "provider-secret-provider-secret-1234";
@@ -277,7 +293,6 @@ describe("Pi runtime configuration", () => {
     process.env.TOOL_GATEWAY_SECRET = "tools-secret-tools-secret-12345678";
     const uploads: Array<{ path: string; text: string }> = [];
     const commands: string[] = [];
-    let gatewayMarkerWritten = false;
     const sandbox = {
       id: "box",
       labels: { [SANDBOX_GENERATION_LABEL]: SANDBOX_GENERATION },
@@ -289,7 +304,60 @@ describe("Pi runtime configuration", () => {
       process: {
         executeCommand: mock(async (command: string) => {
           commands.push(command);
-          if (command.startsWith("grep -Fxq") && command.includes(".lock-sha256")) {
+          return { exitCode: 0, result: "" };
+        }),
+      },
+    } as never;
+
+    for (const [runId, model] of [["run-1", "openai/gpt-5.6-sol"], ["run-2", "openai/gpt-5.6-luna"]]) {
+      await preparePiRuntime(
+        sandbox,
+        {
+          runId,
+          threadId: "thread",
+          orgId: "org",
+          userId: "user",
+          model,
+          prompt: "clean user prompt",
+        } as never,
+        "/root/work",
+      );
+    }
+
+    expect(commands).toHaveLength(10);
+    expect(commands.filter((command) => command.includes("npm ci"))).toHaveLength(0);
+    expect(commands.filter((command) => command.includes(".lock-sha256"))).toHaveLength(2);
+    expect(uploads.filter((entry) => entry.path.endsWith("/models.json")).map((entry) => entry.text))
+      .toEqual([
+        expect.stringContaining('"id":"gpt-5.6-sol"'),
+        expect.stringContaining('"id":"gpt-5.6-luna"'),
+      ]);
+    expect(uploads.filter((entry) => entry.path.endsWith("/.mcp.json"))).toHaveLength(2);
+    expect(uploads.filter((entry) => entry.path.endsWith("/capabilities.json"))).toHaveLength(2);
+  });
+
+  test("keeps signed credentials behind the root broker and installs from the immutable lock", async () => {
+    process.env.SANDBOX_SECRET_MODE = "gateway_only";
+    process.env.PROVIDER_GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-secret-provider-secret-1234";
+    process.env.GATEWAY_PUBLIC_URL = "https://tools.example.test";
+    process.env.TOOL_GATEWAY_SECRET = "tools-secret-tools-secret-12345678";
+    const uploads: Array<{ path: string; text: string }> = [];
+    const commands: string[] = [];
+    let gatewayMarkerWritten = false;
+    let runtimeProbeCount = 0;
+    const sandbox = {
+      id: "box",
+      labels: { [SANDBOX_GENERATION_LABEL]: SANDBOX_GENERATION },
+      fs: {
+        uploadFile: mock(async (bytes: Buffer, path: string) => {
+          uploads.push({ path, text: bytes.toString("utf8") });
+        }),
+      },
+      process: {
+        executeCommand: mock(async (command: string) => {
+          commands.push(command);
+          if (command.includes("grep -Fxq") && command.includes(".lock-sha256") && runtimeProbeCount++ === 0) {
             return { exitCode: 10, result: "" };
           }
           if (command.includes(".skynet/provider-gateway-generation") && command.includes("base64 -d")) {
@@ -335,6 +403,7 @@ describe("Pi runtime configuration", () => {
     expect(await providerGatewaySandboxIsCurrent(sandbox)).toBe(true);
     expect(commands.join("\n")).not.toContain("command -v bun");
     expect(commands.join("\n")).not.toContain("clean user prompt");
+    expect(commands).toHaveLength(8);
     expect(runtime).toMatchObject({
       executable: "/opt/useagent/pi-runtime/current/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js",
       bunExecutable: "/opt/useagent/pi-runtime/current/node_modules/.bin/bun",
@@ -420,5 +489,6 @@ describe("Pi runtime configuration", () => {
     expect(commandText).not.toContain("/root");
     expect(commandText).not.toContain("/opt");
     expect(commandText).not.toContain("clean user prompt");
+    expect(commands).toHaveLength(6);
   });
 });

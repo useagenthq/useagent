@@ -1,6 +1,9 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { runs, type RunStatus } from "../db/schema";
+import { MODEL_QUALIFICATION_RUN_ORIGIN } from "./origin";
+
+type RunRecord = typeof runs.$inferSelect;
 
 export async function setRunStatus(id: string, status: RunStatus): Promise<void> {
   await db.update(runs).set({ status, updatedAt: new Date() }).where(eq(runs.id, id));
@@ -33,6 +36,27 @@ export async function pinSkillToActiveRun(input: {
     )
     .returning({ id: runs.id });
   return Boolean(row);
+}
+
+/** Customer-facing lookup. Release canaries retain their authenticated direct
+ * diagnostics, while autonomous model-qualification runs stay undiscoverable. */
+export async function getCustomerRunForOrg(
+  orgId: string,
+  id: string,
+  exec: Executor = db,
+): Promise<RunRecord | null> {
+  const [row] = await exec
+    .select()
+    .from(runs)
+    .where(
+      and(
+        eq(runs.id, id),
+        eq(runs.orgId, orgId),
+        or(isNull(runs.origin), ne(runs.origin, MODEL_QUALIFICATION_RUN_ORIGIN)),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }
 
 export async function completeRun(
