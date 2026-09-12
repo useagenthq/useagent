@@ -143,9 +143,9 @@ describe("durable artifacts", () => {
       sourceKey: TRUSTED_SOURCE_KEY,
       output,
     });
-    expect(first.record.sourcePath).toStartWith("/.skynet/provider-output/");
+    expect(first.record.sourcePath).toStartWith("/.useagent/provider-output/");
     await db.update(artifacts)
-      .set({ sourcePath: first.record.sourcePath.replace("/.skynet/", "/.useagent/") })
+      .set({ sourcePath: first.record.sourcePath.replace("/.useagent/", "/.skynet/") })
       .where(eq(artifacts.id, first.record.id));
     const duplicate = await publishTrustedArtifact({
       orgId: owner.orgId,
@@ -161,7 +161,7 @@ describe("durable artifacts", () => {
     expect(duplicate.artifact.id).toBe(first.artifact.id);
     expect(await storage.read(first.record.storageKey)).toEqual(bytes);
     const record = await getArtifact(first.record.id);
-    expect(record?.sourcePath).toStartWith("/.useagent/provider-output/codex/");
+    expect(record?.sourcePath).toStartWith("/.skynet/provider-output/codex/");
     expect(record?.name).toBe("generated.png");
     expect(record?.sourcePath).not.toContain("/host/");
     expect(record?.sourcePath).not.toContain("generated");
