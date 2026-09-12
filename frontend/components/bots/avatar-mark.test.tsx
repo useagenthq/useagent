@@ -7,13 +7,14 @@ import { AvatarMark, botOrb } from "./avatar-mark";
 import { BOT_AVATAR_TONES } from "./types";
 
 describe("AvatarMark", () => {
-  test("is an orb in the bot's palette tone with the role glyph centered on it", () => {
+  test("is a face: an orb in the bot's palette tone with two eyes and no glyph", () => {
     const html = renderToStaticMarkup(<AvatarMark tone="violet" icon="research" size="size-8" />);
     expect(html).toContain('class="orb ');
     expect(html).toContain('data-tone="violet"');
     expect(html).toContain('data-variant="solid"');
-    expect(html).toContain("<svg");
-    expect(html).toContain("size-4");
+    expect(html).toContain('class="orb-face"');
+    expect(html).not.toContain("<svg");
+    expect(html).toContain("size-8");
   });
 
   test("the picker offers the prism ball and it renders as the prism variant", () => {
@@ -47,6 +48,7 @@ describe("one avatar language", () => {
     );
     expect(html).toContain('class="orb ');
     expect(html).toContain('data-variant="prism"');
+    expect(html).toContain('class="orb-face"');
     expect(html).not.toContain("remixicon-file-line");
   });
 

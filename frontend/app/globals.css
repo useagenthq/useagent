@@ -3718,16 +3718,12 @@ html {
  * state ramp was tried first and went chalky in the dark themes, where those
  * tokens are deliberately pastel for text and badges.
  *
- * Ink is static per tone: the three bright centers (emerald, amber, cyan)
- * fail a white glyph at 3:1 and take black; the rest take white with a soft
- * drop shadow. The component stamps `data-ink` from the same list.
+ * The sheen is deliberately fainter than the reference swatches (about half
+ * their alphas) so the ball reads soft rather than lacquered. A bot's avatar
+ * is the face variant: two white dot eyes, no glyph.
  * ------------------------------------------------------------------------- */
 .orb {
   color: rgb(255 255 255);
-}
-
-.orb[data-ink="dark"] {
-  color: rgb(0 0 0);
 }
 
 .orb[data-tone="blue"] {
@@ -3768,15 +3764,28 @@ html {
   background: radial-gradient(circle closest-side, var(--orb-light) 0%, var(--orb-deep) 100%);
 }
 
-/* Everything that is not the ball (the glyph, a state dot) paints above it. */
+/* Everything that is not the ball (the face, a state dot) paints above it. */
 .orb > :not(.orb-ball) {
   z-index: 1;
 }
-.orb > svg {
+
+.orb-face {
   position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 18%;
+  pointer-events: none;
 }
-.orb[data-ink="light"] > svg {
-  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.35));
+.orb-face > span {
+  display: block;
+  width: 16%;
+  height: 16%;
+  border-radius: 999px;
+  background: rgb(255 255 255);
+  box-shadow: 0 1px 1.5px rgb(0 0 0 / 0.35);
 }
 
 .orb-sheen {
@@ -3787,14 +3796,14 @@ html {
 .orb-sheen[data-layer="glaze"] {
   inset: 0;
   border-radius: 0;
-  background: linear-gradient(to bottom, rgb(255 255 255 / 0) 0%, rgb(255 255 255 / 0.3) 100%);
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0) 0%, rgb(255 255 255 / 0.16) 100%);
 }
 .orb-sheen[data-layer="cap"] {
   top: 0;
   left: 7.7%;
   width: 84.6%;
   height: 38.5%;
-  background: linear-gradient(to bottom, rgb(255 255 255 / 0.5) 0%, rgb(255 255 255 / 0) 100%);
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0.3) 0%, rgb(255 255 255 / 0) 100%);
   filter: blur(0.5px);
 }
 .orb-sheen[data-layer="glint"] {
@@ -3802,7 +3811,7 @@ html {
   left: 34.6%;
   width: 30.8%;
   height: 11.5%;
-  background: linear-gradient(to bottom, rgb(255 255 255 / 0.5) 0%, rgb(255 255 255 / 0) 100%);
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0.3) 0%, rgb(255 255 255 / 0) 100%);
   filter: blur(1px);
 }
 .orb-sheen[data-layer="bounce"] {
@@ -3810,14 +3819,13 @@ html {
   left: -23.1%;
   width: 138.5%;
   height: 53.8%;
-  background: linear-gradient(to bottom, rgb(255 255 255 / 0) 0%, rgb(255 255 255 / 0.5) 100%);
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0) 0%, rgb(255 255 255 / 0.22) 100%);
   filter: blur(0.5px);
 }
 
 /* The iridescent ball: soft pastel spokes under a light center haze, the same
  * sheen on top, and a dark ring inside a hairline neutral border on the
- * unclipped wrapper. Its yellow and green sectors fail a white glyph, so the
- * ink is always black. */
+ * unclipped wrapper. */
 .orb[data-variant="prism"] > .orb-ball {
   background:
     radial-gradient(circle at 50% 50%, rgb(255 255 255 / 0.4) 0%, rgb(255 255 255 / 0) 62%),
