@@ -1,10 +1,5 @@
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
-import {
-  sandboxProvider,
-  sandboxProviderApiKey,
-  sandboxProviderKind,
-  type SandboxHandle,
-} from "../sandboxes/provider";
+import { type SandboxHandle } from "../sandboxes/provider";
 import { claimCubeWarmSandbox } from "../sandboxes/cube-warm-pool";
 import {
   providerGatewaySandboxIsCurrent,
@@ -23,9 +18,11 @@ import {
   resolveSandboxResourceTarget,
   sandboxMeetsResourceTarget,
 } from "./daytona-resources";
+import { bindingRecord, resolveSandboxBindingForRun, resolveSandboxBindingForSandbox, resolveSandboxBindingForThread, type SandboxBinding } from "../sandboxes/binding";
 
 export interface ThreadSandboxLease {
   readonly sandbox: SandboxHandle;
+  readonly binding: SandboxBinding;
   readonly reused: boolean;
   readonly retained: boolean;
   readonly releaseAfterRun: boolean;
@@ -56,7 +53,10 @@ async function resolveRetainedSandbox(
   if (!sandboxId) return null;
   try {
     const cached = getLiveThreadSandbox(ctx.threadId);
-    const provider = sandboxProvider(sandboxProviderApiKey());
+    // The retained sandbox belongs to whichever provider created it.
+    const provider = ctx.orgId
+      ? (await resolveSandboxBindingForThread(ctx.orgId, ctx.threadId)).provider
+      : (await resolveSandboxBindingForSandbox(sandboxId)).provider;
     const sandbox = cached?.id === sandboxId ? cached : await provider.get(sandboxId);
     const state = (sandbox as { state?: string }).state;
     if (state === "stopped" || state === "paused" || state === "archived") {
@@ -83,9 +83,8 @@ export async function acquireThreadSandbox(
   ctx: EngineRunContext,
   options: ThreadSandboxOptions,
 ): Promise<ThreadSandboxLease> {
-  const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) throw new Error("sandbox provider credentials are unavailable");
-  const provider = sandboxProvider(apiKey);
+  const binding = await resolveSandboxBindingForRun(ctx);
+  const provider = binding.provider;
   const resourceTarget = resolveSandboxResourceTarget();
   const endRetained = ctx.timing?.begin(RUN_TIMING_STAGES.sandboxRetained);
   let sandbox: SandboxHandle | null;
@@ -108,7 +107,7 @@ export async function acquireThreadSandbox(
 
   if (!sandbox) {
     await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: options.chip });
-    if (sandboxProviderKind() === "cube" && options.warmPool !== false) {
+    if (binding.kind === "cube" && binding.credential === "env" && options.warmPool !== false) {
       const endWarmPool = ctx.timing?.begin(RUN_TIMING_STAGES.sandboxWarmPool);
       try {
         sandbox = await claimCubeWarmSandbox(options.warmPool || undefined);
@@ -123,7 +122,7 @@ export async function acquireThreadSandbox(
       const endCreate = ctx.timing?.begin(RUN_TIMING_STAGES.sandboxCreate);
       try {
         sandbox = await provider.create({
-          snapshot: options.snapshot,
+          snapshot: binding.credential === "user" ? (binding.snapshot ?? "") : options.snapshot,
           labels: {
             ...providerGatewaySandboxLabels(ctx.runId),
             ...options.labels,
@@ -144,12 +143,13 @@ export async function acquireThreadSandbox(
     runId: ctx.runId,
     sandboxId: sandbox.id,
     reused,
-    persist: setRunSandbox,
+    persist: (runId, sandboxId) => setRunSandbox(runId, sandboxId, bindingRecord(binding)),
     deleteFreshSandbox: () => sandbox.delete(),
   });
   if (ctx.threadId) rememberLiveThreadSandbox(ctx.threadId, sandbox);
   return {
     sandbox,
+    binding,
     reused,
     retained: Boolean(ctx.threadId),
     releaseAfterRun: !ctx.threadId,

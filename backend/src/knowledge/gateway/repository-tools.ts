@@ -6,12 +6,9 @@ import {
 } from "../../resources/public-github";
 import type { RunResource } from "../../resources/types";
 import { getRunForOrg } from "../../runs/repo";
-import {
-  sandboxProvider,
-  sandboxProviderApiKey,
-} from "../../sandboxes/provider";
 import { executeGithubBackedOperation } from "./github-operation-bridge";
 import type { ToolTokenClaims } from "./token";
+import { resolveSandboxBindingForThread } from "../../sandboxes/binding";
 
 interface ToolResult {
   readonly content: readonly { type: "text"; text: string }[];
@@ -210,9 +207,7 @@ const productionService: RepositoryService = {
       );
     }
     if (!run.sandboxId) throw new Error("no sandbox is attached to this run");
-    const apiKey = sandboxProviderApiKey();
-    if (apiKey === undefined) throw new Error("sandbox provider credentials are not set");
-    const sandbox = await sandboxProvider(apiKey).get(run.sandboxId);
+    const sandbox = await (await resolveSandboxBindingForThread(claims.orgId, run.threadId)).provider.get(run.sandboxId);
     const fullName = target.fullName;
     if (target.revision && branch && target.revision !== branch) {
       throw new Error(

@@ -1,10 +1,4 @@
-import {
-  sandboxProvider,
-  sandboxProviderApiKey,
-  sandboxProviderKind,
-  sandboxTemplate,
-  type SandboxHandle,
-} from "../sandboxes/provider";
+import { type SandboxHandle } from "../sandboxes/provider";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import {
   assertSandboxResources,
@@ -46,6 +40,7 @@ import {
   sandboxExitError,
   withSandboxOutputRedaction,
 } from "./sandbox-output-redaction";
+import { bindingSnapshot, resolveSandboxBindingForRun } from "../sandboxes/binding";
 export { createSandboxSessionRevealPersister } from "./sandbox-session-persistence";
 export { sandboxExitError, withSandboxOutputRedaction } from "./sandbox-output-redaction";
 
@@ -436,13 +431,13 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
     id: spec.id as EngineAdapter["id"],
 
     async run(ctx: EngineRunContext): Promise<void> {
-      const apiKey = sandboxProviderApiKey();
-      if (apiKey === undefined) throw new Error(`${spec.id} engine needs sandbox provider credentials`);
       if (!providerGatewayWired()) {
         throw new Error(`${spec.id} engine requires a configured provider gateway`);
       }
       const startedAt = Date.now();
-      const provider = sandboxProvider(apiKey);
+      // The user's own computer when USER_COMPUTERS is on and they connected one; else the server's.
+      const binding = await resolveSandboxBindingForRun(ctx);
+      const provider = binding.provider;
 
       // Engine/provider keys ride as sandbox env — never on the command line.
       // Org secrets live in a protected dotenv that the CLI launch sources
@@ -470,7 +465,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       // world alive for days before deletion.
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320); // 3 days
-      const snapshot = sandboxTemplate("DAYTONA_ACP_SNAPSHOT", "skynet-acp-v3");
+      const snapshot = bindingSnapshot(binding, "DAYTONA_ACP_SNAPSHOT", "skynet-acp-v3");
       const resourceTarget = resolveSandboxResourceTarget();
       let sandbox: SandboxHandle | null = null;
       let retainForThread = false;
@@ -581,7 +576,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         // The documented CLI fallback must honor the same persisted repository
         // and change-resource scope as the resident ACP/runtime adapters. Prepare
         // the base checkout first, then pin an authorized PR to its exact head.
-        const workdir = sandboxProviderKind() === "box" ? "/home/user/work" : "/home/daytona/work";
+        const workdir = binding.kind === "box" ? "/home/user/work" : "/home/daytona/work";
         await prepareRepos(box, workdir, ctx);
         await checkoutPullRequestResources(
           box,

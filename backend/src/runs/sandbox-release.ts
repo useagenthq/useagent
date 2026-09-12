@@ -1,4 +1,4 @@
-import { sandboxProvider, type SandboxProvider } from "../sandboxes/provider";
+import { type SandboxProvider } from "../sandboxes/provider";
 import { forgetAcpThreadRelays } from "../engines/acp-server";
 import { forgetOpenCodeThreadServer } from "../engines/opencode-runtime";
 import { forgetLiveThreadSandbox } from "../engines/sandbox-runtime";
@@ -11,6 +11,7 @@ import {
 } from "./repo";
 import { withThreadLifecycleLock } from "./thread-lifecycle-lock";
 import { parseProviderSessionBinding } from "@useagent/agent-harness/canonical";
+import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 
 export type SandboxReleaseResult =
   | { ok: true; released: false; reason: "no_sandbox" }
@@ -47,7 +48,7 @@ export async function releaseRunSandbox(
     const sandboxId = await getThreadSandboxForOrg(orgId, lockedRun.threadId, tx);
     if (!sandboxId) return { ok: true as const, released: false as const, reason: "no_sandbox" as const };
 
-    const provider = deps.provider ?? sandboxProvider();
+    const provider = deps.provider ?? (await resolveSandboxBindingForSandbox(sandboxId)).provider;
     try {
       const sandbox = await provider.get(sandboxId);
       await sandbox.delete();

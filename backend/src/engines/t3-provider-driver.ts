@@ -7,11 +7,7 @@ import {
   type ProviderDriver,
   type ProviderStartRequest,
 } from "@useagent/agent-harness/control";
-import {
-  sandboxProvider,
-  sandboxProviderApiKey,
-  type SandboxHandle,
-} from "../sandboxes/provider";
+import { type SandboxHandle } from "../sandboxes/provider";
 import { sessionCapabilities } from "./capabilities";
 import {
   isRuntimeEnvironmentMissingSessionError,
@@ -30,6 +26,7 @@ import {
   type RuntimeMode,
   type RuntimeThreadSnapshot,
 } from "./runtime-orchestration";
+import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 
 const RUNTIME_POLL_INTERVAL_MS = 125;
 export const T3_SESSION_GENERATION = 2;
@@ -83,7 +80,7 @@ function driverError(code: string, message: string): {
 async function resolveRuntime(runtime: HarnessRuntime): Promise<SandboxHandle | null> {
   if (runtime.kind !== "sandbox") return null;
   try {
-    return await sandboxProvider(sandboxProviderApiKey()).get(runtime.id);
+    return await (await resolveSandboxBindingForSandbox(runtime.id)).provider.get(runtime.id);
   } catch {
     return null;
   }

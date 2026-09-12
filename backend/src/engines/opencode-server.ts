@@ -1,9 +1,5 @@
 import {
   sandboxPreviewHeaders,
-  sandboxProvider,
-  sandboxProviderApiKey,
-  sandboxProviderKind,
-  sandboxTemplate,
   type SandboxHandle,
 } from "../sandboxes/provider";
 import {
@@ -116,6 +112,7 @@ import {
 import { claimCubeWarmSandbox } from "../sandboxes/cube-warm-pool";
 import { errorMessage } from "../util/error-message";
 import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
+import { bindingRecord, bindingSnapshot, resolveSandboxBindingForRun, resolveSandboxBindingForSandbox, resolveSandboxBindingForThread } from "../sandboxes/binding";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -692,10 +689,8 @@ interface ResidentOpenCodeServer {
 async function openResidentServer(
   sandboxId: string,
 ): Promise<ResidentOpenCodeServer | null> {
-  const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) return null;
   try {
-    const provider = sandboxProvider(apiKey);
+    const provider = (await resolveSandboxBindingForSandbox(sandboxId)).provider;
     const sandbox = await provider.get(sandboxId).catch(() => null);
     if (!sandbox) return null;
     if ((sandbox as { state?: string }).state !== "started") return null;
@@ -1060,13 +1055,12 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
     id: "opencode",
 
     async run(ctx: EngineRunContext): Promise<void> {
-    const apiKey = sandboxProviderApiKey();
-    if (apiKey === undefined) throw new Error("opencode engine needs sandbox provider credentials");
     if (!providerGatewayWired()) {
       throw new Error("opencode engine requires a configured provider gateway");
     }
     const startedAt = Date.now();
-    const provider = sandboxProvider(apiKey);
+    const binding = await resolveSandboxBindingForRun(ctx);
+    const provider = binding.provider;
     const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 600_000);
 
     // Gateway-only mode keeps org secrets out of the sandbox. Compatibility mode
@@ -1085,7 +1079,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
     const secretSourceCommand = sandboxSecretSourceCommand(secretInjection.mode);
     const redact = createSecretRedactor(secretInjection.redactionValues);
 
-    const snapshot = sandboxTemplate("DAYTONA_SNAPSHOT", "skynet-agent-v17");
+    const snapshot = bindingSnapshot(binding, "DAYTONA_SNAPSHOT", "skynet-agent-v17");
     const resourceTarget = resolveSandboxResourceTarget();
     let sandbox: SandboxHandle | null = null;
     let npxFallback = false;
@@ -1151,7 +1145,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const provisionedFresh = !sandbox;
       if (provisionedFresh) {
         await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: "opencode" });
-        if (sandboxProviderKind() === "cube") {
+        if (binding.kind === "cube" && binding.credential === "env") {
           sandbox = await claimCubeWarmSandbox();
           if (sandbox) {
             await ctx.emit({
@@ -1204,7 +1198,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
           runId: ctx.runId,
           sandboxId: box.id,
           reused: retainForThread,
-          persist: setRunSandbox,
+          persist: (runId, sandboxId) => setRunSandbox(runId, sandboxId, bindingRecord(binding)),
           deleteFreshSandbox: () => box.delete(),
         });
       } catch (error) {

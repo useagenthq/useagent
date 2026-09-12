@@ -1,10 +1,8 @@
 import {
   sandboxPreviewHeaders,
-  sandboxProvider,
-  sandboxProviderApiKey,
-  sandboxTemplate,
   type SandboxHandle,
 } from "../sandboxes/provider";
+import { bindingRecord, bindingSnapshot, resolveSandboxBindingForRun } from "../sandboxes/binding";
 import type { EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import {
@@ -500,13 +498,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
     id: cfg.id,
 
     async run(ctx: EngineRunContext): Promise<void> {
-      const apiKey = sandboxProviderApiKey();
-      if (apiKey === undefined) throw new Error(`${cfg.id} engine needs sandbox provider credentials`);
       if (!providerGatewayWired()) {
         throw new Error(`${cfg.id} engine requires a configured provider gateway`);
       }
       const startedAt = Date.now();
-      const provider = sandboxProvider(apiKey);
+      const binding = await resolveSandboxBindingForRun(ctx);
+      const provider = binding.provider;
       const budgetMs = resolveAcpTurnTimeoutMs();
       const gateway = toolGatewayConfig();
       if (
@@ -537,7 +534,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);
-      const snapshot = sandboxTemplate("DAYTONA_ACP_SNAPSHOT", "skynet-acp-v3");
+      const snapshot = bindingSnapshot(binding, "DAYTONA_ACP_SNAPSHOT", "skynet-acp-v3");
       const resourceTarget = resolveSandboxResourceTarget();
 
       const key = ctx.threadId ? relayKey(ctx.threadId, cfg.id) : null;
@@ -666,7 +663,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             runId: ctx.runId,
             sandboxId: box.id,
             reused: retainForThread,
-            persist: setRunSandbox,
+            persist: (runId, sandboxId) => setRunSandbox(runId, sandboxId, bindingRecord(binding)),
             deleteFreshSandbox: () => box.delete(),
           });
           if (ctx.threadId) rememberLiveThreadSandbox(ctx.threadId, box);

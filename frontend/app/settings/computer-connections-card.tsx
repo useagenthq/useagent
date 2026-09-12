@@ -14,7 +14,7 @@ import { InputBase } from "@/components/base/input/input";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { cx } from "@/utils/cx";
 import { ConnectionStatusChip, SpinnerIcon } from "./connection-status-chip";
-import { putProviderApiKey, revokeProviderConnection } from "./provider-connections-api";
+import { fetchSandboxConfig, putProviderApiKey, revokeProviderConnection, type SandboxConfig } from "./provider-connections-api";
 import {
   connectionBadgeStatus,
   isActiveConnection,
@@ -62,7 +62,13 @@ const COMPUTERS: Record<
   },
 };
 
-function ComputerSection({ provider }: { provider: ComputerProviderConnectionProvider }) {
+function ComputerSection({
+  provider,
+  userComputers,
+}: {
+  provider: ComputerProviderConnectionProvider;
+  userComputers: boolean | null;
+}) {
   const copy = COMPUTERS[provider];
   const { connections, load, loading, refreshing } = useProviderConnections();
   const connection = useMemo(
@@ -193,7 +199,11 @@ function ComputerSection({ provider }: { provider: ComputerProviderConnectionPro
           </div>
           <div className="flex flex-col gap-3 border-t border-separator-border pt-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-caption-1-regular text-text-tertiary">
-              Connection setup is available now. Personal {copy.name} execution remains rollout-gated.
+              {userComputers === null
+                ? "Checking whether personal computers run your work on this server..."
+                : userComputers
+                  ? `Connected, ${copy.name} runs your threads on your own account.`
+                  : `Stored for now. Runs stay on the server's computer until USER_COMPUTERS=on is set.`}
             </p>
             <div className="flex items-center gap-2">
               {connection ? (
@@ -234,6 +244,21 @@ function ComputerSection({ provider }: { provider: ComputerProviderConnectionPro
  */
 export function ComputerConnectionsCard() {
   const { connections, error, load } = useProviderConnections();
+  const [sandboxConfig, setSandboxConfig] = useState<SandboxConfig | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchSandboxConfig()
+      .then((config) => {
+        if (!cancelled) setSandboxConfig(config);
+      })
+      .catch(() => {
+        if (!cancelled) setSandboxConfig({ provider: null, userComputers: false });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const userComputers = sandboxConfig ? sandboxConfig.userComputers : null;
   if (error && connections.length === 0) {
     return <BackendUnreachable onRetry={() => void load()} />;
   }
@@ -243,16 +268,18 @@ export function ComputerConnectionsCard() {
         <div className="flex min-w-0 items-center gap-3">
           <RiCloudLine aria-hidden className="size-5 shrink-0 text-foreground-icon-tertiary" />
           <div className="min-w-0">
-            <p className="text-body-2-medium text-text-primary">Managed Cube</p>
+            <p className="text-body-2-medium text-text-primary">
+              {sandboxConfig?.provider === "box" ? "Managed Box" : sandboxConfig?.provider === "daytona" ? "Managed Daytona" : "Managed Cube"}
+            </p>
             <p className="text-caption-1-regular text-text-tertiary">
-              Hosted sandbox runtime currently used for agent execution.
+              The server's computer provider, used unless a personal one runs your work.
             </p>
           </div>
         </div>
         <ConnectionStatusChip status="completed">Available</ConnectionStatusChip>
       </div>
-      <ComputerSection provider="daytona" />
-      <ComputerSection provider="box" />
+      <ComputerSection provider="daytona" userComputers={userComputers} />
+      <ComputerSection provider="box" userComputers={userComputers} />
     </div>
   );
 }

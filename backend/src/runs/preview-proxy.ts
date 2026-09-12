@@ -1,7 +1,5 @@
 import {
   sandboxPreviewHeaders,
-  sandboxProvider,
-  sandboxProviderApiKey,
   type SandboxHandle,
 } from "../sandboxes/provider";
 import {
@@ -10,6 +8,7 @@ import {
   rememberLiveThreadSandbox,
 } from "../engines/sandbox-runtime";
 import { getThreadSandbox } from "./repo";
+import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 
 // ---------------------------------------------------------------------------
 // PREVIEW PROXY — shared machinery for the same-origin bridges that expose a
@@ -104,13 +103,10 @@ export async function resolvePreviewSandbox(threadId: string): Promise<SandboxHa
     }
   }
 
-  const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) throw new Error("preview proxy needs sandbox provider credentials");
-
   const sandboxId = await getThreadSandbox(threadId);
   if (!sandboxId) throw new Error("no-sandbox");
 
-  const provider = sandboxProvider(apiKey);
+  const provider = (await resolveSandboxBindingForSandbox(sandboxId)).provider;
   const sandbox = await provider.get(sandboxId);
   const state = (sandbox as { state?: string }).state;
   if (state === "stopped" || state === "paused" || state === "archived") {

@@ -3,13 +3,10 @@ import { publishSandboxArtifact } from "../../artifacts/publish";
 import type { ArtifactDescriptor } from "../../artifacts/repo";
 import { ensureSandboxDesktopView, type SandboxDesktop } from "../../engines/desktop";
 import { getRunForOrg } from "../../runs/repo";
-import {
-  sandboxProvider,
-  sandboxProviderApiKey,
-  type SandboxHandle,
-} from "../../sandboxes/provider";
+import { type SandboxHandle } from "../../sandboxes/provider";
 import { absoluteArtifactUrl, absoluteArtifactUrlContent } from "./artifact-links";
 import type { ToolTokenClaims } from "./token";
+import { resolveSandboxBindingForThread } from "../../sandboxes/binding";
 
 interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
@@ -68,9 +65,7 @@ async function recordingSandbox(claims: ToolTokenClaims): Promise<SandboxHandle>
   const run = await getRunForOrg(claims.orgId, claims.runId);
   if (!run || run.threadId !== claims.threadId) throw new Error("run not found in this thread");
   if (!run.sandboxId) throw new Error("no sandbox is attached to this run");
-  const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) throw new Error("sandbox provider credentials are not set");
-  return await sandboxProvider(apiKey).get(run.sandboxId);
+  return await (await resolveSandboxBindingForThread(claims.orgId, run.threadId)).provider.get(run.sandboxId);
 }
 
 export async function startRecordingInSandbox(

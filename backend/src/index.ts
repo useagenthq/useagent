@@ -46,6 +46,7 @@ import { startScheduler } from "./schedules/scheduler";
 import { startCaptureDelivery } from "./memory/capture-outbox";
 import { resetStuckLearning, startLearningOutbox } from "./learning/learning-outbox";
 import { sandboxProvider, sandboxProviderApiKey, sandboxProviderKind } from "./sandboxes/provider";
+import { userComputersEnabled } from "./sandboxes/binding";
 import {
   resetStuckCanonicalization,
   startCanonicalizationOutbox,
@@ -335,7 +336,7 @@ app.get("/api/config", (c) => {
     engineReadiness,
     models,
     configuredModels,
-    sandbox: { provider: sandboxProviderKind() },
+    sandbox: { provider: sandboxProviderKind(), userComputers: userComputersEnabled() },
     capabilities: {
       github: githubConfigured(),
       slack: slackConfig() !== null,
