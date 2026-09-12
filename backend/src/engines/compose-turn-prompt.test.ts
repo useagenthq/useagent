@@ -22,6 +22,7 @@ const ctx = (
     resourceContext: string;
     skillContext: string;
     skillCatalogContext: string;
+    botContext: string;
     commandName: string | null;
     orgId: string | null;
     origin: string | null;
@@ -252,5 +253,13 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
       const out = compose(ctx({ prompt: "run the /review command please" }), false);
       expect(out).toBe(`${R}BOOT${P}${W}${S}TURN${userRequest("run the /review command please")}`);
     });
+  });
+
+  test("carries the workspace bot context on fresh and resumed turns, and never for command turns", () => {
+    const bots = "<bot_delegation_policy>\n[]\n</bot_delegation_policy>\n";
+    expect(composeTurnPrompt(ctx({ botContext: bots }), false, EXECUTION, {})).toContain(bots);
+    expect(composeTurnPrompt(ctx({ botContext: bots }), true, EXECUTION, {})).toContain(bots);
+    expect(composeTurnPrompt(ctx({ botContext: bots, commandName: "review" }), true, EXECUTION, {})).not.toContain("<bot_delegation_policy>");
+    expect(composeTurnPrompt(ctx(), true, EXECUTION, {})).not.toContain("<bot_delegation_policy>");
   });
 });

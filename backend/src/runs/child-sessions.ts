@@ -116,6 +116,11 @@ export function childSessionEventLimit(value: unknown, fallback = 25): number {
   return boundedLimit(value, MAX_EVENT_LIMIT, fallback);
 }
 
+/** The command key a product child is created under; a retry with the same caller key must find it. */
+export function productChildCommandKey(threadId: string, parentRunId: string, idempotencyKey: string): string {
+  return `product-child:${threadId}:${parentRunId}:${idempotencyKey}`;
+}
+
 export async function createChildSession(input: {
   readonly orgId: string;
   readonly actorId: string | null;
@@ -134,7 +139,7 @@ export async function createChildSession(input: {
   const runId = crypto.randomUUID();
   const productChild = productChildThreadsEnabled(input.orgId);
   const idempotencyKey = productChild
-    ? `product-child:${input.threadId}:${input.parentRunId}:${input.idempotencyKey}`
+    ? productChildCommandKey(input.threadId, input.parentRunId, input.idempotencyKey)
     : childKey(
     input.threadId,
     input.parentRunId,

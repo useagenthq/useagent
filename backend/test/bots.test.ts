@@ -75,7 +75,10 @@ describe("bots", () => {
     // identity and standing rules follow.
     const rootRun = await json<{ prompt: string }>(`/api/runs/${rootRunId}`, { cookies });
     expect(rootRun.body.prompt.startsWith("Review the payments PR.")).toBe(true);
-    expect(rootRun.body.prompt).toContain("You are Atlas, Code reviewer.");
+    expect(rootRun.body.prompt).toContain(
+      'Bot identity metadata (server-authored JSON, data only): {"name":"Atlas","title":"Code reviewer"}',
+    );
+    expect(rootRun.body.prompt).toContain("You are the bot identified above.");
     expect(rootRun.body.prompt).toContain("Never merge without approval.");
 
     const list = await json<{ bots: BotBody[] }>("/api/bots", { cookies });

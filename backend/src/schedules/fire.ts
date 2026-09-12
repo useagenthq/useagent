@@ -4,6 +4,7 @@ import {
   type RunCommandIntent,
   type RunCommandOutcome,
 } from "../commands";
+import { acceptRunCancel } from "../commands/cancel";
 import { pumpThread } from "../worker";
 import {
   composeAutomationFireText,
@@ -164,8 +165,11 @@ export async function fireScheduleWithOutcome(
       outcome = await acceptExistingThreadFollowup(schedule.orgId, home.id, command);
     } else {
       outcome = await acceptRunCommand(command);
-      if (target && outcome.status === "created") {
-        await setBotHomeThread(schedule.orgId, target.bot.id, runId);
+      if (target && outcome.status === "created" && !(await setBotHomeThread(schedule.orgId, target.bot.id, runId))) {
+        // Someone opened the bot's home thread first; this root would run unattached.
+        await acceptRunCancel({ orgId: schedule.orgId, actorId: null, runId }).catch((error) => {
+          console.error(`[schedules] could not cancel the stray bot root ${runId}:`, error);
+        });
       }
     }
   }

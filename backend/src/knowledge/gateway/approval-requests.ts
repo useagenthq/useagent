@@ -4,7 +4,7 @@ import { gatewayApprovalRequests } from "../../db/schema";
 import { recordProviderEvent } from "../../runs/provider-events";
 import { getRunForOrg } from "../../runs/repo";
 import { approvalArgumentsHash, mintApprovalCapability } from "./approval-capability";
-import { isBotHomeThread } from "../../bots/repo";
+import { isBotThread } from "../../bots/repo";
 
 // ---------------------------------------------------------------------------
 // Durable approval-request lane (#77). The agent records a request for one
@@ -20,12 +20,12 @@ import { isBotHomeThread } from "../../bots/repo";
 
 /** How long a request waits for the human before it lapses. */
 const REQUEST_TTL_MS = 15 * 60_000;
-/** A bot's home thread is a standing assignment: its approvals wait for a
- *  person instead of expiring in minutes and leaving the bot silently stuck. */
+/** A bot's threads (home or handed off) are standing assignments: their approvals
+ *  wait for a person instead of expiring in minutes and leaving the bot silently stuck. */
 export const BOT_REQUEST_TTL_MS = 7 * 24 * 60 * 60_000;
 
 async function approvalTtlMs(orgId: string, threadId: string): Promise<number> {
-  return (await isBotHomeThread(orgId, threadId)) ? BOT_REQUEST_TTL_MS : REQUEST_TTL_MS;
+  return (await isBotThread(orgId, threadId)) ? BOT_REQUEST_TTL_MS : REQUEST_TTL_MS;
 }
 const LIST_LIMIT = 50;
 
@@ -237,7 +237,9 @@ async function gateResolution(
   const run = await deps.findRun(request.orgId, request.runId);
   if (!run) return "run_not_found";
   if (run.status !== "running") return "run_not_active";
-  if (run.userId !== resolvedBy) return "run_user_mismatch";
+  // A run started by a person is that person's to approve. A run without a user
+  // (a bot routine firing) belongs to the org: any member who reached this route may act.
+  if (run.userId !== null && run.userId !== resolvedBy) return "run_user_mismatch";
   return null;
 }
 

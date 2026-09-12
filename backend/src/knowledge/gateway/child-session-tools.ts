@@ -15,9 +15,9 @@ import {
 import { acceptProductChildBatch } from "../../runs/child-thread-batch-service";
 import { CHILD_BATCH_LIMIT, CHILD_PROMPT_MAX_CHARS, CHILD_TITLE_MAX_CHARS } from "../../runs/child-session-policy";
 import { productChildThreadsEnabled } from "../../runs/thread-relationship-rollout";
-import { composeHandoffPrompt, handoffsAvailable, recordBotHandoff, resolveBotMention } from "../../bots/handoffs";
+import { MENTIONS_MAX, distinctBotsHandedOffByRun, handoffToBot, handoffsAvailable, resolveBotMention } from "../../bots/handoffs";
+import type { GatewayToolListOptions } from "./operation-registry";
 import { botsEnabled } from "../../bots/rollout";
-import { defaultModelForEngine } from "../../runs/model-policy";
 import { ENGINE_IDS, type EngineId } from "../../db/schema";
 
 const MAX_TEXT_EVENT_LINES = 20;
@@ -167,10 +167,18 @@ export const CHILD_SESSION_TOOL_NAMES: ReadonlySet<string> = new Set(
   [...CHILD_SESSION_TOOLS.map((tool) => tool.name), BOT_HANDOFF_TOOL.name],
 );
 
-export function advertisedChildSessionTools(productChildren = productChildThreadsEnabled()): readonly ((typeof CHILD_SESSION_TOOLS)[number] | typeof BOT_HANDOFF_TOOL)[] {
-  // The bots surface is org-flagged; the handoff tool is advertised only when
-  // the flag is on globally (an allowlisted org still gets it at call time).
-  if (productChildren) return botsEnabled(null) ? [...CHILD_SESSION_TOOLS, BOT_HANDOFF_TOOL] : CHILD_SESSION_TOOLS;
+/** The one place the tool-list options are derived from a caller's claims (registry and MCP both use it). */
+export async function gatewayToolListOptionsFor(claims: ToolTokenClaims, slack = false): Promise<GatewayToolListOptions> {
+  return { childSessions: await childSessionToolsEnabled(claims), orgId: claims.orgId, slack, productChildThreads: productChildThreadsEnabled(claims.orgId) };
+}
+
+export function advertisedChildSessionTools(
+  productChildren = productChildThreadsEnabled(),
+  orgId: string | null = null,
+): readonly ((typeof CHILD_SESSION_TOOLS)[number] | typeof BOT_HANDOFF_TOOL)[] {
+  // The bots surface is org-flagged: the handoff tool is advertised exactly when
+  // the turn prompt tells this org's agents about bots.
+  if (productChildren) return botsEnabled(orgId) ? [...CHILD_SESSION_TOOLS, BOT_HANDOFF_TOOL] : CHILD_SESSION_TOOLS;
   return CHILD_SESSION_TOOLS
     .filter((tool) => tool.name !== "child_session_create_many")
     .map((tool) => tool.name === "child_session_create"
@@ -457,24 +465,25 @@ async function handoff(claims: ToolTokenClaims, args: Record<string, unknown>): 
   if (prompt.length > CHILD_PROMPT_MAX_CHARS) return errorResult(`bot_handoff prompt exceeds ${CHILD_PROMPT_MAX_CHARS} characters.`);
   const bot = await resolveBotMention(claims.orgId, mention);
   if (!bot) return errorResult(`No bot named ${mention}. Bots are listed in the workspace's Bots page.`);
-  const outcome = await createChildSession({
+  const handedThisTurn = await distinctBotsHandedOffByRun(claims.orgId, run.id);
+  if (!handedThisTurn.has(bot.id) && handedThisTurn.size >= MENTIONS_MAX) {
+    return errorResult(`This turn already handed work to ${MENTIONS_MAX} bots; finish with those before involving more.`);
+  }
+  const outcome = await handoffToBot({
     orgId: claims.orgId,
     actorId: claims.userId || null,
     parentRunId: run.id,
     threadId: run.threadId,
-    prompt: composeHandoffPrompt(bot, prompt),
-    title: title || `${bot.name}: ${prompt.slice(0, 120)}`,
-    engine: bot.engine,
-    model: bot.model ?? defaultModelForEngine(bot.engine),
-    repos: [...bot.repos],
-    memoryScope: bot.memoryScope,
+    bot,
+    text: prompt,
+    title: title || undefined,
     idempotencyKey: `${idempotencyKey}:${bot.id}`,
   });
   if (outcome.status === "conflict") return errorResult("idempotencyKey was already used for a different handoff.");
-  await recordBotHandoff({ orgId: claims.orgId, botId: bot.id, threadId: outcome.child.id, parentThreadId: run.threadId, sourceRunId: run.id });
+  const verb = outcome.status === "created" ? "Handed off to" : outcome.status === "followed_up" ? "Continued the existing handoff to" : "Replayed handoff to";
   return textResult(
-    `${outcome.status === "created" ? "Handed off to" : "Replayed handoff to"} ${bot.name} in child session ${outcome.child.id} (${outcome.child.status}).`,
-    { status: outcome.status, bot: { id: bot.id, name: bot.name, engine: bot.engine }, child: outcome.child },
+    `${verb} ${bot.name} in child session ${outcome.threadId}. Do not do the bot's part or write as the bot; read its result with child_session_gather when it settles.`,
+    { status: outcome.status, bot: { id: bot.id, name: bot.name, engine: bot.engine }, child: { id: outcome.threadId } },
   );
 }
 
