@@ -506,9 +506,9 @@ app.route("/api/wiki", wikiGenRoutes);
 // correct/delete), the capture outbox (inspect + manual recovery), and the
 // retrieval ledger. Org-scoped; memory transport credentials stay server-side.
 app.route("/api/memory", memoryRoutes);
-// Snapshot-level slash-command catalog (cached from a live sandbox's /command
-// taps) — powers "/" autocomplete on the New Task composer before a sandbox
-// exists.
+// Slash-command catalog for the pre-session picker: the latest catalog a native
+// session of this org advertised for the chosen engine, read from the durable
+// canonical stream. Powers "/" autocomplete on the New Task composer.
 app.route("/api/commands", commandsRoutes);
 
 // Always-on scheduler loop (60s tick). Harmless when no schedule is enabled —

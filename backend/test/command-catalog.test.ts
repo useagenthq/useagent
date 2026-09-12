@@ -1,67 +1,69 @@
 import { describe, expect, test } from "bun:test";
-import {
-  cacheCommandCatalog,
-  defaultSnapshot,
-  readCommandCatalog,
-} from "../src/runs/command-catalog";
+import { db } from "../src/db/client";
+import { canonicalEvents, runs } from "../src/db/schema";
+import { readLatestEngineCommandCatalog } from "../src/runs/command-catalog";
+import { DEV_ORG_ID } from "../src/seed";
 import { json, uid } from "./helpers";
 
-describe("command catalog cache", () => {
-  test("readCommandCatalog: unknown snapshot → null; upsert; empty/garbage ignored", async () => {
-    const snap = uid("snap"); // unique — never the default snapshot below
+/** A settled run in `orgId` whose native session advertised `commands` for `provider`,
+ *  written as the durable canonical `commands.updated` the picker reads. */
+async function advertise(
+  orgId: string,
+  provider: string,
+  commands: { name: string; description?: string }[],
+): Promise<string> {
+  const runId = uid("run");
+  await db.insert(runs).values({
+    id: runId, prompt: "root", model: "claude-haiku-4-5", engine: provider === "mock" ? "mock" : "codex",
+    status: "completed", threadId: runId, engineSessionId: `ses-${runId}`, orgId,
+  }).onConflictDoNothing();
+  await db.insert(canonicalEvents).values({
+    eventId: `${runId}:commands`, revision: 0, runId, threadId: runId, seq: 0,
+    kind: "commands.updated", ts: Date.now(),
+    identity: { provider, nativeSessionId: `ses-${runId}` },
+    body: { catalog: commands, commands: commands.map((c) => c.name) },
+  });
+  return runId;
+}
 
-    // Never cached.
-    expect(await readCommandCatalog(snap)).toBeNull();
-
-    // Empty and garbage bodies never clobber (stay uncached).
-    await cacheCommandCatalog(snap, "[]");
-    await cacheCommandCatalog(snap, "not json");
-    expect(await readCommandCatalog(snap)).toBeNull();
-
-    // A valid body caches, normalized: nameless entries dropped, missing
-    // description → null.
-    await cacheCommandCatalog(
-      snap,
-      JSON.stringify([
-        { name: "init", description: "seed the repo" },
-        { name: "review" },
-        { description: "no name — dropped" },
-      ]),
-    );
-    const first = await readCommandCatalog(snap);
-    expect(first).not.toBeNull();
-    expect(first!.commands).toEqual([
-      { name: "init", description: "seed the repo" },
-      { name: "review", description: null },
+describe("pre-session command catalog from the canonical stream", () => {
+  test("returns the latest catalog a native session of this org advertised for the engine", async () => {
+    const provider = uid("engine");
+    await advertise(DEV_ORG_ID, provider, [{ name: "old-review" }]);
+    await advertise(DEV_ORG_ID, provider, [{ name: "review", description: "Review the diff" }, { name: "status" }]);
+    const latest = await readLatestEngineCommandCatalog(DEV_ORG_ID, provider);
+    expect(latest?.commands).toEqual([
+      { name: "review", description: "Review the diff", input: null },
+      { name: "status", description: null, input: null },
     ]);
-    expect(first!.fetchedAt).toBeInstanceOf(Date);
-
-    // Re-caching upserts (single row per snapshot).
-    await cacheCommandCatalog(snap, JSON.stringify([{ name: "plan" }]));
-    const second = await readCommandCatalog(snap);
-    expect(second!.commands).toEqual([{ name: "plan", description: null }]);
+    expect(latest?.fetchedAt).toBeInstanceOf(Date);
   });
 
-  test("GET /api/commands serves the current default snapshot cache", async () => {
-    // The test database is intentionally durable across invocations, so the
-    // default snapshot may already be primed by an earlier run. Upsert a unique
-    // command and assert the route reads that current value rather than making
-    // test order or database freshness part of the product contract.
+  test("engines and orgs are isolated; an engine nobody ran yet has no catalog", async () => {
+    const provider = uid("engine");
+    await advertise(DEV_ORG_ID, provider, [{ name: "mine" }]);
+    await advertise(uid("org"), provider, [{ name: "theirs" }]);
+    expect((await readLatestEngineCommandCatalog(DEV_ORG_ID, provider))?.commands.map((c) => c.name)).toEqual(["mine"]);
+    expect(await readLatestEngineCommandCatalog(DEV_ORG_ID, uid("other-engine"))).toBeNull();
+  });
+
+  test("GET /api/commands?engine= serves the current org's latest catalog for that engine", async () => {
+    const provider = uid("engine");
     const commandName = uid("review");
-    await cacheCommandCatalog(
-      defaultSnapshot(),
-      JSON.stringify([{ name: commandName, description: "review the diff" }]),
-    );
-    const populated = await json<{
-      commands: { name: string; description: string | null }[];
+    await advertise(DEV_ORG_ID, provider, [{ name: commandName, description: "review the diff" }]);
+    const res = await json<{
+      engine: string;
+      commands: { name: string; description: string | null; input: string | null }[];
       fetched_at: string | null;
-    }>("/api/commands");
-    expect(populated.status).toBe(200);
-    expect(populated.body.commands).toContainEqual({
-      name: commandName,
-      description: "review the diff",
-    });
-    expect(typeof populated.body.fetched_at).toBe("string");
+    }>(`/api/commands?engine=${encodeURIComponent(provider)}`);
+    expect(res.status).toBe(200);
+    expect(res.body.engine).toBe(provider);
+    expect(res.body.commands).toContainEqual({ name: commandName, description: "review the diff", input: null });
+    expect(typeof res.body.fetched_at).toBe("string");
+
+    const empty = await json<{ commands: unknown[]; fetched_at: string | null }>(`/api/commands?engine=${encodeURIComponent(uid("unused"))}`);
+    expect(empty.status).toBe(200);
+    expect(empty.body.commands).toEqual([]);
+    expect(empty.body.fetched_at).toBeNull();
   });
 });
-
