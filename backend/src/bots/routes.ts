@@ -71,7 +71,7 @@ async function checkPreset(orgId: string, input: BotInput): Promise<PresetProble
   }
   const skillId = input.skillIds[0];
   if (skillId) {
-    const pinned = await resolveSkillSelection(orgId, { id: skillId }).catch(() => null);
+    const pinned = await resolveSkillSelection(orgId, { id: skillId });
     if (!pinned) return { status: 404, body: { error: "skill_not_found", field: "skillIds", reason: `skill ${skillId} not found` } };
   }
   return null;
@@ -120,15 +120,19 @@ botsRoutes.patch("/:id", async (c) => {
   if ("error" in parsed) return c.json({ error: "invalid_bot", ...parsed.error }, 400);
   // The home thread already runs on the stored preset; a changed engine would
   // 400 every follow-up and changed skills/repos/scope would silently not apply.
-  const locked = row.homeThreadId ? changedPresetFields(base, parsed.input) : [];
-  if (locked.length > 0) {
+  const changed = changedPresetFields(base, parsed.input);
+  if (row.homeThreadId && changed.length > 0) {
     return c.json(
-      { error: "preset_locked", fields: locked, reason: "engine, model, skills, repos and memory scope are fixed once the bot has a home thread" },
+      { error: "preset_locked", fields: changed, reason: "engine, model, skills, repos and memory scope are fixed once the bot has a home thread" },
       409,
     );
   }
-  const problem = await checkPreset(c.get("orgId"), parsed.input);
-  if (problem) return c.json(problem.body, problem.status);
+  // Identity edits (name, title, rules, avatar) never touch live engine config:
+  // a provider health dip must not block saving the standing rules.
+  if (changed.length > 0) {
+    const problem = await checkPreset(c.get("orgId"), parsed.input);
+    if (problem) return c.json(problem.body, problem.status);
+  }
   try {
     const updated = await updateBotRow(c.get("orgId"), row.id, parsed.input);
     if (!updated) return c.json({ error: "not_found" }, 404);
@@ -184,8 +188,19 @@ botsRoutes.post("/:id/messages", async (c) => {
   // thread. Cancel this stray root rather than leave it running unattached.
   const current = await getBotRow(orgId, row.id);
   if (current?.homeThreadId !== accepted.id) {
-    await acceptRunCancel({ orgId, actorId: c.get("userId"), runId: accepted.id });
-    return c.json({ error: "home_thread_already_created", homeThreadId: current?.homeThreadId ?? null }, 409);
+    try {
+      await acceptRunCancel({ orgId, actorId: c.get("userId"), runId: accepted.id });
+    } catch (error) {
+      console.error(`[bots] could not cancel stray root ${accepted.id} for bot ${row.id}:`, error);
+    }
+    return c.json(
+      {
+        error: "home_thread_already_created",
+        homeThreadId: current?.homeThreadId ?? null,
+        reason: "Another message opened this bot's thread first. Send yours again into that thread.",
+      },
+      409,
+    );
   }
   return response;
 });

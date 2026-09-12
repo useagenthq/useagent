@@ -32,7 +32,10 @@ export function FirstMessage({ bot }: { bot: ApiBot }) {
         body: JSON.stringify({ text: trimmed }),
       });
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        // Lost a race with another first message: the thread exists now. Show
+        // it and keep the draft so the user can resend into it.
+        if (response.status === 409 && data.error === "home_thread_already_created") return router.refresh();
         return setError(apiErrorText(data, "The bot could not start."));
       }
       setText("");
