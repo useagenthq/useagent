@@ -122,8 +122,9 @@ describe("bot handoffs (@mentions)", () => {
     expect(attribution?.botId).toBe(nova.id);
     expect(attribution?.parentThreadId).toBe(parent.body.id);
 
-    const view = await json<{ bot: BotBody }>(`/api/bots/${nova.id}`, { cookies });
+    const view = await json<{ bot: BotBody & { handoffThreadIds: string[] } }>(`/api/bots/${nova.id}`, { cookies });
     expect(view.body.bot.handoffs).toBe(1);
+    expect(view.body.bot.handoffThreadIds).toEqual([childThreadId]);
 
     // Same message again with the same parent run is idempotent per (run, bot):
     // a follow-up in the parent thread that mentions Nova again opens a second handoff.

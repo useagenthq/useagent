@@ -31,7 +31,7 @@ import {
   selectSessionCommandCatalog,
   selectSessionCommands,
 } from "@/components/chat/canonical-timeline";
-import { Conversation } from "@/components/chat/conversation";
+import { type AssistantIdentity, Conversation } from "@/components/chat/conversation";
 import { DesktopPane } from "@/components/chat/desktop-pane";
 import { DiffPane } from "@/components/chat/diff-pane";
 import { EditorPane } from "@/components/chat/editor-pane";
@@ -109,13 +109,13 @@ const RAIL_TAB_LABEL_COLLAPSE = "@max-[40rem]:sr-only";
  * A reply starts a child run in the same thread and arrives on the open stream -
  * never navigating away, never reconnecting.
  */
-export function SessionView({ initialThread, initialOutline = null, initialRelationshipHint = "legacy_or_off" }: {
+export function SessionView({ initialThread, initialOutline = null, initialRelationshipHint = "legacy_or_off", assistantIdentity }: {
   initialThread: ApiRun[];
   /** Windowed initial loading (long threads): the WHOLE thread's per-turn
    *  skeleton, while `initialThread` carries only the root + the fully-loaded
    *  tail. Turns known only by outline render as sized placeholders and are
    *  fetched in islands as the user scrolls into them. Null = full load. */
-  initialOutline?: ApiThreadOutlineTurn[] | null; initialRelationshipHint?: InitialThreadRelationshipHint;
+  initialOutline?: ApiThreadOutlineTurn[] | null; initialRelationshipHint?: InitialThreadRelationshipHint; assistantIdentity?: AssistantIdentity;
 }) {
   const root = initialThread[0];
   if (!root) throw new Error("SessionView requires a non-empty thread");
@@ -807,7 +807,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
             commands={isProductChild ? [] : commands}
             commandState={isProductChild ? undefined : catalogState}
             modelSelection={isProductChild ? false : modelSelection}
-            onReply={handleReply}
+            onReply={handleReply} assistantIdentity={assistantIdentity}
             pendingQuestion={activeQuestion?.request ?? null}
             answeringQuestion={answeringQuestion}
             questionError={questionError}

@@ -2,44 +2,79 @@
 
 import { RiAddLine } from "@remixicon/react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { Focusable } from "react-aria-components";
 import { Button } from "@/components/base/buttons/button";
+import { Tooltip, TooltipTrigger } from "@/components/base/tooltip/tooltip";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cx } from "@/utils/cx";
-import { AvatarMark } from "./avatar-mark";
+import { AvatarMark, StateBadge } from "./avatar-mark";
 import { NewBotDialog } from "./new-bot-dialog";
-import { orderRoster, outcomeLine, relativeTime } from "./roster-model";
+import { absoluteTime, orderRoster, outcomeLine, relativeTime } from "./roster-model";
 import type { ApiBot } from "./types";
 import { useNow } from "./use-now";
 
 const POLL_MS = 15_000;
 
 function ContactRow({ bot, selected, now }: { bot: ApiBot; selected: boolean; now: number | null }) {
-  return (
+  const nameId = useId();
+  const outcomeId = useId();
+  const line = outcomeLine(bot, now);
+  // When the line had to fall back, the whole reply is one hover away.
+  const detail = bot.lastOutcome && bot.lastOutcome !== line ? bot.lastOutcome : null;
+  const row = (
     <Link
       href={`/bots/${bot.id}`}
       aria-current={selected ? "page" : undefined}
+      aria-labelledby={nameId}
+      aria-describedby={outcomeId}
       className={cx(
-        "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
+        "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-border-focus-ring",
         selected ? "bg-background-secondary-default" : "hover:bg-background-primary-hover",
       )}
     >
       <AvatarMark tone={bot.avatarTone} icon={bot.avatarIcon} state={bot.state} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-3">
-          <span className="truncate text-body-medium text-text-primary">{bot.name}</span>
-          <span className="shrink-0 text-caption-1-regular text-text-tertiary">{relativeTime(bot.lastAt, now)}</span>
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span id={nameId} title={bot.name} className="truncate text-body-medium text-text-primary">
+              {bot.name}
+            </span>
+            <StateBadge state={bot.state} />
+          </span>
+          {bot.lastAt && (
+            <time
+              dateTime={bot.lastAt}
+              title={absoluteTime(bot.lastAt, now) || undefined}
+              className="shrink-0 text-caption-1-regular text-text-tertiary"
+            >
+              {relativeTime(bot.lastAt, now)}
+            </time>
+          )}
         </span>
         <span
+          id={outcomeId}
           className={cx(
             "block truncate text-body-2-regular",
             bot.state === "attention" ? "text-text-primary" : "text-text-secondary",
           )}
         >
-          {outcomeLine(bot)}
+          {line}
+          {bot.handoffs > 0 && (
+            <span className="text-text-tertiary">{` +${bot.handoffs} handoff${bot.handoffs === 1 ? "" : "s"}`}</span>
+          )}
         </span>
       </span>
     </Link>
+  );
+  if (!detail) return row;
+  return (
+    <TooltipTrigger delay={300}>
+      <Focusable>{row}</Focusable>
+      <Tooltip size="md" className="max-w-xs">
+        <span className="line-clamp-4">{detail}</span>
+      </Tooltip>
+    </TooltipTrigger>
   );
 }
 
@@ -47,8 +82,17 @@ function ContactRow({ bot, selected, now }: { bot: ApiBot; selected: boolean; no
  * Left pane: every bot, needs-you first, one line each - the bot's own words
  * for what it last finished. Polls so a bot that starts working or asks for
  * approval moves up without a reload; the server-rendered list is the first paint.
+ * Full width below md (the only pane at /bots); a 320px column beside the thread above it.
  */
-export function BotsRoster({ initialBots, selectedId }: { initialBots: ApiBot[]; selectedId: string | null }) {
+export function BotsRoster({
+  initialBots,
+  selectedId,
+  className = "flex",
+}: {
+  initialBots: ApiBot[];
+  selectedId: string | null;
+  className?: string;
+}) {
   const [bots, setBots] = useState(initialBots);
   const [creating, setCreating] = useState(false);
   const now = useNow();
@@ -77,14 +121,18 @@ export function BotsRoster({ initialBots, selectedId }: { initialBots: ApiBot[];
   }, []);
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-r border-border-button-default">
+    <aside className={cx("w-full shrink-0 flex-col border-r border-border-button-default md:w-80", className)}>
       <div className="flex items-center justify-between px-5 pt-5 pb-3">
-        <h1 className="text-headline-medium text-text-primary">Bots</h1>
+        <h1 className="text-display-sm text-text-primary">Bots</h1>
         <Button variant="ghost" size="small" iconOnly leadingIcon={RiAddLine} aria-label="New bot" onClick={() => setCreating(true)} />
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3">
         {bots.length === 0 ? (
-          <p className="px-3 py-6 text-body-2-regular text-text-tertiary">No bots yet.</p>
+          <div className="px-3 py-6">
+            <Button variant="secondary" size="small" className="rounded-full" onClick={() => setCreating(true)}>
+              Create bot
+            </Button>
+          </div>
         ) : (
           orderRoster(bots).map((bot) => <ContactRow key={bot.id} bot={bot} selected={bot.id === selectedId} now={now} />)
         )}

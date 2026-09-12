@@ -5,7 +5,7 @@ import {
   ENGINE_IDS,
   type EngineId,
 } from "@useagent/agent-client";
-import { and, count, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { botHandoffs, bots, gatewayApprovalRequests, runs, schedules, type BotRow } from "../db/schema";
 
@@ -46,6 +46,8 @@ export interface BotView {
   readonly routines: number;
   /** Delegated threads opened for this bot by @mentions (handoffs). */
   readonly handoffs: number;
+  /** Root run ids of those delegated threads, newest first. */
+  readonly handoffThreadIds: readonly string[];
 }
 
 export interface BotInput {
@@ -230,13 +232,28 @@ export async function createBotRow(orgId: string, input: BotInput, createdBy: st
   return row;
 }
 
-export async function updateBotRow(orgId: string, id: string, input: BotInput): Promise<BotRow | null> {
+export async function updateBotRow(
+  orgId: string,
+  id: string,
+  input: BotInput,
+  archived?: boolean,
+): Promise<BotRow | null> {
   const [row] = await db
     .update(bots)
-    .set({ ...input, updatedAt: new Date() })
+    .set({ ...input, ...(archived === undefined ? {} : { archived }), updatedAt: new Date() })
     .where(and(eq(bots.orgId, orgId), eq(bots.id, id)))
     .returning();
   return row ?? null;
+}
+
+/** The bot (archived or not) whose name matches ignoring case, other than `exceptId`. */
+export async function findBotByName(orgId: string, name: string, exceptId?: string): Promise<BotRow | null> {
+  const rows = await db
+    .select()
+    .from(bots)
+    .where(and(eq(bots.orgId, orgId), sql`lower(${bots.name}) = lower(${name})`))
+    .limit(2);
+  return rows.find((row) => row.id !== exceptId) ?? null;
 }
 
 /** First writer wins: two concurrent first messages cannot re-point the home thread. */
@@ -346,7 +363,7 @@ function toView(
   head: ThreadHead | null,
   pending: number,
   routines: number,
-  handoffs: { total: number; live: number },
+  handoffs: { threadIds: readonly string[]; live: number },
 ): BotView {
   return {
     id: row.id,
@@ -370,7 +387,8 @@ function toView(
     lastAt: head ? head.updatedAt.toISOString() : null,
     pendingApprovals: pending,
     routines,
-    handoffs: handoffs.total,
+    handoffs: handoffs.threadIds.length,
+    handoffThreadIds: [...handoffs.threadIds],
   };
 }
 
@@ -407,7 +425,7 @@ export async function describeBots(orgId: string, rows: readonly BotRow[]): Prom
       newestHead,
       pendingForBot,
       routines.get(row.id) ?? 0,
-      { total: delegated.length, live },
+      { threadIds: delegated, live },
     );
   });
 }

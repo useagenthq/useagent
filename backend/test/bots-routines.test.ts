@@ -66,8 +66,11 @@ describe("bot routines", () => {
     expect(withCount.body.bot.routines).toBe(1);
 
     // First firing: no home thread yet -> it opens one with the standing rules.
-    const first = await json<{ runId: string }>(`/api/bots/${bot.id}/routines/${routineId}/run-now`, { method: "POST", cookies });
+    const first = await json<{ runId: string; routine: RoutineBody }>(`/api/bots/${bot.id}/routines/${routineId}/run-now`, { method: "POST", cookies });
     expect(first.status).toBe(202);
+    // The response carries the routine as fired, so the row can show the run without a refetch.
+    expect(first.body.routine.id).toBe(routineId);
+    expect(first.body.routine.lastFiredAt).not.toBeNull();
     const afterFirst = await json<{ bot: BotBody }>(`/api/bots/${bot.id}`, { cookies });
     expect(afterFirst.body.bot.homeThreadId).toBe(first.body.runId);
     const rootRun = await json<{ prompt: string; parent_run_id: string | null }>(`/api/runs/${first.body.runId}`, { cookies });

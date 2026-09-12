@@ -1,30 +1,39 @@
 "use client";
 
-import { RiComputerLine, RiInformationLine, RiShieldCheckLine } from "@remixicon/react";
+import { RiArrowLeftLine, RiChat1Line, RiComputerLine, RiInformationLine, RiShieldCheckLine } from "@remixicon/react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Badge } from "@/components/base/badges/badge";
 import { Button } from "@/components/base/buttons/button";
 import * as Drawer from "@/components/base/drawer/drawer";
 import { Input } from "@/components/base/input/input";
 import * as Textarea from "@/components/base/textarea/textarea";
 import { backendFetch } from "@/lib/backend-fetch";
-import { AvatarMark } from "./avatar-mark";
-import { type ApiBot, apiErrorText, engineLabel } from "./types";
+import { cx } from "@/utils/cx";
+import { ArchiveBotButton } from "./archive-bot";
+import { AvatarMark, StateBadge } from "./avatar-mark";
+import { PresetSection } from "./bot-preset";
 import { RoutinesSection } from "./routines-section";
+import { type ApiBot, apiErrorText, engineHasComputer, engineLabel, OFFLINE_MESSAGE } from "./types";
 
 /**
  * Header over the bot's thread plus the details drawer behind the info
  * button: the job, the standing rules (editable), the preset (locked once the
- * home thread exists), approvals, and the isolated-computer line.
+ * home thread exists), routines, handoffs, approvals, what it runs on, and
+ * archiving at the foot. `threadModel` is the newest turn's model: the
+ * composer picks one per turn, so the header, not the preset, shows it.
  */
-export function BotThreadHeader({ bot }: { bot: ApiBot }) {
+export function BotThreadHeader({ bot, threadModel }: { bot: ApiBot; threadModel: string | null }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState(bot.title);
   const [rules, setRules] = useState(bot.rules);
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dirty = title !== bot.title || rules !== bot.rules;
+  const model = threadModel ?? bot.model;
 
   const save = async () => {
     if (busy || !dirty) return;
@@ -38,11 +47,12 @@ export function BotThreadHeader({ bot }: { bot: ApiBot }) {
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        return setError(apiErrorText(data, "Could not save."));
+        return setError(apiErrorText(data, "Unable to save. Try again."));
       }
+      setSaved(true);
       router.refresh();
     } catch {
-      setError("Could not reach the server.");
+      setError(OFFLINE_MESSAGE);
     } finally {
       setBusy(false);
     }
@@ -51,11 +61,28 @@ export function BotThreadHeader({ bot }: { bot: ApiBot }) {
   return (
     <>
       <div className="flex items-center gap-3 border-b border-border-button-default px-5 py-3">
+        <Link
+          href="/bots"
+          aria-label="All bots"
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-foreground-icon-secondary outline-none transition-colors hover:bg-background-primary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring md:hidden"
+        >
+          <RiArrowLeftLine className="size-4" aria-hidden />
+        </Link>
         <AvatarMark tone={bot.avatarTone} icon={bot.avatarIcon} state={bot.state} size="size-8" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-body-medium text-text-primary">{bot.name}</p>
-          <p className="truncate text-caption-1-regular text-text-tertiary">
-            {bot.title || engineLabel(bot.engine)}
+          <p className="flex items-center gap-2 text-body-medium text-text-primary">
+            <span className="truncate" title={bot.name}>
+              {bot.name}
+            </span>
+            {bot.archived ? <Badge>Archived</Badge> : <StateBadge state={bot.state} />}
+          </p>
+          <p className="flex items-center gap-2 text-caption-1-regular text-text-tertiary">
+            <span className="truncate">{bot.title || engineLabel(bot.engine)}</span>
+            {model && (
+              <span className="shrink-0 text-mono-label" title="Model of the latest turn">
+                {model}
+              </span>
+            )}
           </p>
         </div>
         <Button variant="ghost" size="small" iconOnly leadingIcon={RiInformationLine} aria-label="Bot details" onClick={() => setOpen(true)} />
@@ -67,21 +94,28 @@ export function BotThreadHeader({ bot }: { bot: ApiBot }) {
             <Drawer.Title className="text-headline-medium text-text-primary">{bot.name}</Drawer.Title>
           </Drawer.Header>
           <Drawer.Body className="flex flex-col gap-6 overflow-y-auto px-5 py-5">
-            <div className="flex flex-col items-center gap-3 text-center">
+            <div className="flex justify-center">
               <AvatarMark tone={bot.avatarTone} icon={bot.avatarIcon} state={bot.state} size="size-16" />
-              <p className="text-body-2-regular text-text-secondary">
-                {engineLabel(bot.engine)}
-                {bot.model ? ` · ${bot.model}` : ""}
-              </p>
             </div>
 
-            <Input label="What it does" placeholder="One line" value={title} onChange={setTitle} />
+            <Input
+              label="What it does"
+              placeholder="One line"
+              value={title}
+              onChange={(value) => {
+                setTitle(value);
+                setSaved(false);
+              }}
+            />
 
             <label className="flex flex-col gap-1.5">
               <span className="text-body-2-medium text-text-primary">Standing rules</span>
               <Textarea.Root
                 value={rules}
-                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setRules(event.target.value)}
+                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => {
+                  setRules(event.target.value);
+                  setSaved(false);
+                }}
                 rows={5}
                 placeholder="Never send external messages without approval."
               />
@@ -90,35 +124,49 @@ export function BotThreadHeader({ bot }: { bot: ApiBot }) {
               </span>
             </label>
 
-            {(dirty || error) && (
+            {(dirty || error || saved) && (
               <div className="flex items-center justify-between gap-3">
-                <span className="text-caption-1-regular text-text-error-primary">{error ?? ""}</span>
-                <Button variant="primary" size="small" onClick={() => void save()}>
-                  {busy ? "Saving" : "Save"}
-                </Button>
+                <span
+                  role="status"
+                  className={cx("text-caption-1-regular", error ? "text-text-error-primary" : "text-text-secondary")}
+                >
+                  {error ?? (saved && !dirty ? "Saved" : "")}
+                </span>
+                {dirty && (
+                  <Button variant="primary" size="small" onClick={() => void save()}>
+                    {busy ? "Saving…" : "Save"}
+                  </Button>
+                )}
               </div>
             )}
 
-            <section className="flex flex-col gap-1.5">
-              <h3 className="text-body-2-medium text-text-primary">Preset</h3>
-              <p className="text-body-2-regular text-text-secondary">
-                {engineLabel(bot.engine)}
-                {bot.model ? ` · ${bot.model}` : ""}
-                {bot.skillIds.length > 0 ? ` · skill ${bot.skillIds[0]}` : ""}
-                {bot.repos.length > 0 ? ` · ${bot.repos.join(", ")}` : ""}
-                {` · ${bot.memoryScope} memory`}
-              </p>
-              {bot.presetLocked && (
-                <p className="text-caption-1-regular text-text-tertiary">
-                  Fixed since the first message: the home thread runs on it.
-                </p>
-              )}
-            </section>
+            <PresetSection bot={bot} />
 
             <RoutinesSection bot={bot} />
 
+            {bot.handoffs > 0 && (
+              <section className="flex flex-col gap-1.5">
+                <h2 className="text-body-2-medium text-text-primary">Handoffs</h2>
+                <p className="text-body-2-regular text-text-secondary">
+                  {bot.handoffs === 1 ? "1 handoff thread" : `${bot.handoffs} handoff threads`} opened by @mentions.
+                </p>
+                <ul className="flex flex-col gap-1">
+                  {bot.handoffThreadIds.map((threadId, index) => (
+                    <li key={threadId}>
+                      <Link
+                        href={`/session/${threadId}`}
+                        className="text-body-2-regular text-text-primary underline-offset-2 hover:underline"
+                      >
+                        Handoff thread {index + 1}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
             <section className="flex flex-col gap-1.5">
-              <h3 className="text-body-2-medium text-text-primary">Approvals</h3>
+              <h2 className="text-body-2-medium text-text-primary">Approvals</h2>
               <p className="flex items-start gap-2 text-body-2-regular text-text-secondary">
                 <RiShieldCheckLine className="mt-0.5 size-4 shrink-0 text-text-tertiary" aria-hidden />
                 {bot.pendingApprovals > 0
@@ -128,12 +176,23 @@ export function BotThreadHeader({ bot }: { bot: ApiBot }) {
             </section>
 
             <section className="flex flex-col gap-1.5">
-              <h3 className="text-body-2-medium text-text-primary">Computer</h3>
+              <h2 className="text-body-2-medium text-text-primary">Computer</h2>
               <p className="flex items-start gap-2 text-body-2-regular text-text-secondary">
-                <RiComputerLine className="mt-0.5 size-4 shrink-0 text-text-tertiary" aria-hidden />
-                Runs on its own isolated computer. Credentials stay in the gateway; no bot can see another bot's logins.
+                {engineHasComputer(bot.engine) ? (
+                  <>
+                    <RiComputerLine className="mt-0.5 size-4 shrink-0 text-text-tertiary" aria-hidden />
+                    Runs on its own isolated computer. Credentials stay in the gateway; no bot can see another bot's logins.
+                  </>
+                ) : (
+                  <>
+                    <RiChat1Line className="mt-0.5 size-4 shrink-0 text-text-tertiary" aria-hidden />
+                    Chat only: answers from context, no computer or tools.
+                  </>
+                )}
               </p>
             </section>
+
+            <ArchiveBotButton bot={bot} />
           </Drawer.Body>
         </Drawer.Content>
       </Drawer.Root>

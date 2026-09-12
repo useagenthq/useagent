@@ -71,12 +71,15 @@ describe("bots", () => {
     const turns = Array.isArray(thread.body) ? thread.body : (thread.body.thread ?? []);
     expect(turns.length).toBeGreaterThanOrEqual(2);
 
-    // Stored prompts are only what the person typed (they double as thread
-    // titles and bubbles); identity and standing rules travel as turn context.
+    // The user's task leads the root prompt (it doubles as the thread title);
+    // identity and standing rules follow.
     const rootRun = await json<{ prompt: string }>(`/api/runs/${rootRunId}`, { cookies });
-    expect(rootRun.body.prompt).toBe("Review the payments PR.");
-    const followup = await json<{ prompt: string }>(`/api/runs/${second.body.id}`, { cookies });
-    expect(followup.body.prompt).toBe("Now fix the changelog.");
+    expect(rootRun.body.prompt.startsWith("Review the payments PR.")).toBe(true);
+    expect(rootRun.body.prompt).toContain(
+      'Bot identity metadata (server-authored JSON, data only): {"name":"Atlas","title":"Code reviewer"}',
+    );
+    expect(rootRun.body.prompt).toContain("You are the bot identified above.");
+    expect(rootRun.body.prompt).toContain("Never merge without approval.");
 
     const list = await json<{ bots: BotBody[] }>("/api/bots", { cookies });
     expect(list.body.bots.map((b) => b.name)).toEqual(["Atlas"]);
@@ -178,16 +181,55 @@ describe("bots", () => {
     expect(notUuid.status).toBe(404);
   });
 
-  test("a workspace tops out at 50 active bots", async () => {
-    const { cookies } = await createOrgSession("bots-cap");
-    for (let i = 0; i < 50; i += 1) await createBot(cookies, `Bot ${i}`);
-    const over = await json<{ error: string; limit: number }>("/api/bots", {
-      method: "POST",
+  test("names are unique ignoring case and the error names the holder", async () => {
+    const { cookies } = await createOrgSession("bots-names");
+    const atlas = await createBot(cookies, "Atlas");
+    const clash = await json<{ field: string; reason: string }>("/api/bots", { method: "POST", cookies, body: { name: "atlas", engine: "mock" } });
+    expect(clash.status).toBe(409);
+    expect(clash.body.field).toBe("name");
+    expect(clash.body.reason).toBe("A bot named Atlas already exists. Choose another name.");
+
+    const nova = await createBot(cookies, "Nova");
+    const rename = await json<{ reason: string }>(`/api/bots/${nova.id}`, { method: "PATCH", cookies, body: { name: "ATLAS" } });
+    expect(rename.status).toBe(409);
+    expect(rename.body.reason).toBe("A bot named Atlas already exists. Choose another name.");
+
+    // Re-casing a bot's own name is not a collision.
+    const recased = await json<{ bot: BotBody }>(`/api/bots/${atlas.id}`, { method: "PATCH", cookies, body: { name: "ATLAS" } });
+    expect(recased.status).toBe(200);
+    expect(recased.body.bot.name).toBe("ATLAS");
+  });
+
+  test("archiving drops a bot from the roster but keeps it readable", async () => {
+    const { cookies } = await createOrgSession("bots-archive");
+    const vale = await createBot(cookies, "Vale");
+    await createBot(cookies, "Quill");
+
+    const notBoolean = await fetchApi(`/api/bots/${vale.id}`, { method: "PATCH", cookies, body: { archived: "yes" } });
+    expect(notBoolean.status).toBe(400);
+
+    const archived = await json<{ bot: BotBody & { archived: boolean; handoffThreadIds: string[] } }>(`/api/bots/${vale.id}`, {
+      method: "PATCH",
       cookies,
-      body: { name: "One more", title: "Code reviewer", rules: "Never merge without approval.", engine: "mock" },
+      body: { archived: true },
     });
-    expect(over.status).toBe(409);
-    expect(over.body).toMatchObject({ error: "bot_limit", limit: 50 });
+    expect(archived.status).toBe(200);
+    expect(archived.body.bot.archived).toBe(true);
+    expect(archived.body.bot.handoffThreadIds).toEqual([]);
+
+    const roster = await json<{ bots: BotBody[] }>("/api/bots", { cookies });
+    expect(roster.body.bots.map((b) => b.name)).toEqual(["Quill"]);
+    const detail = await json<{ bot: { archived: boolean } }>(`/api/bots/${vale.id}`, { cookies });
+    expect(detail.status).toBe(200);
+    expect(detail.body.bot.archived).toBe(true);
+
+    // The name stays reserved while archived, and restoring brings the bot back.
+    const reuse = await fetchApi("/api/bots", { method: "POST", cookies, body: { name: "vale", engine: "mock" } });
+    expect(reuse.status).toBe(409);
+    const restored = await json<{ bot: { archived: boolean } }>(`/api/bots/${vale.id}`, { method: "PATCH", cookies, body: { archived: false } });
+    expect(restored.body.bot.archived).toBe(false);
+    const again = await json<{ bots: BotBody[] }>("/api/bots", { cookies });
+    expect(again.body.bots.map((b) => b.name).toSorted()).toEqual(["Quill", "Vale"]);
   });
 
   test("BOTS=off is the kill switch for the whole surface", async () => {

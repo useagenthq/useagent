@@ -1,50 +1,50 @@
 "use client";
 
 import { RiAddLine, RiDeleteBinLine, RiPlayLine } from "@remixicon/react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { cadenceLabel } from "@/app/agent/schedules/schedules-data";
+import { Badge } from "@/components/base/badges/badge";
 import { Button } from "@/components/base/buttons/button";
-import { Input } from "@/components/base/input/input";
+import * as Modal from "@/components/base/modal/modal";
 import { Switch } from "@/components/base/switch/switch";
-import * as Textarea from "@/components/base/textarea/textarea";
-import { cx } from "@/utils/cx";
-import { createRoutine, deleteRoutine, fetchRoutines, runRoutineNow, updateRoutine } from "./routines-api";
+import { NewRoutineForm } from "./routine-form";
+import { deleteRoutine, fetchRoutines, runRoutineNow, updateRoutine } from "./routines-api";
 import { relativeTime } from "./roster-model";
-import type { ApiBot, ApiRoutine } from "./types";
+import { type ApiBot, type ApiRoutine, OFFLINE_MESSAGE } from "./types";
 import { useNow } from "./use-now";
 
-/** The reference's four cadences; a custom cron is one field away. */
-const CADENCES = [
-  { label: "Every hour", cron: "0 * * * *" },
-  { label: "Daily 9:00", cron: "0 9 * * *" },
-  { label: "Weekdays 9:00", cron: "0 9 * * 1-5" },
-  { label: "Mondays 9:00", cron: "0 9 * * 1" },
-] as const;
-
-function browserTimezone(): string | null {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
-  } catch {
-    return null;
-  }
+/** "Weekdays at 9:00" -> "weekdays at 9:00", for mid-sentence use. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
-function RoutineRow({ bot, routine, onChange }: { bot: ApiBot; routine: ApiRoutine; onChange: () => void }) {
-  const router = useRouter();
+function RoutineRow({
+  bot,
+  routine,
+  onChange,
+}: {
+  bot: ApiBot;
+  routine: ApiRoutine;
+  /** Reload the list; an updated routine from a response is merged in first. */
+  onChange: (updated?: ApiRoutine) => void;
+}) {
   const now = useNow();
   const [busy, setBusy] = useState<"toggle" | "run" | "delete" | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  /** The run a test run started, until this row goes away. */
+  const [started, setStarted] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const guard = async (kind: "toggle" | "run" | "delete", work: () => Promise<void>) => {
+  const guard = async (kind: "toggle" | "run" | "delete", work: () => Promise<ApiRoutine | undefined>) => {
     if (busy) return;
     setBusy(kind);
     setError(null);
     try {
-      await work();
-      onChange();
+      onChange(await work());
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Something went wrong.");
+      setError(cause instanceof Error ? cause.message : OFFLINE_MESSAGE);
     } finally {
       setBusy(null);
     }
@@ -54,9 +54,15 @@ function RoutineRow({ bot, routine, onChange }: { bot: ApiBot; routine: ApiRouti
     <div className="flex flex-col gap-2 rounded-2xl border border-border-button-default p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-body-2-medium text-text-primary">{routine.name}</p>
+          <p className="flex items-center gap-2 text-body-2-medium text-text-primary">
+            <span className="truncate" title={routine.name}>
+              {routine.name}
+            </span>
+            {started && <Badge>Running</Badge>}
+          </p>
           <p className="text-caption-1-regular text-text-tertiary">
             {cadenceLabel(routine.cron)}
+            {routine.timezone ? ` (${routine.timezone})` : ""}
             {routine.lastFiredAt ? ` · last run ${relativeTime(routine.lastFiredAt, now) || "just now"}` : " · never run"}
           </p>
         </div>
@@ -64,97 +70,78 @@ function RoutineRow({ bot, routine, onChange }: { bot: ApiBot; routine: ApiRouti
           size="sm"
           aria-label={`${routine.name} enabled`}
           isSelected={routine.enabled}
-          onChange={(enabled: boolean) => void guard("toggle", async () => { await updateRoutine(bot.id, routine.id, { enabled }); })}
+          onChange={(enabled: boolean) =>
+            void guard("toggle", async () => (await updateRoutine(bot.id, routine.id, { enabled })) ?? undefined)
+          }
         />
       </div>
       <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => void guard("run", async () => { await runRoutineNow(bot.id, routine.id); router.refresh(); })}
-          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-caption-1-medium text-text-secondary transition-colors hover:bg-background-primary-hover hover:text-text-primary"
-        >
-          <RiPlayLine className="size-3.5" aria-hidden />
-          {busy === "run" ? "Starting" : "Test run"}
-        </button>
-        <button
-          type="button"
-          aria-label={`Delete ${routine.name}`}
-          onClick={() => void guard("delete", async () => { await deleteRoutine(bot.id, routine.id); })}
-          className="rounded-md p-1 text-text-tertiary transition-colors hover:bg-background-primary-hover hover:text-text-primary"
-        >
-          <RiDeleteBinLine className="size-3.5" aria-hidden />
-        </button>
-      </div>
-      {error && <p className="text-caption-1-regular text-text-error-primary">{error}</p>}
-    </div>
-  );
-}
-
-function NewRoutineForm({ bot, onCreated, onCancel }: { bot: ApiBot; onCreated: () => void; onCancel: () => void }) {
-  const [name, setName] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [cron, setCron] = useState<string>(CADENCES[2].cron);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async () => {
-    if (busy) return;
-    if (!name.trim() || !prompt.trim() || !cron.trim()) return setError("Name, cadence and instruction are all needed.");
-    setBusy(true);
-    setError(null);
-    try {
-      await createRoutine(bot.id, { name: name.trim(), prompt: prompt.trim(), cron: cron.trim(), timezone: browserTimezone() });
-      onCreated();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not create the routine.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-border-button-default p-3">
-      <Input label="Name" placeholder="Weekly metrics" value={name} onChange={setName} />
-      <label className="flex flex-col gap-1.5">
-        <span className="text-body-2-medium text-text-primary">Instruction</span>
-        <Textarea.Root
-          value={prompt}
-          onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setPrompt(event.target.value)}
-          rows={3}
-          placeholder="Build the weekly metrics workbook and post the summary."
-        />
-      </label>
-      <div className="flex flex-col gap-1.5">
-        <span className="text-body-2-medium text-text-primary">When</span>
-        <div className="flex flex-wrap gap-1.5">
-          {CADENCES.map((option) => (
-            <button
-              key={option.cron}
-              type="button"
-              aria-pressed={cron === option.cron}
-              onClick={() => setCron(option.cron)}
-              className={cx(
-                "rounded-full border px-3 py-1 text-caption-1-medium transition-colors",
-                cron === option.cron
-                  ? "border-border-button-hover bg-background-secondary-default text-text-primary"
-                  : "border-border-button-default text-text-secondary hover:bg-background-primary-hover",
-              )}
-            >
-              {option.label}
-            </button>
-          ))}
+        <div className="flex min-w-0 items-center gap-2">
+          <Button
+            variant="ghost"
+            size="small"
+            leadingIcon={RiPlayLine}
+            onClick={() =>
+              void guard("run", async () => {
+                const fired = await runRoutineNow(bot.id, routine.id);
+                setStarted(fired.runId);
+                return fired.routine;
+              })
+            }
+          >
+            {busy === "run" ? "Starting…" : "Test run"}
+          </Button>
+          {started && (
+            <span role="status" className="truncate text-caption-1-regular text-text-secondary">
+              Started,{" "}
+              <Link href={`/session/${started}`} className="text-text-primary underline-offset-2 hover:underline">
+                view run
+              </Link>
+            </span>
+          )}
         </div>
-        <Input aria-label="Cron expression" placeholder="0 9 * * 1-5" value={cron} onChange={setCron} className="font-mono" />
+        <Button
+          variant="ghost"
+          size="small"
+          iconOnly
+          leadingIcon={RiDeleteBinLine}
+          aria-label={`Delete ${routine.name}`}
+          onClick={() => setConfirming(true)}
+        />
       </div>
-      {error && <p className="text-caption-1-regular text-text-error-primary">{error}</p>}
-      <div className="flex items-center justify-end gap-2">
-        <Button variant="ghost" size="small" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button variant="primary" size="small" onClick={() => void submit()}>
-          {busy ? "Creating" : "Add routine"}
-        </Button>
-      </div>
+      {error && (
+        <p role="alert" className="text-caption-1-regular text-text-error-primary">
+          {error}
+        </p>
+      )}
+      <Modal.Root open={confirming} onOpenChange={setConfirming}>
+        <Modal.Content className="max-w-[400px] rounded-2xl border border-border-button-default bg-background-primary-default shadow-dropdown">
+          <Modal.Header
+            title={`Delete ${routine.name}?`}
+            description={`It stops firing ${lowerFirst(cadenceLabel(routine.cron))}.`}
+          />
+          <Modal.Footer className="justify-end">
+            <Modal.Close asChild>
+              <Button variant="secondary" size="small">
+                Cancel
+              </Button>
+            </Modal.Close>
+            <Button
+              variant="danger"
+              size="small"
+              onClick={() => {
+                setConfirming(false);
+                void guard("delete", async () => {
+                  await deleteRoutine(bot.id, routine.id);
+                  return undefined;
+                });
+              }}
+            >
+              Delete routine
+            </Button>
+          </Modal.Footer>
+        </Modal.Content>
+      </Modal.Root>
     </div>
   );
 }
@@ -175,7 +162,7 @@ export function RoutinesSection({ bot }: { bot: ApiBot }) {
       setRoutines(await fetchRoutines(bot.id));
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load routines.");
+      setError(cause instanceof Error ? cause.message : OFFLINE_MESSAGE);
     }
   };
 
@@ -184,10 +171,16 @@ export function RoutinesSection({ bot }: { bot: ApiBot }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bot.id]);
 
+  const changed = (updated?: ApiRoutine) => {
+    if (updated) setRoutines((current) => current?.map((routine) => (routine.id === updated.id ? updated : routine)) ?? null);
+    void reload();
+    router.refresh();
+  };
+
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-body-2-medium text-text-primary">Routines</h3>
+        <h2 className="text-body-2-medium text-text-primary">Routines</h2>
         {!adding && (
           <Button variant="ghost" size="small" iconOnly leadingIcon={RiAddLine} aria-label="Add routine" onClick={() => setAdding(true)} />
         )}
@@ -198,8 +191,7 @@ export function RoutinesSection({ bot }: { bot: ApiBot }) {
           onCancel={() => setAdding(false)}
           onCreated={() => {
             setAdding(false);
-            void reload();
-            router.refresh();
+            changed();
           }}
         />
       )}
@@ -208,19 +200,13 @@ export function RoutinesSection({ bot }: { bot: ApiBot }) {
       ) : routines && routines.length === 0 && !adding ? (
         <p className="text-body-2-regular text-text-tertiary">No routines yet. Add one and {bot.name} runs it on schedule into this thread.</p>
       ) : (
-        routines?.map((routine) => (
-          <RoutineRow
-            key={routine.id}
-            bot={bot}
-            routine={routine}
-            onChange={() => {
-              void reload();
-              router.refresh();
-            }}
-          />
-        ))
+        routines?.map((routine) => <RoutineRow key={routine.id} bot={bot} routine={routine} onChange={changed} />)
       )}
-      {error && <p className="text-caption-1-regular text-text-error-primary">{error}</p>}
+      {error && (
+        <p role="alert" className="text-caption-1-regular text-text-error-primary">
+          {error}
+        </p>
+      )}
     </section>
   );
 }

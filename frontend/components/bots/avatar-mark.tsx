@@ -9,7 +9,9 @@ import {
   RiSearchEyeLine,
   RiUserSearchLine,
 } from "@remixicon/react";
+import { Badge } from "@/components/base/badges/badge";
 import { cx } from "@/utils/cx";
+import { stateLabel } from "./roster-model";
 import type { BotState } from "./types";
 
 /**
@@ -39,18 +41,6 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   compass: RiCompass3Line,
 };
 
-/**
- * Glyph ink per tone. The emerald, amber, cyan and slate fills are bright in
- * the light themes, where the white glyph read 2.0 to 2.4:1; static-black is
- * the darkest neutral of every ramp, so it also holds on the dark overlays.
- */
-const INK: Record<string, string> = {
-  emerald: "text-static-black",
-  amber: "text-static-black",
-  cyan: "text-static-black",
-  slate: "text-static-black",
-};
-
 export function toneClass(tone: string): string {
   return TONES[tone] ?? TONES.blue!;
 }
@@ -60,15 +50,24 @@ export function iconFor(icon: string): React.ComponentType<{ className?: string 
 }
 
 const GLYPH: Record<string, string> = {
+  "size-5": "size-3",
   "size-8": "size-4",
   "size-10": "size-5",
   "size-14": "size-7",
   "size-16": "size-8",
 };
 
+/** The state in words beside a name: the dot alone is colour only. */
+export function StateBadge({ state }: { state: BotState }) {
+  const label = stateLabel(state);
+  if (!label) return null;
+  return <Badge color={state === "attention" ? "primary" : "neutral"}>{label}</Badge>;
+}
+
 /**
- * Flat, rounded, one color, one-ink glyph - the reference's avatar language.
- * State is one small dot in the theme's success/warning color; nothing else.
+ * Flat, rounded, one color, white glyph - the reference's avatar language.
+ * State is one small dot in the theme's success/warning color, paired with
+ * the StateBadge wherever the name is shown.
  */
 export function AvatarMark({
   tone,
@@ -87,9 +86,8 @@ export function AvatarMark({
   return (
     <span
       className={cx(
-        "relative flex shrink-0 items-center justify-center rounded-full",
+        "relative flex shrink-0 items-center justify-center rounded-full text-text-white-0",
         toneClass(tone),
-        INK[tone] ?? "text-text-white-0",
         size,
         className,
       )}
