@@ -3,12 +3,15 @@
 import { RiAddLine } from "@remixicon/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { Button } from "@/components/base/buttons/button";
 import { AvatarMark, StateBadge } from "@/components/bots/avatar-mark";
 import { loadBots } from "@/components/bots/load";
+import { NewBotDialog } from "@/components/bots/new-bot-dialog";
 import { orderRoster, outcomeLine } from "@/components/bots/roster-model";
 import { type ApiBot, engineLabel } from "@/components/bots/types";
+import { useNow } from "@/components/bots/use-now";
 import {
   Sidebar,
   SidebarContent,
@@ -22,47 +25,65 @@ import {
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { cn } from "@/lib/utils";
 
-const POLL_MS = 30_000;
-
 /**
  * The bots roster as the shell's second column. The navigation rail stays on
  * the left; this panel lists every bot with its face, one-line outcome and
  * state, and the page to the right is the selected bot's thread. Pattern after
  * the double-sided sidebar block on blocks.so (MIT).
  */
-export function BotsPanel() {
+export function BotsPanel({
+  initialBots,
+  initialError = false,
+}: {
+  initialBots: ApiBot[] | null;
+  initialError?: boolean;
+}) {
   const pathname = usePathname();
-  const [bots, setBots] = useState<ApiBot[]>([]);
-  const [now, setNow] = useState<number | null>(null);
+  const firstPathname = useRef(pathname);
+  const [bots, setBots] = useState<ApiBot[] | null>(() =>
+    initialBots ? orderRoster(initialBots) : null,
+  );
+  const [error, setError] = useState(initialError);
+  const [creating, setCreating] = useState(false);
+  const now = useNow();
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     try {
       const list = await loadBots();
-      if (list) setBots(orderRoster(list));
+      if (list === null) {
+        setError(true);
+        return;
+      }
+      setBots(orderRoster(list));
+      setError(false);
     } catch {
-      /* the panel is ambient; the page reports errors */
+      setError(true);
     }
-  };
+  }, []);
 
   useOrgChanges((change) => {
     if (change.type === "run") void refresh();
   });
 
   useEffect(() => {
-    setNow(Date.now());
-    void refresh();
-    const id = setInterval(() => {
-      setNow(Date.now());
-      void refresh();
-    }, POLL_MS);
-    return () => clearInterval(id);
-  }, []);
+    // A failed server refresh must not discard the last successful roster.
+    if (!initialError || initialBots !== null) {
+      setBots(initialBots ? orderRoster(initialBots) : null);
+    }
+    setError(initialError);
+  }, [initialBots, initialError]);
 
-  const attention = bots.filter((bot) => bot.state === "attention").length;
+  useEffect(() => {
+    if (pathname === firstPathname.current) return;
+    firstPathname.current = pathname;
+    void refresh();
+  }, [pathname, refresh]);
+
+  const attention = bots?.filter((bot) => bot.state === "attention").length ?? 0;
 
   return (
     <Sidebar
-      className="w-80 border-r border-sidebar-border"
+      className="hidden w-80 border-r border-sidebar-border md:flex"
       collapsible="none"
       side="left"
       variant="sidebar"
@@ -71,23 +92,39 @@ export function BotsPanel() {
         <div className="flex items-baseline gap-2">
           <h3 className="font-medium text-foreground">Bots</h3>
           <span className="text-muted-foreground text-xs">
-            {bots.length}
+            {bots?.length ?? 0}
             {attention > 0 ? ` · ${attention} need you` : ""}
           </span>
         </div>
-        <Link
+        <Button
           aria-label="New bot"
-          className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-          href="/bots?new=1"
-        >
-          <RiAddLine className="size-4" aria-hidden />
-        </Link>
+          iconOnly
+          leadingIcon={RiAddLine}
+          onClick={() => setCreating(true)}
+          size="small"
+          variant="ghost"
+        />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {bots.map((bot) => {
+              {error && (
+                <li className="flex flex-col items-start gap-2 px-3 py-3" role="alert">
+                  <span className="text-muted-foreground text-xs">
+                    {bots ? "Couldn't refresh bots." : "Couldn't load bots."}
+                  </span>
+                  <Button
+                    className="rounded-full"
+                    onClick={() => void refresh()}
+                    size="xs"
+                    variant="secondary"
+                  >
+                    Try again
+                  </Button>
+                </li>
+              )}
+              {bots?.map((bot) => {
                 const href = `/bots/${bot.id}`;
                 const selected = pathname === href;
                 return (
@@ -128,13 +165,19 @@ export function BotsPanel() {
                   </SidebarMenuItem>
                 );
               })}
-              {bots.length === 0 && (
+              {bots === null && !error && (
+                <li className="px-3 py-6 text-center text-muted-foreground text-sm">
+                  Loading bots
+                </li>
+              )}
+              {bots?.length === 0 && !error && (
                 <li className="px-3 py-6 text-center text-muted-foreground text-sm">No bots yet</li>
               )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <NewBotDialog open={creating} onOpenChange={setCreating} />
     </Sidebar>
   );
 }

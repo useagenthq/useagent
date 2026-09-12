@@ -32,7 +32,7 @@ export function UserMenu({
   const [open, setOpen] = useState(false);
 
   const signedIn = session !== null;
-  const name = session?.user.name?.trim() || (signedIn ? session!.user.email : "Guest");
+  const name = session?.user.name?.trim() || session?.user.email || "Guest";
   const email = session?.user.email ?? "Not signed in";
   const image = session?.user.image ?? null;
   const initial = (name.charAt(0) || "?").toUpperCase();

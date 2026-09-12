@@ -6,9 +6,9 @@ no `components.json`, so the CLI does not manage these files. Sidebar patterns
 follow the "Dashboard Inset" and "Double-Sided" sidebar blocks on blocks.so
 (MIT). The primitives sit on `@base-ui/react`; there is no Radix here.
 
-Files: `avatar`, `button`, `collapsible`, `dialog`, `input`, `separator`, `sheet`, `sidebar`, `skeleton`, `tooltip`.
-`input`, `input-group`, `separator`, `sheet`, `sidebar`, `skeleton`,
-`textarea`, `tooltip`.
+Files: `button`, `collapsible`, `input`, `separator`, `sheet`, `sidebar`,
+`skeleton`, `tooltip`. Unused copied dialog and avatar wrappers were removed;
+the account card uses the existing product Avatar.
 
 ## Token translation
 
@@ -28,6 +28,8 @@ every theme without a palette of its own.
   markup stays diffable against the registry.
 - `cn` is this product's `cx` re-exported from `lib/utils`.
 
-Product components never import these directly for buttons, chips or avatars;
-the base kit under `components/base` stays the kit for product UI. These files
-exist for the sidebar frame, its sheet on phones and its menus.
+This is a bounded shell-layout exception: the shared frame, navigation rows and
+mobile sheet use these coordinated primitives. Product buttons, chips, avatars
+and dialogs continue to use `components/base`. Do not expand this folder into a
+second general UI kit. Color aliases map to semantic tokens in every theme;
+there are no dark-only color overrides.

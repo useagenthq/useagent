@@ -3,7 +3,12 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
 
-import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/sidebar-kit/sidebar";
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/sidebar-kit/sidebar";
 import { TooltipProvider } from "@/components/sidebar-kit/tooltip";
 import { useIsTabletBand } from "@/hooks/use-is-mobile";
 import { SidebarThreadsProvider } from "./sidebar-threads-provider";

@@ -9,9 +9,13 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
+import { Avatar } from "@/components/base/avatar/avatar";
 import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/sidebar-kit/avatar";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/sidebar-kit/collapsible";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/sidebar-kit/collapsible";
 import {
   Sidebar,
   SidebarContent,
@@ -60,6 +64,32 @@ export function NavRoutes({ routes }: { routes: Route[] }) {
       {routes.map((route) => {
         const hasSubs = !!route.subs?.length;
         const isOpen = !isCollapsed && openId === route.id;
+        if (hasSubs && isCollapsed) {
+          return (
+            <SidebarMenuItem key={route.id}>
+              <SidebarMenuButton
+                isActive={route.active}
+                render={
+                  <Link
+                    aria-current={route.active ? "page" : undefined}
+                    aria-label={route.title}
+                    className={cn(
+                      "flex items-center justify-center rounded-lg px-2 transition-colors",
+                      route.active
+                        ? "bg-sidebar-muted text-foreground"
+                        : "text-muted-foreground hover:bg-sidebar-muted hover:text-foreground",
+                    )}
+                    href={route.href}
+                    prefetch={true}
+                  />
+                }
+                tooltip={route.title}
+              >
+                {route.icon}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          );
+        }
         if (hasSubs) {
           return (
             <SidebarMenuItem key={route.id}>
@@ -128,6 +158,8 @@ export function NavRoutes({ routes }: { routes: Route[] }) {
               isActive={route.active}
               render={
                 <Link
+                  aria-current={route.active ? "page" : undefined}
+                  aria-label={isCollapsed ? route.title : undefined}
                   className={cn(
                     "flex items-center rounded-lg px-2 transition-colors",
                     route.active
@@ -175,12 +207,14 @@ export function UserFooter() {
                 isCollapsed && "justify-center p-0",
               )}
             >
-              <Avatar className="size-8 rounded-lg">
-                {image ? <AvatarImage alt={name} src={image} /> : null}
-                <AvatarFallback className="rounded-lg bg-pink-500/20 text-pink-500">
-                  {initials(name)}
-                </AvatarFallback>
-              </Avatar>
+              <Avatar
+                alt={name}
+                className="rounded-lg"
+                color="pink"
+                initials={initials(name)}
+                size="md"
+                src={image ?? undefined}
+              />
               {!isCollapsed && (
                 <>
                   <span className="grid min-w-0 flex-1 text-left leading-tight">
@@ -251,7 +285,7 @@ export function AppSidebarFrame({
         </div>
       </SidebarHeader>
       <SidebarContent className="gap-3 px-1.5 py-3">
-        {!isCollapsed && <SearchCommand />}
+        <SearchCommand compact={isCollapsed} />
         {children}
       </SidebarContent>
       <SidebarFooter className="px-2">

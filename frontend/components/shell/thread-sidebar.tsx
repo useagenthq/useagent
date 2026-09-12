@@ -23,6 +23,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/sidebar-kit/sidebar";
+import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { AppSidebarFrame, NavRoutes, type Route } from "./app-sidebar-frame";
 import { SidebarProjects } from "./sidebar-projects";
 import { useSidebarThreads } from "./sidebar-threads-provider";
@@ -44,7 +45,13 @@ function CollapsedThreads() {
               <SidebarMenuButton
                 className="justify-center text-muted-foreground hover:bg-sidebar-muted hover:text-foreground"
                 isActive={pathname === href}
-                render={<Link href={href} />}
+                render={
+                  <Link
+                    aria-current={pathname === href ? "page" : undefined}
+                    aria-label={runTitle(run.prompt)}
+                    href={href}
+                  />
+                }
                 tooltip={runTitle(run.prompt)}
               >
                 <RiChat3Line className="size-4" aria-hidden />
@@ -65,6 +72,7 @@ function CollapsedThreads() {
  */
 export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
   const { state } = useSidebar();
+  const { catalog } = useCapabilityCatalog();
   const isCollapsed = state === "collapsed";
 
   const routes: Route[] = [
@@ -83,13 +91,17 @@ export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
       active: active === "dashboard",
       trailing: <WorkingProjectStatus />,
     },
-    {
-      id: "bots",
-      title: "Bots",
-      icon: <RiRobot2Line className="size-4" aria-hidden />,
-      href: "/bots",
-      active: active === "bots",
-    },
+    ...(catalog?.bots
+      ? [
+          {
+            id: "bots",
+            title: "Bots",
+            icon: <RiRobot2Line className="size-4" aria-hidden />,
+            href: "/bots",
+            active: active === "bots",
+          },
+        ]
+      : []),
     {
       id: "customize",
       title: "Customize",
