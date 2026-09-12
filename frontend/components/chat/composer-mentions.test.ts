@@ -1,28 +1,23 @@
+import { describe, expect, test } from "bun:test";
 import {
   botMention,
   botToken,
-  insertMentionToken,
-  mentionedBotIds,
-  mentionsToRunResources as toRunResources,
-  parseDraftMentions,
-  removeMentionToken,
-  skillMention,
-  unlinkedBotTokens,
-} from "./composer-mentions";
-import { describe, expect, test } from "bun:test";
-import {
   detectMentionTrigger,
   fileMention,
   insertMentionToken,
   type Mention,
+  mentionedBotIds,
   mentionKey,
   mentionsReducer,
   mentionsToRunResources,
+  mentionsToRunResources as toRunResources,
+  parseDraftMentions,
   prMention,
   removeMentionToken,
   shortThreadId,
   skillMention,
   threadMention,
+  unlinkedBotTokens,
 } from "./composer-mentions";
 import { repoTreeUrl } from "./composer-mentions-ui";
 
