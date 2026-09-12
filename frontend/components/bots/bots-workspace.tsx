@@ -1,27 +1,15 @@
-import { RiRobot2Line } from "@remixicon/react";
+import type { ThreadView } from "@/components/chat/load-thread-view";
 import { SessionView } from "@/components/chat/session-view";
-import type { ApiRun } from "@/components/chat/types";
-import { BotDetailPane } from "./bot-detail-pane";
+import { BotThreadHeader } from "./bot-details";
 import { BotsRoster } from "./bots-roster";
 import { FirstMessage } from "./first-message";
+import { BotsOnboarding } from "./onboarding";
 import type { ApiBot } from "./types";
 
-function NothingSelected() {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-      <RiRobot2Line className="size-6 text-text-tertiary" aria-hidden />
-      <p className="text-headline-medium text-text-primary">Pick a bot</p>
-      <p className="max-w-sm text-body-2-regular text-text-tertiary">
-        Each bot is a standing job over its own thread. Open one to see its work, or create a new one.
-      </p>
-    </div>
-  );
-}
-
 /**
- * Three panes: roster (client, polls), the selected bot's home thread rendered
- * by the real SessionView (or the first-message prompt when it has none), and
- * the bot's detail pane.
+ * Two panes, like the reference: the roster and the selected bot's thread.
+ * The thread is the real SessionView (windowed like any long session); the
+ * bot's details live behind the info button in the thread header.
  */
 export function BotsWorkspace({
   bots,
@@ -30,21 +18,29 @@ export function BotsWorkspace({
 }: {
   bots: ApiBot[];
   selected: ApiBot | null;
-  thread: ApiRun[];
+  thread: ThreadView | null;
 }) {
   return (
     <div className="flex h-full min-h-0">
       <BotsRoster initialBots={bots} selectedId={selected?.id ?? null} />
       <div className="flex min-h-0 flex-1 flex-col">
         {!selected ? (
-          <NothingSelected />
-        ) : thread.length > 0 ? (
-          <SessionView initialThread={thread} />
+          <BotsOnboarding firstBot={bots.length === 0} />
         ) : (
-          <FirstMessage bot={selected} />
+          <>
+            <BotThreadHeader bot={selected} />
+            {thread ? (
+              <SessionView
+                initialThread={thread.thread}
+                initialOutline={thread.outline}
+                initialRelationshipHint={thread.relationshipHint}
+              />
+            ) : (
+              <FirstMessage bot={selected} />
+            )}
+          </>
         )}
       </div>
-      {selected && <BotDetailPane bot={selected} />}
     </div>
   );
 }

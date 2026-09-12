@@ -1,6 +1,15 @@
-/** Wire shape of GET /api/bots - mirrors the backend BotView. */
-export type BotState = "attention" | "working" | "idle";
+import {
+  BOT_AVATAR_ICONS,
+  BOT_AVATAR_TONES,
+  type BotAvatarIcon,
+  type BotAvatarTone,
+  type BotState,
+} from "@useagent/agent-client";
 
+export { BOT_AVATAR_ICONS, BOT_AVATAR_TONES };
+export type { BotAvatarIcon, BotAvatarTone, BotState };
+
+/** Wire shape of GET /api/bots - mirrors the backend BotView. */
 export interface ApiBot {
   id: string;
   name: string;
@@ -14,6 +23,7 @@ export interface ApiBot {
   avatarTone: string;
   avatarIcon: string;
   homeThreadId: string | null;
+  presetLocked: boolean;
   archived: boolean;
   createdAt: string;
   updatedAt: string;
@@ -23,30 +33,7 @@ export interface ApiBot {
   pendingApprovals: number;
 }
 
-export const BOT_AVATAR_TONES = [
-  "blue",
-  "violet",
-  "emerald",
-  "amber",
-  "rose",
-  "cyan",
-  "fuchsia",
-  "slate",
-] as const;
-
-export const BOT_AVATAR_ICONS = [
-  "robot",
-  "code",
-  "research",
-  "chart",
-  "megaphone",
-  "sales",
-  "support",
-  "pen",
-  "compass",
-] as const;
-
-export const ENGINE_LABELS: Record<string, string> = {
+const ENGINE_LABELS: Record<string, string> = {
   opencode: "OpenCode",
   claude: "Claude Code",
   codex: "Codex",
@@ -57,4 +44,14 @@ export const ENGINE_LABELS: Record<string, string> = {
 
 export function engineLabel(id: string): string {
   return ENGINE_LABELS[id] ?? id;
+}
+
+/** The message a failed request should show: human text first, codes last. */
+export function apiErrorText(data: unknown, fallback: string): string {
+  const record = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  for (const key of ["message", "reason", "error"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return fallback;
 }

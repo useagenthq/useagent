@@ -1,4 +1,4 @@
-import { type ApiRun, toThread } from "@/components/chat/types";
+import { loadThreadView, type ThreadView } from "@/components/chat/load-thread-view";
 import { backendFetch } from "@/lib/backend-fetch";
 import type { ApiBot } from "./types";
 
@@ -20,13 +20,15 @@ export async function loadBot(id: string): Promise<ApiBot | null> {
   return data.bot ?? null;
 }
 
-/** The bot's home thread, root first. [] when it has none or the load fails. */
-export async function loadHomeThread(threadId: string): Promise<ApiRun[]> {
-  try {
-    const response = await backendFetch(`/api/runs/${threadId}?thread=1`);
-    if (!response.ok) return [];
-    return toThread(await response.json());
-  } catch {
-    return [];
-  }
+/**
+ * The bot's home thread through the same windowed loader the session page
+ * uses. A missing thread (the run was removed) reads as "no thread yet"; a
+ * transient failure throws rather than pretending the bot is new.
+ */
+export async function loadHomeThread(bot: ApiBot): Promise<ThreadView | null> {
+  if (!bot.homeThreadId) return null;
+  const probe = await backendFetch(`/api/runs/${bot.homeThreadId}`);
+  if (probe.status === 404) return null;
+  if (!probe.ok) throw new Error(`home thread failed: ${probe.status}`);
+  return loadThreadView(bot.homeThreadId);
 }

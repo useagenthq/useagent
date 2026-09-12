@@ -740,3 +740,35 @@ export interface SessionCommandCatalog {
   readonly commands: readonly CommandCatalogEntry[];
   readonly revision: number;
 }
+
+// ── Bots (named presets over durable home threads) ──────────────────────────
+
+/** Avatar fills map onto the theme's state ramp on the client, never raw colors. */
+export const BOT_AVATAR_TONES = [
+  "blue",
+  "violet",
+  "emerald",
+  "amber",
+  "rose",
+  "cyan",
+  "fuchsia",
+  "slate",
+] as const;
+export type BotAvatarTone = (typeof BOT_AVATAR_TONES)[number];
+
+export const BOT_AVATAR_ICONS = [
+  "robot",
+  "code",
+  "research",
+  "chart",
+  "megaphone",
+  "sales",
+  "support",
+  "pen",
+  "compass",
+] as const;
+export type BotAvatarIcon = (typeof BOT_AVATAR_ICONS)[number];
+
+/** Derived from the home thread's runs + pending approvals; never stored. */
+export const BOT_STATES = ["attention", "working", "idle"] as const;
+export type BotState = (typeof BOT_STATES)[number];

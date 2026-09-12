@@ -9,5 +9,5 @@ export const metadata: Metadata = { title: "Bots" };
 export default async function BotsPage() {
   const bots = await loadBots();
   if (bots === null) notFound();
-  return <BotsWorkspace bots={bots} selected={null} thread={[]} />;
+  return <BotsWorkspace bots={bots} selected={null} thread={null} />;
 }

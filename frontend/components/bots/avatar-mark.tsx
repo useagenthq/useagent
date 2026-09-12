@@ -12,15 +12,19 @@ import {
 import { cx } from "@/utils/cx";
 import type { BotState } from "./types";
 
+/**
+ * Avatar fills come from the theme's state ramp, so a bot looks native in
+ * every theme (Dusk gets Tokyo Night, Aura gets violet) with no raw palette.
+ */
 const TONES: Record<string, string> = {
-  blue: "from-sky-400 to-blue-600",
-  violet: "from-indigo-400 to-violet-600",
-  emerald: "from-emerald-400 to-teal-600",
-  amber: "from-amber-400 to-orange-600",
-  rose: "from-rose-400 to-red-600",
-  cyan: "from-cyan-400 to-sky-600",
-  fuchsia: "from-fuchsia-400 to-purple-600",
-  slate: "from-slate-400 to-slate-600",
+  blue: "bg-primary-base",
+  violet: "bg-feature-base",
+  emerald: "bg-success-base",
+  amber: "bg-warning-base",
+  rose: "bg-error-base",
+  cyan: "bg-verified-base",
+  fuchsia: "bg-highlighted-base",
+  slate: "bg-away-base",
 };
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -43,15 +47,22 @@ export function iconFor(icon: string): React.ComponentType<{ className?: string 
   return ICONS[icon] ?? RiRobot2Line;
 }
 
+const GLYPH: Record<string, string> = {
+  "size-8": "size-4",
+  "size-10": "size-5",
+  "size-14": "size-7",
+  "size-16": "size-8",
+};
+
 /**
- * Gradient orb with the bot's role icon. Working bots carry a pulsing presence
- * dot; bots waiting on you get an amber ring so the roster reads at a glance.
+ * Flat, rounded, one color, white glyph - the reference's avatar language.
+ * State is one small dot in the theme's success/warning color; nothing else.
  */
-export function AvatarOrb({
+export function AvatarMark({
   tone,
   icon,
   state = "idle",
-  size = "size-9",
+  size = "size-10",
   className,
 }: {
   tone: string;
@@ -64,20 +75,21 @@ export function AvatarOrb({
   return (
     <span
       className={cx(
-        "relative flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-white shadow-sm",
+        "relative flex shrink-0 items-center justify-center rounded-full text-text-white-0",
         toneClass(tone),
-        state === "attention" && "ring-2 ring-yellow-400/70 ring-offset-1 ring-offset-background-primary-default",
         size,
         className,
       )}
       aria-hidden
     >
-      <Icon className={size === "size-10" || size === "size-14" ? "size-5" : "size-4"} />
-      {state === "working" && (
-        <span className="absolute -right-0.5 -bottom-0.5 size-2.5 animate-pulse rounded-full border-2 border-background-primary-default bg-lime-500" />
-      )}
-      {state === "attention" && (
-        <span className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-background-primary-default bg-yellow-500" />
+      <Icon className={GLYPH[size] ?? "size-5"} />
+      {state !== "idle" && (
+        <span
+          className={cx(
+            "absolute -right-0.5 -bottom-0.5 size-3 rounded-full border-2 border-bg-white-0",
+            state === "working" ? "bg-success-base" : "bg-warning-base",
+          )}
+        />
       )}
     </span>
   );

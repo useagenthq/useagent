@@ -1,24 +1,10 @@
 import type { ApiBot, BotState } from "./types";
 
 /** Roster order: what needs you first, then what is moving, then the rest. */
-export const ROSTER_SECTIONS: readonly { state: BotState; label: string }[] = [
-  { state: "attention", label: "NEEDS YOU" },
-  { state: "working", label: "WORKING" },
-  { state: "idle", label: "IDLE" },
-];
+const ORDER: readonly BotState[] = ["attention", "working", "idle"];
 
-export interface RosterSection {
-  readonly state: BotState;
-  readonly label: string;
-  readonly bots: readonly ApiBot[];
-}
-
-/** Group by derived state in section order; empty sections are dropped. */
-export function groupRoster(bots: readonly ApiBot[]): RosterSection[] {
-  return ROSTER_SECTIONS.map((section) => ({
-    ...section,
-    bots: bots.filter((bot) => bot.state === section.state),
-  })).filter((section) => section.bots.length > 0);
+export function orderRoster(bots: readonly ApiBot[]): ApiBot[] {
+  return bots.toSorted((a, b) => ORDER.indexOf(a.state) - ORDER.indexOf(b.state));
 }
 
 /** The one line under the name: the bot's own outcome, or an honest fallback. */
@@ -31,9 +17,9 @@ export function outcomeLine(bot: Pick<ApiBot, "state" | "lastOutcome" | "homeThr
   return bot.homeThreadId ? "Finished, no summary yet" : "No conversations yet";
 }
 
-/** Compact relative time: now, 5m, 2h, 3d. */
-export function relativeTime(iso: string | null, now: number = Date.now()): string {
-  if (!iso) return "";
+/** Compact relative time: now, 5m, 2h, 3d. "" until `now` is known (after mount). */
+export function relativeTime(iso: string | null, now: number | null): string {
+  if (!iso || now === null) return "";
   const then = Date.parse(iso);
   if (Number.isNaN(then)) return "";
   const seconds = Math.max(0, Math.round((now - then) / 1000));
