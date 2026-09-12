@@ -5,10 +5,11 @@
 // live). The React side lives in ./timeline-view (BotTurn) + ./bot-work-fold.
 
 import { formatWorkingTimer } from "@/components/session-ui/work-entry";
+import { workEntryIndicatesToolFailure } from "@/components/session-ui/work-entry";
 import { workedForDuration } from "@/components/session-ui/worked-for-fold";
+import { workEntryFromTimelineNode } from "@/components/session-ui/adapter";
 import type { TimelineNode } from "./timeline";
 import { summarizeToolStep } from "./tool-summary";
-import { deriveTrace } from "./types";
 
 export interface BotTurnSplit {
   /** Everything the bot did between the message and its reply, in true order. */
@@ -46,7 +47,10 @@ export function splitBotTurn(nodes: readonly TimelineNode[], live: boolean): Bot
 }
 
 export function botWorkFailureCount(work: readonly TimelineNode[]): number {
-  return work.filter((node) => node.kind === "tool" && deriveTrace(node.step).isError).length;
+  return work.filter((node) => {
+    const entry = workEntryFromTimelineNode(node, "done");
+    return entry ? workEntryIndicatesToolFailure(entry) : false;
+  }).length;
 }
 
 /** The latest thing the bot is doing, from the summarizer; null with no steps yet. */

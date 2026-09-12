@@ -376,10 +376,8 @@ interface TimelineProps {
   showSources?: boolean;
 }
 
-/** A bot thread's turn context: the thread (its fold preference is remembered
- *  per thread) and the settled run's duration for the "Worked for" label. */
+/** A bot thread's settled run duration for the "Worked for" label. */
 export interface BotTurnContext {
-  readonly threadId: string;
   readonly durationMs: number | null;
 }
 

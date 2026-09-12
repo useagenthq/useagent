@@ -3,9 +3,8 @@
 // The ONE disclosure a bot thread folds its work behind: a quiet header line
 // ("Worked for 3m 12s, 14 steps" / "Working, <step>") with a chevron, opening
 // in place to the full interleaved timeline. Children render only while open,
-// so a long work log never hits the DOM behind a closed fold. The open/closed
-// choice is remembered per thread in localStorage (read after mount so the
-// server and first client paint agree; every access is guarded).
+// so a long work log never hits the DOM behind a closed fold. The containing
+// turn owns the disclosure state so virtualized remounts preserve only that row.
 
 import { RiArrowDownSLine, RiArrowRightSLine } from "@remixicon/react";
 import type { ReactNode } from "react";

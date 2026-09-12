@@ -35,6 +35,11 @@ const TYPECHECK = toolNode(
   { tool: "execute", input: { command: "bun run typecheck" }, output: "", error: true },
   "2026-09-03T09:03:12Z",
 );
+const IMPLICIT_FAILURE = toolNode("s3", {
+  tool: "execute",
+  input: { command: "cat missing.txt" },
+  output: "cat: missing.txt: No such file or directory",
+});
 const REPLY: TimelineNode = { kind: "text", key: "t2", text: "Here is today's digest." };
 const ARTIFACT: TimelineNode = {
   kind: "artifact",
@@ -99,6 +104,13 @@ describe("botWorkLabel", () => {
       "Worked for 3m 12s, 4 steps, 1 failed",
     );
     expect(botWorkLabel({ live: false, work: [RECALL], durationMs: null })).toBe("Worked, 1 step");
+  });
+
+  test("collapsed work uses the expanded row's implicit failure predicate", () => {
+    expect(botWorkFailureCount([IMPLICIT_FAILURE])).toBe(1);
+    expect(botWorkLabel({ live: false, work: [IMPLICIT_FAILURE], durationMs: 1_000 })).toBe(
+      "Worked for 1s, 1 step, 1 failed",
+    );
   });
 
   test("live: the latest step's human label, never its raw payload", () => {

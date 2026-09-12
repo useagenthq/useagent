@@ -249,7 +249,7 @@ const TurnBlock = memo(function TurnBlock({
 }) {
   const { run, steps, status, summary, live, liveText, liveReasoning } = turn;
   // A bot's thread reads like chat: the reply is the block, the work folds away.
-  const botTurn = assistantIdentity ? { threadId: run.thread_id, durationMs: run.duration_ms } : undefined;
+  const botTurn = assistantIdentity ? { durationMs: run.duration_ms } : undefined;
   // Capture whether this turn was streaming when it first mounted, so its
   // summary typewriters in on arrival but settled history renders instantly.
   const [wasLive] = useState(() => live);
