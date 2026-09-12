@@ -6,8 +6,7 @@
  * Compound API (Root/Trigger/Close/Content/Header/Title/Body/Footer) built on
  * @radix-ui/react-dialog for focus-trap, Esc-to-close, scroll-lock and backdrop
  * dismiss. Slides in from the right; callers own the open state (Root
- * open/onOpenChange) and focus returns to whatever opened the drawer on
- * close. BoardUI tokens; callers restyle via className.
+ * open/onOpenChange). BoardUI tokens; callers restyle via className.
  */
 
 import * as React from "react";
@@ -15,7 +14,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import { cx } from "@/utils/cx";
 import { CloseButton } from "@/components/base/buttons/close-button";
-import { useFocusReturn } from "@/components/base/modal/focus-return";
+import { OverlayPortalContainerContext, escapeBelongsToNestedOverlay } from "@/components/base/overlay-portal-container";
 
 const DrawerRoot = DialogPrimitive.Root;
 const DrawerTrigger = DialogPrimitive.Trigger;
@@ -45,21 +44,24 @@ DrawerOverlay.displayName = "DrawerOverlay";
 const DrawerContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, onOpenAutoFocus, onCloseAutoFocus, ...rest }, forwardedRef) => {
-  const focusReturn = useFocusReturn();
+>(({ className, children, onEscapeKeyDown, ...rest }, forwardedRef) => {
+  // Popovers opened from inside the drawer portal into its content, so the
+  // focus trap and pointer-events lock do not shut them out.
+  const [container, setContainer] = React.useState<HTMLElement | null>(null);
+  const handleEscape = (event: KeyboardEvent) => {
+    onEscapeKeyDown?.(event);
+    if (escapeBelongsToNestedOverlay(event.target, container)) event.preventDefault();
+  };
+  const setRefs = (node: HTMLDivElement | null) => {
+    setContainer(node);
+    if (typeof forwardedRef === "function") forwardedRef(node);
+    else if (forwardedRef) forwardedRef.current = node;
+  };
   return (
     <DrawerPortal>
       <DrawerOverlay>
         <DialogPrimitive.Content
-          ref={forwardedRef}
-          onOpenAutoFocus={(event) => {
-            onOpenAutoFocus?.(event);
-            focusReturn.onOpenAutoFocus();
-          }}
-          onCloseAutoFocus={(event) => {
-            onCloseAutoFocus?.(event);
-            if (!event.defaultPrevented) focusReturn.onCloseAutoFocus(event);
-          }}
+          ref={setRefs}
           className={cx(
             // base
             "size-full max-w-[400px] overflow-y-auto",
@@ -71,9 +73,12 @@ const DrawerContent = React.forwardRef<
             "data-[state=closed]:slide-out-to-right-full",
             className,
           )}
+          onEscapeKeyDown={handleEscape}
           {...rest}
         >
-          <div className="relative flex size-full flex-col">{children}</div>
+          <OverlayPortalContainerContext.Provider value={container}>
+            <div className="relative flex size-full flex-col">{children}</div>
+          </OverlayPortalContainerContext.Provider>
         </DialogPrimitive.Content>
       </DrawerOverlay>
     </DrawerPortal>
