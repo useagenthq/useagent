@@ -78,6 +78,24 @@ function unitList(config: SshSystemdAdoptionConfig): string {
 		.join(" ");
 }
 
+export function writableMountOwnershipCommand(
+	image: string,
+	mounts: ReadonlyArray<{ readonly host: string }>,
+): string {
+	return (
+		`uid=$(docker run --rm --entrypoint id ${shellQuote(image)} -u); ` +
+		`gid=$(docker run --rm --entrypoint id ${shellQuote(image)} -g); ` +
+		`case "$uid:$gid" in :*|*:|*[!0-9:]*) echo 'backend image returned a non-numeric uid/gid' >&2; exit 1;; esac; ` +
+		mounts
+			.map(
+				(mount) =>
+					`install -d -o "$uid" -g "$gid" -m 0770 ${shellQuote(mount.host)}; ` +
+					`chown -R "$uid:$gid" ${shellQuote(mount.host)}`,
+			)
+			.join("; ")
+	);
+}
+
 export class SshSystemdAdoptionEffects implements SystemdAdoptionEffects {
 	readonly #config: SshSystemdAdoptionConfig;
 	readonly #remote: RemoteHost;
@@ -258,17 +276,7 @@ export class SshSystemdAdoptionEffects implements SystemdAdoptionEffects {
 				container: "/opt/useagent/pi-runtime",
 			},
 		];
-		await this.#remote.run(
-			`uid=$(docker run --rm --entrypoint id ${shellQuote(image)} -u); ` +
-				`gid=$(docker run --rm --entrypoint id ${shellQuote(image)} -g); ` +
-				mounts
-					.map(
-						(mount) =>
-							`if ! test -d ${shellQuote(mount.host)}; then ` +
-							`install -d -o "$uid" -g "$gid" -m 0770 ${shellQuote(mount.host)}; fi`,
-					)
-					.join("; "),
-		);
+		await this.#remote.run(writableMountOwnershipCommand(image, mounts));
 		const sentinel = `.useagent-adoption-${target.manifest.commit}`;
 		const script =
 			"set -eu; command -v bun >/dev/null; command -v codex >/dev/null; " +

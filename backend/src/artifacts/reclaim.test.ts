@@ -19,7 +19,16 @@ describe("artifact reclaim CLI", () => {
       (line) => lines.push(line),
       async (options) => {
         expect(options).toEqual({ dryRun: true, minAgeMs: 2 * 60 * 60 * 1000 });
-        return { scanned: 2, removed: ["a".repeat(64)], retained: ["b".repeat(64)] };
+        return {
+          scanned: 2,
+          removed: ["a".repeat(64)],
+          retained: ["b".repeat(64)],
+          warnings: [{
+            code: "permission_denied",
+            operation: "readdir",
+            path: "/var/lib/useagent/artifacts/cc",
+          }],
+        };
       },
     );
 
@@ -29,6 +38,12 @@ describe("artifact reclaim CLI", () => {
       removed_count: 1,
       removed: ["a".repeat(64)],
       retained_count: 1,
+      warning_count: 1,
+      warnings: [{
+        code: "permission_denied",
+        operation: "readdir",
+        path: "/var/lib/useagent/artifacts/cc",
+      }],
     });
   });
 });
