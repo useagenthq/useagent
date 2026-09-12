@@ -623,6 +623,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   );
   const railTabLabel = railTabLabelFor(railTab);
   const [desktopEverOpened, setDesktopEverOpened] = useState(false);
+  const desktopActive = railTab === "desktop" && (!surfacesSheet || sheetSurfacesOpen);
   useEffect(() => {
     if (railTab === "desktop") setDesktopEverOpened(true);
     if (railTab === "workspace") setWorkspaceEverOpened(true);
@@ -982,9 +983,8 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
               />
             </div>
             <div className="relative min-h-0 flex-1">
-              {/* Browser work starts only after an explicit selection. Once
-                  opened, keep noVNC mounted across tab switches to preserve the
-                  visible desktop and its WebSocket. */}
+              {/* Browser work starts only after selection; then noVNC stays mounted
+                  across tab switches to preserve the desktop and its WebSocket. */}
               {desktopEverOpened ? (
                 <div
                   aria-hidden={railTab !== "desktop"}
@@ -993,7 +993,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
                     railTab === "desktop" ? "visible" : "pointer-events-none invisible",
                   )}
                 >
-                  <DesktopPane threadId={rootId} live={live} />
+                  <DesktopPane threadId={rootId} live={live} active={desktopActive} />
                 </div>
               ) : null}
               {/* Workspace stays mounted once opened (like Desktop) so switching

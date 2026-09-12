@@ -22,7 +22,11 @@ describe("Desktop product surface", () => {
     expect(sessionView).toContain('isSelected={railTab === "desktop"}');
     expect(sessionView).toContain('onSelect={() => setRailTabOverride("desktop")}');
     expect(sessionView).not.toContain("{hasDesktop && (");
-    expect(sessionView).toContain("<DesktopPane threadId={rootId} live={live} />");
+    expect(sessionView).toContain("<DesktopPane");
+    expect(sessionView).toContain(
+      'const desktopActive = railTab === "desktop" && (!surfacesSheet || sheetSurfacesOpen)',
+    );
+    expect(sessionView).toContain("active={desktopActive}");
     expect(sessionView).toContain("desktopEverOpened ? (");
     expect(sessionView).toContain('if (railTab === "desktop") setDesktopEverOpened(true)');
     expect(sessionView).toContain(
@@ -141,9 +145,8 @@ describe("Desktop product surface", () => {
     );
     expect(desktopPane).toContain("lastOuterFocusRef.current = target");
     expect(desktopPane).toContain("previous.focus()");
-    // The ONLY programmatic focus into the frame is the explicit capture click.
-    const focusCalls = desktopPane.split("contentWindow?.focus()").length - 1;
-    expect(focusCalls).toBe(1);
+    // Enabling control never strands keyboard focus in the cross-origin frame.
+    expect(desktopPane).not.toContain("contentWindow?.focus()");
     expect(desktopPane).toContain("inputCapturedRef.current = true;");
     // Release resets the synchronous mirror too, so the guard resumes bouncing.
     expect(desktopPane).toContain("inputCapturedRef.current = false;");
@@ -173,6 +176,8 @@ describe("Desktop product surface", () => {
     expect(desktopPane).toContain('{inputCaptured ? "Release control" : "Take control"}');
     expect(desktopPane).toContain("onClick={inputCaptured ? releaseCapture : captureInput}");
     expect(desktopPane).toContain("if (!open) releaseCapture();");
+    expect(desktopPane).toContain("if (active) return;");
+    expect(desktopPane).toContain("setViewerOpen(false);");
     // The collapsed card has no capture affordance at all.
     expect(desktopPane).not.toContain("Click to control desktop");
   });

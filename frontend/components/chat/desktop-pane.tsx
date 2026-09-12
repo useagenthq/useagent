@@ -162,7 +162,15 @@ function restoreOuterFocus(previous: HTMLElement | null, frame: HTMLIFrameElemen
  * rail, and a full-width viewer where "Take control" routes input to the
  * desktop. `live` is the thread's live-run signal, for the status pill.
  */
-export function DesktopPane({ threadId, live }: { threadId: string; live: boolean }) {
+export function DesktopPane({
+  threadId,
+  live,
+  active,
+}: {
+  threadId: string;
+  live: boolean;
+  active: boolean;
+}) {
   const [ready, setReady] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [inputCaptured, setInputCaptured] = useState(false);
@@ -170,10 +178,10 @@ export function DesktopPane({ threadId, live }: { threadId: string; live: boolea
   const [status, setStatus] = useState("No active sandbox. Send a message to start one.");
   // The Agent Screen stage: the frame plus, while expanded, the viewer chrome.
   // Pointer and focus activity inside it never releases captured input.
-  const surfaceRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLDialogElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   // Mirrors inputCaptured synchronously so the focus-steal guard cannot race
-  // the requestAnimationFrame focus issued by the explicit capture click.
+  // the explicit transition from watch-only to interactive desktop input.
   const inputCapturedRef = useRef(false);
   // The last focused element OUTSIDE this pane (usually the composer) - where
   // stolen focus gets returned to.
@@ -237,11 +245,11 @@ export function DesktopPane({ threadId, live }: { threadId: string; live: boolea
     }
   }, []);
 
-  // The ONLY programmatic focus into the frame: the explicit take-control gesture.
+  // Taking control enables pointer input without trapping keyboard focus in the
+  // cross-origin iframe. A subsequent explicit click on the desktop focuses it.
   const captureInput = useCallback(() => {
     inputCapturedRef.current = true;
     setInputCaptured(true);
-    requestAnimationFrame(() => frameRef.current?.contentWindow?.focus());
   }, []);
 
   // Collapsing the viewer always hands input back: the card is view-only.
@@ -252,6 +260,15 @@ export function DesktopPane({ threadId, live }: { threadId: string; live: boolea
     },
     [releaseCapture],
   );
+
+  // SessionView keeps the desktop mounted to preserve its WebSocket. When a
+  // different rail surface becomes active, close the modal and release input
+  // before the preserved pane is made invisible.
+  useEffect(() => {
+    if (active) return;
+    releaseCapture();
+    setViewerOpen(false);
+  }, [active, releaseCapture]);
 
   useEffect(() => {
     if (!inputCaptured) return;

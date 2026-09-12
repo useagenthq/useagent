@@ -9,7 +9,7 @@
 // node and the viewer's action is whatever the caller passes as `controls`
 // (the desktop pane passes its take-control toggle). The viewer does not
 // portal a copy of the screen: the same stage element is promoted into the
-// browser's top layer with the popover API, so a live iframe inside it never
+// browser's top layer with a modal dialog, so a live iframe inside it never
 // remounts (no reconnect, focus guards stay attached). Upstream tokens map to
 // our semantic tokens; the screen bed is black in every theme, like a screen.
 
@@ -88,7 +88,7 @@ export interface AgentScreenProps {
   /** Viewer title-bar controls, left of Collapse (the take-control toggle). */
   controls?: ReactNode;
   /** The stage that holds the screen and the viewer chrome in both states. */
-  ref?: Ref<HTMLDivElement>;
+  ref?: Ref<HTMLDialogElement>;
   className?: string;
 }
 
@@ -110,8 +110,11 @@ export function AgentScreen({
   ref,
   className,
 }: AgentScreenProps) {
-  const stageRef = useRef<HTMLDivElement | null>(null);
-  const setStage = useCallback<RefCallback<HTMLDivElement>>(
+  const stageRef = useRef<HTMLDialogElement | null>(null);
+  const openButtonRef = useRef<HTMLButtonElement | null>(null);
+  const collapseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const setStage = useCallback<RefCallback<HTMLDialogElement>>(
     (node) => {
       stageRef.current = node;
       if (typeof ref === "function") ref(node);
@@ -120,65 +123,67 @@ export function AgentScreen({
     [ref],
   );
 
-  // Promote the stage into the top layer while the viewer is open. A popover,
-  // not a portal, keeps the screen node mounted in place, so a live iframe
-  // inside it never reloads. Without the API the fixed classes below still
-  // cover the viewport, just not above transformed ancestors.
+  // Promote this SAME stage into the browser's modal top layer. Native dialog
+  // provides background inertness and focus containment without portalling or
+  // remounting the live screen node inside it.
   useEffect(() => {
     const stage = stageRef.current;
-    if (!open || !stage || typeof stage.showPopover !== "function") return;
-    if (!stage.matches(":popover-open")) stage.showPopover();
+    if (!open || !stage) return;
+    const active = document.activeElement;
+    if (!openerRef.current && active instanceof HTMLElement && active.tagName !== "BODY") {
+      openerRef.current = active;
+    }
+    const previousOverflow = document.documentElement.style.overflow;
+    stage.showModal();
+    collapseButtonRef.current?.focus();
+    document.documentElement.style.overflow = "hidden";
     return () => {
-      if (stage.isConnected && stage.matches(":popover-open")) stage.hidePopover();
+      if (stage.open) stage.close();
+      document.documentElement.style.overflow = previousOverflow;
+      const opener = openerRef.current?.isConnected ? openerRef.current : openButtonRef.current;
+      if (opener && !opener.closest('[aria-hidden="true"], [inert]')) opener.focus();
+      openerRef.current = null;
     };
   }, [open]);
 
-  // Escape collapses the viewer. A keystroke that reaches the page, that is:
-  // while the desktop has control, Escape belongs to the desktop.
-  useEffect(() => {
-    if (!open) return;
-    const collapseOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onOpenChange(false);
-    };
-    document.addEventListener("keydown", collapseOnEscape);
-    return () => document.removeEventListener("keydown", collapseOnEscape);
-  }, [open, onOpenChange]);
-
   const label = `${agentName}'s screen`;
   // Dialog semantics only while the stage is the viewer.
-  const dialogProps = open ? { role: "dialog" as const, "aria-label": label } : {};
+  const dialogProps = open
+    ? { role: "dialog" as const, "aria-modal": true as const, "aria-label": label }
+    : { role: "presentation" as const };
 
   return (
     <div data-agent-screen={open ? "open" : "collapsed"} className={cx("flex w-full flex-col gap-2.5", className)}>
       {/* The slot keeps the card's footprint while the stage is in the top layer. */}
       <div className={cx("relative w-full", AGENT_SCREEN_ASPECT, open && "rounded-2xl bg-background-secondary-default")}>
-        <div
+        <dialog
           ref={setStage}
-          popover="manual"
           {...dialogProps}
+          onCancel={(event) => {
+            event.preventDefault();
+            onOpenChange(false);
+          }}
+          onKeyDown={(event) => {
+            // The native dialog owns this Escape. Keep the parent rail/sheet
+            // listeners from unwinding a second UI layer on the same keypress.
+            if (event.key === "Escape") event.stopPropagation();
+          }}
+          onPointerDown={(event) => {
+            if (open && event.target === event.currentTarget) onOpenChange(false);
+          }}
           className={cx(
-            // The stage is a manual popover in both states. Undo the UA popover
-            // sheet (display:none while closed, a fixed centered box, border,
-            // padding, Canvas colors) so the collapsed stage fills the slot and
-            // the open stage paints its own full-viewport scrim.
-            "m-0 size-auto border-0 bg-transparent p-0 text-inherit",
+            // Undo the UA dialog box so the collapsed stage fills the slot and
+            // the modal stage owns the viewport without changing DOM identity.
+            "m-0 size-auto max-h-none max-w-none border-0 bg-transparent p-0 text-inherit backdrop:bg-black/60",
             open
               ? "fixed inset-0 z-50 flex items-center justify-center overflow-hidden p-4 sm:p-6"
               : "absolute inset-0 block overflow-visible",
           )}
         >
-          {open && (
-            <button
-              type="button"
-              aria-label="Collapse"
-              onClick={() => onOpenChange(false)}
-              className="absolute inset-0 cursor-default bg-black/60 outline-none"
-            />
-          )}
           <div
             className={
               open
-                ? "relative flex max-h-full max-w-full flex-col overflow-hidden rounded-2xl bg-background-primary-default p-2 pt-0 shadow-dropdown"
+                ? "relative flex max-h-full max-w-full flex-col overflow-hidden rounded-2xl bg-background-primary-default p-2 pt-0 shadow-dropdown overscroll-contain"
                 : "absolute inset-0"
             }
           >
@@ -191,6 +196,7 @@ export function AgentScreen({
                 <div className="flex shrink-0 items-center gap-1.5">
                   {controls}
                   <Button
+                    ref={collapseButtonRef}
                     variant="ghost"
                     size="small"
                     iconOnly
@@ -207,7 +213,10 @@ export function AgentScreen({
               className={cx(
                 "relative overflow-hidden bg-black",
                 open
-                  ? cx("w-[min(92vw,calc((100dvh_-_7.5rem)*1.6))] rounded-xl", AGENT_SCREEN_ASPECT)
+                  ? cx(
+                      "w-[min(92vw,calc((100dvh_-_7.5rem)*1.6))] max-w-full rounded-xl",
+                      AGENT_SCREEN_ASPECT,
+                    )
                   : "group/screen size-full rounded-2xl border border-border-button-default shadow-card transition-shadow duration-150 hover:shadow-regular-sm",
               )}
             >
@@ -219,9 +228,13 @@ export function AgentScreen({
                       revealed on hover and on keyboard focus. Nothing to open
                       into while the screen is still connecting. */}
                   <button
+                    ref={openButtonRef}
                     type="button"
                     aria-label={`Open ${label}`}
-                    onClick={() => onOpenChange(true)}
+                    onClick={(event) => {
+                      openerRef.current = event.currentTarget;
+                      onOpenChange(true);
+                    }}
                     className="absolute inset-0 cursor-pointer bg-black/0 outline-none transition-colors duration-150 group-hover/screen:bg-black/20 group-focus-within/screen:bg-black/20"
                   />
                   <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -240,7 +253,7 @@ export function AgentScreen({
               )}
             </div>
           </div>
-        </div>
+        </dialog>
       </div>
       <div className="flex items-center justify-between gap-2 px-0.5">
         <span className="truncate text-body-2-medium text-text-primary">{label}</span>

@@ -58,17 +58,20 @@ describe("agent screen card", () => {
     const html = render(true);
     expect(html).toContain('data-agent-screen="open"');
     expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
     expect(html).toContain('aria-label="Nova&#x27;s screen"');
     expect(html).toContain("Take control");
     expect(html).toContain('aria-label="Collapse"');
+    expect(html.split('aria-label="Collapse"')).toHaveLength(2);
     expect(html).toContain('data-testid="live"');
+    expect(html).toContain("max-w-full");
     expect(html).not.toContain('aria-label="Open Nova&#x27;s screen"');
   });
 
-  test("the stage is the same popover element in both states, so the screen never remounts", () => {
+  test("the stage stays one dialog element in both states, so the screen has one stable owner", () => {
     for (const open of [false, true]) {
       const html = render(open);
-      expect(html.split('popover="manual"')).toHaveLength(2);
+      expect(html.split("<dialog")).toHaveLength(2);
       expect(html.split('data-testid="live"')).toHaveLength(2);
     }
   });
