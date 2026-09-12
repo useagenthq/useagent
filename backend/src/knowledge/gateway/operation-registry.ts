@@ -75,6 +75,7 @@ export interface GatewayToolListOptions {
   readonly childSessions: boolean;
   readonly slack: boolean;
   readonly productChildThreads?: boolean;
+  readonly bots?: boolean; // bot handoffs advertised; defaults to this process's BOTS flag
   readonly orgId?: string | null;
 }
 
@@ -89,9 +90,8 @@ export interface GatewayToolCatalogDescriptor {
   readonly category: string; readonly descriptor: GatewayToolDescriptor;
   readonly condition: "always" | "child_session" | "slack";
 }
-/** Browser-safe catalog metadata still starts from the execution registry. The
- * caller decides deployment/current-run availability; schemas and executors do
- * not leave this module. */
+/** Browser-safe catalog metadata still starts from the execution registry. The caller
+ * decides deployment/current-run availability; schemas and executors do not leave this module. */
 export function gatewayToolCatalogDescriptors(): readonly GatewayToolCatalogDescriptor[] {
   return ALL_TOOL_FAMILIES.flatMap((family) =>
     family.tools.map((descriptor) => ({
@@ -112,7 +112,7 @@ export function advertisedGatewayToolDescriptors(
   return [
     ...BASE_TOOL_FAMILIES.flatMap<GatewayToolDescriptor>((family) =>
       family.category === "child_sessions"
-        ? (!options.childSessions ? [] : [...advertisedChildSessionTools(options.productChildThreads, options.orgId ?? null)])
+        ? (!options.childSessions ? [] : [...advertisedChildSessionTools(options.productChildThreads, options.orgId ?? null, options.bots)])
         : [...family.tools],
     ),
     ...(options.slack ? SLACK_TOOLS : []),

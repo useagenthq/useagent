@@ -71,3 +71,12 @@ computer/recording/repository tools still need the single deployment-selected
 sandbox provider credential; configure only that active provider's key and
 endpoint/template fields. Never place both Cube and Daytona control credentials
 in the gateway environment, and never copy the backend environment wholesale.
+
+The gateway does need `GATEWAY_DATABASE_URL`, `USEAGENT_API_ORIGIN` (the
+backend origin it forwards child-session, handoff and approval tool calls to),
+`FRONTEND_ORIGIN`, the three shared secrets, `GATEWAY_PUBLIC_URL`, and the same
+`PRODUCT_CHILD_THREADS` and `BOTS` values as the backend. The tool families it
+advertises follow the backend's `GET /api/config` `product` block, refreshed
+once a minute; while its own flags disagree it logs an error naming both values,
+and while the backend is unreachable it falls back to its own flags with a
+warning.

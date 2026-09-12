@@ -33,7 +33,6 @@ import { pullsRoutes } from "./github/pulls-routes";
 import { desktopProxyRoutes } from "./runs/desktop-proxy";
 import { fleetRoutes } from "./runs/fleet-routes";
 import { liveProxyRoutes } from "./runs/live-proxy";
-import { portProxyRoutes } from "./runs/port-proxy";
 import { recoverStaleRuns, startReconcileLoop } from "./runs/recovery";
 import {
   reconcileFleetOnBoot,
@@ -48,6 +47,7 @@ import { startCaptureDelivery } from "./memory/capture-outbox";
 import { resetStuckLearning, startLearningOutbox } from "./learning/learning-outbox";
 import { sandboxProvider, sandboxProviderApiKey, sandboxProviderKind } from "./sandboxes/provider";
 import { userComputersEnabled } from "./sandboxes/binding";
+import { botsEnabled } from "./bots/rollout";
 import {
   resetStuckCanonicalization,
   startCanonicalizationOutbox,
@@ -114,7 +114,6 @@ import {
   setRunAdmission,
 } from "./commands/admission";
 import { getRunWithSteps } from "./runs/repo";
-import { deploymentProvidedProviders } from "./provider-gateway/provider";
 import { uploadRoutes } from "./uploads/routes";
 import { startUploadCleanup } from "./uploads/cleanup";
 import { internalAutomationRoutes } from "./schedules/internal-routes";
@@ -133,7 +132,7 @@ import { assertCanonicalExecutionTranscriptIndexForBoot } from "./db/online-inde
 import { capabilityCatalogRoutes } from "./capabilities/routes";
 import { threadRelationshipRoutes } from "./runs/thread-relationship-routes";
 import { configureProductChildPump } from "./runs/child-session-pump";
-import { assertThreadRelationshipRolloutConfig, threadRelationshipWriteMode } from "./runs/thread-relationship-rollout";
+import { assertThreadRelationshipRolloutConfig, productChildThreadsEnabled, threadRelationshipWriteMode } from "./runs/thread-relationship-rollout";
 import { repairEligiblePublicRootThreadRelationships } from "./runs/thread-relationship-repo";
 
 // Acquire the per-database singleton before ANY shared-state mutation. In strict
@@ -339,8 +338,10 @@ app.get("/api/config", (c) => {
     models,
     configuredModels,
     sandbox: { provider: sandboxProviderKind(), userComputers: userComputersEnabled() },
-    // Per model provider: served from this deployment's own key (a name, never a value).
-    providers: deploymentProvidedProviders(),
+    // The product tool families a gateway process advertises follow this
+    // answer, so a gateway booted with different flags cannot silently drop
+    // child-session or bot-handoff tools (knowledge/gateway/product-flags).
+    product: { childThreads: productChildThreadsEnabled(), bots: botsEnabled(null) },
     capabilities: {
       github: githubConfigured(),
       slack: slackConfig() !== null,
@@ -424,7 +425,6 @@ app.route("/api/live-proxy", liveProxyRoutes);
 // noVNC's static app over HTTP and its RFB WebSocket, injecting the Daytona
 // preview token on both (shares the `websocket` handler above).
 app.route("/api/desktop-proxy", desktopProxyRoutes);
-app.route("/api/port-proxy", portProxyRoutes);
 // Real GitHub repository list for the New Task composer's repo picker. The
 // backend-held token stays server-side; unconfigured → {configured:false}.
 app.route("/api/repos", reposRoutes);
