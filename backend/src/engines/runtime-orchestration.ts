@@ -1,5 +1,9 @@
 import type { EngineId } from "../db/schema";
-import { DEFAULT_CODEX_MODEL, DEFAULT_OPENCODE_MODEL } from "../runs/model-policy";
+import {
+  DEFAULT_CODEX_MODEL,
+  DEFAULT_OPENCODE_MODEL,
+  openCodeRuntimeModelId,
+} from "../runs/model-policy";
 import type { EmitStep, EngineRunContext } from "./types";
 import type { ProviderEventInput } from "../runs/provider-events";
 import type { SecretRedactor } from "../secrets/redact";
@@ -314,23 +318,9 @@ const DEFAULT_MODEL: Record<RuntimeEngineId, string> = {
   opencode: DEFAULT_OPENCODE_MODEL,
 };
 
-/**
- * useAgent stores OpenCode models in its product-facing catalog without an
- * OpenCode provider-instance prefix for Anthropic and most OpenRouter ids.
- * OpenAI-native ids keep their `openai/` provider prefix so T3 can spend a
- * connected OpenAI key instead of routing through OpenRouter.
- */
 export function runtimeModelId(engine: RuntimeEngineId, requested?: string): string {
   const selected = requested?.trim() || DEFAULT_MODEL[engine];
-  if (engine !== "opencode") return selected;
-  if (
-    selected.startsWith("anthropic/") ||
-    selected.startsWith("openai/") ||
-    selected.startsWith("openrouter/")
-  ) {
-    return selected;
-  }
-  return selected.includes("/") ? `openrouter/${selected}` : `anthropic/${selected}`;
+  return engine === "opencode" ? openCodeRuntimeModelId(selected) : selected;
 }
 
 function stableId(prefix: string, value: string): string {

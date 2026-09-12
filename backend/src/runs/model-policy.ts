@@ -55,6 +55,7 @@ const OPENCODE_MODELS = new Set<string>([
   ...SHARED_SANDBOX_MODELS,
   ...OPENCODE_ALLOWED_MODELS.cerebras,
 ]);
+const OPENCODE_PROVIDER_IDS = new Set<string>(Object.keys(OPENCODE_ALLOWED_MODELS));
 const SHARED_SANDBOX_MODEL_SET = new Set<string>(SHARED_SANDBOX_MODELS);
 const CLAUDE_MODELS = new Set<string>(OPENCODE_ALLOWED_MODELS.anthropic);
 const PERSISTED_OPENCODE_MODELS = new Set<string>([CEREBRAS_GEMMA_MODEL]);
@@ -160,6 +161,17 @@ export function isPersistedModelAllowedForEngine(
     return true;
   }
   return isModelAllowedForEngine(engine, model, env);
+}
+
+/** Convert the product catalog id into the provider-qualified id T3/OpenCode expects. */
+export function openCodeRuntimeModelId(model: string): string {
+  const separator = model.indexOf("/");
+  if (separator === -1) return `anthropic/${model}`;
+
+  const provider = model.slice(0, separator);
+  if (OPENCODE_PROVIDER_IDS.has(provider)) return model;
+  if (isPersistedModelAllowedForEngine("opencode", model)) return `openrouter/${model}`;
+  throw new Error(`Unsupported OpenCode model provider: ${provider}`);
 }
 
 /** A reply may inherit its durable parent's accepted model after a restart;
