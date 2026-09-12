@@ -35,12 +35,9 @@ import {
   type GatewayChildSession,
   SubagentsFold,
 } from "@/components/chat/subagents-fold";
-import {
-  buildTimeline,
-  hasNarration,
-  type TimelineNode,
-} from "@/components/chat/timeline";
+import { buildTimeline, hasNarration } from "@/components/chat/timeline";
 import { MD_CLASS, MD_CLASS_REASONING, Timeline } from "@/components/chat/timeline-view";
+import { splitTurn, turnNodesFromSteps, withTransientLiveReasoning } from "@/components/chat/turn-trace-model";
 import { TurnWindow } from "@/components/chat/turn-window";
 // Re-exported so existing importers (lab samples, workspace sample) keep working.
 export { Timeline } from "@/components/chat/timeline-view";
@@ -60,18 +57,10 @@ import {
 } from "@/components/session-ui/thread-error-banner";
 import type { GatewayApproval } from "@/lib/gateway-approvals";
 
-// Canonical-timeline cutover flag. OFF by default:
-// the legacy native/steps derivation renders unless a backend + build opt in via
-// NEXT_PUBLIC_CANONICAL_TIMELINE=1. The canonical path is proven byte-for-byte
-// equivalent (canonical-timeline.equiv/.nodes tests); this flag lets us flip it on
-// deliberately and fall straight back to legacy if a run has no canonical events.
-const CANONICAL_TIMELINE = process.env.NEXT_PUBLIC_CANONICAL_TIMELINE === "1";
-
 import {
   type ApiRun,
   type ApiStep,
   cleanPrompt,
-  deriveTrace,
   type EngineId,
   engineLabel,
   isRenderableTimelineStep,
@@ -196,12 +185,6 @@ const LiveThinking = memo(function LiveThinking({ text }: { text: string }) {
   );
 });
 
-/** Wrap legacy ApiStep rows as canonical tool nodes so the T3 adapter stays the
- *  ONE step-to-work-entry mapping (no parallel grammar for the fallback lane). */
-function toolNodesFromSteps(steps: readonly ApiStep[]): TimelineNode[] {
-  return steps.map((step) => ({ kind: "tool", key: step.id, step }));
-}
-
 /** A single turn: the user's clean prompt, the agent's answer, and its activity
  * (open + streaming while live, a collapsed disclosure once settled).
  * Memoized: the thread store keeps a settled run's view (and so its Turn object)
@@ -220,6 +203,7 @@ const TurnBlock = memo(function TurnBlock({
   isLatestTurn = false,
   windowOwnsRunMarker = false,
   assistantIdentity,
+  canonicalTimeline,
   threadBusy = false,
 }: {
   turn: Turn;
@@ -246,10 +230,13 @@ const TurnBlock = memo(function TurnBlock({
   /** The turn-window wrapper owns the rail marker for virtualized rows. */
   windowOwnsRunMarker?: boolean;
   assistantIdentity?: AssistantIdentity;
+  /** Resolved once by Conversation; injectable so canonical composition tests
+   *  never depend on module-import order or shared process.env mutation. */
+  canonicalTimeline: boolean;
 }) {
   const { run, steps, status, summary, live, liveText, liveReasoning } = turn;
-  // A bot's thread reads like chat: the reply is the block, the work folds away.
-  const botTurn = assistantIdentity ? { durationMs: run.duration_ms } : undefined;
+  // Every thread reads like chat: the work is ONE trace, the reply is the block.
+  const trace = { durationMs: run.duration_ms, defaultOpen: !assistantIdentity };
   // Capture whether this turn was streaming when it first mounted, so its
   // summary typewriters in on arrival but settled history renders instantly.
   const [wasLive] = useState(() => live);
@@ -265,25 +252,30 @@ const TurnBlock = memo(function TurnBlock({
   // from the watched run's native ordered frames. Null on turns without native
   // data (settled history, non-native engines) → the legacy rendering below takes
   // over. Recomputed only when the native snapshot or liveness changes.
-  const timeline = useMemo(() => {
+  const durableTimeline = useMemo(() => {
     // Canonical cutover (flag-gated): render from the canonical lane ONLY once this run's
     // canonicalization reached its durable `complete` record (H2). A still-provisional
     // projection (the outbox is retrying, the snapshot may be partial) never drives the
     // UI - the legacy native derivation does. The two are proven byte-for-byte equivalent,
     // so a completed swap never changes what the user sees.
     const canonical = turn.canonical;
-    if (canonical && shouldUseCanonicalTimeline(CANONICAL_TIMELINE, turn)) {
+    if (canonical && shouldUseCanonicalTimeline(canonicalTimeline, turn)) {
       const stepsById = new Map(turn.steps.map((s) => [s.id, s]));
       return buildTimelineFromCanonical(canonical, stepsById, live);
     }
     return turn.native ? buildTimeline(turn.native, live) : null;
-  }, [turn.native, turn.canonical, turn.canonicalComplete, turn.steps, live]);
+  }, [turn.native, turn.canonical, turn.canonicalComplete, turn.steps, live, canonicalTimeline]);
+
+  const timeline = useMemo(
+    () => withTransientLiveReasoning(durableTimeline, live, liveReasoning),
+    [durableTimeline, live, liveReasoning],
+  );
 
   // Which lane actually drove the timeline above - a test/debug hook (asserted by the
   // flag-on browser E2E to prove the canonical path really rendered, not just that a
   // timeline appeared). Cheap + pure.
   const timelineSource: "canonical" | "native" = shouldUseCanonicalTimeline(
-    CANONICAL_TIMELINE,
+    canonicalTimeline,
     turn,
   )
     ? "canonical"
@@ -291,10 +283,9 @@ const TurnBlock = memo(function TurnBlock({
 
   const activity = steps.filter((s) => s.kind !== "done" && isRenderableTimelineStep(s));
   const failed = status === "failed";
-  // Settled history drops sandbox plumbing rows ("Sandbox — Thinking…" etc.):
-  // they're live indicators, not work worth re-reading. Live rendering keeps
-  // them — they ARE the signal during the boot gap.
-  const settled = activity.filter((s) => deriveTrace(s).accent !== "boot");
+  // The steps-only lane: settled history drops sandbox plumbing and the engine's
+  // prose preview (the summary is the reply); live keeps the boot signal.
+  const settledNodes = turnNodesFromSteps(activity, false);
   // While narration is streaming it IS this turn's live indicator: show the
   // fading text + caret and suppress the Thinking shimmer so only one live
   // signal shows at a time.
@@ -304,6 +295,8 @@ const TurnBlock = memo(function TurnBlock({
   // burst inside the interleaved timeline.
   const answerStarted =
     liveText.length > 0 || Boolean(summary) || (timeline != null && hasNarration(timeline));
+  const timelineOwnsReasoning = timeline?.some((node) => node.kind === "reasoning") ?? false;
+  const timelineReply = timeline ? splitTurn(timeline, live).reply : null;
 
   // STANDARD queued rendering (matches opencode's steering-queue model): a
   // follow-up sent while the thread is busy queues into the same session, and
@@ -350,7 +343,9 @@ const TurnBlock = memo(function TurnBlock({
 
         {/* Thinking surfaced ahead of the answer: real streamed reasoning tokens
             (not a spinner), yielding the instant answer text starts. */}
-        {live && !botTurn && !answerStarted && liveReasoning && <LiveThinking text={liveReasoning} />}
+        {live && !assistantIdentity && !answerStarted && !timelineOwnsReasoning && liveReasoning && (
+          <LiveThinking text={liveReasoning} />
+        )}
 
         {timeline ? (
           /* Native turn: the interleaved timeline IS the turn — narration bursts
@@ -363,9 +358,9 @@ const TurnBlock = memo(function TurnBlock({
               live={live}
               workingSince={run.created_at}
               showFollowups={isLatestTurn}
-              bot={botTurn}
+              trace={trace}
             />
-            {summary && !hasNarration(timeline) && <AgentAnswer summary={summary} />}
+            {summary && !timelineReply && <AgentAnswer summary={summary} />}
             {/* A run whose native frames carry no text (the chat engine streams its
                 answer as deltas only) still narrates live from the delta channel. */}
             {narrating && !summary && !hasNarration(timeline) && <LiveNarration text={liveText} />}
@@ -384,17 +379,17 @@ const TurnBlock = memo(function TurnBlock({
               : live
                 ? activity.length > 0 && (
                     <Timeline
-                      nodes={toolNodesFromSteps(activity)}
+                      nodes={turnNodesFromSteps(activity, true)}
                       live
                       workingSince={run.created_at}
-                      bot={botTurn}
+                      trace={trace}
                     />
                   )
-                : settled.length > 0 && (
+                : settledNodes.length > 0 && (
                     <Timeline
-                      nodes={toolNodesFromSteps(settled)}
+                      nodes={settledNodes}
                       live={false}
-                      bot={botTurn}
+                      trace={trace}
                     />
                   )}
 
@@ -490,10 +485,13 @@ export const Conversation = memo(function Conversation({
   productChildren = [], onOpenProductChild,
   handoffReceipts, handoffNotice, onDismissHandoffNotice,
   assistantIdentity,
+  canonicalTimeline = process.env.NEXT_PUBLIC_CANONICAL_TIMELINE === "1",
 }: {
   turns: Turn[];
   /** The thread's own identity (a bot on its home thread): heads every assistant turn and names the composer. */
   assistantIdentity?: AssistantIdentity;
+  /** Test-injectable cutover decision. Production defaults to the build flag. */
+  canonicalTimeline?: boolean;
   defaultEngine: EngineId;
   defaultModel: string;
   /** The thread's current memory scope — the reply composer starts here. */
@@ -724,6 +722,7 @@ export const Conversation = memo(function Conversation({
                 isLatestTurn={index === renderedTurns.length - 1}
                 windowOwnsRunMarker={windowOwnsRunMarker}
                 assistantIdentity={assistantIdentity}
+                canonicalTimeline={canonicalTimeline}
                 threadBusy={threadBusy}
               />
             )}

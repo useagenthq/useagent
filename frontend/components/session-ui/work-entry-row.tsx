@@ -9,60 +9,29 @@
 //   status affordance + click-to-expand mono body).
 //
 // Port notes:
-// - lucide-react icons -> @remixicon/react (this repo's only icon set).
+// - lucide-react icons -> the shared step-family icon map (components/chat/step-icons),
+//   so these rows draw the same glyphs as the turn trace and the subagent rows.
 // - T3 shadcn tokens -> BoardUI semantic tokens (secondary-label -> text-text-secondary,
 //   icon-muted -> text-text-tertiary, foreground -> text-text-primary, destructive -> error red,
 //   accent hover -> background-primary-hover, border -> border-button-default). No hardcoded palette.
 // - Their status Tooltip -> a plain labelled glyph (role="img" + title): nothing to activate, so no tab stop.
 // - runtime.warning chrome dropped (no sourceActivityKind in our canonical lane yet).
 
-import {
-  type RemixiconComponentType,
-  RiArrowDownSLine,
-  RiChat3Line,
-  RiCheckLine,
-  RiCloseLine,
-  RiEditBoxLine,
-  RiErrorWarningLine,
-  RiEyeLine,
-  RiFlashlightLine,
-  RiGlobalLine,
-  RiHammerLine,
-  RiRobot2Line,
-  RiSubtractLine,
-  RiTerminalLine,
-  RiToolsLine,
-} from "@remixicon/react";
+import { RiArrowDownSLine, RiCheckLine, RiCloseLine, RiSubtractLine } from "@remixicon/react";
 import { type KeyboardEvent, memo, useState } from "react";
+import { iconForWorkEntry } from "@/components/chat/step-icons";
 import { cx as cn } from "@/utils/cx";
 import {
   buildToolCallExpandedBody,
   normalizeCompactToolLabel,
   type WorkEntry,
-  type WorkEntryIconName,
   toolWorkEntryHeading,
-  workEntryIconName,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
   workEntryIndicatesToolSuccess,
   workEntryIsToolLike,
   workEntryPreview,
 } from "./work-entry";
-
-const ENTRY_ICON: Record<WorkEntryIconName, RemixiconComponentType> = {
-  bot: RiRobot2Line,
-  check: RiCheckLine,
-  "circle-alert": RiErrorWarningLine,
-  eye: RiEyeLine,
-  globe: RiGlobalLine,
-  hammer: RiHammerLine,
-  "message-circle": RiChat3Line,
-  "square-pen": RiEditBoxLine,
-  terminal: RiTerminalLine,
-  wrench: RiToolsLine,
-  x: RiCloseLine,
-  zap: RiFlashlightLine,
-};
 
 /** Upstream workToneIcon: tone -> icon color class (BoardUI tokens). */
 function workToneClass(tone: WorkEntry["tone"]): string {
@@ -107,8 +76,7 @@ export const WorkEntryRow = memo(function WorkEntryRow({
   turnSettled?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const entryIconName = workEntryIconName(entry);
-  const EntryIcon = ENTRY_ICON[entryIconName];
+  const EntryIcon = iconForWorkEntry(entry);
   const heading = toolWorkEntryHeading(entry);
   const rawPreview = workEntryPreview(entry, workspaceRoot);
   const preview =

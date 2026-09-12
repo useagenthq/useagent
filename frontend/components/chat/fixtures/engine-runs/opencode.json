@@ -1,0 +1,14 @@
+{
+  "id": "opencode-run",
+  "engine": "opencode",
+  "summary": "The current service status is healthy, and the release window remains open.",
+  "duration_ms": 6100,
+  "steps": [
+    {"id":"opencode-step-context","run_id":"opencode-run","idx":0,"kind":"task","label":"Preparing context and runtime…","chip":"boot","code_json":"{\"phase\":\"preparing\"}","created_at":"2026-01-01T09:00:00.000Z"},
+    {"id":"opencode-step-search","run_id":"opencode-run","idx":1,"kind":"command","label":"web_search","chip":"web_search","code_json":"{\"tool\":\"web_search\",\"input\":{\"query\":\"example service status\"},\"output\":\"Status page reports healthy service.\",\"error\":false}","created_at":"2026-01-01T09:00:02.000Z"},
+    {"id":"opencode-step-memory","run_id":"opencode-run","idx":2,"kind":"command","label":"memory_search","chip":"memory_search","code_json":"{\"tool\":\"memory_search\",\"input\":{\"query\":\"release window\"},\"output\":\"One synthetic note matched.\",\"error\":false}","created_at":"2026-01-01T09:00:03.000Z"},
+    {"id":"opencode-step-list-playbooks","run_id":"opencode-run","idx":3,"kind":"command","label":"skills_list","chip":"skills_list","code_json":"{\"tool\":\"skills_list\",\"input\":{},\"output\":\"release-checklist v1\",\"error\":false}","created_at":"2026-01-01T09:00:04.000Z"},
+    {"id":"opencode-step-activate-playbook","run_id":"opencode-run","idx":4,"kind":"command","label":"skill_activate","chip":"skill_activate","code_json":"{\"tool\":\"skill_activate\",\"input\":{\"name\":\"release-checklist\"},\"output\":\"Playbook activated.\",\"error\":false}","created_at":"2026-01-01T09:00:05.000Z"},
+    {"id":"opencode-step-failed-search","run_id":"opencode-run","idx":5,"kind":"command","label":"web_search","chip":"web_search","code_json":"{\"tool\":\"web_search\",\"input\":{\"query\":\"unavailable example\"},\"output\":\"Search provider unavailable.\",\"error\":true}","created_at":"2026-01-01T09:00:06.000Z"}
+  ]
+}

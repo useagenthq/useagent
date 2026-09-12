@@ -1,10 +1,11 @@
 "use client";
 
-// The interleaved turn timeline RENDERER, split from conversation.tsx (which
-// keeps turn orchestration: TurnBlock, composer, thread chrome). Everything
-// here draws TimelineNode[] for one turn: narration bursts, tool work groups,
-// markers, artifact/file receipt rows, and the closing sources + follow-up
-// grammar. Shared by the session page and the /lab samples.
+// The turn timeline RENDERER, split from conversation.tsx (which keeps turn
+// orchestration: TurnBlock, composer, thread chrome). Everything here draws one
+// turn's TimelineNode[]: its work as ONE trace block (./turn-trace), the plan
+// checklist, the reply as the message, then the deliverables (file receipts,
+// artifacts) and the closing sources + follow-up grammar. Shared by the session
+// page and the /lab samples.
 
 import {
   RiDownloadLine,
@@ -20,35 +21,28 @@ import {
 } from "@useagent/artifact-workspace";
 import { memo, useMemo, useState } from "react";
 import { PlanChecklist } from "@/components/agent-ui/plan-checklist";
-import { Thinking } from "@/components/ai/thinking";
 import { formatArtifactSize } from "@/components/artifacts/model";
-import {
-  botWorkFailureCount,
-  botWorkLabel,
-  splitBotTurn,
-} from "@/components/chat/bot-turn-model";
-import { BotWorkFold } from "@/components/chat/bot-work-fold";
 import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { FollowUpRows } from "@/components/chat/follow-up-rows";
 import { SourceChip } from "@/components/chat/source-chip";
 import {
   deriveTurnSources,
   type TimelineArtifact,
-  type TimelineMarker,
   type TimelineNode,
   type TurnSource,
 } from "@/components/chat/timeline";
-import { MarkerRow } from "@/components/chat/tool-step-row";
+import { TurnTrace } from "@/components/chat/turn-trace";
+import {
+  latestPlanEntries,
+  splitTurn,
+  traceHeader,
+  traceRowsFromWork,
+} from "@/components/chat/turn-trace-model";
 import { basename } from "@/components/chat/types";
 import { useOpenWorkpiece } from "@/components/chat/workspace-open-context";
 import { Markdown } from "@/components/prompt-kit/markdown";
-import { segmentTimeline, type TimelineSegment } from "@/components/session-ui/adapter";
-import {
-  ContextRecallFold,
-  isContextRecallMarker,
-} from "@/components/session-ui/context-recall-fold";
+import { changedFilesFromTimeline } from "@/components/session-ui/adapter";
 import { ExpandedImageDialog } from "@/components/session-ui/expanded-image-dialog";
-import { WorkGroup } from "@/components/session-ui/work-group";
 import { WorkingIndicator } from "@/components/session-ui/working-indicator";
 import { cx as cn } from "@/utils/cx";
 
@@ -61,21 +55,6 @@ export const MD_CLASS = "text-body-2-regular text-text-primary";
 // Subdued variant of MD_CLASS for streamed reasoning (tailwind-merge lets the
 // muted text color win over MD_CLASS's strong default).
 export const MD_CLASS_REASONING = cn(MD_CLASS, "text-text-secondary");
-
-/** A SETTLED reasoning burst in the interleaved timeline: a collapsed, subdued
- *  "Thought" disclosure (reuses the Thinking primitive, inactive - no shimmer),
- *  expandable to read the real thoughts. Duration is intentionally omitted -
- *  native frames carry no timestamps, so deriving one would break the canonical
- *  vs native timeline equivalence the reducers are held to. */
-const SettledThought = memo(function SettledThought({ text }: { text: string }) {
-  return (
-    <Thinking label="Thought" active={false}>
-      <div data-testid="settled-thought">
-        <Markdown className={MD_CLASS_REASONING}>{text}</Markdown>
-      </div>
-    </Thinking>
-  );
-});
 
 /** One narration burst of the interleaved timeline — the same progressive-markdown
  *  treatment LiveNarration uses, memoized by its text so a streaming sibling burst
@@ -291,59 +270,6 @@ function FileChangeRow({ node }: { node: Extract<TimelineNode, { kind: "file" }>
   );
 }
 
-/**
- * The interleaved turn timeline: narration bursts and the tool work that followed
- * them, in TRUE ORDER (opencode-style). Non-tool nodes (markers, text, reasoning,
- * artifacts, files) keep their own renderers; consecutive tool nodes fold into the
- * vendored T3 work grammar (compact rows, expand disclosure, failed/success
- * affordances, "+N previous tool calls" overflow). While live, the in-flight tool
- * is represented by the T3 working indicator's step suffix (upstream filters
- * in-progress rows from the group), which also replaces the old LoadingState tail.
- */
-/** One render unit of the flow: either a fold of consecutive context-recall
- *  markers, or a single passthrough segment. */
-type FlowUnit =
-  | { kind: "recall"; key: string; markers: { key: string; marker: TimelineMarker }[] }
-  | { kind: "seg"; seg: TimelineSegment };
-
-/**
- * Fold a turn's consecutive context-recall markers (skill/playbook loads +
- * memory/knowledge retrievals) into ONE quiet disclosure, like the "+N previous
- * tool calls" fold. A lone receipt renders as its own MarkerRow (a fold of one
- * hides nothing); memory writes and the reconcile marker never fold - they are
- * turn events, not context the run pulled in.
- */
-function groupContextRecall(segs: readonly TimelineSegment[]): FlowUnit[] {
-  const units: FlowUnit[] = [];
-  let run: { key: string; marker: TimelineMarker }[] = [];
-  const flush = () => {
-    if (run.length >= 2) {
-      units.push({ kind: "recall", key: `recall-${run[0].key}`, markers: run });
-    } else if (run.length === 1) {
-      const { key, marker } = run[0];
-      units.push({
-        kind: "seg",
-        seg: { kind: "node", key, node: { kind: "marker", key, marker } },
-      });
-    }
-    run = [];
-  };
-  for (const seg of segs) {
-    if (
-      seg.kind === "node" &&
-      seg.node.kind === "marker" &&
-      isContextRecallMarker(seg.node.marker)
-    ) {
-      run.push({ key: seg.key, marker: seg.node.marker });
-    } else {
-      flush();
-      units.push({ kind: "seg", seg });
-    }
-  }
-  flush();
-  return units;
-}
-
 /** The web sources this turn actually fetched, as a quiet chip row closing the
  *  turn (beautiful-ui citation grammar; derived, never fabricated). */
 function TurnSourcesRow({ sources }: { sources: readonly TurnSource[] }) {
@@ -366,6 +292,15 @@ function TimelineFollowups({ suggestions }: { suggestions: readonly string[] }) 
   return <FollowUpRows suggestions={suggestions} onPick={prefill} />;
 }
 
+/** How the turn's trace block opens: the run's own duration for the settled
+ *  header, and whether it starts open (plain threads) or folded (a bot's). */
+export interface TraceContext {
+  readonly durationMs: number | null;
+  readonly defaultOpen: boolean;
+}
+
+const DEFAULT_TRACE: TraceContext = { durationMs: null, defaultOpen: true };
+
 interface TimelineProps {
   nodes: TimelineNode[];
   live: boolean;
@@ -373,125 +308,73 @@ interface TimelineProps {
   /** Render this turn's follow-up suggestions (the LATEST turn only - stale
    *  suggestions under scrolled-back history are noise). */
   showFollowups?: boolean;
-  showSources?: boolean;
-}
-
-/** A bot thread's settled run duration for the "Worked for" label. */
-export interface BotTurnContext {
-  readonly durationMs: number | null;
+  trace?: TraceContext;
 }
 
 /**
- * One turn's timeline. A plain thread renders the interleaved flow; a bot
- * thread (`bot` set) reads like chat instead: the reply is the block and every
- * step in between folds behind one line (see ./bot-turn-model).
+ * One turn's timeline, read like chat: the work between the message and the
+ * reply is ONE trace block (steps as short lines, opening to their payload),
+ * the reply is the message, and the deliverables close the turn. Row models are
+ * memoized on the node list, so a streaming sibling turn never rebuilds them.
  */
-export function Timeline({ bot, ...props }: TimelineProps & { bot?: BotTurnContext }) {
-  return bot ? <BotTurn {...props} bot={bot} /> : <TimelineFlow {...props} />;
-}
-
-function BotTurn({
+export function Timeline({
   nodes,
   live,
   workingSince,
   showFollowups = false,
-  bot,
-}: TimelineProps & { bot: BotTurnContext }) {
-  const { work, reply, tail } = useMemo(() => splitBotTurn(nodes, live), [nodes, live]);
-  const failures = useMemo(() => botWorkFailureCount(work), [work]);
-  const sources = useMemo(() => (live ? [] : deriveTurnSources(nodes)), [nodes, live]);
-  const label = useMemo(
-    () => botWorkLabel({ live, work, durationMs: bot.durationMs }),
-    [live, work, bot.durationMs],
-  );
-  return (
-    <div className="space-y-3" data-testid="bot-turn">
-      {work.length > 0 && (
-        <BotWorkFold label={label} live={live} failed={failures > 0}>
-          <TimelineFlow nodes={work} live={live} workingSince={workingSince} showSources={false} />
-        </BotWorkFold>
-      )}
-      {reply && (
-        <div data-testid="bot-reply">
-          <TextBurst text={reply} />
-        </div>
-      )}
-      {live && work.length === 0 && !reply && (
-        <WorkingIndicator createdAt={workingSince ?? null} />
-      )}
-      {sources.length > 0 && <TurnSourcesRow sources={sources} />}
-      {tail.length > 0 && <TimelineFlow nodes={tail} live={false} showFollowups={showFollowups} />}
-    </div>
-  );
-}
-
-function TimelineFlow({
-  nodes,
-  live,
-  workingSince,
-  showFollowups = false,
-  showSources = true,
+  trace = DEFAULT_TRACE,
 }: TimelineProps) {
-  const { segments, workingLabel } = useMemo(() => segmentTimeline(nodes, live), [nodes, live]);
-  // Artifacts are deliverables, not narration: they render AFTER the prose and
-  // tool activity so an answer never appears below its own attachment.
-  // Follow-ups close the turn after everything else.
-  const artifactSegs = segments.filter((s) => s.kind === "node" && s.node.kind === "artifact");
-  const followupSegs = segments.filter((s) => s.kind === "node" && s.node.kind === "followups");
-  const flowSegs = segments.filter(
-    (s) => s.kind !== "node" || (s.node.kind !== "artifact" && s.node.kind !== "followups"),
+  const { work, reply, tail } = useMemo(() => splitTurn(nodes, live), [nodes, live]);
+  const rows = useMemo(() => traceRowsFromWork(work, live), [work, live]);
+  // Durable file.changed receipts live in the closing tail, while edit/write
+  // tool calls live in work. Aggregate the complete turn so either source feeds
+  // the same compact changed-files strip.
+  const files = useMemo(() => changedFilesFromTimeline(nodes), [nodes]);
+  const header = useMemo(
+    () => traceHeader({ live, rows, work, durationMs: trace.durationMs, changedFileCount: files.length }),
+    [live, rows, work, trace.durationMs, files.length],
   );
-  const flowUnits = groupContextRecall(flowSegs);
+  const plan = useMemo(() => latestPlanEntries(work), [work]);
   // Cited web sources settle with the turn (the live list would churn row by row).
-  const sources = useMemo(
-    () => (showSources && !live ? deriveTurnSources(nodes) : []),
-    [nodes, live, showSources],
-  );
+  const sources = useMemo(() => (live ? [] : deriveTurnSources(nodes)), [nodes, live]);
   return (
     <div className="space-y-3" data-testid="session-timeline">
-      {flowUnits.map((unit) =>
-        unit.kind === "recall" ? (
-          <ContextRecallFold key={unit.key} markers={unit.markers} />
-        ) : unit.seg.kind === "tools" ? (
-          <WorkGroup
-            key={unit.seg.key}
-            stateKey={`work:${unit.seg.key}`}
-            entries={unit.seg.entries}
-            turnSettled={!live}
-          />
-        ) : unit.seg.kind === "plan" ? (
-          <PlanChecklist
-            key={unit.seg.key}
-            title="Todos"
-            entries={unit.seg.entries}
-            testId="todo-list"
-            className="animate-ai-fade-up"
-          />
-        ) : unit.seg.node.kind === "marker" ? (
-          <MarkerRow key={unit.seg.key} marker={unit.seg.node.marker} />
-        ) : unit.seg.node.kind === "artifact" ? (
-          <ArtifactRow key={unit.seg.key} node={unit.seg.node} />
-        ) : unit.seg.node.kind === "file" ? (
-          <FileChangeRow key={unit.seg.key} node={unit.seg.node} />
-        ) : unit.seg.node.kind === "reasoning" ? (
-          <SettledThought key={unit.seg.key} text={unit.seg.node.text} />
-        ) : unit.seg.node.kind === "followups" ? null : (
-          <TextBurst key={unit.seg.key} text={unit.seg.node.text} />
-        ),
+      {(rows.length > 0 || files.length > 0) && (
+        <TurnTrace
+          rows={rows}
+          header={header}
+          files={files}
+          live={live}
+          defaultOpen={trace.defaultOpen}
+        />
       )}
-      {artifactSegs.map((seg) =>
-        seg.kind === "node" && seg.node.kind === "artifact" ? (
-          <ArtifactRow key={seg.key} node={seg.node} />
+      {plan && (
+        <PlanChecklist
+          title="Todos"
+          entries={plan}
+          testId="todo-list"
+          className="animate-ai-fade-up"
+        />
+      )}
+      {reply && <TextBurst text={reply} />}
+      {/* Nothing to trace yet and nothing said: the boot gap keeps a live signal. */}
+      {live && rows.length === 0 && !reply && (
+        <WorkingIndicator createdAt={workingSince ?? null} />
+      )}
+      {tail.map((node) =>
+        node.kind === "file" ? (
+          <FileChangeRow key={node.key} node={node} />
+        ) : node.kind === "artifact" ? (
+          <ArtifactRow key={node.key} node={node} />
         ) : null,
       )}
       {sources.length > 0 && <TurnSourcesRow sources={sources} />}
       {showFollowups &&
-        followupSegs.map((seg) =>
-          seg.kind === "node" && seg.node.kind === "followups" ? (
-            <TimelineFollowups key={seg.key} suggestions={seg.node.suggestions} />
+        tail.map((node) =>
+          node.kind === "followups" ? (
+            <TimelineFollowups key={node.key} suggestions={node.suggestions} />
           ) : null,
         )}
-      {live && <WorkingIndicator createdAt={workingSince ?? null} stepLabel={workingLabel} />}
     </div>
   );
 }

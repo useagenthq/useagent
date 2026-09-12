@@ -4,9 +4,6 @@ import type { ThreadRelationship } from "@useagent/agent-client";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
 import type { ApiRun, RunStatus } from "./types";
 
-// The canonical-timeline flag is read at module load; flip it on BEFORE importing
-// the conversation so these turns render through the canonical lane.
-process.env.NEXT_PUBLIC_CANONICAL_TIMELINE = "1";
 const { Conversation } = await import("./conversation");
 type Turn = import("./conversation").Turn;
 
@@ -83,6 +80,7 @@ function render(turns: Turn[], productChildren: readonly ThreadRelationship[] = 
       pendingReply={null}
       onReply={async () => {}}
       productChildren={productChildren}
+      canonicalTimeline
     />,
   );
 }
@@ -171,13 +169,13 @@ function fanOutEvents(): StoredCanonicalEvent[] {
 
 test("fan-out turn rows always render a visible heading", () => {
   const html = render([makeTurn("run-fanout", "completed", fanOutEvents())]);
-  const rows = html.split('data-session-ui="work-entry-row"').slice(1);
+  const rows = html.split('data-testid="trace-row"').slice(1);
   expect(rows.length).toBeGreaterThan(0);
   for (const row of rows) {
-    const heading = /<span class="min-w-0 shrink truncate[^"]*">([^<]*)<\/span>/.exec(row)?.[1];
+    const heading = /data-testid="trace-row-label"[^>]*>([^<]*)<\/span>/.exec(row)?.[1];
     expect(heading?.trim().length ?? 0).toBeGreaterThan(0);
   }
-  // The newest visible row is the child_session_create call, named by its tool.
+  // The child_session_create call is a step line named by its tool.
   expect(html).toContain("Child session create");
 });
 
@@ -282,72 +280,100 @@ test("a reply turn without the child-session mark still renders as its own block
   expect(html).not.toContain('data-testid="subagents-fold"');
 });
 
-test("settled turn renders tool bursts through the T3 work grammar", () => {
+test("settled turn renders its work as one trace block", () => {
   const html = render([makeTurn("run-settled", "completed", settledEvents())]);
 
-  // The canonical lane drove the timeline, and tools render as T3 work rows.
+  // The canonical lane drove the timeline, and the work is ONE trace.
   expect(html).toContain('data-timeline-source="canonical"');
   // The timeline wrapper carries the shared 12px (space-y-3) rhythm so a trailing
   // published-artifact card / answer sits one step below the timeline above it,
   // not glued to it (artifact-block spacing fix).
   const timelineWrapper = html.match(/<div[^>]*data-timeline-source="canonical"[^>]*>/)?.[0] ?? "";
   expect(timelineWrapper).toContain("space-y-3");
-  expect(html).toContain('data-session-ui="work-group"');
-  expect(html).toContain('data-session-ui="work-entry-row"');
-  // The legacy ToolStepRow grammar no longer renders tool nodes.
+  expect(html.match(/data-testid="turn-trace"/g)).toHaveLength(1);
+  // A plain thread opens the trace: the skill receipt and the 3 tools are its
+  // step lines, one short line each, in the Thinking grammar.
+  expect(html).toContain('aria-expanded="true"');
+  expect(html.match(/data-testid="trace-row"/g)).toHaveLength(5);
+  // The context marker is a receipt, not a tool call. Pre-tool prose is one
+  // narration message inside the trace; the durable summary owns the reply.
+  expect(html).toContain("3 tool calls, 1 message, 1 failed");
+  expect(html).toContain(">Loaded skill<");
+  expect(html).toContain(">fix-loop<");
+  expect(html).toContain(">Run<");
+  expect(html).toContain(">bun test retry<");
+  expect(html).toContain('aria-label="Completed"');
+  // The old grammars no longer render tool nodes: no T3 work rows, no overflow
+  // fold, no marker rows, no legacy ToolStepRow.
+  expect(html).not.toContain('data-session-ui="work-group"');
+  expect(html).not.toContain('data-session-ui="work-entry-row"');
+  expect(html).not.toContain("previous tool calls");
+  expect(html).not.toContain('data-testid="marker-row"');
   expect(html).not.toContain('data-testid="tool-row"');
 
-  // The 3-tool burst folds behind the upstream overflow toggle (newest visible).
-  expect(html).toContain("+2 previous tool calls");
-
-  // Failed/success affordances from the ported status heuristics.
-  expect(html).toContain('aria-label="Completed"');
-
-  // Everything else is preserved: marker rows, narration bursts, the answer.
-  expect(html).toContain('data-testid="marker-row"');
+  // Narration followed by work stays in the trace. The durable summary is the
+  // only terminal answer outside it.
   expect(html).toContain("Scoping the retry budget now.");
+  expect(html).toContain("Scoped the retry budget per attempt chain.");
 });
 
-test("settled turn surfaces the failed tool once the fold is expanded", () => {
+test("canonical replay renders one Thinking owner when live reasoning is also buffered", () => {
+  const reasoning = ev("reasoning.delta", {
+    messageId: "reasoning-message",
+    text: "Checking the synthetic retry policy.",
+    identity: {
+      nativeEventId: "reasoning-event",
+      nativeSeq: seq + 1,
+      nativeMessageId: "reasoning-message",
+      nativePartId: "reasoning-part",
+    },
+  });
+  const turn = makeTurn("run-reasoning", "running", [reasoning, { ...reasoning, revision: 2 }]);
+  turn.liveReasoning = "Checking the synthetic retry policy.";
+  const html = render([turn]);
+
+  expect(html.match(/data-testid="thinking-header"/g)).toHaveLength(1);
+  expect(html.match(/data-family="reasoning"/g)).toHaveLength(1);
+});
+
+test("a timeline work row owns transient reasoning before its durable frame arrives", () => {
+  const turn = makeTurn("run-reasoning-race", "running", liveEvents());
+  turn.liveReasoning = "Checking the synthetic retry policy.";
+  const html = render([turn]);
+
+  expect(html.match(/data-testid="thinking-header"/g)).toHaveLength(1);
+  expect(html.match(/data-family="reasoning"/g)).toHaveLength(1);
+  expect(html).toContain("Checking the synthetic retry policy.");
+});
+
+test("settled turn shows the failed step as an x in the open trace", () => {
   const html = render([makeTurn("run-settled", "completed", settledEvents())]);
-  // The failure affordance belongs to a hidden (older) row; the fold itself and
-  // the newest visible row must still expose the failure heuristics' markup when
-  // the collapsed group carries the failing entry as its newest row.
-  const htmlNewestFailure = render([
-    makeTurn("run-failed-last", "completed", [
-      ev("tool.started", {
-        toolCallId: "only-bad",
-        name: "bash",
-        input: { command: "cat missing.txt" },
-      }),
-      ev("tool.completed", {
-        toolCallId: "only-bad",
-        status: "error",
-        error: "cat: missing.txt: No such file or directory",
-      }),
-    ]),
-  ]);
-  expect(htmlNewestFailure).toContain('aria-label="Failed"');
-  expect(html).toContain('data-session-ui="work-group"');
+  expect(html).toContain('data-status="failed"');
+  expect(html).toContain('aria-label="Failed"');
+  expect(html).toContain(">cat missing.txt<");
+  // Payloads stay behind the row until opened: the error text never renders inline.
+  expect(html).not.toContain("No such file or directory");
 });
 
-test("live turn tails with the T3 working indicator and hides the in-flight row", () => {
+test("live turn heads the trace with Thinking and the loader, and runs its last step", () => {
   const html = render([makeTurn("run-live", "running", liveEvents())]);
 
-  // Working indicator with the self-ticking timer and the in-flight step suffix.
-  expect(html).toContain('data-session-ui="working-indicator"');
-  expect(html).toContain("Working for");
-  // The in-flight step's suffix is the summarizer's label: for a shell step,
-  // the command line itself (never the "Run - <command>" row grammar).
-  expect(html).toContain("· bun run typecheck");
-  expect(html).not.toContain("· Run - bun run typecheck");
-  // The old LoadingState "Working" shimmer tail is gone from the timeline (no
-  // narration is streaming here, so nothing else may render it either).
-  expect(html).not.toContain("agent-progress-loading-text");
-
-  // Completed work folds T3-style even while live (newest visible, older hidden).
-  expect(html).toContain('data-session-ui="work-group"');
-  expect(html).toContain("+1 previous tool call");
+  // The header shimmers "Thinking" beside the pixel loader; the running step is
+  // its muted detail, named by the summarizer: for a shell step, the command
+  // line itself (never the "Run - <command>" row grammar).
+  expect(html).toContain('data-testid="turn-trace"');
+  expect(html).toContain('data-live="true"');
+  expect(html).toContain("agent-progress-loading-text");
+  expect(html).toContain(">Thinking<");
+  expect(html).toContain(">Run bun run typecheck<");
+  expect(html).not.toContain("Run - bun run typecheck");
+  // The in-flight step is a row with the loader in place of the check.
+  expect(html).toContain('data-status="running"');
+  expect(html).toContain('aria-label="Running"');
+  // Completed work stays visible above it; no T3 working indicator, no folds.
+  expect(html.match(/data-testid="trace-row"/g)).toHaveLength(3);
+  expect(html).not.toContain('data-session-ui="working-indicator"');
+  expect(html).not.toContain("previous tool call");
 });
 
 test("canonical OpenCode plan renders the latest checklist instead of a generic tool row", () => {

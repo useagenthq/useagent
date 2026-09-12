@@ -13,6 +13,7 @@
 import {
   type ApiStep,
   asRecord,
+  basename,
   deriveTrace,
   firstLine,
   parseStepCode,
@@ -27,6 +28,13 @@ export interface ToolSummary {
   readonly detail: string | null;
   /** The command line when the step ran on the shell (the row is a command row). */
   readonly command: string | null;
+  /** The verb half of the label on its own ("Run", "Recalled memory", "Read"). */
+  readonly verb: string;
+  /** What the verb acted on: the command, the path, the query, the playbook
+   *  name; null when the call had no object worth a chip. */
+  readonly object: string | null;
+  /** The object is code-like (a command, a path, a url, a slug) and reads in mono. */
+  readonly objectMono: boolean;
 }
 
 const LABEL_MAX = 96;
@@ -35,14 +43,37 @@ const DETAIL_MAX = 160;
 /** Tool names that mean "run this on the shell" across engines. */
 const SHELL_TOOLS = new Set(["bash", "shell", "execute", "command_execution"]);
 
-
-function clip(text: string, max: number): string {
+/** Trim a line to `max` characters with an ellipsis. Shared with the trace rows. */
+export function clip(text: string, max: number): string {
   const line = text.trim();
   return line.length <= max ? line : `${line.slice(0, max - 1).trimEnd()}…`;
 }
 
 function str(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/** The real call behind a generic bridge tool (`execute`, `gateway_tool_call`):
+ *  opencode's bridge names it `input.name`, codex's MCP bridge `input.tool`. */
+function bridgedToolName(input: Record<string, unknown> | null): string | null {
+  return str(input?.name) ?? str(input?.tool);
+}
+
+/** The names a step's tool call answers to, most specific first: the bridged
+ *  call name, the leaf of `code.tool`, then the leaf of the engine's title
+ *  (`mcp.useagent.skills_list`). The labels below and the icon family key on
+ *  these the same way. */
+export function toolStepNames(step: ApiStep): string[] {
+  const code = asRecord(parseStepCode(step));
+  const input = asRecord(code?.input);
+  const rawTool = str(code?.tool);
+  const title = str(code?.title);
+  const names = [
+    bridgedToolName(input),
+    rawTool ? toolLeafName(rawTool) : null,
+    title && /^[\w.:-]+$/.test(title) ? toolLeafName(title) : null,
+  ];
+  return [...new Set(names.filter((name): name is string => name !== null))];
 }
 
 // ── Result unwrapping ────────────────────────────────────────────────────────
@@ -107,45 +138,63 @@ export function unwrapToolOutput(output: string | null | undefined): string | nu
 
 // ── Labels ───────────────────────────────────────────────────────────────────
 
+interface KnownTool {
+  readonly verb: string;
+  readonly object: string | null;
+  readonly mono: boolean;
+  /** How the label joins verb and object: "Activated playbook: x", "Searched
+   *  the web for x", "Fetched x". */
+  readonly join: ": " | " for " | " ";
+}
+
 /** The human line for a gateway/product tool, or null when the name is not one. */
-function describeKnownTool(name: string, args: Record<string, unknown> | null): string | null {
+function describeKnownTool(name: string, args: Record<string, unknown> | null): KnownTool | null {
   const query = str(args?.query);
   const named = str(args?.name) ?? str(args?.skill) ?? str(args?.skill_name) ?? str(args?.id);
   switch (name.toLowerCase()) {
     case "memory_search":
     case "memory_read":
-      return "Recalled memory";
+      return { verb: "Recalled memory", object: query, mono: false, join: " " };
     case "memory_remember":
-      return "Remembered";
+      return { verb: "Remembered", object: null, mono: false, join: " " };
     case "memory_correct":
-      return "Corrected memory";
+      return { verb: "Corrected memory", object: null, mono: false, join: " " };
     case "memory_forget":
-      return "Forgot memory";
+      return { verb: "Forgot memory", object: null, mono: false, join: " " };
     case "skill":
     case "skill_activate":
     case "skills_activate":
-      return named ? `Activated playbook: ${named}` : "Activated playbook";
+      return { verb: "Activated playbook", object: named, mono: true, join: ": " };
     case "skill_list":
     case "skills_list":
     case "skill_search":
     case "skills_search":
-      return query ? `Searched playbooks for ${query}` : "Searched playbooks";
+      return { verb: "Searched playbooks", object: query, mono: false, join: " for " };
     case "gateway_tools_search":
-      return query ? `Searched tools for ${query}` : "Searched tools";
+      return { verb: "Searched tools", object: query, mono: false, join: " for " };
     case "gateway_tool_describe":
-      return named ? `Described tool ${named}` : "Described a tool";
+      return { verb: "Described tool", object: named, mono: true, join: " " };
     case "websearch":
     case "web_search":
-      return query ? `Searched the web for ${query}` : "Searched the web";
+      return { verb: "Searched the web", object: query, mono: false, join: " for " };
     case "webfetch":
     case "web_fetch":
     case "fetch": {
       const url = str(args?.url);
-      return url ? `Fetched ${url}` : "Fetched a page";
+      return { verb: "Fetched", object: url, mono: true, join: " " };
     }
     default:
       return null;
   }
+}
+
+/** The label a known tool reads as; memory recalls and page fetches keep their
+ *  short form when the object is missing. */
+function knownLabel(tool: KnownTool): string {
+  if (!tool.object) return tool.verb === "Fetched" ? "Fetched a page" : tool.verb;
+  // A memory recall names its query only in the chip, never in the title.
+  if (tool.verb === "Recalled memory") return tool.verb;
+  return `${tool.verb}${tool.join}${tool.object}`;
 }
 
 /** The command a shell step ran, from its input (string or argv) or payload. A
@@ -193,9 +242,28 @@ function structuralLabel(
   );
 }
 
+/** What an uncatalogued tool acted on, from the fields tools commonly name it
+ *  by; null when nothing readable is there (the row then carries no chip). */
+function namedObject(args: Record<string, unknown> | null): string | null {
+  return (
+    str(args?.query) ??
+    str(args?.name) ??
+    str(args?.path) ??
+    str(args?.file_path) ??
+    str(args?.filePath) ??
+    str(args?.url) ??
+    str(args?.pattern) ??
+    str(args?.skill) ??
+    str(args?.prompt) ??
+    str(args?.description) ??
+    str(args?.id)
+  );
+}
+
 /**
- * Summarize one tool step into `{ label, detail }`. Pure; re-derived from
- * `code_json` on every call so an in-place step update reads its new result.
+ * Summarize one tool step into `{ label, detail, command, verb, object }`. Pure;
+ * re-derived from `code_json` on every call so an in-place step update reads
+ * its new result.
  */
 export function summarizeToolStep(step: ApiStep): ToolSummary {
   const trace = deriveTrace(step);
@@ -206,20 +274,38 @@ export function summarizeToolStep(step: ApiStep): ToolSummary {
 
   const rawTool = str(code?.tool);
   const leaf = rawTool ? toolLeafName(rawTool) : null;
-  // The gateway's compact bridge (`gateway_tool_call`) carries the real tool as
-  // `input.name` + `input.arguments`; recognized by shape, whatever the engine
-  // titled the call.
-  const bridgedArgs = str(input?.name) ? asRecord(input?.arguments) : null;
+  // The gateway's compact bridge (`gateway_tool_call` / an ACP `execute`) carries
+  // the real tool as `input.name` (`input.tool` on codex) + `input.arguments`;
+  // recognized by shape, whatever the engine titled the call.
+  const bridgedName = bridgedToolName(input);
+  const bridgedArgs = bridgedName ? asRecord(input?.arguments) : null;
   const args = bridgedArgs ?? input;
-  const candidates = [bridgedArgs ? str(input?.name) : null, leaf, str(input?.name)];
-  for (const candidate of candidates) {
+  for (const candidate of [bridgedArgs ? bridgedName : null, ...toolStepNames(step)]) {
     const known = candidate ? describeKnownTool(candidate, args) : null;
-    if (known) return { label: clip(known, LABEL_MAX), detail, command: null };
+    if (known) {
+      return {
+        label: clip(knownLabel(known), LABEL_MAX),
+        detail,
+        command: null,
+        verb: known.verb,
+        object: known.object,
+        objectMono: known.mono,
+      };
+    }
   }
 
   const shell = trace.glyph === "run" || (leaf !== null && SHELL_TOOLS.has(leaf.toLowerCase()));
   const command = shell ? shellCommand(trace, code, input, leaf) : null;
-  if (command) return { label: shellLabel(command, trace), detail, command };
+  if (command) {
+    return {
+      label: shellLabel(command, trace),
+      detail,
+      command,
+      verb: "Run",
+      object: command,
+      objectMono: true,
+    };
+  }
 
   const verb = trace.verb.trim();
   const target = trace.target.trim();
@@ -236,8 +322,39 @@ export function summarizeToolStep(step: ApiStep): ToolSummary {
       label: verb || structuralLabel(step, code, input),
       detail: detail ?? (target ? clip(target, DETAIL_MAX) : null),
       command: null,
+      verb: verb || structuralLabel(step, code, input),
+      object: target || null,
+      objectMono: false,
     };
   }
-  const label = verb ? (target ? `${verb} ${target}` : verb) : structuralLabel(step, code, input);
-  return { label: clip(label, LABEL_MAX), detail, command: null };
+  // An ACP engine titles a read/search/list call as a sentence ("Read file
+  // '/tmp/x/README.md'", "Search for 'foo' in .") with an empty input; the
+  // quoted thing is the object and the sentence never becomes the label. The
+  // step label is cut at 60 characters, so the full title is read first and a
+  // quote the cut swallowed is tolerated.
+  const sentence = str(code?.title) ?? target;
+  const quoted = /'([^'…]+)'?/.exec(sentence)?.[1] ?? null;
+  const titled = quoted !== null && /^(?:Read|Search|List)\b/.test(sentence);
+  // A file-shaped target is the object; an uncatalogued tool names its object
+  // from its own arguments (a server attribution is never a chip).
+  const object = titled
+    ? trace.glyph === "read"
+      ? basename(quoted)
+      : quoted
+    : (trace.base ?? (trace.monoTarget ? target : null) ?? namedObject(args));
+  const label = verb
+    ? object && titled
+      ? `${verb} ${object}`
+      : target
+        ? `${verb} ${target}`
+        : verb
+    : structuralLabel(step, code, input);
+  return {
+    label: clip(label, LABEL_MAX),
+    detail,
+    command: null,
+    verb: verb || structuralLabel(step, code, input),
+    object: object || null,
+    objectMono: titled || Boolean(trace.base || trace.monoTarget),
+  };
 }

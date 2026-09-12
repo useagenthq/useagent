@@ -1,0 +1,14 @@
+{
+  "id": "codex-run",
+  "engine": "codex",
+  "summary": "The sample module is small, typed, and ready for review.",
+  "duration_ms": 7200,
+  "steps": [
+    {"id":"codex-step-context","run_id":"codex-run","idx":0,"kind":"task","label":"Preparing context and runtime…","chip":"boot","code_json":"{\"phase\":\"preparing\"}","created_at":"2026-01-01T09:00:00.000Z"},
+    {"id":"codex-step-list-playbooks","run_id":"codex-run","idx":1,"kind":"command","label":"mcp.example.skills_list","chip":"tool","code_json":"{\"tool\":\"execute\",\"input\":{\"server\":\"example\",\"tool\":\"skills_list\",\"arguments\":{}},\"output\":\"release-checklist v1\",\"status\":\"completed\"}","created_at":"2026-01-01T09:00:02.000Z"},
+    {"id":"codex-step-activate-playbook","run_id":"codex-run","idx":2,"kind":"command","label":"mcp.example.skill_activate","chip":"tool","code_json":"{\"tool\":\"execute\",\"input\":{\"server\":\"example\",\"tool\":\"skill_activate\",\"arguments\":{\"name\":\"release-checklist\"}},\"output\":\"Playbook activated.\",\"status\":\"completed\"}","created_at":"2026-01-01T09:00:03.000Z"},
+    {"id":"codex-step-run","run_id":"codex-run","idx":3,"kind":"command","label":"execute","chip":"bash","code_json":"{\"tool\":\"execute\",\"input\":{\"command\":\"bun test sample\"},\"output\":\"4 pass\",\"status\":\"completed\"}","created_at":"2026-01-01T09:00:04.000Z"},
+    {"id":"codex-step-read","run_id":"codex-run","idx":4,"kind":"command","label":"read","chip":"read","code_json":"{\"tool\":\"read\",\"input\":{\"file_path\":\"README.md\"},\"output\":\"Synthetic project overview.\",\"status\":\"completed\"}","created_at":"2026-01-01T09:00:05.000Z"},
+    {"id":"codex-step-search","run_id":"codex-run","idx":5,"kind":"command","label":"grep","chip":"search","code_json":"{\"tool\":\"grep\",\"input\":{\"query\":\"retryBudget\"},\"output\":\"src/retry.ts:12\",\"status\":\"completed\"}","created_at":"2026-01-01T09:00:06.000Z"}
+  ]
+}
