@@ -54,7 +54,7 @@ export function mergeOpenCodeProviderConfig(
       ...existingModels,
       [CEREBRAS_QWEN_MODEL.slice("cerebras/".length)]: {
         name: "Qwen 3.8 27B",
-        limit: { context: 65_536, output: 32_768 },
+        limit: { context: 65_536, output: 16_384 },
       },
       // Existing durable Gemma threads may still resume or receive replies.
       [CEREBRAS_GEMMA_MODEL.slice("cerebras/".length)]: {

@@ -111,7 +111,7 @@ describe("OpenCode generated config placement", () => {
         models: {
           "qwen-3.8-27b": {
             name: "Qwen 3.8 27B",
-            limit: { context: 65_536, output: 32_768 },
+            limit: { context: 65_536, output: 16_384 },
           },
           "gemma-4-31b": {
             name: "Gemma 4 31B",
@@ -124,6 +124,36 @@ describe("OpenCode generated config placement", () => {
     expect(claims).not.toBeNull();
     expect(claims!.exp).toBeGreaterThanOrEqual(before + 60_000);
     expect(claims!.exp).toBeLessThanOrEqual(after + 60_000);
+  });
+
+  test("keeps observed Qwen sessions below OpenCode's effective input budget", async () => {
+    process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    const prepared = await prepareOpencodeSandboxConfig(
+      {} as SandboxHandle,
+      runContext(),
+      {
+        provider: {
+          cerebras: {
+            models: {
+              "qwen-3.8-27b": {
+                name: "stale Qwen definition",
+                limit: { context: 65_536, output: 32_768 },
+              },
+            },
+          },
+        },
+      },
+    );
+    const cerebras = (prepared?.config.provider as Record<string, unknown>)
+      .cerebras as { models: Record<string, { limit: { context: number; output: number } }> };
+    const qwen = cerebras.models["qwen-3.8-27b"]!;
+    const inputHeadroom = qwen.limit.context - qwen.limit.output;
+
+    expect(qwen.limit).toEqual({ context: 65_536, output: 16_384 });
+    expect(inputHeadroom).toBe(49_152);
+    expect(42_320).toBeLessThan(inputHeadroom);
+    expect(37_691).toBeLessThan(inputHeadroom);
   });
 
   test("activates warm config in-process with a verified restart fallback", () => {
