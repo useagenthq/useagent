@@ -7,6 +7,7 @@ export default defineMeta({
   pages: [
     "index",
     "runs",
+    "bots",
     "artifacts",
     "knowledge",
     "memory",

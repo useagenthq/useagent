@@ -1,0 +1,77 @@
+---
+title: Bots, mentions, and routines
+description: Create a named agent preset, establish its home thread, schedule work, and hand tasks to it from another conversation.
+sidebar:
+  order: 4
+---
+
+Bots turn a repeated responsibility into a named product surface. A bot carries
+an engine, optional model, standing rules, repository set, memory scope, and an
+optional pinned skill. Its work still runs as ordinary useAgent threads and
+runs; the bot does not bypass admission, authorization, or event recording.
+
+## Prerequisites
+
+- The server exposes `bots: true` in `GET /api/capabilities` for your org.
+- At least one engine is ready.
+- GitHub is connected if the bot needs repositories.
+
+## Create the bot
+
+1. Open **Bots** and select **New bot**.
+2. Choose a name and a ready engine.
+3. Add its job, standing rules, repository set, memory scope, and optional skill.
+4. Send the first message.
+
+The first message creates the bot's home thread and atomically binds it to the
+bot. Later messages are admitted as replies in that thread. Engine, repository,
+skill, and memory defaults come from the established thread rather than being
+silently re-sent by the UI.
+
+:::note
+The bot's execution preset locks after its home thread exists. You can still
+edit descriptive fields and standing rules. This prevents an existing thread
+from being rebound to a different execution identity.
+:::
+
+## Use the home thread
+
+The bot page shows the roster and the selected bot's real session timeline.
+Questions and approvals wait in that thread. Archiving removes the bot from the
+roster and mention picker but keeps its past threads readable.
+
+## Add a routine
+
+In the bot details drawer, add a routine with a name, prompt, cadence, and
+timezone. Routines reuse the automations service and post into the bot's home
+thread.
+
+You can:
+
+- enable or pause a routine;
+- run it immediately as a test;
+- inspect its firing history;
+- delete it without deleting the bot's thread.
+
+Expected outcome: a scheduled or manual firing creates a normal run in the home
+thread and updates the routine's last-run time.
+
+## Mention a bot from another thread
+
+Type `@` in the composer, choose a bot, and send the message. The visible token
+is paired with a structured bot id in the request.
+
+The first mention from a parent thread opens a delegated product child thread
+for that bot. Later mentions continue that same delegated thread. The parent
+shows a receipt tied to the exact child turn, and the child remains an ordinary
+messageable useAgent thread.
+
+Handoffs inherit the parent thread's repositories. They do not reuse the bot's
+home-thread repository set, which keeps delegated work scoped to the context
+that requested it.
+
+## Bots API
+
+The browser uses `/api/bots` for presets and messages and nested
+`/api/bots/:id/routines` routes for schedules. See [Bots API](/api/bots) for the
+request shapes and lifecycle rules.

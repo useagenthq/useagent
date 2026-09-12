@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Install the two apps and bring up the backend and frontend dev servers.
+description: Install every Bun package, configure Postgres and provider prerequisites, then start the backend and frontend development servers.
 sidebar:
   order: 2
 ---
@@ -29,7 +29,7 @@ new work at a throwaway database. See
 
 ## Install
 
-The two apps and the five shared packages each carry their own lockfile, so
+The two apps and the shared packages each carry their own lockfile, so
 install inside each one:
 
 ```bash
@@ -55,11 +55,15 @@ Local dev is designed to boot with almost no configuration:
 - Requests without a session fall back to a seeded dev org and user, so every
   API works unauthenticated in local dev.
 
-Live model and sandbox work needs real keys in `backend/.env`:
+Live model and sandbox work needs real connections or deployment credentials:
 
-- A live chat turn needs `OPENROUTER_API_KEY`.
-- A sandboxed agent run needs a sandbox provider key: `DAYTONA_API_KEY` with the
-  default `SANDBOX_PROVIDER=daytona`.
+- A live chat turn needs a configured chat-model provider.
+- A sandboxed run needs exactly one configured `SANDBOX_PROVIDER`: `box`,
+  `cube`, or `daytona`, plus that plugin's endpoint, key, and template/snapshot
+  fields where required.
+- The selected engine and model need a healthy managed account or API-key
+  provider path. The signed-in actor's current answer is available from
+  `GET /api/capabilities`.
 
 ## Run the dev servers
 
@@ -80,11 +84,11 @@ with the product entirely through `http://localhost:3400`.
   </Step>
   <Step title="Frontend is up">
     `http://localhost:3400` loads the chat surface. A live chat turn needs
-    `OPENROUTER_API_KEY`.
+    a configured chat-model provider.
   </Step>
   <Step title="A run streams">
     Start an agent run and watch steps arrive live in the session timeline.
-    Needs a sandbox provider key (`DAYTONA_API_KEY` by default).
+    Needs the selected sandbox plugin and engine/model credential path to be ready.
   </Step>
 </Steps>
 
@@ -95,11 +99,11 @@ The root scripts you will actually use day to day are:
 ```bash
 bun run dev:backend      # Hono control plane on :3201
 bun run dev:frontend     # Next.js UI on :3400
-bun run typecheck        # frontend, backend, and all five shared packages
+bun run typecheck        # frontend, backend, and every checked shared package
 ```
 
-`bun run typecheck` must pass before any change is considered done. The remaining
-root scripts (`release:hosted`, `canary:hosted-release`,
-`release:provider-connection-bootstrap`, `stage:t3-dist`) are deploy-lane tooling
-covered in [Operations](/operations/deployment). For the full test and operations
-toolset, see [Verification](/operations/verification).
+`bun run typecheck` must pass before any change is considered done. App-specific
+commands live in each package. For example, use `(cd backend && bun run test)`,
+`(cd backend && bun run e2e)`, or `(cd backend && bun run e2e:real)` from the
+repository root. See [Verification](/operations/verification) before running a
+live-provider journey.

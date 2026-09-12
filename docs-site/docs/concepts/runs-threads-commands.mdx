@@ -14,9 +14,11 @@ truth: the frontend renders them but never invents them.
       src="/diagrams/run-lifecycle.svg"
       alt="Run lifecycle: acceptRunCommand accepts a durable command, the worker claims it, a sandbox is acquired, the engine runs one turn, steps and provider events land in Postgres, finalizeRun commits the terminal state, and a reply re-enters the same door with parent_run_id"
       style={{ display: "block", width: "100%", height: "auto" }}
+      width="900"
+      height="424"
     />
   </div>
-  <figcaption style={{ marginTop: "0.5rem", fontSize: "0.8125rem", color: "#737373", textAlign: "center" }}>
+  <figcaption>
     The run lifecycle: every channel enters through one durable command door, the Postgres event log is the source of truth, and a reply re-enters with parent_run_id.
   </figcaption>
 </figure>
@@ -43,16 +45,33 @@ One agent turn inside a thread, from an accepted command to a terminal result.
 The runs list returns thread roots; a single thread is fetched whole when you
 open it.
 
-### Child sessions
+### Product child threads
 
-An agent can spawn child work in-run through the `child_session_create`,
-`child_session_list`, `child_session_events`, and `child_session_gather`
-gateway tools (`backend/src/knowledge/gateway/child-session-tools.ts`). Each
-child is a queued serial turn on the same thread: at most one command per
-thread is in flight at a time (`backend/src/commands/dispatch.ts`), so children
-run one after another, never as a parallel process tree. The timeline renders
-their progress through the `child.started`, `child.updated`, and
-`child.completed` canonical events.
+An agent can create product-owned child work through the child-session gateway
+tools. Each child is an ordinary useAgent thread with its own root run, sandbox
+binding, engine, model, repositories, and durable event stream. The relationship
+record names its parent and family, so the UI can show the tree without merging
+child history into the parent.
+
+Product child threads are messageable. A follow-up is a normal
+`POST /api/runs` with `parent_run_id` set to a run in that child's thread. The
+backend re-authorizes the parent, inherits the child thread's engine and
+resources, and sends the turn through normal admission. Org API keys may use
+this exact `/api/runs` route; they cannot use the browser-only
+`POST /api/threads/:id/messages` convenience route.
+
+### Provider-native children
+
+Codex, Claude Code, OpenCode, and Pi may also report child tasks in their native
+event stream. Those children render in the same execution view, but they do not
+become product threads merely because a provider emitted a task id. They remain
+read-only unless the native driver has a verified, persisted resume/steer
+contract for that exact child session.
+
+The distinction is intentional: a product child is addressable backend state;
+a native child is provider evidence. Both can produce
+`child.started/updated/completed` canonical events without sharing control
+semantics.
 
 ## Command
 
@@ -93,7 +112,7 @@ include:
 | Tools and plans | `tool.started/progress/completed`, `plan.updated` |
 | Files and artifacts | `file.changed`, `artifact.created`, `artifact.delivered` |
 | Questions and approvals | `question.requested/resolved`, `approval.requested/resolved` |
-| Child sessions | `child.started/updated/completed` |
+| Child work | `child.started/updated/completed` |
 | Usage | `usage.updated` |
 
 Because the event log is the source of truth, the two lanes together fully
@@ -101,9 +120,9 @@ describe a run and can be replayed. The UI reduces them into the session
 timeline.
 
 :::note
-A run **survives a backend restart**. The sandbox keeps executing; on restart a
-recovery loop re-probes the session, streams the interim events into the timeline
-with a visible heartbeat, and adopts the real result rather than failing work
-that actually completed. See [Restart
+A run with a reconciliation-capable native session can **survive a backend
+restart**. The sandbox keeps executing; on restart a recovery loop re-probes the
+session, streams interim events into the timeline, and adopts the real result.
+Other combinations fail honestly rather than claiming recovery. See [Restart
 reconciliation](/concepts/sandboxes-and-desktop#restart-reconciliation).
 :::

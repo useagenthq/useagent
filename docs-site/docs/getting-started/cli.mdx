@@ -1,0 +1,90 @@
+---
+title: CLI and MCP
+description: Use the Bun CLI or MCP server to dispatch a task, fan out a bounded JSONL batch, watch progress, and collect durable results.
+sidebar:
+  order: 3
+---
+
+The `@useagent/cli` package sends normal, org-scoped useAgent runs from a local
+terminal. It does not create a separate execution path: every task enters the
+same admission lane, event ledger, sandbox policy, and thread UI as a browser
+request.
+
+## Prerequisites
+
+- Bun installed locally.
+- An org API key created in Settings.
+- The hosted base URL for the environment you intend to use.
+
+Keep the key in the environment. Do not put it in a JSONL task file, command
+argument, or repository.
+
+```bash
+export USEAGENT_API_KEY="uak_example_replace_me"
+export USEAGENT_BASE_URL="https://useagent.example.com"
+```
+
+## Run one task
+
+The CLI package is private and unpublished. Run its checked-in entrypoint from
+the repository root:
+
+```bash
+bun packages/cli/src/bin.ts run "summarize the release notes" \
+  --engine codex \
+  --repo acme/web \
+  --watch
+```
+
+Expected outcome: the command prints a run id and web URL. With `--watch`, it
+reports status changes on stderr and prints the final answer on stdout. A failed
+run exits non-zero.
+
+## Fan out a bounded batch
+
+Create one task per line:
+
+```jsonl
+{"prompt":"Check the auth boundary","engine":"codex","repos":["acme/api"]}
+{"prompt":"Review the mobile navigation","engine":"opencode","repos":["acme/web"]}
+```
+
+Then dispatch with explicit concurrency:
+
+```bash
+bun packages/cli/src/bin.ts fan tasks.jsonl \
+  --parallel 4 \
+  --qc "Return VERDICT: PASS only when the requested check is complete." \
+  --out results.jsonl
+```
+
+Each result line contains the prompt, run id, status, answer, URL, and optional
+verdict or error. QC is a real reply in the same thread, not an offline label.
+
+## Inspect one run
+
+```bash
+bun packages/cli/src/bin.ts status RUN_ID
+```
+
+The command prints the web URL and final answer when present. A missing or failed
+run exits non-zero.
+
+## Give a local agent fleet tools
+
+The checked-in `mcp` command starts a stdio MCP server with tools for dispatch, bounded
+parallel dispatch, atomic batches, result collection, and recent-run lookup.
+
+```bash
+claude mcp add useagent-fleet -- bun packages/cli/src/bin.ts mcp
+```
+
+Start the local agent with `USEAGENT_API_KEY` in its environment. The MCP server
+never broadens the API key's backend allowlist.
+
+## API key boundary
+
+API keys are stored as hashes, shown once at creation, and sent as
+`Authorization: Bearer uak_...`. A deny-by-default route allowlist limits them
+to fleet dispatch and read operations. Key creation and revocation require the
+browser session and cannot be performed with another API key.

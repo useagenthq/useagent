@@ -1,6 +1,6 @@
 ---
 title: Repository map
-description: Where each part of the platform lives, from the two apps to the shared contract packages.
+description: Navigate the frontend and backend apps, shared contracts, sandbox plugins, deployment code, and conformance surfaces.
 sidebar:
   order: 3
 ---
@@ -37,7 +37,7 @@ the contracts between them.
 ## How the pieces depend on each other
 
 <div style="background:#ffffff;border:1px solid #ebebeb;border-radius:12px;padding:12px;margin:24px 0;">
-  <img src="/diagrams/package-dependency-graph.svg" alt="Package dependency graph: frontend depends on agent-client, agent-harness, and artifact-workspace; backend depends on agent-client, agent-harness, artifact-formats, and artifact-workspace; agent-client depends on agent-harness and artifact-workspace; artifact-formats depends on artifact-workspace; conformance guards agent-client and agent-harness with contract tests." style="width:100%;height:auto;display:block;" />
+  <img src="/diagrams/package-dependency-graph.svg" alt="Package dependency graph: frontend depends on agent-client, agent-harness, and artifact-workspace; backend depends on agent-client, agent-harness, artifact-formats, and artifact-workspace; agent-client depends on agent-harness and artifact-workspace; artifact-formats depends on artifact-workspace; conformance guards agent-client and agent-harness with contract tests." style="width:100%;height:auto;display:block;" width="940" height="520" />
 </div>
 
 Every arrow is a real `file:` dependency in a `package.json`; the dashed arrows are the conformance package's contract tests over the client and harness.

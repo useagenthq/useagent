@@ -1,0 +1,103 @@
+---
+title: Verified support
+description: What Pro implements, what dated validation snapshots prove, and which combinations still require certification.
+sidebar:
+  order: 2
+---
+
+This page separates three claims that should not be collapsed:
+
+- **Implemented** means the current Pro code contains the driver or adapter.
+- **Ready** means the deployment can expose it after configuration and policy
+  checks.
+- **Verified** means the named path has current end-to-end evidence for this
+  snapshot.
+
+The authoritative runtime answer for a signed-in actor is
+`GET /api/capabilities`.
+
+## Evidence snapshot recorded 2026-09-05
+
+This is a dated release-validation snapshot, not a live health dashboard and not
+a statement about which commit is deployed now. Each result covers only the
+journey named in its row.
+
+| Evidence source | Journey | Observed result | Boundary |
+| --- | --- | --- | --- |
+| `e1649e5ed` | Claude Code on Box | Cold turn passed in 162.817 s; resume passed in 20.995 s with the same native session identity. | This does not certify repositories, children, artifacts, or other sandbox providers. |
+| `e1649e5ed` | Pi on Box | Basic native turn passed in 47.641 s. | No resume or broader engine/provider matrix was exercised. |
+| `30cc90499` | Claude Code on retained Box with a user-authorized repository | The real-repository turn passed in 80.299 s. | This is retained-workspace evidence, not fresh-clone evidence. |
+| `30cc90499` | Codex on Box with a fresh user-authorized repository | Authorization was correct, but the repository contents disappeared during overlapping cold-start preparation. | This fresh path did not pass at this fingerprint. The next retained turn passed in 24.107 s, and a second retry preserved the repository directory inode and Git `HEAD`. |
+| `728e0dc80` | OpenCode with Luna on Box | Cold turn passed in 57.916 s; resume passed in 9.036 s with the same native session identity. | This does not certify repositories, children, artifacts, or other models and providers. |
+| `728e0dc80` | Codex on Cube through the real backend | A pre-provisioned fixture passed a 39.559 s cold turn, an 8.481 s resume, and file-persistence checks. | This was not public fresh provisioning and is not a full Cube engine matrix certification. |
+| 2026-09-05 route check | Direct Cerebras routing | 38 direct requests returned HTTP 200. | This proves the direct route, not a complete native engine turn for every Cerebras model. |
+| 2026-09-05 route check | Qwen native completion | The completion looped and was cancelled. | This is not a passing turn. |
+
+The deployed release recorded here, `cd0a6e9d1`, changes fresh-sandbox preparation
+for the T3-backed runtime path: the selected stable native installation completes
+before repositories and inputs, and run-bound activation happens only after
+those resources finish. This mitigates the cold-start overlap observed at
+`30cc90499`; fresh-Box repository verification still failed after this change,
+so it does not resolve the repository-loss incident.
+
+The later merged commit `a0f14e830` includes a Qwen output-budget correction to
+leave sufficient input space in native OpenCode. It had not been deployed or
+verified in production when this evidence snapshot was recorded.
+
+Retained workspaces keep their existing parallel preparation where the runtime
+ownership contract allows it. Native drivers and lifecycle semantics are
+unchanged; this ordering change does not introduce ACP.
+
+## Runtime and pending certification
+
+The runtime artifact pinned by the backend manifest is authoritative for the
+bytes under test: source fingerprint
+`524d46b26f5ac85c82cd41e20f6c709d9f08db9b`. Artifact identity proves
+reproducibility, not engine/provider certification. Runtime release `v0.0.4`
+remains uncertified, and the OSS release remains held.
+
+The full Daytona real-backend matrix is still pending provider selection. An
+invalid isolated subscription canary does not prove that the Daytona provider
+failed, so it must not be used as a provider verdict.
+
+## Historical evidence at 70b1116
+
+| Path | Code state at 70b1116 | Historical evidence at 70b1116 |
+| --- | --- | --- |
+| Codex on Box | Implemented | Cold start, retained resume, child isolation, and replay were verified at this fingerprint. |
+| OpenCode on Box | Implemented | Cold execution, child isolation, and replay were verified at this fingerprint. |
+| Pi on Box | Implemented | Cold execution, child isolation, and replay were verified at this historical fingerprint. |
+| Claude Code on Box | Earlier implementation | The later native-health repair is not covered by this historical fingerprint. |
+| Cube runtime template | Implemented | The rebuilt template was ready and cold fork/boot had proof, but it was not activated or fully engine-certified at this fingerprint. |
+| Daytona matrix | Implemented | No fresh full engine/provider matrix was recorded for this fingerprint. |
+
+## Conditions that still apply
+
+Verification never overrides runtime conditions. A path is available only when:
+
+1. the deployment selects and configures the sandbox provider;
+2. the engine's native runtime can run on that provider;
+3. the actor has the required connected account or API key;
+4. the chosen model is policy-allowed and its provider is ready;
+5. the current provider session advertises the needed lifecycle capability.
+
+If any condition fails, the product should show the typed reason and keep the
+combination unavailable. It must not fall back to ACP, another engine, another
+sandbox provider, or a reduced lifecycle.
+
+## Children and replay
+
+The historical `70b1116` Box rows included isolated provider-native child
+evidence and durable replay. That evidence is not certification for the
+2026-09-05 snapshots and does not make every native child messageable. Product
+child threads are messageable because they are admitted useAgent threads. A
+provider-native child remains read-only until its exact driver and persisted
+session authority support a follow-up.
+
+## How to refresh this page
+
+Run deterministic tests first, then the provider-specific cold, resume, child,
+and replay journeys against the exact release image and credentials being
+claimed. Record results by engine, sandbox provider, auth mode, model, runtime
+generation, and commit. Do not carry certification forward across a changed
+fingerprint.

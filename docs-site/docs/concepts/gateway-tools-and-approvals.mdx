@@ -14,6 +14,8 @@ through the gateway.
     src="/diagrams/gateway-trust-boundary.svg"
     alt="Trust boundary diagram: the untrusted sandbox calls the gateway process on port 3202 with MCP tools/call and a Bearer tool token; the gateway reaches Postgres through a restricted role, provider APIs with server-side keys, GitHub, GCS, and Slack; an approval loop turns a pending request into a one-shot argument-bound capability."
     style={{ width: "100%", display: "block", borderRadius: "8px" }}
+    width="960"
+    height="520"
   />
 </div>
 
@@ -123,7 +125,7 @@ operations:
   </Step>
 </Steps>
 
-The approval lane is live and certified by the guarded release: a destructive
-gated tool pauses for the card, then resumes with the one-shot capability.
-Slack delivery of approval cards is deliberately deferred; the session timeline
-is the only approval surface today.
+For a supported gated tool, the session timeline pauses on the approval card and
+resumes only after the one-shot capability is consumed. Slack delivery of
+approval cards is not an approval surface; resolve the request in the session
+timeline.
