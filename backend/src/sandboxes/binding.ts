@@ -6,12 +6,13 @@ import { listProviderConnections } from "../provider-connections/repo";
 import { getTrustedProviderCredential } from "../provider-connections/service";
 import { resolveGatewayComputerApiKeyConnection } from "../provider-gateway/api-key-credentials";
 import {
-  sandboxProvider,
   sandboxProviderFor,
   sandboxProviderApiKey,
+  sandboxProviderApiKeyFor,
   sandboxProviderKind,
   sandboxTemplate,
 } from "./provider";
+import { isSandboxProviderKind } from "./plugins";
 
 /**
  * Which computer a run's sandbox lives on. The server's env provider is the
@@ -58,15 +59,26 @@ function isComputerKind(value: unknown): value is ComputerProviderKind {
 
 /** The server's own provider from env; null when no credential is configured. */
 export function envSandboxBinding(env: Readonly<Record<string, string | undefined>> = process.env): SandboxBinding | null {
+  const kind = sandboxProviderKind(env);
   const apiKey = sandboxProviderApiKey(env);
   if (apiKey === undefined) return null;
-  return { kind: sandboxProviderKind(env), provider: sandboxProvider(apiKey), snapshot: null, credential: "env", userId: null };
+  return { kind, provider: sandboxProviderFor(kind, apiKey, env), snapshot: null, credential: "env", userId: null };
 }
 
 function requireEnvBinding(deps: SandboxBindingDeps): SandboxBinding {
   const binding = (deps.envProvider ?? (() => envSandboxBinding(deps.env)))();
   if (!binding) throw new Error("sandbox provider credentials are unavailable");
   return binding;
+}
+
+function requireRecordedEnvBinding(kind: SandboxProviderKind, deps: SandboxBindingDeps): SandboxBinding {
+  const env = deps.env ?? process.env;
+  const apiKey = sandboxProviderApiKeyFor(kind, env);
+  if (apiKey === undefined) {
+    throw new Error(`sandbox provider credentials are unavailable for recorded ${kind} sandbox`);
+  }
+  const build = deps.providers?.[kind] ?? ((key: string) => sandboxProviderFor(kind, key, env));
+  return { kind, provider: build(apiKey), snapshot: null, credential: "env", userId: null };
 }
 
 async function userSandboxBinding(
@@ -151,6 +163,12 @@ async function bindingForRecorded(recorded: RecordedSandbox | null, deps: Sandbo
       throw new Error(`the ${recorded.sandboxProvider} connection that created this sandbox has been revoked`);
     }
     return user;
+  }
+  if (recorded?.sandboxProvider !== null && recorded?.sandboxProvider !== undefined) {
+    if (!isSandboxProviderKind(recorded.sandboxProvider)) {
+      throw new Error(`recorded sandbox provider ${recorded.sandboxProvider} is unsupported`);
+    }
+    return requireRecordedEnvBinding(recorded.sandboxProvider, deps);
   }
   return requireEnvBinding(deps);
 }
