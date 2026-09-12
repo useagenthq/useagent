@@ -26,6 +26,13 @@ export type SandboxCredentialSource = "env" | "user";
 export const COMPUTER_PROVIDER_KINDS = ["daytona", "box"] as const;
 export type ComputerProviderKind = (typeof COMPUTER_PROVIDER_KINDS)[number];
 
+export class PersonalSandboxConnectionUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PersonalSandboxConnectionUnavailableError";
+  }
+}
+
 export interface SandboxBinding {
   readonly kind: SandboxProviderKind;
   readonly provider: SandboxProvider;
@@ -156,11 +163,15 @@ interface RecordedSandbox {
 async function bindingForRecorded(recorded: RecordedSandbox | null, deps: SandboxBindingDeps): Promise<SandboxBinding> {
   if (recorded?.sandboxCredential === "user") {
     if (!recorded.orgId || !recorded.userId || !isComputerKind(recorded.sandboxProvider)) {
-      throw new Error("this sandbox was created on a personal computer whose owner can no longer be resolved");
+      throw new PersonalSandboxConnectionUnavailableError(
+        "this sandbox was created on a personal computer whose owner can no longer be resolved",
+      );
     }
     const user = await userSandboxBinding({ orgId: recorded.orgId, userId: recorded.userId }, recorded.sandboxProvider, deps);
     if (!user) {
-      throw new Error(`the ${recorded.sandboxProvider} connection that created this sandbox has been revoked`);
+      throw new PersonalSandboxConnectionUnavailableError(
+        `the ${recorded.sandboxProvider} connection that created this sandbox has been revoked`,
+      );
     }
     return user;
   }

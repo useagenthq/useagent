@@ -275,7 +275,7 @@ describe("sandbox binding", () => {
 
     // The deployment provider's authoritative listing returned neither id (everything else stays live).
     const others = (await listCurrentRetainedSandboxMappings()).map((m) => m.sandboxId).filter((id) => id !== "srv_gone" && id !== "bx_personal");
-    await clearMissingRetainedSandboxMappings(new Set(others));
+    await clearMissingRetainedSandboxMappings(new Set(others), "daytona");
 
     const [server] = await db.select({ sandboxId: runs.sandboxId }).from(runs).where(eq(runs.id, serverRun.body.id));
     const [personal] = await db.select({ sandboxId: runs.sandboxId }).from(runs).where(eq(runs.id, userRun.body.id));
