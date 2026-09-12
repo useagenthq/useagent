@@ -1,4 +1,6 @@
 import type { BotRow } from "../db/schema";
+import { handoffsAvailable } from "./handoffs";
+import { listBotRows } from "./repo";
 
 const BOTS_MAX = 25;
 
@@ -26,4 +28,10 @@ export function composeBotContext(bots: readonly Pick<BotRow, "name" | "title" |
     "</bots>",
     "",
   ].join("\n");
+}
+
+/** The block for a run's org: empty when bots or handoffs are unavailable, or the list cannot be read. */
+export async function botContextForOrg(orgId: string | null): Promise<string> {
+  if (!orgId || !handoffsAvailable(orgId)) return "";
+  return composeBotContext(await listBotRows(orgId).catch(() => []));
 }

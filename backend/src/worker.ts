@@ -21,7 +21,6 @@ import { listSkillCatalogForOrg } from "./skills/repo";
 import { resolveExecutableSkillPin } from "./skills/pins";
 import {
   formatSkillCatalogPrefill,
-  frameSkillCatalogContext,
   shouldPrefillSkillCatalog,
 } from "./skills/catalog";
 import { formatSkillMarkdown, frameSkillContext } from "./skills/format";
@@ -43,9 +42,8 @@ import {
   RUN_TIMING_STAGES,
   type RunStageTimer,
 } from "./runs/run-timing";
-import { handoffsAvailable } from "./bots/handoffs";
-import { composeBotContext } from "./bots/prompt-context";
-import { listBotRows } from "./bots/repo";
+import { botContextForOrg } from "./bots/prompt-context";
+import { frameTurnContexts } from "./engines/turn-contexts";
 import { formatInputContext, runInputFiles } from "./uploads/materialize";
 import { CHAT_SYSTEM_PROMPT } from "./chat/prompt";
 import { retrieveChatContext } from "./chat/retrieve";
@@ -360,16 +358,8 @@ async function runWorker(runId: string): Promise<void> {
     const providerSession = providerSessionState.binding ?? undefined;
     const engineSessionId = providerSession?.nativeSessionId ??
       providerSessionState.legacySessionId ?? undefined;
-    const turnContext = recall?.rendered ?? "";
-    const skillCatalogContext = skillCatalogPage
-      ? frameSkillCatalogContext(skillCatalogPage)
-      : "";
-    const resourceContext = resourceSnapshot
-      ? formatResourceAccessContext(resourceSnapshot)
-      : "";
-    const botContext = run.orgId && handoffsAvailable(run.orgId)
-      ? composeBotContext(await listBotRows(run.orgId).catch(() => []))
-      : "";
+    const { turnContext, skillCatalogContext, resourceContext } = frameTurnContexts({ recall, skillCatalogPage, resourceSnapshot });
+    const botContext = await botContextForOrg(run.orgId);
 
     if (turnContext || bootstrapContext || skillContext || skillCatalogContext || resourceContext) {
       console.log(

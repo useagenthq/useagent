@@ -73,7 +73,7 @@ const BACKEND_SIZE_BASELINE: Record<string, number> = {
   "runs/routes.ts": 1072,
   "memory/team-memory.ts": 1005,
   // Scripted mock execution and worker events live in focused worker modules.
-  "worker.ts": 840,
+  "worker.ts": 839,
 };
 
 describe("file-size ratchet (backend/src)", () => {
