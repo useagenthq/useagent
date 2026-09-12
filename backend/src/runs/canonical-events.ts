@@ -79,6 +79,16 @@ export function publishCanonicalizationComplete(e: CanonicalizationComplete): vo
   bus.emit(canonicalCompleteChannel(e.threadId), e);
 }
 
+/** Per-connection dedupe of completion records (`seen`: runId -> degraded). A run is
+ *  announced once; the one repeat admitted is the clean-to-degraded correction, since a
+ *  seal only ever moves in that direction. Mutates `seen` when it admits. */
+export function admitCanonicalComplete(seen: Map<string, boolean>, e: CanonicalizationComplete): boolean {
+  const prior = seen.get(e.runId);
+  if (prior !== undefined && (prior || !e.degraded)) return false;
+  seen.set(e.runId, e.degraded);
+  return true;
+}
+
 type SelectRow = typeof canonicalEvents.$inferSelect;
 
 function toInsertRow(e: CanonicalAgentEvent, revision: number) {

@@ -59,7 +59,11 @@ canonical events for fidelity and debugging. Four invariants govern the lane:
   seal then writes `complete_degraded` instead of `complete`. Both are final and
   trusted; the degraded record carries the lost-frame count on the
   `canonical-complete` frame so the client can tell the user part of the run's
-  activity is missing.
+  activity is missing. Ledger and seal serialize on one lock per run, so a loss
+  that lands after a clean seal corrects it and announces the completion again.
+  The ledger's memory copy bridges the gap until its rows land; a process
+  restart before an unflushed loss lands loses that marker and the run can then
+  seal clean, the one stated residual.
 - **Persist before publish.** Canonical rows are written with an immutable
   thread-wide delivery cursor and append-only revisions, and only then emitted
   to live subscribers, so a reconnect replays exactly what live showed.

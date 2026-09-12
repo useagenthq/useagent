@@ -52,6 +52,7 @@ test("a capture that fails transiently is retried inside the run's chain and is 
   // created inside the retry window and the retry lands the frame.
   const capture = recordProviderEvent(input);
   await new Promise((r) => setTimeout(r, 30));
+  expect(await providerEventExists(input.id)).toBe(false); // the first attempt failed
   await createRun({
     id: runId,
     prompt: "late run",

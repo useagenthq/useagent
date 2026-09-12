@@ -33,7 +33,7 @@ import {
 import { canonicalizationOutbox } from "../db/schema";
 import { getNativeFramesSince } from "./native-events";
 import { getRun, getStepsApi } from "./repo";
-import { captureLossForRun } from "./capture-loss";
+import { captureLossLock, flushCaptureLoss } from "./capture-loss";
 import { drainProviderEvents } from "./provider-events";
 import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "../engines/opencode-canonical";
 import type { CanonicalAgentEvent } from "@useagent/agent-harness/canonical";
@@ -135,18 +135,24 @@ async function claimDue(limit: number): Promise<Claimed[]> {
  *  publish happens AFTER this commits (see the worker), so subscribers only ever receive
  *  finalized rows. Returns the delivered rows to publish. */
 async function finalizeCanonicalForRun(
-  runId: string, events: readonly CanonicalAgentEvent[], w: Watermark, degraded: boolean,
-): Promise<DeliveredCanonicalEvent[]> {
+  runId: string, events: readonly CanonicalAgentEvent[], w: Watermark,
+): Promise<{ delivered: DeliveredCanonicalEvent[]; lostFrames: number }> {
   return db.transaction(async (tx) => {
+    // Serialize with the capture-loss ledger: a loss lands either before this read (and
+    // the seal is degraded) or after this commit (and then corrects the seal itself).
+    await tx.execute(captureLossLock(runId));
+    const [loss] = (await tx.execute(sql`
+      select count(*)::int as n from run_capture_loss where run_id = ${runId}`)) as unknown as Array<{ n: number | string }>;
+    const lostFrames = Number(loss?.n ?? 0);
     const delivered = await replaceCanonicalRowsTx(tx, runId, events);
     await tx
       .update(canonicalizationOutbox)
       .set({
-        state: degraded ? "complete_degraded" : "complete",
+        state: lostFrames > 0 ? "complete_degraded" : "complete",
         sourceFrameMax: w.frameMax, sourceStepCount: w.stepCount, lastError: null, updatedAt: new Date(),
       })
       .where(eq(canonicalizationOutbox.runId, runId));
-    return delivered;
+    return { delivered, lostFrames };
   });
 }
 
@@ -185,11 +191,11 @@ export async function canonicalizeRun(runId: string, threadId: string): Promise<
   if (!watermarkStable(before, after)) {
     return { complete: false, degraded: false, lostFrames: 0, delivered: [], watermark: after }; // source moved - retry against the newer source
   }
-  // The capture ledger is read AFTER the drain: a write that failed inside the run's chain
-  // has been counted by the time the chain settles, so the seal sees every loss.
-  const loss = await captureLossForRun(runId);
-  const delivered = await finalizeCanonicalForRun(runId, events, before, loss !== null);
-  return { complete: true, degraded: loss !== null, lostFrames: loss?.lostFrames ?? 0, delivered, watermark: before };
+  // A loss noted in this process is pushed to the ledger first; the seal transaction then
+  // reads the ledger under the lock it shares with the ledger flush.
+  await flushCaptureLoss(runId).catch(() => {});
+  const { delivered, lostFrames } = await finalizeCanonicalForRun(runId, events, before);
+  return { complete: true, degraded: lostFrames > 0, lostFrames, delivered, watermark: before };
 }
 
 /** Process up to `limit` due canonicalizations. Returns how many completed. */
