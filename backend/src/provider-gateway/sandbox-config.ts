@@ -23,21 +23,6 @@ import {
   type ToolGatewayCapabilityDescriptor,
 } from "../knowledge/gateway/descriptor";
 import { sandboxSecretMode, type SandboxSecretMode } from "../secrets/inject";
-import {
-  CANONICAL_SANDBOX_GENERATION_LABEL,
-  CANONICAL_SANDBOX_RUN_LABEL,
-  LEGACY_SANDBOX_GENERATION_LABEL,
-  LEGACY_SANDBOX_RUN_LABEL,
-  readCompatibleSandboxLabel,
-} from "../sandboxes/label-compat";
-export type { CompatibleSandboxLabel } from "../sandboxes/label-compat";
-export {
-  CANONICAL_SANDBOX_GENERATION_LABEL,
-  CANONICAL_SANDBOX_RUN_LABEL,
-  LEGACY_SANDBOX_GENERATION_LABEL,
-  LEGACY_SANDBOX_RUN_LABEL,
-  readCompatibleSandboxLabel,
-} from "../sandboxes/label-compat";
 
 export interface OpenCodeProviderOptions {
   readonly baseURL: string;
@@ -88,7 +73,11 @@ export function mergeOpenCodeProviderConfig(
 // from surviving a compatibility -> gateway-only transition.
 export const SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-gateway-only-secrets";
 const COMPATIBILITY_SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-compatibility-secrets";
-export const SANDBOX_GENERATION_LABEL = LEGACY_SANDBOX_GENERATION_LABEL;
+export const CANONICAL_SANDBOX_RUN_LABEL = "useagent-run";
+export const LEGACY_SANDBOX_RUN_LABEL = "skynet-run";
+export const CANONICAL_SANDBOX_GENERATION_LABEL = "useagent-provider-generation";
+export const LEGACY_SANDBOX_GENERATION_LABEL = "skynet-provider-generation";
+export const SANDBOX_GENERATION_LABEL = CANONICAL_SANDBOX_GENERATION_LABEL;
 const SANDBOX_MARKER = "$HOME/.skynet/provider-gateway-generation";
 const OPENAI_TOKEN_FILE = "$HOME/.skynet/provider-openai.token";
 export const CLAUDE_CONFIG_DIR = "/tmp/skynet-claude-config";
@@ -102,6 +91,24 @@ const CLAUDE_ONE_MILLION_CONTEXT_MODELS = new Set([
   "claude-opus-5",
   "claude-sonnet-5",
 ]);
+
+export interface CompatibleSandboxLabel {
+  readonly value: string | null;
+  readonly conflict: boolean;
+}
+
+export function readCompatibleSandboxLabel(
+  labels: Readonly<Record<string, string>>,
+  canonicalKey: string,
+  legacyKey: string,
+): CompatibleSandboxLabel {
+  const canonical = labels[canonicalKey];
+  const legacy = labels[legacyKey];
+  if (canonical !== undefined && legacy !== undefined && canonical !== legacy) {
+    return { value: null, conflict: true };
+  }
+  return { value: canonical ?? legacy ?? null, conflict: false };
+}
 
 function sandboxGeneration(mode: SandboxSecretMode = sandboxSecretMode()): string {
   return mode === "gateway_only" ? SANDBOX_GENERATION : COMPATIBILITY_SANDBOX_GENERATION;
@@ -338,7 +345,7 @@ export function providerGatewayWired(): boolean {
  * trust anchor used for warm reuse. */
 export function providerGatewaySandboxLabels(runId: string): Record<string, string> {
   return {
-    [LEGACY_SANDBOX_RUN_LABEL]: runId,
+    [CANONICAL_SANDBOX_RUN_LABEL]: runId,
     ...(providerGatewayWired()
       ? { [SANDBOX_GENERATION_LABEL]: sandboxGeneration() }
       : {}),

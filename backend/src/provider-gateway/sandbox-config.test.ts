@@ -286,8 +286,8 @@ describe("sandbox provider gateway config", () => {
     expect(verifyProviderToken(options.cerebras?.apiKey)).toMatchObject({ provider: "cerebras" });
     expect(SANDBOX_GENERATION).toBe("provider-gateway-v17-useagent-mcp-gateway-only-secrets");
     expect(providerGatewaySandboxLabels("run-a")).toEqual({
-      "skynet-run": "run-a",
-      "skynet-provider-generation": SANDBOX_GENERATION,
+      "useagent-run": "run-a",
+      "useagent-provider-generation": SANDBOX_GENERATION,
     });
   });
 
@@ -529,13 +529,13 @@ describe("sandbox provider gateway config", () => {
     expect(shellChecks).toBe(1);
 
     (sandbox as unknown as { labels: Record<string, string> }).labels = {
-      [CANONICAL_SANDBOX_GENERATION_LABEL]: currentLabels["skynet-provider-generation"]!,
+      [CANONICAL_SANDBOX_GENERATION_LABEL]: currentLabels[CANONICAL_SANDBOX_GENERATION_LABEL]!,
     };
     expect(await providerGatewaySandboxIsCurrent(sandbox)).toBe(true);
     expect(shellChecks).toBe(2);
 
     (sandbox as unknown as { labels: Record<string, string> }).labels = {
-      [CANONICAL_SANDBOX_GENERATION_LABEL]: currentLabels["skynet-provider-generation"]!,
+      [CANONICAL_SANDBOX_GENERATION_LABEL]: currentLabels[CANONICAL_SANDBOX_GENERATION_LABEL]!,
       "skynet-provider-generation": "conflicting-generation",
     };
     expect(await providerGatewaySandboxIsCurrent(sandbox)).toBe(false);
@@ -548,7 +548,7 @@ describe("sandbox provider gateway config", () => {
     process.env.NODE_ENV = "development";
     process.env.SANDBOX_SECRET_MODE = "compatibility";
     const compatibilityLabels = providerGatewaySandboxLabels("run-compatibility");
-    expect(compatibilityLabels["skynet-provider-generation"]).toBe(
+    expect(compatibilityLabels[CANONICAL_SANDBOX_GENERATION_LABEL]).toBe(
       "provider-gateway-v17-useagent-mcp-compatibility-secrets",
     );
 
@@ -566,7 +566,7 @@ describe("sandbox provider gateway config", () => {
 
     expect(await providerGatewaySandboxIsCurrent(retained)).toBe(false);
     expect(shellChecks).toBe(0);
-    expect(providerGatewaySandboxLabels("run-gateway")["skynet-provider-generation"]).toBe(
+    expect(providerGatewaySandboxLabels("run-gateway")[CANONICAL_SANDBOX_GENERATION_LABEL]).toBe(
       SANDBOX_GENERATION,
     );
   });
