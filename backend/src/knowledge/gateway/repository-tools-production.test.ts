@@ -14,10 +14,13 @@ const ensureRepoClone = mock(async (
 ) => {
   const [sandbox, workdir, entry, ctx, options] = args;
   if (
-    workdir === "/root/work" &&
+    workdir === "/home/user/work" &&
     entry === "upstream-org/backend:feature/auth" &&
     ctx.orgId === "org-1" &&
-    options?.useGithubCredential === true
+    options?.useGithubCredential === true &&
+    options.runtimeLayout?.home === "/home/user" &&
+    options.runtimeLayout.workdir === "/home/user/work" &&
+    options.runtimeLayout.runsAsRoot === false
   ) {
     return undefined;
   }
@@ -37,6 +40,7 @@ mock.module("../../engines/repo-prep", () => ({
 mock.module("../../sandboxes/provider", () => ({
   ...sandboxProviderModule,
   sandboxProviderApiKey: () => "sandbox-key",
+  sandboxProviderKind: () => "box",
   sandboxProvider: (apiKey: string) => {
     if (apiKey === "sandbox-key") {
       return {
@@ -76,7 +80,7 @@ describe("repository gateway production clone", () => {
       repos: ["upstream-org/backend:feature/auth"],
       memoryScope: "org",
     });
-    await setRunSandbox(runId, "sandbox-1");
+    await setRunSandbox(runId, "sandbox-1", { kind: "box", credential: "env" });
 
     try {
       const listed = await executeRepositoryTool(claims, "github_repositories", {});
@@ -101,9 +105,15 @@ describe("repository gateway production clone", () => {
       });
       expect(ensureRepoClone.mock.calls[0]?.[4]).toEqual({
         useGithubCredential: true,
+        runtimeLayout: {
+          home: "/home/user",
+          workdir: "/home/user/work",
+          runsAsRoot: false,
+          bunExecutable: "/usr/local/bin/bun",
+        },
       });
       expect(executeCommand).toHaveBeenCalledWith(
-        "git -c safe.directory='/root/work/upstream-org/backend' -C '/root/work/upstream-org/backend' rev-parse HEAD && git -c safe.directory='/root/work/upstream-org/backend' -C '/root/work/upstream-org/backend' rev-parse --abbrev-ref HEAD",
+        "git -c safe.directory='/home/user/work/upstream-org/backend' -C '/home/user/work/upstream-org/backend' rev-parse HEAD && git -c safe.directory='/home/user/work/upstream-org/backend' -C '/home/user/work/upstream-org/backend' rev-parse --abbrev-ref HEAD",
         undefined,
         undefined,
         15,
@@ -112,7 +122,7 @@ describe("repository gateway production clone", () => {
         repository: "upstream-org/backend",
         branch: "feature/auth",
         commit: "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d",
-        path: "/root/work/upstream-org/backend",
+        path: "/home/user/work/upstream-org/backend",
       });
       const provider = await import("../../sandboxes/provider");
       expect(typeof provider.sandboxTemplate).toBe("function");

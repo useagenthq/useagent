@@ -115,22 +115,91 @@ const runtimeFiles = Promise.all([
 export function buildPiRuntimeInstallCommand(input: {
   readonly runtimeRoot: string;
   readonly runtimeManifestDir: string;
+}): string {
+  const { runtimeRoot, runtimeManifestDir } = input;
+  return (
+    `rm -f '${runtimeRoot}/.lock-sha256'; ` +
+    `install -d -m 755 '${runtimeRoot}/current' && ` +
+    `cp '${runtimeManifestDir}/package.json' '${runtimeManifestDir}/package-lock.json' '${runtimeRoot}/current/' && ` +
+    `cd '${runtimeRoot}/current' && npm ci --omit=dev --silent`
+  );
+}
+
+function buildPiRuntimeVerificationCommand(input: {
+  readonly runtimeRoot: string;
   readonly bunExecutable: string;
   readonly executable: string;
+  readonly requireCacheLock: boolean;
 }): string {
-  const { runtimeRoot, runtimeManifestDir, bunExecutable, executable } = input;
+  const { runtimeRoot, bunExecutable, executable, requireCacheLock } = input;
+  const lock = `${runtimeRoot}/.lock-sha256`;
+  const packageLock = `${runtimeRoot}/current/package-lock.json`;
+  const cacheCheck = requireCacheLock
+    ? `grep -Fxq '${PI_RUNTIME_LOCK_SHA256}' '${lock}' 2>/dev/null || exit 10; `
+    : "";
+  const commit = requireCacheLock
+    ? ""
+    : `printf '%s\\n' '${PI_RUNTIME_LOCK_SHA256}' > '${lock}'`;
   return (
-    `if ! test -f '${runtimeRoot}/.lock-sha256' || ` +
-    `! grep -Fxq '${PI_RUNTIME_LOCK_SHA256}' '${runtimeRoot}/.lock-sha256'; then ` +
-    `{ install -d -m 755 '${runtimeRoot}/current' && ` +
-    `cp '${runtimeManifestDir}/package.json' '${runtimeManifestDir}/package-lock.json' '${runtimeRoot}/current/' && ` +
-    `cd '${runtimeRoot}/current' && npm ci --omit=dev --silent >/dev/null; } || ` +
-    `{ rm -f '${runtimeRoot}/.lock-sha256'; exit 1; }; fi; ` +
-    `if ! '${bunExecutable}' --version | grep -Fxq '${PI_BUN_VERSION}' || ` +
-    `! '${bunExecutable}' '${executable}' --version | grep -Fq '${PI_CODING_AGENT_VERSION}'; then ` +
-    `rm -f '${runtimeRoot}/.lock-sha256'; exit 1; fi; ` +
-    `printf '%s\\n' '${PI_RUNTIME_LOCK_SHA256}' > '${runtimeRoot}/.lock-sha256'`
+    cacheCheck +
+    `actual_lock="$(sha256sum -- '${packageLock}' 2>/dev/null | cut -d ' ' -f1)"; ` +
+    `if test "$actual_lock" != '${PI_RUNTIME_LOCK_SHA256}'; then ` +
+    `rm -f '${lock}'; printf '%s\\n' 'stage=verify package-lock mismatch' >&2; exit 21; fi; ` +
+    `if ! '${bunExecutable}' --version | grep -Fxq '${PI_BUN_VERSION}'; then ` +
+    `rm -f '${lock}'; printf '%s\\n' 'stage=verify Bun version mismatch' >&2; exit 22; fi; ` +
+    `if ! '${bunExecutable}' '${executable}' --version | grep -Fxq 'omp/${PI_CODING_AGENT_VERSION}'; then ` +
+    `rm -f '${lock}'; printf '%s\\n' 'stage=verify Pi version mismatch' >&2; exit 23; fi; ` +
+    commit
   );
+}
+
+type PiRuntimeCommandProcess = Pick<SandboxHandle["process"], "executeCommand">;
+type PiRuntimeCommandResult = Awaited<ReturnType<PiRuntimeCommandProcess["executeCommand"]>>;
+
+function describePiRuntimeStage(stage: "install" | "verify", result: PiRuntimeCommandResult): string {
+  const detail = (result.result ?? "").replace(/\s+/g, " ").trim().slice(-180);
+  return `${stage} exit ${result.exitCode ?? "?"}${detail ? `: ${detail}` : ""}`;
+}
+
+export async function ensurePiRuntimeInstalled(input: {
+  readonly process: PiRuntimeCommandProcess;
+  readonly runtimeRoot: string;
+  readonly runtimeManifestDir: string;
+  readonly bunExecutable: string;
+  readonly executable: string;
+}): Promise<void> {
+  const verificationInput = {
+    runtimeRoot: input.runtimeRoot,
+    bunExecutable: input.bunExecutable,
+    executable: input.executable,
+  };
+  const cached = await input.process.executeCommand(
+    buildPiRuntimeVerificationCommand({ ...verificationInput, requireCacheLock: true }),
+    undefined,
+    undefined,
+    20,
+  );
+  if ((cached.exitCode ?? 1) === 0) return;
+
+  const install = await input.process.executeCommand(
+    buildPiRuntimeInstallCommand(input),
+    undefined,
+    undefined,
+    300,
+  );
+  const verification = await input.process.executeCommand(
+    buildPiRuntimeVerificationCommand({ ...verificationInput, requireCacheLock: false }),
+    undefined,
+    undefined,
+    20,
+  );
+  if ((verification.exitCode ?? 1) === 0) return;
+
+  const stages = [
+    ...(install.exitCode === 0 ? [] : [describePiRuntimeStage("install", install)]),
+    describePiRuntimeStage("verify", verification),
+  ];
+  throw new Error(`failed to install Pi ${PI_CODING_AGENT_VERSION} (${stages.join("; ")})`);
 }
 
 /** Installs the pinned Pi runtime once per retained sandbox and refreshes only
@@ -190,20 +259,13 @@ export async function preparePiRuntime(
   ]);
   const bunExecutable = layout.bunExecutable ?? `${runtimeRoot}/current/node_modules/.bin/bun`;
   const executable = `${runtimeRoot}/current/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`;
-  const install = await sandbox.process.executeCommand(
-    buildPiRuntimeInstallCommand({
-      runtimeRoot,
-      runtimeManifestDir,
-      bunExecutable,
-      executable,
-    }),
-    undefined,
-    undefined,
-    300,
-  );
-  if ((install.exitCode ?? 1) !== 0) {
-    throw new Error(`failed to install Pi ${PI_CODING_AGENT_VERSION}`);
-  }
+  await ensurePiRuntimeInstalled({
+    process: sandbox.process,
+    runtimeRoot,
+    runtimeManifestDir,
+    bunExecutable,
+    executable,
+  });
   await startPiCredentialBroker({
     sandbox,
     provider: providerCapability,

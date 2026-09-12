@@ -6,7 +6,18 @@
 // "Claude Code native binary not found at ~/.local/bin/claude". Lock the invariant so
 // a future refactor can't quietly reintroduce a PATH-based check.
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   buildAcpInstallClause,
   acpRunningLabel,
@@ -16,6 +27,64 @@ import {
   codexAcpConfig,
 } from "./acp-server";
 import { CODEX_ACP_FULL_ACCESS_MODE, codexAgentModeRequest } from "./acp-provisioning";
+
+const tempHomes: string[] = [];
+
+afterEach(() => {
+  for (const home of tempHomes.splice(0)) rmSync(home, { force: true, recursive: true });
+});
+
+function fakeNpmHome(mode: "recover" | "fail"): { home: string; path: string } {
+  const home = mkdtempSync(join(tmpdir(), "useagent-acp-provisioning-"));
+  tempHomes.push(home);
+  const binDir = join(home, "fake-bin");
+  mkdirSync(binDir, { recursive: true });
+  const npm = join(binDir, "npm");
+  writeFileSync(
+    npm,
+    `#!/bin/sh
+count_file="$HOME/npm-count"
+count=0
+[ ! -f "$count_file" ] || count=$(cat "$count_file")
+count=$((count + 1))
+printf '%s' "$count" > "$count_file"
+printf '%s\\n' "$*" >> "$HOME/npm-calls"
+echo "registry output with secret-token-that-must-not-leak" >&2
+if [ "${mode}" = "recover" ] && [ "$count" -eq 2 ] && [ ! -e "$HOME/.npm/_cacache" ]; then
+  mkdir -p "$HOME/.local/bin"
+  printf '#!/bin/sh\\nexit 0\\n' > "$HOME/.local/bin/$EXPECTED_BIN"
+  chmod +x "$HOME/.local/bin/$EXPECTED_BIN"
+  exit 0
+fi
+exit 42
+`,
+  );
+  chmodSync(npm, 0o755);
+  return { home, path: `${binDir}:${process.env.PATH ?? "/usr/bin:/bin"}` };
+}
+
+function runInstallClause(
+  packages: { pkg: string; bin: string }[],
+  mode: "recover" | "fail",
+): { home: string; result: ReturnType<typeof Bun.spawnSync> } {
+  const { home, path } = fakeNpmHome(mode);
+  const result = Bun.spawnSync({
+    cmd: [
+      "sh",
+      "-c",
+      `${buildAcpInstallClause(packages)}printf RELAY > "$HOME/relay-staged"`,
+    ],
+    env: {
+      ...process.env,
+      EXPECTED_BIN: packages[0]?.bin ?? "",
+      HOME: home,
+      PATH: path,
+    },
+    stderr: "pipe",
+    stdout: "pipe",
+  });
+  return { home, result };
+}
 
 describe("ACP executable provisioning (#127)", () => {
   test("idempotency is keyed on the actual install path, not `command -v`", () => {
@@ -44,7 +113,55 @@ describe("ACP executable provisioning (#127)", () => {
     expect(clause).toContain('[ -x "$HOME/.local/bin/abin" ]');
     expect(clause).toContain('[ -x "$HOME/.local/bin/bbin" ]');
     expect((clause.match(/\/usr\/local\/share\/skynet-provider-bin/g) ?? []).length).toBe(4);
-    expect((clause.match(/npm install -g --prefix \$HOME\/\.local/g) ?? []).length).toBe(2);
+    expect((clause.match(/npm install -g --prefix \$HOME\/\.local/g) ?? []).length).toBe(4);
+  });
+
+  test("a corrupt npm cache is cleared once and the exact executable is verified", () => {
+    const bin = "useagent-acp-recovery-test";
+    const { home, path } = fakeNpmHome("recover");
+    mkdirSync(join(home, ".npm", "_cacache"), { recursive: true });
+    const recovered = Bun.spawnSync({
+      cmd: [
+        "sh",
+        "-c",
+        `${buildAcpInstallClause([{ pkg: "recovery-package@1", bin }])}printf RELAY > "$HOME/relay-staged"`,
+      ],
+      env: {
+        ...process.env,
+        EXPECTED_BIN: bin,
+        HOME: home,
+        PATH: path,
+      },
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+
+    expect(recovered.exitCode).toBe(0);
+    expect(readFileSync(join(home, "npm-count"), "utf8")).toBe("2");
+    expect(existsSync(join(home, ".npm", "_cacache"))).toBe(false);
+    expect(existsSync(join(home, ".local", "bin", bin))).toBe(true);
+    expect(existsSync(join(home, "relay-staged"))).toBe(true);
+  });
+
+  test("a permanent install failure stops later packages and relay staging", () => {
+    const { home, result } = runInstallClause(
+      [
+        { pkg: "first-package@1", bin: "first-acp-bin" },
+        { pkg: "later-package@1", bin: "later-acp-bin" },
+      ],
+      "fail",
+    );
+    const calls = readFileSync(join(home, "npm-calls"), "utf8");
+    const stderr = Buffer.from(result.stderr ?? []).toString();
+
+    expect(result.exitCode).not.toBe(0);
+    expect((calls.match(/first-package@1/g) ?? []).length).toBe(2);
+    expect(calls).not.toContain("later-package@1");
+    expect(existsSync(join(home, "relay-staged"))).toBe(false);
+    expect(stderr).toContain(
+      "ACP provisioning failed for first-acp-bin: executable missing after cache retry",
+    );
+    expect(stderr).not.toContain("secret-token-that-must-not-leak");
   });
 
   test("claude: the provisioned path is EXACTLY where CLAUDE_CODE_EXECUTABLE looks", () => {

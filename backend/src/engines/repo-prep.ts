@@ -5,7 +5,7 @@
 // inside the chosen repositories - never an empty workspace. One implementation,
 // one trust boundary; do not copy this per engine.
 // ---------------------------------------------------------------------------
-import type { SandboxHandle } from "../sandboxes/provider";
+import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
 import { createHash } from "node:crypto";
 import { resolveGithubSandboxToken } from "../github/auth";
 import { parseRepoRef } from "../github/repo-ref";
@@ -18,12 +18,26 @@ import { truncate } from "./util";
 type RepoSandbox = { readonly process: Pick<SandboxHandle["process"], "executeCommand"> };
 type RepoCloneContext = Pick<EngineRunContext, "emit" | "orgId">;
 type RepoCheckoutContext = RepoCloneContext & Pick<EngineRunContext, "repos">;
-type RepoCloneOptions = { readonly useGithubCredential?: boolean };
-const RUNTIME_USER_OWNERSHIP_ROOT = "/root/.skynet/repo-runtime-ownership";
+type RepoCloneOptions = {
+  readonly useGithubCredential?: boolean;
+  readonly runtimeLayout?: SandboxRuntimeLayout;
+};
+const ROOT_RUNTIME_LAYOUT: SandboxRuntimeLayout = {
+  home: "/root",
+  workdir: "/root/work",
+  runsAsRoot: true,
+};
 
-export function runtimeUserOwnershipMarker(repoPath: string): string {
+function repoStateRoot(layout: SandboxRuntimeLayout): string {
+  return `${layout.home}/.skynet`;
+}
+
+export function runtimeUserOwnershipMarker(
+  repoPath: string,
+  layout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT,
+): string {
   const digest = createHash("sha256").update(repoPath).digest("hex");
-  return `${RUNTIME_USER_OWNERSHIP_ROOT}/${digest}`;
+  return `${repoStateRoot(layout)}/repo-runtime-ownership/${digest}`;
 }
 
 /** POSIX single-quote a string for safe interpolation into a shell command. */
@@ -89,13 +103,27 @@ export async function ensureRepoClone(
   // The stored entry may carry a branch ("owner/name:branch"); split it so the
   // subdir/URL use the clean repo and the clone checks out the chosen branch.
   const { repo, branch } = parseRepoRef(entry);
+  const runtimeLayout = options.runtimeLayout ?? ROOT_RUNTIME_LAYOUT;
   const url = `https://github.com/${repo}.git`;
   // OWNER-QUALIFIED subdir (`<workdir>/<owner>/<name>`), NOT a bare basename. Two selected
   // repos that share a basename (`a/widget` + `b/widget`) get distinct checkouts instead of
   // colliding on one directory (same-basename collision).
   const dir = `${workdir}/${repo}`;
-  const runtimeOwnershipMarker = runtimeUserOwnershipMarker(dir);
+  const runtimeOwnershipMarker = runtimeUserOwnershipMarker(dir, runtimeLayout);
+  const runtimeOwnershipRoot = `${repoStateRoot(runtimeLayout)}/repo-runtime-ownership`;
+  const stagingRoot = `${repoStateRoot(runtimeLayout)}/repo-staging`;
   const wantBranch = branch ?? "";
+  const matchingOriginState = runtimeLayout.runsAsRoot
+    ? `if [ "$O" = 1000 ] && [ -f ${shq(runtimeOwnershipMarker)} ]; then echo state:reuse; else echo state:ownership; fi; ` +
+      `elif [ "$O" = 0 ]; then echo state:branch; else echo state:agent-branch; fi; `
+    : `if [ "$O" = "$CURRENT_UID" ] && [ -f ${shq(runtimeOwnershipMarker)} ]; then echo state:reuse; else echo state:ownership; fi; ` +
+      `elif [ "$O" = "$CURRENT_UID" ]; then echo state:branch; else echo state:agent-branch; fi; `;
+  const staleOriginState = runtimeLayout.runsAsRoot
+    ? `elif [ "$O" = 0 ] && [ -f "$DIR/.git/skynet-owned" ]; then echo state:owned-stale; `
+    : "";
+  const ownerProbe = runtimeLayout.runsAsRoot
+    ? `O="$(stat -c %u "$DIR" 2>/dev/null)"; `
+    : `O="$(stat -c %u "$DIR" 2>/dev/null)"; CURRENT_UID="$(id -u)"; `;
   // NON-DESTRUCTIVE identity pre-check for a warm/reused sandbox. Report the EXACT state of the
   // destination so we NEVER rm -rf an unexpected directory:
   //   reuse       - a checkout of the RIGHT repo on the right branch -> fast skip.
@@ -110,14 +138,13 @@ export async function ensureRepoClone(
     `DIR=${shq(dir)}; ` +
     `if [ ! -e "$DIR" ]; then echo state:absent; ` +
     `elif [ -d "$DIR/.git" ]; then ` +
-    `O="$(stat -c %u "$DIR" 2>/dev/null)"; ` +
+    ownerProbe +
     `U="$(git -c safe.directory="$DIR" -C "$DIR" remote get-url origin 2>/dev/null)"; ` +
     `B="$(git -c safe.directory="$DIR" -C "$DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"; ` +
     `if [ "$U" = ${shq(url)} ]; then ` +
     `if [ -z ${shq(wantBranch)} ] || [ "$B" = ${shq(wantBranch)} ]; then ` +
-    `if [ "$O" = 1000 ] && [ -f ${shq(runtimeOwnershipMarker)} ]; then echo state:reuse; else echo state:ownership; fi; ` +
-    `elif [ "$O" = 0 ]; then echo state:branch; else echo state:agent-branch; fi; ` +
-    `elif [ "$O" = 0 ] && [ -f "$DIR/.git/skynet-owned" ]; then echo state:owned-stale; ` +
+    matchingOriginState +
+    staleOriginState +
     `else echo state:foreign; fi; ` +
     `else echo state:occupied; fi`;
   const idState = (await sandbox.process.executeCommand(idScript, undefined, undefined, 15)).result ?? "";
@@ -140,28 +167,52 @@ export async function ensureRepoClone(
   if (idState.includes("state:occupied")) {
     throw new Error(`refusing to prepare ${repo}: ${dir} holds existing content not created by useAgent`);
   }
+  if (!runtimeLayout.runsAsRoot && idState.includes("state:owned-stale")) {
+    throw new Error(
+      `refusing to replace ${repo} in a non-root retained checkout; start a fresh workspace`,
+    );
+  }
 
   // One-shot GitHub credential (an exact-repo App token, or a dev-gated local PAT). Passed via
   // GIT_CONFIG_* ENV ONLY (never the git argv / .git-config / logs / prompt), applied for THIS
   // operation and never persisted. Absent -> public repo. Shared by the switch + clone paths.
-  const authEnv = await githubAuthEnv(repo, ctx.orgId, options);
+  // Non-root providers run control commands and the agent as the same uid.
+  // Never place a backend-held repository token in that shared process space;
+  // public clones still work and private repositories fail closed at Git.
+  const authEnv = await githubAuthEnv(repo, ctx.orgId, {
+    ...options,
+    useGithubCredential: runtimeLayout.runsAsRoot
+      ? options.useGithubCredential
+      : false,
+  });
 
-  // ABSENT or a useAgent-OWNED stale checkout: clone into a UNIQUE TEMP directory under a
-  // root-owned staging root, validate its origin, stamp the ownership marker, then ATOMICALLY
-  // rename into place. The owner-qualified destination parent is also root-owned, so the runtime
-  // user cannot swap workspace pathnames while credentialed Git is running or during placement.
-  // A failed/interrupted clone only ever leaves root-owned staging content (which we clean), never
+  // ABSENT or a useAgent-OWNED stale checkout: clone into a UNIQUE TEMP directory under the
+  // provider runtime user's private state root, validate its origin, stamp the ownership marker,
+  // then ATOMICALLY rename into place. The owner-qualified destination parent must be owned by the
+  // same effective uid that executes the command, never by an arbitrary account. A failed or
+  // interrupted clone only ever leaves private staging content (which we clean), never
   // a partial destination. `-b <branch>` selects the branch; a missing branch fails honestly.
   const allowReplace = idState.includes("state:owned-stale") ? "yes" : "no";
   const branchArg = branch ? `-b ${shq(branch)} ` : "";
+  const stagingSetup = runtimeLayout.runsAsRoot
+    ? `STAGE_ROOT=${shq(stagingRoot)}; install -d -o 0 -g 0 -m 700 "$STAGE_ROOT"; `
+    : `STAGE_ROOT=${shq(stagingRoot)}; OWNERSHIP_ROOT=${shq(runtimeOwnershipRoot)}; ` +
+      `install -d -m 700 "$STAGE_ROOT" "$OWNERSHIP_ROOT"; `;
+  const cloneLog = runtimeLayout.runsAsRoot
+    ? `L="$(mktemp)"; `
+    : `L="$(mktemp "$STAGE_ROOT/log.XXXXXX")"; `;
+  const writeOwnershipReceipt = runtimeLayout.runsAsRoot
+    ? ""
+    : `printf 'uid=%s\n' "$CURRENT_UID" > ${shq(runtimeOwnershipMarker)}; chmod 600 ${shq(runtimeOwnershipMarker)}; `;
   const script =
     `set -e; DIR=${shq(dir)}; ALLOW=${allowReplace}; PARENT="$(dirname "$DIR")"; ` +
     `if [ ! -e "$PARENT" ]; then mkdir "$PARENT" 2>/dev/null || true; fi; ` +
-    `if [ ! -d "$PARENT" ] || [ -L "$PARENT" ] || [ "$(stat -c %u "$PARENT" 2>/dev/null)" != 0 ]; ` +
+    `CURRENT_UID="$(id -u)"; ` +
+    `if [ ! -d "$PARENT" ] || [ -L "$PARENT" ] || [ "$(stat -c %u "$PARENT" 2>/dev/null)" != "$CURRENT_UID" ]; ` +
     `then echo clone:parent-untrusted; exit 1; fi; chmod 755 "$PARENT"; ` +
-    `STAGE_ROOT=/root/.skynet/repo-staging; install -d -o 0 -g 0 -m 700 "$STAGE_ROOT"; ` +
+    stagingSetup +
     `rm -f ${shq(runtimeOwnershipMarker)}; ` +
-    `TMP="$(mktemp -d "$STAGE_ROOT/clone.XXXXXX")"; L="$(mktemp)"; ` +
+    `TMP="$(mktemp -d "$STAGE_ROOT/clone.XXXXXX")"; ` + cloneLog +
     `if ! git clone ${branchArg}${shq(url)} "$TMP" >"$L" 2>&1; then echo clone:failed; tail -c 300 "$L"; rm -rf "$TMP" "$L"; exit 1; fi; ` +
     `RU="$(git -C "$TMP" remote get-url origin 2>/dev/null)"; ` +
     `if [ "$RU" != ${shq(url)} ]; then echo clone:badorigin; rm -rf "$TMP" "$L"; exit 1; fi; ` +
@@ -173,10 +224,12 @@ export async function ensureRepoClone(
     // closed. Unowned content is never removed.
     `BAK="$TMP.old"; ` +
     `if [ -e "$DIR" ]; then ` +
-    `if [ "$ALLOW" = yes ] || [ -f "$DIR/.git/skynet-owned" ]; then ` +
+    `if [ "$ALLOW" = yes ]; then ` +
     `mv "$DIR" "$BAK" 2>/dev/null || { echo clone:collision; rm -rf "$TMP" "$L"; exit 1; }; ` +
     `else echo clone:collision; rm -rf "$TMP" "$L"; exit 1; fi; fi; ` +
-    `if mv -T "$TMP" "$DIR" 2>/dev/null; then rm -rf "$BAK" "$L"; echo clone:ok; ` +
+    `if mv -T "$TMP" "$DIR" 2>/dev/null; then ` +
+    writeOwnershipReceipt +
+    `rm -rf "$BAK" "$L"; echo clone:ok; ` +
     `else [ -e "$BAK" ] && mv "$BAK" "$DIR" 2>/dev/null; rm -rf "$TMP" "$L"; echo clone:collision; exit 1; fi`;
   await ctx.emit({
     kind: "command",
@@ -188,7 +241,7 @@ export async function ensureRepoClone(
   if ((res.exitCode ?? 1) !== 0 || /clone:(failed|badorigin|collision|parent-untrusted)/.test(out)) {
     if (/clone:parent-untrusted/.test(out)) {
       throw new Error(
-        `refusing to prepare ${repo}: workspace repository parent is not root-owned`,
+        `refusing to prepare ${repo}: workspace repository parent is not ${runtimeLayout.runsAsRoot ? "root-owned" : "owned by the sandbox runtime user"}`,
       );
     }
     if (/clone:collision/.test(out)) {
@@ -214,6 +267,7 @@ export async function checkoutPullRequestResources(
   workdir: string,
   resources: readonly RunResource[],
   ctx: RepoCheckoutContext,
+  runtimeLayout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT,
 ): Promise<readonly string[]> {
   const selectedRepos = new Set(
     (ctx.repos ?? []).map((entry) => parseRepoRef(entry).repo.toLowerCase()),
@@ -231,26 +285,32 @@ export async function checkoutPullRequestResources(
 
   for (const change of changes) {
     const { repository, number, revision } = change.locator;
-    const authEnv = await githubAuthEnv(repository, ctx.orgId, {});
+    const authEnv = await githubAuthEnv(repository, ctx.orgId, {
+      useGithubCredential: runtimeLayout.runsAsRoot,
+    });
     const dir = `${workdir}/${repository}`;
-    const runtimeOwnershipMarker = runtimeUserOwnershipMarker(dir);
+    const runtimeOwnershipMarker = runtimeUserOwnershipMarker(dir, runtimeLayout);
+    const rootOwnershipChecks = runtimeLayout.runsAsRoot
+      ? `if [ "$OWNER" = 1000 ]; then ` +
+        `ACTUAL="$(git -c safe.directory="$DIR" -C "$DIR" rev-parse HEAD 2>/dev/null)"; ` +
+        `if [ -n "$EXPECTED" ] && [ "$ACTUAL" = "$EXPECTED" ]; then rm -f "$L"; echo "pr:reuse sha=$ACTUAL"; exit 0; fi; ` +
+        `echo pr:agent-owned; rm -f "$L"; exit 1; fi; ` +
+        `if [ "$OWNER" != 0 ]; then echo pr:ownership-untrusted; rm -f "$L"; exit 1; fi; ` +
+        `if ! UNTRUSTED="$(find "$DIR" -xdev \\( ! -uid 0 -o ! -gid 0 -o -perm /022 \\) -print -quit 2>/dev/null)"; ` +
+        `then echo pr:ownership-check-failed; rm -f "$L"; exit 1; fi; ` +
+        `if [ -n "$UNTRUSTED" ]; then echo pr:ownership-incomplete; rm -f "$L"; exit 1; fi; `
+      : `CURRENT_UID="$(id -u)"; ` +
+        `if [ "$OWNER" != "$CURRENT_UID" ] || [ ! -f ${shq(runtimeOwnershipMarker)} ] || [ ! -f "$DIR/.git/skynet-owned" ]; ` +
+        `then echo pr:ownership-untrusted; rm -f "$L"; exit 1; fi; ` +
+        `ACTUAL="$(git -c safe.directory="$DIR" -C "$DIR" rev-parse HEAD 2>/dev/null)"; ` +
+        `if [ -n "$EXPECTED" ] && [ "$ACTUAL" = "$EXPECTED" ]; then rm -f "$L"; echo "pr:reuse sha=$ACTUAL"; exit 0; fi; `;
     const remoteRef = `refs/pull/${number}/head`;
     const localRef = `refs/skynet/pull/${number}/head`;
     const expected = revision ?? "";
     const script =
       `set -e; DIR=${shq(dir)}; EXPECTED=${shq(expected)}; L="$(mktemp)"; ` +
       `OWNER="$(stat -c %u "$DIR" 2>/dev/null)"; ` +
-      `if [ "$OWNER" = 1000 ]; then ` +
-      `ACTUAL="$(git -c safe.directory="$DIR" -C "$DIR" rev-parse HEAD 2>/dev/null)"; ` +
-      `if [ -n "$EXPECTED" ] && [ "$ACTUAL" = "$EXPECTED" ]; then rm -f "$L"; echo "pr:reuse sha=$ACTUAL"; exit 0; fi; ` +
-      `echo pr:agent-owned; rm -f "$L"; exit 1; fi; ` +
-      `if [ "$OWNER" != 0 ]; then echo pr:ownership-untrusted; rm -f "$L"; exit 1; fi; ` +
-      // A previous depth-first ownership transfer may have been interrupted before changing the
-      // repository root itself. Prove every entry is still root-owned and not writable by the
-      // runtime user before any credentialed Git mutation; otherwise require a fresh workspace.
-      `if ! UNTRUSTED="$(find "$DIR" -xdev \\( ! -uid 0 -o ! -gid 0 -o -perm /022 \\) -print -quit 2>/dev/null)"; ` +
-      `then echo pr:ownership-check-failed; rm -f "$L"; exit 1; fi; ` +
-      `if [ -n "$UNTRUSTED" ]; then echo pr:ownership-incomplete; rm -f "$L"; exit 1; fi; ` +
+      rootOwnershipChecks +
       `rm -f ${shq(runtimeOwnershipMarker)}; ` +
       `if ! git -c safe.directory="$DIR" -C "$DIR" fetch --force --quiet origin ${shq(`${remoteRef}:${localRef}`)} >"$L" 2>&1; ` +
       `then echo pr:fetch-failed; tail -c 300 "$L"; rm -f "$L"; exit 1; fi; ` +
@@ -260,6 +320,9 @@ export async function checkoutPullRequestResources(
       `then echo "pr:sha-mismatch actual=$ACTUAL"; rm -f "$L"; exit 1; fi; ` +
       `if ! git -c safe.directory="$DIR" -C "$DIR" checkout --detach ${shq(localRef)} >"$L" 2>&1; ` +
       `then echo pr:checkout-failed; tail -c 300 "$L"; rm -f "$L"; exit 1; fi; ` +
+      (runtimeLayout.runsAsRoot
+        ? ""
+        : `printf 'uid=%s\n' "$CURRENT_UID" > ${shq(runtimeOwnershipMarker)}; chmod 600 ${shq(runtimeOwnershipMarker)}; `) +
       `rm -f "$L"; echo "pr:ok sha=$ACTUAL"`;
 
     await ctx.emit({
@@ -317,6 +380,7 @@ export async function prepareRepos(
   sandbox: RepoSandbox,
   workdir: string,
   ctx: EngineRunContext,
+  runtimeLayout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT,
 ): Promise<readonly string[]> {
   const repos = ctx.repos ?? [];
   const end = ctx.timing?.begin(RUN_TIMING_STAGES.repoPrep);
@@ -330,6 +394,7 @@ export async function prepareRepos(
       if (ctx.signal.aborted) throw new Error("run aborted (timeout)");
       const changed = await ensureRepoClone(sandbox, workdir, r, ctx, {
         useGithubCredential: shouldUseGithubCredential(r, ctx.resolvedResources ?? []),
+        runtimeLayout,
       });
       if (changed) changedPaths.push(`${workdir}/${parseRepoRef(r).repo}`);
     }

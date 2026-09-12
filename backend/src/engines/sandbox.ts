@@ -1,4 +1,4 @@
-import { type SandboxHandle } from "../sandboxes/provider";
+import { sandboxRuntimeLayout, type SandboxHandle } from "../sandboxes/provider";
 import { sandboxPlugin } from "../sandboxes/plugins";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import {
@@ -579,13 +579,15 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         // The documented CLI fallback must honor the same persisted repository
         // and change-resource scope as the resident ACP/runtime adapters. Prepare
         // the base checkout first, then pin an authorized PR to its exact head.
-        const workdir = `${sandboxPlugin(binding.kind).home}/work`;
-        await prepareRepos(box, workdir, ctx);
+        const runtimeLayout = sandboxRuntimeLayout(binding.kind);
+        const workdir = runtimeLayout.workdir;
+        await prepareRepos(box, workdir, ctx, runtimeLayout);
         await checkoutPullRequestResources(
           box,
           workdir,
           ctx.resolvedResources ?? [],
           ctx,
+          runtimeLayout,
         );
 
         // Explicit native-session resume: id from the DB (previous turn, same

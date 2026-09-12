@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildPiRuntimeInstallCommand,
+  ensurePiRuntimeInstalled,
   preparePiRuntime,
   piApiForProvider,
   piModelSelection,
@@ -47,7 +48,7 @@ describe("Pi runtime configuration", () => {
     });
   });
 
-  test("does not stamp the runtime lock when npm fails over old matching binaries", async () => {
+  test("accepts an ambiguous install only after exact runtime verification", async () => {
     const root = await mkdtemp(join(tmpdir(), "useagent-pi-install-"));
     const manifest = join(root, "manifest");
     const current = join(root, "current");
@@ -62,10 +63,15 @@ describe("Pi runtime configuration", () => {
         mkdir(fakeBin),
       ]);
       await Promise.all([
-        writeFile(join(manifest, "package.json"), "{}\n"),
-        writeFile(join(manifest, "package-lock.json"), "{}\n"),
-        writeFile(executable, "old but matching\n"),
-        writeFile(lock, "stale\n"),
+        writeFile(
+          join(manifest, "package.json"),
+          await readFile(new URL("../../pi-runtime/package.json", import.meta.url)),
+        ),
+        writeFile(
+          join(manifest, "package-lock.json"),
+          await readFile(new URL("../../pi-runtime/package-lock.json", import.meta.url)),
+        ),
+        writeFile(executable, "current runtime\n"),
         writeFile(join(fakeBin, "npm"), "#!/bin/sh\nexit 42\n"),
         writeFile(
           bunExecutable,
@@ -77,21 +83,161 @@ describe("Pi runtime configuration", () => {
         chmod(bunExecutable, 0o755),
       ]);
 
-      const result = Bun.spawnSync(
-        ["sh", "-c", buildPiRuntimeInstallCommand({
+      const commands: string[] = [];
+      await ensurePiRuntimeInstalled({
+        process: {
+          executeCommand: async (command) => {
+            commands.push(command);
+            const result = Bun.spawnSync(["sh", "-c", command], {
+              env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+            });
+            return { exitCode: result.exitCode, result: result.stderr.toString("utf8") };
+          },
+        },
+        runtimeRoot: root,
+        runtimeManifestDir: manifest,
+        bunExecutable,
+        executable,
+      });
+
+      expect(commands).toHaveLength(3);
+      expect(commands[1]).toBe(
+        buildPiRuntimeInstallCommand({
+          runtimeRoot: root,
+          runtimeManifestDir: manifest,
+        }),
+      );
+      expect(await readFile(lock, "utf8")).toBe(`${PI_RUNTIME_LOCK_SHA256}\n`);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a stale runtime without publishing a cache lock", async () => {
+    const root = await mkdtemp(join(tmpdir(), "useagent-pi-stale-"));
+    const manifest = join(root, "manifest");
+    const current = join(root, "current");
+    const fakeBin = join(root, "bin");
+    const bunExecutable = join(fakeBin, "bun");
+    const executable = join(current, "pi.js");
+    const lock = join(root, ".lock-sha256");
+    try {
+      await Promise.all([mkdir(manifest), mkdir(current), mkdir(fakeBin)]);
+      await Promise.all([
+        writeFile(
+          join(manifest, "package.json"),
+          await readFile(new URL("../../pi-runtime/package.json", import.meta.url)),
+        ),
+        writeFile(
+          join(manifest, "package-lock.json"),
+          await readFile(new URL("../../pi-runtime/package-lock.json", import.meta.url)),
+        ),
+        writeFile(join(current, "package-lock.json"), "stale\n"),
+        writeFile(executable, "stale runtime\n"),
+        writeFile(lock, `${PI_RUNTIME_LOCK_SHA256}\n`),
+        writeFile(join(fakeBin, "npm"), "#!/bin/sh\nexit 42\n"),
+        writeFile(bunExecutable, "#!/bin/sh\necho 0.0.0\n"),
+      ]);
+      await Promise.all([chmod(join(fakeBin, "npm"), 0o755), chmod(bunExecutable, 0o755)]);
+
+      await expect(
+        ensurePiRuntimeInstalled({
+          process: {
+            executeCommand: async (command) => {
+              const result = Bun.spawnSync(["sh", "-c", command], {
+                env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+              });
+              return { exitCode: result.exitCode, result: result.stderr.toString("utf8") };
+            },
+          },
           runtimeRoot: root,
           runtimeManifestDir: manifest,
           bunExecutable,
           executable,
-        })],
-        { env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` } },
-      );
+        }),
+      ).rejects.toThrow("stage=verify Bun version mismatch");
 
-      expect(result.exitCode).toBe(1);
       expect(await Bun.file(lock).exists()).toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  test("rejects a Pi version that only shares the expected prefix", async () => {
+    const root = await mkdtemp(join(tmpdir(), "useagent-pi-version-prefix-"));
+    const manifest = join(root, "manifest");
+    const current = join(root, "current");
+    const fakeBin = join(root, "bin");
+    const bunExecutable = join(fakeBin, "bun");
+    const executable = join(current, "pi.js");
+    const lock = join(root, ".lock-sha256");
+    try {
+      await Promise.all([mkdir(manifest), mkdir(current), mkdir(fakeBin)]);
+      await Promise.all([
+        writeFile(
+          join(manifest, "package.json"),
+          await readFile(new URL("../../pi-runtime/package.json", import.meta.url)),
+        ),
+        writeFile(
+          join(manifest, "package-lock.json"),
+          await readFile(new URL("../../pi-runtime/package-lock.json", import.meta.url)),
+        ),
+        writeFile(
+          join(current, "package-lock.json"),
+          await readFile(new URL("../../pi-runtime/package-lock.json", import.meta.url)),
+        ),
+        writeFile(executable, "prefix-matching runtime\n"),
+        writeFile(join(fakeBin, "npm"), "#!/bin/sh\nexit 42\n"),
+        writeFile(
+          bunExecutable,
+          "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 1.3.14; else echo omp/18.0.30; fi\n",
+        ),
+      ]);
+      await Promise.all([chmod(join(fakeBin, "npm"), 0o755), chmod(bunExecutable, 0o755)]);
+
+      await expect(
+        ensurePiRuntimeInstalled({
+          process: {
+            executeCommand: async (command) => {
+              const result = Bun.spawnSync(["sh", "-c", command], {
+                env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+              });
+              return { exitCode: result.exitCode, result: result.stderr.toString("utf8") };
+            },
+          },
+          runtimeRoot: root,
+          runtimeManifestDir: manifest,
+          bunExecutable,
+          executable,
+        }),
+      ).rejects.toThrow("stage=verify Pi version mismatch");
+
+      expect(await Bun.file(lock).exists()).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("reports bounded install and verification stages for a true failure", async () => {
+    const outcomes = [
+      { exitCode: 10, result: "" },
+      { exitCode: 42, result: `npm failed ${"x".repeat(300)}` },
+      { exitCode: 21, result: "stage=verify package-lock mismatch" },
+    ];
+
+    await expect(
+      ensurePiRuntimeInstalled({
+        process: {
+          executeCommand: mock(async () => outcomes.shift() ?? { exitCode: 1, result: "unexpected" }),
+        },
+        runtimeRoot: "/runtime",
+        runtimeManifestDir: "/runtime/manifest",
+        bunExecutable: "/usr/local/bin/bun",
+        executable: "/runtime/current/pi.js",
+      }),
+    ).rejects.toThrow(
+      /failed to install Pi 18\.0\.3 \(install exit 42: x{1,180}; verify exit 21: stage=verify package-lock mismatch\)/,
+    );
   });
 
   test("keeps signed credentials behind the root broker and installs from the immutable lock", async () => {
@@ -114,6 +260,9 @@ describe("Pi runtime configuration", () => {
       process: {
         executeCommand: mock(async (command: string) => {
           commands.push(command);
+          if (command.startsWith("grep -Fxq") && command.includes(".lock-sha256")) {
+            return { exitCode: 10, result: "" };
+          }
           if (command.includes(".skynet/provider-gateway-generation") && command.includes("base64 -d")) {
             gatewayMarkerWritten = true;
           }
@@ -184,6 +333,9 @@ describe("Pi runtime configuration", () => {
       process: {
         executeCommand: mock(async (command: string) => {
           commands.push(command);
+          if (command.startsWith("grep -Fxq") && command.includes(".lock-sha256")) {
+            return { exitCode: 10, result: "" };
+          }
           return { exitCode: 0, result: "" };
         }),
       },
@@ -225,7 +377,7 @@ describe("Pi runtime configuration", () => {
       commandText.indexOf("--version | grep -Fq '18.0.3'"),
     );
     expect(commandText).toContain(
-      "rm -f '/home/user/.useagent/pi-runtime/.lock-sha256'; exit 1",
+      "rm -f '/home/user/.useagent/pi-runtime/.lock-sha256'; printf '%s\\n' 'stage=verify",
     );
     expect(commandText).not.toContain("useradd");
     expect(commandText).not.toContain("chown");
