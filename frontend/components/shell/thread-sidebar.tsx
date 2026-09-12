@@ -14,14 +14,13 @@ import {
 } from "@remixicon/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
 import { runTitle } from "@/components/chat/types";
+import { useRailFolded } from "@/components/shell/rail-folded";
 import {
   SidebarGroup,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from "@/components/sidebar-kit/sidebar";
 import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { AppSidebarFrame, NavRoutes, type Route } from "./app-sidebar-frame";
@@ -71,9 +70,8 @@ function CollapsedThreads() {
  * "Show N more" disclosures - because it is the same component.
  */
 export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
-  const { state } = useSidebar();
   const { catalog } = useCapabilityCatalog();
-  const isCollapsed = state === "collapsed";
+  const isCollapsed = useRailFolded();
   const pathname = usePathname();
 
   const routes: Route[] = [
