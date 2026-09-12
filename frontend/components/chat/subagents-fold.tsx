@@ -224,7 +224,7 @@ function ProductChildResults({ children }: { children: readonly ThreadRelationsh
 
   return (
     <li
-      className="border-border-card-soft bg-background-secondary-subtle mt-2 rounded-lg border px-3 py-2.5"
+      className="mt-3 px-2"
       data-testid="product-child-results"
     >
       <p className="text-caption-1-medium text-text-secondary">Combined results</p>
