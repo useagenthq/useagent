@@ -522,6 +522,39 @@ async function ensureRuntimeProviderBootstrap(
   }
 }
 
+async function ensureSelectedRuntimeProviderBootstrap(
+  sandbox: SandboxHandle,
+  engine: RuntimeEngineId,
+  claudeEnvironment: Readonly<Record<string, string>>,
+  layout: SandboxRuntimeLayout,
+): Promise<void> {
+  const command = buildRuntimeProviderBootstrapCommand(
+    engine,
+    claudeEnvironment,
+    layout,
+  );
+  await ensureRuntimeProviderBootstrap(sandbox, engine, command, layout);
+}
+
+/** Install and verify one selected native provider, including its stable T3
+ * settings, without creating a run-bound capability, relay, or process lease. */
+export async function prepareStableRuntimeProvider(
+  sandbox: SandboxHandle,
+  ctx: EngineRunContext,
+  engine: RuntimeEngineId,
+): Promise<void> {
+  const layout = runtimeBridgeLayout(sandbox);
+  await ensureSandboxBun(sandbox, layout, ctx.signal);
+  ctx.signal.throwIfAborted();
+  const claudeEnvironment = engine === "claude" ? providerGatewayEnv(ctx, "claude") : {};
+  await ensureSelectedRuntimeProviderBootstrap(
+    sandbox,
+    engine,
+    claudeEnvironment,
+    layout,
+  );
+}
+
 async function prepareClaudeRuntimeAccess(
   sandbox: Pick<SandboxHandle, "process">,
   workdir: string,
@@ -590,13 +623,8 @@ export async function prepareRuntimeProviderBridge(
   workdir: string,
 ): Promise<RuntimeProviderBridgeLease> {
   const layout = runtimeBridgeLayout(sandbox);
-  await ensureSandboxBun(sandbox, layout, ctx.signal);
   const claudeEnvironment = engine === "claude" ? providerGatewayEnv(ctx, "claude") : {};
-  const command = buildRuntimeProviderBootstrapCommand(
-    engine,
-    claudeEnvironment,
-    layout,
-  );
+  await prepareStableRuntimeProvider(sandbox, ctx, engine);
 
   if (engine === "opencode") {
     await prepareOpenCodeGateway(sandbox, ctx);
@@ -613,7 +641,6 @@ export async function prepareRuntimeProviderBridge(
     const authPath = codexBridgeAuthPath(subscription !== null);
     if (authPath === "subscription") {
       if (!subscription) throw new Error("codex_subscription_runtime_missing");
-      await ensureRuntimeProviderBootstrap(sandbox, engine, command, layout);
       const lease = await prepareCodexSubscription({ sandbox, ctx, workdir, runtime: subscription });
       return {
         authPath: "subscription",
@@ -625,7 +652,6 @@ export async function prepareRuntimeProviderBridge(
     await prepareProviderGatewaySandbox(sandbox, ctx, engine);
   }
 
-  await ensureRuntimeProviderBootstrap(sandbox, engine, command, layout);
   if (engine === "claude") {
     await prepareClaudeRuntimeAccess(sandbox, workdir);
     return {
@@ -648,12 +674,12 @@ export async function prewarmRuntimeProviderBridge(
   const layout = runtimeBridgeLayout(sandbox);
   await ensureSandboxBun(sandbox, layout, AbortSignal.timeout(180_000));
   for (const engine of ["codex", "claude", "opencode"] as const) {
-    const command = buildRuntimeProviderBootstrapCommand(
+    await ensureSelectedRuntimeProviderBootstrap(
+      sandbox,
       engine,
       engine === "claude" ? claudeProviderGatewayEnvironment() : {},
       layout,
     );
-    await ensureRuntimeProviderBootstrap(sandbox, engine, command, layout);
   }
 }
 
