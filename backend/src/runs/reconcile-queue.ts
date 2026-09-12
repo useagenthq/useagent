@@ -1,5 +1,5 @@
-import { asc, eq, lte, sql } from "drizzle-orm";
-import { db } from "../db/client";
+import { and, eq, sql } from "drizzle-orm";
+import { db, type Executor } from "../db/client";
 import { reconcileQueue } from "../db/schema";
 
 // ---------------------------------------------------------------------------
@@ -45,6 +45,10 @@ export interface ReconcileEntry {
   readonly sinceMs: number;
   readonly attempts: number;
   readonly deadlineMs: number;
+  /** The lease this claim holds: the exact next_attempt_at the claim wrote. Every row write
+   *  the tick makes is fenced on it, so a tick that outlived its lease and was replaced
+   *  cannot reschedule, inflate or delete the row its replacement now owns. */
+  readonly leaseUntil: Date;
 }
 
 /**
@@ -78,37 +82,100 @@ export async function enqueueReconcile(input: {
   return inserted.length > 0;
 }
 
-/** Claim due parked rows (next_attempt_at <= now), oldest first, up to `limit`.
- *  Single-replica scope: the loop is single-flight, so no row-locking is needed. */
-export async function claimDueReconciles(limit = 20): Promise<ReconcileEntry[]> {
-  const rows = await db
-    .select()
-    .from(reconcileQueue)
-    .where(lte(reconcileQueue.nextAttemptAt, sql`now()`))
-    .orderBy(asc(reconcileQueue.nextAttemptAt))
-    .limit(limit);
-  return rows.map((r) => ({
-    runId: r.runId,
-    threadId: r.threadId,
-    sandboxId: r.sandboxId,
-    sessionId: r.sessionId,
-    sinceMs: r.sinceAt.getTime(),
-    attempts: r.attempts,
-    deadlineMs: r.deadline.getTime(),
-  }));
+/** How long a claimed row stays invisible to other claims while its tick probes it: the
+ *  probe race budget (11 s) plus finalize headroom. A tick that dies mid-flight simply lets
+ *  the lease expire, so a crash never strands a parked run; the lease is not an attempt. */
+export const RECONCILE_CLAIM_LEASE_MS = 60_000;
+
+/** The last lease minted by this process per lease length, so two claims of the same
+ *  length never share a token even when they land in the same millisecond. In production
+ *  a row is re-claimable only after its lease expired, 60 s later, so only tests reach that
+ *  case; keyed by length so a short test lease is never floored by a long one. */
+const lastLeaseMintedMs = new Map<number, number>();
+
+/** Claim due parked rows (next_attempt_at <= now), oldest first, up to `limit`, and LEASE
+ *  them: the same statement pushes next_attempt_at to the lease, so an overlapping tick
+ *  (the watchdog can resurrect one) cannot claim a row that is already being probed. The
+ *  select locks its rows with SKIP LOCKED, so two claims running at once split the due set
+ *  instead of sharing it. Due is checked against the DB clock, like the outbox primitive;
+ *  the lease timestamp is minted here at millisecond precision so it doubles as the fence
+ *  token every later write for the row is compared against. */
+export async function claimDueReconciles(
+  limit = 20,
+  leaseMs = RECONCILE_CLAIM_LEASE_MS,
+): Promise<ReconcileEntry[]> {
+  const leaseUntil = new Date(Math.max(Date.now() + leaseMs, (lastLeaseMintedMs.get(leaseMs) ?? 0) + 1));
+  lastLeaseMintedMs.set(leaseMs, leaseUntil.getTime());
+  const rows = (await db.execute(sql`
+    with due as (
+      select run_id, next_attempt_at as due_at from reconcile_queue
+      where next_attempt_at <= now()
+      order by next_attempt_at asc
+      limit ${limit}
+      for update skip locked
+    )
+    update reconcile_queue q
+    set next_attempt_at = ${leaseUntil.toISOString()}::timestamptz
+    from due where q.run_id = due.run_id
+    returning q.run_id, q.thread_id, q.sandbox_id, q.session_id, q.since_at, q.attempts, q.deadline, due.due_at`)) as unknown as Array<{
+    run_id: string; thread_id: string; sandbox_id: string; session_id: string;
+    since_at: string | Date; attempts: number | string; deadline: string | Date; due_at: string | Date;
+  }>;
+  return rows
+    .toSorted((a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime())
+    .map((r) => ({
+      runId: r.run_id,
+      threadId: r.thread_id,
+      sandboxId: r.sandbox_id,
+      sessionId: r.session_id,
+      sinceMs: new Date(r.since_at).getTime(),
+      attempts: Number(r.attempts),
+      deadlineMs: new Date(r.deadline).getTime(),
+      leaseUntil,
+    }));
 }
 
-/** Schedule the next re-probe (attempts += 1, next_attempt_at = backoff). */
-export async function bumpReconcile(runId: string, nextAttemptAt: Date): Promise<void> {
-  await db
+/** The row filter for a fenced write: the run, and (when a lease is given) only while the
+ *  row still carries exactly that lease. A tick whose lease expired and whose row was
+ *  re-claimed then matches nothing, so it cannot touch its replacement's work. */
+const claimedRow = (runId: string, lease?: Date) =>
+  lease ? and(eq(reconcileQueue.runId, runId), eq(reconcileQueue.nextAttemptAt, lease)) : eq(reconcileQueue.runId, runId);
+
+/** Schedule the next re-probe (attempts += 1, next_attempt_at = backoff), fenced on the
+ *  claim's lease when given. Returns whether the row was written. */
+export async function bumpReconcile(runId: string, nextAttemptAt: Date, lease?: Date): Promise<boolean> {
+  const rows = await db
     .update(reconcileQueue)
     .set({ attempts: sql`${reconcileQueue.attempts} + 1`, nextAttemptAt })
-    .where(eq(reconcileQueue.runId, runId));
+    .where(claimedRow(runId, lease))
+    .returning({ runId: reconcileQueue.runId });
+  return rows.length > 0;
 }
 
-/** Remove a parked row once its run has settled (adopted / failed / stolen). */
-export async function deleteReconcile(runId: string): Promise<void> {
-  await db.delete(reconcileQueue).where(eq(reconcileQueue.runId, runId));
+/** Remove a parked row once its run has settled (adopted / failed / stolen), fenced on the
+ *  claim's lease when given. Runs on `exec` so the reconciler can make it the ownership
+ *  guard INSIDE its finalization transaction. Returns whether the row was removed. */
+export async function deleteReconcile(runId: string, lease?: Date, exec: Executor = db): Promise<boolean> {
+  const rows = await exec
+    .delete(reconcileQueue)
+    .where(claimedRow(runId, lease))
+    .returning({ runId: reconcileQueue.runId });
+  return rows.length > 0;
+}
+
+/** Lock the claim row and report whether it still carries exactly this claim's lease. Run
+ *  on the transaction of a write that must be conditional on ownership (recovered events):
+ *  the row lock is held until that transaction ends, so a competing claim (which locks
+ *  with SKIP LOCKED) cannot take the row mid-write, and a claim that already moved on
+ *  (a different lease) matches nothing. */
+export async function reconcileClaimHeldForUpdate(runId: string, lease: Date, exec: Executor): Promise<boolean> {
+  const [row] = await exec
+    .select({ runId: reconcileQueue.runId })
+    .from(reconcileQueue)
+    .where(claimedRow(runId, lease))
+    .for("update")
+    .limit(1);
+  return !!row;
 }
 
 /** Ops/test read helper. */

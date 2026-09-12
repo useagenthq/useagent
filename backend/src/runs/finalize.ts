@@ -297,11 +297,22 @@ export async function resolveDurableFinalizationOutcome(
   return { status: winner.status, summary: winner.summary ?? "" };
 }
 
+export interface FinalizeRunOptions {
+  /** Ownership guard evaluated INSIDE the finalization transaction, after the run row is
+   *  read and before anything is written. When it returns false the transaction writes
+   *  nothing and the result is `applied: false`. The reconciler passes its fenced
+   *  parked-row delete here, so a tick that lost its claim cannot commit a terminal
+   *  status over its replacement's work, and a crash can never leave a settled run
+   *  with a parked row. */
+  readonly claim?: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<boolean>;
+}
+
 export async function finalizeRun(
   runId: string,
   status: RunStatus,
   summary: string,
   durationMs: number,
+  options: FinalizeRunOptions = {},
 ): Promise<FinalizeRunResult> {
   const executionGraphMode = executionGraphRolloutMode();
   const finishedWorkMode = finishedWorkRolloutMode();
@@ -322,6 +333,7 @@ export async function finalizeRun(
     if (finishedWorkMode !== "off") await lockFinishedWorkRun(runId, tx);
     const [run] = await tx.select().from(runs).where(eq(runs.id, runId)).limit(1);
     if (!run) return; // deleted mid-flight — nothing to finalize
+    if (options.claim && !(await options.claim(tx))) return; // the caller no longer owns this settlement
     settledThreadId = run.threadId;
     settledOrgId = run.orgId;
     settledUserId = run.userId;
