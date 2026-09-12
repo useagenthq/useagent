@@ -19,7 +19,7 @@ import {
   type RuntimeThreadSnapshot,
 } from "./runtime-orchestration";
 import { createSecretRedactor } from "../secrets/redact";
-import { DEEPSEEK_V4_FLASH_MODEL } from "../runs/model-policy";
+import { CEREBRAS_QWEN_MODEL, DEEPSEEK_V4_FLASH_MODEL } from "../runs/model-policy";
 import { makeNativeFrame } from "../runs/native-events";
 import { translateOpenCode } from "./opencode-canonical";
 
@@ -73,11 +73,17 @@ describe("T3 orchestration projection", () => {
     expect(runtimeModelId("opencode", "openai/gpt-5.6-luna")).toBe(
       "openai/gpt-5.6-luna",
     );
+    expect(runtimeModelId("opencode", "anthropic/claude-opus-5")).toBe(
+      "anthropic/claude-opus-5",
+    );
     expect(runtimeModelId("opencode", "moonshotai/kimi-k3")).toBe(
       "openrouter/moonshotai/kimi-k3",
     );
     expect(runtimeModelId("opencode", DEEPSEEK_V4_FLASH_MODEL)).toBe(
       "openrouter/deepseek/deepseek-v4-flash",
+    );
+    expect(runtimeModelId("opencode", "rotated/model:free")).toBe(
+      "openrouter/rotated/model:free",
     );
     expect(runtimeModelId("opencode", "claude-opus-5")).toBe(
       "anthropic/claude-opus-5",
@@ -85,14 +91,20 @@ describe("T3 orchestration projection", () => {
     expect(runtimeModelId("opencode", "openrouter/openai/gpt-5.6-luna")).toBe(
       "openrouter/openai/gpt-5.6-luna",
     );
+    expect(runtimeModelId("opencode", CEREBRAS_QWEN_MODEL)).toBe(
+      "cerebras/qwen-3.8-27b",
+    );
+    expect(() => runtimeModelId("opencode", "unknown/model")).toThrow(
+      "Unsupported OpenCode model provider: unknown",
+    );
     expect(runtimeModelId("codex", "gpt-5.6-luna")).toBe("gpt-5.6-luna");
   });
 
-  test("uses provider-qualified OpenCode ids for thread and turn commands", () => {
+  test("sends a Cerebras-qualified selection unchanged to native OpenCode", () => {
     const opencodeContext = {
-      runId: "run-opencode",
-      threadId: "thread-opencode",
-      model: "openai/gpt-5.6-luna",
+      runId: "run-cerebras",
+      threadId: "thread-cerebras",
+      model: CEREBRAS_QWEN_MODEL,
     };
     expect(
       buildRuntimeThreadCreateCommand(
@@ -103,7 +115,7 @@ describe("T3 orchestration projection", () => {
     ).toMatchObject({
       modelSelection: {
         instanceId: "opencode",
-        model: "openai/gpt-5.6-luna",
+        model: "cerebras/qwen-3.8-27b",
       },
     });
     expect(
@@ -117,7 +129,7 @@ describe("T3 orchestration projection", () => {
     ).toMatchObject({
       modelSelection: {
         instanceId: "opencode",
-        model: "openai/gpt-5.6-luna",
+        model: "cerebras/qwen-3.8-27b",
       },
     });
   });

@@ -68,7 +68,6 @@ function lineCount(text: string): number {
 const BACKEND_SIZE_BASELINE: Record<string, number> = {
   "engines/opencode-server.ts":     1874,
   "engines/acp-server.ts":     1462,
-  "engines/runtime-orchestration.ts": 802,
   // Read-only and windowed thread routes live in runs/read-routes.ts.
   "runs/routes.ts": 1067,
   "memory/team-memory.ts": 1005,
