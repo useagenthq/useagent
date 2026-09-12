@@ -42,9 +42,6 @@ WORKDIR /app/backend
 RUN bun install --frozen-lockfile --production
 
 FROM ${BUN_IMAGE} AS runtime
-ARG RELEASE_COMMIT
-RUN echo "${RELEASE_COMMIT}" | grep -Eq '^[0-9a-f]{40}$'
-
 USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client \
@@ -62,15 +59,6 @@ RUN set -eux; \
     curl -fsSL "https://ascii.dev/api/box/cli/download?platform=linux-${box_arch}&channel=ascii-prod" \
       -o /usr/local/bin/box; \
     chmod +x /usr/local/bin/box
-
-LABEL org.opencontainers.image.source="https://github.com/useagenthq/useagent" \
-      org.opencontainers.image.revision="${RELEASE_COMMIT}" \
-      org.opencontainers.image.title="useAgent backend"
-
-ENV NODE_ENV=production \
-    PORT=3201 \
-    USEAGENT_BIND_HOST=0.0.0.0 \
-    USEAGENT_RELEASE_COMMIT=${RELEASE_COMMIT}
 
 WORKDIR /app
 COPY --from=dependencies /app/backend/node_modules ./backend/node_modules
@@ -133,6 +121,18 @@ RUN ln -s backend/node_modules /app/node_modules \
       /opt/useagent/pi-runtime
 
 RUN codex --version | grep -Fx "codex-cli 0.153.3"
+
+ARG RELEASE_COMMIT
+RUN echo "${RELEASE_COMMIT}" | grep -Eq '^[0-9a-f]{40}$'
+
+LABEL org.opencontainers.image.source="https://github.com/useagenthq/useagent" \
+      org.opencontainers.image.revision="${RELEASE_COMMIT}" \
+      org.opencontainers.image.title="useAgent backend"
+
+ENV NODE_ENV=production \
+    PORT=3201 \
+    USEAGENT_BIND_HOST=0.0.0.0 \
+    USEAGENT_RELEASE_COMMIT=${RELEASE_COMMIT}
 
 USER bun
 WORKDIR /app/backend
