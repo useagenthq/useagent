@@ -90,4 +90,9 @@ describe("Daytona plugin", () => {
       httpStatus: 404,
     });
   });
+
+  test("an IPv6 loopback literal is refused like the IPv4 one", () => {
+    expect(daytonaPlugin.previewHostProblem(new URL("https://[::1]:8080/"), {})).toBe("Codex exec-server preview host is unavailable");
+    expect(daytonaPlugin.previewHostProblem(new URL("https://127.0.0.1:8080/"), {})).toBe("Codex exec-server preview host is unavailable");
+  });
 });

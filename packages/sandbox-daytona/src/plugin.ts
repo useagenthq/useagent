@@ -10,7 +10,9 @@ export function daytonaApiConfig(apiKey: string, env: SandboxEnv): DaytonaApiCon
   };
 }
 
-function isPrivateIpLiteral(hostname: string): boolean {
+function isPrivateIpLiteral(rawHostname: string): boolean {
+  // WHATWG URLs report IPv6 literals in brackets ("[::1]").
+  const hostname = rawHostname.replace(/^\[|\]$/g, "");
   const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
   if (!match) return hostname === "::1" || hostname.startsWith("fe80:") || hostname.startsWith("fc") || hostname.startsWith("fd");
   const octets = match.slice(1).map(Number);
