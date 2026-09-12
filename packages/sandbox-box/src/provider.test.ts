@@ -339,7 +339,9 @@ describe("Box sandbox provider", () => {
     const sandbox = await provider(api).provider.get("bx_s");
     const started = await sandbox.process.executeSessionCommand("sess-1", { command: "echo hi", runAsync: true });
     const base = `/home/user/.useagent/sessions/sess-1/${started.cmdId}`;
-    expect(api.commands.at(-1)).toBe(`nohup setsid sh '${base}.launch.sh' </dev/null >'${base}.log' 2>&1 &`);
+    expect(api.commands.at(-1)).toBe(
+      `cd '/home/user' && nohup setsid sh '${base}.launch.sh' </dev/null >'${base}.log' 2>&1 &`,
+    );
     expect(api.files.get(`bx_s:${base}.launch.sh`)?.toString("utf8")).toBe(
       `echo $$ >'${base}.pid'\nexport USEAGENT_SESSION_ID='sess-1' USEAGENT_COMMAND_ID='${started.cmdId}'\nexec sh '${base}.sh'\n`,
     );

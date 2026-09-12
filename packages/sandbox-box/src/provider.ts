@@ -439,7 +439,7 @@ class BoxProcess implements SandboxProcess {
     await this.api.writeFile(this.boxId, `${dir}/run.sh`, Buffer.from(composed));
     await this.api.detach(
       this.boxId,
-      `nohup sh -c 'sh ${q(`${dir}/run.sh`)} >${q(`${dir}/log`)} 2>&1; echo $? >${q(`${dir}/exit`)}' </dev/null >/dev/null 2>&1 &`,
+      `cd ${q(HOME_DIR)} && nohup sh -c 'sh ${q(`${dir}/run.sh`)} >${q(`${dir}/log`)} 2>&1; echo $? >${q(`${dir}/exit`)}' </dev/null >/dev/null 2>&1 &`,
     );
     const deadline = Date.now() + timeoutSeconds * 1000;
     let exitCode: number | undefined;
@@ -518,7 +518,10 @@ class BoxProcess implements SandboxProcess {
         ].join("\n"),
       ),
     );
-    await this.api.detach(this.boxId, `nohup setsid sh ${q(`${base}.launch.sh`)} </dev/null >${q(`${base}.log`)} 2>&1 &`);
+    await this.api.detach(
+      this.boxId,
+      `cd ${q(HOME_DIR)} && nohup setsid sh ${q(`${base}.launch.sh`)} </dev/null >${q(`${base}.log`)} 2>&1 &`,
+    );
     return { cmdId: commandId, exitCode: 0 };
   }
 
