@@ -78,16 +78,12 @@ export class CodexSubscriptionProtocol {
     this.#dependencies = dependencies;
   }
 
-  /** Validate a client frame and return the frame to forward upstream. Almost
-   *  always the input unchanged; the one rewrite: a `thread/start` for a thread
-   *  this run relay has ALREADY bound becomes a `thread/resume` of the bound
-   *  provider thread. The T3 driver falls back to `thread/start` whenever its
-   *  local resume cursor is missing (per-run relay instances are torn down and
-   *  re-patched between turns, so the cursor rarely survives) - honoring the
-   *  start verbatim would fork the provider-side conversation, and rejecting it
-   *  killed every reply turn ("no first activity", 2026-08-19). Start and
-   *  resume share their params shape (resume = start + threadId) and their
-   *  response schema, so the rewrite is invisible to the driver. */
+  /** Validate a client frame and return the frame to forward upstream. Thread
+   *  opening is reconciled with this managed subscription's current auth-epoch
+   *  binding: a bound start resumes that provider thread, while an unbound
+   *  resume starts a fresh native thread without carrying the old cursor across
+   *  the auth transition. In the pinned T3 protocol, resume params are start
+   *  params plus threadId and both methods share the response schema. */
   async acceptClientFrame(raw: string): Promise<string> {
     const frame = parseCodexSubscriptionFrame(raw, "client");
     if (!frame.method) {
@@ -118,11 +114,27 @@ export class CodexSubscriptionProtocol {
         envelope.params = { ...values, threadId: bound };
         outbound = JSON.stringify(envelope);
       }
+    } else if (method === "thread/resume") {
+      const values = frame.params ?? {};
+      assertModelAndCwd(values, this.#binding);
+      assertHostOwnedThreadFields(values);
+      const bound = await this.#dependencies.loadThreadBinding();
+      if (bound) {
+        if (values.threadId !== bound) {
+          throw new Error("Codex resume thread binding mismatch");
+        }
+        expectedThreadId = bound;
+      } else {
+        method = "thread/start";
+        const envelope = JSON.parse(raw) as Record<string, unknown>;
+        const startParams = { ...values };
+        delete startParams.threadId;
+        envelope.method = method;
+        envelope.params = startParams;
+        outbound = JSON.stringify(envelope);
+      }
     } else {
       await this.#assertBoundRequest(method, frame.params);
-      if (method === "thread/resume") {
-        expectedThreadId = String(frame.params?.threadId);
-      }
     }
     if (frame.id !== undefined) {
       assertRequestCapacity(this.#pendingClientRequests, frame.id, "client");
