@@ -18,7 +18,11 @@ import {
   GithubConnectedRow,
 } from "@/components/chat/composer-add-menu";
 import { mentionsToRunResources, useComposerMentions } from "@/components/chat/composer-mentions-ui";
-import { resolveEnabledEngine, useEnabledEngineConfig } from "@/components/chat/engine-picker";
+import {
+  engineRuntimeCaption,
+  resolveEnabledEngine,
+  useEnabledEngineConfig,
+} from "@/components/chat/engine-picker";
 import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 import {
   type CommandPickerStatus,
@@ -33,7 +37,6 @@ import {
   engineLabel,
   modelOptionsForEngine,
   partitionModelOptions,
-  selectableModelsForEngine,
 } from "@/components/chat/types";
 import { AgentThinking } from "@/components/application/agent-thinking/agent-thinking";
 import { ComposerLoader } from "@/components/application/composer-loader/composer-loader";
@@ -78,22 +81,21 @@ export function NewTaskComposer({
   const [selectedRepos, setSelectedRepos] = useState<string[]>([]);
   const [repos, setRepos] = useState<RepoItem[]>([]);
   const [playbook, setPlaybook] = useState(""); // selected skill/playbook id, "" = none
-  // Codex is the preferred default engine (user decision 2026-08-23); the
-  // manifest effect below demotes it only AFTER the server manifest loads
-  // without codex, so the default survives the pre-fetch fallback window.
-  const [model, setModel] = useState(selectableModelsForEngine("codex")[0]?.value ?? "");
+  // Codex is the preferred default engine. Model membership and the default
+  // arrive from the authenticated capability catalog below.
+  const [model, setModel] = useState("");
   const [engine, setEngine] = useState<string>("codex");
   // The "+" action shelf under the composer holds the add-context controls
   // (upload, repos, skills, GitHub, branches) so the toolbar row never overflows.
   const [addMenuOpen, setAddMenuOpen] = useState(false);
-  // Only offer engines the SERVER enabled (GET /api/config, gated by
+  // Only offer engines the SERVER configured (GET /api/capabilities, gated by
   // ENABLED_ENGINES): claude/codex surface here only on a backend that turned them
   // on, so the picker never lets a user start a run the backend would 403. This is
   // the capability-driven engine manifest.
   const engineConfig = useEnabledEngineConfig();
   const enabledEngines = engineConfig.engines;
   const engineId = engine as EngineId;
-  const selectableModels = modelOptionsForEngine(engineId, engineConfig.models[engineId]);
+  const selectableModels = modelOptionsForEngine(engineId, engineConfig.models[engineId] ?? []);
   // The Free lane tracks OpenRouter's live catalog; the heading's refresh
   // re-derives it on demand (same affordance as the chat surface's picker).
   const [refreshingModels, setRefreshingModels] = useState(false);
@@ -334,13 +336,17 @@ export function NewTaskComposer({
           (e) => ({
             value: e.id,
             label: e.label,
-            caption: `${e.hint}${engineConfig.readiness[e.id]?.ready === false ? " · needs attention" : ""}`,
+            caption: engineRuntimeCaption(
+              e.id,
+              engineConfig.runtimes[e.id],
+              engineConfig.readiness[e.id],
+            ),
             icon: RiCpuLine,
           }),
         ),
       },
     ],
-    [enabledEngines, engineConfig.readiness],
+    [enabledEngines, engineConfig.readiness, engineConfig.runtimes],
   );
 
   // One combined picker over the shared substrate: an explicit "none" option, then

@@ -1,3 +1,5 @@
+import { productChildThreadsEnabled } from "../runs/thread-relationship-rollout";
+
 /** The provider-neutral context needed to compose one agent turn. */
 export interface TurnPromptContext {
   readonly prompt: string;
@@ -8,6 +10,8 @@ export interface TurnPromptContext {
   readonly skillCatalogContext?: string;
   readonly inputContext?: string;
   readonly commandName?: string | null;
+  readonly orgId?: string | null;
+  readonly origin?: string | null;
 }
 
 /**
@@ -50,6 +54,28 @@ export const AGENT_SKILL_DISCOVERY_RULES =
   "Cached skill_catalog metadata may supplement this discovery but never replaces these calls.\n" +
   "</skill_discovery>\n\n";
 
+function productFanoutRoutingRules(
+  ctx: TurnPromptContext,
+  executionCapabilities: ExecutionCapabilitySnapshot,
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  const tools = executionCapabilities.facilities.tools;
+  const gatewayAvailable =
+    tools.availability === "ready" && tools.access.kind === "useagent_gateway";
+  const productFanoutAvailable = gatewayAvailable && ctx.origin === null &&
+    productChildThreadsEnabled(ctx.orgId, env);
+  if (!productFanoutAvailable) return "";
+  return "<delegation_routing>\n" +
+    "When the user explicitly asks to fan out, delegate, parallelize work across agents, or create " +
+    "user-visible child sessions, you MUST use the trusted child_session_create_many tool. Those " +
+    "product child sessions are the durable, independently visible delegation boundary. Native " +
+    "harness subagents are only for internal decomposition within the current product session and " +
+    "must not substitute for requested user-visible fan-out. Use native subagents only when the " +
+    "user explicitly requests native/internal subagents or when privately decomposing one product " +
+    "child's assigned task.\n" +
+    "</delegation_routing>\n\n";
+}
+
 /**
  * Compose the exact text sent to an engine for one turn. Fresh sessions receive
  * reconstructed thread history and global rules. Resumed sessions receive only
@@ -60,6 +86,7 @@ export function composeTurnPrompt(
   ctx: TurnPromptContext,
   resumed: boolean,
   executionCapabilities: ExecutionCapabilitySnapshot,
+  env: Readonly<Record<string, string | undefined>> = process.env,
 ): string {
   if (ctx.commandName) return ctx.prompt;
   const skillReference = ctx.skillContext ||
@@ -67,12 +94,13 @@ export function composeTurnPrompt(
   const perTurn =
     executionCapabilityPrompt(executionCapabilities) +
     AGENT_WORKFLOW_ROUTING_RULES +
+    productFanoutRoutingRules(ctx, executionCapabilities, env) +
     skillReference +
     (ctx.resourceContext ?? "") +
     (ctx.inputContext ?? "") +
     ctx.turnContext;
   const prefix = resumed ? perTurn : AGENT_OPERATING_RULES + ctx.bootstrapContext + perTurn;
-  return prefix + ctx.prompt;
+  return `${prefix}<current_user_request>\n${ctx.prompt}\n</current_user_request>`;
 }
 import type { ExecutionCapabilitySnapshot } from "@useagent/agent-harness/canonical";
 import { executionCapabilityPrompt } from "./execution-capabilities";

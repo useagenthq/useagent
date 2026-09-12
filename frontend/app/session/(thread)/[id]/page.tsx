@@ -11,6 +11,7 @@ import {
   WINDOWED_THREAD_LIMIT,
 } from "@/components/chat/windowed-thread";
 import { backendFetch } from "@/lib/backend-fetch";
+import { loadThreadRelationshipHint } from "@/lib/thread-relationship-hint";
 
 // Always render fresh: a session is a live run (cookies + streaming state).
 export const dynamic = "force-dynamic";
@@ -77,7 +78,8 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
     // rest - older turns stream in as islands when the user scrolls up.
     const tail = await loadWindowedTail(id, outline);
     if (tail.length > 0) {
-      return <SessionView initialThread={tail} initialOutline={outline} />;
+      const relationshipHint = await loadThreadRelationshipHint(tail[0]?.thread_id ?? id, backendFetch);
+      return <SessionView initialThread={tail} initialOutline={outline} initialRelationshipHint={relationshipHint} />;
     }
     // A windowed fetch failed mid-flight - the full load below still works.
   }
@@ -87,7 +89,8 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   // single-run shape.
   const thread = await loadFullThread(id);
   if (thread.length === 0) notFound();
+  const relationshipHint = await loadThreadRelationshipHint(thread[0]?.thread_id ?? id, backendFetch);
 
   // The persistent shell lives in the (thread) layout above this segment.
-  return <SessionView initialThread={thread} />;
+  return <SessionView initialThread={thread} initialRelationshipHint={relationshipHint} />;
 }

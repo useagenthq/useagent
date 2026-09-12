@@ -33,10 +33,12 @@ export async function materializeRunInputs(
     readonly fs: Pick<SandboxHandle["fs"], "uploadFile">;
   },
   files: readonly RunInputFile[] | undefined,
+  owner?: { readonly uid: number; readonly gid: number },
 ): Promise<void> {
   if (!files?.length) return;
   const prepared = await sandbox.process.executeCommand(
-    `mkdir -p ${INPUT_ROOT} && chmod 700 ${INPUT_ROOT}`,
+    `mkdir -p ${INPUT_ROOT} && chmod 700 ${INPUT_ROOT}` +
+      (owner ? ` && chown ${owner.uid}:${owner.gid} ${INPUT_ROOT}` : ""),
     undefined,
     undefined,
     30,
@@ -49,7 +51,8 @@ export async function materializeRunInputs(
     if (digest !== file.sha256) throw new Error(`upload digest mismatch: ${file.id}`);
     await sandbox.fs.uploadFile(Buffer.from(bytes), file.sandboxPath, 120);
     const secured = await sandbox.process.executeCommand(
-      `chmod 600 -- '${file.sandboxPath.replaceAll("'", "'\\''")}'`,
+      `${owner ? `chown ${owner.uid}:${owner.gid} -- '${file.sandboxPath.replaceAll("'", "'\\''")}' && ` : ""}` +
+        `chmod 600 -- '${file.sandboxPath.replaceAll("'", "'\\''")}'`,
       undefined,
       undefined,
       30,

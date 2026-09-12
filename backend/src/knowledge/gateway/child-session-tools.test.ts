@@ -6,7 +6,7 @@ import { db } from "../../db/client";
 import { createRun, setRunStatus } from "../../runs/repo";
 import { recordProviderEvent } from "../../runs/provider-events";
 import { createGatewayApp } from "../../gateway-app";
-import { executeRegisteredGatewayTool } from "./operation-registry";
+import { advertisedGatewayToolDescriptors, executeRegisteredGatewayTool } from "./operation-registry";
 import {
   CHILD_SESSION_TOOLS,
   executeChildSessionTool,
@@ -22,6 +22,7 @@ const ENV_KEYS = [
   "ENGINE_READINESS_OPENCODE",
   "PROVIDER_HEALTH_OPENAI",
   "PROVIDER_HEALTH_OPENROUTER",
+  "PRODUCT_CHILD_THREADS",
 ] as const;
 
 let savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> =
@@ -33,6 +34,7 @@ beforeEach(() => {
   process.env.ENABLED_ENGINES = "opencode,codex";
   process.env.ENGINE_READINESS_CODEX = "ready";
   process.env.ENGINE_READINESS_OPENCODE = "ready";
+  process.env.PRODUCT_CHILD_THREADS = "off";
   process.env.PROVIDER_HEALTH_OPENAI = "ready";
   process.env.PROVIDER_HEALTH_OPENROUTER = "ready";
 });
@@ -108,6 +110,12 @@ function childId(
 }
 
 describe("child session gateway tools", () => {
+  test("batch advertisement is rollout honest", () => {
+    const names = () => advertisedGatewayToolDescriptors({ childSessions: true, slack: false }).map((tool) => tool.name);
+    expect(names()).not.toContain("child_session_create_many");
+    process.env.PRODUCT_CHILD_THREADS = "on";
+    expect(names()).toContain("child_session_create_many");
+  });
   test("schemas never accept caller-supplied org or user identity", () => {
     const schemas = CHILD_SESSION_TOOLS.map((tool) => tool.inputSchema);
     expect(JSON.stringify(schemas)).not.toContain("orgId");

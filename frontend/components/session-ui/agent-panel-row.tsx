@@ -26,8 +26,14 @@
 // - Dot = the shared StatusDot primitive (components/shared/status-dot), pulsing
 //   while active, instead of a parallel dot implementation.
 
-import { RiArrowRightSLine, RiCheckLine, RiErrorWarningLine } from "@remixicon/react";
+import {
+  RiArrowDownSLine,
+  RiArrowRightSLine,
+  RiCheckLine,
+  RiErrorWarningLine,
+} from "@remixicon/react";
 import Link from "next/link";
+import type { KeyboardEventHandler } from "react";
 import type { ChildUsage } from "@/components/chat/child-usage";
 import type { ChildStatus } from "@/components/chat/native-events";
 import { type EngineId, engineLabel } from "@/components/chat/types";
@@ -41,6 +47,7 @@ export interface AgentPanelRowModel {
   /** Engine that runs this child (gateway children); null for native children
    *  whose engine is the parent's. Rendered in the meta caption. */
   readonly engine: EngineId | null;
+  readonly provider?: string | null;
   readonly model: string | null;
   readonly status: ChildStatus;
   /** Human status word for `status` (sr-only text + activity fallback). */
@@ -55,6 +62,8 @@ export interface AgentPanelRowModel {
   readonly usage: ChildUsage | null;
   /** Preformatted elapsed ("34s"); null when no honest wall clock exists. */
   readonly elapsed: string | null;
+  readonly lane?: "product" | "native" | "gateway";
+  readonly childCount?: number;
 }
 
 /** In-flight states all present as one steady working state (T3 rule: detail
@@ -152,10 +161,21 @@ export function AgentPanelRow({
   agent,
   onOpen,
   href,
+  treeItem,
 }: {
   agent: AgentPanelRowModel;
   onOpen?: () => void;
   href?: string;
+  treeItem?: {
+    readonly id: string;
+    readonly level: number;
+    readonly position: number;
+    readonly setSize: number;
+    readonly expanded?: boolean;
+    readonly tabIndex: number;
+    readonly onKeyDown: KeyboardEventHandler<HTMLElement>;
+    readonly onFocus: () => void;
+  };
 }) {
   const live = isActiveStatus(agent.status);
   // Second line only when there is real content: the activity/result text, else
@@ -168,14 +188,21 @@ export function AgentPanelRow({
       ? null
       : agent.role;
   const meta = [
-    agent.engine ? engineLabel(agent.engine) : null,
+    agent.engine ? engineLabel(agent.engine) : agent.provider,
     formatSubagentModelLabel(agent.model, null),
     agent.usage ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok` : null,
     agent.usage?.costUsd !== undefined ? formatSubagentCostUsd(agent.usage.costUsd) : null,
   ].filter((value): value is string => value !== null);
 
-  const className =
-    "bg-background-secondary-default border-border-button-default hover:bg-background-tertiary-hover block w-full rounded-xl border px-3 py-2 text-left transition-colors";
+  const depthClass = treeItem
+    ? ["", "ml-3 w-[calc(100%-0.75rem)]", "ml-6 w-[calc(100%-1.5rem)]", "ml-9 w-[calc(100%-2.25rem)]"][
+        Math.min(3, Math.max(0, treeItem.level - 1))
+      ]
+    : "";
+  const className = cn(
+    "bg-background-secondary-default border-border-button-default hover:bg-background-tertiary-hover block w-full rounded-xl border px-3 py-2 text-left transition-colors",
+    depthClass,
+  );
   const body = (
     <>
       <div className="flex items-center gap-2">
@@ -183,6 +210,11 @@ export function AgentPanelRow({
         <span className="text-body-2-medium text-text-primary min-w-0 flex-1 truncate">
           {agent.title}
         </span>
+        {agent.lane ? (
+          <span className="border-border-button-default text-text-tertiary shrink-0 rounded-sm border px-1 font-mono text-[.65rem] capitalize">
+            {agent.lane}
+          </span>
+        ) : null}
         {role ? (
           <span className="border-border-button-default text-text-tertiary max-w-24 shrink-0 truncate rounded-sm border px-1 font-mono text-[.65rem]">
             {role}
@@ -198,8 +230,21 @@ export function AgentPanelRow({
             {agent.elapsed}
           </span>
         ) : null}
+        {agent.childCount ? (
+          <span className="text-text-tertiary shrink-0 font-mono text-caption-1-medium tabular-nums">
+            {agent.childCount} {agent.childCount === 1 ? "child" : "children"}
+          </span>
+        ) : null}
         <AgentStateGlyph status={agent.status} />
-        <RiArrowRightSLine className="text-text-tertiary size-4 shrink-0" aria-hidden />
+        {treeItem && agent.childCount ? (
+          treeItem.expanded ? (
+            <RiArrowDownSLine className="text-text-tertiary size-4 shrink-0" aria-hidden />
+          ) : (
+            <RiArrowRightSLine className="text-text-tertiary size-4 shrink-0" aria-hidden />
+          )
+        ) : (
+          <RiArrowRightSLine className="text-text-tertiary size-4 shrink-0" aria-hidden />
+        )}
       </div>
       {caption ? (
         <p
@@ -216,9 +261,19 @@ export function AgentPanelRow({
     </>
   );
 
-  return href ? (
+  if (href) return (
     <Link
       href={href}
+      role={treeItem ? "treeitem" : undefined}
+      aria-level={treeItem?.level}
+      aria-posinset={treeItem?.position}
+      aria-setsize={treeItem?.setSize}
+      aria-expanded={treeItem?.expanded}
+      tabIndex={treeItem?.tabIndex}
+      onKeyDown={treeItem?.onKeyDown}
+      onFocus={treeItem?.onFocus}
+      data-child-tree-id={treeItem?.id}
+      data-child-lane={agent.lane}
       data-testid="subagent-card"
       data-session-ui="agent-panel-row"
       aria-label={`Open subagent: ${agent.title}`}
@@ -226,10 +281,38 @@ export function AgentPanelRow({
     >
       {body}
     </Link>
-  ) : (
+  );
+  if (treeItem) return (
+    <div
+      role="treeitem"
+      aria-level={treeItem.level}
+      aria-posinset={treeItem.position}
+      aria-setsize={treeItem.setSize}
+      aria-expanded={treeItem.expanded}
+      tabIndex={treeItem.tabIndex}
+      onClick={onOpen}
+      onFocus={treeItem.onFocus}
+      onKeyDown={(event) => {
+        treeItem.onKeyDown(event);
+        if (event.defaultPrevented || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        onOpen?.();
+      }}
+      data-child-tree-id={treeItem.id}
+      data-child-lane={agent.lane}
+      data-testid="subagent-card"
+      data-session-ui="agent-panel-row"
+      aria-label={`Open subagent: ${agent.title}`}
+      className={cn(className, "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring")}
+    >
+      {body}
+    </div>
+  );
+  return (
     <button
       type="button"
       onClick={onOpen}
+      data-child-lane={agent.lane}
       data-testid="subagent-card"
       data-session-ui="agent-panel-row"
       aria-label={`Open subagent: ${agent.title}`}

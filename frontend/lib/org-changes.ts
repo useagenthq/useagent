@@ -27,7 +27,11 @@ function flush(): void {
 
 function enqueue(change: OrgChange): void {
   const key =
-    change.type === "run"
+    change.type === "execution_graph"
+      ? `execution_graph:${change.runId}`
+      : change.type === "thread_relationship"
+      ? `thread_relationship:${change.familyThreadId}:${change.threadId}`
+      : change.type === "run"
       ? `run:${change.runId}`
       : change.type === "artifact"
         ? `artifact:${change.artifactId}`

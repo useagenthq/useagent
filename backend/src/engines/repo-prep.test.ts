@@ -13,7 +13,7 @@ import { RUN_TIMING_OUTCOMES, RUN_TIMING_STAGES, type TimingSpanEnd } from "../r
 // Slice 1 + Phase 5 (non-destructive hardening): ONE shared, engine-neutral repository preparer.
 // Exercised with a fake sandbox (records every executeCommand + env) so script construction,
 // OWNER-QUALIFIED checkout dirs, the ownership-marker state machine (reuse / branch / owned-stale
-// / foreign / occupied / absent), clone-into-temp + atomic rename, fail-closed on unowned content,
+// / foreign / occupied / absent), root-owned clone staging + atomic rename, fail-closed on unowned content,
 // token redaction, and partial failure are provable without a live sandbox.
 
 const SENTINEL = "ghp_TESTSENTINEL_do_not_log_0000";
@@ -32,7 +32,7 @@ interface Call {
   env: Record<string, string> | undefined;
 }
 interface FakeSandboxOptions {
-  state?: "reuse" | "branch" | "owned-stale" | "foreign" | "occupied" | "absent";
+  state?: "reuse" | "ownership" | "branch" | "agent-branch" | "owned-stale" | "foreign" | "occupied" | "absent";
   cloneExit?: number;
   cloneOut?: string;
   switchExit?: number;
@@ -41,7 +41,7 @@ interface FakeSandboxOptions {
   pullOut?: string;
 }
 /** `state` is what the pre-check reports for the destination: "reuse" (right repo+branch),
- *  "branch" (right repo, wrong branch -> switch in place), "owned-stale" (a useAgent-owned checkout
+ *  "branch" (right repo, wrong branch -> require a fresh workspace), "owned-stale" (a useAgent-owned checkout
  *  of a different repo -> safe to replace), "foreign" (an UNOWNED git repo, different origin ->
  *  fail closed), "occupied" (UNOWNED non-git content -> fail closed), "absent" (nothing there). */
 function fakeSandbox(opts: FakeSandboxOptions = {}): {
@@ -54,7 +54,7 @@ function fakeSandbox(opts: FakeSandboxOptions = {}): {
       calls.push({ cmd, env });
       if (/echo state:absent/.test(cmd) && !/git clone/.test(cmd)) return { result: `state:${opts.state ?? "absent"}`, exitCode: 0 };
       if (/refs\/pull\//.test(cmd)) return { result: opts.pullOut ?? "pr:ok", exitCode: opts.pullExit ?? 0 };
-      if (/git -C .* (fetch|checkout)/.test(cmd)) return { result: opts.switchOut ?? "switch:ok", exitCode: opts.switchExit ?? 0 };
+      if (/git .* -C .* (fetch|checkout)/.test(cmd)) return { result: opts.switchOut ?? "switch:ok", exitCode: opts.switchExit ?? 0 };
       if (/git clone/.test(cmd)) return { result: opts.cloneOut ?? "clone:ok", exitCode: opts.cloneExit ?? 0 };
       return { result: "", exitCode: 0 };
     },
@@ -84,7 +84,7 @@ function fakeCtx(repos?: string[]): {
 }
 const cloneCmd = (calls: Call[]) => calls.find((c) => /git clone/.test(c.cmd));
 const idCmd = (calls: Call[]) => calls.find((c) => /echo state:absent/.test(c.cmd) && !/git clone/.test(c.cmd));
-const switchCmd = (calls: Call[]) => calls.find((c) => /git -C .* checkout/.test(c.cmd));
+const switchCmd = (calls: Call[]) => calls.find((c) => /git .* -C .* checkout/.test(c.cmd));
 const pullCmd = (calls: Call[]) => calls.find((c) => /refs\/pull\//.test(c.cmd));
 
 async function withProductionMode<T>(action: () => Promise<T>): Promise<T> {
@@ -135,16 +135,21 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(shq("it's")).toBe("'it'\\''s'");
   });
 
-  test("a fresh single repo clones into an OWNER-QUALIFIED subdir via a temp dir + atomic rename", async () => {
+  test("a fresh single repo clones from root-owned staging into an OWNER-QUALIFIED subdir", async () => {
     const { sandbox, calls } = fakeSandbox({ state: "absent" });
     const { ctx, emits } = fakeCtx();
-    await ensureRepoClone(sandbox, "/home/daytona/work", "acme/widget", ctx);
+    const changed = await ensureRepoClone(sandbox, "/home/daytona/work", "acme/widget", ctx);
+    expect(changed).toBe(true);
     const clone = cloneCmd(calls);
     expect(clone).toBeDefined();
     expect(clone?.cmd).toContain("git clone");
     expect(clone?.cmd).toContain("'https://github.com/acme/widget.git'");
     expect(clone?.cmd).toContain("/home/daytona/work/acme/widget"); // <owner>/<name>, not bare <name>
-    expect(clone?.cmd).toContain("mktemp -d"); // clone into a unique temp sibling first
+    expect(clone?.cmd).toContain('STAGE_ROOT=/root/.skynet/repo-staging');
+    expect(clone?.cmd).toContain('mktemp -d "$STAGE_ROOT/clone.XXXXXX"');
+    expect(clone?.cmd).not.toContain('mktemp -d "$PARENT/');
+    expect(clone?.cmd).toContain('stat -c %u "$PARENT"');
+    expect(clone?.cmd).toContain("clone:parent-untrusted");
     expect(clone?.cmd).toContain('mv -T "$TMP" "$DIR"'); // then atomically rename into place (mv -T = no nest)
     expect(clone?.cmd).toContain('mv "$DIR" "$BAK"'); // owned/absent replace moves the old aside atomically first
     expect(clone?.cmd).not.toContain('rm -rf "$DIR"'); // never rm the destination (race-safe move-aside instead)
@@ -235,21 +240,22 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     });
     const { ctx, emits } = fakeCtx(["acme/widget"]);
 
-    await checkoutPullRequestResources(
+    const changedPaths = await checkoutPullRequestResources(
       sandbox,
       "/home/daytona/work with spaces",
       [pullRequestResource(expectedHead)],
       ctx,
     );
+    expect(changedPaths).toEqual(["/home/daytona/work with spaces/acme/widget"]);
 
     const checkout = pullCmd(calls);
     expect(checkout).toBeDefined();
     expect(checkout?.cmd).toContain("DIR='/home/daytona/work with spaces/acme/widget'");
     expect(checkout?.cmd).toContain(
-      "git -C \"$DIR\" fetch --force --quiet origin 'refs/pull/42/head:refs/skynet/pull/42/head'",
+      "git -c safe.directory=\"$DIR\" -C \"$DIR\" fetch --force --quiet origin 'refs/pull/42/head:refs/skynet/pull/42/head'",
     );
     expect(checkout?.cmd).toContain(
-      "git -C \"$DIR\" checkout --detach 'refs/skynet/pull/42/head'",
+      "git -c safe.directory=\"$DIR\" -C \"$DIR\" checkout --detach 'refs/skynet/pull/42/head'",
     );
     expect(checkout?.cmd).toContain(`EXPECTED='${expectedHead}'`);
     expect(checkout?.cmd).not.toContain("github.com/acme/widget/pull/42");
@@ -281,6 +287,65 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     ).rejects.toThrow(
       `pull request acme/widget#42 head SHA mismatch: expected ${expectedHead}, fetched ${actualHead}`,
     );
+  });
+
+  test("a retained agent-owned pull-request checkout is read-only for root", async () => {
+    const expectedHead = "0123456789abcdef0123456789abcdef01234567";
+    const { sandbox, calls } = fakeSandbox({
+      pullExit: 1,
+      pullOut: "pr:agent-owned",
+    });
+    const { ctx } = fakeCtx(["acme/widget"]);
+
+    await expect(
+      checkoutPullRequestResources(
+        sandbox,
+        "/w",
+        [pullRequestResource(expectedHead)],
+        ctx,
+      ),
+    ).rejects.toThrow("agent-owned retained checkout; start a fresh workspace");
+    const command = pullCmd(calls)?.cmd ?? "";
+    expect(command.indexOf('if [ "$OWNER" = 1000 ]')).toBeLessThan(
+      command.indexOf("fetch --force"),
+    );
+  });
+
+  test("an interrupted ownership transfer blocks root pull-request mutation", async () => {
+    const expectedHead = "0123456789abcdef0123456789abcdef01234567";
+    const { sandbox, calls } = fakeSandbox({
+      pullExit: 1,
+      pullOut: "pr:ownership-incomplete",
+    });
+    const { ctx } = fakeCtx(["acme/widget"]);
+
+    await expect(
+      checkoutPullRequestResources(
+        sandbox,
+        "/w",
+        [pullRequestResource(expectedHead)],
+        ctx,
+      ),
+    ).rejects.toThrow("partially transferred retained checkout; start a fresh workspace");
+    const command = pullCmd(calls)?.cmd ?? "";
+    expect(command).toContain(
+      'find "$DIR" -xdev \\( ! -uid 0 -o ! -gid 0 -o -perm /022 \\) -print -quit',
+    );
+    expect(command.indexOf('find "$DIR"')).toBeLessThan(
+      command.indexOf("fetch --force"),
+    );
+  });
+
+  test("an already-matching retained pull-request checkout needs no root mutation", async () => {
+    const expectedHead = "0123456789abcdef0123456789abcdef01234567";
+    const { sandbox } = fakeSandbox({ pullOut: `pr:reuse sha=${expectedHead}` });
+    const { ctx } = fakeCtx(["acme/widget"]);
+    expect(await checkoutPullRequestResources(
+      sandbox,
+      "/w",
+      [pullRequestResource(expectedHead)],
+      ctx,
+    )).toEqual([]);
   });
 
   test("resources without a code change do not run a checkout command", async () => {
@@ -343,36 +408,50 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
   test("REUSE: a checkout with matching origin+branch is a fast skip (no clone, no step)", async () => {
     const { sandbox, calls } = fakeSandbox({ state: "reuse" });
     const { ctx, emits } = fakeCtx();
-    await ensureRepoClone(sandbox, "/w", "acme/widget", ctx);
+    const changed = await ensureRepoClone(sandbox, "/w", "acme/widget", ctx);
+    expect(changed).toBe(false);
     expect(cloneCmd(calls)).toBeUndefined();
     expect(emits.some((e) => e.label?.startsWith("Cloning"))).toBe(false);
   });
 
-  test("SAME repo, WRONG branch: switch IN PLACE (fetch+checkout), NEVER rm -rf a warm checkout", async () => {
-    const { sandbox, calls } = fakeSandbox({ state: "branch" });
-    const { ctx, emits } = fakeCtx();
-    await ensureRepoClone(sandbox, "/w", "acme/widget:main", ctx);
-    const sw = switchCmd(calls);
-    expect(sw).toBeDefined();
-    expect(sw?.cmd).toContain("git -C \"$DIR\" fetch origin 'main'");
-    expect(sw?.cmd).toContain("git -C \"$DIR\" checkout 'main'");
-    expect(sw?.cmd).not.toContain("rm -rf");
+  test("a missing trusted ownership receipt repairs transfer without repeating Git", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "ownership" });
+    const { ctx } = fakeCtx();
+    expect(await ensureRepoClone(sandbox, "/w", "acme/widget", ctx)).toBe(true);
     expect(cloneCmd(calls)).toBeUndefined();
-    expect(emits.some((e) => e.label === "Checking out acme/widget (main)")).toBe(true);
-    expect(sw?.env?.GIT_CONFIG_VALUE_0).toContain(Buffer.from(`x-access-token:${SENTINEL}`).toString("base64"));
-    expect(sw?.cmd).not.toContain(SENTINEL);
+    expect(switchCmd(calls)).toBeUndefined();
   });
 
-  test("a branch switch that FAILS throws a SANITIZED error and does not fall through to a re-clone", async () => {
-    const { sandbox, calls } = fakeSandbox({ state: "branch", switchExit: 1, switchOut: "switch:failed\nerror: pathspec 'main' did not match" });
+  test("never mutates an agent-owned retained checkout as root", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "agent-branch" });
     const { ctx } = fakeCtx();
-    let msg = "";
-    await ensureRepoClone(sandbox, "/w", "acme/widget:main", ctx).catch((e) => { msg = e instanceof Error ? e.message : String(e); });
-    expect(msg).toContain("failed to switch acme/widget to main");
-    expect(msg).toContain("error: pathspec 'main' did not match");
-    expect(msg).not.toContain("switch:failed");
-    expect(msg).not.toContain(SENTINEL);
+    await expect(
+      ensureRepoClone(sandbox, "/w", "acme/widget:main", ctx),
+    ).rejects.toThrow("retained agent-owned checkout requires a fresh workspace");
+    expect(switchCmd(calls)).toBeUndefined();
+  });
+
+  test("SAME repo, WRONG branch: fail closed and require a fresh workspace", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "branch" });
+    const { ctx } = fakeCtx();
+    await expect(
+      ensureRepoClone(sandbox, "/w", "acme/widget:main", ctx),
+    ).rejects.toThrow("branch changes require a fresh workspace");
+    expect(switchCmd(calls)).toBeUndefined();
     expect(cloneCmd(calls)).toBeUndefined();
+  });
+
+  test("an untrusted workspace repository parent fails before placement", async () => {
+    const { sandbox, calls } = fakeSandbox({
+      state: "absent",
+      cloneExit: 1,
+      cloneOut: "clone:parent-untrusted",
+    });
+    const { ctx } = fakeCtx();
+    await expect(
+      ensureRepoClone(sandbox, "/w", "acme/widget", ctx),
+    ).rejects.toThrow("workspace repository parent is not root-owned");
+    expect(cloneCmd(calls)?.cmd).toContain('if [ ! -e "$PARENT" ]');
   });
 
   test("FOREIGN: an UNOWNED git repo with a different origin FAILS CLOSED (never rm, never clone)", async () => {
@@ -403,7 +482,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     const clone = cloneCmd(calls);
     expect(clone).toBeDefined();
     expect(clone?.cmd).toContain("ALLOW=yes"); // we own it -> may replace
-    expect(clone?.cmd).toContain("mktemp -d"); // still via temp + rename (clone succeeds before replacing)
+    expect(clone?.cmd).toContain('mktemp -d "$STAGE_ROOT/clone.XXXXXX"');
     expect(clone?.cmd).toContain("-b 'main'");
   });
 

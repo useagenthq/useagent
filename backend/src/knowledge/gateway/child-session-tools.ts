@@ -12,8 +12,11 @@ import {
   listChildSessionEvents,
   listChildSessions,
 } from "../../runs/child-sessions";
+import { acceptProductChildBatch } from "../../runs/child-thread-batch-service";
+import { CHILD_BATCH_LIMIT, CHILD_PROMPT_MAX_CHARS, CHILD_TITLE_MAX_CHARS } from "../../runs/child-session-policy";
+import { productChildThreadsEnabled } from "../../runs/thread-relationship-rollout";
+import { ENGINE_IDS, type EngineId } from "../../db/schema";
 
-const MAX_PROMPT_CHARS = 4_000;
 const MAX_TEXT_EVENT_LINES = 20;
 const MAX_TEXT_PAYLOAD_CHARS = 320;
 
@@ -21,7 +24,7 @@ export const CHILD_SESSION_TOOLS = [
   {
     name: "child_session_create",
     description:
-      "Create a durable child session under the current live run. Children do NOT run in parallel with this turn: each child is queued as a deferred serial thread turn that starts only after the current turn settles, so plan to finish this turn and read child results in a later turn (via child_session_list/events/gather). Identity, thread, engine, model, repositories, and memory scope are derived only from the signed gateway capability and current run. Creation is idempotent by idempotencyKey.",
+      "Create one durable, independently dispatchable, messageable child thread. Identity, family, repositories, resources, and memory scope are derived from the signed current run. Creation is idempotent by idempotencyKey.",
     inputSchema: {
       type: "object",
       properties: {
@@ -32,10 +35,43 @@ export const CHILD_SESSION_TOOLS = [
         },
         prompt: {
           type: "string",
-          description: `Child task prompt, bounded to ${MAX_PROMPT_CHARS} characters.`,
+          description: `Child task prompt, bounded to ${CHILD_PROMPT_MAX_CHARS} characters.`,
+        },
+        title: {
+          type: "string",
+          description: `Meaningful child title, bounded to ${CHILD_TITLE_MAX_CHARS} characters.`,
         },
       },
       required: ["idempotencyKey", "prompt"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "child_session_create_many",
+    description:
+      "Atomically create 1-20 durable, independently dispatchable, messageable child threads for visible fan-out. All children inherit the signed parent authority snapshot and are accepted or rejected together.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        idempotencyKey: { type: "string", description: "Stable key for this ordered fan-out batch." },
+        children: {
+          type: "array",
+          minItems: 1,
+          maxItems: CHILD_BATCH_LIMIT,
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string", maxLength: CHILD_TITLE_MAX_CHARS },
+              prompt: { type: "string", maxLength: CHILD_PROMPT_MAX_CHARS },
+              engine: { type: "string" },
+              model: { type: "string" },
+            },
+            required: ["title", "prompt"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["idempotencyKey", "children"],
       additionalProperties: false,
     },
   },
@@ -72,6 +108,11 @@ export const CHILD_SESSION_TOOLS = [
           description:
             "Last native event seq already seen. Omit or use -1 for the first page.",
         },
+        cursorRunId: {
+          type: "string",
+          description:
+            "Run id returned as cursorRunId by the previous page. Required with cursor after a child thread advances to a later turn.",
+        },
         limit: {
           type: "integer",
           minimum: 1,
@@ -105,6 +146,18 @@ export const CHILD_SESSION_TOOLS = [
 export const CHILD_SESSION_TOOL_NAMES: ReadonlySet<string> = new Set(
   CHILD_SESSION_TOOLS.map((tool) => tool.name),
 );
+
+export function advertisedChildSessionTools(productChildren = productChildThreadsEnabled()): readonly (typeof CHILD_SESSION_TOOLS)[number][] {
+  if (productChildren) return CHILD_SESSION_TOOLS;
+  return CHILD_SESSION_TOOLS
+    .filter((tool) => tool.name !== "child_session_create_many")
+    .map((tool) => tool.name === "child_session_create"
+      ? {
+          ...tool,
+          description: "Create one durable legacy deferred child turn in the current thread. It starts after the current turn settles and is not an independently messageable product thread.",
+        }
+      : tool) as readonly (typeof CHILD_SESSION_TOOLS)[number][];
+}
 
 function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -157,9 +210,9 @@ export async function childSessionToolsEnabled(
 ): Promise<boolean> {
   const run = await getRunForOrg(claims.orgId, claims.runId);
   if (!run || run.status !== "running") return false;
-  // Gateway child sessions are engine-independent (deferred serial thread turns through the
-  // product command lane), so no runtime-session-id requirement: any live run on a
-  // dispatch-ready engine/model gets them, ACP claude/codex included.
+  // Gateway child sessions are engine-independent product commands. The rollout
+  // decides whether creation uses legacy deferred turns or independently
+  // dispatchable child threads; neither requires a provider-native session id.
   const capabilities = sessionCapabilities(run.engine, {
     desktop: Boolean(run.sandboxId),
     knowledgeTools: true,
@@ -187,12 +240,13 @@ async function create(
   }
   const idempotencyKey = cleanString(args.idempotencyKey);
   const prompt = cleanString(args.prompt);
+  const title = cleanString(args.title);
   if (!idempotencyKey)
     return errorResult("child_session_create requires idempotencyKey.");
   if (!prompt) return errorResult("child_session_create requires prompt.");
-  if (prompt.length > MAX_PROMPT_CHARS) {
+  if (prompt.length > CHILD_PROMPT_MAX_CHARS) {
     return errorResult(
-      `child_session_create prompt exceeds ${MAX_PROMPT_CHARS} characters.`,
+      `child_session_create prompt exceeds ${CHILD_PROMPT_MAX_CHARS} characters.`,
     );
   }
 
@@ -202,6 +256,7 @@ async function create(
     parentRunId: run.id,
     threadId: run.threadId,
     prompt,
+    title: title || undefined,
     engine: run.engine,
     model: run.model,
     repos: run.repos,
@@ -217,6 +272,54 @@ async function create(
     `${outcome.status === "created" ? "Created" : "Replayed"} child session ${outcome.child.id} (${outcome.child.status}).`,
     { status: outcome.status, child: outcome.child },
   );
+}
+
+async function createMany(
+  claims: ToolTokenClaims,
+  args: Record<string, unknown>,
+): Promise<ToolCallResult> {
+  const run = await currentRun(claims);
+  if (!run || !(await childSessionToolsEnabled(claims)) || !productChildThreadsEnabled(claims.orgId)) {
+    return errorResult("Product child fan-out is not enabled for the current live run.");
+  }
+  const idempotencyKey = cleanString(args.idempotencyKey);
+  if (!idempotencyKey) return errorResult("child_session_create_many requires idempotencyKey.");
+  if (!Array.isArray(args.children) || args.children.length < 1 || args.children.length > CHILD_BATCH_LIMIT) {
+    return errorResult(`child_session_create_many requires 1 to ${CHILD_BATCH_LIMIT} children.`);
+  }
+  const children = args.children.map((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const child = value as Record<string, unknown>;
+    const title = cleanString(child.title);
+    const prompt = cleanString(child.prompt);
+    const engine = cleanString(child.engine);
+    const model = cleanString(child.model);
+    if (!title || !prompt || (engine && !(ENGINE_IDS as readonly string[]).includes(engine))) return null;
+    return {
+      title,
+      prompt,
+      engine: (engine as EngineId) || null,
+      model: model || null,
+    };
+  });
+  if (children.some((child) => child === null)) return errorResult("invalid child_session_create_many child.");
+  try {
+    const outcome = await acceptProductChildBatch({
+      orgId: claims.orgId,
+      actorId: claims.userId || null,
+      parentRunId: run.id,
+      parentThreadId: run.threadId,
+      idempotencyKey,
+      children: children as Parameters<typeof acceptProductChildBatch>[0]["children"],
+    });
+    if (outcome.status === "conflict") return errorResult("idempotencyKey was already used for different fan-out input.");
+    return textResult(
+      `${outcome.status === "created" ? "Created" : "Replayed"} ${outcome.children.length} child threads.`,
+      outcome,
+    );
+  } catch (error) {
+    return errorResult(error instanceof Error ? error.message : "child fan-out failed");
+  }
 }
 
 async function list(
@@ -263,12 +366,13 @@ async function events(
     threadId: claims.threadId,
     childRunId,
     cursor: args.cursor,
+    cursorRunId: args.cursorRunId,
     limit: args.limit,
   });
   if (!page) return errorResult("child session not found", { status: 404 });
   const shownEvents = page.events.slice(0, MAX_TEXT_EVENT_LINES);
   const hasHiddenReturnedEvents = page.events.length > shownEvents.length;
-  const more = hasHiddenReturnedEvents || page.nextCursor !== null;
+  const more = hasHiddenReturnedEvents || page.hasMore;
   const textCursor = hasHiddenReturnedEvents
     ? shownEvents.at(-1)?.seq ?? null
     : page.nextCursor;
@@ -278,7 +382,7 @@ async function events(
   });
   return textResult(
     [
-      `Child run: ${childRunId}`,
+      `Child run: ${page.childRunId}`,
       `Returned: ${page.events.length}; shown: ${shownEvents.length}; more: ${more}; cursor: ${textCursor ?? "end"}; ref: ${page.eventRef}`,
       ...lines,
     ].join("\n"),
@@ -319,6 +423,7 @@ export async function executeChildSessionToolLocal(
   args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
   if (name === "child_session_create") return create(claims, args);
+  if (name === "child_session_create_many") return createMany(claims, args);
   if (name === "child_session_list") return list(claims, args);
   if (name === "child_session_events") return events(claims, args);
   if (name === "child_session_gather") return gather(claims, args);

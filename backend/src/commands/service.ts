@@ -13,6 +13,8 @@ import { engineModelReadyForDispatch, persistedEngineModelReadyForDispatch } fro
 import { withThreadLifecycleLock } from "../runs/thread-lifecycle-lock";
 import { assertRunAdmissionOpen } from "./admission";
 import { assertRunPromptLimit } from "./prompt-policy";
+import { and, desc, eq } from "drizzle-orm";
+import { runs } from "../db/schema";
 
 // ---------------------------------------------------------------------------
 // Command acceptance orchestration (north star "Durable Commands"). Decides,
@@ -23,6 +25,10 @@ import { assertRunPromptLimit } from "./prompt-policy";
 
 /** Bounded audit copy of the accepted request. */
 const PAYLOAD_CAP = 8_192;
+
+export class StaleThreadHeadError extends Error {
+  readonly code = "stale_thread_head" as const;
+}
 
 /** Classify a keyed submission against an existing command: same fingerprint →
  *  idempotent replay of its run; different fingerprint → ambiguous reuse. */
@@ -40,6 +46,23 @@ function classifyReplay(
   return { status: "conflict", reason: "payload_mismatch" };
 }
 
+function acceptedFingerprint(
+  intent: RunCommandIntent,
+  threadRelationship?: RunCommandInput["threadRelationship"],
+): string {
+  const base = runIntentFingerprint(intent);
+  if (!threadRelationship) return base;
+  return new Bun.CryptoHasher("sha256").update(JSON.stringify([
+    base,
+    threadRelationship.parentThreadId,
+    threadRelationship.familyThreadId,
+    threadRelationship.kind,
+    threadRelationship.title,
+    threadRelationship.sourceRunId,
+    threadRelationship.sourceExecutionId ?? null,
+  ])).digest("hex");
+}
+
 /**
  * Read a previously accepted keyed decision before any external preflight.
  * Missing/unkeyed submissions return null and must continue through normal
@@ -50,11 +73,12 @@ async function preflightRunCommandReplayWithOrigin(input: {
   readonly idempotencyKey: string | null;
   readonly intent: RunCommandIntent;
   readonly origin: InternalRunOrigin | null;
+  readonly threadRelationship?: RunCommandInput["threadRelationship"];
 }): Promise<RunCommandOutcome | null> {
   if (input.idempotencyKey) {
     const existing = await findCommandByKey(input.orgId, input.idempotencyKey);
     if (existing) {
-      return classifyReplay(existing, runIntentFingerprint(input.intent), input.origin);
+      return classifyReplay(existing, acceptedFingerprint(input.intent, input.threadRelationship), input.origin);
     }
   }
   await assertRunAdmissionOpen();
@@ -65,6 +89,7 @@ export function preflightRunCommandReplay(input: {
   readonly orgId: string;
   readonly idempotencyKey: string | null;
   readonly intent: RunCommandIntent;
+  readonly threadRelationship?: RunCommandInput["threadRelationship"];
 }): Promise<RunCommandOutcome | null> {
   return preflightRunCommandReplayWithOrigin({ ...input, origin: null });
 }
@@ -74,6 +99,7 @@ export function preflightInternalRunCommandReplay(input: {
   readonly idempotencyKey: string | null;
   readonly intent: RunCommandIntent;
   readonly origin: InternalRunOrigin;
+  readonly threadRelationship?: RunCommandInput["threadRelationship"];
 }): Promise<RunCommandOutcome | null> {
   assertInternalRunOrigin(input.origin);
   return preflightRunCommandReplayWithOrigin(input);
@@ -95,7 +121,7 @@ async function acceptRunCommandWithOrigin(
   priority = 0,
 ): Promise<RunCommandOutcome> {
   const intent = input.intent ?? runIntentFromAcceptedRun(input.run);
-  const fingerprint = runIntentFingerprint(intent);
+  const fingerprint = acceptedFingerprint(intent, input.threadRelationship);
   const payload = JSON.stringify({
     prompt: input.run.prompt,
     model: input.run.model,
@@ -126,6 +152,13 @@ async function acceptRunCommandWithOrigin(
         if (input.idempotencyKey) {
           const existing = await findCommandByKey(input.orgId, input.idempotencyKey, tx);
           if (existing) return classifyReplay(existing, fingerprint, origin);
+        }
+        if (input.expectedThreadHeadRunId) {
+          const [head] = await tx.select({ id: runs.id }).from(runs).where(and(
+            eq(runs.orgId, input.orgId),
+            eq(runs.threadId, input.run.threadId),
+          )).orderBy(desc(runs.createdAt), desc(runs.id)).limit(1);
+          if (head?.id !== input.expectedThreadHeadRunId) throw new StaleThreadHeadError();
         }
 
         // Shared transaction lock closes the preflight-vs-insert race: a deploy
@@ -168,6 +201,7 @@ async function acceptRunCommandWithOrigin(
             run: input.run,
             origin,
             priority,
+            threadRelationship: input.threadRelationship,
           },
           tx,
         );

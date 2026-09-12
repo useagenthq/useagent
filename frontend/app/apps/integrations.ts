@@ -1,6 +1,8 @@
 import {
   type RemixiconComponentType,
   RiBubbleChartFill,
+  RiBuilding2Fill,
+  RiCheckboxCircleFill,
   RiDriveFill,
   RiDropboxFill,
   RiFigmaFill,
@@ -82,6 +84,16 @@ const integrations: Integration[] = [
     provider: "gmail",
     icon: RiMailFill,
     iconClass: "text-[#ea4335]",
+  },
+  {
+    provider: "linear",
+    icon: RiCheckboxCircleFill,
+    iconClass: "text-[#5e6ad2]",
+  },
+  {
+    provider: "hubspot",
+    icon: RiBuilding2Fill,
+    iconClass: "text-[#ff7a59]",
   },
   {
     provider: "google_drive",

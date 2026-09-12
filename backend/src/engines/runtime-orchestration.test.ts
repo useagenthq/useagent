@@ -358,6 +358,28 @@ describe("T3 orchestration projection", () => {
       summary: "Tool started",
       payload: { itemType: "collab_agent_tool_call" },
     })).toBe(false);
+    expect(shouldProjectRuntimeActivity({
+      ...collabActivity,
+      id: "identified-call-without-child",
+      kind: "tool.started",
+      payload: {
+        itemType: "collab_agent_tool_call",
+        toolCallId: "call-without-child",
+        status: "inProgress",
+        data: {},
+      },
+    })).toBe(false);
+    expect(shouldProjectRuntimeActivity({
+      ...collabActivity,
+      id: "identified-child-start",
+      kind: "tool.started",
+      payload: {
+        itemType: "collab_agent_tool_call",
+        toolCallId: "call-with-child",
+        childSessionId: "session-with-child",
+        status: "inProgress",
+      },
+    })).toBe(true);
     const anonymousCompletion = {
       ...collabActivity,
       id: "anonymous-complete",

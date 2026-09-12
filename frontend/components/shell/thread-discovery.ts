@@ -1,8 +1,10 @@
 import type { DotTone } from "@/components/shared/status-dot";
+import type { ProductThreadStatus } from "@useagent/agent-client";
+import type { ThreadRelationship } from "@useagent/agent-client";
 import { effectiveSidebarRunStatus, type SidebarRun } from "./working-project-status";
 
 export interface ThreadStatusPresentation {
-  readonly label: "Running" | "Queued" | "Failed" | "Completed";
+  readonly label: "Running" | "Waiting" | "Queued" | "Failed" | "Cancelled" | "Completed";
   readonly priority: number;
   readonly dot: { tone: DotTone; pulse?: boolean; hollow?: boolean } | null;
 }
@@ -13,15 +15,23 @@ export function effectiveThreadStatus(
   return effectiveSidebarRunStatus(run);
 }
 
-export function threadStatusPresentation(status: SidebarRun["status"]): ThreadStatusPresentation {
+export function threadStatusPresentation(
+  status: SidebarRun["status"] | ProductThreadStatus,
+): ThreadStatusPresentation {
   if (status === "running") {
     return { label: "Running", priority: 0, dot: { tone: "success", pulse: true } };
   }
   if (status === "queued") {
     return { label: "Queued", priority: 1, dot: { tone: "away", hollow: true } };
   }
+  if (status === "waiting") {
+    return { label: "Waiting", priority: 1, dot: { tone: "away", pulse: true } };
+  }
   if (status === "failed") {
     return { label: "Failed", priority: 2, dot: { tone: "error" } };
+  }
+  if (status === "cancelled") {
+    return { label: "Cancelled", priority: 2, dot: { tone: "neutral", hollow: true } };
   }
   return { label: "Completed", priority: 2, dot: null };
 }
@@ -80,6 +90,28 @@ export function findThreadMatches(runs: readonly SidebarRun[], query: string): S
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [];
   return rankThreads(runs).filter((run) => searchableThreadText(run).includes(normalized));
+}
+
+export function findRelationshipMatches(
+  relationships: readonly ThreadRelationship[],
+  query: string,
+): ThreadRelationship[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return [];
+  const byId = new Map(relationships.map((item) => [item.threadId, item] as const));
+  return relationships
+    .filter((item) => item.parentThreadId !== null)
+    .filter((item) => {
+      const parentTitle = item.parentThreadId ? byId.get(item.parentThreadId)?.title ?? "" : "";
+      return `${item.title} ${item.engine} ${item.model} ${parentTitle}`
+        .toLowerCase()
+        .includes(normalized);
+    })
+    .toSorted((a, b) => {
+      const priority = threadStatusPresentation(a.status).priority - threadStatusPresentation(b.status).priority;
+      if (priority !== 0) return priority;
+      return Date.parse(b.latestActivityAt) - Date.parse(a.latestActivityAt) || a.threadId.localeCompare(b.threadId);
+    });
 }
 
 export function filterCommandEntries<T extends { readonly label: string }>(

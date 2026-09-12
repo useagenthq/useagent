@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CHILD_SESSION_TOOLS } from "./child-session-tools";
+import { CHILD_SESSION_TOOLS, advertisedChildSessionTools } from "./child-session-tools";
 import {
   advertisedGatewayToolDescriptor,
   advertisedGatewayToolDescriptors,
@@ -112,7 +112,7 @@ describe("gateway operation registry", () => {
       expect(baseNames.has(tool.name)).toBe(false);
       expect(enabledNames.has(tool.name)).toBe(true);
     }
-    for (const tool of CHILD_SESSION_TOOLS) {
+    for (const tool of advertisedChildSessionTools()) {
       expect(baseNames.has(tool.name)).toBe(false);
       expect(enabledNames.has(tool.name)).toBe(true);
     }

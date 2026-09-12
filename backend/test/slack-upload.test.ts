@@ -27,6 +27,7 @@ import { InMemoryArtifactStorage } from "./in-memory-artifact-storage";
 import { getArtifact, reviseArtifactPublication } from "../src/artifacts/repo";
 import { createHash } from "node:crypto";
 import { finalizeRun } from "../src/runs/finalize";
+import { insertThreadRelationship } from "../src/runs/thread-relationship-repo";
 
 const ORG = "org-skynet-dev";
 const TEAM = "T-SKYNET-DEV";
@@ -281,5 +282,70 @@ describe("slack_upload tool", () => {
     await createRun({ id: plainId, prompt: "api run", model: "claude-opus-5", engine: "mock", orgId: ORG, userId: null, parentRunId: null, threadId: plainId });
     expect(await listNames(plainId)).not.toContain("slack_upload");
     expect(await listNames(plainId)).toContain("artifact_publish");
+  });
+
+  test("a product child inherits Slack discovery and artifact delivery from its family root", async () => {
+    const root = await slackRunWithSandbox("coordinate artifact child");
+    await insertThreadRelationship({
+      orgId: ORG,
+      threadId: root.runId,
+      parentThreadId: null,
+      familyThreadId: root.runId,
+      kind: "root",
+      title: "Coordinate artifact child",
+      sourceRunId: root.runId,
+    });
+    const childId = crypto.randomUUID();
+    await createRun({
+      id: childId,
+      prompt: "Create the child report",
+      model: "claude-opus-5",
+      engine: "mock",
+      orgId: ORG,
+      userId: null,
+      parentRunId: null,
+      threadId: childId,
+    });
+    await setRunSandbox(childId, "sb-child");
+    await insertThreadRelationship({
+      orgId: ORG,
+      threadId: childId,
+      parentThreadId: root.runId,
+      familyThreadId: root.runId,
+      kind: "delegated",
+      title: "Child report",
+      sourceRunId: root.runId,
+    });
+    const claims = claimsFor(childId);
+    const listed = await handleMcpMessage(claims, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+    });
+    expect(
+      (listed?.result as { tools: Array<{ name: string }> }).tools.map(({ name }) => name),
+    ).toContain("slack_upload");
+
+    const published = await executeArtifactTool(claims, "artifact_publish", {
+      path: "/root/work/outputs/child-report.txt",
+    });
+    const artifactId = (published.structuredContent?.artifact as { id: string }).id;
+    const result = await executeSlackTool(claims, "slack_upload", { artifactId });
+    expect(result.isError).toBeUndefined();
+
+    const [row] = await db
+      .select({ payload: slackOutbox.payload })
+      .from(slackOutbox)
+      .where(eq(slackOutbox.kind, "upload_file"))
+      .orderBy(desc(slackOutbox.createdAt))
+      .limit(1);
+    expect(JSON.parse(row?.payload ?? "{}")).toMatchObject({
+      orgId: ORG,
+      channel: root.channel,
+      threadTs: root.ts,
+      artifactId,
+      artifactThreadId: childId,
+      deliveryRunId: childId,
+    });
   });
 });

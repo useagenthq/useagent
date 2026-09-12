@@ -32,6 +32,7 @@ export function registerRunReadRoutes(routes: Hono<AppEnv>): void {
           all,
           limit,
           includeActive: c.req.query("include_active") === "1",
+          includeNativeChildren: c.req.query("include_native_children") === "1",
         }),
       });
     }

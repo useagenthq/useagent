@@ -6,7 +6,13 @@ import type {
 } from "@useagent/agent-harness/canonical";
 import { gatewayCompactToolListEnabled } from "../knowledge/gateway/gateway-meta-tools";
 
-const COMPUTER_OPERATIONS = ["computer_screenshot", "computer_sequence"] as const;
+const BROWSER_OPERATIONS = ["computer_screenshot", "computer_sequence"] as const;
+const DESKTOP_OPERATIONS = [
+  "computer_screenshot",
+  "computer_sequence",
+  "desktop_recording_start",
+  "desktop_recording_stop",
+] as const;
 
 export interface ExecutionCapabilityFacts {
   readonly runtime: "sandbox" | "managed";
@@ -81,14 +87,14 @@ export function buildExecutionCapabilitySnapshot(
   const desktop = gatewayFacility(
     facts.desktopAvailability,
     facts.gatewayAvailable,
-    COMPUTER_OPERATIONS,
+    DESKTOP_OPERATIONS,
     env,
     facts.desktopReasonCode,
   );
   const browser = gatewayFacility(
     facts.desktopAvailability,
     facts.gatewayAvailable,
-    COMPUTER_OPERATIONS,
+    BROWSER_OPERATIONS,
     env,
     facts.desktopReasonCode,
   );

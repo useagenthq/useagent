@@ -535,6 +535,10 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         warmPool: RUNTIME_CUBE_WARM_POOL_NAME,
         labels: { [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION },
         requiredLabels: { [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION },
+        providerAfterResources: engine === "claude",
+        resourceUser: engine === "claude"
+          ? { uid: 1000, gid: 1000, home: "/home/user" }
+          : undefined,
         // Frozen timing prefix: hosted cutover canaries read these values.
         timingPrefix: "t3",
         async prepareProvider(sandbox, workdir) {

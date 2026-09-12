@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
 import {
   executionHistoryKey,
+  fetchExecutionGraph,
   fetchExecutionTranscript,
+  fetchExecutionTranscriptById,
   mergeExecutionTranscript,
   resetExecutionGraphCache,
   resolveExecutionId,
@@ -62,6 +64,30 @@ describe("execution graph client", () => {
     expect(executionHistoryKey("run-a", "child")).not.toBe(executionHistoryKey("run-b", "child"));
   });
 
+  test("loads the exact execution transcript without resolving a colliding native id", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: string[] = [];
+    globalThis.fetch = (async (input) => {
+      calls.push(String(input));
+      return Response.json({ events: [event("exact", 1)], has_more: false, next_cursor: 1 });
+    }) as typeof fetch;
+    try {
+      expect(
+        await fetchExecutionTranscriptById(
+          "run-b",
+          "execution-b",
+          new AbortController().signal,
+        ),
+      ).toHaveLength(1);
+      expect(calls).toEqual([
+        "/api/runs/run-b/executions/execution-b/events?limit=200&cursor=0",
+      ]);
+      expect(calls.some((url) => url.includes("/executions?"))).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("paginates the graph and past 200 transcript events", async () => {
     const originalFetch = globalThis.fetch;
     const calls: string[] = [];
@@ -114,6 +140,86 @@ describe("execution graph client", () => {
       expect(pageSizes).toEqual([200, 201]);
       expect(calls.filter((url) => url.includes("/executions?"))).toHaveLength(2);
       expect(calls.at(-1)).toContain("cursor=200");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("decodes and deterministically merges paginated executions and delegation edges", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      const second = url.includes("cursor=page-2");
+      return Response.json({
+        graph_cursor: second ? 2 : 1,
+        executions: [
+          {
+            id: second ? "execution-b" : "execution-a",
+            mode: "native_child",
+            provider: "codex",
+            native_session_id: second ? "b" : "a",
+            native_parent_session_id: second ? "a" : "root",
+            status: second ? "completed" : "running",
+            started_at: "2026-09-01T10:00:00.000Z",
+            settled_at: second ? "2026-09-01T10:00:02.000Z" : null,
+            created_at: second
+              ? "2026-09-01T10:00:01.000Z"
+              : "2026-09-01T10:00:00.000Z",
+          },
+        ],
+        delegation_edges: [{
+          id: second ? "edge-b" : "edge-a",
+          parent_execution_id: second ? "execution-a" : "root-execution",
+          child_execution_id: second ? "execution-b" : "execution-a",
+          native_target_session_id: second ? "b" : "a",
+          observed_delivery_seq: second ? 2 : 1,
+        }],
+        has_more: !second,
+        next_cursor: second ? "page-3" : "page-2",
+      });
+    }) as typeof fetch;
+
+    try {
+      const graph = await fetchExecutionGraph("run-tree", new AbortController().signal);
+      expect(graph?.executions.map((row) => row.id)).toEqual(["execution-a", "execution-b"]);
+      expect(graph?.delegationEdges?.map((edge) => edge.id)).toEqual(["edge-a", "edge-b"]);
+      expect(graph?.executions[1]?.native_parent_session_id).toBe("a");
+      expect(graph?.graphCursor).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("authoritative refresh replaces a cached running execution with its completed revision", async () => {
+    const originalFetch = globalThis.fetch;
+    let request = 0;
+    globalThis.fetch = (async () => {
+      request += 1;
+      return Response.json({
+        graph_cursor: request,
+        executions: [{
+          id: "execution-child",
+          mode: "native_child",
+          provider: "codex",
+          native_session_id: "child",
+          status: request === 1 ? "running" : "completed",
+          settled_at: request === 1 ? null : "2026-09-01T10:00:02.000Z",
+          created_at: "2026-09-01T10:00:00.000Z",
+        }],
+        delegation_edges: [],
+        has_more: false,
+        next_cursor: "same-creation-cursor",
+      });
+    }) as typeof fetch;
+
+    try {
+      const signal = new AbortController().signal;
+      expect((await fetchExecutionGraph("run-refresh", signal))?.executions[0]?.status).toBe("running");
+      const refreshed = await fetchExecutionGraph("run-refresh", signal);
+      expect(refreshed?.executions).toHaveLength(1);
+      expect(refreshed?.executions[0]?.status).toBe("completed");
+      expect(refreshed?.graphCursor).toBe(2);
+      expect(request).toBe(2);
     } finally {
       globalThis.fetch = originalFetch;
     }

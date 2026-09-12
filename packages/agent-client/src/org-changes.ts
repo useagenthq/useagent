@@ -25,6 +25,20 @@ export interface RunOrgChange {
   readonly threadId: string;
 }
 
+export interface ThreadRelationshipOrgChange {
+  readonly type: "thread_relationship";
+  readonly action: "created" | "updated";
+  readonly threadId: string;
+  readonly familyThreadId: string;
+}
+
+export interface ExecutionGraphOrgChange {
+  readonly type: "execution_graph";
+  readonly runId: string;
+  readonly threadId: string;
+  readonly graphCursor: number;
+}
+
 export interface ArtifactOrgChange {
   readonly type: "artifact";
   readonly action: ArtifactChangeAction;
@@ -49,6 +63,8 @@ export type AutomationOrgChange =
 /** Complete browser-visible org invalidation wire contract. */
 export type OrgChange =
   | RunOrgChange
+  | ThreadRelationshipOrgChange
+  | ExecutionGraphOrgChange
   | ArtifactOrgChange
   | AutomationOrgChange
   | IntegrationConnectionChange
@@ -76,6 +92,35 @@ function isAutomationChangeAction(value: unknown): value is AutomationChangeActi
 
 export function decodeOrgChange(value: unknown): OrgChange | null {
   if (!isRecord(value)) return null;
+
+  if (
+    value.type === "execution_graph" &&
+    typeof value.runId === "string" && value.runId.length > 0 &&
+    typeof value.threadId === "string" && value.threadId.length > 0 &&
+    typeof value.graphCursor === "number" &&
+    Number.isSafeInteger(value.graphCursor) && value.graphCursor >= 0
+  ) {
+    return {
+      type: value.type,
+      runId: value.runId,
+      threadId: value.threadId,
+      graphCursor: value.graphCursor,
+    };
+  }
+
+  if (
+    value.type === "thread_relationship" &&
+    (value.action === "created" || value.action === "updated") &&
+    typeof value.threadId === "string" && value.threadId.length > 0 &&
+    typeof value.familyThreadId === "string" && value.familyThreadId.length > 0
+  ) {
+    return {
+      type: value.type,
+      action: value.action,
+      threadId: value.threadId,
+      familyThreadId: value.familyThreadId,
+    };
+  }
 
   if (
     value.type === "run" &&

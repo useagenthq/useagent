@@ -5,7 +5,11 @@
  * dividers, mass-mention safety, plain text left alone).
  */
 import { describe, expect, test } from "bun:test";
-import { toSlackMrkdwn, neutralizeMassMentions } from "../src/slack/mrkdwn";
+import {
+  toSlackMrkdwn,
+  neutralizeMassMentions,
+  slackPlainLabel,
+} from "../src/slack/mrkdwn";
 import { composeSlackReplyText } from "../src/slack/reply";
 
 describe("toSlackMrkdwn — required cases", () => {
@@ -72,6 +76,12 @@ describe("toSlackMrkdwn — ported faithful behaviors", () => {
     expect(toSlackMrkdwn("2 * 3 * 4")).toBe("2 * 3 * 4");
     expect(toSlackMrkdwn("file_name_here")).toBe("file_name_here");
     expect(toSlackMrkdwn("")).toBe("");
+  });
+
+  test("metadata labels cannot inject mrkdwn, links, layout, or broadcasts", () => {
+    expect(slackPlainLabel(" *Child*\n<!channel> <https://evil.test|click> `code` ")).toBe(
+      "Child @​channel &lt;https://evil.test|click&gt; code",
+    );
   });
 
   test("full agent reply converts end-to-end (no leftover markdown)", () => {

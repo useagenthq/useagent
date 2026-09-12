@@ -5,6 +5,9 @@ import { createRun } from "../runs/repo";
 import type { RunCommandInput } from "./types";
 import { claimUploadsForRun, UploadClaimError } from "../uploads/repo";
 import { recordAdmissionOnAccept } from "../fleet/intake";
+import { ensureRootThreadRelationship, insertThreadRelationship } from "../runs/thread-relationship-repo";
+import { threadRelationshipWriteMode } from "../runs/thread-relationship-rollout";
+import { enqueueProductChildStartedTx } from "../slack/product-child";
 
 // ---------------------------------------------------------------------------
 // Command persistence — pure data access, no decisions. The service layer
@@ -36,6 +39,7 @@ export interface NewRunCommand {
   readonly origin: string | null;
   /** Server-owned fleet priority. Public run acceptance always supplies 0. */
   readonly priority: number;
+  readonly threadRelationship?: RunCommandInput["threadRelationship"];
 }
 
 /** Look up a prior command by its per-tenant idempotency key. */
@@ -90,6 +94,33 @@ export async function insertCommandWithRun(
       },
       tx,
     );
+    if (cmd.threadRelationship) {
+      await insertThreadRelationship({
+        orgId: cmd.orgId,
+        threadId: cmd.run.threadId,
+        ...cmd.threadRelationship,
+      }, tx);
+      if (cmd.threadRelationship.parentThreadId) {
+        await enqueueProductChildStartedTx({
+          exec: tx,
+          orgId: cmd.orgId,
+          threadId: cmd.run.threadId,
+          runId: cmd.run.id,
+          title: cmd.threadRelationship.title,
+        });
+      }
+    } else if (
+      cmd.origin === null &&
+      cmd.run.parentRunId === null &&
+      cmd.run.threadId === cmd.run.id &&
+      threadRelationshipWriteMode() !== "off"
+    ) {
+      await ensureRootThreadRelationship({
+        orgId: cmd.orgId,
+        threadId: cmd.run.threadId,
+        title: cmd.run.prompt.slice(0, 160) || "Untitled thread",
+      }, tx);
+    }
     const attachmentIds = cmd.run.attachmentIds ?? [];
     if (attachmentIds.length > 0) {
       if (!cmd.actorId) throw new UploadClaimError();

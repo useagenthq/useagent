@@ -1,6 +1,11 @@
 import type { SandboxHandle } from "../sandboxes/provider";
 import { acquireThreadSandbox } from "./thread-sandbox";
-import { checkoutPullRequestResources, prepareRepos } from "./repo-prep";
+import {
+  checkoutPullRequestResources,
+  prepareRepos,
+  runtimeUserOwnershipMarker,
+  shq,
+} from "./repo-prep";
 import type { EngineRunContext } from "./types";
 import { materializeRunInputs } from "../uploads/materialize";
 import {
@@ -22,6 +27,11 @@ export interface SandboxTurnPreparationOptions<T> {
   /** Providers that establish a lower-privilege runtime user must run after
    * repository/input materialization so ownership cannot race those writes. */
   readonly providerAfterResources?: boolean;
+  readonly resourceUser?: {
+    readonly uid: number;
+    readonly gid: number;
+    readonly home: string;
+  };
   readonly prepareProvider: (sandbox: SandboxHandle, workdir: string) => Promise<T>;
 }
 
@@ -64,24 +74,58 @@ export async function prepareSandboxTurn<T>(
       }
     };
     const workdir = await stage("workspace_root", () => resolveRuntimeWorkspaceRoot(sandbox));
+    const resourceUser = options.resourceUser;
+    if (resourceUser) {
+      const owned = await stage("workspace_owner", () => sandbox.process.executeCommand(
+        `command -v setfacl >/dev/null && ` +
+          `setfacl -m u:${resourceUser.uid}:x /root && ` +
+          `chown root:root ${shq(workdir)} && chmod 1777 ${shq(workdir)}`,
+        undefined,
+        undefined,
+        10,
+      ));
+      if ((owned.exitCode ?? 1) !== 0) {
+        throw new Error("failed to prepare lower-privilege workspace owner");
+      }
+    }
     await stage("secrets", () =>
       materializeSecretInjection(
         (command) => sandbox.process.executeCommand(command, undefined, undefined, 30),
         secretInjection,
       ),
     );
-    const prepareResources = () => Promise.all([
-      stage("repos", async () => {
-        await prepareRepos(sandbox, workdir, ctx);
-        await checkoutPullRequestResources(
-          sandbox,
-          workdir,
-          ctx.resolvedResources ?? [],
-          ctx,
-        );
-      }),
-      stage("inputs", () => materializeRunInputs(sandbox, ctx.inputFiles)),
-    ]);
+    const prepareResources = async () => {
+      const [changedRepoPaths] = await Promise.all([
+        stage("repos", async () => {
+          const changed = await prepareRepos(sandbox, workdir, ctx);
+          const pullRequests = await checkoutPullRequestResources(
+            sandbox,
+            workdir,
+            ctx.resolvedResources ?? [],
+            ctx,
+          );
+          return [...new Set([...changed, ...pullRequests])];
+        }),
+        stage("inputs", () => materializeRunInputs(sandbox, ctx.inputFiles, resourceUser)),
+      ]);
+      if (resourceUser && changedRepoPaths.length > 0) {
+        const markers = changedRepoPaths.map((path) => {
+          const marker = shq(runtimeUserOwnershipMarker(path));
+          return `printf 'uid=%s gid=%s\n' ${resourceUser.uid} ${resourceUser.gid} > ${marker} && chmod 600 ${marker}`;
+        });
+        const transferred = await stage("repo_owner", () => sandbox.process.executeCommand(
+          `install -d -m 700 /root/.skynet/repo-runtime-ownership && ` +
+            `find ${changedRepoPaths.map(shq).join(" ")} -xdev -depth -exec chown -h ${resourceUser.uid}:${resourceUser.gid} -- {} + && ` +
+            markers.join(" && "),
+          undefined,
+          undefined,
+          30,
+        ));
+        if ((transferred.exitCode ?? 1) !== 0) {
+          throw new Error("failed to transfer prepared repositories to runtime user");
+        }
+      }
+    };
     let providerState: T;
     if (options.providerAfterResources) {
       await prepareResources();

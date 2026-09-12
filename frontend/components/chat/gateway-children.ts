@@ -10,11 +10,14 @@ import { cleanPrompt, type EngineId, type RunStatus } from "./types";
 /** One gateway child-session turn (its own run in the same thread). */
 export interface GatewayChildSession {
   readonly id: string;
+  readonly parentRunId?: string;
   readonly prompt: string;
   readonly engine: EngineId;
   readonly model: string;
   readonly status: RunStatus;
   readonly summary: string | null;
+  readonly durationMs?: number | null;
+  readonly createdAt?: string;
 }
 
 /** The minimal run/turn shape the derivation reads. `Turn` satisfies it
@@ -27,6 +30,8 @@ interface ChildTurnLike {
     readonly model: string;
     readonly parent_run_id?: string | null;
     readonly child_session?: boolean;
+    readonly duration_ms?: number | null;
+    readonly created_at?: string;
   };
   readonly status: RunStatus;
   readonly summary: string | null;
@@ -53,11 +58,14 @@ export const firstLine = (text: string): string => text.split("\n", 1)[0]?.trim(
 export function toGatewayChildSession(turn: ChildTurnLike): GatewayChildSession {
   return {
     id: turn.run.id,
+    parentRunId: turn.run.parent_run_id ?? "",
     prompt: cleanPrompt(turn.run.prompt),
     engine: turn.run.engine,
     model: turn.run.model,
     status: turn.status,
     summary: turn.summary,
+    durationMs: turn.run.duration_ms ?? null,
+    createdAt: turn.run.created_at ?? "",
   };
 }
 

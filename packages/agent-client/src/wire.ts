@@ -244,6 +244,34 @@ type ApiRunSummaryBase = Pick<
   | "updated_at"
 >;
 
+/** Execution-graph statuses a native child summary can carry (mirrors the
+ *  backend `agent_executions.status` enum). */
+export const NATIVE_CHILD_SUMMARY_STATUSES = [
+  "queued",
+  "running",
+  "waiting",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+export type NativeChildSummaryStatus = (typeof NATIVE_CHILD_SUMMARY_STATUSES)[number];
+
+/** One ENGINE-NATIVE subagent execution projected for navigation surfaces
+ *  (execution graph `mode='native_child'`). INSPECT-ONLY: it has no run of its
+ *  own and is never messageable - the UI deep-links into the parent session's
+ *  agent detail surface instead of treating it as a thread. */
+export interface ApiNativeChildSummary {
+  execution_id: string;
+  /** The parent turn (run) whose harness execution spawned this child. */
+  run_id: string;
+  provider: string;
+  native_session_id: string;
+  /** Spawn title from the canonical `child.started` event, when recorded. */
+  title: string | null;
+  status: NativeChildSummaryStatus;
+  started_at: string | null;
+}
+
 /** Compact projection for navigation/dashboard surfaces (`listRunSummaries`).
  *  Root fields preserve thread identity and compatibility. `latest_*` projects
  *  the newest turn so callers can render and rank the thread's current state. */
@@ -252,6 +280,11 @@ export type ApiRunSummary = ApiRunSummaryBase & {
   latest_status: RunStatus;
   latest_created_at: string;
   latest_updated_at: string;
+  /** Bounded, newest-first ENGINE-NATIVE child executions across the thread
+   *  (inspect-only sidebar projection). Omitted when the thread has none. */
+  native_children?: readonly ApiNativeChildSummary[];
+  /** Total native children in the thread (>= native_children.length). */
+  native_children_total?: number;
 };
 
 /** One turn's skeleton in a thread outline (`GET /api/runs/:id/thread-outline`):
@@ -448,11 +481,69 @@ function decodeApiRunSummaryBase(value: unknown): ApiRunSummaryBase | null {
   };
 }
 
+const NATIVE_CHILD_SUMMARY_STATUS_SET: ReadonlySet<string> = new Set(
+  NATIVE_CHILD_SUMMARY_STATUSES,
+);
+
+function decodeNativeChildSummary(value: unknown): ApiNativeChildSummary | null {
+  const record = asRecord(value);
+  if (
+    !record ||
+    typeof record.execution_id !== "string" ||
+    typeof record.run_id !== "string" ||
+    typeof record.provider !== "string" ||
+    typeof record.native_session_id !== "string" ||
+    !isNullableString(record.title) ||
+    typeof record.status !== "string" ||
+    !NATIVE_CHILD_SUMMARY_STATUS_SET.has(record.status) ||
+    !isNullableString(record.started_at)
+  ) {
+    return null;
+  }
+  return {
+    execution_id: record.execution_id,
+    run_id: record.run_id,
+    provider: record.provider,
+    native_session_id: record.native_session_id,
+    title: record.title,
+    status: record.status as NativeChildSummaryStatus,
+    started_at: record.started_at,
+  };
+}
+
+/** Decode the OPTIONAL native-children projection on a run summary. Returns
+ *  `null` on malformed input, `{}` when absent, the decoded fields otherwise. */
+function decodeNativeChildrenProjection(
+  record: Record<string, unknown>,
+): Pick<ApiRunSummary, "native_children" | "native_children_total"> | null {
+  if (record.native_children === undefined) {
+    return record.native_children_total === undefined ? {} : null;
+  }
+  if (!Array.isArray(record.native_children)) return null;
+  const children = record.native_children.map(decodeNativeChildSummary);
+  if (children.some((child) => child === null)) return null;
+  const total = record.native_children_total;
+  if (
+    total !== undefined &&
+    (
+      typeof total !== "number" ||
+      !Number.isSafeInteger(total) ||
+      total < children.length
+    )
+  ) return null;
+  return {
+    native_children: children as ApiNativeChildSummary[],
+    native_children_total: total ?? children.length,
+  };
+}
+
 /** Decode the compact run projection used by navigation/dashboard surfaces. */
 export function decodeApiRunSummary(value: unknown): ApiRunSummary | null {
   const record = asRecord(value);
   const summary = decodeApiRunSummaryBase(value);
   if (!record || !summary) return null;
+  const nativeChildren = decodeNativeChildrenProjection(record);
+  if (nativeChildren === null) return null;
 
   const hasLatestProjection =
     record.latest_run_id !== undefined ||
@@ -462,6 +553,7 @@ export function decodeApiRunSummary(value: unknown): ApiRunSummary | null {
   if (!hasLatestProjection) {
     return {
       ...summary,
+      ...nativeChildren,
       latest_run_id: summary.id,
       latest_status: summary.status,
       latest_created_at: summary.created_at,
@@ -480,6 +572,7 @@ export function decodeApiRunSummary(value: unknown): ApiRunSummary | null {
   }
   return {
     ...summary,
+    ...nativeChildren,
     latest_run_id: record.latest_run_id,
     latest_status: record.latest_status as RunStatus,
     latest_created_at: record.latest_created_at,

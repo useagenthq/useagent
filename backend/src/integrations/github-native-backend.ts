@@ -292,6 +292,8 @@ export function createGithubDelegatedConnectionBackend(
   const github = createGithubNativeConnectionBackend(config, dependencies);
   return {
     kind: "delegated",
+    catalogBackend: "native",
+    catalogAuthMethod: "custom_credential",
     runtimeBindingId: GITHUB_NATIVE_RUNTIME_BINDING_ID,
     disconnectSupported: true,
     supports: (provider) => provider === "github",

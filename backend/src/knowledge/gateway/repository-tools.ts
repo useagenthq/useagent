@@ -230,7 +230,8 @@ const productionService: RepositoryService = {
     );
     const path = `/root/work/${fullName}`;
     const revision = await sandbox.process.executeCommand(
-      `git -C ${shq(path)} rev-parse HEAD && git -C ${shq(path)} rev-parse --abbrev-ref HEAD`,
+      `git -c safe.directory=${shq(path)} -C ${shq(path)} rev-parse HEAD && ` +
+        `git -c safe.directory=${shq(path)} -C ${shq(path)} rev-parse --abbrev-ref HEAD`,
       undefined,
       undefined,
       15,

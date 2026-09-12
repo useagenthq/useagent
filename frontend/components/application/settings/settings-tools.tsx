@@ -14,8 +14,10 @@ import {
 } from "@/components/base/dropdown/dropdown";
 import { Switch } from "@/components/base/switch/switch";
 import { ChevronUpDownSmall } from "@/components/foundations/icons/chevrons";
+import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { cx } from "@/utils/cx";
 import { SettingsCard, SettingsRow, SettingsSectionLabel } from "./settings-rows";
+import { gatewayServerFromCapabilityCatalog, type McpServer } from "./settings-tools-data";
 
 /**
  * The settings modal's Tools page — MCP server management, structured after
@@ -34,77 +36,10 @@ import { SettingsCard, SettingsRow, SettingsSectionLabel } from "./settings-rows
 
 /* ------------------------------------------------------------------- data */
 
-type ServerStatus = "connected" | "error";
-
-interface McpServer {
-  id: string;
-  name: string;
-  /** Letter tile — bg/text pair from the swatch palette. */
-  initial: string;
-  tileClass: string;
-  status: ServerStatus;
-  /** e.g. "26 tools, 1 prompts, 104 resources enabled" */
-  summary?: string;
-  /** Names revealed by the expander chevron. */
-  tools?: string[];
-}
-
-const SERVERS: Record<string, McpServer> = {
-  astro: {
-    id: "astro",
-    name: "astro",
-    initial: "A",
-    tileClass: "bg-background-tertiary-default text-text-secondary",
-    status: "error",
-  },
-  figma: {
-    id: "figma",
-    name: "Figma",
-    initial: "F",
-    tileClass: "bg-pink-200 text-pink-700",
-    status: "connected",
-    summary: "26 tools, 1 prompts, 104 resources enabled",
-    tools: ["get_design_context", "get_metadata", "get_screenshot", "get_variable_defs", "create_new_file"],
-  },
-  paper: {
-    id: "paper",
-    name: "paper",
-    initial: "P",
-    tileClass: "bg-blue-200 text-blue-700",
-    status: "error",
-  },
-  posthog: {
-    id: "posthog",
-    name: "posthog",
-    initial: "P",
-    tileClass: "bg-amber-200 text-amber-700",
-    status: "connected",
-    summary: "521 tools, 173 resources enabled",
-    tools: ["query_insights", "list_dashboards", "capture_event", "feature_flags", "session_recordings"],
-  },
-  vercel: {
-    id: "vercel",
-    name: "vercel",
-    initial: "V",
-    tileClass: "bg-neutral-950 text-white",
-    status: "connected",
-    summary: "30 tools, 13 prompts enabled",
-    tools: ["list_deployments", "get_build_logs", "promote_deployment", "env_variables"],
-  },
-};
-
 /** Per-scope server lists — switching a pill swaps the section below. */
 const SCOPES: { id: string; label: string; servers: McpServer[] }[] = [
-  { id: "home", label: "Home", servers: [SERVERS.astro, SERVERS.figma] },
-  { id: "boardui", label: "boardui", servers: [SERVERS.figma, SERVERS.vercel] },
-  { id: "iospoke", label: "iospoke", servers: [SERVERS.astro] },
-  { id: "mideo", label: "mideo", servers: [SERVERS.posthog] },
-  { id: "bereal", label: "BeReal Task", servers: [SERVERS.figma] },
-  { id: "poke", label: "poke-1", servers: [] },
-  { id: "cloud", label: "Cloud", servers: [SERVERS.vercel, SERVERS.posthog] },
+  { id: "home", label: "Workspace", servers: [] },
 ];
-
-const PLUGIN_SERVERS: McpServer[] = [SERVERS.paper, SERVERS.posthog, SERVERS.vercel];
 
 /* ----------------------------------------------------------------- pieces */
 
@@ -276,7 +211,9 @@ function NewServerRow() {
 export function SettingsTools() {
   const [scopeId, setScopeId] = useState("home");
   const [waitForAuth, setWaitForAuth] = useState(true);
+  const { catalog, loaded } = useCapabilityCatalog();
   const scope = SCOPES.find((s) => s.id === scopeId) ?? SCOPES[0];
+  const pluginServers = [gatewayServerFromCapabilityCatalog(catalog, loaded)];
 
   return (
     <div className="flex w-full flex-col gap-6">
@@ -353,7 +290,7 @@ export function SettingsTools() {
       <div className="flex w-full flex-col gap-2">
         <SettingsSectionLabel className="px-2">Plugin MCP Servers</SettingsSectionLabel>
         <SettingsCard>
-          {PLUGIN_SERVERS.map((server) => (
+          {pluginServers.map((server) => (
             <ServerRow key={server.id} server={server} />
           ))}
         </SettingsCard>

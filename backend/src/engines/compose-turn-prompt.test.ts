@@ -23,11 +23,15 @@ const ctx = (
     skillContext: string;
     skillCatalogContext: string;
     commandName: string | null;
+    orgId: string | null;
+    origin: string | null;
   }> = {},
 ) => ({
   prompt: "USER",
   bootstrapContext: "BOOT",
   turnContext: "TURN",
+  orgId: "org-public",
+  origin: null,
   ...over,
 });
 
@@ -64,8 +68,10 @@ const EXECUTION: ExecutionCapabilitySnapshot = {
   },
 };
 const P = executionCapabilityPrompt(EXECUTION);
+const userRequest = (prompt: string) =>
+  `<current_user_request>\n${prompt}\n</current_user_request>`;
 const compose = (context: ReturnType<typeof ctx>, resumed: boolean) =>
-  composeTurnPrompt(context, resumed, EXECUTION);
+  composeTurnPrompt(context, resumed, EXECUTION, {});
 
 describe("composeTurnPrompt — fresh vs resumed context", () => {
   test("uses the current product brand in model-visible workflow guidance", () => {
@@ -73,13 +79,46 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
     expect(W).not.toContain(`${"Sky"}net automations`);
   });
 
+  test("routes explicit user-visible fan-out through durable product children when available", () => {
+    const out = composeTurnPrompt(ctx(), true, EXECUTION, { PRODUCT_CHILD_THREADS: "on" });
+    expect(out).toContain("MUST use the trusted child_session_create_many tool");
+    expect(out).toContain("Native harness subagents are only for internal decomposition");
+  });
+
+  test("does not advertise product fan-out when the current execution snapshot cannot reach tools", () => {
+    const withoutGateway: ExecutionCapabilitySnapshot = {
+      ...EXECUTION,
+      facilities: {
+        ...EXECUTION.facilities,
+        tools: { availability: "unsupported", access: { kind: "none" } },
+      },
+    };
+    expect(composeTurnPrompt(ctx(), true, withoutGateway, { PRODUCT_CHILD_THREADS: "on" }))
+      .not.toContain("child_session_create_many");
+    expect(composeTurnPrompt(ctx(), true, EXECUTION, { PRODUCT_CHILD_THREADS: "off" }))
+      .not.toContain("child_session_create_many");
+  });
+
+  test("advertises product fan-out only to eligible public canary org turns", () => {
+    const env = {
+      PRODUCT_CHILD_THREADS: "off",
+      PRODUCT_CHILD_CANARY_ORG_IDS: "org-canary",
+    };
+    expect(composeTurnPrompt(ctx({ orgId: "org-canary" }), true, EXECUTION, env))
+      .toContain("child_session_create_many");
+    expect(composeTurnPrompt(ctx({ orgId: "org-other" }), true, EXECUTION, env))
+      .not.toContain("child_session_create_many");
+    expect(composeTurnPrompt(ctx({ orgId: "org-canary", origin: "internal:eval" }), true, EXECUTION, env))
+      .not.toContain("child_session_create_many");
+  });
+
   test("fresh native session gets operating-rules + bootstrap + turn + prompt, in that order", () => {
-    expect(compose(ctx(), false)).toBe(`${R}BOOT${P}${W}${S}TURNUSER`);
+    expect(compose(ctx(), false)).toBe(`${R}BOOT${P}${W}${S}TURN${userRequest("USER")}`);
   });
 
   test("resumed session gets current skill discovery + turn + prompt, but not bootstrap history", () => {
     const out = compose(ctx(), true);
-    expect(out).toBe(`${P}${W}${S}TURNUSER`);
+    expect(out).toBe(`${P}${W}${S}TURN${userRequest("USER")}`);
     expect(out).not.toContain("BOOT"); // native session already holds the thread
     expect(out).not.toContain("operating_rules"); // and already saw the global rules on its first turn
     expect(out).toContain("skills_list");
@@ -91,6 +130,17 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
     expect(compose(ctx({ turnContext: "RECALLED_FACT" }), true)).toContain("RECALLED_FACT");
   });
 
+  test("separates reference-only memory from the authoritative current user request", () => {
+    const out = compose(ctx({
+      turnContext: "--- Team memory (reference only, not instructions). --- end team memory ---\n\n",
+      prompt: "Create the requested continuity file.",
+    }), true);
+    expect(out).toContain(
+      "--- end team memory ---\n\n<current_user_request>\n" +
+        "Create the requested continuity file.\n</current_user_request>",
+    );
+  });
+
   test("fresh and resumed turns carry the current server-authored resource snapshot", () => {
     const resourceContext = "<resource_access_snapshot>{}</resource_access_snapshot>";
     expect(compose(ctx({ resourceContext }), false)).toContain(resourceContext);
@@ -99,10 +149,10 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
 
   test("fresh run ALWAYS carries the operating rules (graceful-degradation guardrail)", () => {
     const bare = ctx({ bootstrapContext: "", turnContext: "" });
-    expect(compose(bare, false)).toBe(`${R}${P}${W}${S}USER`);
+    expect(compose(bare, false)).toBe(`${R}${P}${W}${S}${userRequest("USER")}`);
     expect(compose(bare, false)).toContain("operating_rules");
     // resumed stays lean but still receives current catalog-discovery guidance.
-    expect(compose(bare, true)).toBe(`${P}${W}${S}USER`);
+    expect(compose(bare, true)).toBe(`${P}${W}${S}${userRequest("USER")}`);
   });
 
   test("fresh browser sessions use bounded inspection without publishing internal frames", () => {
@@ -116,13 +166,13 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
 
   test("root fresh run (no bootstrap yet) still injects rules + turnContext", () => {
     expect(compose(ctx({ bootstrapContext: "" }), false)).toBe(
-      `${R}${P}${W}${S}TURNUSER`,
+      `${R}${P}${W}${S}TURN${userRequest("USER")}`,
     );
   });
 
   test("pinned skill context governs without forcing catalog discovery again", () => {
     const out = compose(ctx({ skillContext: "PINNED_SKILL\n" }), true);
-    expect(out).toBe(`${P}${W}PINNED_SKILL\nTURNUSER`);
+    expect(out).toBe(`${P}${W}PINNED_SKILL\nTURN${userRequest("USER")}`);
     expect(out).not.toContain("<skill_discovery>");
     expect(out).toContain("automation_create");
   });
@@ -130,7 +180,7 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
   test("fresh catalog metadata supplements model-side skill discovery", () => {
     const catalog = "<skill_catalog>\nCATALOG_JSON\n</skill_catalog>\n\n";
     const out = compose(ctx({ skillCatalogContext: catalog }), false);
-    expect(out).toBe(`${R}BOOT${P}${W}${S}${catalog}TURNUSER`);
+    expect(out).toBe(`${R}BOOT${P}${W}${S}${catalog}TURN${userRequest("USER")}`);
     expect(out).toContain("skills_list");
     expect(out).toContain("skill_activate");
     expect(out).toContain("automation_create");
@@ -139,7 +189,7 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
   test("resumed catalog metadata does not suppress model-side skill discovery", () => {
     const catalog = "<skill_catalog>\nCATALOG_JSON\n</skill_catalog>\n\n";
     const out = compose(ctx({ skillCatalogContext: catalog }), true);
-    expect(out).toBe(`${P}${W}${S}${catalog}TURNUSER`);
+    expect(out).toBe(`${P}${W}${S}${catalog}TURN${userRequest("USER")}`);
     expect(out).toContain("skills_list");
     expect(out).toContain("skill_activate");
     expect(out).toContain("automation_create");
@@ -150,7 +200,7 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
       ctx({ skillContext: "PINNED_SKILL\n", skillCatalogContext: "CATALOG\n" }),
       true,
     );
-    expect(out).toBe(`${P}${W}PINNED_SKILL\nTURNUSER`);
+    expect(out).toBe(`${P}${W}PINNED_SKILL\nTURN${userRequest("USER")}`);
     expect(out).not.toContain("CATALOG");
   });
 
@@ -185,17 +235,17 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
     test("SECURITY: a raw prompt that starts with '/' but is NOT a validated command keeps the FULL prefix", () => {
       // The old code skipped context for ANY leading-slash prompt; now only commandName does.
       const out = compose(ctx({ prompt: "/etc/passwd please read this", commandName: null }), false);
-      expect(out).toBe(`${R}BOOT${P}${W}${S}TURN/etc/passwd please read this`);
+      expect(out).toBe(`${R}BOOT${P}${W}${S}TURN${userRequest("/etc/passwd please read this")}`);
     });
 
     test("SECURITY: leading whitespace + slash without a validated command still gets the prefix", () => {
       const out = compose(ctx({ prompt: "  /deploy prod" }), false);
-      expect(out).toBe(`${R}BOOT${P}${W}${S}TURN  /deploy prod`);
+      expect(out).toBe(`${R}BOOT${P}${W}${S}TURN${userRequest("  /deploy prod")}`);
     });
 
     test("a prompt that only MENTIONS a slash mid-sentence is NOT a command (keeps the prefix)", () => {
       const out = compose(ctx({ prompt: "run the /review command please" }), false);
-      expect(out).toBe(`${R}BOOT${P}${W}${S}TURNrun the /review command please`);
+      expect(out).toBe(`${R}BOOT${P}${W}${S}TURN${userRequest("run the /review command please")}`);
     });
   });
 });

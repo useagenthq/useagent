@@ -9,6 +9,7 @@ import {
   buildRuntimeProviderBootstrapCommand,
   claudeProviderReadiness,
   codexBridgeAuthPath,
+  prepareRuntimeProviderBridge,
   prewarmRuntimeProviderBridge,
   resetRuntimeProviderBridgeCacheForTest,
 } from "./runtime-provider-bridge";
@@ -54,12 +55,26 @@ describe("T3 provider bridge", () => {
 
   test("uses private dynamic provider files instead of persisted credentials", () => {
     const command = buildRuntimeProviderBootstrapCommand(claudeEnvironment);
-    const wrapperBase64 = command.match(/printf %s '([^']+)' \| base64 -d/)?.[1];
-    const wrapper = Buffer.from(wrapperBase64!, "base64").toString("utf8");
+    const payloads = [...command.matchAll(/printf %s '([^']+)' \| base64 -d/g)];
+    const wrapper = Buffer.from(payloads[0]![1]!, "base64").toString("utf8");
+    const accessHelper = Buffer.from(payloads[1]![1]!, "base64").toString("utf8");
 
     expect(command).toContain("userdata/settings.json");
     expect(command).toContain("skynet-bin/claude");
-    expect(wrapper).toContain('--mcp-config "$CLAUDE_CONFIG_DIR/skynet-mcp.json"');
+    expect(wrapper).toContain('--settings "/tmp/useagent-claude-capability/useagent-settings.json"');
+    expect(wrapper).toContain('--mcp-config "/tmp/useagent-claude-capability/useagent-mcp.json"');
+    expect(wrapper).toContain('test "$(id -u user)" = "$CLAUDE_UID"');
+    expect(command).toContain('"$CLAUDE_ACCESS_HELPER" "/root/work"');
+    expect(accessHelper).toContain('setfacl -m "u:$CLAUDE_UID:x" /root');
+    expect(accessHelper).toContain('chown root:root "$CLAUDE_WORKDIR"');
+    expect(accessHelper).toContain('chmod 1777 "$CLAUDE_WORKDIR"');
+    expect(accessHelper).not.toContain('chown -R "$CLAUDE_UID:$CLAUDE_GID" "$CLAUDE_WORKDIR"');
+    expect(accessHelper).not.toContain("nonroot-access-v1");
+    expect(wrapper).toContain(
+      'setpriv --reuid="$CLAUDE_UID" --regid="$CLAUDE_GID" --clear-groups --no-new-privs',
+    );
+    expect(wrapper).toContain('export HOME="$CLAUDE_HOME" USER=user LOGNAME=user');
+    expect(wrapper).not.toContain("IS_SANDBOX");
     expect(command).toContain("chmod 700");
     expect(command).toContain("chmodSync(tmp,0o600)");
     expect(command).not.toContain("ANTHROPIC_API_KEY");
@@ -90,8 +105,17 @@ describe("T3 provider bridge", () => {
       const settingsPath = join(home, ".skynet/t3/userdata/settings.json");
       await mkdir(join(home, ".skynet/t3/userdata"), { recursive: true });
       await Bun.write(settingsPath, JSON.stringify({ enableProviderUpdateChecks: false }));
-      const command = buildRuntimeProviderBootstrapCommand(claudeEnvironment);
-      const readiness = claudeProviderReadiness(claudeEnvironment);
+      const environment = {
+        ...claudeEnvironment,
+        CLAUDE_CONFIG_DIR: join(home, "claude-config"),
+      };
+      const command = buildRuntimeProviderBootstrapCommand(environment)
+        .replace(
+          "install -d -o 1000 -g 1000 -m 700 \"$CLAUDE_CONFIG_DIR\"",
+          "install -d -m 700 \"$CLAUDE_CONFIG_DIR\"",
+        )
+        .replace('"$CLAUDE_ACCESS_HELPER" "/root/work"', ":");
+      const readiness = claudeProviderReadiness(environment);
       const result = Bun.spawnSync(["/bin/sh", "-c", command], {
         env: { ...process.env, HOME: home },
       });
@@ -128,7 +152,7 @@ describe("T3 provider bridge", () => {
         config: {
           enabled: true,
           binaryPath: join(home, ".skynet/t3/skynet-bin/claude"),
-          homePath: "/tmp/skynet-claude-config",
+          homePath: join(home, "claude-config"),
           customModels: [],
           launchArgs: "",
         },
@@ -255,6 +279,50 @@ describe("T3 provider bridge", () => {
     await prewarmRuntimeProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" });
 
     expect(commands).toHaveLength(1);
+  });
+
+  test("reasserts the Claude access boundary after resources on every retained turn", async () => {
+    const commands: string[] = [];
+    const sandbox = {
+      id: "t3-provider-retained-claude",
+      process: {
+        executeCommand: async (command: string) => {
+          commands.push(command);
+          return { exitCode: 0, result: "" };
+        },
+      },
+    } as unknown as SandboxHandle;
+    const context = {
+      runId: "run-claude-a",
+      threadId: "thread-claude",
+      prompt: "work",
+      bootstrapContext: "",
+      turnContext: "",
+      workdir: "/root/work",
+      orgId: "org-a",
+      userId: "user-a",
+      model: "claude-sonnet-5",
+      signal: new AbortController().signal,
+      emit: async () => undefined,
+      setSummary: () => undefined,
+    } as const;
+
+    await prepareRuntimeProviderBridge(sandbox, context, "claude", "/root/work");
+    await prepareRuntimeProviderBridge(
+      sandbox,
+      { ...context, runId: "run-claude-b" },
+      "claude",
+      "/root/work",
+    );
+
+    expect(
+      commands.filter((command) =>
+        command.startsWith("$HOME/.skynet/t3/skynet-bin/prepare-claude-access ")
+      ),
+    ).toHaveLength(2);
+    expect(commands.some((command) =>
+      command.includes("install -d -o 0 -g 1000 -m 750 /tmp/useagent-claude-capability")
+    )).toBe(true);
   });
 
   test("evicts a failed bootstrap so a later attempt can recover", async () => {

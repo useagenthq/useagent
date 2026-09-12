@@ -235,7 +235,10 @@ describe("actual claude CLI arguments", () => {
   test("no --dangerously-skip-permissions by default (dev, no yolo)", () => {
     process.env.NODE_ENV = "development";
     delete process.env.ACP_YOLO_APPROVE;
-    expect(claudeSpec.command({ model: "claude-opus-5", resumeId: undefined })).not.toContain("--dangerously-skip-permissions");
+    const command = claudeSpec.command({ model: "claude-opus-5", resumeId: undefined });
+    expect(command).not.toContain("--dangerously-skip-permissions");
+    expect(command).toContain("--settings /tmp/useagent-claude-capability/useagent-settings.json");
+    expect(command).toContain("--mcp-config /tmp/useagent-claude-capability/useagent-mcp.json");
   });
 
   test("production NEVER carries the skip flag, even with the yolo env set", () => {

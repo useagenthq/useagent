@@ -106,3 +106,19 @@ export function publishRunLifecycleChange(input: {
     threadId: input.threadId,
   });
 }
+
+/** Post-commit invalidation for the durable relationship graph. Carries only
+ * tenant-safe ids so an open parent/family view can refresh immediately. */
+export function publishThreadRelationshipChange(input: {
+  readonly orgId: string;
+  readonly threadId: string;
+  readonly familyThreadId: string;
+  readonly action?: "created" | "updated";
+}): void {
+  publishOrgChange(input.orgId, {
+    type: "thread_relationship",
+    action: input.action ?? "created",
+    threadId: input.threadId,
+    familyThreadId: input.familyThreadId,
+  });
+}

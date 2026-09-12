@@ -26,6 +26,21 @@ export function neutralizeMassMentions(text: string): string {
   return text.replace(MASS_MENTION, (_m, word: string) => `@​${word.toLowerCase()}`);
 }
 
+/** Render one server-authored label inside Slack mrkdwn chrome. Titles are
+ * metadata, not Markdown: collapse layout controls, neutralize broadcasts,
+ * escape Slack's entity delimiters, and remove formatting delimiters that
+ * could break the surrounding message. The canonical title remains unchanged
+ * in the product; this is only its safe Slack projection. */
+export function slackPlainLabel(text: string): string {
+  return neutralizeMassMentions(text)
+    .replace(/\s+/g, " ")
+    .trim()
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replace(/[*_~`]/g, "");
+}
+
 /**
  * Convert Markdown to Slack mrkdwn. Code spans and fenced blocks are stashed
  * first and restored last, so nothing inside them is transformed.

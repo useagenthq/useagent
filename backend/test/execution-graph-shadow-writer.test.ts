@@ -19,6 +19,7 @@ import {
   shadowWriteExecutionGraph as writeExecutionGraph,
 } from "../src/runs/execution-graph-shadow-writer";
 import type { ProviderEventInput } from "../src/runs/provider-events";
+import { subscribeOrg } from "../src/runs/org-signals";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
 const databaseName = `useagent_graph_shadow_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -150,6 +151,8 @@ describe("execution graph shadow writer", () => {
   test("writes only explicit OpenCode root and parent-linked child identities", async () => {
     const orgId = `org-${crypto.randomUUID()}`;
     const runId = await seedRun(orgId);
+    const changes: unknown[] = [];
+    const unsubscribe = subscribeOrg(orgId, (change) => changes.push(change));
     await shadowWriteExecutionGraph({
       id: `${runId}:root:session`,
       runId,
@@ -167,6 +170,13 @@ describe("execution graph shadow writer", () => {
       nativeSessionId: "child-session",
       nativeParentSessionId: "root-session",
     }, 1, testDb);
+    expect(changes).toContainEqual({
+      type: "execution_graph",
+      runId,
+      threadId: runId,
+      graphCursor: 1,
+    });
+    unsubscribe();
     await shadowWriteExecutionGraph({
       id: `${runId}:task-wrapper`,
       runId,

@@ -1,5 +1,6 @@
 import type { EngineId, MemoryScope } from "../db/schema";
 import type { ExplicitRunResource, RunResource } from "../resources/types";
+import type { ThreadRelationshipKind } from "../db/schema";
 
 // ---------------------------------------------------------------------------
 // Boundary types for durable command acceptance (north star "Durable
@@ -52,6 +53,20 @@ export interface RunCommandInput {
    * external resource resolution. Legacy/internal callers may omit it and use
    * the accepted run fields as their intent. */
   readonly intent?: RunCommandIntent;
+  /** Server-owned product-thread metadata inserted after the new root run and
+   * before its command/admission in the same transaction. Never browser-owned. */
+  readonly threadRelationship?: {
+    readonly parentThreadId: string | null;
+    readonly familyThreadId: string;
+    readonly kind: ThreadRelationshipKind;
+    readonly title: string;
+    readonly sourceRunId: string;
+    readonly sourceExecutionId?: string | null;
+  };
+  /** Optional server-owned optimistic fence for a follow-up. Rechecked under
+   * the thread lifecycle lock so concurrent submissions cannot branch from a
+   * stale head after passing an earlier route read. */
+  readonly expectedThreadHeadRunId?: string;
   readonly run: {
     readonly id: string;
     readonly prompt: string;

@@ -1,5 +1,7 @@
 import type {
   IntegrationActionCatalogEntry,
+  IntegrationAuthMethod,
+  IntegrationBackend,
   IntegrationConnectionAccount,
 } from "@useagent/agent-client/integrations";
 import type { IntegrationConnectionRecord } from "./connection-repo";
@@ -14,7 +16,11 @@ export interface ManagedConnectionStatus {
   readonly provider: string;
   readonly label: string;
   readonly description: string;
+  readonly authMethod: IntegrationAuthMethod;
+  readonly configured: boolean;
   readonly status: "connected" | "unavailable";
+  readonly degradationReason?: string;
+  readonly scopes?: readonly string[];
   readonly account?: IntegrationConnectionAccount;
 }
 
@@ -55,6 +61,8 @@ export interface ManagedConnectionBackend {
 
 export interface DelegatedConnectionBackend {
   readonly kind: "delegated";
+  readonly catalogBackend?: IntegrationBackend;
+  readonly catalogAuthMethod?: IntegrationAuthMethod;
   readonly runtimeBindingId: string;
   readonly disconnectSupported: boolean;
   supports(provider: string): boolean;

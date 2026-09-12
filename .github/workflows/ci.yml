@@ -17,6 +17,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
     paths-ignore:
       - "docs-site/**"
   pull_request:
@@ -25,7 +27,9 @@ on:
 
 # A newer push to the same ref supersedes an in-flight run — no wasted minutes.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Push and pull_request use different refs for the same branch. Keying by the
+  # PR head name collapses those duplicate full matrices into one current run.
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 env:
@@ -170,10 +174,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: bun-store-${{ runner.os }}-private-ops-${{ hashFiles('backend/bun.lock', 'packages/*/bun.lock') }}
+          key: bun-store-${{ runner.os }}-private-ops-${{ hashFiles('frontend/bun.lock', 'backend/bun.lock', 'packages/*/bun.lock') }}
           restore-keys: bun-store-${{ runner.os }}-private-ops-
       - run: bun install --frozen-lockfile
         working-directory: backend
+      # Private model/runtime contracts import the frontend's advertised model
+      # surface. Install its file:-linked workspace exactly as the frontend job
+      # does instead of relying on a developer machine's existing node_modules.
+      - run: bun install --frozen-lockfile
+        working-directory: frontend
       - name: Install shared package deps
         run: |
           for p in packages/*/; do
@@ -182,7 +191,7 @@ jobs:
       - name: Private release contracts
         run: bun test deploy/hetzner scripts/assert-oss-sync-safe.test.ts
       - name: Private release TypeScript
-        run: bunx tsc --project deploy/hetzner/tsconfig.json --noEmit
+        run: frontend/node_modules/.bin/tsc --project deploy/hetzner/tsconfig.json --noEmit
       - name: Private release shell syntax
         run: |
           find deploy/hetzner -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n

@@ -102,6 +102,12 @@ describe("repository gateway production clone", () => {
       expect(ensureRepoClone.mock.calls[0]?.[4]).toEqual({
         useGithubCredential: true,
       });
+      expect(executeCommand).toHaveBeenCalledWith(
+        "git -c safe.directory='/root/work/upstream-org/backend' -C '/root/work/upstream-org/backend' rev-parse HEAD && git -c safe.directory='/root/work/upstream-org/backend' -C '/root/work/upstream-org/backend' rev-parse --abbrev-ref HEAD",
+        undefined,
+        undefined,
+        15,
+      );
       expect(response.structuredContent).toEqual({
         repository: "upstream-org/backend",
         branch: "feature/auth",

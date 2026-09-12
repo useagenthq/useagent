@@ -11,6 +11,12 @@ import {
   type IntegrationConnectSessionRecord,
 } from "./connect-sessions";
 import {
+  INTEGRATION_CATALOG,
+  integrationCatalogDefinition,
+  isUserFacingIntegrationProvider,
+  summarizeIntegrationPermissions,
+} from "./catalog";
+import {
   findVisibleIntegrationConnectionRecord,
   listVisibleIntegrationConnectionRecords,
   listVisibleIntegrationConnections,
@@ -49,27 +55,6 @@ export interface IntegrationServiceDependencies {
   readonly delegatedBackends: readonly DelegatedConnectionBackend[];
 }
 
-const DELEGATED_INTEGRATION_CATALOG = [
-  {
-    provider: "github",
-    displayName: "GitHub",
-    description: "Native repository discovery, cloning, and pull request workflows.",
-  },
-  {
-    provider: "slack",
-    displayName: "Slack",
-    description: "Native events, threads, files, and streaming cards.",
-  },
-  {
-    provider: "linear",
-    displayName: "Linear",
-    description: "Issues, projects, and team workflows.",
-  },
-  { provider: "gmail", displayName: "Gmail", description: "Read, draft, and send email." },
-  { provider: "notion", displayName: "Notion", description: "Pages, databases, and workspace content." },
-  { provider: "hubspot", displayName: "HubSpot", description: "CRM contacts, companies, and deals." },
-] as const;
-
 function defaultDependencies(): IntegrationServiceDependencies {
   const openConnector = openConnectorConfigFromEnv();
   const oomol = oomolProjectConnectorConfigFromEnv();
@@ -88,14 +73,6 @@ function defaultDependencies(): IntegrationServiceDependencies {
   };
 }
 
-function displayName(provider: string): string {
-  return provider
-    .split(/[\/_-]+/u)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function ownerForRecord(record: { ownerType: "org" | "user"; ownerUserId: string | null }) {
   return record.ownerType === "org"
     ? ({ type: "org" } as const)
@@ -104,6 +81,38 @@ function ownerForRecord(record: { ownerType: "org" | "user"; ownerUserId: string
 
 function integrationBackend(provider: string): IntegrationSummary["backend"] {
   return provider === "github" || provider === "slack" ? "native" : "openconnector";
+}
+
+function connectionDegradationReason(status: IntegrationSummary["status"]): string | null {
+  if (status === "connecting") return "Connection setup is still in progress.";
+  if (status === "reauth_required") return "Reconnect to restore access.";
+  if (status === "unhealthy") return "Connection health verification failed.";
+  if (status === "revoked") return "Connection access has been revoked.";
+  return null;
+}
+
+export function selectProviderConnection<T extends {
+  readonly status: IntegrationSummary["status"];
+  readonly ownerType: "org" | "user";
+  readonly createdAt: Date;
+}>(
+  rows: readonly T[],
+): T | null {
+  const priority: Record<IntegrationSummary["status"], number> = {
+    connected: 5,
+    unhealthy: 4,
+    reauth_required: 3,
+    connecting: 2,
+    revoked: 1,
+    unavailable: 0,
+  };
+  return rows.reduce<T | null>((selected, row) => {
+    if (!selected) return row;
+    const status = priority[row.status] - priority[selected.status];
+    if (status !== 0) return status > 0 ? row : selected;
+    if (row.ownerType !== selected.ownerType) return row.ownerType === "user" ? row : selected;
+    return row.createdAt > selected.createdAt ? row : selected;
+  }, null);
 }
 
 export function createIntegrationService(
@@ -164,58 +173,125 @@ export function createIntegrationService(
 
   return {
     async listIntegrations(scope: IntegrationActorScope): Promise<IntegrationSummary[]> {
-      const [managed, connections, connectableProviders] = await Promise.all([
+      const [managed, connections, discoveries] = await Promise.all([
         Promise.all(deps.managedBackends.map((backend) => backend.readStatus(scope))),
         listVisibleIntegrationConnectionRecords(scope),
         Promise.all(
-          deps.delegatedBackends.map((backend) =>
-            backend.listConnectableProviders().catch(() => []),
-          ),
-        ).then((providers) => new Set(providers.flat())),
+          deps.delegatedBackends.map(async (backend) => {
+            try {
+              return { backend, providers: await backend.listConnectableProviders(), failed: false };
+            } catch {
+              return { backend, providers: [] as readonly string[], failed: true };
+            }
+          }),
+        ),
       ]);
-      const connectionProviders = new Set(connections.map((connection) => connection.provider));
-      const availableDelegated = DELEGATED_INTEGRATION_CATALOG.filter(
-        (item) => !connectionProviders.has(item.provider) && backendForNewConnect(item.provider),
-      );
-      return [
-        ...managed.map((status): IntegrationSummary => ({
-          provider: status.provider,
-          displayName: status.label,
-          description: status.description,
-          backend: "native",
-          managed: true,
-          connectAvailable: false,
-          disconnectAvailable: false,
-          status: status.status,
-          ...(status.account ? { account: status.account } : {}),
-          connection: null,
-        })),
-        ...availableDelegated.map((item): IntegrationSummary => ({
-          provider: item.provider,
-          displayName: item.displayName,
-          description: item.description,
-          backend: integrationBackend(item.provider),
+      const managedByProvider = new Map(managed.map((status) => [status.provider, status]));
+      const discoveredBackendByProvider = new Map<string, DelegatedConnectionBackend>();
+      for (const discovery of discoveries) {
+        for (const provider of discovery.providers) {
+          if (isUserFacingIntegrationProvider(provider) && discovery.backend.supports(provider)) {
+            discoveredBackendByProvider.set(provider, discovery.backend);
+          }
+        }
+      }
+      const connectionsByProvider = new Map<string, typeof connections>();
+      for (const connection of connections) {
+        const rows = connectionsByProvider.get(connection.provider) ?? [];
+        connectionsByProvider.set(connection.provider, [...rows, connection]);
+      }
+      const providers = new Set<string>(INTEGRATION_CATALOG.map((entry) => entry.provider));
+      for (const provider of managedByProvider.keys()) providers.add(provider);
+      for (const provider of connectionsByProvider.keys()) providers.add(provider);
+      for (const provider of discoveredBackendByProvider.keys()) providers.add(provider);
+      const orderedProviders = [
+        ...INTEGRATION_CATALOG.map((entry) => entry.provider),
+        ...[...providers]
+          .filter((provider) => !INTEGRATION_CATALOG.some((entry) => entry.provider === provider))
+          .filter(isUserFacingIntegrationProvider)
+          .sort(),
+      ];
+
+      return Promise.all(orderedProviders.map(async (provider): Promise<IntegrationSummary> => {
+        const definition = integrationCatalogDefinition(provider);
+        const record = selectProviderConnection(connectionsByProvider.get(provider) ?? []);
+        if (record) {
+          const backend = backendForBinding(record.runtimeBindingId);
+          let actions: readonly IntegrationActionCatalogEntry[] = [];
+          let actionCatalogUnavailable = false;
+          if (record.status === "connected" && backend) {
+            try {
+              actions = await backend.listActions({ ...scope, connection: record });
+            } catch {
+              actionCatalogUnavailable = true;
+            }
+          }
+          const connection = projectIntegrationConnection(record);
+          return {
+            ...definition,
+            backend: backend?.catalogBackend ?? integrationBackend(provider),
+            authMethod: record.authMethod,
+            managed: false,
+            configured: backend !== null,
+            connectAvailable: discoveredBackendByProvider.has(provider),
+            disconnectAvailable:
+              record.status !== "revoked" && backend?.disconnectSupported === true,
+            status: record.status,
+            degradationReason:
+              connectionDegradationReason(record.status) ??
+              (!backend
+                ? "The connector runtime for this connection is unavailable."
+                : actionCatalogUnavailable
+                  ? "Connected, but action permissions could not be verified."
+                  : null),
+            permissions: summarizeIntegrationPermissions({ scopes: connection.scopes, actions }),
+            account: connection.account,
+            connection,
+          };
+        }
+
+        const managedStatus = managedByProvider.get(provider);
+        if (managedStatus) {
+          return {
+            provider,
+            displayName: managedStatus.label,
+            description: managedStatus.description,
+            backend: "native",
+            authMethod: managedStatus.authMethod,
+            managed: true,
+            configured: managedStatus.configured,
+            connectAvailable: false,
+            disconnectAvailable: false,
+            status: managedStatus.status,
+            degradationReason: managedStatus.degradationReason ?? null,
+            permissions: summarizeIntegrationPermissions({ scopes: managedStatus.scopes }),
+            ...(managedStatus.account ? { account: managedStatus.account } : {}),
+            connection: null,
+          };
+        }
+
+        const backend = discoveredBackendByProvider.get(provider);
+        const discoveryFailed = discoveries.some(
+          (discovery) => discovery.failed && discovery.backend.supports(provider),
+        );
+        return {
+          ...definition,
+          backend: backend?.catalogBackend ?? integrationBackend(provider),
+          authMethod: backend?.catalogAuthMethod ?? null,
           managed: false,
-          connectAvailable: connectableProviders.has(item.provider),
+          configured: Boolean(backend),
+          connectAvailable: Boolean(backend),
           disconnectAvailable: false,
           status: "unavailable",
+          degradationReason: backend
+            ? null
+            : discoveryFailed
+              ? "Connector availability could not be verified."
+              : "Connector is not configured on this server.",
+          permissions: summarizeIntegrationPermissions({}),
           connection: null,
-        })),
-        ...connections.map((record): IntegrationSummary => ({
-          provider: record.provider,
-          displayName: displayName(record.provider),
-          description: `${displayName(record.provider)} account connection.`,
-          backend: integrationBackend(record.provider),
-          managed: false,
-          connectAvailable: backendForNewConnect(record.provider) !== null,
-          disconnectAvailable:
-            record.status !== "revoked" &&
-            backendForBinding(record.runtimeBindingId)?.disconnectSupported === true,
-          status: record.status,
-          account: projectIntegrationConnection(record).account,
-          connection: projectIntegrationConnection(record),
-        })),
-      ];
+        };
+      }));
     },
 
     async startConnect(input: IntegrationActorScope & {

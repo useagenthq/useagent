@@ -289,7 +289,7 @@ async function runWorker(runId: string): Promise<void> {
     // source. The result both controls fresh-only catalog prefill and is reused
     // by the adapter, avoiding a second DB lookup before dispatch.
     const providerSessionStatePromise = getThreadProviderSessionState(
-      run.threadId,
+      run.orgId, run.threadId,
       run.engine,
       run.id,
     );
@@ -438,8 +438,7 @@ async function runWorker(runId: string): Promise<void> {
         run.model,
         run.repos,
         run.resolvedResources,
-        run.orgId,
-        run.userId,
+        run.orgId, run.userId, run.origin,
         inputFiles,
         ac.signal,
         wasCancelled,
@@ -641,8 +640,7 @@ async function runEngine(
   model: string,
   repos: string[],
   resolvedResources: EngineRunContext["resolvedResources"],
-  orgId: string | null,
-  userId: string | null,
+  orgId: string | null, userId: string | null, origin: string | null,
   inputFiles: readonly RunInputFile[],
   /** Aborts on the hard timeout OR a user cancel (worker owns the controller). */
   signal: AbortSignal,
@@ -735,8 +733,7 @@ async function runEngine(
     workdir,
     threadId,
     timing,
-    orgId,
-    userId,
+    orgId, userId, origin,
     inputFiles,
     inputContext: formatInputContext(inputFiles),
     model,

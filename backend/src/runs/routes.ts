@@ -79,12 +79,10 @@ import { registerRunReadRoutes } from "./read-routes.js";
 import { registerExecutionGraphRoutes } from "./execution-graph-routes.js";
 import { registerProviderSessionRoutes } from "./provider-session-routes.js";
 import { boundedRunPrompt, runCreateBodyLimit, type RunCreateBody } from "./run-create-policy";
+import { acceptExistingThreadFollowup, ThreadFollowupTargetError } from "./thread-followups";
 export type { RunCreateBody } from "./run-create-policy";
-
 export const runsRoutes = new Hono<AppEnv>();
-
 runsRoutes.use("*", orgScope);
-
 // One lightweight, tenant-scoped invalidation stream for ambient product
 // surfaces (Workspace, Runs, Recents, Artifacts). The database remains the
 // source of truth: events carry IDs only and tell clients which snapshot to
@@ -488,7 +486,6 @@ export async function handleRunCreate(
     }
     throw error;
   }
-
   // Accept the run as a durable command. An `Idempotency-Key` makes a lost-
   // response retry observe the ORIGINAL run instead of starting duplicate work;
   // the un-keyed path behaves exactly as before (new run every call). Empty /
@@ -502,9 +499,11 @@ export async function handleRunCreate(
       intent,
       run: { id, prompt: finalPrompt, model, engine, parentRunId, threadId, repos, resolvedResources, attachmentIds, memoryScope, skillId, skillVersion, skillContentHash, commandName, commandProvider, commandSessionId, commandCatalogRevision },
     };
-    accepted = options.origin
-      ? await acceptInternalRunCommand({ ...commandInput, origin: options.origin })
-      : await acceptRunCommand(commandInput);
+    accepted = parentRunId
+      ? await acceptExistingThreadFollowup(c.get("orgId"), parentRunId, commandInput)
+      : options.origin
+        ? await acceptInternalRunCommand({ ...commandInput, origin: options.origin })
+        : await acceptRunCommand(commandInput);
   } catch (error) {
     if (error instanceof RunPromptTooLargeError) {
       return c.json({ error: error.code }, 413);
@@ -512,6 +511,7 @@ export async function handleRunCreate(
     if (error instanceof UploadClaimError) {
       return c.json({ error: "upload_unavailable" }, 409);
     }
+    if (error instanceof ThreadFollowupTargetError) return c.json({ error: error.code }, error.status);
     if (error instanceof RunAdmissionClosedError) {
       return c.json({ error: error.code, retryable: true }, 503);
     }

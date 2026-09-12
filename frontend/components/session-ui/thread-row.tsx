@@ -30,6 +30,7 @@
 import type { RunStatus } from "@useagent/agent-client/wire";
 import Link from "next/link";
 import { memo } from "react";
+import { Loader } from "@/components/agent-ui/agent-loader";
 import { GitChips, runGitRefs } from "@/components/session-ui/git-chip";
 import { type DotTone, StatusDot } from "@/components/shared/status-dot";
 import {
@@ -45,6 +46,8 @@ export interface ThreadRowPill {
   label: "Running" | "Queued" | "Failed";
   dot: { tone: DotTone; pulse?: boolean; hollow?: boolean };
   textClass: string;
+  visual: "spinner" | "dot";
+  showLabel: boolean;
 }
 
 /**
@@ -62,7 +65,13 @@ export function resolveThreadRowPill(input: { status: RunStatus }): ThreadRowPil
         : "text-text-error-primary";
   const label =
     input.status === "running" ? "Running" : input.status === "queued" ? "Queued" : "Failed";
-  return { label, dot: presentation.dot, textClass };
+  return {
+    label,
+    dot: presentation.dot,
+    textClass,
+    visual: input.status === "running" ? "spinner" : "dot",
+    showLabel: input.status === "queued",
+  };
 }
 
 /** Upstream resolveThreadRowClassName: uniform 32px rows, active rows
@@ -115,7 +124,7 @@ export const ThreadRow = memo(function ThreadRow({
       className={resolveThreadRowClassName({ active, gitLine: gitRefs.length > 0 })}
     >
       <span className="flex w-full min-w-0 items-center gap-1.5">
-        {pill ? (
+        {pill?.visual === "dot" ? (
           <span
             className={cn("inline-flex shrink-0 items-center gap-1 text-[10px]", pill.textClass)}
             role="img"
@@ -123,11 +132,19 @@ export const ThreadRow = memo(function ThreadRow({
             title={pill.label}
           >
             <StatusDot {...pill.dot} />
-            {/* Failed stays a quiet dot; only in-motion states carry a word. */}
-            {pill.label !== "Failed" ? <span>{pill.label}</span> : null}
+            {pill.showLabel ? <span>{pill.label}</span> : null}
           </span>
         ) : null}
         <span className="min-w-0 flex-1 truncate">{title}</span>
+        {pill?.visual === "spinner" ? (
+          <Loader
+            variant="spinner"
+            size={16}
+            speed={0.8}
+            label="Running"
+            className="shrink-0 text-lime-500"
+          />
+        ) : null}
         {timestampMs !== null ? (
           <span
             className={cn(

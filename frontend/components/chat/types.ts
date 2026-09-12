@@ -64,17 +64,17 @@ export function cleanPrompt(prompt: string): string {
 
 // Display metadata for user-facing engines, in display order (opencode default).
 // This is a CATALOG, not the selectable set: the composer offers only engines the
-// SERVER reports enabled (GET /api/config -> `engines`, gated by ENABLED_ENGINES).
-// claude/codex run via the resident-ACP adapters (native-binary install verified,
-// #127) but stay OFF by default for SaaS safety, so they surface only when a
-// backend enabled them. The legacy ids ("mock","claude-sdk","daytona","acp") stay
-// in the EngineId union so old rows still type but never render as a choice.
-export const ENGINES: { id: EngineId; label: string; hint: string }[] = [
-  { id: "opencode", label: "OpenCode", hint: "any model · cloud sandbox" },
-  { id: "chat", label: "Chat", hint: "direct model · no sandbox" },
-  { id: "claude", label: "Claude Code", hint: "Anthropic agent · ACP" },
-  { id: "codex", label: "Codex", hint: "OpenAI agent · ACP" },
-  { id: "pi", label: "Pi", hint: "native Pi harness · cloud sandbox" },
+// SERVER reports configured (GET /api/capabilities, gated by ENABLED_ENGINES).
+// Runtime capability kinds come from that endpoint, while primary subtitles
+// remain product-facing harness descriptions and never expose transport names.
+// The legacy ids ("mock","claude-sdk","daytona","acp") stay in
+// the EngineId union so old rows still type but never render as a choice.
+export const ENGINES: { id: EngineId; label: string }[] = [
+  { id: "opencode", label: "OpenCode" },
+  { id: "chat", label: "Chat" },
+  { id: "claude", label: "Claude Code" },
+  { id: "codex", label: "Codex" },
+  { id: "pi", label: "Pi" },
 ];
 
 export function engineLabel(id: EngineId): string {

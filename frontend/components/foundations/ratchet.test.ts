@@ -147,7 +147,7 @@ const FRONTEND_SIZE_BASELINE: Record<string, number> = {
   "components/agent-ui/rich-approval-card.tsx": 880,
   "components/chat/composer.tsx": 809,
   "components/chat/conversation.tsx": 805,
-  "components/chat/session-view.tsx": 1178,
+  "components/chat/session-view.tsx": 1167,
 };
 
 describe("file-size ratchet (frontend)", () => {

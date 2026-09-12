@@ -27,6 +27,7 @@ export * from "./integrations";
 export * from "./org-changes";
 export * from "./provider-connections";
 export * from "./thread-events";
+export * from "./thread-relationships";
 export * from "./execution-summary";
 export * from "./thread-store";
 export * from "./selectors";

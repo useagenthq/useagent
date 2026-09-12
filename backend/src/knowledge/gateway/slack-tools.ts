@@ -1,4 +1,4 @@
-import { findSlackThreadByRoot } from "../../slack/repo";
+import { findSlackThreadForProductThread } from "../../slack/repo";
 import {
   enqueueUploadFile,
   slackArtifactDeliveryIdempotencyKey,
@@ -92,7 +92,7 @@ export async function executeSlackTool(
   const title = typeof args.title === "string" && args.title.trim() ? args.title.trim() : undefined;
 
   // Gate: only Slack-originated runs (their thread maps to a Slack thread).
-  const thread = await findSlackThreadByRoot(claims.threadId, db, claims.orgId);
+  const thread = await findSlackThreadForProductThread(claims.orgId, claims.threadId, db);
   if (!thread) {
     return toolError(
       "This run is not linked to a Slack thread, so files cannot be delivered to Slack. Publish the file as an artifact instead (artifact_publish) so the user can download it.",

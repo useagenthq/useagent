@@ -23,6 +23,8 @@ import {
 import { materializeRunInputs } from "../uploads/materialize";
 import { checkoutPullRequestResources, prepareRepos } from "./repo-prep";
 import {
+  CLAUDE_MCP_CONFIG_FILE,
+  CLAUDE_SETTINGS_FILE,
   prepareProviderGatewaySandbox,
   providerGatewayEnv,
   providerGatewaySandboxIsCurrent,
@@ -231,7 +233,7 @@ export const claudeSpec: SandboxEngineSpec = {
     // verified-dev yolo mode (permission-policy.ts). Without it a non-interactive
     // CLI cannot approve tools - fail-closed, the intended SaaS default.
     const skip = allowPermissionBypass() ? " --dangerously-skip-permissions" : "";
-    return `claude -p ${resume}--model ${model} --output-format stream-json --verbose${skip}`;
+    return `claude -p ${resume}--model ${model} --output-format stream-json --verbose${skip} --settings ${CLAUDE_SETTINGS_FILE} --mcp-config ${CLAUDE_MCP_CONFIG_FILE}`;
   },
   install: { pkg: `@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}`, bin: "claude" },
   prepare: (sandbox, ctx) => prepareProviderGatewaySandbox(sandbox, ctx, "claude"),

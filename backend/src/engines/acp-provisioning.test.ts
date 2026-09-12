@@ -47,15 +47,19 @@ describe("ACP executable provisioning (#127)", () => {
   });
 
   test("claude: the provisioned path is EXACTLY where CLAUDE_CODE_EXECUTABLE looks", () => {
-    // The heart of #127: whatever CLAUDE_CODE_EXECUTABLE points at must be the same
-    // path the install clause guarantees exists.
     const execPath = claudeAcpConfig.agentEnv?.CLAUDE_CODE_EXECUTABLE;
-    expect(execPath).toBe("$HOME/.local/bin/claude");
+    expect(execPath).toBe("$HOME/.local/bin/useagent-claude");
     const claudePkg = claudeAcpConfig.packages.find((p) => p.bin === "claude");
     expect(claudePkg).toBeTruthy();
     const clause = buildAcpInstallClause(claudeAcpConfig.packages);
-    // The clause provisions the claude binary at the exec path (modulo the leading $HOME).
-    expect(clause).toContain(`[ -x "${execPath}" ]`);
+    expect(clause).toContain('[ -x "$HOME/.local/bin/claude" ]');
+    expect(claudeAcpConfig.preRelay).toContain(execPath);
+    const wrapper = Buffer.from(
+      /printf %s '([^']+)'/.exec(claudeAcpConfig.preRelay ?? "")?.[1] ?? "",
+      "base64",
+    ).toString("utf8");
+    expect(wrapper).toContain('--settings "/tmp/useagent-claude-capability/useagent-settings.json"');
+    expect(wrapper).toContain('--mcp-config "/tmp/useagent-claude-capability/useagent-mcp.json"');
   });
 
   test("codex: single package, path-keyed, no PATH-based skip", () => {
@@ -86,14 +90,16 @@ describe("ACP executable provisioning (#127)", () => {
     const exports = buildAcpRuntimeEnvExports({
       ANTHROPIC_BASE_URL: "https://gateway.example.test/api/provider/anthropic",
       ANTHROPIC_MODEL: "claude-opus-5",
-      CLAUDE_CODE_EXECUTABLE: "$HOME/.local/bin/claude",
+      CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config",
+      ...claudeAcpConfig.agentEnv,
     });
 
     expect(exports).toContain(
       "export ANTHROPIC_BASE_URL='https://gateway.example.test/api/provider/anthropic';",
     );
     expect(exports).toContain("export ANTHROPIC_MODEL='claude-opus-5';");
-    expect(exports).toContain('export CLAUDE_CODE_EXECUTABLE="$HOME/.local/bin/claude";');
+    expect(exports).toContain('export CLAUDE_CODE_EXECUTABLE="$HOME/.local/bin/useagent-claude";');
+    expect(exports).toContain("export CLAUDE_CONFIG_DIR='/tmp/skynet-claude-config';");
   });
 
   test("runtime env exports reject invalid names and quote opaque values", () => {

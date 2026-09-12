@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { resolveEnabledEngine } from "@/components/chat/engine-picker";
+import {
+  engineConfigFromCapabilityCatalog,
+  engineRuntimeCaption,
+  fallbackEnabledEngineConfig,
+  resolveEnabledEngine,
+} from "@/components/chat/engine-picker";
 import {
   CHAT_MODELS,
   CODEX_MODELS,
@@ -12,8 +17,18 @@ import {
   selectableModelsForEngine,
   supportsPreSessionModelSelection,
 } from "@/components/chat/types";
+import type { CapabilityCatalog } from "@/lib/capability-catalog";
 
 describe("engine model catalog", () => {
+  test("keeps conservative local OpenCode models when server readiness is unknown", () => {
+    const fallback = fallbackEnabledEngineConfig();
+    expect(fallback.engines).toEqual(["opencode"]);
+    expect(fallback.models.opencode).toEqual(
+      selectableModelsForEngine("opencode").map((model) => model.value),
+    );
+    expect(fallback.readinessKnown).toBe(false);
+    expect(fallback.readiness).toEqual({});
+  });
   test("reconciles a stale selection to the first engine the server actually enables", () => {
     expect(resolveEnabledEngine("opencode", ["chat"])).toBe("chat");
     expect(resolveEnabledEngine("chat", ["chat", "opencode"])).toBe("chat");
@@ -134,5 +149,60 @@ describe("engine model catalog", () => {
     expect(modelOptionsForEngine("claude", ["claude-opus-5"])).toEqual([
       { value: "claude-opus-5", label: "Opus 5", tint: "text-orange-500" },
     ]);
+  });
+
+  test("uses capability endpoint dispatchability as model membership truth", () => {
+    const catalog = {
+      version: 1,
+      scope: "pre_run",
+      engines: [
+        {
+          id: "opencode",
+          configured: true,
+          ready: true,
+          defaultModel: "new/dynamic:free",
+          models: [
+            { id: "openai/gpt-5.6-sol", default: false, dispatchable: false },
+            { id: "openai/gpt-5.6-luna", default: false, dispatchable: true },
+            { id: "new/dynamic:free", default: true, dispatchable: true },
+          ],
+          runtime: { kind: "t3", label: "T3 orchestration · cloud sandbox" },
+        },
+      ],
+      tools: { gatewayConfigured: false, declared: [] },
+      nativeSlashCommands: { catalog: "session_runtime", currentRun: null },
+    } satisfies CapabilityCatalog;
+
+    const config = engineConfigFromCapabilityCatalog(catalog);
+    expect(config.engines).toEqual(["opencode"]);
+    expect(config.models.opencode).toEqual(["new/dynamic:free", "openai/gpt-5.6-luna"]);
+    expect(config.readiness.opencode).toEqual({ ready: true, reason: "enabled" });
+    expect(config.runtimes.opencode).toEqual({
+      kind: "t3",
+      label: "T3 orchestration · cloud sandbox",
+    });
+    expect(engineRuntimeCaption("opencode", config.runtimes.opencode, config.readiness.opencode)).toBe(
+      "any model · cloud sandbox",
+    );
+    expect(
+      engineRuntimeCaption(
+        "claude",
+        { kind: "acp_compat", label: "Claude Code ACP compatibility · cloud sandbox" },
+        { ready: false, reason: "not_proven" },
+      ),
+    ).toBe("Anthropic agent · cloud sandbox · needs attention");
+  });
+
+  test("primary engine captions never expose transport implementation names", () => {
+    expect(engineRuntimeCaption(
+      "codex",
+      { kind: "acp_compat", label: "Codex ACP compatibility · cloud sandbox" },
+      { ready: true, reason: "enabled" },
+    )).toBe("OpenAI agent · cloud sandbox");
+    expect(engineRuntimeCaption(
+      "claude",
+      { kind: "t3", label: "T3 orchestration · cloud sandbox" },
+      { ready: true, reason: "enabled" },
+    )).toBe("Anthropic agent · cloud sandbox");
   });
 });

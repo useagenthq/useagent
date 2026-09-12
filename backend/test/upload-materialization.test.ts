@@ -45,6 +45,7 @@ describe("sandbox input materialization", () => {
           sandboxPath: path,
         },
       ],
+      { uid: 1000, gid: 1000 },
     );
 
     expect(uploaded).toHaveLength(1);
@@ -52,6 +53,8 @@ describe("sandbox input materialization", () => {
     expect(uploaded[0]?.timeout).toBe(120);
     expect(new Uint8Array(uploaded[0]!.bytes)).toEqual(bytes);
     expect(commands[0]).toContain("chmod 700 /root/work/.skynet-inputs");
+    expect(commands[0]).toContain("chown 1000:1000 /root/work/.skynet-inputs");
+    expect(commands[1]).toContain(`chown 1000:1000 -- '${path}'`);
     expect(commands[1]).toContain(`chmod 600 -- '${path}'`);
   });
 

@@ -122,10 +122,16 @@ import { currentReleaseFingerprint, isClientReleaseCompatible } from "./release"
 import { dashboardRoutes } from "./dashboard/routes";
 import { fleetBatchRoutes } from "./fleet/batch-routes";
 import { assertCanonicalExecutionTranscriptIndexForBoot } from "./db/online-indexes/canonical-execution-transcript";
+import { capabilityCatalogRoutes } from "./capabilities/routes";
+import { threadRelationshipRoutes } from "./runs/thread-relationship-routes";
+import { configureProductChildPump } from "./runs/child-session-pump";
+import { assertThreadRelationshipRolloutConfig, threadRelationshipWriteMode } from "./runs/thread-relationship-rollout";
+import { repairEligiblePublicRootThreadRelationships } from "./runs/thread-relationship-repo";
 
 // Acquire the per-database singleton before ANY shared-state mutation. In strict
 // production mode an unavailable/contended lock fails boot closed, so a duplicate
 // process cannot migrate or recover another backend's database first.
+assertThreadRelationshipRolloutConfig();
 await enforceSingleBackend();
 
 // Apply committed Drizzle migrations BEFORE anything reads or seeds the schema,
@@ -133,6 +139,9 @@ await enforceSingleBackend();
 // migrator is idempotent — already-applied migrations are skipped. Path is
 // resolved from this module so cwd doesn't matter.
 await migrate(db, { migrationsFolder: `${import.meta.dir}/../drizzle` });
+if (threadRelationshipWriteMode() !== "off") {
+  await repairEligiblePublicRootThreadRelationships();
+}
 
 // READ serves child transcripts from the canonical execution identity lookup.
 // The large online index is managed separately from transactional migrations;
@@ -143,6 +152,7 @@ await assertCanonicalExecutionTranscriptIndexForBoot();
 // cache from the last atomically published DB generation before serving config.
 await hydrateFreeModelLaneFromRegistry();
 startFreeModelRegistryHydrator();
+configureProductChildPump(pumpThread);
 
 // Reconcile the restricted gateway role's grants on EVERY boot: a migration
 // that adds a gateway-written table ships its grant in the same commit (see
@@ -274,6 +284,7 @@ app.route("/api/internal/gateway-approval/consume", internalGatewayApprovalRoute
 app.route("/api/internal/gateway-approval-requests", internalApprovalRequestRoutes);
 app.route("/api/internal/github-operations", internalGithubRoutes);
 app.route("/api/internal/codex-relay", codexSubscriptionRelayRoutes);
+app.route("/api/threads", threadRelationshipRoutes);
 // Loopback-only operator dispatch bridge (see runs/operator-routes.ts): lets
 // the release-lane parity canary run turns IN THIS PROCESS so the codex relay
 // rendezvous works. Secret-authenticated; proxied requests are rejected.
@@ -379,6 +390,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 app.route("/api/chat", chatRoutes);
 
 app.route("/api/runs", runsRoutes);
+app.route("/api/capabilities", capabilityCatalogRoutes);
 // Session-authenticated human approval minting. This stays on the product API;
 // the sandbox-reachable gateway can only consume the resulting exact capability.
 app.route("/api/gateway/approvals", gatewayApprovalRoutes);

@@ -111,4 +111,29 @@ describe("run/step wire boundary decoders", () => {
     expect(decodeApiRunSummary({ ...summary, latest_status: "done" })).toBeNull();
     expect(decodeApiStep({ ...step, kind: "shell" })).toBeNull();
   });
+
+  test("strictly decodes bounded native-child summary projections", () => {
+    const child = {
+      execution_id: "execution-1",
+      run_id: "run-1",
+      provider: "codex",
+      native_session_id: "session-1",
+      title: "Review checkout",
+      status: "running",
+      started_at: "2026-09-01T10:00:00.000Z",
+    };
+    expect(decodeApiRunSummary({
+      ...summary,
+      native_children: [child],
+      native_children_total: 3,
+    })?.native_children_total).toBe(3);
+    for (const total of [Number.NaN, Number.POSITIVE_INFINITY, -1, 0, 1.5]) {
+      expect(decodeApiRunSummary({
+        ...summary,
+        native_children: [child],
+        native_children_total: total,
+      })).toBeNull();
+    }
+    expect(decodeApiRunSummary({ ...summary, native_children_total: 1 })).toBeNull();
+  });
 });

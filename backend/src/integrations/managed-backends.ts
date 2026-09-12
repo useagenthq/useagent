@@ -20,7 +20,10 @@ export const githubManagedBackend: ManagedConnectionBackend = {
       provider: "github",
       label: "GitHub",
       description: "Native repository discovery, cloning, and pull request workflows.",
+      authMethod: "custom_credential",
+      configured: connected,
       status: connected ? "connected" : "unavailable",
+      ...(!connected ? { degradationReason: "GitHub is not configured for this organization." } : {}),
       ...(connected
         ? {
             account: {
@@ -47,7 +50,10 @@ export const slackManagedBackend: ManagedConnectionBackend = {
       provider: "slack",
       label: "Slack",
       description: "Native events, threads, files, and streaming cards.",
+      authMethod: "oauth2",
+      configured: legacySlackEnabled(),
       status: workspace ? "connected" : "unavailable",
+      ...(!workspace ? { degradationReason: "No verified Slack workspace is connected." } : {}),
       ...(workspace ? { account: { externalAccountId: workspace.teamId } } : {}),
     };
   },

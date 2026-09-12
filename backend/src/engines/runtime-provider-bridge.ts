@@ -3,6 +3,10 @@ import type { SandboxHandle } from "../sandboxes/provider";
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import {
+  CLAUDE_CAPABILITY_GID,
+  CLAUDE_CONFIG_DIR,
+  CLAUDE_MCP_CONFIG_FILE,
+  CLAUDE_SETTINGS_FILE,
   claudeProviderGatewayEnvironment,
   markProviderGatewaySandboxCurrent,
   prepareProviderGatewaySandbox,
@@ -19,8 +23,11 @@ import {
   readOpencodeSandboxConfig,
   writeOpencodeSandboxConfig,
 } from "./opencode-server";
-import { RUNTIME_ENVIRONMENT_HOME } from "./runtime-environment";
-import { runtimeEnvironmentEnabled } from "./runtime-environment";
+import {
+  RUNTIME_ENVIRONMENT_HOME,
+  RUNTIME_ENVIRONMENT_WORKDIR,
+  runtimeEnvironmentEnabled,
+} from "./runtime-environment";
 import {
   prepareCodexSubscription,
   type CodexSubscriptionLease,
@@ -29,9 +36,14 @@ import {
 const RUNTIME_SETTINGS_PATH = `${RUNTIME_ENVIRONMENT_HOME}/userdata/settings.json`;
 const RUNTIME_BIN_DIRECTORY = `${RUNTIME_ENVIRONMENT_HOME}/skynet-bin`;
 const RUNTIME_CLAUDE_WRAPPER = `${RUNTIME_BIN_DIRECTORY}/claude`;
+const RUNTIME_CLAUDE_ACCESS_HELPER = `${RUNTIME_BIN_DIRECTORY}/prepare-claude-access`;
 const RUNTIME_CLAUDE_WRAPPER_PLACEHOLDER = "__USEAGENT_T3_CLAUDE_WRAPPER__";
 const CLAUDE_STATUS_CACHE_PATH = `${RUNTIME_ENVIRONMENT_HOME}/caches/claudeAgent.json`;
 const CLAUDE_READY_POLL_MS = 150;
+const CLAUDE_RUNTIME_UID = 1000;
+const CLAUDE_RUNTIME_GID = CLAUDE_CAPABILITY_GID;
+const CLAUDE_RUNTIME_HOME = "/home/user";
+const CLAUDE_ATTACHMENTS_DIR = "/root/.skynet/t3/userdata/attachments";
 
 interface BootstrapState {
   readonly command: string;
@@ -101,8 +113,10 @@ export function claudeProviderReadiness(
 /**
  * Configure the runtime provider drivers without persisting a bearer token in
  * settings. Codex and OpenCode read their private, dynamically refreshed
- * config files. Claude is launched through a stable wrapper that exports only
- * the non-secret gateway URL; its apiKeyHelper reads the run capability file.
+ * config files. Claude is launched through a stable wrapper that exports the
+ * non-secret gateway URL, grants the dedicated runtime uid access only to this
+ * tenant's workspace/config, and drops root before Claude Code starts. Its
+ * apiKeyHelper reads the run capability file from the isolated config dir.
  */
 export function buildRuntimeProviderBootstrapCommand(
   claudeEnvironment: Readonly<Record<string, string>>,
@@ -115,12 +129,39 @@ export function buildRuntimeProviderBootstrapCommand(
   assertSafeUrl(anthropicBaseUrl);
   const readiness = claudeProviderReadiness(claudeEnvironment);
 
+  const accessHelper = [
+    "#!/bin/sh",
+    "set -eu",
+    `CLAUDE_UID=${CLAUDE_RUNTIME_UID}`,
+    `CLAUDE_GID=${CLAUDE_RUNTIME_GID}`,
+    `CLAUDE_ATTACHMENTS=${JSON.stringify(CLAUDE_ATTACHMENTS_DIR)}`,
+    'CLAUDE_WORKDIR="${1:?Claude workspace is required}"',
+    'command -v setfacl >/dev/null',
+    'test "$(id -u user)" = "$CLAUDE_UID"',
+    'test -d "$CLAUDE_WORKDIR"',
+    'setfacl -m "u:$CLAUDE_UID:x" /root',
+    'chown root:root "$CLAUDE_WORKDIR"',
+    'chmod 1777 "$CLAUDE_WORKDIR"',
+    'if [ -d "$CLAUDE_ATTACHMENTS" ]; then',
+    '  setfacl -m "u:$CLAUDE_UID:x" /root/.skynet /root/.skynet/t3 /root/.skynet/t3/userdata',
+    '  setfacl -Rm "u:$CLAUDE_UID:rwx" "$CLAUDE_ATTACHMENTS"',
+    '  setfacl -Rdm "u:$CLAUDE_UID:rwx" "$CLAUDE_ATTACHMENTS"',
+    "fi",
+    "",
+  ].join("\n");
   const wrapper = [
     "#!/bin/sh",
     "set -eu",
-    `export ANTHROPIC_BASE_URL=${JSON.stringify(anthropicBaseUrl)}`,
-    `export CLAUDE_CONFIG_DIR=${JSON.stringify(claudeConfigDir)}`,
-    'exec claude --mcp-config "$CLAUDE_CONFIG_DIR/skynet-mcp.json" "$@"',
+    `CLAUDE_UID=${CLAUDE_RUNTIME_UID}`,
+    `CLAUDE_GID=${CLAUDE_RUNTIME_GID}`,
+    `CLAUDE_HOME=${JSON.stringify(CLAUDE_RUNTIME_HOME)}`,
+    `ANTHROPIC_BASE_URL=${JSON.stringify(anthropicBaseUrl)}`,
+    `CLAUDE_CONFIG_DIR=${JSON.stringify(claudeConfigDir)}`,
+    'command -v setpriv >/dev/null',
+    'test "$(id -u user)" = "$CLAUDE_UID"',
+    'export HOME="$CLAUDE_HOME" USER=user LOGNAME=user',
+    "export ANTHROPIC_BASE_URL CLAUDE_CONFIG_DIR",
+    `exec setpriv --reuid="$CLAUDE_UID" --regid="$CLAUDE_GID" --clear-groups --no-new-privs -- claude "$@" --settings ${JSON.stringify(CLAUDE_SETTINGS_FILE)} --mcp-config ${JSON.stringify(CLAUDE_MCP_CONFIG_FILE)}`,
     "",
   ].join("\n");
   const claudeProviderConfig = {
@@ -165,9 +206,15 @@ export function buildRuntimeProviderBootstrapCommand(
     `BIN_DIR="${RUNTIME_BIN_DIRECTORY}"`,
     `SETTINGS="${RUNTIME_SETTINGS_PATH}"`,
     `CLAUDE_WRAPPER="${RUNTIME_CLAUDE_WRAPPER}"`,
+    `CLAUDE_ACCESS_HELPER="${RUNTIME_CLAUDE_ACCESS_HELPER}"`,
+    `CLAUDE_CONFIG_DIR=${JSON.stringify(claudeConfigDir)}`,
     'install -d -m 700 "$BIN_DIR" "$(dirname "$SETTINGS")"',
+    'if [ -L "$CLAUDE_CONFIG_DIR" ]; then rm -f -- "$CLAUDE_CONFIG_DIR"; fi',
+    `install -d -o ${CLAUDE_RUNTIME_UID} -g ${CLAUDE_RUNTIME_GID} -m 700 "$CLAUDE_CONFIG_DIR"`,
     `printf %s '${encode(wrapper)}' | base64 -d > "$CLAUDE_WRAPPER"`,
-    'chmod 700 "$CLAUDE_WRAPPER"',
+    `printf %s '${encode(accessHelper)}' | base64 -d > "$CLAUDE_ACCESS_HELPER"`,
+    'chmod 700 "$CLAUDE_WRAPPER" "$CLAUDE_ACCESS_HELPER"',
+    `"$CLAUDE_ACCESS_HELPER" ${JSON.stringify(RUNTIME_ENVIRONMENT_WORKDIR)}`,
     `export PATCH_B64='${encode(JSON.stringify(settingsPatch))}'`,
     `node -e 'const fs=require("node:fs");const path=process.argv[1];const wrapper=process.argv[2];const patch=JSON.parse(Buffer.from(process.env.PATCH_B64,"base64").toString("utf8"));patch.providers.claudeAgent.binaryPath=wrapper;patch.providerInstances.claudeAgent.config.binaryPath=wrapper;let current={};try{current=JSON.parse(fs.readFileSync(path,"utf8"))}catch{};current.enableAgentBrowserAccess=patch.enableAgentBrowserAccess;current.providers={...(current.providers??{}),...patch.providers};current.providerInstances={...(current.providerInstances??{}),...patch.providerInstances};const tmp=path+".tmp";fs.writeFileSync(tmp,JSON.stringify(current));fs.chmodSync(tmp,0o600);fs.renameSync(tmp,path)' "$SETTINGS" "$CLAUDE_WRAPPER"`,
   ].join("\n");
@@ -271,6 +318,21 @@ async function ensureRuntimeProviderBootstrap(
   }
 }
 
+async function prepareClaudeRuntimeAccess(
+  sandbox: Pick<SandboxHandle, "process">,
+  workdir: string,
+): Promise<void> {
+  const result = await sandbox.process.executeCommand(
+    `${RUNTIME_CLAUDE_ACCESS_HELPER} ${JSON.stringify(workdir)}`,
+    undefined,
+    undefined,
+    30,
+  );
+  if ((result.exitCode ?? 1) !== 0) {
+    throw new Error("the provider runtime Claude non-root boundary failed");
+  }
+}
+
 async function prepareOpenCodeGateway(
   sandbox: SandboxHandle,
   ctx: EngineRunContext,
@@ -329,7 +391,9 @@ export async function prepareRuntimeProviderBridge(
   if (engine === "opencode") {
     await prepareOpenCodeGateway(sandbox, ctx);
   } else if (engine === "claude") {
-    await prepareProviderGatewaySandbox(sandbox, ctx, engine);
+    await prepareProviderGatewaySandbox(sandbox, ctx, engine, {
+      rootOwnedClaudeCapability: true,
+    });
   } else {
     const mode = engineAuthMode("codex");
     if (!mode) throw new Error("invalid ENGINE_AUTH_MODE_CODEX");
@@ -353,6 +417,7 @@ export async function prepareRuntimeProviderBridge(
 
   await ensureRuntimeProviderBootstrap(sandbox, command);
   if (engine === "claude") {
+    await prepareClaudeRuntimeAccess(sandbox, workdir);
     return {
       authPath: null,
       authEpoch: null,

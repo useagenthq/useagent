@@ -27,6 +27,8 @@ import {
   type RunStatus,
   type StepKind,
 } from "../db/schema";
+import { sidebarNativeChildren } from "./native-children-projection";
+import { executionGraphReadEnabled } from "./execution-graph-rollout";
 import { parseRepoRef } from "../github/repo-ref";
 import type { RunResource } from "../resources/types";
 import { ensureProject } from "../projects/repo";
@@ -441,7 +443,12 @@ export async function listRunsWithSteps(
  * uploads, resources, and provider session state stay off this wire. */
 export async function listRunSummaries(
   orgId: string,
-  opts: { all?: boolean; limit?: number; includeActive?: boolean } = {},
+  opts: {
+    all?: boolean;
+    limit?: number;
+    includeActive?: boolean;
+    includeNativeChildren?: boolean;
+  } = {},
 ): Promise<ApiRunSummary[]> {
   const limit = opts.limit ?? 100;
   const rootFilter = opts.all ? sql`` : sql`and root.parent_run_id is null`;
@@ -526,7 +533,7 @@ export async function listRunSummaries(
     order by ${outputOrder}
   `);
 
-  return rows.map((row) => {
+  const summaries = rows.map((row) => {
     const repoRefs = row.repos as string[];
     const specs = repoRefs.map(parseRepoRef);
     return {
@@ -548,6 +555,28 @@ export async function listRunSummaries(
       latest_created_at: new Date(row.latest_created_at as string | Date).toISOString(),
       latest_updated_at: new Date(row.latest_updated_at as string | Date).toISOString(),
     } satisfies ApiRunSummary;
+  });
+  // Native-children projection only decorates the THREAD view (each row is a
+  // root whose id IS its thread id); the `all` flat view keeps its shape.
+  if (
+    opts.all ||
+    !opts.includeNativeChildren ||
+    !executionGraphReadEnabled() ||
+    summaries.length === 0
+  ) return summaries;
+  const childrenByThread = await sidebarNativeChildren(
+    orgId,
+    summaries.map((summary) => summary.id),
+  );
+  if (childrenByThread.size === 0) return summaries;
+  return summaries.map((summary) => {
+    const projection = childrenByThread.get(summary.id);
+    if (!projection) return summary;
+    return {
+      ...summary,
+      native_children: projection.children,
+      native_children_total: projection.total,
+    };
   });
 }
 

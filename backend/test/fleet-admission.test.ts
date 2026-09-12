@@ -113,7 +113,10 @@ beforeEach(async () => {
   // fixture must own the complete fleet projection rather than inherit those
   // unrelated rows from the shared integration-test database.
   await db.transaction(async (tx) => {
-    await tx.execute(sql`delete from run_admissions`);
+    // TRUNCATE also resets index storage. DELETE leaves dead pages behind, so
+    // the planner can cost the exact partial queue index above a competing
+    // general index even with sequential scans disabled.
+    await tx.execute(sql`truncate table run_admissions`);
     await tx.execute(sql`delete from sandbox_leases`);
     await tx.execute(sql`update runs set sandbox_id = null, provider_session = null, engine_session_id = null where sandbox_id is not null`);
   });

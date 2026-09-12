@@ -53,7 +53,7 @@ describe("fetchSidebarRuns", () => {
     const threads = fetchSidebarRuns();
     expect(request).toHaveBeenCalledTimes(1);
     expect(request).toHaveBeenCalledWith(
-      "/api/runs?view=summary&limit=100&include_active=1",
+      "/api/runs?view=summary&limit=100&include_active=1&include_native_children=1",
       { cache: "no-store" },
     );
 

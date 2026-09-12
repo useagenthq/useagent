@@ -2,7 +2,7 @@ import {
   parseProviderSessionBinding,
   type ProviderSessionBinding,
 } from "@useagent/agent-harness/canonical";
-import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, ne } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { runs } from "../db/schema";
 
@@ -55,6 +55,7 @@ export interface ThreadProviderSessionState {
 /** Most recent same-engine provider session in a thread, excluding the turn
  * being admitted. A thread may mix engines; native sessions never transfer. */
 export async function getThreadProviderSessionState(
+  orgId: string | null,
   threadId: string,
   engine: string,
   excludeRunId: string,
@@ -68,6 +69,7 @@ export async function getThreadProviderSessionState(
     .where(
       and(
         eq(runs.threadId, threadId),
+        orgId === null ? isNull(runs.orgId) : eq(runs.orgId, orgId),
         eq(runs.engine, engine as RunRecord["engine"]),
         ne(runs.id, excludeRunId),
         isNotNull(runs.engineSessionId),
@@ -83,10 +85,11 @@ export async function getThreadProviderSessionState(
 
 /** Compatibility helper for callers not yet migrated to typed authority. */
 export async function getThreadEngineSession(
+  orgId: string | null,
   threadId: string,
   engine: string,
   excludeRunId: string,
 ): Promise<string | null> {
-  const state = await getThreadProviderSessionState(threadId, engine, excludeRunId);
+  const state = await getThreadProviderSessionState(orgId, threadId, engine, excludeRunId);
   return state.binding?.nativeSessionId ?? state.legacySessionId;
 }

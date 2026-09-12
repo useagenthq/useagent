@@ -3,12 +3,14 @@ import { describe, expect, test } from "bun:test";
 import {
   dedupeProjectRepos,
   groupThreadsByProject,
+  projectSidebarThreadFamilies,
   type ProjectRepo,
   runPrimaryRepo,
   UNATTACHED_KEY,
   visibleProjectGroups,
 } from "./sidebar-project-groups";
 import type { SidebarRun } from "./working-project-status";
+import type { ThreadRelationship } from "@useagent/agent-client";
 
 function run(overrides: Partial<SidebarRun> & Pick<SidebarRun, "id">): SidebarRun {
   return {
@@ -216,5 +218,55 @@ describe("visibleProjectGroups", () => {
 
   test("returns every project when expanded", () => {
     expect(visibleProjectGroups(groups, 5, true)).toEqual({ groups, hiddenCount: 0 });
+  });
+});
+
+describe("projectSidebarThreadFamilies", () => {
+  const relationship = (
+    threadId: string,
+    parentThreadId: string | null,
+    over: Partial<ThreadRelationship> = {},
+  ): ThreadRelationship => ({
+    threadId,
+    parentThreadId,
+    familyThreadId: "root",
+    kind: parentThreadId ? "delegated" : "root",
+    title: `Task ${threadId}`,
+    sourceRunId: "root",
+    sourceExecutionId: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-01T00:00:00.000Z",
+    status: "completed",
+    engine: "codex",
+    model: "gpt-5.6-sol",
+    latestRunId: threadId,
+    latestActivityAt: "2026-09-01T00:00:00.000Z",
+    ...over,
+  });
+
+  test("keeps roots in project groups and recursively nests ordinary child threads", () => {
+    const projected = projectSidebarThreadFamilies(
+      [run({ id: "root", repos: ["acme/api"] }), run({ id: "child" }), run({ id: "grandchild" })],
+      [
+        relationship("root", null),
+        relationship("child", "root"),
+        relationship("grandchild", "child"),
+      ],
+    );
+    expect(projected.roots.map((item) => item.id)).toEqual(["root"]);
+    expect(projected.byRoot.get("root")?.[0]?.id).toBe("child");
+    expect(projected.byRoot.get("root")?.[0]?.children[0]?.id).toBe("grandchild");
+  });
+
+  test("ranks active children before settled siblings using relationship truth", () => {
+    const projected = projectSidebarThreadFamilies(
+      [run({ id: "root" }), run({ id: "done" }), run({ id: "working" })],
+      [
+        relationship("root", null),
+        relationship("done", "root", { status: "completed" }),
+        relationship("working", "root", { status: "running" }),
+      ],
+    );
+    expect(projected.byRoot.get("root")?.map((item) => item.id)).toEqual(["working", "done"]);
   });
 });

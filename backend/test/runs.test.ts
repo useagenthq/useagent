@@ -17,7 +17,7 @@ async function runToCompletion(
     body,
     ...(cookies ? { cookies } : {}),
   });
-  expect(created.status).toBe(201);
+  expect(created.status, JSON.stringify(created.body)).toBe(201);
   const id = created.body.id;
   return waitFor(async () => {
     const { body: run } = await json<any>(`/api/runs/${id}`, {

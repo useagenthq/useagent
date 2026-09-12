@@ -14,6 +14,11 @@ import { repoShortname } from "@/components/session-ui/git-chip";
 import { primaryRepo } from "@/lib/runs";
 import { rankThreads, threadActivityTimestamp } from "./thread-discovery";
 import type { SidebarRun } from "./working-project-status";
+import type {
+  ProductThreadStatus,
+  ThreadRelationship,
+} from "@useagent/agent-client";
+import type { EngineId } from "@useagent/agent-client/wire";
 
 export interface ProjectRepo {
   readonly fullName: string;
@@ -33,6 +38,99 @@ export interface ProjectGroup {
 
 /** Bucket key for threads that carry no repo. */
 export const UNATTACHED_KEY = "__unattached__";
+
+export interface SidebarThreadFamilyNode {
+  readonly id: string;
+  readonly title: string;
+  readonly status: ProductThreadStatus;
+  readonly engine: EngineId;
+  readonly model: string;
+  readonly activityAt: string;
+  readonly run: SidebarRun | null;
+  readonly relationship: ThreadRelationship;
+  readonly children: readonly SidebarThreadFamilyNode[];
+}
+
+const relationshipPriority = (status: ProductThreadStatus): number => {
+  if (status === "running") return 0;
+  if (status === "waiting" || status === "queued") return 1;
+  return 2;
+};
+
+function compareFamilyNodes(a: SidebarThreadFamilyNode, b: SidebarThreadFamilyNode): number {
+  const status = relationshipPriority(a.status) - relationshipPriority(b.status);
+  if (status !== 0) return status;
+  const activity = Date.parse(b.activityAt) - Date.parse(a.activityAt);
+  return activity !== 0 ? activity : a.id.localeCompare(b.id);
+}
+
+/** Build the ordinary product-thread hierarchy without hydrating any transcript. */
+export function projectSidebarThreadFamilies(
+  runs: readonly SidebarRun[],
+  relationships: readonly ThreadRelationship[],
+): {
+  readonly roots: readonly SidebarRun[];
+  readonly byRoot: ReadonlyMap<string, readonly SidebarThreadFamilyNode[]>;
+} {
+  const runsById = new Map(runs.map((run) => [run.id, run] as const));
+  const relationshipById = new Map(relationships.map((item) => [item.threadId, item] as const));
+  const childIds = new Set(
+    relationships.flatMap((item) => item.parentThreadId ? [item.threadId] : []),
+  );
+  const roots = rankThreads(runs.filter((run) => !childIds.has(run.id)).map((run) => {
+    const relationship = relationshipById.get(run.id);
+    if (!relationship) return run;
+    const status = relationship.status === "waiting"
+      ? "queued"
+      : relationship.status === "cancelled"
+        ? "completed"
+        : relationship.status;
+    return {
+      ...run,
+      prompt: relationship.title,
+      status,
+      latest_status: status,
+      latest_run_id: relationship.latestRunId,
+      latest_updated_at: relationship.latestActivityAt,
+    } satisfies SidebarRun;
+  }));
+  const childrenByParent = new Map<string, ThreadRelationship[]>();
+  for (const item of relationships) {
+    if (!item.parentThreadId) continue;
+    const children = childrenByParent.get(item.parentThreadId) ?? [];
+    children.push(item);
+    childrenByParent.set(item.parentThreadId, children);
+  }
+  const build = (item: ThreadRelationship, path: ReadonlySet<string>): SidebarThreadFamilyNode => {
+    const nextPath = new Set(path).add(item.threadId);
+    const children = (childrenByParent.get(item.threadId) ?? [])
+      .filter((child) => !nextPath.has(child.threadId))
+      .map((child) => build(child, nextPath))
+      .toSorted(compareFamilyNodes);
+    return {
+      id: item.threadId,
+      title: item.title,
+      status: item.status,
+      engine: item.engine,
+      model: item.model,
+      activityAt: item.latestActivityAt,
+      run: runsById.get(item.threadId) ?? null,
+      relationship: item,
+      children,
+    };
+  };
+  const byRoot = new Map<string, readonly SidebarThreadFamilyNode[]>();
+  for (const root of roots) {
+    const rootRelationship = relationshipById.get(root.id);
+    const familyId = rootRelationship?.familyThreadId ?? root.id;
+    const direct = relationships
+      .filter((item) => item.familyThreadId === familyId && item.parentThreadId === root.id)
+      .map((item) => build(item, new Set([root.id])))
+      .toSorted(compareFamilyNodes);
+    if (direct.length > 0) byRoot.set(root.id, direct);
+  }
+  return { roots, byRoot };
+}
 
 /** Primary repo of a typed run summary (repo_specs > repos > legacy repo).
  *  A typed adapter over the shared `primaryRepo`, which reads the same fields

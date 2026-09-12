@@ -42,11 +42,14 @@ describe("deriveThreadGatewayChildren", () => {
     expect(children.map((c) => c.id)).toEqual(["c1", "c2"]);
     expect(children[0]).toEqual({
       id: "c1",
+      parentRunId: "parent",
       prompt: "Get Google stock price",
       engine: "codex",
       model: "openai/gpt-5.6-sol",
       status: "completed",
       summary: "GOOGL $344",
+      durationMs: null,
+      createdAt: "",
     });
   });
 });

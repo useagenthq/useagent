@@ -95,6 +95,9 @@ export interface EngineRunContext {
    *  no identity → the adapter skips gateway wiring (fail closed). */
   orgId?: string | null;
   userId?: string | null;
+  /** Server-owned run origin. Product fan-out policy is never injected into
+   * internal eval/canary turns. */
+  origin?: string | null;
   /** The run's requested model id (bare Anthropic-style, e.g. "claude-opus-5").
    *  Adapters map it to their provider format and fall back to their own
    *  default when absent/unsupported. */

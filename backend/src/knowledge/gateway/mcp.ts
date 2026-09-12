@@ -4,8 +4,9 @@ import {
   JSONRPCRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { Hono } from "hono";
-import { findSlackThreadByRoot } from "../../slack/repo";
+import { findSlackThreadForProductThread } from "../../slack/repo";
 import { childSessionToolsEnabled } from "./child-session-tools";
+import { productChildThreadsEnabled } from "../../runs/thread-relationship-rollout";
 import {
   executeRegisteredGatewayTool,
   gatewayToolListDescriptors,
@@ -84,7 +85,8 @@ export async function handleMcpMessage(
   const params = msg.params as Record<string, unknown> | undefined;
   const listOptions = async () => ({
     childSessions: await childSessionToolsEnabled(claims),
-    slack: Boolean(await findSlackThreadByRoot(claims.threadId)),
+    slack: Boolean(await findSlackThreadForProductThread(claims.orgId, claims.threadId)),
+    productChildThreads: productChildThreadsEnabled(claims.orgId),
   });
   switch (msg.method) {
     case "initialize": {

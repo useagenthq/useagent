@@ -114,6 +114,43 @@ describe("AgentClient HTTP", () => {
     const client = createAgentClient({ fetch: async () => jsonResponse(202, { id: "r", status: "cancelling" }) });
     expect(await client.cancel("r")).toEqual({ ok: true, status: "cancelling" });
   });
+
+  test("thread relationship reads and child messages use the exact product thread", async () => {
+    const calls: { url: string; init?: Parameters<FetchLike>[1] }[] = [];
+    const relationship = {
+      thread_id: "child-1", parent_thread_id: "root-1", family_thread_id: "root-1",
+      kind: "delegated", title: "Build calendar grid", source_run_id: "root-1",
+      source_execution_id: null, created_at: "2026-09-01T00:00:00.000Z",
+      updated_at: "2026-09-01T00:01:00.000Z", status: "running", engine: "codex",
+      model: "gpt-5.6-sol", latest_run_id: "child-1",
+      latest_activity_at: "2026-09-01T00:01:00.000Z",
+    };
+    const client = createAgentClient({
+      baseUrl: "https://x",
+      fetch: async (url, init) => {
+        calls.push({ url, init });
+        if (url.endsWith("/relationship")) return jsonResponse(200, { relationship });
+        if (url.includes("/children")) return jsonResponse(200, { children: [relationship], next_cursor: null, has_more: false });
+        if (url.includes("/relationships")) return jsonResponse(200, { relationships: [relationship], next_cursor: null, has_more: false });
+        return jsonResponse(201, { id: "child-followup", status: "queued" });
+      },
+    });
+    expect((await client.getThreadRelationship("child-1")).threadId).toBe("child-1");
+    expect((await client.listThreadChildren("root-1", { limit: 50 })).children).toHaveLength(1);
+    expect((await client.listThreadRelationships({ limit: 200 })).children).toHaveLength(1);
+    expect(await client.sendThreadMessage("child-1", {
+      text: "Add keyboard navigation",
+      attachments: ["upload-1"],
+      idempotencyKey: "message-1",
+    })).toEqual({ runId: "child-followup", status: "queued" });
+    const post = calls.at(-1)!;
+    expect(post.url).toBe("https://x/api/threads/child-1/messages");
+    expect(post.init?.headers?.["Idempotency-Key"]).toBe("message-1");
+    expect(JSON.parse(post.init?.body ?? "{}")).toEqual({
+      text: "Add keyboard navigation",
+      attachments: ["upload-1"],
+    });
+  });
 });
 
 describe("AgentClient connectThread", () => {

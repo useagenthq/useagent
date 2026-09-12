@@ -149,6 +149,8 @@ export function createOomolProjectConnectorBackend(
 
   return {
     kind: "delegated",
+    catalogBackend: "openconnector",
+    catalogAuthMethod: "oauth2",
     runtimeBindingId,
     disconnectSupported: false,
     supports: (provider) => PROJECT_CONNECTOR_PROVIDER_SET.has(provider),

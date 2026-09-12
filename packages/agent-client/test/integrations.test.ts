@@ -6,6 +6,7 @@ import {
   decodeIntegrationActionCatalog,
   decodeIntegrationActionCatalogEntry,
   decodeIntegrationConnectionChange,
+  decodeIntegrationSummary,
   type ConnectionProjection,
   type IntegrationActionCatalogEntry,
   type IntegrationConnectionChange,
@@ -122,5 +123,52 @@ describe("integration browser-safe wire contract", () => {
     ).toBeNull();
     expect(decodeIntegrationActionCatalog([catalogEntry, { ...catalogEntry, approval: "always" }]))
       .toEqual([catalogEntry]);
+  });
+
+  test("decodes the safe provider catalog without internal connector material", () => {
+    const decoded = decodeIntegrationSummary({
+      provider: "linear",
+      displayName: "Linear",
+      description: "Issue tracking.",
+      backend: "openconnector",
+      authMethod: "oauth2",
+      managed: false,
+      configured: true,
+      connectAvailable: true,
+      disconnectAvailable: false,
+      status: "unavailable",
+      degradationReason: null,
+      permissions: {
+        scopes: ["issues:read"],
+        actionCount: 2,
+        effects: ["read", "write"],
+        approvals: ["none", "interactive"],
+      },
+      connection: null,
+      runtimeBindingId: "must-not-cross",
+      adminToken: "must-not-cross",
+    });
+    expect(decoded).toEqual({
+      provider: "linear",
+      displayName: "Linear",
+      description: "Issue tracking.",
+      backend: "openconnector",
+      authMethod: "oauth2",
+      managed: false,
+      configured: true,
+      connectAvailable: true,
+      disconnectAvailable: false,
+      status: "unavailable",
+      degradationReason: null,
+      permissions: {
+        scopes: ["issues:read"],
+        actionCount: 2,
+        effects: ["read", "write"],
+        approvals: ["none", "interactive"],
+      },
+      connection: null,
+    });
+    expect(JSON.stringify(decoded)).not.toContain("runtimeBindingId");
+    expect(JSON.stringify(decoded)).not.toContain("adminToken");
   });
 });

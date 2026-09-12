@@ -183,6 +183,8 @@ export function createSlackDelegatedConnectionBackend(
   const readCredential = dependencies.readCredential ?? readIntegrationCredential;
   return {
     kind: "delegated",
+    catalogBackend: "native",
+    catalogAuthMethod: "oauth2",
     runtimeBindingId: SLACK_NATIVE_RUNTIME_BINDING_ID,
     disconnectSupported: true,
     supports: (provider) => provider === "slack",

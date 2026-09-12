@@ -24,6 +24,32 @@ class FakeEventSource extends EventTarget {
 
 describe("org change protocol", () => {
   test("accepts IDs-only product invalidations", () => {
+    expect(parseOrgChange({
+      type: "execution_graph",
+      runId: "run-1",
+      threadId: "thread-1",
+      graphCursor: 9,
+    })).toEqual({
+      type: "execution_graph",
+      runId: "run-1",
+      threadId: "thread-1",
+      graphCursor: 9,
+    });
+
+    expect(
+      parseOrgChange({
+        type: "thread_relationship",
+        action: "created",
+        threadId: "child-1",
+        familyThreadId: "root-1",
+      }),
+    ).toEqual({
+      type: "thread_relationship",
+      action: "created",
+      threadId: "child-1",
+      familyThreadId: "root-1",
+    });
+
     expect(
       parseOrgChange({
         type: "run",
@@ -94,6 +120,13 @@ describe("org change protocol", () => {
 
   test("rejects malformed or unknown invalidations", () => {
     expect(parseOrgChange(null)).toBeNull();
+    expect(
+      parseOrgChange({
+        type: "thread_relationship",
+        action: "created",
+        threadId: "child-1",
+      }),
+    ).toBeNull();
     expect(
       parseOrgChange({ type: "run", action: "deleted", runId: "r", threadId: "t" }),
     ).toBeNull();
@@ -174,6 +207,18 @@ describe("org change protocol", () => {
 
       expect(first).toEqual([change, providerChange, integrationChange]);
       expect(second).toEqual([change, providerChange, integrationChange]);
+      const graphOne = {
+        type: "execution_graph",
+        runId: "run-live",
+        threadId: "thread-live",
+        graphCursor: 1,
+      } satisfies OrgChange;
+      const graphTwo = { ...graphOne, graphCursor: 2 } satisfies OrgChange;
+      source.emitChange(graphOne);
+      source.emitChange(graphTwo);
+      await Promise.resolve();
+      expect(first.at(-1)).toEqual(graphTwo);
+      expect(second.at(-1)).toEqual(graphTwo);
       unsubscribeFirst();
       expect(source.closed).toBeFalse();
       unsubscribeSecond();

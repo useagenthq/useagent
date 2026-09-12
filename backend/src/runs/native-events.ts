@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, count, eq, gt } from "drizzle-orm";
 import { NATIVE_SCHEMA_VERSION } from "@useagent/agent-client/wire";
 import type { NativeFrame } from "@useagent/agent-client/wire";
 import { db } from "../db/client";
@@ -111,11 +111,17 @@ function rowToNativeFrame(row: ProviderEventRow): NativeFrame {
 export async function getNativeFramesSince(
   runId: string,
   cursorSeq: number,
+  limit?: number,
 ): Promise<NativeFrame[]> {
-  const rows = await db
-    .select()
-    .from(providerEvents)
+  const base = db.select().from(providerEvents)
     .where(and(eq(providerEvents.runId, runId), gt(providerEvents.seq, cursorSeq)))
     .orderBy(asc(providerEvents.seq));
+  const rows = limit === undefined ? await base : await base.limit(limit);
   return rows.map(rowToNativeFrame);
+}
+
+export async function countNativeFrames(runId: string): Promise<number> {
+  const [row] = await db.select({ count: count() }).from(providerEvents)
+    .where(eq(providerEvents.runId, runId));
+  return row?.count ?? 0;
 }

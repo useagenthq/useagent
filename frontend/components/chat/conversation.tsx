@@ -532,8 +532,7 @@ export const Conversation = memo(function Conversation({
   onStop,
   runStartedAt,
   prefill,
-  repoRevisions,
-  onTurnsNeeded,
+  repoRevisions, resourceMentions = true, onTurnsNeeded, composerLocked = false, composerLockedMessage,
 }: {
   turns: Turn[];
   defaultEngine: EngineId;
@@ -582,6 +581,8 @@ export const Conversation = memo(function Conversation({
    *  proposal); each request carries a fresh nonce so repeats re-apply. */
   prefill?: { readonly text: string; readonly nonce: number } | null;
   repoRevisions?: Readonly<Record<string, string | null>>;
+  resourceMentions?: boolean;
+  composerLocked?: boolean; composerLockedMessage?: string;
   /** Windowed initial loading: called with the run ids of not-yet-loaded
    *  (outline stub) turns entering the render window, so their island can be
    *  fetched. Absent on fully-loaded threads. */
@@ -765,7 +766,6 @@ export const Conversation = memo(function Conversation({
         <MessageScrollerRail turns={renderedTurns} scrollRef={scrollRef} />
         <ScrollToEndPill scrollRef={scrollRef} />
       </div>
-
       <ReplyComposer
         engine={defaultEngine}
         model={defaultModel}
@@ -774,7 +774,7 @@ export const Conversation = memo(function Conversation({
         commands={commands}
         commandState={commandState}
         modelSelection={modelSelection}
-        locked={controlLocksComposer}
+        locked={controlLocksComposer || composerLocked}
         placeholder={
           pendingApproval
             ? "Respond to the approval above to continue…"
@@ -782,7 +782,7 @@ export const Conversation = memo(function Conversation({
               ? composerCanAnswerQuestion
                 ? "Answer Agent’s question…"
                 : "Answer the question above to continue…"
-              : undefined
+              : composerLocked ? composerLockedMessage ?? "Loading thread controls…" : undefined
         }
         onReply={onReply}
         running={running}
@@ -796,7 +796,7 @@ export const Conversation = memo(function Conversation({
         engineUnavailableMessage={engineUnavailableMessage}
         draftKey={turns[0]?.run.id ?? null}
         prefill={prefill}
-        enableMentions={composerAcceptsRunResources(pendingQuestion ?? null)}
+        enableMentions={resourceMentions && composerAcceptsRunResources(pendingQuestion ?? null)}
         enableUploads={composerAcceptsRunResources(pendingQuestion ?? null)}
         repoRevisions={repoRevisions}
       />

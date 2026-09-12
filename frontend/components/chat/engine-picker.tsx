@@ -11,6 +11,8 @@ import {
   partitionModelOptions,
   selectableModelsForEngine,
 } from "@/components/chat/types";
+import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
+import type { CapabilityCatalog, CapabilityEngineRuntime } from "@/lib/capability-catalog";
 import { cx as cn } from "@/utils/cx";
 
 export type EngineModelCatalog = Partial<Record<EngineId, readonly string[]>>;
@@ -23,12 +25,74 @@ export interface EngineReadinessStatus {
 }
 export type EngineReadinessCatalog = Partial<Record<EngineId, EngineReadinessStatus>>;
 
+const ENGINE_RUNTIME_CAPTIONS: Partial<Record<EngineId, string>> = {
+  opencode: "any model · cloud sandbox",
+  claude: "Anthropic agent · cloud sandbox",
+  codex: "OpenAI agent · cloud sandbox",
+  pi: "native Pi harness · cloud sandbox",
+  chat: "direct model · no sandbox",
+};
+
+export function engineRuntimeCaption(
+  engine: EngineId,
+  runtime: CapabilityEngineRuntime | undefined,
+  readiness: EngineReadinessStatus | undefined,
+): string {
+  const label = runtime ? ENGINE_RUNTIME_CAPTIONS[engine] ?? "Runtime unavailable" : "Runtime unavailable";
+  return `${label}${readiness?.ready === false ? " · needs attention" : ""}`;
+}
+
+export function engineConfigFromCapabilityCatalog(catalog: CapabilityCatalog): {
+  engines: EngineId[];
+  models: EngineModelCatalog;
+  readiness: EngineReadinessCatalog;
+  runtimes: Partial<Record<EngineId, CapabilityEngineRuntime>>;
+} {
+  const configured = catalog.engines.filter((engine) => engine.configured);
+  return {
+    engines: configured.map((engine) => engine.id),
+    models: Object.fromEntries(
+      configured.map((engine) => [
+        engine.id,
+        engine.models
+          .filter((model) => model.dispatchable)
+          .sort((left, right) => Number(right.default) - Number(left.default))
+          .map((model) => model.id),
+      ]),
+    ),
+    readiness: Object.fromEntries(
+      configured.map((engine) => [
+        engine.id,
+        {
+          ready: engine.ready,
+          reason: engine.degradationReason ?? "enabled",
+          ...(engine.message ? { message: engine.message } : {}),
+        },
+      ]),
+    ),
+    runtimes: Object.fromEntries(configured.map((engine) => [engine.id, engine.runtime])),
+  };
+}
+
 export function resolveEnabledEngine(
   current: EngineId,
   enabled: readonly EngineId[],
 ): EngineId | null {
   if (enabled.includes(current)) return current;
   return enabled[0] ?? null;
+}
+
+export function fallbackEnabledEngineConfig() {
+  return {
+    engines: ["opencode"] as EngineId[],
+    models: {
+      opencode: selectableModelsForEngine("opencode").map((model) => model.value),
+    } satisfies EngineModelCatalog,
+    readiness: {} as EngineReadinessCatalog,
+    runtimes: {} as Partial<Record<EngineId, CapabilityEngineRuntime>>,
+    loaded: false,
+    readinessKnown: false,
+  };
 }
 
 function parseEngineModelCatalog(raw: unknown): EngineModelCatalog {
@@ -59,9 +123,7 @@ export function parseEngineReadinessCatalog(raw: unknown): EngineReadinessCatalo
       ...(typeof value.provider === "string"
         ? { provider: value.provider as EngineReadinessStatus["provider"] }
         : {}),
-      ...(typeof value.providerHealth === "string"
-        ? { providerHealth: value.providerHealth }
-        : {}),
+      ...(typeof value.providerHealth === "string" ? { providerHealth: value.providerHealth } : {}),
       ...(typeof value.message === "string" ? { message: value.message } : {}),
     };
   }
@@ -110,7 +172,8 @@ export function useEnabledEngineConfig(): {
   engines: EngineId[];
   models: EngineModelCatalog;
   readiness: EngineReadinessCatalog;
-  /** True once GET /api/config resolved (or failed): before that the engines
+  runtimes: Partial<Record<EngineId, CapabilityEngineRuntime>>;
+  /** True once GET /api/capabilities resolved (or failed): before that the engines
    * list is the conservative fallback and must not demote a richer default. */
   loaded: boolean;
   /** True only when the server returned an engines manifest. */
@@ -119,66 +182,28 @@ export function useEnabledEngineConfig(): {
    * or rate-limited request keeps the current catalog. */
   refreshModels: (preserveModel?: string) => Promise<void>;
 } {
+  const capabilityState = useCapabilityCatalog();
   const [config, setConfig] = useState<{
     engines: EngineId[];
     models: EngineModelCatalog;
     readiness: EngineReadinessCatalog;
+    runtimes: Partial<Record<EngineId, CapabilityEngineRuntime>>;
     loaded: boolean;
     readinessKnown: boolean;
-  }>({
-    engines: ["opencode"],
-    models: { opencode: selectableModelsForEngine("opencode").map((m) => m.value) },
-    readiness: {},
-    loaded: false,
-    readinessKnown: false,
-  });
+  }>(fallbackEnabledEngineConfig);
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/config");
-        if (!res.ok) return;
-        const j = (await res.json()) as {
-          engines?: unknown;
-          models?: unknown;
-          configuredEngines?: unknown;
-          configuredModels?: unknown;
-          engineReadiness?: unknown;
-        };
-        if (cancelled) return;
-        const advertisedEngines = Array.isArray(j.configuredEngines)
-          ? j.configuredEngines
-          : j.engines;
-        const engines = Array.isArray(advertisedEngines)
-          ? advertisedEngines.filter(
-              (e): e is EngineId => typeof e === "string" && ENGINES.some((x) => x.id === e),
-            )
-          : [];
-        if (engines.length) {
-          setConfig({
-            engines,
-            models: parseEngineModelCatalog(j.configuredModels ?? j.models),
-            readiness: parseEngineReadinessCatalog(j.engineReadiness),
-            loaded: true,
-            readinessKnown: true,
-          });
-        } else {
-          setConfig((c) => ({
-            ...c,
-            loaded: true,
-            readinessKnown: Array.isArray(j.engines),
-          }));
-        }
-      } catch {
-        // network/backend down: keep the safe OpenCode-only default, but mark
-        // the manifest resolved so the composer can settle its engine choice.
-        setConfig((c) => ({ ...c, loaded: true }));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    const catalog = capabilityState.catalog;
+    if (!catalog) {
+      if (capabilityState.loaded) setConfig((current) => ({ ...current, loaded: true }));
+      return;
+    }
+    const next = engineConfigFromCapabilityCatalog(catalog);
+    setConfig({
+      ...next,
+      loaded: true,
+      readinessKnown: true,
+    });
+  }, [capabilityState.catalog, capabilityState.loaded]);
   const refreshModels = useCallback(async (preserveModel?: string) => {
     const models = await requestModelCatalogRefresh();
     if (!models || Object.keys(models).length === 0) return;
@@ -190,7 +215,7 @@ export function useEnabledEngineConfig(): {
   return { ...config, refreshModels };
 }
 
-/** Configured user-facing engines from GET /api/config. Dispatch readiness is
+/** Configured user-facing engines from GET /api/capabilities. Dispatch readiness is
  * carried separately in `readiness`, so a provider problem stays discoverable
  * and actionable instead of making its engine disappear. */
 export function useEnabledEngines(): EngineId[] {
@@ -216,7 +241,7 @@ export function ModelPicker({
   const [open, setOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { models: modelCatalog, refreshModels } = useEnabledEngineConfig();
-  const models = modelOptionsForEngine(engine, modelCatalog[engine]);
+  const models = modelOptionsForEngine(engine, modelCatalog[engine] ?? []);
   // The zero-cost OpenRouter ":free" variants render under their own section;
   // membership is manifest-driven (":free" id suffix), never a hardcoded list.
   const { paid, free } = partitionModelOptions(models);

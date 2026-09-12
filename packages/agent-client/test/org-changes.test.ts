@@ -16,6 +16,18 @@ describe("org-change wire contract", () => {
 
     const changes = [
       {
+        type: "execution_graph",
+        runId: "run-1",
+        threadId: "thread-1",
+        graphCursor: 42,
+      },
+      {
+        type: "thread_relationship",
+        action: "created",
+        threadId: "child-1",
+        familyThreadId: "root-1",
+      },
+      {
         type: "artifact",
         action: "created",
         artifactId: "artifact-1",
@@ -71,6 +83,21 @@ describe("org-change wire contract", () => {
   test("rejects incomplete and unknown events", () => {
     expect(decodeOrgChange(null)).toBeNull();
     expect(
+      decodeOrgChange({
+        type: "execution_graph",
+        runId: "run-1",
+        threadId: "thread-1",
+        graphCursor: -1,
+      }),
+    ).toBeNull();
+    expect(
+      decodeOrgChange({
+        type: "thread_relationship",
+        action: "created",
+        threadId: "child-1",
+      }),
+    ).toBeNull();
+    expect(
       decodeOrgChange({ type: "run", action: "deleted", runId: "run-1", threadId: "thread-1" }),
     ).toBeNull();
     expect(
@@ -117,6 +144,21 @@ describe("org-change wire contract", () => {
       artifactId: "artifact-1",
       runId: "run-1",
       threadId: "thread-1",
+    });
+  });
+
+  test("allowlists thread relationship invalidation fields", () => {
+    expect(decodeOrgChange({
+      type: "thread_relationship",
+      action: "updated",
+      threadId: "child-1",
+      familyThreadId: "root-1",
+      parentThreadId: "must-not-cross",
+    })).toEqual({
+      type: "thread_relationship",
+      action: "updated",
+      threadId: "child-1",
+      familyThreadId: "root-1",
     });
   });
 });

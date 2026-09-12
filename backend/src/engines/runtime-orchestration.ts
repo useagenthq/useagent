@@ -232,6 +232,7 @@ export function shouldProjectRuntimeActivity(
   if (payload?.timelineBypass === true && !activity.kind.startsWith("task.")) return false;
   if (!activity.kind.startsWith("tool.")) return true;
   const itemType = typeof payload?.itemType === "string" ? payload.itemType : null;
+  if (itemType === "collab_agent_tool_call" && activity.kind !== "tool.completed" && activity.kind !== "tool.denied" && runtimeChildSessionId(activity) === null) return false;
   if (
     (itemType === "dynamic_tool_call" || itemType === "mcp_tool_call") &&
     !runtimeToolProjection(activity).tool
@@ -282,7 +283,6 @@ export function shouldProjectRuntimeActivity(
     return childSessionId !== null && candidatePayload?.toolUseId === toolCallId;
   });
 }
-
 export interface RuntimeThreadSnapshot {
   readonly snapshotSequence: number;
   readonly thread: {

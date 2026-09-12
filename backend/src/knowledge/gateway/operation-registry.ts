@@ -12,6 +12,7 @@ import {
   type FinishedWorkReceiptRecord,
 } from "../../runs/finished-work-repo";
 import { finishedWorkRolloutMode } from "../../runs/finished-work-rollout";
+import { productChildThreadsEnabled } from "../../runs/thread-relationship-rollout";
 import { providerEventExists, recordProviderEvent } from "../../runs/provider-events";
 import {
   APPROVAL_REQUEST_TOOLS,
@@ -26,6 +27,7 @@ import {
 import { BLUEPRINT_TOOLS, executeBlueprintTool } from "./blueprint-tools";
 import {
   CHILD_SESSION_TOOLS,
+  advertisedChildSessionTools,
   childSessionToolsEnabled,
   executeChildSessionTool,
 } from "./child-session-tools";
@@ -93,9 +95,11 @@ export function setGatewayCompletionEventRecorderForTest(
 export interface GatewayToolListOptions {
   readonly childSessions: boolean;
   readonly slack: boolean;
+  readonly productChildThreads?: boolean;
 }
 
 interface GatewayToolFamily {
+  readonly category: string;
   readonly tools: readonly GatewayToolDescriptor[];
   readonly execute: GatewayToolExecutor;
 }
@@ -150,32 +154,31 @@ const APPROVED_INTEGRATION_TOOLS = INTEGRATION_TOOLS.map(withApprovalRequirement
 const APPROVED_GITHUB_TOOLS = GITHUB_TOOLS.map(withApprovalRequirement);
 
 const BASE_TOOL_FAMILIES = [
-  { tools: KNOWLEDGE_TOOLS, execute: executeKnowledgeTool },
-  { tools: CONTEXT_TOOLS, execute: executeContextTool },
-  { tools: APPROVED_KNOWLEDGE_MANAGEMENT_TOOLS, execute: executeKnowledgeManagementTool },
-  { tools: MEMORY_TOOLS, execute: executeMemoryTool },
-  { tools: APPROVED_INTEGRATION_TOOLS, execute: executeIntegrationTool },
-  { tools: WEB_SEARCH_TOOLS, execute: executeWebSearchTool },
-  { tools: ARTIFACT_TOOLS, execute: executeArtifactTool },
-  { tools: RECORDING_TOOLS, execute: executeRecordingTool },
-  { tools: COMPUTER_USE_TOOLS, execute: executeComputerUseTool },
-  { tools: RESOURCE_TOOLS, execute: executeResourceTool },
-  { tools: REPOSITORY_TOOLS, execute: executeRepositoryTool },
-  { tools: APPROVED_GITHUB_TOOLS, execute: executeGithubTool },
-  { tools: GCS_TOOLS, execute: executeGcsTool },
-  { tools: AUTOMATION_TOOLS, execute: executeAutomationTool },
-  { tools: APPROVAL_REQUEST_TOOLS, execute: executeApprovalRequestTool },
-  { tools: BLUEPRINT_TOOLS, execute: executeBlueprintTool },
-  { tools: CHILD_SESSION_TOOLS, execute: executeChildSessionTool },
-  { tools: SKILL_TOOLS, execute: executeSkillTool },
-  { tools: TASK_TOOLS, execute: executeTaskTool },
+  { category: "knowledge", tools: KNOWLEDGE_TOOLS, execute: executeKnowledgeTool },
+  { category: "context", tools: CONTEXT_TOOLS, execute: executeContextTool },
+  { category: "knowledge", tools: APPROVED_KNOWLEDGE_MANAGEMENT_TOOLS, execute: executeKnowledgeManagementTool },
+  { category: "memory", tools: MEMORY_TOOLS, execute: executeMemoryTool },
+  { category: "integrations", tools: APPROVED_INTEGRATION_TOOLS, execute: executeIntegrationTool },
+  { category: "web", tools: WEB_SEARCH_TOOLS, execute: executeWebSearchTool },
+  { category: "artifacts", tools: ARTIFACT_TOOLS, execute: executeArtifactTool },
+  { category: "recording", tools: RECORDING_TOOLS, execute: executeRecordingTool },
+  { category: "computer", tools: COMPUTER_USE_TOOLS, execute: executeComputerUseTool },
+  { category: "resources", tools: RESOURCE_TOOLS, execute: executeResourceTool },
+  { category: "repositories", tools: REPOSITORY_TOOLS, execute: executeRepositoryTool },
+  { category: "github", tools: APPROVED_GITHUB_TOOLS, execute: executeGithubTool },
+  { category: "storage", tools: GCS_TOOLS, execute: executeGcsTool },
+  { category: "automations", tools: AUTOMATION_TOOLS, execute: executeAutomationTool },
+  { category: "approvals", tools: APPROVAL_REQUEST_TOOLS, execute: executeApprovalRequestTool },
+  { category: "blueprints", tools: BLUEPRINT_TOOLS, execute: executeBlueprintTool },
+  { category: "child_sessions", tools: CHILD_SESSION_TOOLS, execute: executeChildSessionTool },
+  { category: "skills", tools: SKILL_TOOLS, execute: executeSkillTool },
+  { category: "tasks", tools: TASK_TOOLS, execute: executeTaskTool },
 ] as const satisfies readonly GatewayToolFamily[];
-
 const SLACK_FAMILY = {
+  category: "slack",
   tools: SLACK_TOOLS,
   execute: executeSlackTool,
 } as const satisfies GatewayToolFamily;
-
 const ALL_TOOL_FAMILIES = [
   ...BASE_TOOL_FAMILIES,
   SLACK_FAMILY,
@@ -230,13 +233,35 @@ export function baseGatewayToolDescriptors(): readonly GatewayToolDescriptor[] {
 export function gatewayMetaToolDescriptors(): readonly GatewayToolDescriptor[] {
   return GATEWAY_META_TOOLS;
 }
+export interface GatewayToolCatalogDescriptor {
+  readonly category: string; readonly descriptor: GatewayToolDescriptor;
+  readonly condition: "always" | "child_session" | "slack";
+}
+/** Browser-safe catalog metadata still starts from the execution registry. The
+ * caller decides deployment/current-run availability; schemas and executors do
+ * not leave this module. */
+export function gatewayToolCatalogDescriptors(): readonly GatewayToolCatalogDescriptor[] {
+  return ALL_TOOL_FAMILIES.flatMap((family) =>
+    family.tools.map((descriptor) => ({
+      category: family.category,
+      descriptor,
+      condition: family === SLACK_FAMILY
+        ? "slack" as const
+        : family.tools === CHILD_SESSION_TOOLS
+          ? "child_session" as const
+          : "always" as const,
+    }))
+  );
+}
 
 export function advertisedGatewayToolDescriptors(
   options: GatewayToolListOptions,
 ): readonly GatewayToolDescriptor[] {
   return [
     ...BASE_TOOL_FAMILIES.flatMap<GatewayToolDescriptor>((family) =>
-      family.tools === CHILD_SESSION_TOOLS && !options.childSessions ? [] : [...family.tools],
+      family.tools === CHILD_SESSION_TOOLS
+        ? (!options.childSessions ? [] : [...advertisedChildSessionTools(options.productChildThreads)])
+        : [...family.tools],
     ),
     ...(options.slack ? SLACK_TOOLS : []),
   ].map(advertisedDescriptor);
@@ -704,6 +729,7 @@ export async function executeRegisteredGatewayTool(
   const resolvedOptions = options ?? {
     childSessions: await childSessionToolsEnabled(claims),
     slack: false,
+    productChildThreads: productChildThreadsEnabled(claims.orgId),
   };
   if (isGatewayMetaToolName(canonicalName)) {
     const availableTools = availableGatewayToolDescriptors(resolvedOptions);

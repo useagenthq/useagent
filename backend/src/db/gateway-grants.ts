@@ -22,7 +22,7 @@ const LEGACY_GATEWAY_DATABASE_ROLE = "skynet_gateway";
  * process writes, add it HERE in the same change.
  */
 export const GATEWAY_GRANTS: readonly string[] = [
-  "GRANT SELECT ON runs, skills, skill_revisions, secrets, artifacts, provider_gateway_audit, slack_threads TO useagent_gateway",
+  "GRANT SELECT ON runs, skills, skill_revisions, secrets, artifacts, provider_gateway_audit, slack_threads, thread_relationships TO useagent_gateway",
   "GRANT UPDATE (skill_id, skill_version, skill_content_hash, updated_at) ON runs TO useagent_gateway",
   "GRANT UPDATE (usage_count, last_run_at, updated_at) ON skills TO useagent_gateway",
   "GRANT SELECT (id, run_id, seq, event_type, payload) ON provider_events TO useagent_gateway",

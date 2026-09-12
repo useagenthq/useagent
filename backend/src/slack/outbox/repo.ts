@@ -27,6 +27,48 @@ export interface ClaimedRow {
   readonly maxAttempts: number;
 }
 
+function payloadRecord(row: ClaimedRow): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(row.payload);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function sameString(left: Record<string, unknown>, right: Record<string, unknown>, key: string): boolean {
+  return typeof left[key] === "string" && left[key] === right[key];
+}
+
+/** Resolve semantic ties that can share the same database timestamp. A clear
+ * status must follow its working status, and immutable artifact revisions must
+ * reach Slack oldest-first. Other row kinds retain the stable id fallback. */
+function semanticClaimOrder(left: ClaimedRow, right: ClaimedRow): number {
+  const leftPayload = payloadRecord(left);
+  const rightPayload = payloadRecord(right);
+  if (
+    left.kind === "set_thread_status" && right.kind === "set_thread_status" &&
+    ["teamId", "channel", "threadTs", "runId"].every((key) =>
+      sameString(leftPayload, rightPayload, key)
+    )
+  ) {
+    return Number(leftPayload.status === "") - Number(rightPayload.status === "");
+  }
+  if (
+    left.kind === "upload_file" && right.kind === "upload_file" &&
+    sameString(leftPayload, rightPayload, "artifactId")
+  ) {
+    const leftRevision = Number(leftPayload.artifactRevision);
+    const rightRevision = Number(rightPayload.artifactRevision);
+    if (Number.isInteger(leftRevision) && Number.isInteger(rightRevision)) {
+      return leftRevision - rightRevision;
+    }
+  }
+  return 0;
+}
+
 /**
  * Idempotently enqueue an outbound Slack call (north star "transactional
  * connector outbox"): a committed row is the durable intent to deliver. A
@@ -112,24 +154,37 @@ export async function claimDue(limit = 20): Promise<ClaimedRow[]> {
     with due as (
       select id from slack_outbox
       where state = 'pending' and next_attempt_at <= now()
-      order by next_attempt_at asc
+      order by next_attempt_at asc, created_at asc, id asc
       limit ${limit}
       for update skip locked
     )
     update slack_outbox o set state = 'delivering', updated_at = now()
     from due where o.id = due.id
-    returning o.id, o.idempotency_key, o.kind, o.state, o.payload, o.attempt_count, o.max_attempts`)) as unknown as Array<
+    returning o.id, o.idempotency_key, o.kind, o.state, o.payload, o.attempt_count, o.max_attempts,
+      o.next_attempt_at, o.created_at`)) as unknown as Array<
     Record<string, unknown>
   >;
-  return rows.map((r) => ({
-    id: r.id as string,
-    idempotencyKey: r.idempotency_key as string,
-    kind: r.kind as ClaimedRow["kind"],
-    state: r.state as ClaimedRow["state"],
-    payload: r.payload as string,
-    attemptCount: Number(r.attempt_count),
-    maxAttempts: Number(r.max_attempts),
-  }));
+  return rows
+    .map((r) => ({
+      row: {
+        id: r.id as string,
+        idempotencyKey: r.idempotency_key as string,
+        kind: r.kind as ClaimedRow["kind"],
+        state: r.state as ClaimedRow["state"],
+        payload: r.payload as string,
+        attemptCount: Number(r.attempt_count),
+        maxAttempts: Number(r.max_attempts),
+      },
+      nextAttemptAt: new Date(r.next_attempt_at as string | Date).getTime(),
+      createdAt: new Date(r.created_at as string | Date).getTime(),
+    }))
+    .sort((left, right) =>
+      left.nextAttemptAt - right.nextAttemptAt ||
+      left.createdAt - right.createdAt ||
+      semanticClaimOrder(left.row, right.row) ||
+      left.row.id.localeCompare(right.row.id)
+    )
+    .map(({ row }) => row);
 }
 
 /** Persist delivery progress on a claimed row (the chunk cursor): after each

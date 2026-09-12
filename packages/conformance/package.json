@@ -3,6 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./evidence-combine": "./src/evidence-combine.ts",
+    "./evidence-cache": "./src/evidence-cache.ts",
+    "./evidence-checkpoint": "./src/evidence-checkpoint.ts",
+    "./live-retry": "./src/live-retry.ts",
+    "./targets": "./src/targets.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test",

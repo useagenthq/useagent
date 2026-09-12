@@ -53,6 +53,7 @@ import {
   providerGatewaySandboxIsCurrent,
   providerGatewaySandboxLabels,
 } from "../provider-gateway/sandbox-config";
+import { CLAUDE_ACP_PRE_RELAY, CLAUDE_ACP_WRAPPER } from "./claude-acp-launch";
 import { extractAcpToolOutput } from "./acp-content";
 import {
   forgetLiveThreadSandbox,
@@ -1499,15 +1500,14 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 export const claudeAcpConfig: AcpEngineConfig = {
   id: "claude",
   port: 4097,
-  // claude-agent-acp embeds the Agent SDK; CLAUDE_CODE_EXECUTABLE points it at
-  // the resident claude binary (also installed) instead of the ~250MB bundled
-  // optional dependency.
+  // Point the embedded Agent SDK at the separately installed resident binary.
   packages: [
     { pkg: CLAUDE_CODE_PKG, bin: "claude" },
     { pkg: CLAUDE_ACP_PKG, bin: "claude-agent-acp" },
   ],
   agentCmd: ["claude-agent-acp"],
-  agentEnv: { CLAUDE_CODE_EXECUTABLE: "$HOME/.local/bin/claude" },
+  agentEnv: { CLAUDE_CODE_EXECUTABLE: CLAUDE_ACP_WRAPPER },
+  preRelay: CLAUDE_ACP_PRE_RELAY,
   prepare: (sandbox, ctx) => prepareProviderGatewaySandbox(sandbox, ctx, "claude"),
 };
 

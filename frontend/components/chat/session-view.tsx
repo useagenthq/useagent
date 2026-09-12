@@ -49,12 +49,18 @@ import {
 } from "@/components/chat/rail-resizer";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import { SubagentChips } from "@/components/chat/subagent-pane";
-import { type SurfaceChoice, SurfaceChooser } from "@/components/chat/surface-chooser";
+import {
+  railTabLabelFor,
+  type SurfaceChoice,
+  SurfaceChooser,
+} from "@/components/chat/surface-chooser";
+import { useAgentsRailDeepLink } from "@/components/chat/use-agents-rail-deep-link";
 import { TerminalPane } from "@/components/chat/terminal-pane";
 import { terminalRunIdForThread } from "@/components/chat/terminal-run-state";
 import type { TimelineArtifact } from "@/components/chat/timeline";
 import { ComposerPrefillProvider } from "@/components/chat/composer-prefill-context";
 import { SessionLatestRunProvider } from "@/components/chat/session-run-context";
+import { SessionThreadBreadcrumb } from "@/components/chat/session-thread-breadcrumb";
 import { useWorkpieceAutoOpen } from "@/components/chat/use-workpiece-auto-open";
 import { shouldFocusAutoOpened, workspaceSurfaceHasFocus } from "@/components/chat/workpiece-auto-open";
 import { WorkspaceOpenProvider } from "@/components/chat/workspace-open-context";
@@ -79,8 +85,10 @@ import { Button } from "@/components/base/buttons/button";
 import { CloseButton } from "@/components/base/buttons/close-button";
 import { PillTab, PillTabList } from "@/components/base/tabs/pill-tab";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { threadSubmissionLane, useThreadFamily } from "@/hooks/use-thread-family";
+import type { InitialThreadRelationshipHint } from "@/lib/thread-relationship-hint";
 import { backendFetch } from "@/lib/backend-fetch";
-import { createRun, runCreateFailureMessage } from "@/lib/create-run";
+import { createRun, createThreadMessage, runCreateFailureMessage } from "@/lib/create-run";
 import { cx } from "@/utils/cx";
 
 // The rail is a resizable sub-viewport panel (viewport breakpoints can't
@@ -100,20 +108,16 @@ const RAIL_TAB_LABEL_COLLAPSE = "@max-[40rem]:sr-only";
  * A reply starts a child run in the same thread and arrives on the open stream -
  * never navigating away, never reconnecting.
  */
-export function SessionView({
-  initialThread,
-  initialOutline = null,
-}: {
+export function SessionView({ initialThread, initialOutline = null, initialRelationshipHint = "legacy_or_off" }: {
   initialThread: ApiRun[];
   /** Windowed initial loading (long threads): the WHOLE thread's per-turn
    *  skeleton, while `initialThread` carries only the root + the fully-loaded
    *  tail. Turns known only by outline render as sized placeholders and are
    *  fetched in islands as the user scrolls into them. Null = full load. */
-  initialOutline?: ApiThreadOutlineTurn[] | null;
+  initialOutline?: ApiThreadOutlineTurn[] | null; initialRelationshipHint?: InitialThreadRelationshipHint;
 }) {
   const root = initialThread[0];
   if (!root) throw new Error("SessionView requires a non-empty thread");
-
   // Optimistic reply, keyed by the accepted run id: kept visible until the durable
   // run is observed in the store, so a POST-accepted message never vanishes if SSE
   // is momentarily down AND the reconcile fetch fails (Codex finding 4).
@@ -124,17 +128,20 @@ export function SessionView({
   const [questionError, setQuestionError] = useState<string | null>(null);
   const [answeringApproval, setAnsweringApproval] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
-
   // ONE realtime subscription for the whole conversation, keyed by the ROOT thread
   // id for the page lifetime (final_fix.md): creating/queueing/starting/settling/
   // cancelling a run never resets the store or reconnects. Every run's projection
   // (durable steps + native frames + live narration) is owned by the thread store,
   // so no run-switch transition can blank/freeze a turn or target the wrong run.
   const rootId = root.id;
+  const threadFamily = useThreadFamily(rootId);
+  const { descendants: productChildren } = threadFamily;
+  const submissionLane = threadSubmissionLane(threadFamily, initialRelationshipHint);
+  const isProductChild = submissionLane === "child" || (!threadFamily.ready && initialRelationshipHint === "child");
+  const composerRelationshipBlocked = submissionLane === "blocked";
   const { snapshot, reconcile, mergeRuns } = useThreadStream(rootId, initialThread);
   const thread = snapshot.runs.length ? snapshot.runs : initialThread;
   const newest = thread.at(-1) ?? root;
-
   const { turns, onTurnsNeeded: handleTurnsNeeded } = useWindowedThread({
     rootId,
     thread,
@@ -366,8 +373,7 @@ export function SessionView({
       attachmentIds: readonly string[] = [],
       resources: readonly RunResourceSelection[] = [],
     ) => {
-      // A free-text reply to a native question resumes the resident OpenCode
-      // turn. It must never enqueue a child run behind the blocked parent.
+      // Native-question replies resume the blocked provider turn instead of enqueueing a run.
       if (activeQuestion && composerCanAnswerQuestion) {
         if (attachmentIds.length > 0 || resources.length > 0) {
           throw new Error("Resources cannot be added while answering a native question");
@@ -378,24 +384,26 @@ export function SessionView({
       }
       setPending({ text, runId: null });
       try {
-        const res = await createRun(
-          {
+        if (composerRelationshipBlocked) throw new Error("Child-session identity is still being verified. Try again in a moment.");
+        if (isProductChild && (command || resources.length > 0)) {
+          throw new Error("Commands and linked resources are not available in child follow-ups yet");
+        }
+        const res = submissionLane === "child"
+          ? await createThreadMessage(rootId, {
+                text,
+                ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}),
+              }, idempotencyKey)
+          : await createRun({
             prompt: text,
             engine,
-            // Unsupported controls must not leak stale values into the API.
-            // ACP replies inherit the thread model server-side; OpenCode may
-            // send the user-selected per-turn override it actually supports.
+            // Only engines with negotiated selection receive a model override.
             ...(modelSelection ? { model } : {}),
             parent_run_id: newest.id,
-            // The backend inherits the parent's scope when omitted; sending the
-            // composer's choice lets the user change it for this reply.
+            // Explicitly preserve the composer's chosen memory scope.
             memory_scope: memoryScope,
             ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}),
             ...(resources.length > 0 ? { resources } : {}),
-            // TYPED native-command intent (Phase 3): present ONLY for a `/known-command ...`
-            // from the current session's catalog. Carries the provider + native session id so
-            // the backend rejects a stale/cross-session intent; the backend re-validates before
-            // delivering it verbatim. Absent => an ordinary prompt keeps its full context.
+            // Catalog commands carry the exact provider session and revision so stale intent fails closed.
             ...(command
               ? {
                   command: {
@@ -406,23 +414,15 @@ export function SessionView({
                   },
                 }
               : {}),
-          },
-          idempotencyKey,
-        );
+          }, idempotencyKey);
         if (!res.ok) throw new Error(await runCreateFailureMessage(res, `backend ${res.status}`));
-        // Key the optimistic bubble to the ACCEPTED run id and keep it until that
-        // durable run is observed in the store (retired by the effect below). The
-        // child run normally arrives on the OPEN thread stream (post-commit
-        // `created` signal); reconcile is a best-effort nudge if SSE was momentarily
-        // down. If BOTH are down, the message must NOT vanish - the backend accepted
-        // it (Codex finding 4).
+        // Keep the accepted run visible until SSE/reconcile observes its durable id.
         const body = (await res.json().catch(() => ({}))) as { id?: unknown };
         const runId = typeof body.id === "string" ? body.id : null;
         setPending((p) => (p ? { ...p, runId } : { text, runId }));
         void reconcile();
       } catch (err) {
-        // POST itself failed: drop the optimistic bubble and re-throw so the composer
-        // restores the draft and shows an explicit retry state.
+        // A failed POST restores the draft and explicit retry state.
         setPending(null);
         throw err;
       }
@@ -433,19 +433,18 @@ export function SessionView({
       commandCatalogRevision,
       composerCanAnswerQuestion,
       engineSessionId,
+      isProductChild,
+      composerRelationshipBlocked, submissionLane,
       newest.id,
+      rootId,
       reconcile,
       submitQuestionAnswers,
     ],
   );
-
-  // Retire the optimistic bubble ONLY once its accepted run is present in the thread
-  // store (matched by run id, never prompt text) - so a POST-accepted reply survives
-  // an SSE/reconcile outage and is cleared exactly when the durable run lands.
+  // Retire optimistic state by accepted run id, never matching prompt text.
   useEffect(() => {
     if (pending && shouldRetireOptimistic(pending.runId, snapshot)) setPending(null);
   }, [pending, snapshot]);
-
   // The ACTUALLY-RUNNING turn may not be the newest (rapid-fire replies make
   // the newest a QUEUED run) - Stop and Send-now must target the running one.
   const runningTurn = turns.find((t) => t.status === "running") ?? null;
@@ -514,6 +513,7 @@ export function SessionView({
   const hasFiles = allSteps.some((s) => s.kind === "file" && parseFileEntries(s).length > 0);
   const hasCommands = allSteps.some((s) => s.kind === "command");
   const hasSubagents =
+    productChildren.length > 0 ||
     gatewayChildren.length > 0 ||
     allCanonicalEvents.some((event) => event.kind === "child.started") ||
     allSteps.some((s) => s.chip === "subagent");
@@ -579,6 +579,8 @@ export function SessionView({
     setRailOverride(true);
     if (railTab === null) setRailTabOverride("artifacts");
   }, [railTab]);
+  const { focusExecutionId, focusExecutionRunId, clearAgentFocus } =
+    useAgentsRailDeepLink(setRailTabOverride, setRailOverride);
 
   const openWorkpiece = useCallback((artifact: Pick<TimelineArtifact, "id" | "name">) => {
     setOpenWorkpieces((prev) =>
@@ -629,22 +631,7 @@ export function SessionView({
     },
     [activeWorkpieceId, openWorkpieces, railTabOverride],
   );
-  const railTabLabel =
-    railTab === null
-      ? "Surface"
-      : railTab === "agents"
-        ? "Agents"
-        : railTab === "artifacts"
-          ? "Files"
-          : railTab === "diff"
-            ? "Diff"
-            : railTab === "editor"
-              ? "Editor"
-              : railTab === "workspace"
-                ? "Workspace"
-                : railTab === "terminal"
-                  ? "Terminal"
-                  : "Desktop";
+  const railTabLabel = railTabLabelFor(railTab);
   const [desktopEverOpened, setDesktopEverOpened] = useState(false);
   useEffect(() => {
     if (railTab === "desktop") setDesktopEverOpened(true);
@@ -758,29 +745,24 @@ export function SessionView({
           open workpiece can tell a requested edit (from the user's own last
           message's run) from an unsolicited one. */}
       <SessionLatestRunProvider value={newest.id}>
-      {/* The conversation dominates; the full-height rail stays alongside it.
-          Its header stays inside the conversation column.
-          The boot orb yields to the conversation's Thinking block once steps stream. */}
+      {/* Conversation and full-height inspector share one responsive split. */}
       <div ref={bodyRef} className="flex h-full min-h-0 flex-col md:flex-row">
         {/* Conversation */}
         <section
           aria-hidden={railExpanded}
           className={cx(
-            // min-h-0 (not a vh block) below md too: the conversation is the ONLY
-            // in-flow surface on a phone, so this column fills main exactly and
-            // its internal scroller pins the composer to the viewport bottom.
-            // md:min-w-80 floors the tablet split so a wide rail cannot crush it.
+            // min-h-0 pins the internal scroller/composer; md:min-w-80 protects the split.
             "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-w-80",
             railExpanded && "hidden",
           )}
         >
-          {/* Compact thread bar - INSIDE the conversation column so the rail
-              can run full height beside it. Brand/search stay in the sidebar. */}
-          {/* border-b drops when the sidebar is minimized (group/shell data
-              attribute): the collapsed layout reads as one full-bleed surface. */}
+          {/* Compact in-column thread bar; collapsed sidebar removes its divider. */}
           <div className="border-border-button-default/50 flex h-12 shrink-0 items-center justify-between gap-3 border-b px-4 md:group-data-[sidebar-collapsed]/shell:border-b-0">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="text-mono-label text-text-tertiary">Session</span>
+              <SessionThreadBreadcrumb
+                relationship={threadFamily.relationship}
+                parent={threadFamily.parent}
+              />
               {/* The thread's git identity: repos (+ chosen branch) come from the
                   ROOT run's durable wire row - repos are inherited across a thread,
                   so the SSR-provided root is authoritative for the page lifetime. */}
@@ -832,9 +814,9 @@ export function SessionView({
             // composer lets the user change it. Legacy runs w/o a scope → "org".
             defaultMemoryScope={newest.memory_scope ?? "org"}
             pendingReply={pending?.text ?? null}
-            commands={commands}
-            commandState={catalogState}
-            modelSelection={modelSelection}
+            commands={isProductChild ? [] : commands}
+            commandState={isProductChild ? undefined : catalogState}
+            modelSelection={isProductChild ? false : modelSelection}
             onReply={handleReply}
             pendingQuestion={activeQuestion?.request ?? null}
             answeringQuestion={answeringQuestion}
@@ -857,6 +839,8 @@ export function SessionView({
             repoRevisions={Object.fromEntries(
               newest.repo_specs.map((spec) => [spec.repo, spec.branch]),
             )}
+            resourceMentions={!isProductChild}
+            composerLocked={composerRelationshipBlocked} composerLockedMessage="Verifying child session…"
             onTurnsNeeded={initialOutline ? handleTurnsNeeded : undefined}
           />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the
@@ -1127,12 +1111,17 @@ export function SessionView({
                   ) : railTab === "agents" ? (
                     <AgentsRail
                       rootRunId={rootId}
+                      parentThreadId={root.thread_id}
                       steps={allSteps}
                       live={live}
                       frames={allFrames}
                       canonicalEvents={allCanonicalEvents}
                       executionSummary={snapshot.executionSummary}
                       childSessions={gatewayChildren}
+                      productChildren={productChildren}
+                      focusExecutionId={focusExecutionId}
+                      focusExecutionRunId={focusExecutionRunId}
+                      onClearNativeSessionFocus={clearAgentFocus}
                     />
                   ) : railTab === "artifacts" ? (
                     <ArtifactsRail threadId={rootId} live={live} />

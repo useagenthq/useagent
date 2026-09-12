@@ -2,12 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createCanonicalThreadStore, type CanonicalThreadEvent } from "@useagent/agent-client";
-import { AgentsRail, childElapsedMs, childStatusLabel } from "./agents-rail";
+import {
+  AgentDetail,
+  AgentsRail,
+  childElapsedMs,
+  childStatusLabel,
+  focusNodeIdFor,
+} from "./agents-rail";
+import { projectChildTree } from "./child-tree-projector";
 import type { CanonicalChildEventLike } from "./canonical-children";
 import type { GatewayChildSession } from "./gateway-children";
 import type { SubagentCard } from "./subagents";
 import type { ApiStep } from "./types";
 import { EXECUTION_SUMMARY_ROLLOUT_MODE } from "./execution-summary-rollout";
+import type { ThreadRelationship } from "@useagent/agent-client";
 
 describe("agents rail child state labels", () => {
   test("uses the explicit resumable flag for idle children", () => {
@@ -36,7 +44,168 @@ describe("agents rail child state labels", () => {
   });
 });
 
+describe("agents rail sidebar focus", () => {
+  test("selects the exact durable execution even when native session ids collide", () => {
+    const tree = projectChildTree({
+      cards: [],
+      fidelity: new Map(),
+      gatewayChildren: [],
+      graph: {
+        executions: [
+          {
+            id: "execution-a",
+            mode: "native_child",
+            provider: "codex",
+            native_session_id: "reused-session",
+          },
+          {
+            id: "execution-b",
+            mode: "native_child",
+            provider: "claude",
+            native_session_id: "reused-session",
+          },
+        ],
+        delegationEdges: [],
+      },
+      runLive: true,
+    });
+    expect(focusNodeIdFor(tree, "execution-a")).toBe("native:execution-a");
+    expect(focusNodeIdFor(tree, "execution-b")).toBe("native:execution-b");
+    expect(focusNodeIdFor(tree, "missing")).toBeNull();
+    expect(focusNodeIdFor(tree, null)).toBeNull();
+  });
+});
+
 describe("agents rail rows", () => {
+  test("selected detail renders the existing canonical transcript instead of an empty pane", () => {
+    const card: SubagentCard = {
+      id: "card-child-1",
+      title: "Inspect checkout",
+      childSessionId: "child-1",
+      callId: "call-1",
+      aliases: ["child-1", "call-1"],
+      status: "Completed",
+      startedAt: Date.parse("2026-09-01T10:00:00Z"),
+      lastActivityAt: Date.parse("2026-09-01T10:00:02Z"),
+    };
+    const fidelity = {
+      callId: "call-1",
+      childSessionId: "child-1",
+      status: "running" as const,
+      resultText: "Checkout is healthy.",
+      progress: "Working",
+      lastToolName: null,
+      recentActivity: [],
+      usage: { totalTokens: 120, durationMs: 2_000 },
+      prompt: "Inspect the checkout flow",
+      model: "gpt-5.6-sol",
+      role: "verifier",
+      resumable: true,
+    };
+    const node = projectChildTree({
+      cards: [card],
+      fidelity: new Map([["child-1", fidelity]]),
+      gatewayChildren: [],
+      canonicalEvents: [{
+        kind: "session.started",
+        seq: 1,
+        identity: { nativeSessionId: "child-1" },
+        capabilities: { resume: true, stop: true },
+      }],
+      graph: {
+        executions: [{
+          id: "execution-child-1",
+          mode: "native_child",
+          provider: "codex",
+          native_session_id: "child-1",
+          status: "completed",
+          started_at: "2026-09-01T10:00:00Z",
+          settled_at: "2026-09-01T10:00:02Z",
+          created_at: "2026-09-01T10:00:00Z",
+        }],
+        delegationEdges: [],
+      },
+      runLive: false,
+    })[0];
+    expect(node).toBeDefined();
+    if (!node) throw new Error("expected projected child");
+
+    const html = renderToStaticMarkup(
+      createElement(AgentDetail, {
+        node,
+        card,
+        fidelity,
+        steps: [],
+        ownerByStep: new Map(),
+        spawnStepId: card.id,
+        canonicalEvents: [{
+          kind: "message.completed",
+          seq: 2,
+          messageId: "message-1",
+          text: "Recovered child transcript.",
+          identity: { nativeSessionId: "child-1" },
+        }],
+        historyLoading: false,
+        parentThreadId: "thread-1",
+        onBack: () => {},
+      }),
+    );
+    expect(html).toContain("Recovered child transcript.");
+    expect(html).toContain("Checkout is healthy.");
+    expect(html).toContain("Inspect the checkout flow");
+    expect(html).toContain("Completed");
+    expect(html).toContain("Continue as session");
+    expect(html).not.toContain("Working");
+    expect(html).toContain("cancel</span> unavailable: This child is no longer running.");
+    expect(html).not.toContain("No activity recorded");
+  });
+
+  test("selected settled detail names an honestly absent transcript/result", () => {
+    const card: SubagentCard = {
+      id: "card-empty",
+      title: "Verify release",
+      childSessionId: "empty-child",
+      callId: "call-empty",
+      aliases: ["empty-child"],
+      status: null,
+      startedAt: Date.parse("2026-09-01T10:00:00Z"),
+      lastActivityAt: null,
+    };
+    const node = projectChildTree({
+      cards: [card],
+      fidelity: new Map(),
+      gatewayChildren: [],
+      graph: {
+        executions: [{
+          id: "execution-empty",
+          mode: "native_child",
+          provider: "codex",
+          native_session_id: "empty-child",
+          status: "completed",
+          started_at: "2026-09-01T10:00:00Z",
+          settled_at: "2026-09-01T10:00:01Z",
+          created_at: "2026-09-01T10:00:00Z",
+        }],
+        delegationEdges: [],
+      },
+      runLive: false,
+    })[0];
+    if (!node) throw new Error("expected projected child");
+    const html = renderToStaticMarkup(createElement(AgentDetail, {
+      node,
+      card,
+      fidelity: undefined,
+      steps: [],
+      ownerByStep: new Map(),
+      spawnStepId: card.id,
+      canonicalEvents: [],
+      historyLoading: false,
+      onBack: () => {},
+    }));
+    expect(html).toContain("Completed");
+    expect(html).toContain("No child transcript/result captured.");
+  });
+
   test("production consumer reads the supplied store snapshot behind the rollout mode", () => {
     const started = (
       childId: string,
@@ -178,6 +347,59 @@ describe("agents rail gateway children", () => {
     expect(html).toContain('href="/session/child-run-1"');
     expect(html).toContain("GOOGL is $344.82.");
     expect(html).toContain("Queued");
+  });
+
+  test("renders ordinary product children as the primary messageable lane", () => {
+    const productChild: ThreadRelationship = {
+      threadId: "product-child-1",
+      parentThreadId: "root",
+      familyThreadId: "root",
+      kind: "delegated",
+      title: "Build calendar grid",
+      sourceRunId: "root",
+      sourceExecutionId: null,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:01.000Z",
+      status: "running",
+      engine: "claude",
+      model: "claude-sonnet-5",
+      latestRunId: "product-child-1",
+      latestActivityAt: "2026-09-01T00:00:01.000Z",
+    };
+    const html = renderToStaticMarkup(createElement(AgentsRail, {
+      steps: [],
+      live: true,
+      productChildren: [productChild],
+    }));
+    expect(html).toContain("Build calendar grid");
+    expect(html).toContain('data-child-lane="product"');
+    expect(html).toContain('href="/session/product-child-1"');
+    expect(html).toContain("Claude Code");
+  });
+
+  test("renders a keyboard-readable nested tree with lane and child-count metadata", () => {
+    const html = renderToStaticMarkup(
+      createElement(AgentsRail, {
+        steps: [],
+        live: false,
+        childSessions: [
+          gatewayChild({ id: "parent-child", parentRunId: "root" }),
+          gatewayChild({
+            id: "nested-child",
+            parentRunId: "parent-child",
+            prompt: "Nested research",
+          }),
+        ],
+      }),
+    );
+    expect(html).toContain('role="tree"');
+    expect(html.match(/role="treeitem"/g)).toHaveLength(2);
+    expect(html).toContain('aria-level="1"');
+    expect(html).toContain('aria-level="2"');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('data-child-lane="gateway"');
+    expect(html).toContain("1 child");
+    expect(html).toContain('href="/session/nested-child"');
   });
 
   test("excludes anonymous 'Tool' tool-call rows - the nine-identical-cards bug", () => {
