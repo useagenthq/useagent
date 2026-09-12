@@ -62,7 +62,7 @@ export function SettingsRail({ className }: { className?: string }) {
               "whitespace-nowrap rounded-2lg px-3 py-1.5 text-body-2-medium transition-colors duration-150",
               "outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring",
               selected
-                ? "bg-linear-to-b from-accent-500 to-accent-600 text-white shadow-nav-selected"
+                ? "bg-linear-to-b from-accent-600 to-accent-700 text-white shadow-nav-selected"
                 : "text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary",
             )}
           >

@@ -693,7 +693,7 @@ html {
       --neutral-0: 0 0% 100%;
       --neutral-50: 228.57 72.41% 88.63%; /* #cdd5f7 - primary text (lifted Tokyo Night lavender) */
       --neutral-100: 229.76 35.65% 77.45%; /* #b1b8da - secondary text (derived) */
-      --neutral-200: 232.11 19.39% 61.57%; /* #8a8fb0 - muted text */
+      --neutral-200: 232.11 19.39% 65%; /* #9499b7 - muted text (5.2:1 on the raised panel) */
       --neutral-300: 229.29 22.76% 48.24%; /* #5f6997 - soft text (derived) */
       --neutral-400: 229.33 23.81% 37.06%; /* #485075 - stronger border / disabled (derived) */
       --neutral-500: 230 23.08% 30.59%; /* #3c4260 - surface step (derived) */
@@ -2165,6 +2165,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(0 0% 20%); /* #333333 */
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
 
@@ -2257,6 +2258,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(228.75 24.24% 25.88%); /* #323852 */
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
 
@@ -2290,7 +2292,7 @@ html {
   --color-ai-chat-composer-add-hover-background: hsl(var(--neutral-300));
   --color-agent-progress-ring:                   color-mix(in srgb, hsl(var(--neutral-0)) 50%, transparent);
   --color-dropdown-item-hover-background:        color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
-  --color-kbd-background:                        hsl(var(--neutral-400));
+  --color-kbd-background:                        hsl(var(--neutral-500)); /* #3c4260: the hint reads 5:1, one step lighter it was 4:1 */
   --color-kbd-foreground:                        hsl(var(--neutral-100));
   --color-docs-code-background:                  var(--color-background-full);
   --color-docs-install-rail:                     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
@@ -2377,6 +2379,8 @@ html {
   --color-status-rose-text:         hsl(var(--red-400));
   --color-status-yellow-background: hsl(var(--yellow-400) / 12%);
   --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-orange-background: hsl(var(--orange-400) / 12%);
+  --color-status-orange-text:       hsl(var(--orange-400));
   --color-status-blue-background:   hsl(var(--blue-300) / 12%);
   --color-status-blue-text:         hsl(var(--blue-300));
   --color-status-cyan-background:   hsl(var(--sky-400) / 12%);
@@ -2459,6 +2463,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(259.96 19.06% 24.71%); /* #3b334b */
   --color-text-error-primary: hsl(var(--red-400));
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
@@ -2572,6 +2577,8 @@ html {
   --color-status-lime-text:         hsl(var(--green-400));
   --color-status-yellow-background: hsl(var(--yellow-alpha-24));
   --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-orange-background: hsl(var(--orange-alpha-24));
+  --color-status-orange-text:       hsl(var(--orange-400));
   --color-status-rose-background:   hsl(var(--red-alpha-24));
   --color-status-rose-text:         hsl(var(--red-400));
   --color-status-cyan-background:   hsl(var(--sky-alpha-24));
@@ -2628,9 +2635,25 @@ html {
 }
 
 .harbor {
-  /* Accent deliberately NOT overridden: interactive blue (nav selected,
-   * primary buttons, focus) stays the standard light-theme ramp per user
-   * decision 2026-08-23; harbor personality lives in surfaces and text. */
+  /* Accent hue deliberately NOT re-tinted: interactive blue (nav selected,
+   * primary buttons, focus) stays the standard ramp per user decision
+   * 2026-08-23; harbor personality lives in surfaces and text. The stops are
+   * still declared so the overlay carries the full component token set:
+   * 300-950 point at the standard blue primitives (what harbor rendered
+   * anyway), and the three pale tints become alpha washes of that blue,
+   * because the light pastels they fell through to sat as bright blocks on
+   * the dark canvas. */
+  --color-accent-50:  color-mix(in srgb, var(--color-blue-500) 10%, transparent);
+  --color-accent-100: color-mix(in srgb, var(--color-blue-500) 16%, transparent);
+  --color-accent-200: color-mix(in srgb, var(--color-blue-500) 24%, transparent);
+  --color-accent-300: var(--color-blue-300);
+  --color-accent-400: var(--color-blue-400);
+  --color-accent-500: var(--color-blue-500);
+  --color-accent-600: var(--color-blue-600);
+  --color-accent-700: var(--color-blue-700);
+  --color-accent-800: var(--color-blue-800);
+  --color-accent-900: var(--color-blue-900);
+  --color-accent-950: var(--color-blue-950);
 
   /* Foreground */
   --color-foreground-full:            hsl(var(--neutral-400));
@@ -2650,6 +2673,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(220 12.24% 19.22%); /* #2b2f37 */
   --color-text-error-primary: hsl(var(--red-400));
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
@@ -2760,6 +2784,8 @@ html {
   --color-status-lime-text:         hsl(var(--green-400));
   --color-status-yellow-background: hsl(var(--yellow-alpha-24));
   --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-orange-background: hsl(var(--orange-alpha-24));
+  --color-status-orange-text:       hsl(var(--orange-400));
   --color-status-rose-background:   hsl(var(--red-alpha-24));
   --color-status-rose-text:         hsl(var(--red-400));
   --color-status-cyan-background:   hsl(var(--sky-alpha-24));
@@ -2848,6 +2874,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(135.65 29.11% 15.49%); /* #1c3322 */
   --color-text-error-primary: hsl(var(--red-400));
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
@@ -2958,6 +2985,8 @@ html {
   --color-status-lime-text:         hsl(var(--green-400));
   --color-status-yellow-background: hsl(var(--yellow-alpha-24));
   --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-orange-background: hsl(var(--orange-alpha-24));
+  --color-status-orange-text:       hsl(var(--orange-400));
   --color-status-rose-background:   hsl(var(--red-alpha-24));
   --color-status-rose-text:         hsl(var(--red-400));
   --color-status-cyan-background:   hsl(var(--sky-alpha-24));
@@ -3046,6 +3075,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(222.35 10.83% 30.78%); /* #464b57 */
   --color-text-error-primary: hsl(var(--red-400));
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
@@ -3156,6 +3186,8 @@ html {
   --color-status-lime-text:         hsl(var(--green-400));
   --color-status-yellow-background: hsl(var(--yellow-alpha-24));
   --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-orange-background: hsl(var(--orange-alpha-24));
+  --color-status-orange-text:       hsl(var(--orange-400));
   --color-status-rose-background:   hsl(var(--red-alpha-24));
   --color-status-rose-text:         hsl(var(--red-400));
   --color-status-cyan-background:   hsl(var(--sky-alpha-24));
@@ -3488,6 +3520,7 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
   --color-text-disabled:  hsl(320 17.65% 20%); /* #3c2a36 */
   --color-text-error-primary: hsl(var(--red-400));
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
@@ -3598,6 +3631,8 @@ html {
   --color-status-lime-text:         hsl(var(--green-400));
   --color-status-yellow-background: hsl(var(--yellow-alpha-24));
   --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-orange-background: hsl(var(--orange-alpha-24));
+  --color-status-orange-text:       hsl(var(--orange-400));
   --color-status-rose-background:   hsl(var(--red-alpha-24));
   --color-status-rose-text:         hsl(var(--red-400));
   --color-status-cyan-background:   hsl(var(--sky-alpha-24));
@@ -3735,7 +3770,7 @@ html {
  * ========================================================================= */
 @utility text-mono-label {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -4070,6 +4105,14 @@ html {
 
 @media (prefers-reduced-motion: reduce) {
   .useagent-orbit-active {
+    animation: none;
+  }
+  /* Overlay enter/exit keyframes (Modal, Drawer, menus) and the breathing
+   * status dots. The utilities sit behind variant prefixes in the class
+   * attribute (data-[state=open]:animate-in), so match by substring. */
+  [class*="animate-in"],
+  [class*="animate-out"],
+  [class*="animate-pulse"] {
     animation: none;
   }
   .ai-code-surface .ai-code-line {

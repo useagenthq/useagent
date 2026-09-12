@@ -2,7 +2,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 // clsx-only (not cnExt): tailwind-merge misgroups the custom `text-mono-label`
-// utility with the `text-neutral-*` color in the same call and drops it, blowing
+// utility with the `text-static-white/*` color in the same call and drops it, blowing
 // the tab labels up to the inherited 16px instead of the 11px mono-label rhythm.
 import { cx as cn } from "@/utils/cx";
 import { InteractiveTerminal } from "@/components/chat/interactive-terminal";
@@ -18,7 +18,10 @@ import {
  * terminal that streams the run's command steps as `$ command` lines with any
  * captured output beneath. Intentionally uses the fixed `neutral-950` scale
  * (not the theme-flipping `bg-strong-950` token) so the terminal stays dark in
- * both light and dark app themes, like a real IDE terminal.
+ * both light and dark app themes, like a real IDE terminal. Text on it uses
+ * `static-white` alphas for the same reason: the semantic text tokens and the
+ * neutral primitives invert per theme, which left the labels at 1.4 to 2.3:1
+ * on the dark surface.
  *
  * Memoized: SessionView memoizes `allSteps`, so renders that don't change the
  * step list (drag commits, tab bookkeeping) skip this pane entirely.
@@ -77,8 +80,8 @@ export const TerminalPane = memo(function TerminalPane({
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-neutral-950" data-testid="terminal-pane">
       <div className="flex shrink-0 items-center gap-2.5 border-b border-white/10 px-3.5 py-2">
-        <span className="text-mono-label text-neutral-400">Terminal</span>
-        <span className="text-mono-label rounded border border-white/10 px-1.5 py-px text-neutral-500">
+        <span className="text-mono-label text-static-white/60">Terminal</span>
+        <span className="text-mono-label rounded border border-white/10 px-1.5 py-px text-static-white/50">
           {engineLabel(engine)}
         </span>
         {runId && (
@@ -94,7 +97,7 @@ export const TerminalPane = memo(function TerminalPane({
                   "text-mono-label rounded-md px-2 py-1 transition-colors",
                   tab === t
                     ? "bg-neutral-800 text-white ring-1 ring-inset ring-white/15 shadow-sm"
-                    : "text-neutral-500 hover:bg-white/5 hover:text-neutral-300",
+                    : "text-static-white/50 hover:bg-white/5 hover:text-static-white/80",
                 )}
               >
                 {t === "shell" ? "Shell" : "Log"}
@@ -117,7 +120,7 @@ export const TerminalPane = memo(function TerminalPane({
         className="min-h-0 flex-1 overflow-y-auto px-3.5 py-3 [font-family:var(--font-mono)] text-[13px] leading-6"
       >
         {parsedCommands.length === 0 ? (
-          <p className="text-neutral-600" data-testid="terminal-log-empty">
+          <p className="text-static-white/50" data-testid="terminal-log-empty">
             {live ? "Booting session…" : "No commands were run."}
           </p>
         ) : (
@@ -140,7 +143,7 @@ export const TerminalPane = memo(function TerminalPane({
                     </span>
                   </div>
                   {output && (
-                    <div className="whitespace-pre-wrap break-words pl-4 text-neutral-500">
+                    <div className="whitespace-pre-wrap break-words pl-4 text-static-white/70">
                       {output}
                     </div>
                   )}
@@ -156,9 +159,9 @@ export const TerminalPane = memo(function TerminalPane({
             {live && !lastInflight && (
               <div className="mt-0.5 flex items-center gap-2" data-testid="terminal-log-working">
                 <span className="shrink-0 select-none text-green-400">$</span>
-                <span className="agent-progress-loading-text text-neutral-500">working</span>
+                <span className="agent-progress-loading-text text-static-white/60">working</span>
                 <span
-                  className="ai-caret inline-block h-4 w-2 translate-y-0.5 bg-neutral-500"
+                  className="ai-caret inline-block h-4 w-2 translate-y-0.5 bg-static-white/60"
                   aria-hidden
                 />
               </div>

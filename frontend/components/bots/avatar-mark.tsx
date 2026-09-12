@@ -39,6 +39,18 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   compass: RiCompass3Line,
 };
 
+/**
+ * Glyph ink per tone. The emerald, amber, cyan and slate fills are bright in
+ * the light themes, where the white glyph read 2.0 to 2.4:1; static-black is
+ * the darkest neutral of every ramp, so it also holds on the dark overlays.
+ */
+const INK: Record<string, string> = {
+  emerald: "text-static-black",
+  amber: "text-static-black",
+  cyan: "text-static-black",
+  slate: "text-static-black",
+};
+
 export function toneClass(tone: string): string {
   return TONES[tone] ?? TONES.blue!;
 }
@@ -55,7 +67,7 @@ const GLYPH: Record<string, string> = {
 };
 
 /**
- * Flat, rounded, one color, white glyph - the reference's avatar language.
+ * Flat, rounded, one color, one-ink glyph - the reference's avatar language.
  * State is one small dot in the theme's success/warning color; nothing else.
  */
 export function AvatarMark({
@@ -75,8 +87,9 @@ export function AvatarMark({
   return (
     <span
       className={cx(
-        "relative flex shrink-0 items-center justify-center rounded-full text-text-white-0",
+        "relative flex shrink-0 items-center justify-center rounded-full",
         toneClass(tone),
+        INK[tone] ?? "text-text-white-0",
         size,
         className,
       )}

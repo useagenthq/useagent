@@ -12,7 +12,7 @@ const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffec
  *
  *   pill      px 8, py 5, gap 4
  *   blue      fully rounded (40px); selected bg uses the semantic blue pill
- *             surface, icon + label color/blue/500 (the AI chat panel switcher)
+ *             surface, icon + label text/accent (the AI chat panel switcher)
  *   gray      radius/2lg (10px); selected bg background/tertiary, label
  *             text/primary (quieter — scope/filter rows like the settings
  *             Tools page)
@@ -47,11 +47,11 @@ const styles = sortCx({
     gray: "bg-background-primary-hover",
   },
   selectedIcon: {
-    blue: "text-accent-500",
+    blue: "text-text-accent",
     gray: "text-foreground-icon-primary",
   },
   selectedLabel: {
-    blue: "text-accent-500",
+    blue: "text-text-accent",
     gray: "text-text-primary",
   },
 });

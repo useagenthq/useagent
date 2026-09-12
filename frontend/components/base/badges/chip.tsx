@@ -7,16 +7,18 @@ import { cx, sortCx } from "@/utils/cx";
  * 3731:3055).
  *
  * Colored label chip. Three emphasis levels, all rounded radius/md (6px),
- * px 6:
+ * px 6. `caption` is the default: chips sit beside 12-13px UI text, and
+ * every product call site was already opting into it.
  *
- *   bold    py 2, Body 1/Medium   (14/20/500) — status + percentage deltas
+ *   caption py 4, Caption 1/Medium (12/16/500, tracking .15) — status, role tags
+ *   bold    py 2, Body 1/Medium   (14/20/500) — table status + percentage deltas
  *   subtle  py 4, Body 1/Medium   (14/20/500) — price chips
- *   caption py 4, Caption 1/Medium (12/16/500, tracking .15) — role tags
  *
  * Status pairs are semantic so the same component follows both Figma modes:
  *   lime    light 200/800 · dark 950 @ 60% / 500
  *   rose    light 200/800 · dark 950 @ 60% / 500
  *   yellow  light 200/800 · dark 950 @ 60% / 500
+ *   orange  light 200/800 · dark 950 @ 60% / 500 (failed / stale states)
  *   cyan    light 200/800 · dark 950 @ 60% / 400
  *   blue    light 200/800 · dark 950 @ 60% / 300 (same dark status recipe;
  *           first needed by the medical template's "In treatment" status)
@@ -45,7 +47,7 @@ const styles = sortCx({
   color: {
     lime: "bg-status-lime-background text-status-lime-text",
     rose: "bg-status-rose-background text-status-rose-text",
-    orange: "bg-orange-500/15 text-orange-600",
+    orange: "bg-status-orange-background text-status-orange-text",
     yellow: "bg-status-yellow-background text-status-yellow-text",
     cyan: "bg-status-cyan-background text-status-cyan-text",
     blue: "bg-status-blue-background text-status-blue-text",
@@ -57,7 +59,7 @@ const styles = sortCx({
 });
 
 export function Chip({
-  variant = "bold",
+  variant = "caption",
   color = "neutral",
   className,
   ref,
