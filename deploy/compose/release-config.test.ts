@@ -37,6 +37,24 @@ const validCompose = {
 } as const;
 
 describe("release configuration", () => {
+	test("maps durable runtime paths onto writable container mounts", async () => {
+		const compose = await Bun.file(
+			new URL("../../compose.prod.yaml", import.meta.url),
+		).text();
+		for (const contract of [
+			"ARTIFACT_STORAGE_DIR: /app/backend/.artifacts",
+			"RUNS_ROOT: /app/backend/.runs",
+			"SLACK_UPLOAD_STAGING_ROOT: /app/backend/.slack-uploads",
+			"SCRATCH_DIR: /tmp",
+			"/var/lib/useagent/artifacts:/app/backend/.artifacts",
+			"/var/lib/useagent/runs:/app/backend/.runs",
+			"/var/lib/useagent/slack-uploads:/app/backend/.slack-uploads",
+		]) {
+			expect(compose).toContain(contract);
+		}
+		expect(compose).not.toContain(":/var/lib/skynet");
+	});
+
 	test("preserves the production Compose digest and fixed-port contract", () => {
 		expect(productionComposeReleaseConfig(validCompose)).toEqual({
 			color: "green",

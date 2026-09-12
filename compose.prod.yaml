@@ -16,6 +16,10 @@ services:
       USEAGENT_BIND_HOST: 127.0.0.1
       USEAGENT_RELEASE_COMMIT: ${USEAGENT_RELEASE_COMMIT:?set the exact release commit}
       REQUIRE_SINGLE_BACKEND: "true"
+      ARTIFACT_STORAGE_DIR: /app/backend/.artifacts
+      RUNS_ROOT: /app/backend/.runs
+      SLACK_UPLOAD_STAGING_ROOT: /app/backend/.slack-uploads
+      SCRATCH_DIR: /tmp
       CODEX_APP_SERVER_HOME_ROOT: /var/lib/useagent/codex-app-server
       GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL:?set the sandbox-reachable HTTPS gateway origin}
       PROVIDER_GATEWAY_PUBLIC_URL: ${USEAGENT_GATEWAY_PUBLIC_URL}
