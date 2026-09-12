@@ -52,7 +52,7 @@ export function SidebarSectionLabel({ children }: { children: ReactNode }) {
 export type NavIconTone = "blue" | "purple" | "green" | "orange" | "primary";
 
 /** A brand tint for a nav icon - a touch of color in an otherwise mono rail. */
-const NAV_ICON_TONE: Record<NavIconTone, string> = {
+export const NAV_ICON_TONE: Record<NavIconTone, string> = {
   blue: "text-blue-500",
   purple: "text-purple-500",
   green: "text-green-600",
@@ -100,7 +100,11 @@ export function SidebarNavItem({
             <Icon
               className={cx(
                 "size-3.5 shrink-0",
-                active ? "text-white" : tone ? NAV_ICON_TONE[tone] : "text-foreground-icon-tertiary",
+                active
+                  ? "text-white"
+                  : tone
+                    ? NAV_ICON_TONE[tone]
+                    : "text-foreground-icon-tertiary",
               )}
               aria-hidden
             />

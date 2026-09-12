@@ -2,20 +2,15 @@
 
 // The app sidebar frame follows the "Dashboard Inset" sidebar block on
 // blocks.so (MIT), on the vendored sidebar primitives in components/sidebar-kit.
-// The page is an inset card beside a rail that folds to icons.
+// The page is an inset card beside a rail that folds to icons. The rows inside
+// the frame are this product's own nav rows and tokens.
 
-import { RiArrowDownSLine, RiArrowUpSLine, RiExpandUpDownLine } from "@remixicon/react";
+import { type RemixiconComponentType, RiExpandUpDownLine } from "@remixicon/react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useState } from "react";
 
-import { Avatar } from "@/components/base/avatar/avatar";
 import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/sidebar-kit/collapsible";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/sidebar-kit/avatar";
 import {
   Sidebar,
   SidebarContent,
@@ -24,15 +19,13 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
   SidebarTrigger,
   useSidebar,
 } from "@/components/sidebar-kit/sidebar";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { SearchCommand } from "./search-command";
+import { NAV_ICON_TONE, type NavIconTone, SidebarNavItem } from "./sidebar-nav";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 import { useWorkingSignal } from "./working-signal";
@@ -40,11 +33,12 @@ import { useWorkingSignal } from "./working-signal";
 export type Route = {
   id: string;
   title: string;
-  icon: ReactNode;
+  icon: RemixiconComponentType;
   href: string;
   active?: boolean;
+  /** Brand tint for the icon, as on the previous rail. */
+  tone?: NavIconTone;
   trailing?: ReactNode;
-  subs?: { title: string; href: string; icon?: ReactNode }[];
 };
 
 export function initials(name: string): string {
@@ -53,132 +47,52 @@ export function initials(name: string): string {
   return letters.join("") || "U";
 }
 
-/** Navigation rows: icon rows, with optional collapsible sub-rows. */
+/** The rail's nav rows: the product's SidebarNavItem when expanded, tinted
+ * icon buttons with tooltips when folded. */
 export function NavRoutes({ routes }: { routes: Route[] }) {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
-  const [openId, setOpenId] = useState<string | null>(null);
 
   return (
-    <SidebarMenu>
+    <SidebarMenu className="gap-0">
       {routes.map((route) => {
-        const hasSubs = !!route.subs?.length;
-        const isOpen = !isCollapsed && openId === route.id;
-        if (hasSubs && isCollapsed) {
-          return (
-            <SidebarMenuItem key={route.id}>
-              <SidebarMenuButton
-                isActive={route.active}
-                render={
-                  <Link
-                    aria-current={route.active ? "page" : undefined}
-                    aria-label={route.title}
-                    className={cn(
-                      "flex items-center justify-center rounded-lg px-2 transition-colors",
-                      route.active
-                        ? "bg-sidebar-muted text-foreground"
-                        : "text-muted-foreground hover:bg-sidebar-muted hover:text-foreground",
-                    )}
-                    href={route.href}
-                    prefetch={true}
-                  />
-                }
-                tooltip={route.title}
-              >
-                {route.icon}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          );
-        }
-        if (hasSubs) {
-          return (
-            <SidebarMenuItem key={route.id}>
-              <Collapsible
-                className="w-full"
-                onOpenChange={(open) => setOpenId(open ? route.id : null)}
-                open={isOpen}
-              >
-                <CollapsibleTrigger
-                  render={
-                    <SidebarMenuButton
-                      className={cn(
-                        "flex w-full items-center rounded-lg px-2 transition-colors",
-                        isOpen
-                          ? "bg-sidebar-muted text-foreground"
-                          : "text-muted-foreground hover:bg-sidebar-muted hover:text-foreground",
-                        isCollapsed && "justify-center",
-                      )}
-                      tooltip={route.title}
-                    />
-                  }
-                >
-                  {route.icon}
-                  {!isCollapsed && (
-                    <span className="ml-2 flex-1 font-medium text-sm">{route.title}</span>
-                  )}
-                  {!isCollapsed && (
-                    <span className="ml-auto">
-                      {isOpen ? (
-                        <RiArrowUpSLine className="size-4" aria-hidden />
-                      ) : (
-                        <RiArrowDownSLine className="size-4" aria-hidden />
-                      )}
-                    </span>
-                  )}
-                </CollapsibleTrigger>
-                {!isCollapsed && (
-                  <CollapsibleContent>
-                    <SidebarMenuSub className="my-1 ml-3.5">
-                      {route.subs?.map((sub) => (
-                        <SidebarMenuSubItem className="h-auto" key={`${route.id}-${sub.title}`}>
-                          <SidebarMenuSubButton
-                            render={
-                              <Link
-                                className="flex items-center gap-2 rounded-md px-4 py-1.5 font-medium text-muted-foreground text-sm hover:bg-sidebar-muted hover:text-foreground"
-                                href={sub.href}
-                                prefetch={true}
-                              />
-                            }
-                          >
-                            {sub.icon}
-                            {sub.title}
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      ))}
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                )}
-              </Collapsible>
-            </SidebarMenuItem>
-          );
-        }
+        const Icon = route.icon;
         return (
           <SidebarMenuItem key={route.id}>
-            <SidebarMenuButton
-              isActive={route.active}
-              render={
-                <Link
-                  aria-current={route.active ? "page" : undefined}
-                  aria-label={isCollapsed ? route.title : undefined}
+            {isCollapsed ? (
+              <SidebarMenuButton
+                className={cn(
+                  "justify-center",
+                  route.active
+                    ? "bg-linear-to-b from-accent-500 to-accent-600 text-white shadow-nav-selected hover:text-white"
+                    : "text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary",
+                )}
+                isActive={route.active}
+                render={<Link href={route.href} aria-current={route.active ? "page" : undefined} />}
+                tooltip={route.title}
+              >
+                <Icon
                   className={cn(
-                    "flex items-center rounded-lg px-2 transition-colors",
+                    "size-4",
                     route.active
-                      ? "bg-sidebar-muted text-foreground"
-                      : "text-muted-foreground hover:bg-sidebar-muted hover:text-foreground",
-                    isCollapsed && "justify-center",
+                      ? "text-white"
+                      : route.tone
+                        ? NAV_ICON_TONE[route.tone]
+                        : "text-foreground-icon-tertiary",
                   )}
-                  href={route.href}
-                  prefetch={true}
+                  aria-hidden
                 />
-              }
-              tooltip={route.title}
-            >
-              {route.icon}
-              {!isCollapsed && <span className="ml-2 font-medium text-sm">{route.title}</span>}
-              {!isCollapsed && route.trailing ? (
-                <span className="ml-auto">{route.trailing}</span>
-              ) : null}
-            </SidebarMenuButton>
+              </SidebarMenuButton>
+            ) : (
+              <SidebarNavItem
+                href={route.href}
+                icon={Icon}
+                tone={route.tone}
+                label={route.title}
+                active={route.active}
+                trailing={route.trailing}
+              />
+            )}
           </SidebarMenuItem>
         );
       })}
@@ -203,26 +117,26 @@ export function UserFooter() {
           trigger={
             <span
               className={cn(
-                "flex w-full items-center gap-2 rounded-lg p-2 text-sm transition-colors hover:bg-sidebar-accent hover:text-foreground",
-                isCollapsed && "justify-center p-0",
+                "flex w-full items-center gap-2.5 rounded-2lg px-2.5 py-2 transition-colors hover:bg-background-secondary-hover",
+                isCollapsed && "justify-center px-0",
               )}
             >
-              <Avatar
-                alt={name}
-                className="rounded-lg"
-                color="pink"
-                initials={initials(name)}
-                size="md"
-                src={image ?? undefined}
-              />
+              <Avatar className="size-8 rounded-full">
+                {image ? <AvatarImage alt={name} src={image} /> : null}
+                <AvatarFallback className="rounded-full bg-pink-500/20 text-pink-500 text-caption-1-medium">
+                  {initials(name)}
+                </AvatarFallback>
+              </Avatar>
               {!isCollapsed && (
                 <>
                   <span className="grid min-w-0 flex-1 text-left leading-tight">
-                    <span className="truncate font-semibold">{name}</span>
-                    <span className="truncate text-muted-foreground text-xs">{email}</span>
+                    <span className="truncate text-body-2-medium text-text-primary">{name}</span>
+                    <span className="truncate text-caption-1-regular text-text-secondary">
+                      {email}
+                    </span>
                   </span>
                   <RiExpandUpDownLine
-                    className="ml-auto size-4 shrink-0 text-muted-foreground"
+                    className="ml-auto size-4 shrink-0 text-foreground-icon-tertiary"
                     aria-hidden
                   />
                 </>
@@ -256,7 +170,7 @@ export function AppSidebarFrame({
     <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader
         className={cn(
-          "flex md:pt-2",
+          "flex px-2 md:pt-2",
           isCollapsed
             ? "flex-row items-center justify-between gap-y-4 md:flex-col md:items-start md:justify-start"
             : "flex-row items-center justify-between",
@@ -264,15 +178,11 @@ export function AppSidebarFrame({
       >
         <Link
           aria-label="UseAgent new thread"
-          className="flex items-center gap-2.5 px-1"
+          className="flex items-center gap-2.5 rounded-2lg px-2 py-1.5 text-text-primary outline-none transition-colors hover:bg-background-secondary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
           href="/agent/new"
         >
           <OrbitKnotMark className="size-8" active={working} />
-          {!isCollapsed && (
-            <span className="text-[19px] font-[650] leading-none tracking-[-0.04em] text-foreground">
-              {label}
-            </span>
-          )}
+          {!isCollapsed && <span className="truncate text-body-2-medium">{label}</span>}
         </Link>
         <div
           className={cn(
@@ -281,14 +191,14 @@ export function AppSidebarFrame({
           )}
         >
           {!isCollapsed && <ThemeToggle />}
-          <SidebarTrigger />
+          <SidebarTrigger className="text-foreground-icon-secondary hover:text-foreground-icon-primary" />
         </div>
       </SidebarHeader>
-      <SidebarContent className="gap-3 px-1.5 py-3">
-        <SearchCommand compact={isCollapsed} />
+      <SidebarContent className="gap-1 px-2 pt-0.5 pb-3">
+        {!isCollapsed && <SearchCommand />}
         {children}
       </SidebarContent>
-      <SidebarFooter className="px-2">
+      <SidebarFooter className="px-2 pb-2">
         <UserFooter />
       </SidebarFooter>
     </Sidebar>

@@ -18,8 +18,9 @@ import {
   RiStackLine,
 } from "@remixicon/react";
 
-import { SidebarGroup, SidebarGroupLabel, useSidebar } from "@/components/sidebar-kit/sidebar";
+import { useSidebar } from "@/components/sidebar-kit/sidebar";
 import { AppSidebarFrame, NavRoutes, type Route } from "./app-sidebar-frame";
+import { SidebarSectionLabel } from "./sidebar-nav";
 
 export type LibrarySidebarActive =
   | "skills"
@@ -69,31 +70,21 @@ export function LibrarySidebar({ active }: { active?: LibrarySidebarActive }) {
   const isCollapsed = state === "collapsed";
 
   const back: Route[] = [
-    {
-      id: "all-threads",
-      title: "All threads",
-      icon: <RiStackLine className="size-4" aria-hidden />,
-      href: "/agent/runs",
-    },
+    { id: "all-threads", title: "All threads", icon: RiStackLine, href: "/agent/runs" },
   ];
-  const items: Route[] = LIBRARY_ITEMS.map((item) => {
-    const Icon = item.icon;
-    return {
-      id: item.key,
-      title: item.label,
-      icon: <Icon className="size-4" aria-hidden />,
-      href: item.href,
-      active: active === item.key,
-    };
-  });
+  const items: Route[] = LIBRARY_ITEMS.map((item) => ({
+    id: item.key,
+    title: item.label,
+    icon: item.icon,
+    href: item.href,
+    active: active === item.key,
+  }));
 
   return (
     <AppSidebarFrame label="Customize">
       <NavRoutes routes={back} />
-      <SidebarGroup className="py-0">
-        {!isCollapsed && <SidebarGroupLabel>Customize</SidebarGroupLabel>}
-        <NavRoutes routes={items} />
-      </SidebarGroup>
+      {!isCollapsed && <SidebarSectionLabel>Customize</SidebarSectionLabel>}
+      <NavRoutes routes={items} />
     </AppSidebarFrame>
   );
 }

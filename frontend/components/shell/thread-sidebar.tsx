@@ -2,14 +2,9 @@
 
 import {
   RiAddLine,
-  RiArchiveLine,
-  RiBookOpenLine,
   RiBookShelfLine,
-  RiBrainLine,
   RiChat3Line,
   RiDashboardLine,
-  RiKey2Line,
-  RiListCheck2,
   RiRobot2Line,
 } from "@remixicon/react";
 import Link from "next/link";
@@ -23,7 +18,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/sidebar-kit/sidebar";
-import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { AppSidebarFrame, NavRoutes, type Route } from "./app-sidebar-frame";
 import { SidebarProjects } from "./sidebar-projects";
 import { useSidebarThreads } from "./sidebar-threads-provider";
@@ -43,15 +37,9 @@ function CollapsedThreads() {
           return (
             <SidebarMenuItem key={run.id}>
               <SidebarMenuButton
-                className="justify-center text-muted-foreground hover:bg-sidebar-muted hover:text-foreground"
+                className="justify-center text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary"
                 isActive={pathname === href}
-                render={
-                  <Link
-                    aria-current={pathname === href ? "page" : undefined}
-                    aria-label={runTitle(run.prompt)}
-                    href={href}
-                  />
-                }
+                render={<Link href={href} />}
                 tooltip={runTitle(run.prompt)}
               >
                 <RiChat3Line className="size-4" aria-hidden />
@@ -65,65 +53,48 @@ function CollapsedThreads() {
 }
 
 /**
- * The thread rail: the app sidebar frame around the product's own project
- * thread tree. The tree keeps everything the previous rail had - folders,
- * nested delegated children, status dots, per-project actions and the
+ * The thread rail: the app sidebar frame around the product's own nav rows and
+ * project thread tree. The tree keeps everything the previous rail had -
+ * folders, nested delegated children, status dots, per-project actions and the
  * "Show N more" disclosures - because it is the same component.
  */
 export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
   const { state } = useSidebar();
-  const { catalog } = useCapabilityCatalog();
   const isCollapsed = state === "collapsed";
 
   const routes: Route[] = [
     {
       id: "new",
       title: "New thread",
-      icon: <RiAddLine className="size-4" aria-hidden />,
+      icon: RiAddLine,
+      tone: "primary",
       href: "/agent/new",
       active: active === "new",
     },
     {
       id: "dashboard",
       title: "Dashboard",
-      icon: <RiDashboardLine className="size-4" aria-hidden />,
+      icon: RiDashboardLine,
+      tone: "purple",
       href: "/dashboard",
       active: active === "dashboard",
       trailing: <WorkingProjectStatus />,
     },
-    ...(catalog?.bots
-      ? [
-          {
-            id: "bots",
-            title: "Bots",
-            icon: <RiRobot2Line className="size-4" aria-hidden />,
-            href: "/bots",
-            active: active === "bots",
-          },
-        ]
-      : []),
+    {
+      id: "bots",
+      title: "Bots",
+      icon: RiRobot2Line,
+      tone: "blue",
+      href: "/bots",
+      active: active === "bots",
+    },
     {
       id: "customize",
       title: "Customize",
-      icon: <RiBookOpenLine className="size-4" aria-hidden />,
+      icon: RiBookShelfLine,
+      tone: "green",
       href: "/skills",
       active: active === "library",
-    },
-    {
-      id: "library",
-      title: "Library",
-      icon: <RiBookShelfLine className="size-4" aria-hidden />,
-      href: "/artifacts",
-      subs: [
-        {
-          title: "Artifacts",
-          href: "/artifacts",
-          icon: <RiArchiveLine className="size-4" aria-hidden />,
-        },
-        { title: "Tasks", href: "/tasks", icon: <RiListCheck2 className="size-4" aria-hidden /> },
-        { title: "Memory", href: "/memory", icon: <RiBrainLine className="size-4" aria-hidden /> },
-        { title: "Secrets", href: "/secrets", icon: <RiKey2Line className="size-4" aria-hidden /> },
-      ],
     },
   ];
 

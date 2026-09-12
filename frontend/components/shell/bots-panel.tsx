@@ -3,15 +3,12 @@
 import { RiAddLine } from "@remixicon/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
-import { Button } from "@/components/base/buttons/button";
 import { AvatarMark, StateBadge } from "@/components/bots/avatar-mark";
 import { loadBots } from "@/components/bots/load";
-import { NewBotDialog } from "@/components/bots/new-bot-dialog";
 import { orderRoster, outcomeLine } from "@/components/bots/roster-model";
 import { type ApiBot, engineLabel } from "@/components/bots/types";
-import { useNow } from "@/components/bots/use-now";
 import {
   Sidebar,
   SidebarContent,
@@ -25,116 +22,82 @@ import {
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { cn } from "@/lib/utils";
 
+const POLL_MS = 30_000;
+
 /**
  * The bots roster as the shell's second column. The navigation rail stays on
  * the left; this panel lists every bot with its face, one-line outcome and
  * state, and the page to the right is the selected bot's thread. Pattern after
  * the double-sided sidebar block on blocks.so (MIT).
  */
-export function BotsPanel({
-  initialBots,
-  initialError = false,
-}: {
-  initialBots: ApiBot[] | null;
-  initialError?: boolean;
-}) {
+export function BotsPanel() {
   const pathname = usePathname();
-  const firstPathname = useRef(pathname);
-  const [bots, setBots] = useState<ApiBot[] | null>(() =>
-    initialBots ? orderRoster(initialBots) : null,
-  );
-  const [error, setError] = useState(initialError);
-  const [creating, setCreating] = useState(false);
-  const now = useNow();
+  const [bots, setBots] = useState<ApiBot[]>([]);
+  const [now, setNow] = useState<number | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = async () => {
     try {
       const list = await loadBots();
-      if (list === null) {
-        setError(true);
-        return;
-      }
-      setBots(orderRoster(list));
-      setError(false);
+      if (list) setBots(orderRoster(list));
     } catch {
-      setError(true);
+      /* the panel is ambient; the page reports errors */
     }
-  }, []);
+  };
 
   useOrgChanges((change) => {
     if (change.type === "run") void refresh();
   });
 
   useEffect(() => {
-    // A failed server refresh must not discard the last successful roster.
-    if (!initialError || initialBots !== null) {
-      setBots(initialBots ? orderRoster(initialBots) : null);
-    }
-    setError(initialError);
-  }, [initialBots, initialError]);
-
-  useEffect(() => {
-    if (pathname === firstPathname.current) return;
-    firstPathname.current = pathname;
+    setNow(Date.now());
     void refresh();
-  }, [pathname, refresh]);
+    const id = setInterval(() => {
+      setNow(Date.now());
+      void refresh();
+    }, POLL_MS);
+    return () => clearInterval(id);
+  }, []);
 
-  const attention = bots?.filter((bot) => bot.state === "attention").length ?? 0;
+  const attention = bots.filter((bot) => bot.state === "attention").length;
 
   return (
     <Sidebar
-      className="hidden w-80 border-r border-sidebar-border md:flex"
+      className="w-80 border-r border-border-button-white"
       collapsible="none"
       side="left"
       variant="sidebar"
     >
-      <SidebarHeader className="flex flex-row items-center justify-between border-b border-sidebar-border px-4 py-3">
+      <SidebarHeader className="flex flex-row items-center justify-between border-b border-border-button-white px-4 py-3">
         <div className="flex items-baseline gap-2">
-          <h3 className="font-medium text-foreground">Bots</h3>
-          <span className="text-muted-foreground text-xs">
-            {bots?.length ?? 0}
+          <h3 className="text-body-2-medium text-text-primary">Bots</h3>
+          <span className="text-caption-1-regular text-text-tertiary">
+            {bots.length}
             {attention > 0 ? ` · ${attention} need you` : ""}
           </span>
         </div>
-        <Button
+        <Link
           aria-label="New bot"
-          iconOnly
-          leadingIcon={RiAddLine}
-          onClick={() => setCreating(true)}
-          size="small"
-          variant="ghost"
-        />
+          className="flex size-7 items-center justify-center rounded-2lg text-foreground-icon-secondary hover:bg-background-secondary-hover hover:text-foreground-icon-primary"
+          href="/bots?new=1"
+        >
+          <RiAddLine className="size-4" aria-hidden />
+        </Link>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {error && (
-                <li className="flex flex-col items-start gap-2 px-3 py-3" role="alert">
-                  <span className="text-muted-foreground text-xs">
-                    {bots ? "Couldn't refresh bots." : "Couldn't load bots."}
-                  </span>
-                  <Button
-                    className="rounded-full"
-                    onClick={() => void refresh()}
-                    size="xs"
-                    variant="secondary"
-                  >
-                    Try again
-                  </Button>
-                </li>
-              )}
-              {bots?.map((bot) => {
+              {bots.map((bot) => {
                 const href = `/bots/${bot.id}`;
                 const selected = pathname === href;
                 return (
                   <SidebarMenuItem key={bot.id}>
                     <SidebarMenuButton
                       className={cn(
-                        "h-auto w-full justify-start gap-3 px-3 py-2",
+                        "h-auto w-full justify-start gap-3 rounded-2lg px-2.5 py-2",
                         selected
-                          ? "bg-sidebar-accent text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
+                          ? "bg-background-secondary-default text-text-primary"
+                          : "text-text-secondary hover:bg-background-primary-hover hover:text-text-primary",
                       )}
                       isActive={selected}
                       render={<Link href={href} />}
@@ -148,13 +111,15 @@ export function BotsPanel({
                       />
                       <div className="min-w-0 flex-1 text-left">
                         <div className="flex items-center gap-2">
-                          <span className="truncate font-medium text-foreground">{bot.name}</span>
+                          <span className="truncate text-body-2-medium text-text-primary">
+                            {bot.name}
+                          </span>
                           <StateBadge state={bot.state} />
                         </div>
-                        <div className="mt-0.5 truncate text-muted-foreground text-xs">
+                        <div className="mt-0.5 truncate text-caption-1-regular text-text-secondary">
                           {outcomeLine(bot, now)}
                         </div>
-                        <div className="mt-0.5 truncate text-muted-foreground text-[11px]">
+                        <div className="mt-0.5 truncate text-caption-1-regular text-text-tertiary">
                           {engineLabel(bot.engine)}
                           {bot.routines > 0
                             ? ` · ${bot.routines} routine${bot.routines === 1 ? "" : "s"}`
@@ -165,19 +130,15 @@ export function BotsPanel({
                   </SidebarMenuItem>
                 );
               })}
-              {bots === null && !error && (
-                <li className="px-3 py-6 text-center text-muted-foreground text-sm">
-                  Loading bots
+              {bots.length === 0 && (
+                <li className="px-3 py-6 text-center text-body-2-regular text-text-tertiary">
+                  No bots yet
                 </li>
-              )}
-              {bots?.length === 0 && !error && (
-                <li className="px-3 py-6 text-center text-muted-foreground text-sm">No bots yet</li>
               )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <NewBotDialog open={creating} onOpenChange={setCreating} />
     </Sidebar>
   );
 }
