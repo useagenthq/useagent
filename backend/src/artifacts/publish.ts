@@ -54,7 +54,7 @@ import {
 export const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024;
 const LEGACY_TRUSTED_OUTPUT_SOURCE_ROOT = "/.skynet/provider-output";
 const CANONICAL_TRUSTED_OUTPUT_SOURCE_ROOT = "/.useagent/provider-output";
-const TRUSTED_OUTPUT_SOURCE_ROOT = LEGACY_TRUSTED_OUTPUT_SOURCE_ROOT;
+const TRUSTED_OUTPUT_SOURCE_ROOT = CANONICAL_TRUSTED_OUTPUT_SOURCE_ROOT;
 
 function safeName(sourcePath: string, requested?: string): string {
   const candidate = requested?.trim() || basename(sourcePath.replaceAll("\\", "/")) || "artifact";

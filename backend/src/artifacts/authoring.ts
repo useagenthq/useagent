@@ -41,7 +41,7 @@ import { publishOrgChange } from "../runs/org-signals";
 
 const LEGACY_ARTIFACT_AUTHORING_SOURCE_PATH = "/.skynet/artifact-workspace";
 const CANONICAL_ARTIFACT_AUTHORING_SOURCE_PATH = "/.useagent/artifact-workspace";
-export const ARTIFACT_AUTHORING_SOURCE_PATH = LEGACY_ARTIFACT_AUTHORING_SOURCE_PATH;
+export const ARTIFACT_AUTHORING_SOURCE_PATH = CANONICAL_ARTIFACT_AUTHORING_SOURCE_PATH;
 
 export interface ArtifactExportBytes {
   readonly bytes: Uint8Array;

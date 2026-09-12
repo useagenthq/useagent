@@ -229,18 +229,18 @@ describe("browser-authored artifacts", () => {
       state: { text: "# Release\nShip it" },
     };
     const first = await createAuthoredArtifact(input);
-    expect(first.artifact.source_path).toStartWith("/.skynet/artifact-workspace/");
+    expect(first.artifact.source_path).toStartWith("/.useagent/artifact-workspace/");
     const firstBytes = await storage.read(first.artifact.sha256);
     await db.update(artifacts)
-      .set({ sourcePath: first.artifact.source_path.replace("/.skynet/", "/.useagent/") })
+      .set({ sourcePath: first.artifact.source_path.replace("/.useagent/", "/.skynet/") })
       .where(eq(artifacts.id, first.artifact.id));
     const [historical] = await db.select().from(artifacts).where(eq(artifacts.id, first.artifact.id));
     if (!historical) throw new Error("missing authored fixture");
-    const canonicalReplay = await createAuthoredArtifact(input);
-    expect(canonicalReplay.created).toBe(false);
-    expect(canonicalReplay.artifact.id).toBe(first.artifact.id);
-    expect(canonicalReplay.artifact.source_path).toBe(historical.sourcePath);
-    expect(canonicalReplay.artifact.workpiece).toEqual(first.artifact.workpiece);
+    const legacyReplay = await createAuthoredArtifact(input);
+    expect(legacyReplay.created).toBe(false);
+    expect(legacyReplay.artifact.id).toBe(first.artifact.id);
+    expect(legacyReplay.artifact.source_path).toBe(historical.sourcePath);
+    expect(legacyReplay.artifact.workpiece).toEqual(first.artifact.workpiece);
     expect(await storage.read(first.artifact.sha256)).toEqual(firstBytes);
     expect(await db.select().from(artifacts).where(eq(artifacts.sourcePath, historical.sourcePath)))
       .toHaveLength(1);
@@ -266,7 +266,7 @@ describe("browser-authored artifacts", () => {
     expect(first.created).toBe(true);
     expect(replay.created).toBe(false);
     expect([first.artifact.id, second.row.id]).toContain(replay.artifact.id);
-    expect(replay.artifact.source_path).toStartWith("/.useagent/artifact-workspace/");
+    expect(replay.artifact.source_path).toStartWith("/.skynet/artifact-workspace/");
     expect(replay.artifact.workpiece).toEqual(first.artifact.workpiece);
     expect(await db.select().from(artifacts).where(eq(artifacts.sourcePath, historical.sourcePath)))
       .toHaveLength(2);
