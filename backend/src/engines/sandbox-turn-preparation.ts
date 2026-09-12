@@ -17,6 +17,7 @@ import {
 } from "../secrets/inject";
 import { createSecretRedactor } from "../secrets/redact";
 import { resolveRuntimeWorkspaceRoot } from "./runtime-environment";
+import { buildRootTraversalAccessCommand } from "./runtime-user-permissions";
 
 export interface SandboxTurnPreparationOptions<T> {
   readonly snapshot: string;
@@ -125,10 +126,17 @@ export async function prepareSandboxTurn<T>(
       ? options.resourceUser(lease.binding)
       : options.resourceUser;
     if (resourceUser) {
+      const rootAccess = buildRootTraversalAccessCommand({
+        paths: ["/root"],
+        uid: resourceUser.uid,
+        gid: resourceUser.gid,
+      });
       const owned = await stage("workspace_owner", () => sandbox.process.executeCommand(
-        `command -v setfacl >/dev/null && ` +
-          `setfacl -m u:${resourceUser.uid}:x /root && ` +
-          `chown root:root ${shq(workdir)} && chmod 1777 ${shq(workdir)}`,
+        `set -eu\n${rootAccess}\n` +
+          `test -d ${shq(workdir)} && test ! -L ${shq(workdir)} && ` +
+          `test "$(realpath -e -- ${shq(workdir)})" = ${shq(workdir)} && ` +
+          `chown root:root -- ${shq(workdir)} && chmod 1777 -- ${shq(workdir)} && ` +
+          `test "$(stat -c '%u:%g:%a' -- ${shq(workdir)})" = "0:0:1777"`,
         undefined,
         undefined,
         10,

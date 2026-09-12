@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { SandboxBinding } from "../sandboxes/binding";
 import type { SandboxHandle } from "../sandboxes/provider";
 import type { EngineRunContext } from "./types";
@@ -82,6 +85,128 @@ function freshLease(sandbox: SandboxHandle) {
 }
 
 describe("sandbox turn provider cleanup", () => {
+  test("runs the unsupported-ACL fallback and stops on its first permission failure", async () => {
+    for (const scenario of [
+      { aclFailure: "unsupported", chownFailure: false, expectedExit: 0 },
+      { aclFailure: "unsupported", chownFailure: true, expectedExit: 42 },
+      { aclFailure: "permission", chownFailure: false, expectedExit: 1 },
+      { aclFailure: "mixed", chownFailure: false, expectedExit: 1 },
+    ] as const) {
+      const root = await mkdtemp(join(tmpdir(), "useagent-workspace-owner-"));
+      const workdir = join(root, "work");
+      const tools = join(root, "tools");
+      const calls = join(root, "calls");
+      await mkdir(workdir);
+      await mkdir(tools);
+      await chmod(workdir, 0o700);
+      await writeFile(join(tools, "id"), [
+        "#!/bin/sh",
+        'case "$1" in -u|-g) printf \'%s\\n\' 1000 ;; *) exit 2 ;; esac',
+      ].join("\n"));
+      await writeFile(join(tools, "setfacl"), [
+        "#!/bin/sh",
+        "for target do :; done",
+        'case "$ACL_FAILURE" in',
+        '  unsupported) printf \'setfacl: %s: Operation not supported\\n\' "$target" >&2 ;;',
+        '  permission) printf \'setfacl: %s: Permission denied\\n\' "$target" >&2 ;;',
+        '  mixed) printf \'setfacl: %s: Operation not supported\\nsetfacl: %s: Permission denied\\n\' "$target" "$target" >&2 ;;',
+        "esac",
+        "exit 1",
+      ].join("\n"));
+      await writeFile(join(tools, "chown"), [
+        "#!/bin/sh",
+        `printf '%s\\n' "$*" >> '${calls}'`,
+        '[ "$CHOWN_FAIL" = 1 ] && exit 42',
+        "exit 0",
+      ].join("\n"));
+      await writeFile(join(tools, "stat"), [
+        "#!/bin/sh",
+        "for path do :; done",
+        'if [ "$path" = "$FIXTURE_ROOT" ]; then printf \'%s\\n\' 0:1000:710; else printf \'%s\\n\' 0:0:1777; fi',
+      ].join("\n"));
+      await writeFile(join(tools, "realpath"), [
+        "#!/bin/sh",
+        "for path do :; done",
+        'printf \'%s\\n\' "$path"',
+      ].join("\n"));
+      await writeFile(join(tools, "chmod"), [
+        "#!/bin/sh",
+        "mode=$1",
+        "shift",
+        '[ "$1" = -- ] && shift',
+        '/bin/chmod "$mode" "$1"',
+      ].join("\n"));
+      await Promise.all(["id", "setfacl", "chown", "stat", "realpath", "chmod"].map((name) =>
+        chmod(join(tools, name), 0o755)
+      ));
+      const retained = sandboxFixture();
+      let activations = 0;
+      const ownerResult: { exitCode: number | null; error: string } = {
+        exitCode: null,
+        error: "",
+      };
+      retained.sandbox.process.executeCommand = async (command: string) => {
+        if (command.includes("printf '%s\\n' \"/root/work\"")) {
+          return { exitCode: 0, result: "/root/work" };
+        }
+        if (!command.includes("ACL_ERROR=$(mktemp)")) return { exitCode: 0, result: "" };
+        const result = Bun.spawnSync(["bash", "-c", command.replaceAll("/root", root)], {
+          env: {
+            ...process.env,
+            PATH: `${tools}:${process.env.PATH ?? ""}`,
+            FIXTURE_ROOT: root,
+            ACL_FAILURE: scenario.aclFailure,
+            CHOWN_FAIL: scenario.chownFailure ? "1" : "0",
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        ownerResult.exitCode = result.exitCode;
+        ownerResult.error = result.stderr.toString();
+        return {
+          exitCode: result.exitCode,
+          result: result.stderr.toString(),
+        };
+      };
+
+      try {
+        const preparation = prepareSandboxTurn(
+          context(),
+          {
+            snapshot: "runtime",
+            chip: "runtime:claude",
+            timingPrefix: "runtime",
+            resourceUser: { uid: 1000, gid: 1000, home: "/home/user" },
+            async prepareProvider() {
+              activations += 1;
+              return {};
+            },
+          },
+          { acquireThreadSandbox: async () => retainedLease(retained.sandbox) },
+        );
+        if (scenario.expectedExit !== 0) {
+          await expect(preparation).rejects.toThrow(
+            "failed to prepare lower-privilege workspace owner",
+          );
+          expect(ownerResult.exitCode).toBe(scenario.expectedExit);
+          expect(activations).toBe(0);
+          expect((await stat(workdir)).mode & 0o7777).toBe(0o700);
+        } else {
+          const outcome = await preparation.then(() => "resolved", (error) => String(error));
+          expect({ outcome, ownerResult }).toEqual({
+            outcome: "resolved",
+            ownerResult: { exitCode: 0, error: "" },
+          });
+          expect(activations).toBe(1);
+          expect((await stat(root)).mode & 0o7777).toBe(0o710);
+          expect((await stat(workdir)).mode & 0o7777).toBe(0o1777);
+        }
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    }
+  });
+
   test("runs the retained-sandbox fence before repository and input preparation", async () => {
     const order: string[] = [];
     const retained = sandboxFixture({
