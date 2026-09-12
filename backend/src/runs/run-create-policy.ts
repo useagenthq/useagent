@@ -22,6 +22,8 @@ export interface RunCreateBody {
   command?: unknown;
   attachments?: unknown;
   resources?: unknown;
+  /** Bot ids @mentioned in the prompt: each opens a delegated child thread on that bot's preset. */
+  bot_mentions?: unknown;
   origin?: unknown;
 }
 

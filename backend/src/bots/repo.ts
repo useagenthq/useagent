@@ -7,7 +7,7 @@ import {
 } from "@useagent/agent-client";
 import { and, count, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { db } from "../db/client";
-import { bots, gatewayApprovalRequests, runs, schedules, type BotRow } from "../db/schema";
+import { botHandoffs, bots, gatewayApprovalRequests, runs, schedules, type BotRow } from "../db/schema";
 
 type ScheduleRecord = typeof schedules.$inferSelect;
 import { isMemoryScope, type MemoryScope } from "../memory/scope";
@@ -42,6 +42,8 @@ export interface BotView {
   readonly pendingApprovals: number;
   /** Enabled routines (schedules owned by this bot). */
   readonly routines: number;
+  /** Delegated threads opened for this bot by @mentions (handoffs). */
+  readonly handoffs: number;
 }
 
 export interface BotInput {
@@ -291,10 +293,28 @@ export async function latestRunInThread(orgId: string, threadId: string): Promis
   return (await threadHeads(orgId, [threadId])).get(threadId) ?? null;
 }
 
-export function deriveState(latestStatus: string | null, pendingApprovals: number): BotState {
+const LIVE_STATUSES: ReadonlySet<string> = new Set(["queued", "running"]);
+
+export function deriveState(
+  latestStatus: string | null,
+  pendingApprovals: number,
+  liveHandoffs = 0,
+): BotState {
   if (pendingApprovals > 0) return "attention";
-  if (latestStatus === "queued" || latestStatus === "running") return "working";
+  if ((latestStatus !== null && LIVE_STATUSES.has(latestStatus)) || liveHandoffs > 0) return "working";
   return "idle";
+}
+
+/** Handoff thread ids per bot, one query. */
+async function handoffThreads(orgId: string, botIds: readonly string[]): Promise<Map<string, string[]>> {
+  if (botIds.length === 0) return new Map();
+  const rows = await db
+    .select({ botId: botHandoffs.botId, threadId: botHandoffs.threadId })
+    .from(botHandoffs)
+    .where(and(eq(botHandoffs.orgId, orgId), inArray(botHandoffs.botId, [...botIds])));
+  const out = new Map<string, string[]>();
+  for (const row of rows) out.set(row.botId, [...(out.get(row.botId) ?? []), row.threadId]);
+  return out;
 }
 
 /** Enabled routines per bot in one query. */
@@ -308,7 +328,13 @@ async function routineCounts(orgId: string, botIds: readonly string[]): Promise<
   return new Map(rows.flatMap((row) => (row.botId ? [[row.botId, Number(row.routines)] as const] : [])));
 }
 
-function toView(row: BotRow, head: ThreadHead | null, pending: number, routines: number): BotView {
+function toView(
+  row: BotRow,
+  head: ThreadHead | null,
+  pending: number,
+  routines: number,
+  handoffs: { total: number; live: number },
+): BotView {
   return {
     id: row.id,
     name: row.name,
@@ -326,30 +352,40 @@ function toView(row: BotRow, head: ThreadHead | null, pending: number, routines:
     archived: row.archived,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-    state: deriveState(head?.status ?? null, pending),
+    state: deriveState(head?.status ?? null, pending, handoffs.live),
     lastOutcome: head?.summary?.trim() || null,
     lastAt: head ? head.updatedAt.toISOString() : null,
     pendingApprovals: pending,
     routines,
+    handoffs: handoffs.total,
   };
 }
 
-/** Attach the derived fields for many bots with three queries total. */
+/** Attach the derived fields for many bots with four queries total. */
 export async function describeBots(orgId: string, rows: readonly BotRow[]): Promise<BotView[]> {
-  const threadIds = rows.flatMap((row) => (row.homeThreadId ? [row.homeThreadId] : []));
+  const botIds = rows.map((row) => row.id);
+  const handoffs = await handoffThreads(orgId, botIds);
+  const homeThreadIds = rows.flatMap((row) => (row.homeThreadId ? [row.homeThreadId] : []));
+  const allThreadIds = [...homeThreadIds, ...[...handoffs.values()].flat()];
   const [heads, pending, routines] = await Promise.all([
-    threadHeads(orgId, threadIds),
-    pendingApprovalCounts(orgId, threadIds),
-    routineCounts(orgId, rows.map((row) => row.id)),
+    threadHeads(orgId, allThreadIds),
+    pendingApprovalCounts(orgId, homeThreadIds),
+    routineCounts(orgId, botIds),
   ]);
-  return rows.map((row) =>
-    toView(
+  return rows.map((row) => {
+    const delegated = handoffs.get(row.id) ?? [];
+    const live = delegated.filter((threadId) => {
+      const status = heads.get(threadId)?.status;
+      return status !== undefined && LIVE_STATUSES.has(status);
+    }).length;
+    return toView(
       row,
       row.homeThreadId ? (heads.get(row.homeThreadId) ?? null) : null,
       row.homeThreadId ? (pending.get(row.homeThreadId) ?? 0) : 0,
       routines.get(row.id) ?? 0,
-    ),
-  );
+      { total: delegated.length, live },
+    );
+  });
 }
 
 export async function describeBot(orgId: string, row: BotRow): Promise<BotView> {

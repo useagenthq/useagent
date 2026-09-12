@@ -30,6 +30,7 @@ export * from "./schema/finished-work";
 export * from "./schema/artifact-quality";
 export * from "./schema/thread-relationships";
 export * from "./schema/bots";
+export * from "./schema/bot-handoffs";
 
 // Re-export the better-auth tables so drizzle-kit sees the whole schema and
 // the drizzle adapter can resolve every model.

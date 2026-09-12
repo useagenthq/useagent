@@ -8,6 +8,7 @@ import {
   type RunStatus,
 } from "../db/schema";
 import { isMemoryScope } from "../memory/scope";
+import { acceptedRunHandoffs, runBotMentions } from "../bots/handoffs";
 import { orgScope } from "../middleware/org";
 import {
   getRun,
@@ -63,7 +64,7 @@ import {
 } from "./canonical-events";
 import { completeCanonicalRuns } from "./canonicalization-outbox";
 import { subscribeThread } from "./thread-signals";
-import { clientOrgChangeForUser, subscribeOrg } from "./org-signals";
+import { registerRunChangesRoute } from "./changes-route";
 import type { ApiStep } from "./repo";
 import { defaultModelForEngine, isReplyModelAllowedForEngine } from "./model-policy";
 import {
@@ -83,64 +84,6 @@ import { acceptExistingThreadFollowup, ThreadFollowupTargetError } from "./threa
 export type { RunCreateBody } from "./run-create-policy";
 export const runsRoutes = new Hono<AppEnv>();
 runsRoutes.use("*", orgScope);
-// One lightweight, tenant-scoped invalidation stream for ambient product
-// surfaces (Workspace, Runs, Recents, Artifacts). The database remains the
-// source of truth: events carry IDs only and tell clients which snapshot to
-// refresh. The active conversation keeps its richer thread-events stream.
-runsRoutes.get("/changes", (c) => {
-  const orgId = c.get("orgId");
-  const userId = c.get("userId");
-  const encoder = new TextEncoder();
-  const signal = c.req.raw.signal;
-
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      let closed = false;
-      const send = (frame: string): void => {
-        if (closed) return;
-        try {
-          controller.enqueue(encoder.encode(frame));
-        } catch {
-          cleanup();
-        }
-      };
-      const unsubscribe = subscribeOrg(orgId, (change) => {
-        const clientChange = clientOrgChangeForUser(change, userId);
-        if (!clientChange) return;
-        send(`event: change\ndata: ${JSON.stringify(clientChange)}\n\n`);
-      });
-      const heartbeat = setInterval(() => send(": ping\n\n"), 25_000);
-      heartbeat.unref?.();
-
-      function cleanup(): void {
-        if (closed) return;
-        closed = true;
-        clearInterval(heartbeat);
-        unsubscribe();
-        signal.removeEventListener("abort", cleanup);
-        try {
-          controller.close();
-        } catch {
-          // The browser may already have closed the stream.
-        }
-      }
-
-      send(": open\nretry: 1500\n\n");
-      if (signal.aborted) cleanup();
-      else signal.addEventListener("abort", cleanup);
-    },
-  });
-
-  return new Response(body, {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
-});
-
 export async function handleRunCreate(
   c: Context<AppEnv>,
   options: {
@@ -184,6 +127,8 @@ export async function handleRunCreate(
     return c.json({ error: "authenticated user required for attachments" }, 401);
   }
 
+  const botMentions = runBotMentions(c.get("orgId"), body.bot_mentions);
+  if ("status" in botMentions) return c.json(botMentions.body, botMentions.status);
   const requestedResources = decodeRunResourceSelections(body.resources ?? []);
   if (!requestedResources) {
     return c.json({ error: "resources must be an array of valid resource selections" }, 400);
@@ -527,11 +472,13 @@ export async function handleRunCreate(
     case "created": {
       // Pump the mailbox: dispatches now if the thread is idle AND capacity is
       // free, else the run stays queued (survives a restart; the reconciler
-      // admits it later). ADDITIVE response: still `id`, plus `status` + `queue`.
+      // admits it later). ADDITIVE response: `id` + `status` + `queue`, plus
+      // `handoffs` when @mentioned bots each got a delegated child thread.
       await pumpThread(threadId);
+      const handoffs = await acceptedRunHandoffs({ orgId: c.get("orgId"), actorId: c.get("userId"), runId: accepted.runId, threadId, text: prompt, botIds: botMentions.ids });
       const queue = await runQueueView(accepted.runId);
       const status = queue?.state === "queued" ? "queued" : "running";
-      return c.json({ id: accepted.runId, status, queue }, 201);
+      return c.json({ id: accepted.runId, status, queue, ...handoffs }, 201);
     }
     case "replayed":
       // The original run's worker is already running (or finished) — return its
@@ -606,6 +553,7 @@ runsRoutes.delete("/:id/sandbox", async (c) => {
   return c.json(result);
 });
 
+registerRunChangesRoute(runsRoutes);
 registerRunReadRoutes(runsRoutes);
 registerExecutionGraphRoutes(runsRoutes);
 registerProviderSessionRoutes(runsRoutes);

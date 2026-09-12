@@ -54,6 +54,7 @@ import { RepoBranchBar } from "./repo-branch-bar";
 import { type RepoItem, RepoMultiPicker } from "./repo-multi-picker";
 import { type PickerGroup, SearchablePicker } from "./searchable-picker";
 import type { Skill } from "./skills-data";
+import { mentionedBotIds } from "@/components/chat/composer-mentions";
 
 /**
  * The New Task composer: a prompt textarea over a control row of searchable
@@ -405,6 +406,7 @@ export function NewTaskComposer({
       if (chosen && chosen !== item.default_branch) branchPayload[item.full_name] = chosen;
     }
     const mentionResources = mentionsToRunResources(mentions.mentions);
+    const mentionedBots = mentionedBotIds(mentions.mentions);
 
     const body = {
       // Send a model only for engines with an explicit picker/catalog. Codex
@@ -416,6 +418,7 @@ export function NewTaskComposer({
       ...(selectedRepos.length ? { repos: selectedRepos } : {}),
       ...(Object.keys(branchPayload).length ? { branches: branchPayload } : {}),
       ...(mentionResources.length ? { resources: mentionResources } : {}),
+      ...(mentionedBots.length ? { bot_mentions: mentionedBots } : {}),
       ...(runUploads.readyIds.length > 0 ? { attachments: runUploads.readyIds } : {}),
       ...(selectedSkill
         ? { skill: { id: selectedSkill.id, version: selectedSkill.version } }

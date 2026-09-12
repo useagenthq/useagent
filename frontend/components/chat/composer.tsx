@@ -16,6 +16,7 @@ import { type Agent, AgentChip, ChooseAgentPopover } from "@/components/chat/age
 import type { CommandCatalogState } from "@/components/chat/canonical-timeline";
 import { ChatModelMenu, type ChatModelOption } from "@/components/chat/chat-model-menu";
 import { AddFilesRow, AddMenuDivider, CreateRows } from "@/components/chat/composer-add-menu";
+import { mentionedBotIds } from "@/components/chat/composer-mentions";
 import { mentionsToRunResources, useComposerMentions } from "@/components/chat/composer-mentions-ui";
 import { ModelPicker } from "@/components/chat/engine-picker";
 import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
@@ -98,6 +99,8 @@ export type ComposerSubmit = (
   command?: { name: string; args: string } | null,
   attachmentIds?: readonly string[],
   resources?: readonly RunResourceSelection[],
+  /** Bot ids behind @bot chips; each opens a delegated handoff thread on that bot's preset. */
+  botMentions?: readonly string[],
 ) => void | Promise<void>;
 
 export type ComposerProps = {
@@ -409,6 +412,7 @@ export function Composer({
         intent,
         runUploads.readyIds,
         mentionsToRunResources(mentions.mentions),
+        mentionedBotIds(mentions.mentions),
       );
       retry.current = null; // accepted — drop the retry key
       runUploads.clearAccepted();
