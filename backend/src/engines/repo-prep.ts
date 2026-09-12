@@ -124,12 +124,19 @@ export async function ensureRepoClone(
   const ownerProbe = runtimeLayout.runsAsRoot
     ? `O="$(stat -c %u "$DIR" 2>/dev/null)"; `
     : `O="$(stat -c %u "$DIR" 2>/dev/null)"; CURRENT_UID="$(id -u)"; `;
+  const emptyDirectoryState = runtimeLayout.runsAsRoot
+    ? `elif [ -d "$DIR" ] && [ ! -L "$DIR" ] && [ "$(stat -c %u "$DIR" 2>/dev/null)" = 0 ] && ` +
+      `[ -z "$(find "$DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then echo state:empty; `
+    : `elif [ -d "$DIR" ] && [ ! -L "$DIR" ] && [ "$(stat -c %u "$DIR" 2>/dev/null)" = "$(id -u)" ] && ` +
+      `[ -z "$(find "$DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then echo state:empty; `;
   // NON-DESTRUCTIVE identity pre-check for a warm/reused sandbox. Report the EXACT state of the
   // destination so we NEVER rm -rf an unexpected directory:
   //   reuse       - a checkout of the RIGHT repo on the right branch -> fast skip.
   //   branch      - the RIGHT repo, wrong branch -> switch in place (fetch+checkout).
   //   owned-stale - a checkout WE created (carries the `.git/useAgent-owned` marker) of a
   //                 different repo -> safe to replace (we own it).
+  //   empty       - an empty directory owned by the command uid -> remove only if it is still
+  //                 empty immediately before the atomic placement.
   //   foreign     - a git repo we do NOT own with a different origin -> FAIL CLOSED.
   //   occupied    - a non-git file/dir we do NOT own -> FAIL CLOSED.
   //   absent      - nothing there -> clone.
@@ -146,6 +153,7 @@ export async function ensureRepoClone(
     matchingOriginState +
     staleOriginState +
     `else echo state:foreign; fi; ` +
+    emptyDirectoryState +
     `else echo state:occupied; fi`;
   const idState = (await sandbox.process.executeCommand(idScript, undefined, undefined, 15)).result ?? "";
   if (idState.includes("state:reuse")) return false;
@@ -192,7 +200,11 @@ export async function ensureRepoClone(
   // same effective uid that executes the command, never by an arbitrary account. A failed or
   // interrupted clone only ever leaves private staging content (which we clean), never
   // a partial destination. `-b <branch>` selects the branch; a missing branch fails honestly.
-  const allowReplace = idState.includes("state:owned-stale") ? "yes" : "no";
+  const allowReplace = idState.includes("state:owned-stale")
+    ? "yes"
+    : idState.includes("state:empty")
+      ? "empty"
+      : "no";
   const branchArg = branch ? `-b ${shq(branch)} ` : "";
   const stagingSetup = runtimeLayout.runsAsRoot
     ? `STAGE_ROOT=${shq(stagingRoot)}; install -d -o 0 -g 0 -m 700 "$STAGE_ROOT"; `
@@ -213,7 +225,12 @@ export async function ensureRepoClone(
     stagingSetup +
     `rm -f ${shq(runtimeOwnershipMarker)}; ` +
     `TMP="$(mktemp -d "$STAGE_ROOT/clone.XXXXXX")"; ` + cloneLog +
-    `if ! git clone ${branchArg}${shq(url)} "$TMP" >"$L" 2>&1; then echo clone:failed; tail -c 300 "$L"; rm -rf "$TMP" "$L"; exit 1; fi; ` +
+    `if ! git clone ${branchArg}${shq(url)} "$TMP" >"$L" 2>&1; then ` +
+    `if grep -Fq 'Clone succeeded, but checkout failed.' "$L" && [ -d "$TMP/.git" ] && ` +
+    `git --git-dir="$TMP/.git" config core.bare false && ` +
+    `git --git-dir="$TMP/.git" --work-tree="$TMP" checkout --force HEAD >>"$L" 2>&1; ` +
+    `then echo clone:checkout-recovered >>"$L"; ` +
+    `else echo clone:failed; tail -c 1200 "$L"; rm -rf "$TMP" "$L"; exit 1; fi; fi; ` +
     `RU="$(git -C "$TMP" remote get-url origin 2>/dev/null)"; ` +
     `if [ "$RU" != ${shq(url)} ]; then echo clone:badorigin; rm -rf "$TMP" "$L"; exit 1; fi; ` +
     `printf 'skynet-owned repo=%s\\n' ${shq(repo)} > "$TMP/.git/skynet-owned"; ` +
@@ -226,11 +243,15 @@ export async function ensureRepoClone(
     `if [ -e "$DIR" ]; then ` +
     `if [ "$ALLOW" = yes ]; then ` +
     `mv "$DIR" "$BAK" 2>/dev/null || { echo clone:collision; rm -rf "$TMP" "$L"; exit 1; }; ` +
+    `elif [ "$ALLOW" = empty ] && [ -d "$DIR" ] && [ ! -L "$DIR" ] && ` +
+    `[ "$(stat -c %u "$DIR" 2>/dev/null)" = "$CURRENT_UID" ] && rmdir "$DIR" 2>/dev/null; then :; ` +
     `else echo clone:collision; rm -rf "$TMP" "$L"; exit 1; fi; fi; ` +
     `if mv -T "$TMP" "$DIR" 2>/dev/null; then ` +
     writeOwnershipReceipt +
     `rm -rf "$BAK" "$L"; echo clone:ok; ` +
-    `else [ -e "$BAK" ] && mv "$BAK" "$DIR" 2>/dev/null; rm -rf "$TMP" "$L"; echo clone:collision; exit 1; fi`;
+    `else [ -e "$BAK" ] && mv "$BAK" "$DIR" 2>/dev/null; ` +
+    `[ "$ALLOW" = empty ] && [ ! -e "$DIR" ] && mkdir -m 700 "$DIR" 2>/dev/null; ` +
+    `rm -rf "$TMP" "$L"; echo clone:collision; exit 1; fi`;
   await ctx.emit({
     kind: "command",
     label: branch ? `Cloning ${repo} (${branch})` : `Cloning ${repo}`,

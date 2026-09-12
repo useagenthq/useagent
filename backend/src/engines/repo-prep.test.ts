@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { composeBoxCommand } from "@useagent/sandbox-box";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
 import type { RunResource } from "../resources/types";
 import type { EngineRunContext } from "./types";
@@ -39,7 +42,7 @@ interface Call {
   env: Record<string, string> | undefined;
 }
 interface FakeSandboxOptions {
-  state?: "reuse" | "ownership" | "branch" | "agent-branch" | "owned-stale" | "foreign" | "occupied" | "absent";
+  state?: "reuse" | "ownership" | "branch" | "agent-branch" | "owned-stale" | "foreign" | "occupied" | "empty" | "absent";
   cloneExit?: number;
   cloneOut?: string;
   switchExit?: number;
@@ -188,8 +191,143 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(`${identity}\n${clone}`).not.toContain('"$O" = 0');
     expect(clone).not.toContain("-o 0");
     expect(clone).not.toContain('|| [ -f "$DIR/.git/skynet-owned" ]');
+    expect(clone).toContain("Clone succeeded, but checkout failed.");
+    expect(clone).toContain('git --git-dir="$TMP/.git" config core.bare false');
+    expect(clone).toContain('git --git-dir="$TMP/.git" --work-tree="$TMP" checkout --force HEAD');
     expect(cloneCmd(calls)?.env).toEqual({});
     expect(composeBoxCommand(clone, undefined, cloneCmd(calls)?.env)).not.toContain(SENTINEL);
+  });
+
+  test("a user-owned empty runtime placeholder is replaced only after rmdir proves it stayed empty", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "empty" });
+    const { ctx } = fakeCtx();
+
+    expect(await ensureRepoClone(sandbox, BOX_LAYOUT.workdir, "acme/widget", ctx, {
+      runtimeLayout: BOX_LAYOUT,
+    })).toBe(true);
+
+    const identity = idCmd(calls)?.cmd ?? "";
+    const clone = cloneCmd(calls)?.cmd ?? "";
+    expect(identity).toContain("state:empty");
+    expect(identity).toContain('"$(stat -c %u "$DIR" 2>/dev/null)" = "$(id -u)"');
+    expect(identity).toContain('find "$DIR" -mindepth 1 -maxdepth 1 -print -quit');
+    expect(clone).toContain("ALLOW=empty");
+    expect(clone).toContain('rmdir "$DIR"');
+    expect(clone).not.toContain('rm -rf "$DIR"');
+  });
+
+  test.skipIf(process.platform !== "linux")(
+    "the generated clone shell replaces an empty placeholder but preserves content appearing before placement",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "useagent-repo-shell-"));
+      const source = join(root, "source");
+      const runtimeLayout: SandboxRuntimeLayout = {
+        home: join(root, "home"),
+        workdir: join(root, "unused"),
+        runsAsRoot: false,
+      };
+      const runGit = (args: string[]) => Bun.spawnSync(["git", ...args], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const shellSandbox = (injectRace: boolean): SandboxHandle => ({
+        process: {
+          async executeCommand(command: string, _cwd?: string, env?: Record<string, string>) {
+            const localCommand = command.includes("git clone")
+              ? command
+                  .replaceAll(shq("https://github.com/acme/widget.git"), shq(source))
+                  .replace(
+                    'if [ -e "$DIR" ]; then ',
+                    `${injectRace ? 'printf protected > "$DIR/appeared.txt"; ' : ""}if [ -e "$DIR" ]; then `,
+                  )
+              : command;
+            const result = Bun.spawnSync(["/bin/sh", "-c", localCommand], {
+              env: { ...process.env, ...env },
+              stdout: "pipe",
+              stderr: "pipe",
+            });
+            return {
+              exitCode: result.exitCode,
+              result: `${result.stdout.toString()}${result.stderr.toString()}`,
+            };
+          },
+        },
+      }) as unknown as SandboxHandle;
+      try {
+        await mkdir(source);
+        expect(runGit(["-C", source, "init", "-q", "--initial-branch=main"]).exitCode).toBe(0);
+        await writeFile(join(source, "tracked.txt"), "real generated-shell checkout\n");
+        expect(runGit(["-C", source, "add", "tracked.txt"]).exitCode).toBe(0);
+        expect(runGit([
+          "-C", source,
+          "-c", "user.name=useAgent test",
+          "-c", "user.email=test@useagent.dev",
+          "commit", "-qm", "fixture",
+        ]).exitCode).toBe(0);
+
+        const successWorkdir = join(root, "success", "work");
+        const successDir = join(successWorkdir, "acme", "widget");
+        await mkdir(successDir, { recursive: true });
+        expect(await ensureRepoClone(shellSandbox(false), successWorkdir, "acme/widget", fakeCtx().ctx, {
+          runtimeLayout,
+        })).toBe(true);
+        expect(await readFile(join(successDir, "tracked.txt"), "utf8"))
+          .toBe("real generated-shell checkout\n");
+
+        const racedWorkdir = join(root, "raced", "work");
+        const racedDir = join(racedWorkdir, "acme", "widget");
+        await mkdir(racedDir, { recursive: true });
+        await expect(ensureRepoClone(shellSandbox(true), racedWorkdir, "acme/widget", fakeCtx().ctx, {
+          runtimeLayout,
+        })).rejects.toThrow("occupied by unowned content during preparation");
+        expect(await readFile(join(racedDir, "appeared.txt"), "utf8")).toBe("protected");
+      } finally {
+        await chmod(root, 0o700).catch(() => {});
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test("the checkout recovery repairs a real clone that Git currently treats as bare", async () => {
+    const root = await mkdtemp(join(tmpdir(), "useagent-repo-prep-"));
+    const source = join(root, "source");
+    const checkout = join(root, "checkout");
+    const runGit = (args: string[]) => Bun.spawnSync(["git", ...args], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    try {
+      await mkdir(source);
+      expect(runGit(["-C", source, "init", "-q", "--initial-branch=main"]).exitCode).toBe(0);
+      await writeFile(join(source, "tracked.txt"), "real checkout\n");
+      expect(runGit(["-C", source, "add", "tracked.txt"]).exitCode).toBe(0);
+      expect(runGit([
+        "-C", source,
+        "-c", "user.name=useAgent test",
+        "-c", "user.email=test@useagent.dev",
+        "commit", "-qm", "fixture",
+      ]).exitCode).toBe(0);
+      expect(runGit(["clone", "--no-checkout", source, checkout]).exitCode).toBe(0);
+      expect(runGit(["-C", checkout, "config", "core.bare", "true"]).exitCode).toBe(0);
+
+      const implicit = runGit(["-C", checkout, "checkout", "--force", "HEAD"]);
+      expect(implicit.exitCode).not.toBe(0);
+      expect(implicit.stderr.toString()).toContain("operation must be run in a work tree");
+
+      const gitDir = join(checkout, ".git");
+      expect(runGit([`--git-dir=${gitDir}`, "config", "core.bare", "false"]).exitCode).toBe(0);
+      expect(runGit([
+        `--git-dir=${gitDir}`,
+        `--work-tree=${checkout}`,
+        "checkout",
+        "--force",
+        "HEAD",
+      ]).exitCode).toBe(0);
+      expect(await readFile(join(checkout, "tracked.txt"), "utf8")).toBe("real checkout\n");
+    } finally {
+      await chmod(root, 0o700).catch(() => {});
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("a retained non-root repo trusts only the current runtime uid and declared receipt", async () => {
