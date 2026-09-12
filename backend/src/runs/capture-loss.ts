@@ -54,6 +54,10 @@ const captureLosses = new Map<string, CaptureLossEntry>();
  *  registered after every batch that committed or may have committed, so a later batch
  *  that keeps failing cannot strand an announcement. */
 const pendingAnnouncements = new Set<string>();
+/** Bumped every time a run's announcement is owed again, so an attempt that started
+ *  before a newer obligation arrived cannot clear that obligation: it sees the bump
+ *  and runs again before it finishes. */
+const announcementGeneration = new Map<string, number>();
 /** One announcement in flight per run; overlapping callers share it. */
 const announcing = new Map<string, Promise<void>>();
 const announceRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -98,7 +102,8 @@ export function noteCaptureLoss(
 export function flushCaptureLoss(runId: string): Promise<void> {
   const entry = captureLosses.get(runId);
   if (!entry || entry.pending.size === 0) {
-    return pendingAnnouncements.has(runId) ? announceDegradedSeal(runId) : Promise.resolve();
+    // Same contract as the ledger path: an announcement failure retries on its own.
+    return pendingAnnouncements.has(runId) ? announceDegradedSeal(runId).catch(() => {}) : Promise.resolve();
   }
   if (entry.flushing) return entry.flushing;
   if (entry.retryTimer) {
@@ -126,7 +131,7 @@ export function flushCaptureLoss(runId: string): Promise<void> {
       } finally {
         // Committed, or possibly committed: the seal may be degraded now, so the
         // announcement is owed whatever happens to the rest of the flush.
-        pendingAnnouncements.add(runId);
+        oweAnnouncement(runId);
       }
       for (const f of batch) entry.pending.delete(f.eventId);
     }
@@ -176,6 +181,11 @@ export async function captureLossForRun(runId: string): Promise<CaptureLoss | nu
  *  not sealed yet needs nothing (canonicalizeRun reads the ledger inside its transaction
  *  and publishes the seal it writes). A failure keeps the announcement pending and
  *  retries it on the timer. */
+function oweAnnouncement(runId: string): void {
+  announcementGeneration.set(runId, (announcementGeneration.get(runId) ?? 0) + 1);
+  pendingAnnouncements.add(runId);
+}
+
 function announceDegradedSeal(runId: string): Promise<void> {
   const inFlight = announcing.get(runId);
   if (inFlight) return inFlight;
@@ -185,25 +195,34 @@ function announceDegradedSeal(runId: string): Promise<void> {
     announceRetryTimers.delete(runId);
   }
   const attempt = (async () => {
-    if (consumeSimulatedFailure(announcementFailuresForTest, runId)) throw new Error("simulated announcement failure");
-    const [row] = (await db.execute(sql`
-      select thread_id, source_frame_max, source_step_count from canonicalization_outbox
-      where run_id = ${runId} and state = 'complete_degraded'`)) as unknown as Array<{
-      thread_id: string; source_frame_max: number | null; source_step_count: number | null;
-    }>;
-    if (row) {
-      const rows = (await db.execute(sql`
-        select count(*)::int as n from run_capture_loss where run_id = ${runId}`)) as unknown as Array<{ n: number | string }>;
-      publishCanonicalizationComplete({
-        runId,
-        threadId: row.thread_id,
-        sourceFrameMax: Number(row.source_frame_max ?? -1),
-        sourceStepCount: Number(row.source_step_count ?? 0),
-        degraded: true,
-        lostFrames: Math.max(1, Number(rows[0]?.n ?? 0)),
-      });
+    for (;;) {
+      // The obligation this pass answers. A newer one arriving during the pass (a flush
+      // that commits after this read) bumps the generation, and the pass runs again.
+      const generation = announcementGeneration.get(runId) ?? 0;
+      if (consumeSimulatedFailure(announcementFailuresForTest, runId)) throw new Error("simulated announcement failure");
+      const [row] = (await db.execute(sql`
+        select thread_id, source_frame_max, source_step_count from canonicalization_outbox
+        where run_id = ${runId} and state = 'complete_degraded'`)) as unknown as Array<{
+        thread_id: string; source_frame_max: number | null; source_step_count: number | null;
+      }>;
+      await announcementGatesForTest.get(runId)?.();
+      if (row) {
+        const rows = (await db.execute(sql`
+          select count(*)::int as n from run_capture_loss where run_id = ${runId}`)) as unknown as Array<{ n: number | string }>;
+        publishCanonicalizationComplete({
+          runId,
+          threadId: row.thread_id,
+          sourceFrameMax: Number(row.source_frame_max ?? -1),
+          sourceStepCount: Number(row.source_step_count ?? 0),
+          degraded: true,
+          lostFrames: Math.max(1, Number(rows[0]?.n ?? 0)),
+        });
+      }
+      if ((announcementGeneration.get(runId) ?? 0) === generation) {
+        pendingAnnouncements.delete(runId);
+        return;
+      }
     }
-    pendingAnnouncements.delete(runId);
   })()
     .catch((err) => {
       const retry = setTimeout(() => {
@@ -225,6 +244,7 @@ function announceDegradedSeal(runId: string): Promise<void> {
 
 const lostAcknowledgementsForTest = new Map<string, number>();
 const announcementFailuresForTest = new Map<string, number>();
+const announcementGatesForTest = new Map<string, () => Promise<void>>();
 
 function consumeSimulatedFailure(map: Map<string, number>, runId: string): boolean {
   const left = map.get(runId) ?? 0;
@@ -245,6 +265,23 @@ export function simulateLostFlushAcknowledgementForTest(runId: string, times = 1
  *  committed, so the announcement must be retried on its own. */
 export function simulateAnnouncementFailureForTest(runId: string, times = 1): void {
   announcementFailuresForTest.set(runId, times);
+}
+
+/** Tests only: hold every announcement attempt for the run open after its seal read,
+ *  until the returned release is called; pass null to remove the hold. */
+export function holdAnnouncementForTest(runId: string): () => void {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  announcementGatesForTest.set(runId, () => held);
+  return () => {
+    announcementGatesForTest.delete(runId);
+    release();
+  };
+}
+
+/** Tests only: whether the run still owes an announcement. */
+export function announcementOwedForTest(runId: string): boolean {
+  return pendingAnnouncements.has(runId);
 }
 
 /** Tests only: shorten the retry timer. */
@@ -270,9 +307,11 @@ export function resetCaptureLossMemoryForTest(): void {
   for (const timer of announceRetryTimers.values()) clearTimeout(timer);
   captureLosses.clear();
   pendingAnnouncements.clear();
+  announcementGeneration.clear();
   announcing.clear();
   announceRetryTimers.clear();
   lostAcknowledgementsForTest.clear();
   announcementFailuresForTest.clear();
+  announcementGatesForTest.clear();
   retryMs = DEFAULT_RETRY_MS;
 }
