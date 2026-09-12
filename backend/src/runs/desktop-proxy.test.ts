@@ -11,7 +11,8 @@ describe("desktop proxy recovery", () => {
       password: "provider-password",
     });
     expect(redirect).not.toBeNull();
-    const parsed = new URL(redirect!);
+    expect(redirect).toStartWith("/api/desktop-proxy/");
+    const parsed = new URL(redirect!, source.origin);
     expect(parsed.searchParams.get("password")).toBe("provider-password");
     expect(parsed.searchParams.get("path")).toBe(
       "api/desktop-proxy/thread/websockify",

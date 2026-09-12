@@ -65,7 +65,7 @@ export function desktopClientQueryRedirect(
     redirected.searchParams.set(key, value);
     changed = true;
   }
-  return changed ? redirected.toString() : null;
+  return changed ? `${redirected.pathname}${redirected.search}` : null;
 }
 
 /** Old retained sandboxes may predate desktop provisioning, and a stopped box
