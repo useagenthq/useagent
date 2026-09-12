@@ -18,6 +18,8 @@ export type PostMessagePayload = {
   readonly chunks?: readonly string[];
   readonly text?: string;
   readonly threadTs?: string;
+  readonly runId?: string;
+  readonly messageRole?: "user_mirror";
 };
 
 export type AddReactionPayload = {
@@ -153,6 +155,9 @@ export type StopStreamPayload = {
   readonly fallbackBlocks?: readonly unknown[];
   /** The full answer, chunked - plain-text fallback when no stream/card update works. */
   readonly fallbackChunks: readonly string[];
+  /** A same-run user mirror that must reach a terminal outbox state before the
+   * result is eligible, so retries cannot put the result first. */
+  readonly waitForIdempotencyKey?: string;
 };
 
 /** A request to durably enqueue one outbound Slack call. `idempotencyKey` makes
