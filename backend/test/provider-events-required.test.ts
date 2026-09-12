@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
+import { captureLossForRun } from "../src/runs/capture-loss";
 import {
-  captureLossForRun,
   providerEventExists,
   recordProviderEvent,
   recordProviderEventIfAbsent,

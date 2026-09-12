@@ -903,10 +903,13 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
       };
       // Canonicalization-complete (H2): the per-run signal that its canonical projection
       // is trustworthy. Deduped per run so replay + live never re-announce a run.
-      const canonicalCompleteSeen = new Set<string>();
+      // A seal only ever moves from complete to complete-degraded, so the one re-announce
+      // let through is that correction.
+      const canonicalCompleteSeen = new Map<string, boolean>();
       const sendCanonicalComplete = (complete: CanonicalizationComplete): void => {
-        if (canonicalCompleteSeen.has(complete.runId)) return;
-        canonicalCompleteSeen.add(complete.runId);
+        const seenDegraded = canonicalCompleteSeen.get(complete.runId);
+        if (seenDegraded !== undefined && (seenDegraded || !complete.degraded)) return;
+        canonicalCompleteSeen.set(complete.runId, complete.degraded);
         sendFrame("canonical-complete", { threadId, complete });
       };
 

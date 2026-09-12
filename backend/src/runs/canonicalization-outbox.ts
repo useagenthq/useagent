@@ -33,7 +33,8 @@ import {
 import { canonicalizationOutbox } from "../db/schema";
 import { getNativeFramesSince } from "./native-events";
 import { getRun, getStepsApi } from "./repo";
-import { captureLossForRun, drainProviderEvents } from "./provider-events";
+import { captureLossForRun } from "./capture-loss";
+import { drainProviderEvents } from "./provider-events";
 import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "../engines/opencode-canonical";
 import type { CanonicalAgentEvent } from "@useagent/agent-harness/canonical";
 import { canonicalEngine } from "../engines/engine-alias";
@@ -226,9 +227,9 @@ export async function completeCanonicalRuns(threadId: string): Promise<Array<{
   runId: string; sourceFrameMax: number; sourceStepCount: number; degraded: boolean; lostFrames: number;
 }>> {
   const rows = (await db.execute(sql`
-    select o.run_id, o.source_frame_max, o.source_step_count, o.state, coalesce(l.lost_frames, 0) as lost_frames
+    select o.run_id, o.source_frame_max, o.source_step_count, o.state,
+           (select count(*) from run_capture_loss l where l.run_id = o.run_id) as lost_frames
     from canonicalization_outbox o
-    left join run_capture_loss l on l.run_id = o.run_id
     where o.thread_id = ${threadId} and o.state in ('complete', 'complete_degraded')`)) as unknown as Array<{
     run_id: string; source_frame_max: number | null; source_step_count: number | null; state: string; lost_frames: number | string;
   }>;

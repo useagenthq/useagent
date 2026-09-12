@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
@@ -52,23 +53,27 @@ export const canonicalEvents = pgTable(
 );
 
 /**
- * Capture-loss ledger. One row per run that lost at least one provider frame at capture
- * (the write failed after the bounded retry in runs/provider-events.ts). Read by the
- * canonicalization outbox at seal time: a run with a row here seals `complete_degraded`,
- * never `complete`, so completeness is never claimed over a hole. Deliberately no foreign
- * key to runs: the ledger must stay writable when other writes are failing.
+ * Capture-loss ledger. One row per provider frame that failed to persist even after the
+ * bounded retry in runs/provider-events.ts, keyed by (run, event id) so landing it is
+ * idempotent. Read by the canonicalization outbox at seal time: a run with rows here seals
+ * `complete_degraded`, never `complete`, so completeness is never claimed over a hole.
+ * Deliberately no foreign key to runs: the ledger must stay writable when other writes
+ * are failing.
  */
 export const runCaptureLoss = pgTable(
   "run_capture_loss",
   {
-    runId: text("run_id").primaryKey(),
+    runId: text("run_id").notNull(),
+    eventId: text("event_id").notNull(),
     threadId: text("thread_id").notNull(),
-    lostFrames: integer("lost_frames").notNull().default(0),
-    lastError: text("last_error"),
-    firstAt: timestamp("first_at", { withTimezone: true }).notNull().defaultNow(),
-    lastAt: timestamp("last_at", { withTimezone: true }).notNull().defaultNow(),
+    eventType: text("event_type"),
+    error: text("error"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("idx_run_capture_loss_thread").on(t.threadId)],
+  (t) => [
+    primaryKey({ columns: [t.runId, t.eventId] }),
+    index("idx_run_capture_loss_thread").on(t.threadId),
+  ],
 );
 
 /** `complete_degraded` is `complete` for every reader (the rows are final and trusted),

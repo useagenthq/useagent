@@ -5,6 +5,7 @@ import { makeNativeFrame, publishNativeFrame } from "./native-events";
 import { errorMessage } from "../util/error-message";
 import { executionGraphWriteEnabled } from "./execution-graph-rollout";
 import { shadowWriteExecutionGraph } from "./execution-graph-shadow-writer";
+import { noteCaptureLoss } from "./capture-loss";
 
 export const PROVIDER_PAYLOAD_CAP_BYTES = 32 * 1_024;
 export const CHILD_TRANSCRIPT_PAYLOAD_CAP_BYTES = 512 * 1_024;
@@ -100,34 +101,10 @@ interface RunSequencer {
 
 const runSequencers = new Map<string, RunSequencer>();
 
-// ---------------------------------------------------------------------------
-// Capture-quality contract. A capture write that still fails after the bounded retry
-// below is a LOST frame: the run's native history is missing something the provider
-// emitted. The loss goes into a per-run ledger - in memory at once, and durably in
-// run_capture_loss on a best-effort write that is retried whenever the ledger is read -
-// and the canonicalization outbox seals such a run as `complete_degraded`, never
-// `complete`, so no reader can mistake a shorter history for the whole one. Required
-// captures are excluded: their failure is returned to the caller, who retries or fails
-// the run loudly. The memory copy is process-local (single-replica scope, like the drain
-// barrier) and only bridges the gap until the durable row lands.
-// ---------------------------------------------------------------------------
-
-/** Delays before the second and third attempt of a failed capture write. */
+/** Delays before the second and third attempt of a failed capture write. A write that
+ *  still fails and was not `required` is a lost frame: see capture-loss.ts for the
+ *  ledger and the seal it degrades. */
 const CAPTURE_RETRY_DELAYS_MS = [100, 400] as const;
-
-interface CaptureLossEntry {
-  threadId: string;
-  /** Lost frames not yet counted in the durable row. */
-  pending: number;
-  lastError: string;
-  flushing: Promise<void> | null;
-}
-const captureLosses = new Map<string, CaptureLossEntry>();
-
-export interface CaptureLoss {
-  readonly lostFrames: number;
-  readonly lastError: string | null;
-}
 
 async function persistWithRetry(input: ProviderEventInput, seq: RunSequencer): Promise<void> {
   for (let attempt = 0; ; attempt++) {
@@ -144,66 +121,6 @@ async function persistWithRetry(input: ProviderEventInput, seq: RunSequencer): P
       await new Promise((r) => setTimeout(r, delay));
     }
   }
-}
-
-function noteCaptureLoss(input: ProviderEventInput, error: string): void {
-  const entry = captureLosses.get(input.runId) ?? {
-    threadId: input.threadId, pending: 0, lastError: error, flushing: null,
-  };
-  entry.pending++;
-  entry.lastError = error;
-  captureLosses.set(input.runId, entry);
-  console.error(
-    `[provider-events] LOST frame for run ${input.runId} (${input.eventType}); the run will seal as complete_degraded:`,
-    error,
-  );
-  void flushCaptureLoss(input.runId).catch(() => {});
-}
-
-/** Push the in-memory loss count into run_capture_loss. One flush in flight per run; a
- *  loss noted during a flush is carried by the next one. Rejects when the write fails,
- *  and the memory copy then keeps the count until a later flush lands. */
-function flushCaptureLoss(runId: string): Promise<void> {
-  const entry = captureLosses.get(runId);
-  if (!entry || entry.pending === 0) return Promise.resolve();
-  if (entry.flushing) return entry.flushing;
-  const n = entry.pending;
-  const flush = db
-    .execute(sql`
-      insert into run_capture_loss (run_id, thread_id, lost_frames, last_error)
-      values (${runId}, ${entry.threadId}, ${n}, ${entry.lastError.slice(0, 500)})
-      on conflict (run_id) do update set
-        lost_frames = run_capture_loss.lost_frames + excluded.lost_frames,
-        last_error = excluded.last_error,
-        last_at = now()`)
-    .then(() => {
-      entry.pending -= n;
-      if (entry.pending === 0) captureLosses.delete(runId);
-    })
-    .finally(() => {
-      entry.flushing = null;
-    });
-  entry.flushing = flush;
-  return flush;
-}
-
-/** The run's capture loss as the seal sees it: the durable row plus anything still only
- *  in memory, after one more attempt to land it. Null when nothing was lost. */
-export async function captureLossForRun(runId: string): Promise<CaptureLoss | null> {
-  await flushCaptureLoss(runId).catch(() => {});
-  const [row] = (await db.execute(sql`
-    select lost_frames, last_error from run_capture_loss where run_id = ${runId}`)) as unknown as Array<{
-    lost_frames: number | string; last_error: string | null;
-  }>;
-  const pending = captureLosses.get(runId);
-  const lostFrames = Number(row?.lost_frames ?? 0) + (pending?.pending ?? 0);
-  if (lostFrames === 0) return null;
-  return { lostFrames, lastError: pending?.lastError ?? row?.last_error ?? null };
-}
-
-/** Tests only: forget the in-memory ledger, as a process restart would. */
-export function resetCaptureLossMemoryForTest(): void {
-  captureLosses.clear();
 }
 
 /**

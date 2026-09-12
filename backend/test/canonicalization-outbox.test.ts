@@ -28,12 +28,8 @@ import {
   type CanonicalizationComplete,
   type DeliveredCanonicalEvent,
 } from "../src/runs/canonical-events";
-import {
-  captureLossForRun,
-  drainProviderEvents,
-  recordProviderEvent,
-  resetCaptureLossMemoryForTest,
-} from "../src/runs/provider-events";
+import { captureLossForRun, flushCaptureLoss, resetCaptureLossMemoryForTest } from "../src/runs/capture-loss";
+import { drainProviderEvents, recordProviderEvent } from "../src/runs/provider-events";
 import { updateStepCode } from "../src/runs/repo";
 import { waitFor } from "./helpers"; // side-effect: imports src/index -> migrate
 
@@ -252,6 +248,45 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
       await new Promise((r) => setTimeout(r, 50));
     }
     expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+  });
+
+  test("a loss that arrives after a clean seal corrects it to complete_degraded and re-announces", async () => {
+    const { RUN, THREAD } = await seedRun("cob_late_loss");
+    await enqueueCanonicalization(RUN, THREAD);
+    for (let i = 0; i < 30 && (await outboxRow(RUN))?.state !== "complete"; i++) {
+      await runCanonicalizationOutboxOnce();
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect((await outboxRow(RUN))?.state).toBe("complete");
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    try {
+      // A post-finalize producer (follow-up suggestions run after the seal) loses its frame.
+      await recordProviderEvent({
+        id: `folup_${RUN}`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never,
+      });
+      await drainProviderEvents(RUN);
+      await flushCaptureLoss(RUN);
+    } finally {
+      off();
+    }
+    expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+    const corrected = seen.find((e) => e.runId === RUN);
+    expect(corrected?.degraded).toBe(true);
+    expect(corrected?.lostFrames).toBe(1);
+    expect((await completeCanonicalRuns(THREAD)).find((r) => r.runId === RUN)?.degraded).toBe(true);
+  });
+
+  test("landing a loss is idempotent per event id: a retried flush never double counts", async () => {
+    const { RUN, THREAD } = await seedRun("cob_idempotent_loss");
+    await recordProviderEvent({ id: `${RUN}-lost-once`, runId: RUN, threadId: THREAD, provider: "opencode", eventType: null as never });
+    await drainProviderEvents(RUN);
+    await flushCaptureLoss(RUN);
+    // The same frame fails again (a re-probe re-ingesting it): still one lost frame.
+    await recordProviderEvent({ id: `${RUN}-lost-once`, runId: RUN, threadId: THREAD, provider: "opencode", eventType: null as never });
+    await drainProviderEvents(RUN);
+    await flushCaptureLoss(RUN);
+    expect(await captureLossForRun(RUN)).toEqual({ lostFrames: 1, lastError: expect.any(String) });
   });
 
   test("re-enqueueing a degraded run never regresses its seal", async () => {

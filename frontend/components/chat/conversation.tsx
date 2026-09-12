@@ -333,17 +333,19 @@ const TurnBlock = memo(function TurnBlock({
           !timelineOwnsReasoning &&
           liveReasoning && <LiveThinking text={liveReasoning} />}
 
+        {/* A degraded seal is disclosed whichever branch renders the turn below. */}
+        {turn.canonicalDegraded && (
+          <p className="text-text-tertiary text-caption-1-regular" data-capture-degraded="">
+            Part of this run's activity was not recorded. What is shown is complete as saved.
+          </p>
+        )}
+
         {timeline ? (
           /* Native turn: the interleaved timeline IS the turn — narration bursts
              and their tool rows in true order (live and settled alike). Its final
              burst is the answer, so the durable summary is re-rendered only when
              the timeline carried no narration (a tool-only turn). */
           <div data-timeline-source={timelineSource} className="space-y-3">
-            {turn.canonicalDegraded && (
-              <p className="text-text-tertiary text-caption-1-regular" data-capture-degraded="">
-                Part of this run's activity was not recorded. What is shown is complete as saved.
-              </p>
-            )}
             <Timeline
               nodes={timeline}
               live={live}
