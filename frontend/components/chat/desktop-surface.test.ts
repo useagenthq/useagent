@@ -22,7 +22,11 @@ describe("Desktop product surface", () => {
     expect(sessionView).toContain('isSelected={railTab === "desktop"}');
     expect(sessionView).toContain('onSelect={() => setRailTabOverride("desktop")}');
     expect(sessionView).not.toContain("{hasDesktop && (");
-    expect(sessionView).toContain("<DesktopPane threadId={rootId} />");
+    expect(sessionView).toContain("<DesktopPane");
+    expect(sessionView).toContain(
+      'const desktopActive = railTab === "desktop" && (!surfacesSheet || sheetSurfacesOpen)',
+    );
+    expect(sessionView).toContain("active={desktopActive}");
     expect(sessionView).toContain("desktopEverOpened ? (");
     expect(sessionView).toContain('if (railTab === "desktop") setDesktopEverOpened(true)');
     expect(sessionView).toContain(
@@ -114,7 +118,11 @@ describe("Desktop product surface", () => {
 
     expect(desktopPane).toContain("tabIndex={-1}");
     expect(desktopPane).toContain('data-testid="desktop-frame"');
-    expect(desktopPane).toContain('pointerEvents: loaded && inputCaptured ? "auto" : "none"');
+    // Pointer input reaches the frame only in the expanded viewer, once loaded,
+    // after the explicit take-control gesture (desktopFrameInteractive).
+    expect(desktopPane).toContain("pointerEvents: desktopFrameInteractive({");
+    expect(desktopPane).toContain("expanded: viewerOpen,");
+    expect(desktopPane).toContain("captured: inputCaptured,");
     expect(desktopPane).toContain('aria-label="Control sandbox desktop"');
     expect(desktopPane).toContain('window.addEventListener("focusin", releaseDesktopInput, true)');
     expect(desktopPane).toContain(
@@ -137,12 +145,41 @@ describe("Desktop product surface", () => {
     );
     expect(desktopPane).toContain("lastOuterFocusRef.current = target");
     expect(desktopPane).toContain("previous.focus()");
-    // The ONLY programmatic focus into the frame is the explicit capture click.
-    const focusCalls = desktopPane.split("contentWindow?.focus()").length - 1;
-    expect(focusCalls).toBe(1);
+    // Enabling control never strands keyboard focus in the cross-origin frame.
+    expect(desktopPane).not.toContain("contentWindow?.focus()");
     expect(desktopPane).toContain("inputCapturedRef.current = true;");
     // Release resets the synchronous mirror too, so the guard resumes bouncing.
     expect(desktopPane).toContain("inputCapturedRef.current = false;");
+  });
+
+  test("bot home, delegated and plain threads share the SessionView rail and its Agent Screen card", () => {
+    const desktopPane = read("./desktop-pane.tsx");
+    const botThreadPane = read("../bots/bot-thread-pane.tsx");
+    const threadPage = read("../../app/session/(thread)/[id]/page.tsx");
+    const botsWorkspace = read("../bots/bots-workspace.tsx");
+
+    // The card is the pane's only presentation: whoever renders SessionView gets it.
+    expect(desktopPane).toContain("<AgentScreen");
+    expect(desktopPane).not.toContain("Click to control desktop");
+    // A bot's home thread (/bots/[id]) and a delegated thread (/session/[id]
+    // resolved through botForThread) both render the real SessionView.
+    expect(botsWorkspace).toContain("<BotThreadPane bot={selected} thread={thread} />");
+    expect(botThreadPane).toContain("<SessionView");
+    expect(threadPage).toContain("botForThread(bots, id)");
+    expect(threadPage).toContain("<SessionView");
+  });
+
+  test("the viewer's take-control toggle is the only way into the frame; collapsing releases it", () => {
+    const desktopPane = read("./desktop-pane.tsx");
+
+    expect(desktopPane).toContain("aria-pressed={inputCaptured}");
+    expect(desktopPane).toContain('{inputCaptured ? "Release control" : "Take control"}');
+    expect(desktopPane).toContain("onClick={inputCaptured ? releaseCapture : captureInput}");
+    expect(desktopPane).toContain("if (!open) releaseCapture();");
+    expect(desktopPane).toContain("if (active) return;");
+    expect(desktopPane).toContain("setViewerOpen(false);");
+    // The collapsed card has no capture affordance at all.
+    expect(desktopPane).not.toContain("Click to control desktop");
   });
 
   test("the focus-steal guard bounces only while input is not captured", () => {

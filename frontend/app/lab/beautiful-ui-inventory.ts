@@ -18,6 +18,7 @@ export const BEAUTIFUL_UI_COMPONENTS = [
   "code-block",
   "fine-tune-card",
   "selection-actions",
+  "agent-screen",
 ] as const;
 
 export type BeautifulUiComponent = (typeof BEAUTIFUL_UI_COMPONENTS)[number];

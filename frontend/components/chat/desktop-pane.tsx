@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AgentScreen } from "@/components/ai/agent-screen";
+import { Button } from "@/components/base/buttons/button";
+import { desktopFrameInteractive, desktopScreenStatus } from "./desktop-screen-state";
 
 export function buildDesktopFrameSrc(threadId: string): string {
   const params = new URLSearchParams({
@@ -154,16 +157,31 @@ function restoreOuterFocus(previous: HTMLElement | null, frame: HTMLIFrameElemen
  * The tab is always present. Before a sandbox exists, or while a retained
  * sandbox's desktop service is being repaired, probe the authenticated proxy
  * and show a product-owned waiting state instead of embedding raw error JSON.
+ *
+ * Presentation is the Agent Screen card: a view-only framed capture in the
+ * rail, and a full-width viewer where "Take control" routes input to the
+ * desktop. `live` is the thread's live-run signal, for the status pill.
  */
-export function DesktopPane({ threadId }: { threadId: string }) {
+export function DesktopPane({
+  threadId,
+  live,
+  active,
+}: {
+  threadId: string;
+  live: boolean;
+  active: boolean;
+}) {
   const [ready, setReady] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [inputCaptured, setInputCaptured] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const [status, setStatus] = useState("No active sandbox. Send a message to start one.");
-  const surfaceRef = useRef<HTMLDivElement>(null);
+  // The Agent Screen stage: the frame plus, while expanded, the viewer chrome.
+  // Pointer and focus activity inside it never releases captured input.
+  const surfaceRef = useRef<HTMLDialogElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   // Mirrors inputCaptured synchronously so the focus-steal guard cannot race
-  // the requestAnimationFrame focus issued by the explicit capture click.
+  // the explicit transition from watch-only to interactive desktop input.
   const inputCapturedRef = useRef(false);
   // The last focused element OUTSIDE this pane (usually the composer) - where
   // stolen focus gets returned to.
@@ -216,20 +234,49 @@ export function DesktopPane({ threadId }: { threadId: string }) {
     };
   }, [readySrc]);
 
+  const releaseCapture = useCallback(() => {
+    inputCapturedRef.current = false;
+    setInputCaptured(false);
+    try {
+      frameRef.current?.contentWindow?.blur();
+    } catch {
+      // The desktop proxy is normally same-origin. If a browser treats it as
+      // cross-origin, disabling pointer events still prevents re-capture.
+    }
+  }, []);
+
+  // Taking control enables pointer input without trapping keyboard focus in the
+  // cross-origin iframe. A subsequent explicit click on the desktop focuses it.
+  const captureInput = useCallback(() => {
+    inputCapturedRef.current = true;
+    setInputCaptured(true);
+  }, []);
+
+  // Collapsing the viewer always hands input back: the card is view-only.
+  const setViewer = useCallback(
+    (open: boolean) => {
+      if (!open) releaseCapture();
+      setViewerOpen(open);
+    },
+    [releaseCapture],
+  );
+
+  // SessionView keeps the desktop mounted to preserve its WebSocket. When a
+  // different rail surface becomes active, close the modal and release input
+  // before the preserved pane is made invisible.
+  useEffect(() => {
+    if (active) return;
+    releaseCapture();
+    setViewerOpen(false);
+  }, [active, releaseCapture]);
+
   useEffect(() => {
     if (!inputCaptured) return;
 
     const releaseDesktopInput = (event: FocusEvent | PointerEvent) => {
       const target = event.target;
       if (target instanceof Node && surfaceRef.current?.contains(target)) return;
-      inputCapturedRef.current = false;
-      setInputCaptured(false);
-      try {
-        frameRef.current?.contentWindow?.blur();
-      } catch {
-        // The desktop proxy is normally same-origin. If a browser treats it as
-        // cross-origin, disabling pointer events still prevents re-capture.
-      }
+      releaseCapture();
     };
 
     window.addEventListener("focusin", releaseDesktopInput, true);
@@ -238,7 +285,7 @@ export function DesktopPane({ threadId }: { threadId: string }) {
       window.removeEventListener("focusin", releaseDesktopInput, true);
       window.removeEventListener("pointerdown", releaseDesktopInput, true);
     };
-  }, [inputCaptured]);
+  }, [inputCaptured, releaseCapture]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -309,51 +356,57 @@ export function DesktopPane({ threadId }: { threadId: string }) {
     });
   }, [loaded, inputCaptured]);
 
-  if (!ready) {
-    return (
-      <div className="text-text-tertiary flex size-full items-center justify-center px-6 text-center text-body-2-regular">
-        {status}
-      </div>
-    );
-  }
+  const connected = ready && loaded;
 
   return (
-    <div ref={surfaceRef} className="relative size-full bg-neutral-950">
-      <iframe
-        ref={frameRef}
-        data-testid="desktop-frame"
-        title="Sandbox desktop"
-        src={src}
-        tabIndex={-1}
-        onLoad={(event) => {
-          setLoaded(true);
-          event.currentTarget.blur();
-        }}
-        className="size-full border-0"
-        style={{ pointerEvents: loaded && inputCaptured ? "auto" : "none" }}
-        allow="clipboard-read; clipboard-write"
+    <div className="size-full overflow-y-auto p-3">
+      <AgentScreen
+        ref={surfaceRef}
+        status={desktopScreenStatus({ connected, live })}
+        loading={!connected}
+        loadingCaption={ready ? undefined : status}
+        open={viewerOpen}
+        onOpenChange={setViewer}
+        controls={
+          <Button
+            variant="secondary"
+            size="small"
+            aria-label="Control sandbox desktop"
+            aria-pressed={inputCaptured}
+            disabled={!connected}
+            onClick={inputCaptured ? releaseCapture : captureInput}
+            className="rounded-full"
+          >
+            {inputCaptured ? "Release control" : "Take control"}
+          </Button>
+        }
+        screen={
+          ready ? (
+            <iframe
+              ref={frameRef}
+              data-testid="desktop-frame"
+              title="Sandbox desktop"
+              src={src}
+              tabIndex={-1}
+              onLoad={(event) => {
+                setLoaded(true);
+                event.currentTarget.blur();
+              }}
+              className="absolute inset-0 size-full border-0"
+              style={{
+                pointerEvents: desktopFrameInteractive({
+                  expanded: viewerOpen,
+                  loaded,
+                  captured: inputCaptured,
+                })
+                  ? "auto"
+                  : "none",
+              }}
+              allow="clipboard-read; clipboard-write"
+            />
+          ) : null
+        }
       />
-      {!loaded && (
-        <div className="bg-background-primary-default text-text-tertiary absolute inset-0 flex items-center justify-center text-body-2-regular">
-          Connecting to desktop…
-        </div>
-      )}
-      {loaded && !inputCaptured && (
-        <button
-          type="button"
-          aria-label="Control sandbox desktop"
-          onClick={() => {
-            inputCapturedRef.current = true;
-            setInputCaptured(true);
-            requestAnimationFrame(() => frameRef.current?.contentWindow?.focus());
-          }}
-          className="absolute inset-0 flex items-end justify-center bg-transparent p-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70"
-        >
-          <span className="rounded-full bg-neutral-950/80 px-3 py-1.5 text-caption-1-medium text-white shadow-lg backdrop-blur-sm">
-            Click to control desktop
-          </span>
-        </button>
-      )}
     </div>
   );
 }

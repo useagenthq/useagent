@@ -37,11 +37,11 @@ const manifest = JSON.parse(
 const sha256 = (content: Uint8Array) => createHash("sha256").update(content).digest("hex");
 
 describe("Beautiful UI vendor snapshot", () => {
-  test("pins one complete 19-component upstream snapshot", () => {
-    expect(manifest.componentCount).toBe(19);
+  test("pins one complete 20-component upstream snapshot", () => {
+    expect(manifest.componentCount).toBe(20);
     expect(manifest.components).toHaveLength(manifest.componentCount);
-    expect(new Set(manifest.components.map(({ slug }) => slug)).size).toBe(19);
-    expect(new Set(manifest.components.map(({ rscRecordId }) => rscRecordId)).size).toBe(19);
+    expect(new Set(manifest.components.map(({ slug }) => slug)).size).toBe(20);
+    expect(new Set(manifest.components.map(({ rscRecordId }) => rscRecordId)).size).toBe(20);
 
     expect(manifest.upstream.sourceUrl).toBe("https://www.beautifului.dev/");
     expect(manifest.upstream.licenseUrl).toBe("https://www.beautifului.dev/license");
@@ -50,8 +50,11 @@ describe("Beautiful UI vendor snapshot", () => {
     expect(manifest.upstream.vercelDeploymentId).toMatch(/^dpl_[A-Za-z0-9]+$/);
     expect(Object.values(manifest.upstream.staticSourceSnapshot).every(Boolean)).toBe(true);
 
+    // react and react-dom resolve in this frontend; everything else upstream
+    // imports is a site-local atom or a package we did not adopt.
+    const resolved = new Set(["react", "react-dom"]);
     const unresolvedImports = new Set(
-      manifest.components.flatMap(({ imports }) => imports).filter((name) => name !== "react"),
+      manifest.components.flatMap(({ imports }) => imports).filter((name) => !resolved.has(name)),
     );
     expect(manifest.unresolvedUpstreamImports.toSorted()).toEqual(
       [...unresolvedImports].toSorted(),

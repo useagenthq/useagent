@@ -6,6 +6,7 @@ import { FineTuneCard } from "@/components/ai/fine-tune-card";
 import { SearchList } from "@/components/ai/search-list";
 import { SelectionActions } from "@/components/ai/selection-actions";
 import { SidebarNav } from "@/components/ai/sidebar-nav";
+import { AgentScreenShowcase } from "./agent-screen-showcase";
 
 function Demo({
   component,
@@ -98,6 +99,15 @@ export function BeautifulUiExtras() {
         wide
       >
         <SelectionActions className="min-h-[548px]" />
+      </Demo>
+
+      <Demo
+        component="agent-screen"
+        title="Agent Screen"
+        index={20}
+        description="Watch an agent's screen: open, take control."
+      >
+        <AgentScreenShowcase />
       </Demo>
     </>
   );
