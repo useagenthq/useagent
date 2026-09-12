@@ -1,6 +1,10 @@
 import { db } from "../db/client";
 import { artifacts, userUploads } from "../db/schema";
-import { artifactStorage, LocalArtifactStorage } from "./storage";
+import {
+  artifactStorage,
+  type ArtifactReclaimResult,
+  LocalArtifactStorage,
+} from "./storage";
 import { eq, sql } from "drizzle-orm";
 
 export async function listReferencedArtifactStorageKeys(): Promise<Set<string>> {
@@ -34,7 +38,7 @@ export async function reclaimUnreferencedLocalArtifacts(input: {
   readonly dryRun?: boolean;
   readonly minAgeMs?: number;
   readonly now?: Date;
-} = {}): Promise<{ scanned: number; removed: string[]; retained: string[] }> {
+} = {}): Promise<ArtifactReclaimResult> {
   const storage = artifactStorage();
   if (!(storage instanceof LocalArtifactStorage)) {
     throw new Error("artifact orphan reclamation is only supported by local artifact storage");

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalArtifactStorage } from "./storage";
@@ -79,6 +79,7 @@ describe("LocalArtifactStorage", () => {
       dryRun: true,
     });
     expect(dryRun.removed).toEqual([orphan]);
+    expect(dryRun.warnings).toEqual([]);
     expect(await storage.size(orphan)).toBe(6);
 
     const result = await storage.reclaimUnreferenced({
@@ -100,7 +101,18 @@ describe("LocalArtifactStorage", () => {
 
     await expect(
       storage.reclaimUnreferenced({ referencedKeys: new Set(), minAgeMs: 0 }),
-    ).resolves.toEqual({ scanned: 0, removed: [], retained: [] });
+    ).resolves.toEqual({ scanned: 0, removed: [], retained: [], warnings: [] });
+  });
+
+  test("fails loudly when the storage root cannot be listed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    roots.add(root);
+    const notDirectory = join(root, "not-a-directory");
+    await writeFile(notDirectory, "invalid root");
+
+    await expect(new LocalArtifactStorage(notDirectory).reclaimUnreferenced({
+      referencedKeys: new Set(),
+    })).rejects.toMatchObject({ code: "ENOTDIR" });
   });
 
   test("continues reclaiming after an inaccessible digest-prefix directory", async () => {
@@ -125,6 +137,11 @@ describe("LocalArtifactStorage", () => {
         scanned: 1,
         removed: [reclaimable],
         retained: [],
+        warnings: [{
+          code: "permission_denied",
+          operation: "readdir",
+          path: inaccessibleDirectory,
+        }],
       });
       await expect(storage.read(reclaimable)).rejects.toThrow(
         "artifact bytes are missing",
@@ -148,7 +165,7 @@ describe("LocalArtifactStorage", () => {
       isReferenced: async () => true,
     });
 
-    expect(result).toEqual({ scanned: 1, removed: [], retained: [key] });
+    expect(result).toEqual({ scanned: 1, removed: [], retained: [key], warnings: [] });
     expect(new TextDecoder().decode(await storage.read(key))).toBe("published-during-gc");
   });
 
@@ -169,7 +186,43 @@ describe("LocalArtifactStorage", () => {
       },
     });
 
-    expect(result).toEqual({ scanned: 1, removed: [], retained: [key] });
+    expect(result).toEqual({ scanned: 1, removed: [], retained: [key], warnings: [] });
     expect(new TextDecoder().decode(await storage.read(key))).toBe("fresh");
+  });
+
+  test("restores canonical bytes when the post-quarantine reference check fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    roots.add(root);
+    const key = "3".repeat(64);
+    const storage = new LocalArtifactStorage(root);
+    await storage.put(key, new TextEncoder().encode("must-survive"));
+
+    await expect(storage.reclaimUnreferenced({
+      referencedKeys: new Set(),
+      minAgeMs: 0,
+      now: new Date(Date.now() + 1_000),
+      isReferenced: async () => { throw new Error("database unavailable"); },
+    })).rejects.toThrow("database unavailable");
+
+    expect(new TextDecoder().decode(await storage.read(key))).toBe("must-survive");
+  });
+
+  test("recovers a stale quarantine before evaluating the canonical key", async () => {
+    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    roots.add(root);
+    const key = "4".repeat(64);
+    const storage = new LocalArtifactStorage(root);
+    await storage.put(key, new TextEncoder().encode("recover-me"));
+    const path = join(root, "44", key);
+    await rename(path, `${path}.00000000-0000-4000-8000-000000000000.reclaim`);
+
+    const result = await storage.reclaimUnreferenced({
+      referencedKeys: new Set([key]),
+      minAgeMs: 0,
+      now: new Date(Date.now() + 1_000),
+    });
+
+    expect(result).toEqual({ scanned: 1, removed: [], retained: [key], warnings: [] });
+    expect(new TextDecoder().decode(await storage.read(key))).toBe("recover-me");
   });
 });

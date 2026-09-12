@@ -44,6 +44,8 @@ export async function runArtifactReclaimCli(
       removed_count: result.removed.length,
       removed: result.removed,
       retained_count: result.retained.length,
+      warning_count: result.warnings.length,
+      warnings: result.warnings,
     }),
   );
 }
