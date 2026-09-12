@@ -28,6 +28,9 @@ import { publishCanonicalizationComplete } from "./canonical-events";
 /** Delay before an unflushed loss or an unsent announcement is retried. */
 const DEFAULT_RETRY_MS = 5_000;
 let retryMs = DEFAULT_RETRY_MS;
+/** Passes one announcement attempt makes before handing a still-moving obligation to a
+ *  fresh attempt, so a steady stream of losses cannot starve the caller that awaits it. */
+const MAX_ANNOUNCEMENT_PASSES = 3;
 
 /** Namespace of the per-run advisory lock, in the two-key lock space, so it never
  *  collides with the single-key thread locks the command lane takes (a root run's
@@ -116,6 +119,7 @@ export function flushCaptureLoss(runId: string): Promise<void> {
       try {
         await db.transaction(async (tx) => {
           await tx.execute(captureLossLock(runId));
+          if (consumeSimulatedFailure(flushFailuresBeforeCommitForTest, runId)) throw new Error("simulated failure before commit");
           await tx.execute(sql`
             insert into run_capture_loss (run_id, event_id, thread_id, event_type, error)
             select ${runId}, e.event_id, ${entry.threadId}, e.event_type, e.error
@@ -195,7 +199,7 @@ function announceDegradedSeal(runId: string): Promise<void> {
     announceRetryTimers.delete(runId);
   }
   const attempt = (async () => {
-    for (;;) {
+    for (let pass = 0; ; pass++) {
       // The obligation this pass answers. A newer one arriving during the pass (a flush
       // that commits after this read) bumps the generation, and the pass runs again.
       const generation = announcementGeneration.get(runId) ?? 0;
@@ -205,7 +209,9 @@ function announceDegradedSeal(runId: string): Promise<void> {
         where run_id = ${runId} and state = 'complete_degraded'`)) as unknown as Array<{
         thread_id: string; source_frame_max: number | null; source_step_count: number | null;
       }>;
-      await announcementGatesForTest.get(runId)?.();
+      lastAnnouncementReadForTest.set(runId, row ? "degraded" : "clean");
+      const gate = announcementGatesForTest.get(runId);
+      if (gate) await gate();
       if (row) {
         const rows = (await db.execute(sql`
           select count(*)::int as n from run_capture_loss where run_id = ${runId}`)) as unknown as Array<{ n: number | string }>;
@@ -218,13 +224,25 @@ function announceDegradedSeal(runId: string): Promise<void> {
           lostFrames: Math.max(1, Number(rows[0]?.n ?? 0)),
         });
       }
+      // Settlement is one synchronous step with the check: the obligation clears and this
+      // attempt stops owning the run before anything else can run, so a flush committing
+      // right after this point starts a fresh attempt instead of joining a finished one.
       if ((announcementGeneration.get(runId) ?? 0) === generation) {
         pendingAnnouncements.delete(runId);
+        if (!captureLosses.has(runId)) announcementGeneration.delete(runId);
+        announcing.delete(runId);
+        return;
+      }
+      if (pass + 1 >= MAX_ANNOUNCEMENT_PASSES) {
+        // Still moving: release this caller and let a fresh attempt take what is left.
+        announcing.delete(runId);
+        queueMicrotask(() => void announceDegradedSeal(runId).catch(() => {}));
         return;
       }
     }
   })()
     .catch((err) => {
+      if (announcing.get(runId) === attempt) announcing.delete(runId);
       const retry = setTimeout(() => {
         announceRetryTimers.delete(runId);
         void announceDegradedSeal(runId).catch(() => {});
@@ -232,9 +250,6 @@ function announceDegradedSeal(runId: string): Promise<void> {
       retry.unref?.();
       announceRetryTimers.set(runId, retry);
       throw err;
-    })
-    .finally(() => {
-      announcing.delete(runId);
     });
   announcing.set(runId, attempt);
   return attempt;
@@ -243,8 +258,10 @@ function announceDegradedSeal(runId: string): Promise<void> {
 // ── Test hooks ───────────────────────────────────────────────────────────────
 
 const lostAcknowledgementsForTest = new Map<string, number>();
+const flushFailuresBeforeCommitForTest = new Map<string, number>();
 const announcementFailuresForTest = new Map<string, number>();
 const announcementGatesForTest = new Map<string, () => Promise<void>>();
+const lastAnnouncementReadForTest = new Map<string, "clean" | "degraded">();
 
 function consumeSimulatedFailure(map: Map<string, number>, runId: string): boolean {
   const left = map.get(runId) ?? 0;
@@ -261,22 +278,41 @@ export function simulateLostFlushAcknowledgementForTest(runId: string, times = 1
   lostAcknowledgementsForTest.set(runId, times);
 }
 
+/** Tests only: make the run's next `times` flush transactions fail before they commit,
+ *  so the batch rolls back and stays pending while the seal stays as it was. */
+export function simulateFlushFailureBeforeCommitForTest(runId: string, times = 1): void {
+  flushFailuresBeforeCommitForTest.set(runId, times);
+}
+
 /** Tests only: make the run's next `times` announcements fail after their correction
  *  committed, so the announcement must be retried on its own. */
 export function simulateAnnouncementFailureForTest(runId: string, times = 1): void {
   announcementFailuresForTest.set(runId, times);
 }
 
-/** Tests only: hold every announcement attempt for the run open after its seal read,
- *  until the returned release is called; pass null to remove the hold. */
-export function holdAnnouncementForTest(runId: string): () => void {
+/** Tests only: hold every announcement pass for the run open after its seal read.
+ *  `step` releases the pass currently held (the next pass is held again); `stop` removes
+ *  the hold and releases whatever is waiting. */
+export function holdAnnouncementForTest(runId: string): { step: () => void; stop: () => void } {
   let release!: () => void;
-  const held = new Promise<void>((resolve) => { release = resolve; });
+  let held = new Promise<void>((resolve) => { release = resolve; });
   announcementGatesForTest.set(runId, () => held);
-  return () => {
-    announcementGatesForTest.delete(runId);
-    release();
+  return {
+    step: () => {
+      const releaseCurrent = release;
+      held = new Promise<void>((resolve) => { release = resolve; });
+      releaseCurrent();
+    },
+    stop: () => {
+      announcementGatesForTest.delete(runId);
+      release();
+    },
   };
+}
+
+/** Tests only: what the run's latest announcement pass read from the outbox. */
+export function lastAnnouncementReadOfTest(runId: string): "clean" | "degraded" | null {
+  return lastAnnouncementReadForTest.get(runId) ?? null;
 }
 
 /** Tests only: whether the run still owes an announcement. */
@@ -311,7 +347,9 @@ export function resetCaptureLossMemoryForTest(): void {
   announcing.clear();
   announceRetryTimers.clear();
   lostAcknowledgementsForTest.clear();
+  flushFailuresBeforeCommitForTest.clear();
   announcementFailuresForTest.clear();
   announcementGatesForTest.clear();
+  lastAnnouncementReadForTest.clear();
   retryMs = DEFAULT_RETRY_MS;
 }

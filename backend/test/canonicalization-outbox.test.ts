@@ -35,10 +35,12 @@ import {
   captureLossLock,
   flushCaptureLoss,
   holdAnnouncementForTest,
+  lastAnnouncementReadOfTest,
   pendingCaptureLossForTest,
   resetCaptureLossMemoryForTest,
   setCaptureLossRetryDelayForTest,
   simulateAnnouncementFailureForTest,
+  simulateFlushFailureBeforeCommitForTest,
   simulateLostFlushAcknowledgementForTest,
 } from "../src/runs/capture-loss";
 import { drainProviderEvents, recordProviderEvent } from "../src/runs/provider-events";
@@ -419,7 +421,7 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
       expect(announcementOwedForTest(RUN)).toBe(true);
       // A held attempt is joined, not duplicated, by a loss that lands while it is open: the
       // newer obligation bumps the generation and the same attempt runs once more.
-      const release = holdAnnouncementForTest(RUN);
+      const hold = holdAnnouncementForTest(RUN);
       const held = flushCaptureLoss(RUN); // attempt 3 clears the timer, reads the seal, then waits
       await new Promise((r) => setTimeout(r, 60));
       expect(announceRetryTimersForTest(RUN)).toBe(0);
@@ -427,7 +429,7 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
       await drainProviderEvents(RUN); // its flush lands and joins the held attempt
       await new Promise((r) => setTimeout(r, 60));
       expect(seen.some((e) => e.runId === RUN)).toBe(false); // nothing published while held
-      release();
+      hold.stop();
       await held;
       await new Promise((r) => setTimeout(r, 60));
       expect(announceRetryTimersForTest(RUN)).toBe(0);
@@ -449,25 +451,69 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
     const seen: CanonicalizationComplete[] = [];
     const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
     try {
-      // Attempt A starts while the seal is still clean (a failed batch owed it) and is held
-      // open right after it read "no degraded row".
-      simulateLostFlushAcknowledgementForTest(RUN, 1);
+      // The first batch fails BEFORE it commits: the seal stays clean, the batch stays pending,
+      // and the possibly-committed rule still owes an announcement. Its attempt is held open
+      // right after it read the still-clean seal.
+      simulateFlushFailureBeforeCommitForTest(RUN, 1);
+      const hold = holdAnnouncementForTest(RUN);
       await recordProviderEvent({ id: `${RUN}-gen-a`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
-      const release = holdAnnouncementForTest(RUN);
       await drainProviderEvents(RUN);
-      await new Promise((r) => setTimeout(r, 60)); // A's read is done; A is held
-      expect(seen.some((e) => e.runId === RUN)).toBe(false);
-      // The pending batch lands for real now, correcting the seal and owing a newer announcement
-      // while A is still in flight; the flush joins A.
+      await new Promise((r) => setTimeout(r, 60));
+      expect((await outboxRow(RUN))?.state).toBe("complete");
+      expect(lastAnnouncementReadOfTest(RUN)).toBe("clean"); // the held attempt saw no degraded row
+      expect(pendingCaptureLossForTest(RUN)).toBe(1);
+      // The pending batch lands for real now: the correction commits and a newer obligation
+      // arrives while the held attempt is still in flight and joins it.
       const landed = flushCaptureLoss(RUN);
       await new Promise((r) => setTimeout(r, 60));
       expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
-      release();
+      expect(seen.some((e) => e.runId === RUN)).toBe(false);
+      hold.stop();
       await landed;
       await new Promise((r) => setTimeout(r, 60));
-      expect(seen.find((e) => e.runId === RUN)?.degraded).toBe(true); // A ran again and announced
+      expect(lastAnnouncementReadOfTest(RUN)).toBe("degraded"); // the attempt ran again after the bump
+      expect(seen.find((e) => e.runId === RUN)?.degraded).toBe(true);
       expect(announcementOwedForTest(RUN)).toBe(false);
       expect(announceRetryTimersForTest(RUN)).toBe(0);
+    } finally {
+      off();
+      resetCaptureLossMemoryForTest();
+    }
+  });
+
+  test("a steady stream of losses cannot starve the caller: an attempt hands a still-moving obligation to a fresh one", async () => {
+    const { RUN, THREAD } = await seedRun("cob_stream");
+    await enqueueCanonicalization(RUN, THREAD);
+    for (let i = 0; i < 30 && (await outboxRow(RUN))?.state !== "complete"; i++) {
+      await runCanonicalizationOutboxOnce();
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    const hold = holdAnnouncementForTest(RUN);
+    try {
+      await recordProviderEvent({ id: `${RUN}-stream-0`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await drainProviderEvents(RUN);
+      await new Promise((r) => setTimeout(r, 60)); // the first attempt is held on pass 1
+      const caller = flushCaptureLoss(RUN); // joins that attempt
+      let callerSettled = false;
+      void caller.then(() => { callerSettled = true; });
+      // A new loss lands during every held pass, so the generation keeps moving.
+      for (let n = 1; n <= 4; n++) {
+        await recordProviderEvent({ id: `${RUN}-stream-${n}`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+        await drainProviderEvents(RUN);
+        await new Promise((r) => setTimeout(r, 40));
+        hold.step();
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      // The attempt gave up after its pass bound, so the caller was released while the
+      // obligation was still moving, and a fresh attempt owns what is left.
+      expect(callerSettled).toBe(true);
+      hold.stop();
+      await new Promise((r) => setTimeout(r, 120));
+      expect(announcementOwedForTest(RUN)).toBe(false);
+      expect(seen.some((e) => e.runId === RUN && e.degraded)).toBe(true);
+      expect(await captureLossForRun(RUN)).toEqual({ lostFrames: 5, lastError: expect.any(String) });
     } finally {
       off();
       resetCaptureLossMemoryForTest();
