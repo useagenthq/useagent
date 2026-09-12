@@ -35,14 +35,14 @@ function CollapsedThreads() {
   const pathname = usePathname();
   const runs = useSidebarThreads();
   return (
-    <SidebarGroup>
-      <SidebarMenu>
+    <SidebarGroup className="items-center p-0 pt-2">
+      <SidebarMenu className="items-center gap-1">
         {runs.slice(0, 6).map((run) => {
           const href = `/session/${run.id}`;
           return (
-            <SidebarMenuItem key={run.id}>
+            <SidebarMenuItem key={run.id} className="w-8">
               <SidebarMenuButton
-                className="justify-center text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary"
+                className="justify-center rounded-2lg text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary"
                 isActive={pathname === href}
                 render={<Link href={href} />}
                 tooltip={runTitle(run.prompt)}

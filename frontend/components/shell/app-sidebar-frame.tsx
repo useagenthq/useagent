@@ -114,17 +114,17 @@ export function NavRoutes({ routes }: { routes: Route[] }) {
   const isCollapsed = state === "collapsed";
 
   return (
-    <SidebarMenu className="gap-0">
+    <SidebarMenu className={cn("gap-0", isCollapsed && "items-center gap-1")}>
       {routes.map((route) => {
         const Icon = route.icon;
         return (
-          <SidebarMenuItem key={route.id}>
+          <SidebarMenuItem key={route.id} className={cn(isCollapsed && "w-8")}>
             {!isCollapsed && route.subs?.length ? (
               <NavGroup route={route} />
             ) : isCollapsed ? (
               <SidebarMenuButton
                 className={cn(
-                  "justify-center",
+                  "justify-center rounded-2lg",
                   route.active
                     ? "bg-linear-to-b from-accent-500 to-accent-600 text-white shadow-nav-selected hover:text-white"
                     : "text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary",
@@ -232,15 +232,18 @@ export function AppSidebarFrame({
     <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader
         className={cn(
-          "flex px-2 md:pt-2",
+          "flex md:pt-2",
           isCollapsed
-            ? "flex-row items-center justify-between gap-y-4 md:flex-col md:items-start md:justify-start"
-            : "flex-row items-center justify-between",
+            ? "flex-row items-center justify-between gap-y-3 px-0 md:flex-col md:items-center md:justify-start"
+            : "flex-row items-center justify-between px-2",
         )}
       >
         <Link
           aria-label="UseAgent new thread"
-          className="flex items-center gap-2.5 rounded-2lg px-2 py-1.5 text-text-primary outline-none transition-colors hover:bg-background-secondary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+          className={cn(
+            "flex items-center gap-2.5 rounded-2lg py-1.5 text-text-primary outline-none transition-colors hover:bg-background-secondary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+            isCollapsed ? "justify-center px-0" : "px-2",
+          )}
           href="/agent/new"
         >
           <OrbitKnotMark className="size-8" active={working} />
@@ -253,14 +256,16 @@ export function AppSidebarFrame({
           )}
         >
           {!isCollapsed && <ThemeToggle />}
-          <SidebarTrigger className="text-foreground-icon-secondary hover:text-foreground-icon-primary" />
+          <SidebarTrigger className="rounded-2lg text-foreground-icon-secondary hover:bg-background-secondary-hover hover:text-foreground-icon-primary" />
         </div>
       </SidebarHeader>
-      <SidebarContent className="gap-1 px-2 pt-0.5 pb-3">
+      <SidebarContent
+        className={cn("gap-1 pt-0.5 pb-3", isCollapsed ? "items-center px-0" : "px-2")}
+      >
         {!isCollapsed && <SearchCommand />}
         {children}
       </SidebarContent>
-      <SidebarFooter className="px-2 pb-2">
+      <SidebarFooter className={cn("pb-2", isCollapsed ? "items-center px-0" : "px-2")}>
         <UserFooter />
       </SidebarFooter>
     </Sidebar>
