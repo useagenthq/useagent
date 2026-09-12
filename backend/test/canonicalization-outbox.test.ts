@@ -30,6 +30,7 @@ import {
 } from "../src/runs/canonical-events";
 import {
   announceRetryTimersForTest,
+  announcementGenerationForTest,
   announcementOwedForTest,
   captureLossForRun,
   captureLossLock,
@@ -76,6 +77,11 @@ const outboxRow = async (runId: string) => {
     sql`select state, source_frame_max, source_step_count, attempt_count from canonicalization_outbox where run_id = ${runId}`,
   )) as unknown as Array<{ state: string; source_frame_max: number | null; source_step_count: number | null; attempt_count: number }>;
   return row;
+};
+/** Poll a condition for up to two seconds, then assert it. */
+const until = async (ok: () => boolean) => {
+  for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));
+  expect(ok()).toBe(true);
 };
 const canonCount = async (runId: string) => {
   const [row] = (await db.execute(
@@ -468,11 +474,11 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
       await new Promise((r) => setTimeout(r, 60));
       expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
       expect(seen.some((e) => e.runId === RUN)).toBe(false);
+      hold.step(); // release pass 1; the bumped generation makes the same attempt run pass 2
+      await until(() => lastAnnouncementReadOfTest(RUN) === "degraded"); // pass 2 read the corrected seal
       hold.stop();
       await landed;
-      await new Promise((r) => setTimeout(r, 60));
-      expect(lastAnnouncementReadOfTest(RUN)).toBe("degraded"); // the attempt ran again after the bump
-      expect(seen.find((e) => e.runId === RUN)?.degraded).toBe(true);
+      await until(() => seen.some((e) => e.runId === RUN && e.degraded));
       expect(announcementOwedForTest(RUN)).toBe(false);
       expect(announceRetryTimersForTest(RUN)).toBe(0);
     } finally {
@@ -494,24 +500,30 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
     try {
       await recordProviderEvent({ id: `${RUN}-stream-0`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
       await drainProviderEvents(RUN);
-      await new Promise((r) => setTimeout(r, 60)); // the first attempt is held on pass 1
+      await until(() => lastAnnouncementReadOfTest(RUN) !== null); // the first attempt is held on pass 1
       const caller = flushCaptureLoss(RUN); // joins that attempt
       let callerSettled = false;
       void caller.then(() => { callerSettled = true; });
-      // A new loss lands during every held pass, so the generation keeps moving.
-      for (let n = 1; n <= 4; n++) {
+      // A new loss lands during every held pass, so the generation moves before each step.
+      const land = async (n: number) => {
+        const before = announcementGenerationForTest(RUN);
         await recordProviderEvent({ id: `${RUN}-stream-${n}`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
         await drainProviderEvents(RUN);
-        await new Promise((r) => setTimeout(r, 40));
+        await until(() => announcementGenerationForTest(RUN) > before); // its flush committed and owed anew
+      };
+      for (let n = 1; n <= 3; n++) {
+        await land(n);
+        expect(callerSettled).toBe(false); // still inside the first attempt's pass bound
         hold.step();
-        await new Promise((r) => setTimeout(r, 40));
+        await new Promise((r) => setTimeout(r, 30));
       }
-      // The attempt gave up after its pass bound, so the caller was released while the
-      // obligation was still moving, and a fresh attempt owns what is left.
-      expect(callerSettled).toBe(true);
+      // Three passes were made while the obligation kept moving: the first attempt handed
+      // off and its caller was released before the stream stopped.
+      await until(() => callerSettled);
+      expect(announcementOwedForTest(RUN)).toBe(true);
+      await land(4);
       hold.stop();
-      await new Promise((r) => setTimeout(r, 120));
-      expect(announcementOwedForTest(RUN)).toBe(false);
+      await until(() => !announcementOwedForTest(RUN));
       expect(seen.some((e) => e.runId === RUN && e.degraded)).toBe(true);
       expect(await captureLossForRun(RUN)).toEqual({ lostFrames: 5, lastError: expect.any(String) });
     } finally {

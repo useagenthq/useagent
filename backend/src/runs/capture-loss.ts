@@ -209,9 +209,12 @@ function announceDegradedSeal(runId: string): Promise<void> {
         where run_id = ${runId} and state = 'complete_degraded'`)) as unknown as Array<{
         thread_id: string; source_frame_max: number | null; source_step_count: number | null;
       }>;
-      lastAnnouncementReadForTest.set(runId, row ? "degraded" : "clean");
       const gate = announcementGatesForTest.get(runId);
-      if (gate) await gate();
+      if (gate) {
+        // Observation is opt-in: only a held run records what its passes read.
+        lastAnnouncementReadForTest.set(runId, row ? "degraded" : "clean");
+        await gate();
+      }
       if (row) {
         const rows = (await db.execute(sql`
           select count(*)::int as n from run_capture_loss where run_id = ${runId}`)) as unknown as Array<{ n: number | string }>;
@@ -308,6 +311,11 @@ export function holdAnnouncementForTest(runId: string): { step: () => void; stop
       release();
     },
   };
+}
+
+/** Tests only: the run's current announcement obligation generation. */
+export function announcementGenerationForTest(runId: string): number {
+  return announcementGeneration.get(runId) ?? 0;
 }
 
 /** Tests only: what the run's latest announcement pass read from the outbox. */
