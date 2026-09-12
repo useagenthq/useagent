@@ -8,6 +8,7 @@ import {
   RiErrorWarningLine,
   RiFileLine,
   RiFlashlightLine,
+  RiRobot2Line,
   RiFolder3Line,
   RiGitPullRequestLine,
   RiLoader4Line,
@@ -22,11 +23,13 @@ import {
   useReducer,
   useState,
 } from "react";
+import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cx as cn } from "@/utils/cx";
 import { relativeTime } from "@/utils/format";
 import {
   detectMentionTrigger,
+  botMention,
   fileMention,
   insertMentionToken,
   type Mention,
@@ -65,6 +68,7 @@ const CATEGORIES: {
   { kind: "pr", label: "Pull requests", description: "Open and recent pull requests", icon: RiGitPullRequestLine },
   { kind: "thread", label: "Threads", description: "Reference another thread", icon: RiChat3Line },
   { kind: "skill", label: "Skills", description: "Skills available to the agent", icon: RiFlashlightLine },
+  { kind: "bot", label: "Bots", description: "Hand part of this to a bot", icon: RiRobot2Line },
 ];
 
 const CATEGORY_LABEL: Record<MentionKind, string> = {
@@ -72,6 +76,7 @@ const CATEGORY_LABEL: Record<MentionKind, string> = {
   pr: "Pull requests",
   thread: "Threads",
   skill: "Skills",
+  bot: "Bots",
 };
 
 type Resource<T> = { status: "idle" | "loading" | "ready" | "error"; items: T[] };
@@ -81,10 +86,11 @@ type ThreadItem = { id: string; title: string; meta: string };
 type PullItem = { repo: string; number: number; title: string };
 type RepoItem = { full_name: string; private: boolean; default_branch: string | null };
 type TreeItem = { path: string; name: string; type: "file" | "dir" };
+type BotItem = { id: string; name: string; title: string };
 
 type MentionView =
   | { level: "root" }
-  | { level: "list"; kind: "skill" | "thread" | "pr" }
+  | { level: "list"; kind: "skill" | "thread" | "pr" | "bot" }
   | { level: "files"; repo: string | null; revision: string | null; dir: string };
 
 type MentionRow =
@@ -94,7 +100,8 @@ type MentionRow =
   | { type: "pr"; repo: string; number: number; title: string }
   | { type: "repo"; full_name: string; private: boolean }
   | { type: "dir"; path: string; name: string }
-  | { type: "file"; path: string; name: string };
+  | { type: "file"; path: string; name: string }
+  | { type: "bot"; id: string; name: string; title: string };
 
 function firstLine(text: string): string {
   const line = (text ?? "").split("\n").find((l) => l.trim().length > 0) ?? "";
@@ -131,6 +138,13 @@ async function fetchPulls(): Promise<PullItem[]> {
       typeof p.repo === "string" && typeof p.number === "number",
     )
     .map((p) => ({ repo: p.repo, number: p.number, title: p.title ?? "" }));
+}
+
+async function fetchBots(): Promise<BotItem[]> {
+  const res = await backendFetch("/api/bots");
+  if (!res.ok) throw new Error(`bots ${res.status}`);
+  const data = (await res.json()) as { bots?: { id: string; name: string; title: string; archived?: boolean }[] };
+  return (data.bots ?? []).filter((b) => !b.archived).map((b) => ({ id: b.id, name: b.name, title: b.title }));
 }
 
 async function fetchRepos(): Promise<RepoItem[]> {
@@ -227,6 +241,9 @@ export function useComposerMentions(opts: {
   const [repos, setRepos] = useState<Resource<RepoItem>>(IDLE);
   const [tree, setTree] = useState<Resource<TreeItem>>(IDLE);
   const [fetchedSkills, setFetchedSkills] = useState<Resource<MentionSkill>>(IDLE);
+  const [bots, setBots] = useState<Resource<BotItem>>(IDLE);
+  const { catalog } = useCapabilityCatalog();
+  const showBots = catalog?.bots === true;
 
   const trigger = enabled ? detectMentionTrigger(value, caret) : null;
   const open = trigger !== null && !dismissed;
@@ -276,6 +293,7 @@ export function useComposerMentions(opts: {
     };
     if (view.level === "list" && view.kind === "thread") void load(setThreads, fetchThreads);
     else if (view.level === "list" && view.kind === "pr") void load(setPulls, fetchPulls);
+    else if (view.level === "list" && view.kind === "bot") void load(setBots, fetchBots);
     else if (view.level === "list" && view.kind === "skill" && !skills)
       void load(setFetchedSkills, fetchSkillsPicker);
     else if (view.level === "files" && view.repo === null) void load(setRepos, fetchRepos);
@@ -298,6 +316,8 @@ export function useComposerMentions(opts: {
         view,
         query,
         skillItems,
+        bots,
+        showBots,
         skillStatus: skills ? "ready" : fetchedSkills.status,
         threads,
         pulls,
@@ -331,6 +351,7 @@ export function useComposerMentions(opts: {
       } else if (row.type === "skill") insertMention(skillMention(row.id, row.name));
       else if (row.type === "thread") insertMention(threadMention(row.id, row.title));
       else if (row.type === "pr") insertMention(prMention(row.repo, row.number, row.title));
+      else if (row.type === "bot") insertMention(botMention(row.id, row.name));
       else if (row.type === "repo") {
         const repo = repos.items.find((item) => item.full_name === row.full_name);
         setView({
@@ -445,11 +466,13 @@ function computeRows(input: {
   pulls: Resource<PullItem>;
   repos: Resource<RepoItem>;
   tree: Resource<TreeItem>;
+  bots: Resource<BotItem>;
+  showBots: boolean;
 }): { rows: MentionRow[]; status: Resource<unknown>["status"] } {
   const { view, query } = input;
   if (view.level === "root") {
     return {
-      rows: CATEGORIES.map((c) => ({
+      rows: CATEGORIES.filter((c) => c.kind !== "bot" || input.showBots).map((c) => ({
         type: "category" as const,
         kind: c.kind,
         label: c.label,
@@ -464,6 +487,13 @@ function computeRows(input: {
       .slice(0, ROW_CAP)
       .map((s) => ({ type: "skill" as const, id: s.id, name: s.name, tag: s.tag }));
     return { rows, status: input.skillStatus };
+  }
+  if (view.level === "list" && view.kind === "bot") {
+    const rows = input.bots.items
+      .filter((b) => includesQuery(b.name, query) || includesQuery(b.title, query))
+      .slice(0, ROW_CAP)
+      .map((b) => ({ type: "bot" as const, id: b.id, name: b.name, title: b.title }));
+    return { rows, status: input.bots.status };
   }
   if (view.level === "list" && view.kind === "thread") {
     const rows = input.threads.items
@@ -506,6 +536,8 @@ function chipIcon(kind: MentionKind) {
   switch (kind) {
     case "skill":
       return RiFlashlightLine;
+    case "bot":
+      return RiRobot2Line;
     case "thread":
       return RiChat3Line;
     case "pr":
@@ -518,6 +550,7 @@ function chipIcon(kind: MentionKind) {
 function chipLabel(m: Mention): string {
   switch (m.kind) {
     case "skill":
+    case "bot":
       return m.name;
     case "thread":
       return `thread/${m.shortId}`;
@@ -574,6 +607,8 @@ function rowIcon(row: MentionRow) {
       return CATEGORIES.find((c) => c.kind === row.kind)?.icon ?? RiFileLine;
     case "skill":
       return RiFlashlightLine;
+    case "bot":
+      return RiRobot2Line;
     case "thread":
       return RiChat3Line;
     case "pr":
@@ -591,6 +626,7 @@ function rowPrimary(row: MentionRow): string {
     case "category":
       return row.label;
     case "skill":
+    case "bot":
       return row.name;
     case "thread":
       return row.title;
@@ -610,6 +646,8 @@ function rowSecondary(row: MentionRow): string | undefined {
       return row.description;
     case "skill":
       return row.tag;
+    case "bot":
+      return row.title || "Bot";
     case "thread":
       return row.meta;
     case "pr":
@@ -625,6 +663,7 @@ const EMPTY_TEXT: Record<string, string> = {
   skill: "No matching skills.",
   thread: "No matching threads.",
   pr: "No matching pull requests.",
+  bot: "No matching bots.",
   files: "No matching files.",
 };
 
@@ -767,6 +806,8 @@ function rowKey(row: MentionRow, index: number): string {
       return `cat-${row.kind}`;
     case "skill":
       return `skill-${row.id}`;
+    case "bot":
+      return `bot-${row.id}`;
     case "thread":
       return `thread-${row.id}`;
     case "pr":

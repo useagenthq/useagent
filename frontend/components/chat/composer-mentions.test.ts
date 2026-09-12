@@ -1,3 +1,4 @@
+import { botMention, mentionedBotIds, mentionsToRunResources as toRunResources, skillMention } from "./composer-mentions";
 import { describe, expect, test } from "bun:test";
 import {
   detectMentionTrigger,
@@ -151,5 +152,15 @@ describe("identity + short id helpers", () => {
     expect(mentionKey(prMention("o/r", 9, "t"))).toBe("pr:o/r#9");
     expect(mentionKey(fileMention("o/r", "a/b.ts", null))).toBe("file:o/r:a/b.ts");
     expect(mentionKey(threadMention("abcd1234ef", "t"))).toBe("thread:abcd1234ef");
+  });
+});
+
+describe("bot mentions", () => {
+  test("a bot chip is a handoff, not a resource: token names it, the id rides separately", () => {
+    const nova = botMention("11111111-1111-4111-8111-111111111111", "Nova");
+    expect(nova.token).toBe("@bot/Nova");
+    expect(toRunResources([nova, skillMention("s1", "review-pr")])).toEqual([]);
+    expect(mentionedBotIds([nova, nova, skillMention("s1", "review-pr")])).toEqual(["11111111-1111-4111-8111-111111111111"]);
+    expect(mentionedBotIds([])).toEqual([]);
   });
 });

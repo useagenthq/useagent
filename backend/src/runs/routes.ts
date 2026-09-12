@@ -8,6 +8,8 @@ import {
   type RunStatus,
 } from "../db/schema";
 import { isMemoryScope } from "../memory/scope";
+import { dispatchBotHandoffs, parseBotMentions } from "../bots/handoffs";
+import { botsEnabled } from "../bots/rollout";
 import { orgScope } from "../middleware/org";
 import {
   getRun,
@@ -184,6 +186,11 @@ export async function handleRunCreate(
     return c.json({ error: "authenticated user required for attachments" }, 401);
   }
 
+  const botMentions = parseBotMentions(body.bot_mentions);
+  if ("error" in botMentions) return c.json({ error: "invalid_bot_mentions", reason: botMentions.error }, 400);
+  if (botMentions.ids.length > 0 && !botsEnabled(c.get("orgId"))) {
+    return c.json({ error: "bots_disabled" }, 404);
+  }
   const requestedResources = decodeRunResourceSelections(body.resources ?? []);
   if (!requestedResources) {
     return c.json({ error: "resources must be an array of valid resource selections" }, 400);
@@ -529,9 +536,24 @@ export async function handleRunCreate(
       // free, else the run stays queued (survives a restart; the reconciler
       // admits it later). ADDITIVE response: still `id`, plus `status` + `queue`.
       await pumpThread(threadId);
+      // @mentioned bots each get a delegated child thread on their own preset.
+      // The parent run is already durable; a handoff failure is reported, not fatal.
+      const handoffs = botMentions.ids.length > 0
+        ? await dispatchBotHandoffs({
+            orgId: c.get("orgId"),
+            actorId: c.get("userId"),
+            parentRunId: accepted.runId,
+            threadId,
+            text: prompt,
+            botIds: botMentions.ids,
+          }).catch((error: unknown) => {
+            console.error(`[bots] handoff dispatch failed for run ${accepted.runId}:`, error);
+            return null;
+          })
+        : [];
       const queue = await runQueueView(accepted.runId);
       const status = queue?.state === "queued" ? "queued" : "running";
-      return c.json({ id: accepted.runId, status, queue }, 201);
+      return c.json({ id: accepted.runId, status, queue, ...(handoffs && handoffs.length > 0 ? { handoffs } : {}) }, 201);
     }
     case "replayed":
       // The original run's worker is already running (or finished) — return its

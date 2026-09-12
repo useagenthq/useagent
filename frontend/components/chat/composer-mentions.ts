@@ -19,13 +19,14 @@
 
 import type { RunResourceSelection } from "@useagent/agent-client/wire";
 
-export type MentionKind = "skill" | "thread" | "pr" | "file";
+export type MentionKind = "skill" | "thread" | "pr" | "file" | "bot";
 
 export type Mention =
   | { kind: "skill"; id: string; name: string; token: string }
   | { kind: "thread"; id: string; shortId: string; title: string; token: string }
   | { kind: "pr"; repo: string; number: number; title: string; token: string }
-  | { kind: "file"; repo: string; path: string; revision: string | null; token: string };
+  | { kind: "file"; repo: string; path: string; revision: string | null; token: string }
+  | { kind: "bot"; id: string; name: string; token: string };
 
 // ---------------------------------------------------------------------------
 // Token builders + identity
@@ -47,6 +48,11 @@ export function fileToken(repo: string, path: string): string {
   return `@${repo}:${path}`;
 }
 
+/** A bot handoff. The token names the bot; the id rides in `bot_mentions`. */
+export function botToken(name: string): string {
+  return `@bot/${name}`;
+}
+
 /** Short, human-facing thread handle - the run id's leading segment. */
 export function shortThreadId(id: string): string {
   return id.slice(0, 8);
@@ -55,6 +61,8 @@ export function shortThreadId(id: string): string {
 /** Stable identity for dedupe + React keys (independent of the display token). */
 export function mentionKey(m: Mention): string {
   switch (m.kind) {
+    case "bot":
+      return `bot:${m.id}`;
     case "skill":
       return `skill:${m.id}`;
     case "thread":
@@ -82,6 +90,10 @@ export function prMention(repo: string, num: number, title: string): Mention {
 
 export function fileMention(repo: string, path: string, revision: string | null): Mention {
   return { kind: "file", repo, path, revision, token: fileToken(repo, path) };
+}
+
+export function botMention(id: string, name: string): Mention {
+  return { kind: "bot", id, name, token: botToken(name) };
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +165,7 @@ export function mentionsToRunResources(mentions: readonly Mention[]): RunResourc
   return mentions.flatMap((mention): RunResourceSelection[] => {
     switch (mention.kind) {
       case "skill":
+      case "bot":
         return [];
       case "thread":
         return [{
@@ -207,4 +220,9 @@ export function mentionsReducer(state: Mention[], action: MentionAction): Mentio
     case "clear":
       return [];
   }
+}
+
+/** Bot ids behind the @bot chips - sent as `bot_mentions`, each opens a handoff thread. */
+export function mentionedBotIds(mentions: readonly Mention[]): string[] {
+  return [...new Set(mentions.flatMap((m) => (m.kind === "bot" ? [m.id] : [])))];
 }

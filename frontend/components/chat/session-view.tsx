@@ -372,10 +372,11 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
       command?: { name: string; args: string } | null,
       attachmentIds: readonly string[] = [],
       resources: readonly RunResourceSelection[] = [],
+      botMentions: readonly string[] = [],
     ) => {
       // Native-question replies resume the blocked provider turn instead of enqueueing a run.
       if (activeQuestion && composerCanAnswerQuestion) {
-        if (attachmentIds.length > 0 || resources.length > 0) {
+        if (attachmentIds.length > 0 || resources.length > 0 || botMentions.length > 0) {
           throw new Error("Resources cannot be added while answering a native question");
         }
         const accepted = await submitQuestionAnswers(activeQuestion, [[text]]);
@@ -385,7 +386,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
       setPending({ text, runId: null });
       try {
         if (composerRelationshipBlocked) throw new Error("Child-session identity is still being verified. Try again in a moment.");
-        if (isProductChild && (command || resources.length > 0)) {
+        if (isProductChild && (command || resources.length > 0 || botMentions.length > 0)) {
           throw new Error("Commands and linked resources are not available in child follow-ups yet");
         }
         const res = submissionLane === "child"
@@ -403,6 +404,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
             memory_scope: memoryScope,
             ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}),
             ...(resources.length > 0 ? { resources } : {}),
+            ...(botMentions.length > 0 ? { bot_mentions: botMentions } : {}),
             // Catalog commands carry the exact provider session and revision so stale intent fails closed.
             ...(command
               ? {

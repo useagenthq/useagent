@@ -15,6 +15,9 @@ import {
 import { acceptProductChildBatch } from "../../runs/child-thread-batch-service";
 import { CHILD_BATCH_LIMIT, CHILD_PROMPT_MAX_CHARS, CHILD_TITLE_MAX_CHARS } from "../../runs/child-session-policy";
 import { productChildThreadsEnabled } from "../../runs/thread-relationship-rollout";
+import { composeHandoffPrompt, handoffsAvailable, recordBotHandoff, resolveBotMention } from "../../bots/handoffs";
+import { botsEnabled } from "../../bots/rollout";
+import { defaultModelForEngine } from "../../runs/model-policy";
 import { ENGINE_IDS, type EngineId } from "../../db/schema";
 
 const MAX_TEXT_EVENT_LINES = 20;
@@ -143,12 +146,31 @@ export const CHILD_SESSION_TOOLS = [
   },
 ] as const;
 
+/** Agent-side @mention: hand part of the work to a named bot on that bot's own preset. */
+export const BOT_HANDOFF_TOOL = {
+  name: "bot_handoff",
+  description:
+    "Hand a task to another bot by name or id, like @mentioning it. Opens one durable delegated child thread on THAT bot's engine, model and standing rules (cross-harness is fine), linked under the current thread. Idempotent by idempotencyKey. Use child_session_gather to read its result.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      idempotencyKey: { type: "string", description: "Stable key for this handoff; reuse it when retrying." },
+      bot: { type: "string", description: "The bot's name (case-insensitive) or id." },
+      prompt: { type: "string", description: `What you need from the bot, bounded to ${CHILD_PROMPT_MAX_CHARS} characters.` },
+      title: { type: "string", description: `Short title for the handoff thread, bounded to ${CHILD_TITLE_MAX_CHARS} characters.` },
+    },
+    required: ["idempotencyKey", "bot", "prompt"],
+  },
+} as const;
+
 export const CHILD_SESSION_TOOL_NAMES: ReadonlySet<string> = new Set(
-  CHILD_SESSION_TOOLS.map((tool) => tool.name),
+  [...CHILD_SESSION_TOOLS.map((tool) => tool.name), BOT_HANDOFF_TOOL.name],
 );
 
-export function advertisedChildSessionTools(productChildren = productChildThreadsEnabled()): readonly (typeof CHILD_SESSION_TOOLS)[number][] {
-  if (productChildren) return CHILD_SESSION_TOOLS;
+export function advertisedChildSessionTools(productChildren = productChildThreadsEnabled()): readonly ((typeof CHILD_SESSION_TOOLS)[number] | typeof BOT_HANDOFF_TOOL)[] {
+  // The bots surface is org-flagged; the handoff tool is advertised only when
+  // the flag is on globally (an allowlisted org still gets it at call time).
+  if (productChildren) return botsEnabled(null) ? [...CHILD_SESSION_TOOLS, BOT_HANDOFF_TOOL] : CHILD_SESSION_TOOLS;
   return CHILD_SESSION_TOOLS
     .filter((tool) => tool.name !== "child_session_create_many")
     .map((tool) => tool.name === "child_session_create"
@@ -417,6 +439,45 @@ async function gather(
   );
 }
 
+async function handoff(claims: ToolTokenClaims, args: Record<string, unknown>): Promise<ToolCallResult> {
+  const run = await currentRun(claims);
+  if (!run || !(await childSessionToolsEnabled(claims))) {
+    return errorResult("Handoffs require an active live turn with a dispatch-ready engine and model.");
+  }
+  if (!handoffsAvailable(claims.orgId)) {
+    return errorResult("Bot handoffs need the bots surface and product child threads enabled for this organization.");
+  }
+  const idempotencyKey = cleanString(args.idempotencyKey);
+  const mention = cleanString(args.bot);
+  const prompt = cleanString(args.prompt);
+  const title = cleanString(args.title);
+  if (!idempotencyKey) return errorResult("bot_handoff requires idempotencyKey.");
+  if (!mention) return errorResult("bot_handoff requires bot (name or id).");
+  if (!prompt) return errorResult("bot_handoff requires prompt.");
+  if (prompt.length > CHILD_PROMPT_MAX_CHARS) return errorResult(`bot_handoff prompt exceeds ${CHILD_PROMPT_MAX_CHARS} characters.`);
+  const bot = await resolveBotMention(claims.orgId, mention);
+  if (!bot) return errorResult(`No bot named ${mention}. Bots are listed in the workspace's Bots page.`);
+  const outcome = await createChildSession({
+    orgId: claims.orgId,
+    actorId: claims.userId || null,
+    parentRunId: run.id,
+    threadId: run.threadId,
+    prompt: composeHandoffPrompt(bot, prompt),
+    title: title || `${bot.name}: ${prompt.slice(0, 120)}`,
+    engine: bot.engine,
+    model: bot.model ?? defaultModelForEngine(bot.engine),
+    repos: [...bot.repos],
+    memoryScope: bot.memoryScope,
+    idempotencyKey: `${idempotencyKey}:${bot.id}`,
+  });
+  if (outcome.status === "conflict") return errorResult("idempotencyKey was already used for a different handoff.");
+  await recordBotHandoff({ orgId: claims.orgId, botId: bot.id, threadId: outcome.child.id, parentThreadId: run.threadId, sourceRunId: run.id });
+  return textResult(
+    `${outcome.status === "created" ? "Handed off to" : "Replayed handoff to"} ${bot.name} in child session ${outcome.child.id} (${outcome.child.status}).`,
+    { status: outcome.status, bot: { id: bot.id, name: bot.name, engine: bot.engine }, child: outcome.child },
+  );
+}
+
 export async function executeChildSessionToolLocal(
   claims: ToolTokenClaims,
   name: string,
@@ -427,6 +488,7 @@ export async function executeChildSessionToolLocal(
   if (name === "child_session_list") return list(claims, args);
   if (name === "child_session_events") return events(claims, args);
   if (name === "child_session_gather") return gather(claims, args);
+  if (name === BOT_HANDOFF_TOOL.name) return handoff(claims, args);
   return errorResult(`Unknown tool: ${name}`);
 }
 
