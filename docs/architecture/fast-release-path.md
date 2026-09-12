@@ -71,10 +71,10 @@ and production still runs the 17-step bash gate on rsynced source.
 ```
 CI (per main commit)        promote (critical path, <= 5 min)      certify (async)
 ------------------------    -----------------------------------    -----------------------
-unit/integration/contract   download artifact + verify sha         scheduled synthetic runs:
-build artifact (frontend    migration check (expansion-safe)       parity matrix, approvals,
-standalone + backend)       drain <= 30 s, swap, restart           questions, cancel, pi,
-upload keyed by commit      /api/health + release marker           product-child fan-out
+unit/integration/contract   pull manifest images by digest         scheduled synthetic runs:
+build + push three OCI      migration check (expansion-safe)       parity matrix, approvals,
+images for linux/amd64      drain <= 30 s, swap, restart           questions, cancel, pi,
+upload digest manifest      three health routes + commit marker    product-child fan-out
                             provider-readiness (auth only)         budgeted per day
                             ONE cheap 1-turn run per engine        alert -> rollback command
 ```
@@ -82,62 +82,83 @@ upload keyed by commit      /api/health + release marker           product-child
 Hard constraint: exactly one backend per database (boot recovery reconciles
 other processes' in-flight runs). So the swap is drain -> stop -> start, with
 admission closed for the swap window only (target <= 30 s). True overlap
-(Kamal-style) needs lease-owner-aware recovery (slice 6); until then, 30 s.
+(Kamal-style) needs lease-owner-aware recovery (slice 9); until then, 30 s.
 
 Budgets: promote wall-clock <= 5 min; admission closed <= 30 s per promote;
 rollback <= 60 s; a frontend-only change <= 3 min end to end.
 
 ## Slices (one PR each, in this order; each has a measured acceptance)
 
-1. **Open admission after the 2/17 health check; close only for the 15/17 swap.**
-   Delete the drain at gate start. Accept: admission-closed window per attempt
-   <= 60 s (from the admission log). Biggest user-facing win, ~20 lines.
-2. **Classify failures; resume instead of rollback.** Probe error / SSH timeout /
-   invalid probe -> keep the healthy candidate serving, exit with a resume hint,
-   evidence cache reused (it already exists). Product error -> rollback. Accept:
-   an SSH timeout no longer rolls back a candidate that passed health.
-3. **Artifact from CI.** GitHub Actions builds `frontend` (Next standalone) and
-   `backend` once per main commit, uploads a tarball keyed by commit (GHCR image
-   later if wanted). Host: `/opt/useagent/releases/<sha>` + `current` symlink;
-   deploy = download, verify sha, swap symlink, restart; rollback = re-point +
-   restart. No `bun install` or `bun run build` on the host. Accept: promote
-   <= 90 s, rollback <= 30 s.
-4. **Parallel parity + scope-aware lane.** `PARITY_CONCURRENCY=3` with a Daytona
-   headroom check. `--scope frontend` (diff vs deployed commit touches only
-   `frontend/**`): build + swap + restart frontend, `/api/health`, one page
-   smoke. Accept: a theme-only change deploys in <= 3 min.
-5. **Move the matrix out of the critical path.** approval / question / cancel /
-   desktop-recording / artifact-publish / pi / product-child canaries become a
-   scheduled `certify` job against the promoted release (budgeted runs per day,
-   evidence written, Slack alert on failure, `deploy rollback` to the previous
-   release dir). Critical path keeps: health, migration check, provider
-   readiness, one cheap single-turn run per engine. Accept: promote <= 5 min on
-   a backend change.
-6. **(Optional) lease-owner-aware boot recovery** so two backends can overlap for
-   ~10 s -> admission never closes. Only after 1-5 are measured.
+1. **CI images.** Add `.github/workflows/images.yml` using Buildx for all three
+   root-context Dockerfiles on `linux/amd64`, with independent GHA layer caches.
+   Pull requests build without publishing. `main` publishes
+   `ghcr.io/useagenthq/{backend,gateway,frontend}` with `sha-<12>` and `main`
+   tags, then uploads `release-manifest.json` containing the exact commit and
+   three digest-pinned image references. Accept: all images build in CI in under
+   10 minutes and the manifest contains immutable digests.
+2. **Health and readiness.** Add `GET /health` to the gateway, health checks to
+   both Compose files using the runtimes already inside the images, and a CI job
+   that runs `docker compose -f compose.local.yaml up -d --wait` before probing
+   all three routes. Accept: the local stack reaches healthy state in CI.
+3. **Promote and rollback.** Implement one Bun command that consumes the release
+   manifest, pulls by digest, warms the inactive frontend and gateway color,
+   performs the single-backend `close -> drain <= 30 s -> stop -> start` swap,
+   switches Caddy, reopens admission, proves health plus release identity, and
+   records release history. Rollback flips to the previous manifest. Prove it
+   first on a throwaway host from `infra/self-host/hetzner`, then destroy the
+   host. Accept: promote <= 5 minutes, admission closed <= 30 seconds, rollback
+   <= 60 seconds.
+4. **Kubernetes.** Add `charts/useagent`: backend uses one replica with `Recreate`
+   because it is the single database writer; frontend and gateway use
+   `RollingUpdate`; all have probes, Services, Ingress, external-Postgres Secret,
+   and manifest-supplied image values. Accept: Helm lint/template pass and the
+   README quickstart renders on kind.
+5. **Self-host Compose.** Add a pgvector-backed self-host Compose stack and a
+   fresh-VPS guide; make `infra/self-host/deploy-app.sh` consume images rather
+   than install Bun or Node on the host. Accept: fresh Ubuntu is healthy in under
+   10 minutes by following the guide.
+6. **Certification leaves promotion.** Run the existing live canaries every six
+   hours and on demand with a daily paid-run budget, durable evidence, and a
+   Slack alert containing the rollback command. Promotion keeps only health,
+   migration expansion safety, auth readiness, and one cheap turn per engine.
+   Provider availability failures alert instead of rolling back a healthy app.
+   Accept: zero multi-turn paid canaries during promotion.
+7. **Recorded provider fixtures.** Record and scrub real resume, model-switch,
+   approval, and cancel sessions per engine, then replay them with recording
+   disabled in CI. Fixtures contain no credentials, user data, host paths, or
+   provider account identifiers. Accept: the parity matrix runs offline in under
+   60 seconds.
+8. **Delete the legacy gate.** Remove the old release, restart, source-sync, and
+   applied one-off migration scripts plus their script-shaped tests. Keep the
+   sandbox and Cube image bakes. Accept: `deploy/hetzner` contains fewer than 40
+   files.
+9. **Optional overlap.** Only after slices 1-8 are measured, add lease-owner-aware
+   boot recovery so two backends may overlap briefly and admission need not
+   close.
 
 ## Test discipline for this work
 
 The deploy tree has ~150 files, most of them one test per shell script. New
-slices add tests only for pure planner/classifier logic (scope classifier,
-failure classifier, artifact manifest). No new test per bash step. Prefer
-deleting a gate step to testing it. `deploy/hetzner` file count must go down,
-not up. Every PR reports before/after numbers for: promote wall-clock,
-admission-closed seconds, rollback seconds, paid runs per promote.
+slices add tests only for pure planner/classifier logic (manifest parsing,
+color/port planning, and drain classification). No new test per shell step, no
+new canaries, and no new legacy gate steps. Prefer deletion to another wrapper.
+`deploy/hetzner` file count must go down, not up. Every PR reports before/after
+numbers for: promote wall-clock, admission-closed seconds, rollback seconds,
+and paid runs per promote.
 
 ## Prompt for the implementing agent
 
 > Implement `docs/architecture/fast-release-path.md` slice by slice, one PR per
-> slice, in order 1 -> 5. Do not touch a running deployment. Before slice 1,
+> slice, in order 1 -> 8. Do not touch production until slice 3 passes on a
+> throwaway host and Abhishek explicitly authorizes promotion. Before slice 1,
 > record the baseline from the host: promote wall-clock, admission-closed
 > seconds, rollback seconds, paid canary runs per promote. Each PR must report
 > the same four numbers after the change and meet the slice's acceptance line.
 > Do not add canaries, gate steps, or a test per script; tests only for pure
 > planner/classifier logic. The `deploy/hetzner` file count must not grow. Keep
 > `REQUIRE_SINGLE_BACKEND=1` semantics: swap is drain -> stop -> start, admission
-> closed for the swap window only. Slice 1 is a ~20-line change to
-> `release-gate.sh` (open admission after 2/17 health, close before 15/17) and
-> must ship today.
+> closed for the swap window only. Commit with `gh@abhishek.it`; keep core
+> release identifiers vendor-neutral.
 
 ## Sources
 
