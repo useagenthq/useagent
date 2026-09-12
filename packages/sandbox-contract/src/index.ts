@@ -195,10 +195,32 @@ export interface SandboxInventory {
   failedOrOom?: number;
 }
 
+export type SandboxTemplateState = "active" | "activating" | "inactive" | "absent" | "error";
+
+/** What a provider knows about a named template (snapshot/image) before a create. */
+export interface SandboxTemplateStatus {
+  readonly name: string;
+  readonly state: SandboxTemplateState;
+  /** Provider wording for a state other than active (the raw state name, an error reason, how long activation ran). */
+  readonly detail?: string;
+}
+
 export interface SandboxProvider {
   create(options?: SandboxCreateOptions): Promise<SandboxHandle>;
   get(sandboxId: string): Promise<SandboxHandle>;
   list(): AsyncIterable<SandboxHandle>;
+  /**
+   * OPTIONAL: report a template's state before creating from it and, when the
+   * provider parks unused templates (Daytona deactivates an idle snapshot),
+   * wake it and wait a bounded time for it to become active. `onActivating`
+   * fires once when a wait starts so the caller can show a step. Providers
+   * whose templates have no lifecycle omit it and the caller goes straight to
+   * create.
+   */
+  ensureTemplate?(
+    name: string,
+    options?: { readonly onActivating?: () => void | Promise<void> },
+  ): Promise<SandboxTemplateStatus>;
   /**
    * OPTIONAL capacity/inventory telemetry. Providers that can observe node-level
    * headroom (multi-node Cube) implement this; single-node or telemetry-less
@@ -292,6 +314,19 @@ export function isSandboxCredentialError(value: unknown): value is SandboxCreden
   return value instanceof Error && value.name === "SandboxCredentialError" && typeof (value as { httpStatus?: unknown }).httpStatus === "number";
 }
 
+/** A provider declared that it cannot open an interactive terminal from this server; the message says why. */
+export class SandboxTerminalUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SandboxTerminalUnavailableError";
+  }
+}
+
+/** True for a SandboxTerminalUnavailableError from any copy of this package. */
+export function isSandboxTerminalUnavailableError(value: unknown): value is SandboxTerminalUnavailableError {
+  return value instanceof Error && value.name === "SandboxTerminalUnavailableError";
+}
+
 export interface SandboxProviderPlugin<Config = unknown> {
   readonly kind: SandboxProviderKind;
   /** Product name for UI and logs. */
@@ -302,6 +337,11 @@ export interface SandboxProviderPlugin<Config = unknown> {
   readonly credentialRequired: boolean;
   /** Environment variable naming the snapshot/template new sandboxes start from, if the provider has one. */
   readonly templateEnv?: string;
+  /** Resources of the provider's base image (what a create without a template yields), when it has one. The
+   *  control plane falls back to the base image only when this meets the run's resource target. */
+  readonly baseImageResources?: { readonly cpu: number; readonly memory: number };
+  /** Why an interactive terminal cannot be opened on this provider from this server, or null when it can. */
+  interactiveTerminalProblem?(): string | null;
   /** Home of the runtime user inside this provider's sandboxes. */
   readonly home: string;
   /** Whether commands run as root (decides where root-only paths may be used). */
@@ -310,8 +350,10 @@ export interface SandboxProviderPlugin<Config = unknown> {
   previewAuthHeaders(token: string): Record<string, string>;
   /** Vendor config from the environment; throws on invalid settings. */
   configFromEnv(apiKey: string, env: SandboxEnv): Config;
-  /** The snapshot/template new sandboxes are created from; "" means the provider's base image. */
-  template(env: SandboxEnv, fallback: { readonly envName: string; readonly value: string }): string;
+  /** The snapshot/template new sandboxes are created from; "" means the provider's base image.
+   *  `templateEnv` names the operator variable for the lane being provisioned (the plugin's own
+   *  `templateEnv` when omitted); a plugin with several lanes keeps its defaults per variable. */
+  template(env: SandboxEnv, templateEnv?: string): string;
   createProvider(config: Config, ports?: SandboxProviderPorts): SandboxProvider;
   /** Validate a user-supplied key (and optional snapshot) without creating anything; throws SandboxCredentialError. */
   validateCredential?(input: SandboxCredentialInput, ports?: SandboxProviderPorts): Promise<void>;

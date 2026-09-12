@@ -89,7 +89,7 @@ describe("OpenCode generated config placement", () => {
     // Perf Phase 1: the same concurrent stages now flow through stagesTogether,
     // which honors the USEAGENT_SERIAL_STARTUP rollback flag (same DAG, concurrency 1).
     expect(source).toContain(
-      "const [desktop, cachedRuntimeServer, , baseOpenCodeConfig] = await stagesTogether([",
+      "const [desktop, cachedRuntimeServer, secretState, baseOpenCodeConfig] = await stagesTogether([",
     );
     expect(source).toContain(
       'prepareStage("base_config", () => readOpencodeSandboxConfig(box))',

@@ -6,6 +6,7 @@ import {
 } from "../sandboxes/provider";
 import { bindingRecord, bindingSnapshot, resolveSandboxBindingForRun } from "../sandboxes/binding";
 import { reviveRetainedSandbox } from "./thread-sandbox";
+import { provisionSandbox } from "./sandbox-provision";
 import type { EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import {
@@ -462,7 +463,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);
-      const snapshot = bindingSnapshot(binding, "DAYTONA_ACP_SNAPSHOT", "skynet-acp-v3");
+      const snapshot = bindingSnapshot(binding, "DAYTONA_ACP_SNAPSHOT");
       const resourceTarget = resolveSandboxResourceTarget();
 
       const key = ctx.threadId ? relayKey(ctx.threadId, cfg.id) : null;
@@ -533,16 +534,11 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             autoStopInterval,
             autoDeleteInterval,
           };
-          try {
-            // ACP dependencies are pinned in a non-root Daytona snapshot. This
-            // removes three fresh-thread npm installs while preserving the
-            // default `daytona` user Claude requires. A missing/inactive image
-            // degrades to the ordinary image and the idempotent install clause.
-            sandbox = await provider.create({ snapshot, ...sandboxConfig });
-            snapshotBacked = true;
-          } catch {
-            sandbox = await provider.create(sandboxConfig);
-          }
+          // ACP dependencies are pinned in a non-root Daytona snapshot (no fresh-thread
+          // npm installs); the base image is used only when it meets the resource target.
+          const provisioned = await provisionSandbox({ ctx, binding, snapshot, chip: cfg.id, create: sandboxConfig, resourceTarget });
+          sandbox = provisioned.sandbox;
+          snapshotBacked = provisioned.fromTemplate;
         }
         if (!sandbox) throw new Error("Sandbox provider returned no sandbox");
         const box = sandbox;

@@ -19,6 +19,8 @@ import {
   sandboxMeetsResourceTarget,
 } from "./daytona-resources";
 import { bindingRecord, resolveSandboxBindingForRun, resolveSandboxBindingForSandbox, resolveSandboxBindingForThread, type SandboxBinding } from "../sandboxes/binding";
+import { provisionSandbox } from "./sandbox-provision";
+import { noteLostWorkspace } from "./workspace-continuity";
 
 export interface ThreadSandboxLease {
   readonly sandbox: SandboxHandle;
@@ -101,7 +103,6 @@ export async function acquireThreadSandbox(
   options: ThreadSandboxOptions,
 ): Promise<ThreadSandboxLease> {
   const binding = await resolveSandboxBindingForRun(ctx);
-  const provider = binding.provider;
   const resourceTarget = resolveSandboxResourceTarget();
   const endRetained = ctx.timing?.begin(RUN_TIMING_STAGES.sandboxRetained);
   let sandbox: SandboxHandle | null;
@@ -134,6 +135,7 @@ export async function acquireThreadSandbox(
       try {
         sandbox = await claimCubeWarmSandbox(options.warmPool || undefined);
         endWarmPool?.(sandbox ? RUN_TIMING_OUTCOMES.hit : RUN_TIMING_OUTCOMES.miss);
+        if (sandbox) await noteLostWorkspace(ctx);
       } catch (error) {
         endWarmPool?.(RUN_TIMING_OUTCOMES.failure);
         throw error;
@@ -143,15 +145,21 @@ export async function acquireThreadSandbox(
     if (!sandbox) {
       const endCreate = ctx.timing?.begin(RUN_TIMING_STAGES.sandboxCreate);
       try {
-        sandbox = await provider.create({
+        sandbox = (await provisionSandbox({
+          ctx,
+          binding,
           snapshot: binding.credential === "user" ? (binding.snapshot ?? "") : options.snapshot,
-          labels: {
-            ...providerGatewaySandboxLabels(ctx.runId),
-            ...options.labels,
+          chip: options.chip,
+          create: {
+            labels: {
+              ...providerGatewaySandboxLabels(ctx.runId),
+              ...options.labels,
+            },
+            autoStopInterval: Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30),
+            autoDeleteInterval: Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320),
           },
-          autoStopInterval: Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30),
-          autoDeleteInterval: Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320),
-        });
+          resourceTarget,
+        })).sandbox;
         endCreate?.(RUN_TIMING_OUTCOMES.success);
       } catch (error) {
         endCreate?.(RUN_TIMING_OUTCOMES.failure);
@@ -160,7 +168,13 @@ export async function acquireThreadSandbox(
     }
   }
 
-  assertSandboxResources(sandbox, resourceTarget);
+  try {
+    assertSandboxResources(sandbox, resourceTarget);
+  } catch (error) {
+    // A fresh box below the target is never retained; it would only fail again.
+    if (!reused) await sandbox.delete().catch(() => {});
+    throw error;
+  }
   await persistSandboxBeforeExecution({
     runId: ctx.runId,
     sandboxId: sandbox.id,

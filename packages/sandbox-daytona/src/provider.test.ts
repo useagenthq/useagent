@@ -3,6 +3,7 @@ import {
   daytonaSandboxProvider,
   type DaytonaClientPort,
   type DaytonaSandboxPort,
+  type DaytonaSnapshotPort,
 } from "./provider";
 import { sandboxProviderConformance } from "@useagent/sandbox-contract/conformance";
 
@@ -85,13 +86,45 @@ function fakeSandbox(options: FakeSandboxOptions = {}): DaytonaSandboxPort {
   };
 }
 
-function fakeClient(sandboxes: readonly DaytonaSandboxPort[]): DaytonaClientPort & {
+/** A snapshot record that walks through the given states on each read (the last one sticks). */
+function fakeSnapshotStore(states: Record<string, readonly string[]>): DaytonaClientPort["snapshot"] & {
+  reads: string[];
+  activations: string[];
+} {
+  const remaining = new Map(Object.entries(states).map(([name, list]) => [name, [...list]]));
+  const reads: string[] = [];
+  const activations: string[] = [];
+  const current = (name: string): DaytonaSnapshotPort => {
+    const list = remaining.get(name);
+    if (!list) throw new Error(`Snapshot ${name} not found`);
+    const state = list.length > 1 ? list.shift()! : list[0]!;
+    return { name, state, errorReason: state === "error" ? "runner lost the image" : null };
+  };
+  return {
+    reads,
+    activations,
+    async get(name) {
+      reads.push(name);
+      return current(name);
+    },
+    async activate(snapshot) {
+      activations.push(snapshot.name);
+      return current(snapshot.name);
+    },
+  };
+}
+
+function fakeClient(
+  sandboxes: readonly DaytonaSandboxPort[],
+  snapshot: DaytonaClientPort["snapshot"] = fakeSnapshotStore({}),
+): DaytonaClientPort & {
   createOptions: unknown[];
 } {
   const byId = new Map(sandboxes.map((sandbox) => [sandbox.id, sandbox]));
   const createOptions: unknown[] = [];
   return {
     createOptions,
+    snapshot,
     async create(options) {
       createOptions.push(options);
       const created = sandboxes[0];
@@ -114,6 +147,59 @@ const config = {
   apiUrl: "https://daytona.example.com/api",
   target: "us",
 };
+
+describe("Daytona snapshot activation", () => {
+  const instant = { sleep: async () => {}, activationPollMs: 1 };
+
+  test("an active snapshot is reported without touching activation", async () => {
+    const store = fakeSnapshotStore({ "skynet-agent-v17": ["active"] });
+    const provider = daytonaSandboxProvider(config, fakeClient([fakeSandbox()], store), instant);
+    expect(await provider.ensureTemplate!("skynet-agent-v17")).toEqual({ name: "skynet-agent-v17", state: "active" });
+    expect(store.activations).toEqual([]);
+  });
+
+  test("an inactive snapshot is activated, the caller sees the wait, and polling ends at active", async () => {
+    const store = fakeSnapshotStore({ "skynet-acp-v3": ["inactive", "building", "building", "active"] });
+    const provider = daytonaSandboxProvider(config, fakeClient([fakeSandbox()], store), instant);
+    let activating = 0;
+    const status = await provider.ensureTemplate!("skynet-acp-v3", { onActivating: () => { activating += 1; } });
+    expect(status).toEqual({ name: "skynet-acp-v3", state: "active" });
+    expect(activating).toBe(1);
+    expect(store.activations).toEqual(["skynet-acp-v3"]);
+    expect(store.reads.length).toBeGreaterThan(2);
+  });
+
+  test("an absent snapshot is reported as absent, never activated", async () => {
+    const store = fakeSnapshotStore({});
+    const provider = daytonaSandboxProvider(config, fakeClient([fakeSandbox()], store), instant);
+    expect(await provider.ensureTemplate!("skynet-agent-v99")).toEqual({ name: "skynet-agent-v99", state: "absent" });
+    expect(store.activations).toEqual([]);
+  });
+
+  test("a snapshot that never comes back within the bound reports how long it waited", async () => {
+    const store = fakeSnapshotStore({ "skynet-agent-v17": ["inactive", "building"] });
+    let clock = 0;
+    const provider = daytonaSandboxProvider(config, fakeClient([fakeSandbox()], store), {
+      ...instant,
+      activationTimeoutMs: 10_000,
+      now: () => clock,
+      sleep: async () => { clock += 4_000; },
+    });
+    const status = await provider.ensureTemplate!("skynet-agent-v17");
+    expect(status.state).toBe("activating");
+    expect(status.detail).toMatch(/still building after \d+s/);
+  });
+
+  test("a snapshot in an error state surfaces the provider's reason", async () => {
+    const store = fakeSnapshotStore({ "skynet-agent-v17": ["error"] });
+    const provider = daytonaSandboxProvider(config, fakeClient([fakeSandbox()], store), instant);
+    expect(await provider.ensureTemplate!("skynet-agent-v17")).toEqual({
+      name: "skynet-agent-v17",
+      state: "error",
+      detail: "runner lost the image",
+    });
+  });
+});
 
 describe("Daytona sandbox provider", () => {
   sandboxProviderConformance("Daytona", () => {

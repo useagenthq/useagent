@@ -160,7 +160,7 @@ const STOPPED_STATES = new Set(["stopped", "archived", "paused"]);
 export async function getMachineStats(orgId: string): Promise<MachineStats> {
   let snapshot: string;
   try {
-    snapshot = sandboxTemplate("DAYTONA_SNAPSHOT", "skynet-agent-v17") || `${sandboxPlugin(sandboxProviderKind()).label} base image`;
+    snapshot = sandboxTemplate("DAYTONA_SNAPSHOT") || `${sandboxPlugin(sandboxProviderKind()).label} base image`;
   } catch {
     snapshot = "unconfigured";
   }

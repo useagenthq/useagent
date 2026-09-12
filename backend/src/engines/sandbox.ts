@@ -42,6 +42,7 @@ import {
   withSandboxOutputRedaction,
 } from "./sandbox-output-redaction";
 import { bindingSnapshot, resolveSandboxBindingForRun } from "../sandboxes/binding";
+import { provisionSandbox } from "./sandbox-provision";
 export { createSandboxSessionRevealPersister } from "./sandbox-session-persistence";
 export { sandboxExitError, withSandboxOutputRedaction } from "./sandbox-output-redaction";
 
@@ -466,7 +467,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       // world alive for days before deletion.
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320); // 3 days
-      const snapshot = bindingSnapshot(binding, "DAYTONA_ACP_SNAPSHOT", "skynet-acp-v3");
+      const snapshot = bindingSnapshot(binding, "DAYTONA_ACP_SNAPSHOT");
       const resourceTarget = resolveSandboxResourceTarget();
       let sandbox: SandboxHandle | null = null;
       let retainForThread = false;
@@ -523,13 +524,14 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         const provisionedFresh = !sandbox;
         if (provisionedFresh) {
           await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: spec.id });
-          sandbox = await provider.create({
+          sandbox = (await provisionSandbox({
+            ctx,
+            binding,
             snapshot,
-            envVars,
-            labels: providerGatewaySandboxLabels(ctx.runId),
-            autoStopInterval,
-            autoDeleteInterval,
-          });
+            chip: spec.id,
+            create: { envVars, labels: providerGatewaySandboxLabels(ctx.runId), autoStopInterval, autoDeleteInterval },
+            resourceTarget,
+          })).sandbox;
         }
         if (!sandbox) throw new Error("Sandbox provider returned no sandbox");
         const box = sandbox;
