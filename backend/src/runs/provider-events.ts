@@ -135,8 +135,8 @@ export async function providerEventExists(id: string): Promise<boolean> {
 
 /** Highest seq already persisted for a run (−1 when none) — seeds the counter so
  *  a re-created sequencer continues the sequence instead of colliding. */
-async function highestSeq(runId: string): Promise<number> {
-  const [row] = await db
+async function highestSeq(runId: string, exec: Executor = db): Promise<number> {
+  const [row] = await exec
     .select({ max: sql<number | null>`max(${providerEvents.seq})` })
     .from(providerEvents)
     .where(eq(providerEvents.runId, runId));
@@ -189,7 +189,7 @@ export function recordProviderEvent(
       runSequencers.delete(input.runId);
     }
   });
-  return opts.required ? attempt : done;
+  return opts.required || fence ? attempt : done; // a fenced write is always required
 }
 
 /**
@@ -332,7 +332,10 @@ async function persistFrame(
   seq: RunSequencer,
   exec: Executor,
 ): Promise<{ frame: ReturnType<typeof makeNativeFrame>; assignedSeq: number }> {
-  if (seq.nextSeq === null) seq.nextSeq = (await highestSeq(input.runId)) + 1;
+  // Seeded on the SAME connection as the write: a fenced write holds a pooled connection
+  // and the claim row's lock, so reaching for a second connection here could exhaust the
+  // pool when several first captures overlap.
+  if (seq.nextSeq === null) seq.nextSeq = (await highestSeq(input.runId, exec)) + 1;
   const assignedSeq = seq.nextSeq++;
 
   let payload: string | null = null;

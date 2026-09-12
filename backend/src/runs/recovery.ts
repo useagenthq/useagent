@@ -351,7 +351,7 @@ function recordReconcilingMarker(
  *  with another run. Payloads are redacted like the live lane. Returns the
  *  number durably present after this probe; strict terminal ingestion throws so
  *  the caller retains the run for retry instead of sealing incomplete history. */
-async function ingestReconciliationEvents(
+export async function ingestReconciliationEvents(
   entry: Pick<ReconcileEntry, "runId" | "threadId">,
   redact: Awaited<ReturnType<typeof orgSecretRedactor>>,
   events: readonly HarnessInterimEvent[],

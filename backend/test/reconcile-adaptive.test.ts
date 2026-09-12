@@ -8,6 +8,7 @@ import { acceptRunCommand } from "../src/commands";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../src/commands/cancel";
 import {
   createTickGuard,
+  ingestReconciliationEvents,
   recoverStaleRuns,
   runDueReconciles,
   RUN_RECONCILING,
@@ -658,6 +659,39 @@ describe("overlapping ticks", () => {
       id: `pe_${runId}_t3_locked`, runId, threadId, provider: "t3", eventType: "t3.activity.message.delta",
       nativePartId: "locked", payload: { text: "stale" },
     }, { required: true, fence: (tx) => reconcileClaimHeldForUpdate(runId, claim!.leaseUntil, tx) })).rejects.toBeInstanceOf(CaptureFenceError);
+    await finalizeRun(runId, "failed", "test teardown", 0);
+  });
+
+  test("a claim lost between two recovered events keeps the first event and its count", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId);
+    const [claim] = await claimDueReconciles(1);
+    const events: HarnessInterimEvent[] = ["first", "second"].map((part) => ({
+      id: `pe_${runId}_t3_${part}`, runScopedId: true, provider: "t3", eventType: "t3.activity.message.delta",
+      sessionId: "ses_x", partId: part, payload: { text: part },
+    }));
+    let writes = 0;
+    // The claim moves on between the two writes (as a replacement's claim would).
+    const fence = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
+      if (writes++ === 1) {
+        await db.update(reconcileQueue).set({ nextAttemptAt: new Date(Date.now() + 90_000) }).where(eq(reconcileQueue.runId, runId));
+      }
+      return reconcileClaimHeldForUpdate(runId, claim!.leaseUntil, tx);
+    };
+    const redact = { text: (v: string) => v, unknown: (v: unknown) => v } as never;
+    const outcome = await ingestReconciliationEvents({ runId, threadId }, redact, events, false, fence).catch((e) => e);
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as { recovered?: number }).recovered).toBe(1); // the first event's count survives the lost claim
+    const rows = await db.select().from(providerEvents).where(and(eq(providerEvents.runId, runId), sql`${providerEvents.id} like ${`pe_${runId}_t3_%`}`));
+    expect(rows.map((r) => r.id)).toEqual([`pe_${runId}_t3_first`]); // and only the first landed
+    await finalizeRun(runId, "failed", "test teardown", 0);
+  });
+
+  test("a fence without required still surfaces the lost claim to the caller", async () => {
+    const { runId, threadId } = await seedRunning();
+    await expect(recordProviderEvent({
+      id: `pe_${runId}_t3_unrequired`, runId, threadId, provider: "t3", eventType: "t3.activity.message.delta",
+    }, { fence: async () => false })).rejects.toBeInstanceOf(CaptureFenceError);
     await finalizeRun(runId, "failed", "test teardown", 0);
   });
 
