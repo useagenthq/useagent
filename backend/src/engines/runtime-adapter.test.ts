@@ -464,10 +464,16 @@ describe("T3 run adapter gate", () => {
     expect(ackIdx).toBeGreaterThan(reloadIdx);
     expect(establishIdx).toBeGreaterThan(ackIdx);
     expect(steerIdx).toBeGreaterThan(establishIdx);
-    const reloadSource = source.slice(
-      source.indexOf("export async function reloadRetainedOpenCodeSession"),
-      source.indexOf("export function runtimeAdapterEnabled"),
+    const reloadModuleSource = readFileSync(
+      new URL("./runtime-session-stop.ts", import.meta.url),
+      "utf8",
     );
+    const reloadFunctionIdx = reloadModuleSource.indexOf(
+      "export async function reloadRetainedOpenCodeSession",
+    );
+    expect(reloadFunctionIdx).toBeGreaterThan(-1);
+    const reloadSource = reloadModuleSource.slice(reloadFunctionIdx);
+    expect(reloadSource.length).toBeGreaterThan(0);
     expect(reloadSource).not.toContain("restartRuntimeEnvironment");
     expect(reloadSource).not.toContain("deleteSession");
     expect(reloadSource).not.toContain("sandbox.delete");
