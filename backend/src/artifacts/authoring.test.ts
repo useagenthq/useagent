@@ -17,6 +17,7 @@ import {
 } from "./authoring";
 import { setArtifactStorageForTest } from "./storage";
 import { InMemoryArtifactStorage } from "../../test/in-memory-artifact-storage";
+import { createArtifactRecord } from "./repo";
 import "../../test/helpers";
 
 const ORG = "org-skynet-dev";
@@ -205,30 +206,70 @@ describe("browser-authored artifacts", () => {
     expect(Buffer.from(stored).equals(source)).toBe(true);
     const events = await createdArtifactEvents(runId);
     expect(events).toHaveLength(1);
+    await expect(createAuthoredArtifact({
+      orgId: ORG,
+      userId: USER,
+      runId,
+      kind: "spreadsheet",
+      uploadId: input.id,
+    })).rejects.toMatchObject({ code: "upload_unavailable" });
+    expect(await db.select().from(artifacts).where(eq(artifacts.runId, runId))).toHaveLength(1);
+    expect(await createdArtifactEvents(runId)).toHaveLength(1);
+    expect(Buffer.from(await storage.read(result.artifact.sha256)).equals(source)).toBe(true);
   });
 
   test("emits one created event across idempotent authored replay", async () => {
     const runId = await sandboxRun();
-    const first = await createAuthoredArtifact({
+    const input = {
       orgId: ORG,
       userId: USER,
       runId,
-      kind: "document",
+      kind: "document" as const,
       name: "release-notes.docx",
       state: { text: "# Release\nShip it" },
+    };
+    const first = await createAuthoredArtifact(input);
+    expect(first.artifact.source_path).toStartWith("/.skynet/artifact-workspace/");
+    const firstBytes = await storage.read(first.artifact.sha256);
+    await db.update(artifacts)
+      .set({ sourcePath: first.artifact.source_path.replace("/.skynet/", "/.useagent/") })
+      .where(eq(artifacts.id, first.artifact.id));
+    const [historical] = await db.select().from(artifacts).where(eq(artifacts.id, first.artifact.id));
+    if (!historical) throw new Error("missing authored fixture");
+    const canonicalReplay = await createAuthoredArtifact(input);
+    expect(canonicalReplay.created).toBe(false);
+    expect(canonicalReplay.artifact.id).toBe(first.artifact.id);
+    expect(canonicalReplay.artifact.source_path).toBe(historical.sourcePath);
+    expect(canonicalReplay.artifact.workpiece).toEqual(first.artifact.workpiece);
+    expect(await storage.read(first.artifact.sha256)).toEqual(firstBytes);
+    expect(await db.select().from(artifacts).where(eq(artifacts.sourcePath, historical.sourcePath)))
+      .toHaveLength(1);
+    expect(await createdArtifactEvents(runId)).toHaveLength(1);
+
+    const second = await createArtifactRecord({
+      orgId: historical.orgId,
+      userId: historical.userId,
+      runId: historical.runId,
+      threadId: historical.threadId,
+      sourcePath: historical.sourcePath,
+      name: historical.name,
+      contentType: historical.contentType,
+      sizeBytes: historical.sizeBytes,
+      sha256: "f".repeat(64),
+      storageKey: "f".repeat(64),
+      workpieceKind: historical.workpieceKind,
+      workpieceState: historical.workpieceState,
     });
-    const replay = await createAuthoredArtifact({
-      orgId: ORG,
-      userId: USER,
-      runId,
-      kind: "document",
-      name: "release-notes.docx",
-      state: { text: "# Release\nShip it" },
-    });
+    expect(second.created).toBe(true);
+    const replay = await createAuthoredArtifact(input);
 
     expect(first.created).toBe(true);
     expect(replay.created).toBe(false);
-    expect(replay.artifact.id).toBe(first.artifact.id);
+    expect([first.artifact.id, second.row.id]).toContain(replay.artifact.id);
+    expect(replay.artifact.source_path).toStartWith("/.useagent/artifact-workspace/");
+    expect(replay.artifact.workpiece).toEqual(first.artifact.workpiece);
+    expect(await db.select().from(artifacts).where(eq(artifacts.sourcePath, historical.sourcePath)))
+      .toHaveLength(2);
     const events = await createdArtifactEvents(runId);
     expect(events).toHaveLength(1);
     expect(events[0]?.id).toBe(`artifact.created:${first.artifact.id}`);

@@ -52,7 +52,9 @@ import {
 } from "../sandboxes/workspace";
 
 export const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024;
-const TRUSTED_OUTPUT_SOURCE_ROOT = "/.skynet/provider-output";
+const LEGACY_TRUSTED_OUTPUT_SOURCE_ROOT = "/.skynet/provider-output";
+const CANONICAL_TRUSTED_OUTPUT_SOURCE_ROOT = "/.useagent/provider-output";
+const TRUSTED_OUTPUT_SOURCE_ROOT = LEGACY_TRUSTED_OUTPUT_SOURCE_ROOT;
 
 function safeName(sourcePath: string, requested?: string): string {
   const candidate = requested?.trim() || basename(sourcePath.replaceAll("\\", "/")) || "artifact";
@@ -80,6 +82,17 @@ function trustedOutputSourcePath(
     identityDigest.update(part);
   }
   return `${TRUSTED_OUTPUT_SOURCE_ROOT}/${safeProvider}/${identityDigest.digest("hex")}`;
+}
+
+function trustedOutputSourceAliases(sourcePath: string): readonly [string, string] {
+  const legacySourcePath = sourcePath.replace(
+    CANONICAL_TRUSTED_OUTPUT_SOURCE_ROOT,
+    LEGACY_TRUSTED_OUTPUT_SOURCE_ROOT,
+  );
+  return [
+    legacySourcePath,
+    legacySourcePath.replace(LEGACY_TRUSTED_OUTPUT_SOURCE_ROOT, CANONICAL_TRUSTED_OUTPUT_SOURCE_ROOT),
+  ];
 }
 
 type TrustedArtifactEventRecorder = typeof recordProviderEventIfAbsent;
@@ -552,9 +565,13 @@ export async function publishTrustedArtifact(input: {
   const stored = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${[
       "trusted-artifact-publish",
-      sourcePath,
+      trustedOutputSourceAliases(sourcePath)[0],
     ].join(":")}))`);
-    const existing = await getArtifactForRunSourcePath(run.id, sourcePath, tx);
+    const [legacySourcePath, canonicalSourcePath] = trustedOutputSourceAliases(sourcePath);
+    const legacyMatch = await getArtifactForRunSourcePath(run.id, legacySourcePath, tx);
+    const canonicalMatch = await getArtifactForRunSourcePath(run.id, canonicalSourcePath, tx);
+    if (legacyMatch && canonicalMatch) throw new Error("trusted output identity aliases conflict");
+    const existing = legacyMatch ?? canonicalMatch;
     if (existing) {
       if (
         existing.sha256 !== digest ||

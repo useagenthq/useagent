@@ -4,6 +4,7 @@ import JSZip from "jszip";
 import PptxGenJS from "pptxgenjs";
 import * as artifactFormats from "@useagent/artifact-formats";
 import type { SandboxProviderKind } from "@useagent/sandbox-contract";
+import { eq } from "drizzle-orm";
 import {
   csvToWorkbook,
   migrateHtmlToDocument,
@@ -34,6 +35,8 @@ import {
 import { deleteSecret, upsertSecret } from "../src/secrets/store";
 import { createOrgSession, fetchApi, json, type OrgSession } from "./helpers";
 import { InMemoryArtifactStorage } from "./in-memory-artifact-storage";
+import { db } from "../src/db/client";
+import { artifacts, providerEvents } from "../src/db/schema";
 
 let sandboxBytes = new TextEncoder().encode("sandbox-to-browser\nexact bytes\n");
 const SOURCE_BYTES = sandboxBytes;
@@ -140,6 +143,10 @@ describe("durable artifacts", () => {
       sourceKey: TRUSTED_SOURCE_KEY,
       output,
     });
+    expect(first.record.sourcePath).toStartWith("/.skynet/provider-output/");
+    await db.update(artifacts)
+      .set({ sourcePath: first.record.sourcePath.replace("/.skynet/", "/.useagent/") })
+      .where(eq(artifacts.id, first.record.id));
     const duplicate = await publishTrustedArtifact({
       orgId: owner.orgId,
       userId: owner.email,
@@ -154,10 +161,28 @@ describe("durable artifacts", () => {
     expect(duplicate.artifact.id).toBe(first.artifact.id);
     expect(await storage.read(first.record.storageKey)).toEqual(bytes);
     const record = await getArtifact(first.record.id);
-    expect(record?.sourcePath).toStartWith("/.skynet/provider-output/codex/");
+    expect(record?.sourcePath).toStartWith("/.useagent/provider-output/codex/");
     expect(record?.name).toBe("generated.png");
     expect(record?.sourcePath).not.toContain("/host/");
     expect(record?.sourcePath).not.toContain("generated");
+    expect(await db.select().from(artifacts).where(eq(artifacts.runId, runId))).toHaveLength(1);
+    expect(await db.select().from(providerEvents).where(eq(providerEvents.runId, runId)))
+      .toHaveLength(1);
+
+    const changed = await readTrustedImageOutput({
+      kind: "trusted_bytes",
+      bytes: new Uint8Array([...bytes, 0x02]),
+      name: "changed.png",
+    }, 1024);
+    await expect(publishTrustedArtifact({
+      orgId: owner.orgId,
+      userId: owner.email,
+      runId,
+      provider: "codex",
+      sourceKey: TRUSTED_SOURCE_KEY,
+      output: changed,
+    })).rejects.toThrow("trusted output identity conflict");
+    expect(await db.select().from(artifacts).where(eq(artifacts.runId, runId))).toHaveLength(1);
   });
 
   test("keeps one artifact per stable identity and repairs a failed created event on retry", async () => {
