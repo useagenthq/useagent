@@ -16,6 +16,7 @@ export const cubePlugin: SandboxProviderPlugin<CubeApiConfig> = {
   // Cube templates run as root with the Daytona-shaped home the runner expects.
   home: "/home/daytona",
   runsAsRoot: true,
+  runtime: { home: "/root", workdir: "/root/work" },
   previewAuthHeaders: cubePreviewAuthHeaders,
   configFromEnv(apiKey) {
     // Every other Cube setting is read from the process environment by the provider itself.

@@ -5,6 +5,7 @@ import {
   preparePiRuntime,
   piApiForProvider,
   piModelSelection,
+  PI_BRIDGE_GENERATION,
   PI_BUN_VERSION,
   PI_CODING_AGENT_UPSTREAM_SHA,
   PI_CODING_AGENT_VERSION,
@@ -23,6 +24,7 @@ afterEach(() => {
 
 describe("Pi runtime configuration", () => {
   test("pins the npm release corresponding to the reviewed upstream revision", async () => {
+    expect(PI_BRIDGE_GENERATION).toBe(4);
     expect(PI_CODING_AGENT_VERSION).toBe("18.0.3");
     expect(PI_BUN_VERSION).toBe("1.3.14");
     expect(PI_CODING_AGENT_UPSTREAM_SHA).toBe("160ed439ac0df594347e7d7018b813a7ffdb5e81");
@@ -111,5 +113,62 @@ describe("Pi runtime configuration", () => {
       runAsUser: "useagent-pi",
       home: "/home/useagent-pi",
     });
+  });
+
+  test("uses only user-writable Box paths and the current sandbox user", async () => {
+    process.env.SANDBOX_SECRET_MODE = "gateway_only";
+    process.env.PROVIDER_GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-secret-provider-secret-1234";
+    process.env.GATEWAY_PUBLIC_URL = "https://tools.example.test";
+    process.env.TOOL_GATEWAY_SECRET = "tools-secret-tools-secret-12345678";
+    const uploads: Array<{ path: string; text: string }> = [];
+    const commands: string[] = [];
+    const sandbox = {
+      id: "box",
+      labels: { [SANDBOX_GENERATION_LABEL]: SANDBOX_GENERATION },
+      fs: {
+        uploadFile: mock(async (bytes: Buffer, path: string) => {
+          uploads.push({ path, text: bytes.toString("utf8") });
+        }),
+      },
+      process: {
+        executeCommand: mock(async (command: string) => {
+          commands.push(command);
+          return { exitCode: 0, result: "" };
+        }),
+      },
+    } as never;
+
+    const runtime = await preparePiRuntime(
+      sandbox,
+      {
+        runId: "run",
+        threadId: "thread",
+        orgId: "org",
+        userId: "user",
+        model: "openai/gpt-5.6-sol",
+        prompt: "clean user prompt",
+      } as never,
+      "/home/user/work",
+      { home: "/home/user", workdir: "/home/user/work", runsAsRoot: false },
+    );
+
+    expect(runtime).toMatchObject({
+      executable: "/home/user/.useagent/pi-runtime/current/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js",
+      bunExecutable: "/home/user/.useagent/pi-runtime/current/node_modules/.bin/bun",
+      runAsUser: null,
+      home: "/home/user/.useagent/pi",
+    });
+    expect(uploads.map((entry) => entry.path)).toContain(
+      "/home/user/.useagent/pi-broker/capabilities.json",
+    );
+    const commandText = commands.join("\n");
+    expect(commandText).toContain("/home/user/work");
+    expect(commandText).toContain("/home/user/.useagent/pi-runtime");
+    expect(commandText).not.toContain("useradd");
+    expect(commandText).not.toContain("chown");
+    expect(commandText).not.toContain("/root");
+    expect(commandText).not.toContain("/opt");
+    expect(commandText).not.toContain("clean user prompt");
   });
 });

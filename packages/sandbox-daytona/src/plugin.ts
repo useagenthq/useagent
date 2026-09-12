@@ -61,6 +61,7 @@ export const daytonaPlugin: SandboxProviderPlugin<DaytonaApiConfig> = {
   baseImageResources: { cpu: 1, memory: 1 },
   home: "/home/daytona",
   runsAsRoot: true,
+  runtime: { home: "/root", workdir: "/root/work" },
   previewAuthHeaders: daytonaPreviewAuthHeaders,
   configFromEnv: daytonaApiConfig,
   template(env, templateEnv = "DAYTONA_SNAPSHOT") {

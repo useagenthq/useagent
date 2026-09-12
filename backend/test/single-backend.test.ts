@@ -42,6 +42,7 @@ describe("single-backend guard (release enforcement)", () => {
     await expect(enforceSingleBackend({ required: true, connect })).rejects.toThrow(
       "single-backend guard unavailable",
     );
+    expect(await enforceSingleBackend({ required: false, connect })).toBe(false);
   });
 
   test("strict mode rejects a duplicate backend", async () => {

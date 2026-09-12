@@ -31,6 +31,17 @@ export type {
 export { boxApiConfig } from "@useagent/sandbox-box";
 export type { DaytonaApiConfig };
 
+export interface SandboxRuntimeLayout {
+  readonly home: string;
+  readonly workdir: string;
+  readonly runsAsRoot: boolean;
+}
+
+export function sandboxRuntimeLayout(kind: SandboxProviderKind): SandboxRuntimeLayout {
+  const plugin = sandboxPlugin(kind);
+  return { ...plugin.runtime, runsAsRoot: plugin.runsAsRoot };
+}
+
 export function sandboxProviderKind(env: SandboxEnv = process.env): SandboxProviderKind {
   const value = env.SANDBOX_PROVIDER?.trim().toLowerCase() || "daytona";
   if (!isSandboxProviderKind(value)) {
@@ -78,7 +89,10 @@ export function sandboxTemplate(templateEnv: string, env: SandboxEnv = process.e
 
 /** The control-plane ports a provider of `kind` gets: durable labels and the runtime readiness probe. */
 export function sandboxProviderPorts(kind: SandboxProviderKind): SandboxProviderPorts {
-  return { labels: dbSandboxLabelStore(kind), identityPreflightCommand: buildRuntimeIdentityPreflightCommand() };
+  return {
+    labels: dbSandboxLabelStore(kind),
+    identityPreflightCommand: buildRuntimeIdentityPreflightCommand(sandboxRuntimeLayout(kind)),
+  };
 }
 
 /** A provider of `kind` for a given key (env or a user's stored credential). */

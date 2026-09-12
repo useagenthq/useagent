@@ -46,15 +46,15 @@ describe("Pi provider driver", () => {
     const resumed = await driver.resume({
       session: harnessSession(),
       metadata: {
-        workdir: "/root/work",
+        workdir: "/home/user/work",
         runtime: {
           fingerprint: "fingerprint",
           knowledgeTools: true,
           model: { provider: "openai", modelId: "gpt", selector: "openai/gpt" },
-          executable: "/opt/useagent/pi-runtime/current/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js",
-          bunExecutable: "/opt/useagent/pi-runtime/bin/bun",
-          runAsUser: "useagent-pi",
-          home: "/home/useagent-pi",
+          executable: "/home/user/.useagent/pi-runtime/current/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js",
+          bunExecutable: "/home/user/.useagent/pi-runtime/bin/bun",
+          runAsUser: null,
+          home: "/home/user/.useagent/pi",
         },
       },
     });

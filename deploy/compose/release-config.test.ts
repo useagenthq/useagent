@@ -46,13 +46,14 @@ describe("release configuration", () => {
 			"ARTIFACT_STORAGE_DIR: /app/backend/.artifacts",
 			"RUNS_ROOT: /app/backend/.runs",
 			"SLACK_UPLOAD_STAGING_ROOT: /app/backend/.slack-uploads",
-			"SCRATCH_DIR: /tmp",
+			"SCRATCH_DIR: /var/lib/useagent/scratch/${USEAGENT_RELEASE_COLOR}",
 			"NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt",
 			"SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt",
 			"USEAGENT_HOST_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt",
 			"/var/lib/useagent/artifacts:/app/backend/.artifacts",
 			"/var/lib/useagent/runs:/app/backend/.runs",
 			"/var/lib/useagent/slack-uploads:/app/backend/.slack-uploads",
+			"/var/lib/useagent/scratch:/var/lib/useagent/scratch",
 		]) {
 			expect(compose).toContain(contract);
 		}

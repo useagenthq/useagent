@@ -1,4 +1,5 @@
-import type { SandboxHandle } from "../sandboxes/provider";
+import { sandboxRuntimeLayout, type SandboxHandle } from "../sandboxes/provider";
+import type { SandboxBinding } from "../sandboxes/binding";
 import { acquireThreadSandbox } from "./thread-sandbox";
 import {
   checkoutPullRequestResources,
@@ -32,7 +33,11 @@ export interface SandboxTurnPreparationOptions<T> {
     readonly gid: number;
     readonly home: string;
   };
-  readonly prepareProvider: (sandbox: SandboxHandle, workdir: string) => Promise<T>;
+  readonly prepareProvider: (
+    sandbox: SandboxHandle,
+    workdir: string,
+    binding: SandboxBinding,
+  ) => Promise<T>;
 }
 
 export interface PreparedSandboxTurn<T> {
@@ -73,7 +78,9 @@ export async function prepareSandboxTurn<T>(
         end?.();
       }
     };
-    const workdir = await stage("workspace_root", () => resolveRuntimeWorkspaceRoot(sandbox));
+    const workdir = await stage("workspace_root", () =>
+      resolveRuntimeWorkspaceRoot(sandbox, sandboxRuntimeLayout(lease.binding.kind))
+    );
     const resourceUser = options.resourceUser;
     if (resourceUser) {
       const owned = await stage("workspace_owner", () => sandbox.process.executeCommand(
@@ -129,10 +136,12 @@ export async function prepareSandboxTurn<T>(
     let providerState: T;
     if (options.providerAfterResources) {
       await prepareResources();
-      providerState = await stage("provider_bridge", () => options.prepareProvider(sandbox, workdir));
+      providerState = await stage("provider_bridge", () =>
+        options.prepareProvider(sandbox, workdir, lease.binding)
+      );
     } else {
       [providerState] = await Promise.all([
-        stage("provider_bridge", () => options.prepareProvider(sandbox, workdir)),
+        stage("provider_bridge", () => options.prepareProvider(sandbox, workdir, lease.binding)),
         prepareResources(),
       ]);
     }

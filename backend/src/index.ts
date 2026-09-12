@@ -84,6 +84,7 @@ import { providerConnectionsRoutes } from "./provider-connections/routes";
 import { integrationRoutes } from "./integrations/routes";
 import { codexSubscriptionRelayRoutes } from "./provider-connections/codex-subscription-relay";
 import { wikiGenRoutes } from "./wiki-gen/routes";
+import { cleanupRepositoryScratch } from "./wiki-gen/clone";
 import {
   configuredEngineReadiness,
   configuredUserFacingEngines,
@@ -141,7 +142,20 @@ import { repairEligiblePublicRootThreadRelationships } from "./runs/thread-relat
 // production mode an unavailable/contended lock fails boot closed, so a duplicate
 // process cannot migrate or recover another backend's database first.
 assertThreadRelationshipRolloutConfig();
-await enforceSingleBackend();
+const singleBackendHeld = await enforceSingleBackend();
+
+// A process crash can strand temporary private checkouts on the disk-backed
+// scratch mount. With the single-backend lock held, no live clone belongs to
+// another backend, so startup can safely remove only our exact temp prefixes.
+if (singleBackendHeld) {
+  const scratchCleanup = await cleanupRepositoryScratch();
+  if (scratchCleanup.removed > 0) {
+    console.log(`[boot] repository scratch cleanup — ${scratchCleanup.removed} stale directories removed`);
+  }
+  for (const failure of scratchCleanup.failures) {
+    console.error(`[boot] repository scratch cleanup failed: ${failure}`);
+  }
+}
 
 // Apply committed Drizzle migrations BEFORE anything reads or seeds the schema,
 // so a fresh clone (or a fresh database) boots with the tables in place. The

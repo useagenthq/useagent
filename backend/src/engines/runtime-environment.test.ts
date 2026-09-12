@@ -79,6 +79,20 @@ describe("T3 Cube environment", () => {
     );
   });
 
+  test("accepts the provider-declared Box user and workspace without root access", async () => {
+    const layout = { home: "/home/user", workdir: "/home/user/work", runsAsRoot: false } as const;
+    const command = buildRuntimeIdentityPreflightCommand(layout);
+    expect(command).toContain('test "$(id -u)" != "0"');
+    expect(command).toContain('test "$HOME" = "/home/user"');
+    expect(command).toContain('pwd -P)" = "/home/user/work"');
+    expect(command).not.toContain("/root");
+
+    const box = runtimeSandbox("box", {
+      executeCommand: async () => ({ exitCode: 0, result: "/home/user/work\n" }),
+    });
+    await expect(resolveRuntimeWorkspaceRoot(box, layout)).resolves.toBe("/home/user/work");
+  });
+
   test("is opt-in until hosted parity is proven", () => {
     expect(runtimeEnvironmentEnabled({})).toBe(false);
     expect(runtimeEnvironmentEnabled({ T3_ENVIRONMENT_ENABLED: "false" })).toBe(false);

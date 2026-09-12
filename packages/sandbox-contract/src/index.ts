@@ -351,6 +351,12 @@ export interface SandboxProviderPlugin<Config = unknown> {
   readonly home: string;
   /** Whether commands run as root (decides where root-only paths may be used). */
   readonly runsAsRoot: boolean;
+  /** Exact identity used by shared resident harnesses. This can differ from
+   *  `home` when a root provider keeps ordinary agent work under another home. */
+  readonly runtime: {
+    readonly home: string;
+    readonly workdir: string;
+  };
   /** Headers a preview link's token must travel in (token header, or Box's port-auth cookie). */
   previewAuthHeaders(token: string): Record<string, string>;
   /** Vendor config from the environment; throws on invalid settings. */

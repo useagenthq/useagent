@@ -8,6 +8,7 @@ describe("Box plugin", () => {
     expect(boxPlugin.credentialRequired).toBe(true);
     expect(boxPlugin.home).toBe("/home/user");
     expect(boxPlugin.runsAsRoot).toBe(false);
+    expect(boxPlugin.runtime).toEqual({ home: "/home/user", workdir: "/home/user/work" });
   });
 
   test("config from env validates the machine class and defaults the API URL", () => {
