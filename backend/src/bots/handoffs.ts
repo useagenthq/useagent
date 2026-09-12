@@ -22,6 +22,41 @@ export function parseBotMentions(value: unknown): { ids: string[] } | { error: s
   return { ids: [...ids] };
 }
 
+export type RunBotMentions =
+  | { readonly ids: string[] }
+  | { readonly status: 400 | 404; readonly body: Record<string, unknown> };
+
+/** Validate `bot_mentions` for a run body before anything is persisted. */
+export function runBotMentions(orgId: string, value: unknown): RunBotMentions {
+  const parsed = parseBotMentions(value);
+  if ("error" in parsed) return { status: 400, body: { error: "invalid_bot_mentions", reason: parsed.error } };
+  if (parsed.ids.length > 0 && !botsEnabled(orgId)) return { status: 404, body: { error: "bots_disabled" } };
+  return parsed;
+}
+
+/**
+ * Response fragment for an accepted run: `{ handoffs }` when bots were
+ * mentioned, `{}` otherwise. The parent run is already durable; a handoff
+ * failure is logged and reported, never fatal to the accepted run.
+ */
+export async function acceptedRunHandoffs(input: {
+  readonly orgId: string;
+  readonly actorId: string | null;
+  readonly runId: string;
+  readonly threadId: string;
+  readonly text: string;
+  readonly botIds: readonly string[];
+}): Promise<{ handoffs?: HandoffResult[] }> {
+  if (input.botIds.length === 0) return {};
+  try {
+    const handoffs = await dispatchBotHandoffs({ ...input, parentRunId: input.runId });
+    return handoffs.length > 0 ? { handoffs } : {};
+  } catch (error) {
+    console.error(`[bots] handoff dispatch failed for run ${input.runId}:`, error);
+    return {};
+  }
+}
+
 /**
  * The child thread's first turn: the message that addressed the bot, then who
  * the bot is and its standing rules. The child inherits the parent thread's

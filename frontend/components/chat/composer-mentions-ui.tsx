@@ -324,7 +324,7 @@ export function useComposerMentions(opts: {
         repos: { ...repos, items: orderRepos(repos.items, selectedRepos) },
         tree,
       }),
-    [view, query, skillItems, skills, fetchedSkills.status, threads, pulls, repos, tree, selectedRepos],
+    [view, query, skillItems, skills, fetchedSkills.status, threads, pulls, repos, tree, selectedRepos, bots, showBots],
   );
 
   const insertMention = useCallback(
