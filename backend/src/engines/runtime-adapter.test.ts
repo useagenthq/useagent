@@ -248,6 +248,8 @@ describe("T3 run adapter gate", () => {
 
   test("barriers on the reconciled Claude gateway instance before session start", () => {
     const source = readFileSync(new URL("./runtime-adapter.ts", import.meta.url), "utf8");
+    expect(source).toContain("const CLAUDE_BARRIER_DEADLINE_MS = 35_000");
+    expect(source).toContain("const CLAUDE_VERIFY_DEADLINE_MS = 35_000");
     const bridgeIdx = source.indexOf("prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir)");
     const barrierIdx = source.indexOf("await ensureRuntimeProviderReadyForTurn({", bridgeIdx);
     const establishIdx = source.indexOf("await establishProviderSession({");

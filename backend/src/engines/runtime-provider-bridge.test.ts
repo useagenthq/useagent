@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
   awaitRuntimeProviderReady,
+  buildClaudeInstallIdentityProbeCommand,
   buildRuntimeProviderReadyProbeCommand,
   buildRuntimeProviderBootstrapCommand,
   claudeProviderReadiness,
@@ -24,6 +25,7 @@ const previousGatewaySecret = process.env.PROVIDER_GATEWAY_SECRET;
 
 async function runColdClaudeBootstrap(
   binaryScript: (home: string) => string,
+  packageVersion = "2.1.226",
 ): Promise<{
   home: string;
   result: ReturnType<typeof Bun.spawnSync>;
@@ -35,12 +37,21 @@ async function runColdClaudeBootstrap(
   await mkdir(fakeTools, { recursive: true });
   await mkdir(join(home, "work"), { recursive: true });
   const encodedBinary = Buffer.from(binaryScript(home), "utf8").toString("base64");
+  const encodedManifest = Buffer.from(JSON.stringify({
+    name: "@anthropic-ai/claude-code",
+    version: packageVersion,
+    bin: { claude: "bin/claude.exe" },
+  }), "utf8").toString("base64");
   await Bun.write(join(fakeTools, "bun"), [
     "#!/bin/sh",
     "set -eu",
-    'mkdir -p "$BUN_INSTALL_BIN"',
-    `printf %s '${encodedBinary}' | base64 -d > "$BUN_INSTALL_BIN/claude"`,
-    'chmod 700 "$BUN_INSTALL_BIN/claude"',
+    'PACKAGE_DIR="$BUN_INSTALL_GLOBAL_DIR/node_modules/@anthropic-ai/claude-code"',
+    'mkdir -p "$BUN_INSTALL_BIN" "$PACKAGE_DIR"',
+    'mkdir -p "$PACKAGE_DIR/bin"',
+    `printf %s '${encodedBinary}' | base64 -d > "$PACKAGE_DIR/bin/claude.exe"`,
+    `printf %s '${encodedManifest}' | base64 -d > "$PACKAGE_DIR/package.json"`,
+    'chmod 700 "$PACKAGE_DIR/bin/claude.exe"',
+    'ln -sf "$PACKAGE_DIR/bin/claude.exe" "$BUN_INSTALL_BIN/claude"',
     "",
   ].join("\n"));
   await Bun.$`chmod 700 ${join(fakeTools, "bun")}`;
@@ -60,6 +71,29 @@ async function runColdClaudeBootstrap(
     }),
     versionCountPath,
   };
+}
+
+async function installFakeClaudePackage(
+  home: string,
+  script: string,
+  version = "2.1.226",
+): Promise<void> {
+  const packageDirectory = join(
+    home,
+    ".local/share/useagent/native-engines/node_modules/@anthropic-ai/claude-code",
+  );
+  const binary = join(packageDirectory, "bin/claude.exe");
+  const launcher = join(home, ".local/bin/claude");
+  await mkdir(join(packageDirectory, "bin"), { recursive: true });
+  await mkdir(join(home, ".local/bin"), { recursive: true });
+  await Bun.write(binary, script);
+  await Bun.write(join(packageDirectory, "package.json"), JSON.stringify({
+    name: "@anthropic-ai/claude-code",
+    version,
+    bin: { claude: "bin/claude.exe" },
+  }));
+  await Bun.$`chmod 700 ${binary}`;
+  await symlink(binary, launcher);
 }
 
 beforeEach(() => {
@@ -105,6 +139,11 @@ describe("T3 provider bridge", () => {
     expect(command).toContain('BUN_INSTALL_GLOBAL_DIR="$NATIVE_GLOBAL_DIR"');
     expect(command).toContain('BUN_INSTALL_BIN="$NATIVE_PREFIX/bin"');
     expect(command).toContain('@anthropic-ai/claude-code@2.1.226');
+    expect(command).toContain('node_modules/@anthropic-ai/claude-code');
+    expect(command).toContain('manifest.version!==expectedVersion');
+    expect(command).toContain('allowedRoots.some');
+    expect(command).not.toContain('spawnSync');
+    expect(command).not.toContain('--version');
     expect(wrapper).toContain('--settings "/tmp/useagent-claude-capability/useagent-settings.json"');
     expect(wrapper).toContain('--mcp-config "/tmp/useagent-claude-capability/useagent-mcp.json"');
     expect(wrapper).toContain('test "$(id -u user)" = "$CLAUDE_UID"');
@@ -124,6 +163,9 @@ describe("T3 provider bridge", () => {
     expect(command).not.toContain("ANTHROPIC_API_KEY");
     expect(command).not.toContain("OPENAI_API_KEY");
     expect(command).not.toContain("Bearer ");
+    expect(command.indexOf('String(Date.now())')).toBeLessThan(
+      command.indexOf('current.providerInstances='),
+    );
   });
 
   test("uses a same-user Claude wrapper and private package prefix on Box", () => {
@@ -173,10 +215,8 @@ describe("T3 provider bridge", () => {
       const workdir = join(home, "work");
       const settingsPath = join(home, ".skynet/t3/userdata/settings.json");
       await mkdir(join(home, ".skynet/t3/userdata"), { recursive: true });
-      await mkdir(bin, { recursive: true });
       await mkdir(workdir, { recursive: true });
-      await Bun.write(join(bin, "claude"), "#!/bin/sh\necho '2.1.226 (Claude Code)'\n");
-      await Bun.$`chmod 700 ${join(bin, "claude")}`;
+      await installFakeClaudePackage(home, "#!/bin/sh\nexit 17\n");
       const existingCodex = { enabled: true, binaryPath: "/custom/codex" };
       const existingOpenCode = { enabled: true, binaryPath: "/custom/opencode" };
       const existingInstance = { driver: "codex", displayName: "Custom Codex" };
@@ -341,107 +381,105 @@ describe("T3 provider bridge", () => {
     }
   });
 
-  test("retries only the post-install version probe when the binary is briefly not ready", async () => {
+  test("verifies the installed Claude package identity without launching the CLI", async () => {
     const run = await runColdClaudeBootstrap((home) => `#!/bin/sh
-set -eu
-COUNT_FILE=${JSON.stringify(join(home, "version-count"))}
-count=0
-if [ -f "$COUNT_FILE" ]; then count="$(cat "$COUNT_FILE")"; fi
-count=$((count + 1))
-printf '%s' "$count" > "$COUNT_FILE"
-if [ "$count" -eq 1 ]; then exit 1; fi
-echo '2.1.226 (Claude Code)'
+printf launched > ${JSON.stringify(join(home, "version-count"))}
+exit 17
 `);
     try {
       expect(run.result.exitCode).toBe(0);
-      expect(await readFile(run.versionCountPath, "utf8")).toBe("2");
+      expect(await Bun.file(run.versionCountPath).exists()).toBe(false);
     } finally {
       await rm(run.home, { recursive: true, force: true });
     }
   });
 
-  test("bounds failed post-install probes and emits only a controlled diagnostic", async () => {
-    const secret = "gateway-capability-must-not-escape";
-    const run = await runColdClaudeBootstrap((home) => `#!/bin/sh
-set -eu
-COUNT_FILE=${JSON.stringify(join(home, "version-count"))}
-count=0
-if [ -f "$COUNT_FILE" ]; then count="$(cat "$COUNT_FILE")"; fi
-count=$((count + 1))
-printf '%s' "$count" > "$COUNT_FILE"
-echo ${JSON.stringify(secret)} >&2
-exit 7
-`);
+  test("rejects a post-install Claude package with the wrong exact version", async () => {
+    const run = await runColdClaudeBootstrap(() => "#!/bin/sh\nexit 0\n", "2.1.225");
     try {
       expect(run.result.exitCode).toBe(1);
-      expect(await readFile(run.versionCountPath, "utf8")).toBe("3");
       const output = `${run.result.stdout?.toString() ?? ""}${run.result.stderr?.toString() ?? ""}`;
       expect(output).toContain(
-        "useagent-native-version-probe: probe_failed attempts=3 last_status=7 error=none",
+        "useagent-native-version-probe: install_identity_mismatch expected=2.1.226",
       );
-      expect(output).not.toContain(secret);
       expect(output.length).toBeLessThan(160);
     } finally {
       await rm(run.home, { recursive: true, force: true });
     }
   });
 
-  test("rejects a clearly observed wrong post-install version without retrying", async () => {
-    const run = await runColdClaudeBootstrap((home) => `#!/bin/sh
-set -eu
-COUNT_FILE=${JSON.stringify(join(home, "version-count"))}
-count=0
-if [ -f "$COUNT_FILE" ]; then count="$(cat "$COUNT_FILE")"; fi
-count=$((count + 1))
-printf '%s' "$count" > "$COUNT_FILE"
-echo '2.1.225 (Claude Code)'
-`);
+  test("repairs an executable outside the verified Claude package and advances the fence", async () => {
+    const run = await runColdClaudeBootstrap(() => "#!/bin/sh\nexit 0\n");
     try {
-      expect(run.result.exitCode).toBe(1);
-      expect(await readFile(run.versionCountPath, "utf8")).toBe("1");
-      const output = `${run.result.stdout?.toString() ?? ""}${run.result.stderr?.toString() ?? ""}`;
-      expect(output).toContain(
-        "useagent-native-version-probe: version_mismatch expected=2.1.226",
+      expect(run.result.exitCode).toBe(0);
+      const marker = join(run.home, ".skynet/t3/caches/useagent-claude-bootstrap");
+      const firstFence = Number(await readFile(marker, "utf8"));
+      const launcher = join(run.home, ".local/bin/claude");
+      await rm(launcher);
+      await Bun.write(launcher, "#!/bin/sh\nexit 0\n");
+      await Bun.$`chmod 700 ${launcher}`;
+      const fakeTools = join(run.home, "fake-tools");
+      await Bun.sleep(2);
+      const command = buildRuntimeProviderBootstrapCommand("claude", {
+        ANTHROPIC_BASE_URL: "https://gateway.example.test/provider/anthropic",
+        CLAUDE_CONFIG_DIR: join(run.home, "claude-config"),
+      }, {
+        home: run.home,
+        workdir: join(run.home, "work"),
+        runsAsRoot: false,
+        bunExecutable: join(fakeTools, "bun"),
+      });
+      const result = Bun.spawnSync(["/bin/sh", "-c", command], {
+        env: { ...process.env, HOME: run.home },
+      });
+      expect(result.exitCode).toBe(0);
+      const packageRoot = await realpath(
+        join(run.home, ".local/share/useagent/native-engines/node_modules/@anthropic-ai/claude-code"),
       );
+      expect((await realpath(launcher)).startsWith(packageRoot)).toBe(true);
+      expect(Number(await readFile(marker, "utf8"))).toBeGreaterThan(firstFence);
     } finally {
       await rm(run.home, { recursive: true, force: true });
     }
   });
 
-  test("accepts only T3's current reconciled Claude gateway instance marker", async () => {
+  test("accepts only fresh authoritative T3 Claude health", async () => {
     const home = await mkdtemp(join(tmpdir(), "skynet-t3-claude-ready-"));
     try {
       const cachePath = join(home, ".skynet/t3/caches/claudeAgent.json");
+      const markerPath = join(home, ".skynet/t3/caches/useagent-claude-bootstrap");
       await mkdir(join(home, ".skynet/t3/caches"), { recursive: true });
+      await Bun.write(markerPath, String(Date.parse("2026-09-05T00:00:10.000Z")));
       const readiness = claudeProviderReadiness(claudeEnvironment);
       const command = buildRuntimeProviderReadyProbeCommand(readiness);
       const runProbe = () => Bun.spawnSync(["/bin/sh", "-c", command], {
         env: { ...process.env, HOME: home },
       }).exitCode;
-
-      await Bun.write(cachePath, JSON.stringify({
-        instanceId: "claudeAgent",
-        driver: "claudeAgent",
-        displayName: claudeProviderReadiness({
-          ...claudeEnvironment,
-          ANTHROPIC_BASE_URL: "https://stale.example.test/provider/anthropic",
-        }).displayName,
-        enabled: true,
-        installed: true,
-        status: "ready",
-        auth: { status: "authenticated" },
-      }));
-      expect(runProbe()).not.toBe(0);
-
-      await Bun.write(cachePath, JSON.stringify({
+      const ready = {
         instanceId: "claudeAgent",
         driver: "claudeAgent",
         displayName: readiness.displayName,
         enabled: true,
-        installed: false,
-        status: "warning",
-        auth: { status: "unknown" },
-      }));
+        installed: true,
+        version: "2.1.226",
+        status: "ready",
+        auth: { status: "authenticated" },
+        checkedAt: "2026-09-05T00:00:11.000Z",
+      } as const;
+
+      for (const rejected of [
+        { ...ready, displayName: "UseAgent Claude gateway stale" },
+        { ...ready, installed: false, status: "warning", auth: { status: "unknown" } },
+        { ...ready, version: "2.1.225" },
+        { ...ready, auth: { status: "unauthenticated" } },
+        { ...ready, checkedAt: "2026-09-05T00:00:09.000Z" },
+        { ...ready, availability: "unavailable" },
+      ]) {
+        await Bun.write(cachePath, JSON.stringify(rejected));
+        expect(runProbe()).not.toBe(0);
+      }
+
+      await Bun.write(cachePath, JSON.stringify(ready));
       expect(runProbe()).toBe(0);
     } finally {
       await rm(home, { recursive: true, force: true });
@@ -529,6 +567,89 @@ echo '2.1.225 (Claude Code)'
     expect(bootstraps[0]).toContain("@openai/codex@0.153.3");
     expect(bootstraps[1]).toContain("@anthropic-ai/claude-code@2.1.226");
     expect(bootstraps[2]).toContain("opencode-ai@1.18.7");
+  });
+
+  test("revalidates cached Claude identity and repairs only after mutation", async () => {
+    let identityValid = true;
+    let bootstrapSucceeds = true;
+    let fullBootstraps = 0;
+    let identityProbes = 0;
+    let fenceGeneration = 0;
+    const identityCommand = buildClaudeInstallIdentityProbeCommand({
+      home: "/home/user",
+      workdir: "/home/user/work",
+      runsAsRoot: false,
+    });
+    const sandbox = {
+      id: "box-cached-claude-identity",
+      providerKind: "box",
+      process: {
+        executeCommand: async (command: string) => {
+          if (command.includes('NATIVE_PACKAGE="@anthropic-ai/claude-code@2.1.226"')) {
+            fullBootstraps += 1;
+            if (!bootstrapSucceeds) return { exitCode: 1, result: "" };
+            identityValid = true;
+            fenceGeneration += 1;
+            return { exitCode: 0, result: "" };
+          }
+          if (command === identityCommand) {
+            identityProbes += 1;
+            return { exitCode: identityValid ? 0 : 1, result: "" };
+          }
+          return { exitCode: 0, result: "" };
+        },
+      },
+    } as unknown as SandboxHandle;
+    const context = {
+      runId: "run-box-identity",
+      threadId: "thread-box-identity",
+      prompt: "work",
+      bootstrapContext: "",
+      turnContext: "",
+      workdir: "/home/user/work",
+      orgId: "org-a",
+      userId: "user-a",
+      model: "claude-fable-5",
+      signal: new AbortController().signal,
+      emit: async () => undefined,
+      setSummary: () => undefined,
+    } as const;
+
+    await prepareRuntimeProviderBridge(sandbox, context, "claude", "/home/user/work");
+    expect({ fullBootstraps, identityProbes, fenceGeneration }).toEqual({
+      fullBootstraps: 1,
+      identityProbes: 0,
+      fenceGeneration: 1,
+    });
+
+    await prepareRuntimeProviderBridge(sandbox, context, "claude", "/home/user/work");
+    expect({ fullBootstraps, identityProbes, fenceGeneration }).toEqual({
+      fullBootstraps: 1,
+      identityProbes: 1,
+      fenceGeneration: 1,
+    });
+
+    identityValid = false;
+    await prepareRuntimeProviderBridge(sandbox, context, "claude", "/home/user/work");
+    expect({ fullBootstraps, identityProbes, fenceGeneration }).toEqual({
+      fullBootstraps: 2,
+      identityProbes: 2,
+      fenceGeneration: 2,
+    });
+
+    await prepareRuntimeProviderBridge(sandbox, context, "claude", "/home/user/work");
+    expect({ fullBootstraps, identityProbes, fenceGeneration }).toEqual({
+      fullBootstraps: 2,
+      identityProbes: 3,
+      fenceGeneration: 2,
+    });
+
+    identityValid = false;
+    bootstrapSucceeds = false;
+    await expect(
+      prepareRuntimeProviderBridge(sandbox, context, "claude", "/home/user/work"),
+    ).rejects.toThrow("native claude runtime bootstrap failed");
+    expect(fenceGeneration).toBe(2);
   });
 
   test("reasserts the Claude access boundary after resources on every retained turn", async () => {
