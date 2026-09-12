@@ -4,6 +4,10 @@ services:
   backend:
     image: ${USEAGENT_BACKEND_IMAGE:?set an immutable backend image digest}
     network_mode: host
+    labels:
+      io.useagent.release.color: ${USEAGENT_RELEASE_COLOR}
+      io.useagent.release.commit: ${USEAGENT_RELEASE_COMMIT}
+      io.useagent.release.service: backend
     env_file:
       - ${USEAGENT_BACKEND_ENV_FILE:-/etc/useagent/backend.env}
     environment:
@@ -36,6 +40,10 @@ services:
   gateway:
     image: ${USEAGENT_GATEWAY_IMAGE:?set an immutable gateway image digest}
     network_mode: host
+    labels:
+      io.useagent.release.color: ${USEAGENT_RELEASE_COLOR}
+      io.useagent.release.commit: ${USEAGENT_RELEASE_COMMIT}
+      io.useagent.release.service: gateway
     env_file:
       - ${USEAGENT_GATEWAY_ENV_FILE:-/etc/useagent/gateway.env}
     environment:
@@ -60,6 +68,10 @@ services:
   frontend:
     image: ${USEAGENT_FRONTEND_IMAGE:?set an immutable frontend image digest}
     network_mode: host
+    labels:
+      io.useagent.release.color: ${USEAGENT_RELEASE_COLOR}
+      io.useagent.release.commit: ${USEAGENT_RELEASE_COMMIT}
+      io.useagent.release.service: frontend
     environment:
       NODE_ENV: production
       HOSTNAME: 127.0.0.1

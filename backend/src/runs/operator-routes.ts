@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { Hono, type Context } from "hono";
+import type { AdmissionChange, RunAdmissionState } from "../commands/admission";
 import type { AppEnv } from "../http";
 import type { RunCreateBody } from "./routes";
 
@@ -23,6 +24,12 @@ import type { RunCreateBody } from "./routes";
  */
 
 interface OperatorOps {
+  readonly getAdmission: () => Promise<RunAdmissionState>;
+  readonly setAdmission: (change: AdmissionChange) => Promise<RunAdmissionState>;
+  readonly deploymentInflight: () => Promise<{
+    readonly count: number;
+    readonly runIds: readonly string[];
+  }>;
   readonly pump: (threadId: string) => Promise<string | null>;
   readonly cancel: (runId: string, reason: string) => boolean;
   /** Approve one pending gateway approval request AS the target run's owner
@@ -93,6 +100,28 @@ export function createOperatorRoutes(ops: OperatorOps): Hono<AppEnv> {
     if (!threadId) return c.json({ error: "threadId_required" }, 400);
     return c.json({ dispatched: await ops.pump(threadId) });
   });
+
+  routes.get("/run-admission", async (c) => c.json(await ops.getAdmission()));
+
+  routes.post("/run-admission", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as {
+      open?: unknown;
+      operationId?: unknown;
+      actor?: unknown;
+      reason?: unknown;
+    } | null;
+    const operationId = typeof body?.operationId === "string" ? body.operationId.trim() : "";
+    const actor = typeof body?.actor === "string" ? body.actor.trim() : "";
+    const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+    if (typeof body?.open !== "boolean" || !operationId || !actor || !reason) {
+      return c.json({ error: "open_operationId_actor_reason_required" }, 400);
+    }
+    return c.json(await ops.setAdmission({ open: body.open, operationId, actor, reason }));
+  });
+
+  routes.get("/deployment-inflight", async (c) =>
+    c.json(await ops.deploymentInflight()),
+  );
 
   routes.post("/admit-release-eval", async (c) => {
     const payload = (await c.req.json().catch(() => null)) as {

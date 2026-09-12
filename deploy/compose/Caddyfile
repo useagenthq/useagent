@@ -1,0 +1,32 @@
+{{APP_DOMAIN}} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	@codex_relay path /api/internal/codex-relay/*
+	handle @codex_relay {
+		# useagent-release: backend
+		reverse_proxy {{BACKEND_UPSTREAM}}
+	}
+
+	@api path /api/*
+	handle @api {
+		# useagent-release: backend
+		reverse_proxy {{BACKEND_UPSTREAM}}
+	}
+
+	handle {
+		# useagent-release: frontend
+		reverse_proxy {{FRONTEND_UPSTREAM}}
+	}
+}
+
+{{GATEWAY_DOMAIN}} {
+	# useagent-release: gateway
+	reverse_proxy {{GATEWAY_UPSTREAM}}
+}

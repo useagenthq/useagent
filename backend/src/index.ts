@@ -105,7 +105,11 @@ import {
 } from "./runs/free-model-qualification-driver";
 import { acceptInternalRunCommand } from "./commands/service";
 import { acceptRunCancel } from "./commands/cancel";
-import { getRunAdmission } from "./commands/admission";
+import {
+  deploymentInflightSnapshot,
+  getRunAdmission,
+  setRunAdmission,
+} from "./commands/admission";
 import { getRunWithSteps } from "./runs/repo";
 import { uploadRoutes } from "./uploads/routes";
 import { startUploadCleanup } from "./uploads/cleanup";
@@ -291,6 +295,9 @@ app.route("/api/threads", threadRelationshipRoutes);
 app.route(
   "/api/internal/operator",
   createOperatorRoutes({
+    getAdmission: getRunAdmission,
+    setAdmission: setRunAdmission,
+    deploymentInflight: deploymentInflightSnapshot,
     pump: pumpThread,
     cancel: signalCancel,
     approveGatewayRequest: approveApprovalRequestAsRunOwner,
