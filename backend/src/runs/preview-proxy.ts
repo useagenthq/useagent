@@ -21,12 +21,21 @@ import { resolveSandboxBindingForSandbox } from "../sandboxes/binding";
 // requests with the token injected server-side.
 // ---------------------------------------------------------------------------
 
+/** Cached preview auth is re-minted after this long even without an error (Box port cookies expire). */
+const PREVIEW_ENDPOINT_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** Upstream answers that mean the cached link or its credential is stale, not the app. */
+export function isStalePreviewResponse(upstream: Response): boolean {
+  return upstream.status === 401 || upstream.status === 403 || upstream.status === 502 || upstream.status === 503;
+}
+
 export interface PreviewEndpoint {
   sandboxId: string;
   baseUrl: string;
   token: string;
   /** Auth headers every upstream request must carry (provider token header or Box's port-auth cookie). */
   headers: Readonly<Record<string, string>>;
+  resolvedAt: number;
 }
 
 /** Per (thread, port) preview endpoint cache. A thread now exposes several ports
@@ -62,7 +71,7 @@ export async function resolvePreviewEndpoint(
   const key = `${threadId}:${port}`;
   if (!force) {
     const cached = endpoints.get(key);
-    if (cached) return cached;
+    if (cached && Date.now() - cached.resolvedAt < PREVIEW_ENDPOINT_TTL_MS) return cached;
   }
   let sandbox = await resolvePreviewSandbox(threadId);
   let link: Awaited<ReturnType<SandboxHandle["getPreviewLink"]>>;
@@ -79,6 +88,7 @@ export async function resolvePreviewEndpoint(
   const ep: PreviewEndpoint = {
     sandboxId: sandbox.id,
     ...previewLinkBase(link),
+    resolvedAt: Date.now(),
   };
   endpoints.set(key, ep);
   return ep;

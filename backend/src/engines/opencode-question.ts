@@ -1,7 +1,7 @@
 import { getOpenCodeThreadServer } from "./opencode-runtime";
 import { resolvePreviewSandbox } from "../runs/preview-proxy";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
-import { previewLinkBase, sandboxPreviewHeaders } from "../sandboxes/provider";
+import { previewLinkBase } from "../sandboxes/provider";
 import type { SecretRedactor } from "../secrets/redact";
 import {
   ProviderQuestionError,

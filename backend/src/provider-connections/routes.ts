@@ -16,8 +16,9 @@ import {
   upsertApiKeyProviderConnection,
   type ProviderConnectionMeta,
 } from "./service";
-import { type SandboxCredentialInput, SandboxCredentialError } from "@useagent/sandbox-contract";
+import { type SandboxCredentialInput, isSandboxCredentialError } from "@useagent/sandbox-contract";
 import { sandboxPlugin } from "../sandboxes/plugins";
+import type { ComputerProviderKind } from "../sandboxes/binding";
 import {
   isProviderConnectionAuthMethod,
   isProviderConnectionProvider,
@@ -54,13 +55,13 @@ const defaultCodexChatGptOAuthLifecycle: CodexChatGptOAuthLifecycle = {
 export function createProviderConnectionsRoutes(input: {
   codexChatGptOAuth?: CodexChatGptOAuthLifecycle;
   /** Test seam: computer-provider credential validation (default: the provider plugin's). */
-  validateCredential?: (kind: "daytona" | "box", input: SandboxCredentialInput) => Promise<void>;
+  validateCredential?: (kind: ComputerProviderKind, input: SandboxCredentialInput) => Promise<void>;
 } = {}): Hono<AppEnv> {
   const providerConnectionsRoutes = new Hono<AppEnv>();
   const codexChatGptOAuth = input.codexChatGptOAuth ?? defaultCodexChatGptOAuthLifecycle;
   const validateCredential =
     input.validateCredential ??
-    (async (kind: "daytona" | "box", credential: SandboxCredentialInput) => {
+    (async (kind: ComputerProviderKind, credential: SandboxCredentialInput) => {
       const validate = sandboxPlugin(kind).validateCredential;
       if (!validate) throw new Error(`${kind} does not support stored credentials`);
       await validate(credential);
@@ -180,7 +181,7 @@ export function createProviderConnectionsRoutes(input: {
       try {
         await validateCredential(provider, { apiKey, ...(snapshotName ? { snapshotName } : {}) });
       } catch (error) {
-        if (error instanceof SandboxCredentialError) return c.json({ error: error.code }, error.httpStatus);
+        if (isSandboxCredentialError(error)) return c.json({ error: error.code }, error.httpStatus);
         throw error;
       }
     }

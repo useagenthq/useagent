@@ -8,7 +8,7 @@
 // selectors live in the backend and implement these interfaces; the conformance
 // harness runs there against live providers.
 //
-// Keep this file a pure leaf: types only, zero imports, zero runtime, so any
+// Keep this file a pure leaf: types only, zero imports, no runtime dependencies, so any
 // runtime can depend on the contract without pulling server code.
 
 export type SandboxProviderKind = "daytona" | "cube" | "box";
@@ -268,6 +268,11 @@ export function sandboxCredentialStatus(code: SandboxCredentialCode): 401 | 403 
     case "provider_unavailable":
       return 503;
   }
+}
+
+/** True for a SandboxCredentialError from any copy of this package (file: installs may duplicate the class). */
+export function isSandboxCredentialError(value: unknown): value is SandboxCredentialError {
+  return value instanceof Error && value.name === "SandboxCredentialError" && typeof (value as { httpStatus?: unknown }).httpStatus === "number";
 }
 
 export interface SandboxProviderPlugin<Config = unknown> {

@@ -12,18 +12,19 @@ export function daytonaApiConfig(apiKey: string, env: SandboxEnv): DaytonaApiCon
 
 function isPrivateIpLiteral(rawHostname: string): boolean {
   // WHATWG URLs report IPv6 literals in brackets ("[::1]").
-  const hostname = rawHostname.replace(/^\[|\]$/g, "");
+  const hostname = rawHostname.replace(/^\[|\]$/g, "").toLowerCase();
   const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
-  if (!match) return hostname === "::1" || hostname.startsWith("fe80:") || hostname.startsWith("fc") || hostname.startsWith("fd");
+  if (!match) {
+    if (!hostname.includes(":")) return false; // a DNS name, even one starting with "fd"
+    if (hostname === "::1" || hostname === "::") return true;
+    const mapped = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(hostname);
+    if (mapped) return isPrivateIpLiteral(mapped[1]!);
+    return hostname.startsWith("fe80:") || hostname.startsWith("fc") || hostname.startsWith("fd");
+  }
   const octets = match.slice(1).map(Number);
   if (octets.some((value) => value > 255)) return true;
-  const first = octets[0];
-  const second = octets[1];
-  if (first === undefined || second === undefined) return true;
-  return first === 0 || first === 10 || first === 127 ||
-    (first === 169 && second === 254) ||
-    (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 168);
+  const [a, b] = octets as [number, number, number, number];
+  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 }
 
 /** Everything the control plane needs to run work on Daytona. */

@@ -10,6 +10,7 @@ import {
   resolvePreviewEndpoint,
   resolvePreviewSandbox,
   type PreviewEndpoint,
+  isStalePreviewResponse,
 } from "./preview-proxy";
 import { ensureSandboxDesktopView } from "../engines/desktop";
 import { sandboxPreviewHeaders } from "../sandboxes/provider";
@@ -236,8 +237,9 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
       upstream = new Response(null, { status: 502 });
     }
     // A stale preview link (sandbox stopped/rotated since we cached it) surfaces
-    // as a transport failure or a 5xx — re-resolve once (wakes the box) and retry.
-    if (upstream.status === 502 || upstream.status === 503) {
+    // as a transport failure or a 5xx, a stale credential (expired Box port
+    // cookie) as a 401/403 — re-resolve once (wakes the box, fresh auth) and retry.
+    if (isStalePreviewResponse(upstream)) {
       invalidateDesktopPreview(threadId);
       await ensureDesktopPreview(threadId);
       invalidatePreviewEndpoint(threadId, DESKTOP_PORT);

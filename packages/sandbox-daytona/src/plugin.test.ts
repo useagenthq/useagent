@@ -91,8 +91,12 @@ describe("Daytona plugin", () => {
     });
   });
 
-  test("an IPv6 loopback literal is refused like the IPv4 one", () => {
-    expect(daytonaPlugin.previewHostProblem(new URL("https://[::1]:8080/"), {})).toBe("Codex exec-server preview host is unavailable");
-    expect(daytonaPlugin.previewHostProblem(new URL("https://127.0.0.1:8080/"), {})).toBe("Codex exec-server preview host is unavailable");
+  test("loopback, unspecified and IPv4-mapped literals are refused; DNS names that merely start with fd are not", () => {
+    const refused = "Codex exec-server preview host is unavailable";
+    for (const host of ["[::1]", "127.0.0.1", "[::]", "[::ffff:127.0.0.1]", "[::ffff:10.0.0.5]", "0.0.0.0", "[fd12::1]", "[fe80::1]"]) {
+      expect(daytonaPlugin.previewHostProblem(new URL(`https://${host}:8080/`), {})).toBe(refused);
+    }
+    expect(daytonaPlugin.previewHostProblem(new URL("https://fd12.example.daytona.work/"), {})).toBeNull();
+    expect(daytonaPlugin.previewHostProblem(new URL("https://[::ffff:8.8.8.8]:8080/"), {})).toBeNull();
   });
 });

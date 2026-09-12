@@ -1,3 +1,5 @@
+import { COMPUTER_PROVIDER_KINDS } from "./binding";
+import { SANDBOX_PROVIDER_KINDS, sandboxPlugin } from "./plugins";
 import { afterEach, describe, expect, test } from "bun:test";
 import { DaytonaProvider } from "@useagent/sandbox-daytona";
 import {
@@ -103,5 +105,10 @@ describe("sandbox preview authentication", () => {
 
   test("does not emit empty credential headers", () => {
     expect(sandboxPreviewHeaders("")).toEqual({});
+  });
+
+  test("the computer-provider kinds are exactly the plugins that validate stored credentials", () => {
+    const fromRegistry = SANDBOX_PROVIDER_KINDS.filter((kind) => sandboxPlugin(kind).validateCredential !== undefined);
+    expect([...fromRegistry].sort()).toEqual([...COMPUTER_PROVIDER_KINDS].sort());
   });
 });
