@@ -14,7 +14,11 @@ import type {
   SandboxSession,
   SandboxTemplateStatus,
 } from "@useagent/sandbox-contract";
-import { SandboxTerminalUnavailableError, memorySandboxLabelStore } from "@useagent/sandbox-contract";
+import {
+  SandboxNotFoundError,
+  SandboxTerminalUnavailableError,
+  memorySandboxLabelStore,
+} from "@useagent/sandbox-contract";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -895,7 +899,15 @@ class BoxProvider implements SandboxProvider {
   }
 
   async get(sandboxId: string): Promise<SandboxHandle> {
-    const record = await this.api.box(sandboxId);
+    let record: BoxRecord;
+    try {
+      record = await this.api.box(sandboxId);
+    } catch (error) {
+      if (error instanceof BoxApiError && error.status === 404 && error.code === "not_found") {
+        throw new SandboxNotFoundError(error);
+      }
+      throw error;
+    }
     const labels = (await this.labels.read([record.id])).get(record.id) ?? {};
     return new BoxSandboxHandle(this.api, this.labels, record, labels);
   }

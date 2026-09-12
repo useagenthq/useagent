@@ -11,11 +11,13 @@ import type {
   SandboxRecording,
   SandboxTemplateStatus,
 } from "@useagent/sandbox-contract";
+import { SandboxNotFoundError } from "@useagent/sandbox-contract";
 
 export interface DaytonaApiConfig {
   apiKey: string;
   apiUrl: string;
   target: string;
+  requestTimeoutMs?: number;
 }
 
 /** Daytona preview links authenticate with the token in its own header. */
@@ -49,7 +51,28 @@ export interface DaytonaPtyPort {
   kill(): Promise<unknown>;
 }
 
-export type DaytonaProcessPort = Omit<SandboxProcess, "createPty"> & {
+export type DaytonaProcessPort = Omit<
+  SandboxProcess,
+  "createPty" | "followSessionCommandLogs" | "getSessionCommand" | "sendSessionCommandInput"
+> & {
+  getSessionCommand(sessionId: string, commandId: string): Promise<{ id: string; exitCode?: number }>;
+  getSessionCommandLogs(
+    sessionId: string,
+    commandId: string,
+  ): Promise<{ output?: string; stdout?: string; stderr?: string }>;
+  getSessionCommandLogs(
+    sessionId: string,
+    commandId: string,
+    onStdout: (chunk: string) => void,
+    onStderr: (chunk: string) => void,
+  ): Promise<void>;
+  sendSessionCommandInput(sessionId: string, commandId: string, data: string): Promise<void>;
+  listSessions(): Promise<Array<{
+    sessionId: string;
+    commands: Array<{ id: string; exitCode?: number }>;
+  }>>;
+  listPtySessions(): Promise<Array<{ id: string }>>;
+  killPtySession(sessionId: string): Promise<void>;
   createPty(options: {
     id: string;
     cols: number;
@@ -124,7 +147,21 @@ class DaytonaProcess implements SandboxProcess {
 
   async getSession(sessionId: string) {
     const session = await this.source.getSession(sessionId);
-    return { commands: session.commands.map(({ id }) => ({ id })) };
+    return {
+      ...(session.sessionId === undefined ? {} : { sessionId: session.sessionId }),
+      commands: session.commands.map(({ id, exitCode }) => ({
+        id,
+        ...(exitCode === undefined ? {} : { exitCode }),
+      })),
+    };
+  }
+
+  async getSessionCommand(sessionId: string, commandId: string) {
+    const command = await this.source.getSessionCommand(sessionId, commandId);
+    return {
+      id: command.id,
+      ...(command.exitCode === undefined ? {} : { exitCode: command.exitCode }),
+    };
   }
 
   async executeSessionCommand(
@@ -145,6 +182,43 @@ class DaytonaProcess implements SandboxProcess {
   async getSessionCommandLogs(sessionId: string, commandId: string) {
     const logs = await this.source.getSessionCommandLogs(sessionId, commandId);
     return { output: logs.output, stdout: logs.stdout, stderr: logs.stderr };
+  }
+
+  async followSessionCommandLogs(
+    sessionId: string,
+    commandId: string,
+    onStdout: (chunk: string) => void,
+    onStderr: (chunk: string) => void,
+  ): Promise<void> {
+    // Daytona's callback is live-only: reconnects do not provide a byte-offset replay contract.
+    await this.source.getSessionCommandLogs(sessionId, commandId, onStdout, onStderr);
+  }
+
+  async sendSessionCommandInput(
+    sessionId: string,
+    commandId: string,
+    data: string,
+  ): Promise<void> {
+    await this.source.sendSessionCommandInput(sessionId, commandId, data);
+  }
+
+  async listSessions() {
+    const sessions = await this.source.listSessions();
+    return sessions.map((session) => ({
+      sessionId: session.sessionId,
+      commands: session.commands.map(({ id, exitCode }) => ({
+        id,
+        ...(exitCode === undefined ? {} : { exitCode }),
+      })),
+    }));
+  }
+
+  async listPtySessions() {
+    return (await this.source.listPtySessions()).map(({ id }) => ({ id }));
+  }
+
+  async killPtySession(sessionId: string): Promise<void> {
+    await this.source.killPtySession(sessionId);
   }
 
   async createPty(options: {
@@ -433,7 +507,12 @@ export class DaytonaProvider implements SandboxProvider {
   }
 
   async get(sandboxId: string): Promise<SandboxHandle> {
-    return new DaytonaSandboxHandle(await this.client.get(sandboxId));
+    try {
+      return new DaytonaSandboxHandle(await this.client.get(sandboxId));
+    } catch (error) {
+      if (error instanceof DaytonaNotFoundError) throw new SandboxNotFoundError(error);
+      throw error;
+    }
   }
 
   async *list(): AsyncIterable<SandboxHandle> {

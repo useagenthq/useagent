@@ -19,11 +19,13 @@ describe("Daytona plugin", () => {
       apiKey: "key",
       apiUrl: "https://app.daytona.io/api",
       target: "us",
+      requestTimeoutMs: 15_000,
     });
     expect(daytonaPlugin.configFromEnv("key", { DAYTONA_API_URL: " https://daytona.example/api ", DAYTONA_TARGET: "eu" })).toEqual({
       apiKey: "key",
       apiUrl: "https://daytona.example/api",
       target: "eu",
+      requestTimeoutMs: 15_000,
     });
   });
 

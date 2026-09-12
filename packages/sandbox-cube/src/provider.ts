@@ -1,5 +1,6 @@
 import {
   Sandbox as E2BSandbox,
+  SandboxNotFoundError as E2BSandboxNotFoundError,
   type CommandHandle,
   type SandboxInfo,
   type SandboxOpts,
@@ -16,6 +17,7 @@ import type {
   SandboxPtyHandle,
   SandboxSession,
 } from "@useagent/sandbox-contract";
+import { SandboxNotFoundError } from "@useagent/sandbox-contract";
 
 export const CUBE_SANDBOX_DOMAIN = "cube.app";
 
@@ -554,7 +556,13 @@ class CubeProvider implements SandboxProvider {
   }
 
   async get(sandboxId: string): Promise<SandboxHandle> {
-    const info = await E2BSandbox.getInfo(sandboxId, this.connection);
+    let info: SandboxInfo;
+    try {
+      info = await E2BSandbox.getInfo(sandboxId, this.connection);
+    } catch (error) {
+      if (error instanceof E2BSandboxNotFoundError) throw new SandboxNotFoundError(error);
+      throw error;
+    }
     const handle = new CubeSandboxHandle(info, this.connection, null);
     try {
       await assertCubeRuntimeIdentity(handle, this.options.identityPreflightCommand);

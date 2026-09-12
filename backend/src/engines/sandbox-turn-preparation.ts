@@ -28,6 +28,12 @@ export interface SandboxTurnPreparationOptions<T> {
   /** Providers that establish a lower-privilege runtime user must run after
    * repository/input materialization so ownership cannot race those writes. */
   readonly providerAfterResources?: boolean;
+  /** Provider-specific retained-sandbox fencing that must complete before any
+   * repository or input mutation begins. */
+  readonly prepareSandbox?: (
+    sandbox: SandboxHandle,
+    binding: SandboxBinding,
+  ) => Promise<void>;
   /** One-time provider installation for a fresh sandbox. This phase may write
    * stable runtime settings, but must not mint a run-bound capability or lease. */
   readonly prepareStableProvider?: (
@@ -107,6 +113,9 @@ export async function prepareSandboxTurn<T>(
         end?.();
       }
     };
+    if (options.prepareSandbox) {
+      await stage("sandbox_fence", () => options.prepareSandbox!(sandbox, lease.binding));
+    }
     const runtimeLayout = sandboxRuntimeLayout(lease.binding.kind);
     const workdir = await stage("workspace_root", () =>
       resolveRuntimeWorkspaceRoot(sandbox, runtimeLayout)
@@ -153,7 +162,7 @@ export async function prepareSandboxTurn<T>(
           );
           return [...new Set([...changed, ...pullRequests])];
         }),
-        stage("inputs", () => materializeRunInputs(sandbox, ctx.inputFiles, resourceUser)),
+        stage("inputs", () => materializeRunInputs(sandbox, ctx, resourceUser)),
       ]);
       if (resourceUser && changedRepoPaths.length > 0) {
         const markers = changedRepoPaths.map((path) => {

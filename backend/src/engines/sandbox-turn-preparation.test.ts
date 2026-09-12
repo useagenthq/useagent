@@ -82,6 +82,37 @@ function freshLease(sandbox: SandboxHandle) {
 }
 
 describe("sandbox turn provider cleanup", () => {
+  test("runs the retained-sandbox fence before repository and input preparation", async () => {
+    const order: string[] = [];
+    const retained = sandboxFixture({
+      onCommand(command) {
+        if (command.includes("echo state:absent") && !command.includes("git clone")) {
+          order.push("resources");
+        }
+      },
+    });
+
+    await prepareSandboxTurn(
+      context(["useagenthq/useagent"]),
+      {
+        snapshot: "runtime",
+        chip: "pi",
+        timingPrefix: "pi",
+        async prepareSandbox() {
+          order.push("fence");
+        },
+        async prepareProvider() {
+          order.push("provider");
+          return {};
+        },
+      },
+      { acquireThreadSandbox: async () => retainedLease(retained.sandbox) },
+    );
+
+    expect(order[0]).toBe("fence");
+    expect(order).toContain("resources");
+  });
+
   test("finishes fresh stable setup and slow resources before run-bound activation", async () => {
     const order: string[] = [];
     const fresh = sandboxFixture({

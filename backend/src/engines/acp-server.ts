@@ -608,7 +608,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
               secretInjection,
             ),
-          () => materializeRunInputs(box, ctx.inputFiles),
+          () => materializeRunInputs(box, ctx),
         ]);
         await recordSecretsInjected(ctx, secretInjection);
         const reconnectingToResidentProcess = retainForThread && !relay;

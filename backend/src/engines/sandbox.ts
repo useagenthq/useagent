@@ -612,7 +612,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
           secretInjection,
         );
-        await materializeRunInputs(box, ctx.inputFiles);
+        await materializeRunInputs(box, ctx);
         await recordSecretsInjected(ctx, secretInjection);
 
         const budgetSec = Math.floor(Number(process.env.ENGINE_TIMEOUT_MS ?? 180_000) / 1000);

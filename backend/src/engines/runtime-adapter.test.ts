@@ -17,6 +17,10 @@ import {
   RUNTIME_EMPTY_TERMINAL_OUTPUT_ERROR,
   type OpenCodeSessionReloadDependencies,
 } from "./runtime-adapter";
+import {
+  recoverStuckCodexSubscriptionStart,
+  RuntimeFirstActivityTimeoutError,
+} from "./runtime-startup-recovery.js";
 import { composeTurnPrompt } from "./turn-prompt";
 import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
 import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
@@ -27,6 +31,7 @@ function reloadSnapshot(
   sessionStatus: string | null,
   turnState: "running" | "completed" | null = "completed",
   threadId = "thread-1",
+  turnId = "turn-1",
 ): RuntimeThreadSnapshot {
   return {
     snapshotSequence: 1,
@@ -35,7 +40,7 @@ function reloadSnapshot(
       latestTurn: turnState === null
         ? null
         : {
-            turnId: "turn-1",
+            turnId,
             state: turnState,
             requestedAt: "2026-09-05T00:00:00.000Z",
             startedAt: "2026-09-05T00:00:00.001Z",
@@ -557,6 +562,227 @@ describe("T3 run adapter gate", () => {
     expect(source).not.toContain("ensureSandboxDesktopView");
     expect(source).not.toContain("desktop.available");
     expect(source).toContain("desktop: false");
+  });
+
+  test("recovers only an owned subscription thread stuck starting after first-activity timeout", async () => {
+    const calls: string[] = [];
+    const nativeHistory = ["message-1", "message-2"];
+    const error = new RuntimeFirstActivityTimeoutError(45_000);
+    const sandbox = { id: "sandbox-owned", nativeHistory } as unknown as SandboxHandle;
+    const cleanupSignal = new AbortController().signal;
+    const returned = await recoverStuckCodexSubscriptionStart({
+      error,
+      ctx: {
+        runId: "run-2",
+        threadId: "thread-1",
+        signal: new AbortController().signal,
+      },
+      sandbox,
+      lease: {
+        authPath: "subscription",
+        close: async () => { calls.push("close-lease"); },
+      },
+      priorTurnId: "turn-previous",
+      dependencies: {
+        requestEnvironment: async <T>(_sandbox: SandboxHandle, request: RuntimeEnvironmentRequest) => {
+          calls.push(request.path);
+          return (request.path === "/api/orchestration/shell"
+            ? { projects: [], threads: [{ id: "skynet-thread-thread-1" }] }
+            : reloadSnapshot(
+                "starting",
+                "completed",
+                "skynet-thread-thread-1",
+                "turn-previous",
+              )) as T;
+        },
+        restart: async (restarted, signal) => {
+          calls.push("restart-runtime");
+          expect(restarted).toBe(sandbox);
+          expect(signal).toBe(cleanupSignal);
+          return {} as never;
+        },
+        invalidateAccess: () => { calls.push("invalidate-access"); },
+        cleanupSignal: () => cleanupSignal,
+        warn: () => { throw new Error("unexpected recovery warning"); },
+      },
+    });
+
+    expect(returned).toEqual({ error, stuckStartConfirmed: true });
+    expect(calls).toEqual([
+      "/api/orchestration/threads/skynet-thread-thread-1",
+      "/api/orchestration/shell",
+      "close-lease",
+      "restart-runtime",
+      "invalidate-access",
+    ]);
+    expect(nativeHistory).toEqual(["message-1", "message-2"]);
+  });
+
+  test("recovers a proven stuck startup on early user abort without queueing cancel", async () => {
+    const calls: string[] = [];
+    const controller = new AbortController();
+    const userStopped = new Error("user stopped the run");
+    controller.abort(userStopped);
+    const recovery = await recoverStuckCodexSubscriptionStart({
+      error: userStopped,
+      ctx: { runId: "run-2", threadId: "thread-1", signal: controller.signal },
+      sandbox: { id: "sandbox-owned" } as SandboxHandle,
+      lease: {
+        authPath: "subscription",
+        close: async () => { calls.push("close-lease"); },
+      },
+      priorTurnId: null,
+      dependencies: {
+        requestEnvironment: async <T>(_sandbox: SandboxHandle, request: RuntimeEnvironmentRequest) => {
+          calls.push(request.path);
+          return (request.path === "/api/orchestration/shell"
+            ? { projects: [], threads: [{ id: "skynet-thread-thread-1" }] }
+            : reloadSnapshot("starting", null, "skynet-thread-thread-1")) as T;
+        },
+        restart: async () => { calls.push("restart-runtime"); return {} as never; },
+        invalidateAccess: () => { calls.push("invalidate-access"); },
+        cleanupSignal: () => new AbortController().signal,
+        warn: () => { throw new Error("unexpected recovery warning"); },
+      },
+    });
+
+    expect(recovery).toEqual({ error: userStopped, stuckStartConfirmed: true });
+    expect(calls).toEqual([
+      "/api/orchestration/threads/skynet-thread-thread-1",
+      "/api/orchestration/shell",
+      "close-lease",
+      "restart-runtime",
+      "invalidate-access",
+    ]);
+    const source = readFileSync(new URL("./runtime-adapter.ts", import.meta.url), "utf8");
+    expect(source).toContain("skipQueuedCancel = recovery.stuckStartConfirmed");
+    expect(source).toContain("if (ctx.signal.aborted && !skipQueuedCancel)");
+  });
+
+  test("does not restart for ordinary waits or when the native turn advanced", async () => {
+    const calls: string[] = [];
+    const dependencies = {
+      requestEnvironment: async <T>() => {
+        calls.push("read");
+        return reloadSnapshot("starting", "completed", "skynet-thread-thread-1") as T;
+      },
+      restart: async () => { calls.push("restart"); return {} as never; },
+      invalidateAccess: () => { calls.push("invalidate"); },
+      cleanupSignal: () => new AbortController().signal,
+      warn: () => { calls.push("warn"); },
+    };
+    const lease = { authPath: "subscription" as const, close: async () => { calls.push("close"); } };
+    const ctx = {
+      runId: "run-2",
+      threadId: "thread-1",
+      signal: new AbortController().signal,
+    };
+
+    const ordinaryWait = new Error("model is still running");
+    expect(await recoverStuckCodexSubscriptionStart({
+      error: ordinaryWait,
+      ctx,
+      sandbox: { id: "sandbox-owned" } as SandboxHandle,
+      lease,
+      priorTurnId: "turn-previous",
+      dependencies,
+    })).toEqual({ error: ordinaryWait, stuckStartConfirmed: false });
+    expect(calls).toEqual([]);
+
+    const timeout = new RuntimeFirstActivityTimeoutError(45_000);
+    expect(await recoverStuckCodexSubscriptionStart({
+      error: timeout,
+      ctx,
+      sandbox: { id: "sandbox-owned" } as SandboxHandle,
+      lease,
+      priorTurnId: "turn-previous",
+      dependencies,
+    })).toEqual({ error: timeout, stuckStartConfirmed: false });
+    expect(calls).toEqual(["read"]);
+
+    calls.length = 0;
+    const activeAbort = new AbortController();
+    const activeAbortReason = new Error("stop active turn");
+    activeAbort.abort(activeAbortReason);
+    expect(await recoverStuckCodexSubscriptionStart({
+      error: activeAbortReason,
+      ctx: { ...ctx, signal: activeAbort.signal },
+      sandbox: { id: "sandbox-owned" } as SandboxHandle,
+      lease,
+      priorTurnId: "turn-previous",
+      dependencies,
+    })).toEqual({ error: activeAbortReason, stuckStartConfirmed: false });
+    expect(calls).toEqual(["read"]);
+
+    calls.length = 0;
+    expect(await recoverStuckCodexSubscriptionStart({
+      error: timeout,
+      ctx,
+      sandbox: { id: "sandbox-owned" } as SandboxHandle,
+      lease,
+      priorTurnId: "turn-previous",
+      dependencies: {
+        ...dependencies,
+        requestEnvironment: async <T>(_sandbox: SandboxHandle, request: RuntimeEnvironmentRequest) => {
+          calls.push(request.path);
+          return (request.path === "/api/orchestration/shell"
+            ? {
+                projects: [],
+                threads: [
+                  { id: "skynet-thread-thread-1" },
+                  { id: "skynet-thread-another-active-thread" },
+                ],
+              }
+            : reloadSnapshot(
+                "starting",
+                "completed",
+                "skynet-thread-thread-1",
+                "turn-previous",
+              )) as T;
+        },
+      },
+    })).toEqual({ error: timeout, stuckStartConfirmed: false });
+    expect(calls).toEqual([
+      "/api/orchestration/threads/skynet-thread-thread-1",
+      "/api/orchestration/shell",
+    ]);
+  });
+
+  test("preserves the first-activity cause when stuck-start recovery fails", async () => {
+    const calls: string[] = [];
+    const warnings: unknown[] = [];
+    const error = new RuntimeFirstActivityTimeoutError(45_000);
+    const returned = await recoverStuckCodexSubscriptionStart({
+      error,
+      ctx: {
+        runId: "run-2",
+        threadId: "thread-1",
+        signal: new AbortController().signal,
+      },
+      sandbox: { id: "sandbox-owned" } as SandboxHandle,
+      lease: {
+        authPath: "subscription",
+        close: async () => { calls.push("close-lease"); },
+      },
+      priorTurnId: null,
+      dependencies: {
+        requestEnvironment: async <T>(_sandbox: SandboxHandle, request: RuntimeEnvironmentRequest) =>
+          (request.path === "/api/orchestration/shell"
+            ? { projects: [], threads: [{ id: "skynet-thread-thread-1" }] }
+            : reloadSnapshot("starting", null, "skynet-thread-thread-1")) as T,
+        restart: async () => {
+          calls.push("restart-runtime");
+          throw new Error("restart failed");
+        },
+        invalidateAccess: () => { calls.push("invalidate-access"); },
+        cleanupSignal: () => new AbortController().signal,
+        warn: (_message, context) => { warnings.push(context.cause); },
+      },
+    });
+
+    expect(returned).toEqual({ error, stuckStartConfirmed: true });
+    expect(calls).toEqual(["close-lease", "restart-runtime"]);
+    expect(warnings).toHaveLength(1);
   });
 
   test("bounds a provider retry storm with one no-progress watchdog owner", () => {

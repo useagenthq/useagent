@@ -1,3 +1,4 @@
+import { SandboxNotFoundError } from "@useagent/sandbox-contract";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { type SandboxHandle } from "../sandboxes/provider";
 import { claimCubeWarmSandbox } from "../sandboxes/cube-warm-pool";
@@ -69,7 +70,12 @@ export async function reviveRetainedSandbox(
   const binding = ctx.threadId && ctx.orgId
     ? await dependencies.threadBinding(ctx.orgId, ctx.threadId)
     : await dependencies.sandboxBinding(sandboxId);
-  const sandbox = cached?.id === sandboxId ? cached : await binding.provider.get(sandboxId);
+  let sandbox: SandboxHandle;
+  if (cached?.id === sandboxId) {
+    sandbox = cached;
+  } else {
+    sandbox = await binding.provider.get(sandboxId);
+  }
   const state = (sandbox as { state?: string }).state;
   if (state === "stopped" || state === "paused" || state === "archived") {
     await ctx.emit({ kind: "task", label: `Resuming thread sandbox ${sandbox.id.slice(0, 8)}…`, chip: options.chip });
@@ -114,8 +120,11 @@ export async function resolveRetainedSandbox(
     return { sandbox, binding };
   } catch (error) {
     if (error instanceof RetainedSandboxRuntimeMismatchError) throw error;
-    dependencies.forget(ctx.threadId, sandboxId);
-    return null;
+    if (error instanceof SandboxNotFoundError) {
+      dependencies.forget(ctx.threadId, sandboxId);
+      return null;
+    }
+    throw error;
   }
 }
 

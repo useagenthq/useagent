@@ -22,7 +22,11 @@ import {
   composeBoxCommand,
 } from "./provider";
 import { sandboxProviderConformance } from "@useagent/sandbox-contract/conformance";
-import { isSandboxTerminalUnavailableError, memorySandboxLabelStore } from "@useagent/sandbox-contract";
+import {
+  SandboxNotFoundError,
+  isSandboxTerminalUnavailableError,
+  memorySandboxLabelStore,
+} from "@useagent/sandbox-contract";
 
 const config: BoxApiConfig = {
   apiKey: "box_test_key",
@@ -209,6 +213,12 @@ function provider(
 }
 
 describe("Box sandbox provider", () => {
+  test("translates only a missing top-level box record into the neutral absence error", async () => {
+    const api = fakeBoxApi([]);
+    await expect(provider(api).provider.get("bx_missing")).rejects
+      .toBeInstanceOf(SandboxNotFoundError);
+  });
+
   sandboxProviderConformance("Box", () => {
     const api = fakeBoxApi([{ id: "bx_existing", state: "archived", vcpu: 2, memoryGB: 4, subdomain: "old" }]);
     return {

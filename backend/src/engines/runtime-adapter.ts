@@ -62,6 +62,10 @@ import { prepareSandboxTurn } from "./sandbox-turn-preparation";
 import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
 import { reloadRetainedOpenCodeSession } from "./runtime-session-stop";
 import { awaitRuntimeOperation } from "./runtime-operation";
+import {
+  recoverStuckCodexSubscriptionStart,
+  RuntimeFirstActivityTimeoutError,
+} from "./runtime-startup-recovery.js";
 export {
   reloadRetainedOpenCodeSession,
   type OpenCodeSessionReloadDependencies,
@@ -277,13 +281,11 @@ async function waitForNewRuntimeTurnSnapshot(
       return snapshot;
     }
     if (Date.now() >= deadline) {
-      throw new Error(
-        `The provider produced no first activity within ${runtimeFirstActivityTimeoutMs()}ms`,
-      );
+      throw new RuntimeFirstActivityTimeoutError(runtimeFirstActivityTimeoutMs());
     }
     await Bun.sleep(RUNTIME_POLL_INTERVAL_MS);
   }
-  throw new Error("Turn projection aborted");
+  throw ctx.signal.reason ?? new Error("Turn projection aborted");
 }
 
 export async function drainRuntimeTerminalOutput(input: {
@@ -686,6 +688,7 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
           );
         }
         const endTurn = ctx.timing?.begin("t3.turn_wait");
+        let skipQueuedCancel = false;
         await ctx.emit({
           kind: "task",
           label: "Waiting for provider activity…",
@@ -702,6 +705,20 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
           await ctx.emit({ kind: "done", label: "Done", chip: null });
           ctx.setSummary(summary, Date.now() - startedAt);
         } catch (error) {
+          if (
+            providerBridgeLease.authPath === "subscription" &&
+            (error instanceof RuntimeFirstActivityTimeoutError || ctx.signal.aborted)
+          ) {
+            const recovery = await recoverStuckCodexSubscriptionStart({
+              error,
+              ctx,
+              sandbox,
+              lease: providerBridgeLease,
+              priorTurnId,
+            });
+            skipQueuedCancel = recovery.stuckStartConfirmed;
+            throw recovery.error;
+          }
           if (error instanceof NoProgressError && !ctx.signal.aborted) {
             // The durable run is failing with the provider's real reason; also
             // stop the sandbox-side turn so a persistent thread does not keep
@@ -712,7 +729,7 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
           throw error;
         } finally {
           endTurn?.();
-          if (ctx.signal.aborted) {
+          if (ctx.signal.aborted && !skipQueuedCancel) {
             const cancelResult = await driver.cancel(session, "turn aborted");
             if (cancelResult.status !== "ok") {
               throw new Error(
