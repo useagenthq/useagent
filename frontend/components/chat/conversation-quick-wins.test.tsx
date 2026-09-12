@@ -43,6 +43,7 @@ function makeTurn(id: string, status: RunStatus, canonical: StoredCanonicalEvent
     child_session: false,
     thread_id: id,
     engine_session_id: null,
+    sandbox_id: null,
     repo: null,
     repos: [],
     repo_specs: [],
@@ -137,6 +138,11 @@ test("queued turns render the T3 queued pill with honest FIFO positions", () => 
   expect(html.split(">Send now<").length - 1).toBe(1);
   // The old bare "queued" tag row is gone.
   expect(html).not.toContain(">queued<");
+  // With nothing running (the reply is only waiting for admission) the pill
+  // must not claim it waits on a current run.
+  const idle = render([makeTurn("run-done", "completed", []), makeTurn("run-q1", "queued", [], "run-done")]);
+  expect(idle).toContain("Queued - waiting to start");
+  expect(idle).not.toContain("sends after the current run");
 });
 
 test("running thread threads runStartedAt into the composer status pill", () => {

@@ -312,7 +312,7 @@ describe("child session gateway tools", () => {
     expect(listedChildren).toHaveLength(1);
     const listedChild = listedChildren[0]!;
     expect([firstId, secondId]).toContain(listedChild.id);
-    expect(listedChild.eventRef).toContain("skynet://runs/");
+    expect(listedChild.eventRef).toContain("useagent://runs/");
 
     const events = await executeChildSessionTool(
       claims,
@@ -329,7 +329,7 @@ describe("child session gateway tools", () => {
     expect(eventRows).toHaveLength(1);
     expect(events.structuredContent?.nextCursor).toBe(0);
     expect(events.structuredContent?.eventRef).toBe(
-      `skynet://runs/${firstId}/native-events`,
+      `useagent://runs/${firstId}/native-events`,
     );
     expect(events.content[0]?.text).toContain(`Child run: ${firstId}`);
     expect(events.content[0]?.text).toContain("Returned: 1; shown: 1; more: true; cursor: 0;");
@@ -355,7 +355,7 @@ describe("child session gateway tools", () => {
       "child.started",
     ]);
     expect(firstGather?.eventRef).toBe(
-      `skynet://runs/${firstId}/native-events`,
+      `useagent://runs/${firstId}/native-events`,
     );
   });
 
@@ -394,7 +394,7 @@ describe("child session gateway tools", () => {
 
     expect(text).toContain(`Child run: ${runId}`);
     expect(text).toContain("Returned: 25; shown: 20; more: true; cursor: 19;");
-    expect(text).toContain(`ref: skynet://runs/${runId}/native-events`);
+    expect(text).toContain(`ref: useagent://runs/${runId}/native-events`);
     expect(eventLines).toHaveLength(20);
     const payload = eventLines[0]!.match(/ payload=(.*) payload_truncated=/)?.[1];
     expect(payload?.length).toBeLessThanOrEqual(320);

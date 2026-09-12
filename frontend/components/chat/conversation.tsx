@@ -15,6 +15,7 @@ import {
 import { type ComposerSubmit } from "@/components/chat/composer";
 import { useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { GatewayApprovalCard } from "@/components/chat/gateway-approval-card";
+import { groupApprovalsByRun } from "@/components/chat/gateway-approval-state";
 import { toGatewayChildSession } from "@/components/chat/gateway-children";
 import {
   deriveHandoffReceipts,
@@ -207,11 +208,6 @@ const LiveThinking = memo(function LiveThinking({ text }: { text: string }) {
   );
 });
 
-// NOTE: the mock NetworkApprovalRequest demo card was removed — engines run
-// one-shot in yolo mode, so nothing can actually pause a run for approval; a
-// fake approval card mid-run was actively misleading. When a real approval flow
-// lands backend-side, compose `@/components/ai/approval-card` here again.
-
 /** Wrap legacy ApiStep rows as canonical tool nodes so the T3 adapter stays the
  *  ONE step-to-work-entry mapping (no parallel grammar for the fallback lane). */
 function toolNodesFromSteps(steps: readonly ApiStep[]): TimelineNode[] {
@@ -236,13 +232,15 @@ const TurnBlock = memo(function TurnBlock({
   isLatestTurn = false,
   windowOwnsRunMarker = false,
   assistantIdentity,
+  threadBusy = false,
 }: {
   turn: Turn;
   /** 1-based place among this thread's queued turns (queued rendering only). */
   queuePosition?: number;
   onSendNow?: () => void;
-  /** Gateway approvals (#77) this run raised: a pending card is actionable,
-   *  a resolved one stays as the turn's durable record of who decided what. */
+  /** A turn is running: a queued reply waits on it (otherwise only on admission). */
+  threadBusy?: boolean;
+  /** Gateway approvals this run raised: pending is actionable, resolved is its record. */
   approvals?: readonly GatewayApproval[];
   onGatewayApprovalResolved?: () => void;
   /** Gateway child sessions THIS turn spawned (deferred serial thread turns) -
@@ -335,7 +333,7 @@ const TurnBlock = memo(function TurnBlock({
         <HandoffReceipts receipts={handoffs} />
         <QueuedMessagePill
           position={queuePosition ?? 1}
-          waitingOnCurrentRun={run.parent_run_id !== null}
+          waitingOnCurrentRun={threadBusy}
           onSendNow={onSendNow}
         />
       </div>
@@ -527,9 +525,8 @@ export const Conversation = memo(function Conversation({
   answeringApproval?: boolean;
   approvalError?: string | null;
   onAnswerApproval?: (decision: ApprovalDecision) => void | Promise<void>;
-  /** Gateway approvals (#77) for the thread's runs - pending ones render
-   * as Approve/Deny cards (stacked when several are pending); each card owns
-   * its own optimistic resolve against /api/gateway/approvals. */
+  /** Gateway approvals (#77) for the thread's runs: pending cards act, resolved
+   *  cards stay as history; each renders under the turn whose run raised it. */
   gatewayApprovals?: readonly GatewayApproval[];
   /** Nudges the approvals fetch lane after a card resolves locally. */
   onGatewayApprovalResolved?: () => void;
@@ -656,24 +653,11 @@ export const Conversation = memo(function Conversation({
   const queuedPositions = new Map(
     turns.filter((t) => t.status === "queued").map((t, i) => [t.run.id, i + 1] as const),
   );
-  // Each approval card renders under the turn whose run raised it; one whose run
-  // is not a rendered turn (a folded child session) falls through to the lane
-  // below the thread so it is never lost.
-  const { approvalsByRun, orphanApprovals } = useMemo(() => {
-    const byRun = new Map<string, GatewayApproval[]>();
-    const orphans: GatewayApproval[] = [];
-    const rendered = new Set(renderedTurns.map((t) => t.run.id));
-    for (const approval of gatewayApprovals ?? []) {
-      if (!rendered.has(approval.runId)) {
-        orphans.push(approval);
-        continue;
-      }
-      const list = byRun.get(approval.runId);
-      if (list) list.push(approval);
-      else byRun.set(approval.runId, [approval]);
-    }
-    return { approvalsByRun: byRun, orphanApprovals: orphans };
-  }, [gatewayApprovals, renderedTurns]);
+  const threadBusy = turns.some((t) => t.status === "running");
+  const { byRun: approvalsByRun, orphans: orphanApprovals } = useMemo(
+    () => groupApprovalsByRun(gatewayApprovals ?? [], renderedTurns.map((t) => t.run.id)),
+    [gatewayApprovals, renderedTurns],
+  );
 
   // Thread-error banner: the LATEST turn's failure summary, dismissible for the
   // session (a NEW error re-appears because the key includes the message). A
@@ -748,6 +732,7 @@ export const Conversation = memo(function Conversation({
                 isLatestTurn={index === renderedTurns.length - 1}
                 windowOwnsRunMarker={windowOwnsRunMarker}
                 assistantIdentity={assistantIdentity}
+                threadBusy={threadBusy}
               />
             )}
           />

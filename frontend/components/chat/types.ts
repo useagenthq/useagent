@@ -634,7 +634,9 @@ export function deriveTrace(step: ApiStep): StepTrace {
     if (tool && !map) {
       const fileBase = filePath ? basename(filePath) : null;
       const displayTool = semanticToolName(tool, code, input);
-      const server = providerDisplayName(semanticServerName(code, input));
+      const server = providerDisplayName(
+        semanticServerName(code, input) ?? splitGatewayTool(displayTool).server,
+      );
       // Name-bearing inputs give the generic row a real target (user-reported): a bare "Skill" becomes "Skill fast-installs".
       const named = pickString(input, [
         "name",
@@ -676,13 +678,25 @@ export function deriveTrace(step: ApiStep): StepTrace {
   return base;
 }
 
+/** OpenCode flattens an MCP tool id to `<server>_<tool>`; when the server is one
+ *  of useAgent's own gateways (a wire id with a product display name) the tool
+ *  half is the label and the gateway is the attribution, never a "Skynet
+ *  knowledge child session ..." verb. Other servers pass through untouched. */
+function splitGatewayTool(tool: string): { leaf: string; server: string | null } {
+  const match = /^([a-z0-9]+-[a-z0-9-]+)_(.+)$/i.exec(tool);
+  if (match?.[1] && match[2] && providerDisplayName(match[1]) !== match[1]) {
+    return { leaf: match[2], server: match[1] };
+  }
+  return { leaf: tool, server: null };
+}
+
 /** Prettify an uncatalogued tool name into a human verb: strip any
  * `mcp__server__` / dotted namespace, spacing out `_`/`-`, Title-case the head.
  * `mcp__github__create_issue` → "Create issue"; falls back to "Tool". */
 function humanizeTool(tool: string): string {
   const leaf =
-    tool
-      .split(/__|[./]/)
+    splitGatewayTool(tool)
+      .leaf.split(/__|[./]/)
       .filter(Boolean)
       .pop() ?? tool;
   const words = leaf.replace(/[_-]+/g, " ").trim();

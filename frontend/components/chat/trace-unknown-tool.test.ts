@@ -68,6 +68,21 @@ describe("deriveTrace — uncatalogued tool", () => {
     expect(trace.target).toBe("useAgent");
   });
 
+  test("a flattened gateway tool id drops the internal server prefix and credits the product", () => {
+    // OpenCode names MCP tools `<server>_<tool>`; the wire server id is not a
+    // product term, so it is attribution, never part of the verb.
+    const trace = deriveTrace(
+      commandStep("skynet-knowledge_child_session_create_many", { tasks: [] }),
+    );
+    expect(trace.verb).toBe("Child session create many");
+    expect(trace.target).toBe("useAgent");
+    expect(deriveTrace(commandStep("skynet-knowledge_child_session_gather", {})).verb).toBe(
+      "Child session gather",
+    );
+    // A hyphenated name that is not a known gateway keeps its full spelling.
+    expect(deriveTrace(commandStep("acme-tools_do_thing", {})).verb).toBe("Acme tools do thing");
+  });
+
   test("a genuine MCP server is attributed as-is", () => {
     const trace = deriveTrace(
       commandStep("mcp__github__create_issue", { title: "x" }, "github"),
