@@ -21,6 +21,7 @@ import {
 import { isPublicApiPath, orgScope } from "./middleware/org";
 import { bearerAuth } from "./middleware/bearer";
 import { chatRoutes } from "./chat/routes";
+import { botsRoutes } from "./bots/routes";
 import { toolGatewayConfig } from "./knowledge/gateway/config";
 import { knowledgeRoutes } from "./knowledge/routes";
 import { knowledgeDraftRoutes, skillProposalRoutes } from "./learning/routes";
@@ -446,6 +447,7 @@ app.route("/api/automations", schedulesRoutes);
 // Backward-compatible alias for sessions and frontend bundles created before
 // the product surface was renamed to Automations.
 app.route("/api/schedules", schedulesRoutes);
+app.route("/api/bots", botsRoutes);
 // Org Secrets — encrypted named secrets injected as env vars into the per-thread
 // sandbox at boot. Org-scoped; values are write-only at this boundary (set/delete
 // only, never returned). See src/secrets/*.

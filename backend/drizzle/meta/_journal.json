@@ -533,6 +533,13 @@
       "when": 1791600000000,
       "tag": "0077_thread_relationships",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1791700000000,
+      "tag": "0078_bots",
+      "breakpoints": true
     }
   ]
 }

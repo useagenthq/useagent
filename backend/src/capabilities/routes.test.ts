@@ -22,6 +22,7 @@ describe("capability catalog route", () => {
     const catalog = {
       version: 1,
       scope: "pre_run",
+      bots: false,
       engines: [],
       tools: { gatewayConfigured: false, families: {}, declared: [] },
       nativeSlashCommands: { catalog: "session_runtime", currentRun: null },

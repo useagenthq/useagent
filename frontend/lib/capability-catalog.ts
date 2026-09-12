@@ -37,6 +37,8 @@ export interface CapabilityCatalogTool {
 export interface CapabilityCatalog {
   version: 1;
   scope: "pre_run";
+  /** Bots surface is enabled for this org (server flag). */
+  bots: boolean;
   engines: CapabilityCatalogEngine[];
   tools: {
     gatewayConfigured: boolean;
@@ -167,6 +169,7 @@ export function parseCapabilityCatalog(value: unknown): CapabilityCatalog | null
   return {
     version: 1,
     scope: "pre_run",
+    bots: root.bots === true,
     engines,
     tools: { gatewayConfigured: toolsRoot.gatewayConfigured, declared },
     nativeSlashCommands: { catalog: "session_runtime", currentRun: null },
