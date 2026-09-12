@@ -122,7 +122,7 @@ describe("sidebar wiring contract", () => {
     expect(projects).toContain("useOrgChanges");
     expect(projects).toContain('backendFetch("/api/repos"');
     expect(projects).toContain("groupThreadsByProject");
-    expect(projects).toContain(">Projects<");
+    expect(projects).toMatch(/>\s*Projects\s*</);
   });
 
   test("the row keeps the ported presentation surface", () => {
