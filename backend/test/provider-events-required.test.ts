@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
+import { captureLossForRun } from "../src/runs/capture-loss";
 import {
+  CaptureFenceError,
   providerEventExists,
   recordProviderEvent,
   recordProviderEventIfAbsent,
@@ -9,6 +11,57 @@ import { getNativeFramesSince, subscribeNative } from "../src/runs/native-events
 import { createRun } from "../src/runs/repo";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import "./helpers";
+
+test("a stale fence rejects once without recording capture loss", async () => {
+  const runId = crypto.randomUUID();
+  let fenceCalls = 0;
+  await expect(recordProviderEvent({
+    id: `${runId}:stale-fence`,
+    runId,
+    threadId: runId,
+    provider: "test",
+    eventType: "session.started",
+    payload: {},
+  }, {
+    fence: async () => {
+      fenceCalls++;
+      return false;
+    },
+  })).rejects.toBeInstanceOf(CaptureFenceError);
+  expect(fenceCalls).toBe(1);
+  expect(await captureLossForRun(runId)).toBeNull();
+});
+
+test("a fenced invalid write retries as required without recording capture loss", async () => {
+  const runId = crypto.randomUUID();
+  await createRun({
+    id: runId,
+    prompt: "fenced invalid provider event",
+    model: "test-model",
+    engine: "mock",
+    orgId: DEV_ORG_ID,
+    userId: DEV_USER_ID,
+    parentRunId: null,
+    threadId: runId,
+    repos: [],
+    memoryScope: "org",
+  });
+  let fenceCalls = 0;
+  await expect(recordProviderEvent({
+    id: `${runId}:invalid-fenced-write`,
+    runId,
+    threadId: runId,
+    provider: "test",
+    eventType: null as never,
+  }, {
+    fence: async () => {
+      fenceCalls++;
+      return true;
+    },
+  })).rejects.toThrow();
+  expect(fenceCalls).toBe(3);
+  expect(await captureLossForRun(runId)).toBeNull();
+});
 
 test("required provider events propagate failure without poisoning the run sequencer", async () => {
   const runId = crypto.randomUUID();
@@ -35,6 +88,58 @@ test("required provider events propagate failure without poisoning the run seque
   });
   await expect(recordProviderEvent(input, { critical: true, required: true })).resolves.toBeUndefined();
   expect(await providerEventExists(input.id)).toBe(true);
+});
+
+test("a capture that fails transiently is retried inside the run's chain and is not counted as lost", async () => {
+  const runId = crypto.randomUUID();
+  const input: ProviderEventInput = {
+    id: `${runId}:late-run`,
+    runId,
+    threadId: runId,
+    provider: "test",
+    eventType: "session.started",
+    payload: {},
+  };
+  // The run does not exist yet, so the first attempt fails its foreign key; the run is
+  // created inside the retry window and the retry lands the frame.
+  const capture = recordProviderEvent(input);
+  await new Promise((r) => setTimeout(r, 30));
+  expect(await providerEventExists(input.id)).toBe(false); // the first attempt failed
+  await createRun({
+    id: runId,
+    prompt: "late run",
+    model: "test-model",
+    engine: "mock",
+    orgId: DEV_ORG_ID,
+    userId: DEV_USER_ID,
+    parentRunId: null,
+    threadId: runId,
+  });
+  await capture;
+  expect(await providerEventExists(input.id)).toBe(true);
+  expect(await captureLossForRun(runId)).toBeNull();
+});
+
+test("a capture that fails every retry is counted as a lost frame for its run", async () => {
+  const runId = crypto.randomUUID();
+  await createRun({
+    id: runId,
+    prompt: "lost frame",
+    model: "test-model",
+    engine: "mock",
+    orgId: DEV_ORG_ID,
+    userId: DEV_USER_ID,
+    parentRunId: null,
+    threadId: runId,
+  });
+  await recordProviderEvent({
+    id: `${runId}:bad`,
+    runId,
+    threadId: runId,
+    provider: "test",
+    eventType: null as never,
+  });
+  expect(await captureLossForRun(runId)).toEqual({ lostFrames: 1, lastError: expect.any(String) });
 });
 
 test("immutable provider events fail required, repair on retry, and publish only once", async () => {

@@ -58,6 +58,7 @@ import {
   type NativeFrame,
 } from "./native-events";
 import {
+  admitCanonicalComplete,
   loadCanonicalThread,
   subscribeCanonicalThread,
   subscribeCanonicalizationComplete,
@@ -903,10 +904,9 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
       };
       // Canonicalization-complete (H2): the per-run signal that its canonical projection
       // is trustworthy. Deduped per run so replay + live never re-announce a run.
-      const canonicalCompleteSeen = new Set<string>();
+      const canonicalCompleteSeen = new Map<string, boolean>(); // runId -> degraded (see admitCanonicalComplete)
       const sendCanonicalComplete = (complete: CanonicalizationComplete): void => {
-        if (canonicalCompleteSeen.has(complete.runId)) return;
-        canonicalCompleteSeen.add(complete.runId);
+        if (!admitCanonicalComplete(canonicalCompleteSeen, complete)) return;
         sendFrame("canonical-complete", { threadId, complete });
       };
 

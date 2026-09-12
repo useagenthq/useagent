@@ -5,6 +5,7 @@ import { makeNativeFrame, publishNativeFrame } from "./native-events";
 import { errorMessage } from "../util/error-message";
 import { executionGraphWriteEnabled } from "./execution-graph-rollout";
 import { shadowWriteExecutionGraph } from "./execution-graph-shadow-writer";
+import { noteCaptureLoss } from "./capture-loss";
 
 export const PROVIDER_PAYLOAD_CAP_BYTES = 32 * 1_024;
 export const CHILD_TRANSCRIPT_PAYLOAD_CAP_BYTES = 512 * 1_024;
@@ -100,6 +101,29 @@ interface RunSequencer {
 
 const runSequencers = new Map<string, RunSequencer>();
 
+/** Delays before the second and third attempt of a failed capture write. A write that
+ *  still fails and was not `required` is a lost frame: see capture-loss.ts for the
+ *  ledger and the seal it degrades. */
+const CAPTURE_RETRY_DELAYS_MS = [100, 400] as const;
+
+async function persistWithRetry(input: ProviderEventInput, seq: RunSequencer, fence?: WriteFence): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await (fence ? persistFencedAndPublish(input, seq, fence) : persistAndPublish(input, seq));
+      return;
+    } catch (err) {
+      if (err instanceof CaptureFenceError) throw err;
+      const delay = CAPTURE_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) throw err;
+      console.warn(
+        `[provider-events] capture attempt ${attempt + 1} failed (${input.eventType}); retrying in ${delay}ms:`,
+        errorMessage(err),
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+}
+
 /**
  * Drain/seal barrier: await every provider-event write CURRENTLY in flight for a run.
  * Captures are fire-and-forget (`void recordProviderEvent`), so at the moment the
@@ -158,7 +182,9 @@ async function highestSeq(runId: string, exec: Executor = db): Promise<number> {
  * caller while the stored sequencer chain still catches the failure and remains
  * usable for later events. `fence` makes the write conditional on an ownership check
  * run inside the write's own transaction (see WriteFence); a fenced write is always
- * `required`, since the caller must learn that its claim is gone.
+ * `required`, since the caller must learn that its claim is gone. Persistence failures
+ * get the bounded retry, but a lost fence rejects immediately. A write that still
+ * fails and was neither required nor fenced is counted as a lost frame.
  */
 export function recordProviderEvent(
   input: ProviderEventInput,
@@ -171,7 +197,7 @@ export function recordProviderEvent(
   }
   const entry = seq;
   const fence = opts.fence;
-  const attempt = entry.chain.then(() => fence ? persistFencedAndPublish(input, entry, fence) : persistAndPublish(input, entry));
+  const attempt = entry.chain.then(() => persistWithRetry(input, entry, fence));
   const done = attempt.catch((err) => {
       if (err instanceof CaptureFenceError) return; // the fenced caller sees the rejection; nothing was written
       const msg = errorMessage(err);
@@ -180,6 +206,9 @@ export function recordProviderEvent(
       // (a command catalog) fails VISIBLY instead of being silently dropped.
       if (opts.critical) console.error(`[provider-events] CRITICAL capture failed (${input.eventType}):`, msg);
       else console.warn("[provider-events] capture failed:", msg);
+      // A required capture hands its failure to the caller, who retries or fails the run.
+      // Anything else is a LOST frame: record it so the run seals degraded, never complete.
+      if (!opts.required && !fence) noteCaptureLoss(input, msg);
   });
   entry.chain = done;
   // Idle-evict when this link is the tail and has settled, so the map only holds

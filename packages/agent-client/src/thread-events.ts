@@ -30,9 +30,15 @@ export type CanonicalThreadEvent = CanonicalAgentEvent & {
   readonly revision: number;
 };
 
-/** The completion record: a run's canonical projection is durable + trustworthy. */
+/** The completion record: a run's canonical projection is durable + trustworthy.
+ *  `degraded` means the run sealed as complete-degraded: the projection is complete as
+ *  recorded, but at least one provider frame was lost at capture (`lostFrames` counts
+ *  them). A client trusts the lane exactly as when not degraded; it may tell the user
+ *  part of the run's activity is missing. Both fields default when a backend omits them. */
 export interface CanonicalCompleteFrame {
   readonly runId: string;
+  readonly degraded: boolean;
+  readonly lostFrames: number;
 }
 
 /** A decoded thread frame. `native`/`run`/`step`/`delta`/`snapshot` carry raw product
@@ -91,7 +97,11 @@ export function validateCanonicalComplete(
   const c = raw as Record<string, unknown>;
   if (!isNonEmptyString(c.runId)) return null;
   if (isNonEmptyString(frameThreadId) && isNonEmptyString(c.threadId) && c.threadId !== frameThreadId) return null;
-  return { runId: c.runId };
+  return {
+    runId: c.runId,
+    degraded: c.degraded === true,
+    lostFrames: isFiniteNumber(c.lostFrames) && c.lostFrames > 0 ? c.lostFrames : 0,
+  };
 }
 
 /** Decode ONE raw SSE frame `(event, data)` into a typed {@link DecodedFrame}. Pure:
