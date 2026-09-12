@@ -1,31 +1,20 @@
-import type { CSSProperties, HTMLAttributes, ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import { cx } from "@/utils/cx";
 
-/** The theme's state ramp; a tone is always a semantic variable, never a raw color. */
-export const ORB_TONES = [
-  "primary",
-  "feature",
-  "success",
-  "warning",
-  "error",
-  "verified",
-  "highlighted",
-  "away",
-] as const;
+/**
+ * The orb palette. These are identity colors, not state colors: a bot's ball
+ * is the same vivid hue in every theme (the state ramp goes pastel in the dark
+ * themes and turned the balls chalky). The pairs live in app/globals.css under
+ * `.orb[data-tone]`, never in a component.
+ */
+export const ORB_TONES = ["blue", "violet", "rose", "emerald", "amber", "cyan", "fuchsia", "slate"] as const;
 export type OrbTone = (typeof ORB_TONES)[number];
 
 /** `solid` is one tone; `prism` is the iridescent sweep with a dark ring. */
 export type OrbVariant = "solid" | "prism";
 
-/** Diameter behind each size class, so the gloss and glow scale with the ball. */
-const PX: Record<string, number> = {
-  "size-5": 20,
-  "size-6": 24,
-  "size-8": 32,
-  "size-10": 40,
-  "size-14": 56,
-  "size-16": 64,
-};
+/** Tones whose center is bright enough that white ink fails 3:1; they take black. */
+export const ORB_DARK_INK: ReadonlySet<OrbTone> = new Set<OrbTone>(["emerald", "amber", "cyan"]);
 
 export interface OrbProps extends HTMLAttributes<HTMLSpanElement> {
   tone?: OrbTone;
@@ -35,30 +24,38 @@ export interface OrbProps extends HTMLAttributes<HTMLSpanElement> {
   children?: ReactNode;
 }
 
+const SHEEN = ["glaze", "cap", "glint", "bounce"] as const;
+
 /**
- * A glossy sphere: a bright highlight cap top-left, the tone deepening toward
- * the bottom edge, a thin darker rim and a faint glow in its own color. One
- * element, layered backgrounds; the recipe is `.orb` in app/globals.css and
- * reads the `--orb-tone` set here. Children (a glyph, a state dot) sit centered
- * over it. No motion, so nothing to reduce.
+ * A glossy sphere built the way the reference swatches are: a radial base
+ * from a lighter center to a deeper edge, then four white sheen layers inside
+ * a clipped ball (a bottom glaze, a wide top cap, a small glint, and the
+ * bounce light along the bottom). No shadow, no glow, no motion. Children
+ * (a glyph, a state dot) sit above the ball and are not clipped, so a state
+ * dot can still ride the edge. The recipe is `.orb` in app/globals.css.
  */
 export function Orb({
-  tone = "primary",
+  tone = "blue",
   variant = "solid",
   size = "size-10",
   children,
   className,
-  style,
   ...rest
 }: OrbProps) {
-  const vars = { "--orb-tone": `hsl(var(--${tone}-base))`, "--orb-px": PX[size] ?? 40 } as CSSProperties;
+  const ink = variant === "prism" || ORB_DARK_INK.has(tone) ? "dark" : "light";
   return (
     <span
       className={cx("orb relative inline-flex shrink-0 items-center justify-center rounded-full", size, className)}
-      style={{ ...vars, ...style }}
+      data-tone={variant === "prism" ? undefined : tone}
       data-variant={variant}
+      data-ink={ink}
       {...rest}
     >
+      <span className="orb-ball absolute inset-0 overflow-hidden rounded-full" aria-hidden>
+        {SHEEN.map((layer) => (
+          <span key={layer} className="orb-sheen" data-layer={layer} />
+        ))}
+      </span>
       {children}
     </span>
   );
