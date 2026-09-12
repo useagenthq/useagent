@@ -180,14 +180,19 @@ export function boxPtyKeygenArgv(home: string): string[] {
   ];
 }
 
-export function boxPtySshArgv(boxId: string, readyMarker: string): string[] {
-  const shell = [
+export function boxPtySshArgv(boxId: string): string[] {
+  // Omitting COMMAND is what makes the Box CLI allocate an actual remote TTY.
+  return ["box", "ssh", boxId];
+}
+
+export function boxPtyBootstrapCommand(readyMarker: string, cwd = WORK_DIR): string {
+  const encodedMarker = Buffer.from(readyMarker, "utf8").toString("base64");
+  return [
     "export TERM=xterm-256color",
-    "cd ~/work 2>/dev/null || cd ~",
-    `printf '%s\\n' ${q(readyMarker)}`,
-    "exec bash -li",
-  ].join("; ");
-  return ["box", "ssh", boxId, "--", "bash", "-lc", shell];
+    `cd ${q(cwd)} 2>/dev/null || cd ~`,
+    `printf '%s' ${q(encodedMarker)} | base64 -d`,
+    "printf '\\n'",
+  ].join("; ") + "\n";
 }
 
 export function boxPtyEnv(
@@ -662,6 +667,7 @@ class BoxProcess implements SandboxProcess {
   async createPty(options: {
     cols: number;
     rows: number;
+    cwd?: string;
     onData: (data: Uint8Array) => void | Promise<void>;
   }): Promise<SandboxPtyHandle> {
     const problem = boxCliProblem();
@@ -701,7 +707,8 @@ class BoxProcess implements SandboxProcess {
         },
       });
       try {
-        const subprocess = Bun.spawn(boxPtySshArgv(this.boxId, readyMarker), { env, terminal });
+        const subprocess = Bun.spawn(boxPtySshArgv(this.boxId), { env, terminal });
+        terminal.write(boxPtyBootstrapCommand(readyMarker, options.cwd));
         void subprocess.exited.then((code) => {
           gate.fail(new Error(`Box terminal exited before the shell was ready (${code})`));
         });
