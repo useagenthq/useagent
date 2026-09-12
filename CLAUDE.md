@@ -34,6 +34,9 @@ Architecture references: `README.md`, `backend/README.md`, `frontend/README.md`,
   compatibility engine and must never be a fallback for these four. If a
   provider cannot host a native runtime, mark that engine/provider pair
   unsupported and stop rather than changing its protocol or lifecycle.
+- RETAINED WORKSPACES: a runtime generation mismatch, upgrade, or rollback must
+  not delete a thread's sandbox/files. Upgrade in place when compatible, or
+  preserve the workspace and fail closed until a safe migration exists.
 - Drizzle migration trap: the boot migrator applies only entries with journal
   `when` GREATER than the last applied - always stamp strictly above the
   journal tail.

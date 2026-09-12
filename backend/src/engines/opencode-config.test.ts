@@ -4,6 +4,7 @@ import type { EngineRunContext } from "./types";
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
   buildOpencodeConfigWriteCommand,
+  closeOpenCodeTurnSandbox,
   prepareOpencodeSandboxConfig,
 } from "./opencode-server";
 import { openCodeModelBody } from "./opencode-model";
@@ -11,6 +12,22 @@ import { verifyToolToken } from "../knowledge/gateway/token";
 import { LEGACY_TOOL_GATEWAY_SERVER_NAME, TOOL_GATEWAY_SERVER_NAME } from "../knowledge/gateway/descriptor";
 
 const original = { ...process.env };
+
+test("OpenCode teardown preserves retained workspaces even before the new turn persists", async () => {
+  for (const [retained, persisted, threadId, expectedDeletes] of [
+    [true, false, "retained-thread", 0],
+    [true, true, "retained-thread", 0],
+    [false, false, "new-thread", 1],
+    [false, true, "new-thread", 0],
+    [false, false, undefined, 1],
+  ] as const) {
+    let deletes = 0;
+    await closeOpenCodeTurnSandbox({
+      sandbox: { delete: async () => { deletes++; } }, retained, persisted, threadId,
+    });
+    expect(deletes).toBe(expectedDeletes);
+  }
+});
 
 afterEach(() => {
   for (const name of [

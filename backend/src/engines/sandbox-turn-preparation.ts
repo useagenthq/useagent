@@ -42,6 +42,7 @@ export interface SandboxTurnPreparationOptions<T> {
     workdir: string,
     binding: SandboxBinding,
   ) => Promise<T>;
+  readonly closeProvider?: (state: T) => Promise<void>;
 }
 
 export interface PreparedSandboxTurn<T> {
@@ -58,11 +59,14 @@ export interface PreparedSandboxTurn<T> {
 export async function prepareSandboxTurn<T>(
   ctx: EngineRunContext,
   options: SandboxTurnPreparationOptions<T>,
+  dependencies: {
+    readonly acquireThreadSandbox: typeof acquireThreadSandbox;
+  } = { acquireThreadSandbox },
 ): Promise<PreparedSandboxTurn<T>> {
   const secretInjection = await composeSecretEnv(ctx, { excludeNames: PROVIDER_SECRET_NAMES });
   const redact = createSecretRedactor(secretInjection.redactionValues);
   const endSandbox = ctx.timing?.begin(`${options.timingPrefix}.sandbox_acquire`);
-  const lease = await acquireThreadSandbox(ctx, {
+  const lease = await dependencies.acquireThreadSandbox(ctx, {
     snapshot: options.snapshot,
     chip: options.chip,
     warmPool: options.warmPool,
@@ -72,6 +76,20 @@ export async function prepareSandboxTurn<T>(
   endSandbox?.();
 
   const endPrepare = ctx.timing?.begin(`${options.timingPrefix}.prepare`);
+  let providerState: T | undefined;
+  let providerPrepared = false;
+  let closed = false;
+  const close = async (): Promise<void> => {
+    if (closed) return;
+    closed = true;
+    try {
+      if (providerPrepared && options.closeProvider) {
+        await options.closeProvider(providerState as T);
+      }
+    } finally {
+      if (lease.releaseAfterRun) await lease.sandbox.delete().catch(() => {});
+    }
+  };
   try {
     const { sandbox } = lease;
     const stage = async <V>(name: string, operation: () => Promise<V>): Promise<V> => {
@@ -141,30 +159,36 @@ export async function prepareSandboxTurn<T>(
         }
       }
     };
-    let providerState: T;
+    const prepareProvider = () => stage("provider_bridge", async () => {
+      const state = await options.prepareProvider(sandbox, workdir, lease.binding);
+      providerState = state;
+      providerPrepared = true;
+      return state;
+    });
+    let resolvedProviderState: T;
     if (options.providerAfterResources) {
       await prepareResources();
-      providerState = await stage("provider_bridge", () =>
-        options.prepareProvider(sandbox, workdir, lease.binding)
-      );
+      resolvedProviderState = await prepareProvider();
     } else {
-      [providerState] = await Promise.all([
-        stage("provider_bridge", () => options.prepareProvider(sandbox, workdir, lease.binding)),
-        prepareResources(),
-      ]);
+      const providerOperation = prepareProvider();
+      const resourcesOperation = prepareResources();
+      try {
+        [resolvedProviderState] = await Promise.all([providerOperation, resourcesOperation]);
+      } catch (error) {
+        await Promise.allSettled([providerOperation, resourcesOperation]);
+        throw error;
+      }
     }
     await stage("secrets_marker", () => recordSecretsInjected(ctx, secretInjection));
     return {
       sandbox,
       workdir,
-      providerState,
+      providerState: resolvedProviderState,
       redact,
-      async close() {
-        if (lease.releaseAfterRun) await sandbox.delete().catch(() => {});
-      },
+      close,
     };
   } catch (error) {
-    if (lease.releaseAfterRun) await lease.sandbox.delete().catch(() => {});
+    await close().catch(() => {});
     throw error;
   } finally {
     endPrepare?.();

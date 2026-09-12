@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
+import { providerEvents } from "../src/db/schema";
 import { acceptRunCommand } from "../src/commands";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../src/commands/cancel";
 import {
@@ -9,6 +10,7 @@ import {
   type ReconcileProbe,
 } from "../src/runs/recovery";
 import { finalizeRun } from "../src/runs/finalize";
+import { recordProviderEvent } from "../src/runs/provider-events";
 import {
   createRun,
   getRun,
@@ -134,6 +136,133 @@ describe("command-lane restart recovery", () => {
 
     // B re-dispatched → executes (mock) → completes. (Order: only after A settled.)
     await waitFor(() => isDone(B));
+  });
+
+  test("persists recovered terminal activity before finalizing the run", async () => {
+    const runId = crypto.randomUUID();
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "opencode",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "ses_terminal_tail",
+      sandbox: "sb",
+      withStep: true,
+    });
+    const result = await recoverStaleRuns(async (_handle, checkpoint) => {
+      if (checkpoint.eventContext?.runId !== runId) return { status: "unreachable" };
+      return {
+        status: "completed",
+        summary: "answer with durable tail",
+        events: [{
+          id: `pe_${runId}_t3_child-terminal`,
+          runScopedId: true,
+          provider: "t3",
+          eventType: "t3.activity.task.completed",
+          sessionId: "child-session",
+          parentSessionId: "parent-session",
+          partId: "child-terminal",
+          callId: "child-session",
+          payload: { status: "completed" },
+        }],
+      };
+    });
+
+    expect(result.reconciled).toBeGreaterThanOrEqual(1);
+    const run = await getRun(runId);
+    expect(run?.status).toBe("completed");
+    const [event] = await db
+      .select()
+      .from(providerEvents)
+      .where(and(eq(providerEvents.runId, runId), eq(providerEvents.nativePartId, "child-terminal")));
+    expect(event?.id).toBe(`pe_${runId}_t3_child-terminal`);
+    expect(event?.nativeParentSessionId).toBe("parent-session");
+    expect(event?.createdAt.getTime()).toBeLessThanOrEqual(run!.settledAt!.getTime());
+  });
+
+  test("persists recovered failure activity before finalizing with its reason", async () => {
+    const runId = crypto.randomUUID();
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "opencode",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "ses_failed_tail",
+      sandbox: "sb",
+      withStep: true,
+    });
+    const eventId = `pe_${runId}_t3_failed-tail`;
+    const result = await recoverStaleRuns(async (_handle, checkpoint) =>
+      checkpoint.eventContext?.runId === runId
+        ? {
+            status: "failed",
+            summary: "Provider turn interrupted",
+            events: [{
+              id: eventId,
+              runScopedId: true,
+              provider: "t3",
+              eventType: "t3.activity.runtime.warning",
+              partId: "failed-tail",
+            }],
+          }
+        : { status: "unreachable" }
+    );
+
+    expect(result.failed).toBeGreaterThanOrEqual(1);
+    const run = await getRun(runId);
+    expect(run?.status).toBe("failed");
+    expect(run?.summary).toBe("Provider turn interrupted");
+    const [event] = await db.select().from(providerEvents).where(eq(providerEvents.id, eventId));
+    expect(event?.createdAt.getTime()).toBeLessThanOrEqual(run!.settledAt!.getTime());
+  });
+
+  test("parks when a required completed-event update fails despite an older row", async () => {
+    const runId = crypto.randomUUID();
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "opencode",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "ses_terminal_retry",
+      sandbox: "sb",
+      withStep: true,
+    });
+    const eventId = `pe_${runId}_t3_stable-tool`;
+    await recordProviderEvent({
+      id: eventId,
+      runId,
+      threadId: runId,
+      provider: "t3",
+      eventType: "t3.activity.tool.started",
+      nativePartId: "stable-tool",
+    }, { required: true });
+
+    const result = await recoverStaleRuns(async (_handle, checkpoint) =>
+      checkpoint.eventContext?.runId === runId
+        ? {
+            status: "completed",
+            summary: "must wait for the tail",
+            events: [{
+              id: eventId,
+              runScopedId: true,
+              provider: "t3",
+              eventType: null as never,
+              partId: "stable-tool",
+            }],
+          }
+        : { status: "unreachable" }
+    );
+
+    expect(result.parked).toBeGreaterThanOrEqual(1);
+    expect((await getRun(runId))?.status).toBe("running");
+    const [event] = await db.select().from(providerEvents).where(eq(providerEvents.id, eventId));
+    expect(event?.eventType).toBe("t3.activity.tool.started");
   });
 
   test("a recovery finalizer loser reports the durable first-writer status", async () => {

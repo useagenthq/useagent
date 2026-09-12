@@ -82,21 +82,21 @@ export async function prepareCodexSubscription(input: {
   let relay: ReturnType<typeof issueCodexSubscriptionRelayCapability> | undefined;
 
   await sandbox.process.deleteSession(CODEX_EXEC_SERVER_SESSION).catch(() => {});
-  await sandbox.process.createSession(CODEX_EXEC_SERVER_SESSION);
-  const launch = await sandbox.process.executeSessionCommand(
-    CODEX_EXEC_SERVER_SESSION,
-    {
-      command: buildCodexExecServerCommand(environmentId, layout),
-      runAsync: true,
-      suppressInputEcho: true,
-    },
-    30,
-  );
-  if ((launch.exitCode ?? 0) !== 0) {
-    throw new Error("Codex exec-server failed to start");
-  }
-
   try {
+    await sandbox.process.createSession(CODEX_EXEC_SERVER_SESSION);
+    const launch = await sandbox.process.executeSessionCommand(
+      CODEX_EXEC_SERVER_SESSION,
+      {
+        command: buildCodexExecServerCommand(environmentId, layout),
+        runAsync: true,
+        suppressInputEcho: true,
+      },
+      30,
+    );
+    if ((launch.exitCode ?? 0) !== 0) {
+      throw new Error("Codex exec-server failed to start");
+    }
+
     const readiness = await sandbox.process.executeCommand(
       buildCodexExecServerReadinessCommand(),
       undefined,

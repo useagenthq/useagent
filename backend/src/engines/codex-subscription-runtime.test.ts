@@ -77,7 +77,7 @@ describe("T3 Codex subscription lease", () => {
       authEpoch: "credential-generation-123",
       model: "gpt-5.5",
       sandboxId: "sandbox-1",
-      sandboxGeneration: "useagent-runtime-v9",
+      sandboxGeneration: "useagent-runtime-v8",
       environmentId: "skynet-sandbox-1-run-1",
       cwd: "/root/work",
     });
@@ -174,6 +174,33 @@ describe("T3 Codex subscription lease", () => {
     })).rejects.toThrow("provider configuration failed");
 
     expect(closed).toEqual(["relay", "bridge"]);
+    expect(harness.deletedSessions).toEqual([
+      "skynet-codex-exec-server",
+      "skynet-codex-exec-server",
+    ]);
+  });
+
+  test("removes a session when the exec server launch fails", async () => {
+    const harness = fakeSandbox({ launchExit: 127 });
+    let relayIssued = false;
+
+    await expect(prepareCodexSubscription({
+      sandbox: harness.sandbox,
+      ctx: context(),
+      workdir: "/root/work",
+      runtime: runtime(),
+      dependencies: {
+        openExecBridge: () => {
+          throw new Error("bridge must not open");
+        },
+        issueRelay: () => {
+          relayIssued = true;
+          throw new Error("relay must not issue");
+        },
+      },
+    })).rejects.toThrow("Codex exec-server failed to start");
+
+    expect(relayIssued).toBe(false);
     expect(harness.deletedSessions).toEqual([
       "skynet-codex-exec-server",
       "skynet-codex-exec-server",
@@ -337,6 +364,7 @@ function runtime(): CodexSubscriptionRuntimeSelection {
 
 function fakeSandbox(options: {
   failProviderPatch?: boolean;
+  launchExit?: number;
   providerKind?: "box" | "cube" | "daytona";
 } = {}) {
   const commands: Array<{ command: string; result: SandboxExecuteResult }> = [];
@@ -364,7 +392,7 @@ function fakeSandbox(options: {
       },
       async executeSessionCommand(sessionId: string, request: { command: string }) {
         sessionCommands.push({ sessionId, command: request.command });
-        return { cmdId: "cmd-1", exitCode: 0 };
+        return { cmdId: "cmd-1", exitCode: options.launchExit ?? 0 };
       },
     },
     async getPreviewLink(port: number) {

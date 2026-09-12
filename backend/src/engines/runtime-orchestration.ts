@@ -15,7 +15,6 @@ import {
   t3TaskDisplayTitle,
 } from "@useagent/agent-harness";
 import { toolServerDisplayName } from "@useagent/agent-harness/canonical";
-
 export type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
 export type RuntimeMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
 export interface RuntimeMessage {
@@ -24,6 +23,7 @@ export interface RuntimeMessage {
   readonly text: string;
   readonly turnId: string | null;
   readonly streaming: boolean;
+  readonly createdAt?: string;
 }
 export interface RuntimeActivity {
   readonly id: string;
@@ -34,7 +34,6 @@ export interface RuntimeActivity {
   readonly turnId: string | null;
   readonly sequence?: number;
 }
-
 /**
  * T3 keeps several activity rows (notably task.progress) under a stable id and
  * replaces their payload as the provider reports newer state. The adapter must
@@ -290,6 +289,9 @@ export interface RuntimeThreadSnapshot {
     readonly latestTurn: null | {
       readonly turnId: string;
       readonly state: "running" | "interrupted" | "completed" | "error";
+      readonly requestedAt?: string;
+      readonly startedAt?: string | null;
+      readonly completedAt?: string | null;
       readonly assistantMessageId: string | null;
     };
     readonly messages: readonly RuntimeMessage[];
@@ -300,7 +302,6 @@ export interface RuntimeThreadSnapshot {
     };
   };
 }
-
 const PROVIDER_INSTANCE: Record<RuntimeEngineId, string> = {
   codex: "codex",
   claude: "claudeAgent",
@@ -351,11 +352,10 @@ function runtimePlanTodos(value: unknown): ReadonlyArray<Readonly<Record<string,
 export function runtimeProjectId(ctx: Pick<EngineRunContext, "threadId" | "runId">): string {
   return stableId("skynet-project", ctx.threadId ?? ctx.runId);
 }
-
 export function runtimeThreadId(ctx: Pick<EngineRunContext, "threadId" | "runId">): string {
   return stableId("skynet-thread", ctx.threadId ?? ctx.runId);
 }
-
+export const runtimeUserMessageId = (runId: string): string => stableId("skynet-message", runId);
 export function buildRuntimeProjectCreateCommand(
   ctx: Pick<EngineRunContext, "threadId" | "runId">,
   workspaceRoot: string,
@@ -418,7 +418,7 @@ export function buildRuntimeTurnStartCommand(
     commandId: stableId("skynet-turn", ctx.runId),
     threadId,
     message: {
-      messageId: stableId("skynet-message", ctx.runId),
+      messageId: runtimeUserMessageId(ctx.runId),
       role: "user",
       text: prompt,
       attachments: [],

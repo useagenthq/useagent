@@ -170,7 +170,9 @@ describe("T3 run adapter gate", () => {
     expect(source).toContain('providerAfterResources: engine === "claude"');
     expect(source).toContain('resourceUser: engine === "claude"');
     expect(source).toContain("prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir)");
-    expect(source).toContain("await providerBridgeLease?.close()");
+    expect(source).toContain("closeProvider: (state) => state.close()");
+    expect(source).toContain("await prepared.close().catch(() => {})");
+    expect(source).not.toContain("await providerBridgeLease?.close()");
     expect(source).not.toContain("runManagedCodexSubscriptionTurn");
     expect(source).not.toContain('runtimeKind: "managed_codex_app_server"');
     expect(source).not.toContain("prompt.includes(");

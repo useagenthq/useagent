@@ -36,6 +36,8 @@ export interface ThreadSandboxOptions {
   readonly warmPool?: string | false;
   readonly labels?: Readonly<Record<string, string>>;
   readonly requiredLabels?: Readonly<Record<string, string>>;
+  /** Filled by acquisition from deployment policy before retained reuse. */
+  readonly minimumResources?: ReturnType<typeof resolveSandboxResourceTarget>;
 }
 
 export function sandboxHasRequiredLabels(
@@ -50,18 +52,23 @@ export function sandboxHasRequiredLabels(
  * Re-attach to a thread's retained sandbox: resolve the binding that created it
  * (a user's computer or the deployment's provider), wake it if it was stopped,
  * and refuse one whose credential generation is obsolete. Throws when the
- * sandbox cannot be reused; callers then provision fresh. Shared by every
+ * sandbox cannot be reused; incompatibility preserves it for migration. Shared by every
  * engine so the reuse rules exist once.
  */
 export async function reviveRetainedSandbox(
   ctx: EngineRunContext,
   sandboxId: string,
   options: { readonly chip: string; readonly onResume?: () => void },
+  dependencies = {
+    threadBinding: resolveSandboxBindingForThread,
+    sandboxBinding: resolveSandboxBindingForSandbox,
+    credentialsCurrent: providerGatewaySandboxIsCurrent,
+  },
 ): Promise<{ sandbox: SandboxHandle; binding: SandboxBinding }> {
   const cached = ctx.threadId ? getLiveThreadSandbox(ctx.threadId) : null;
   const binding = ctx.threadId && ctx.orgId
-    ? await resolveSandboxBindingForThread(ctx.orgId, ctx.threadId)
-    : await resolveSandboxBindingForSandbox(sandboxId);
+    ? await dependencies.threadBinding(ctx.orgId, ctx.threadId)
+    : await dependencies.sandboxBinding(sandboxId);
   const sandbox = cached?.id === sandboxId ? cached : await binding.provider.get(sandboxId);
   const state = (sandbox as { state?: string }).state;
   if (state === "stopped" || state === "paused" || state === "archived") {
@@ -71,29 +78,43 @@ export async function reviveRetainedSandbox(
   } else if (state !== "started") {
     throw new Error(`unusable state: ${state}`);
   }
-  if (!(await providerGatewaySandboxIsCurrent(sandbox))) {
-    await sandbox.delete().catch(() => {});
-    throw new Error("legacy sandbox credential generation");
+  if (!(await dependencies.credentialsCurrent(sandbox))) {
+    throw new RetainedSandboxRuntimeMismatchError("credential-isolation");
   }
   return { sandbox, binding };
 }
 
-async function resolveRetainedSandbox(
+export class RetainedSandboxRuntimeMismatchError extends Error {
+  constructor(reason: "runtime" | "credential-isolation" | "resource" = "runtime") {
+    super(`The retained workspace requires a compatible ${reason} upgrade. Its files were preserved; a safe migration is required before this thread can resume.`);
+    this.name = "RetainedSandboxRuntimeMismatchError";
+  }
+}
+
+export async function resolveRetainedSandbox(
   ctx: EngineRunContext,
   options: ThreadSandboxOptions,
+  dependencies = {
+    getSandboxId: getThreadSandbox,
+    revive: reviveRetainedSandbox,
+    forget: forgetLiveThreadSandbox,
+  },
 ): Promise<{ sandbox: SandboxHandle; binding: SandboxBinding } | null> {
   if (!ctx.threadId) return null;
-  const sandboxId = await getThreadSandbox(ctx.threadId);
+  const sandboxId = await dependencies.getSandboxId(ctx.threadId);
   if (!sandboxId) return null;
   try {
-    const { sandbox, binding } = await reviveRetainedSandbox(ctx, sandboxId, { chip: options.chip });
+    const { sandbox, binding } = await dependencies.revive(ctx, sandboxId, { chip: options.chip });
     if (!sandboxHasRequiredLabels(sandbox, options.requiredLabels)) {
-      await sandbox.delete().catch(() => {});
-      throw new Error("retained sandbox does not match the requested runtime generation");
+      throw new RetainedSandboxRuntimeMismatchError();
+    }
+    if (options.minimumResources && !sandboxMeetsResourceTarget(sandbox, options.minimumResources)) {
+      throw new RetainedSandboxRuntimeMismatchError("resource");
     }
     return { sandbox, binding };
-  } catch {
-    forgetLiveThreadSandbox(ctx.threadId, sandboxId);
+  } catch (error) {
+    if (error instanceof RetainedSandboxRuntimeMismatchError) throw error;
+    dependencies.forget(ctx.threadId, sandboxId);
     return null;
   }
 }
@@ -109,7 +130,7 @@ export async function acquireThreadSandbox(
   // What gets recorded next to the sandbox id: the binding that actually produced it.
   let effectiveBinding: SandboxBinding = binding;
   try {
-    const retained = await resolveRetainedSandbox(ctx, options);
+    const retained = await resolveRetainedSandbox(ctx, { ...options, minimumResources: resourceTarget });
     sandbox = retained?.sandbox ?? null;
     if (retained) effectiveBinding = retained.binding;
   } catch (error) {
@@ -118,14 +139,6 @@ export async function acquireThreadSandbox(
   }
   let reused = sandbox !== null;
 
-  if (sandbox && !sandboxMeetsResourceTarget(sandbox, resourceTarget)) {
-    const staleId = sandbox.id;
-    await sandbox.delete().catch(() => {});
-    if (ctx.threadId) forgetLiveThreadSandbox(ctx.threadId, staleId);
-    sandbox = null;
-    reused = false;
-    effectiveBinding = binding;
-  }
   endRetained?.(sandbox ? RUN_TIMING_OUTCOMES.hit : RUN_TIMING_OUTCOMES.miss);
 
   if (!sandbox) {

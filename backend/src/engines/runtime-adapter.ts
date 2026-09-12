@@ -550,6 +550,7 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         async prepareProvider(sandbox, workdir) {
           return await prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir);
         },
+        closeProvider: (state) => state.close(),
       });
       const { sandbox, workdir, redact } = prepared;
       const providerBridgeLease: RuntimeProviderBridgeLease = prepared.providerState;
@@ -725,8 +726,7 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
           }
         }
       } finally {
-        await providerBridgeLease?.close().catch(() => {});
-        await prepared.close();
+        await prepared.close().catch(() => {});
       }
     },
   };
