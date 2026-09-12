@@ -363,8 +363,8 @@ export class SshSystemdAdoptionEffects implements SystemdAdoptionEffects {
 			caddyConfig: markerized,
 		});
 		await this.#validateLegacyMigrations(target);
-		await this.#compose.applyMigrations(target);
 		await this.#prepareWritablePaths(target);
+		await this.#compose.applyMigrations(target);
 	}
 
 	async warmTargetEdge(target: ReleaseRecord): Promise<void> {
