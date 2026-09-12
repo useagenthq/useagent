@@ -7,7 +7,7 @@ import {
   CANONICAL_SANDBOX_RUN_LABEL,
   LEGACY_SANDBOX_RUN_LABEL,
   readCompatibleSandboxLabel,
-} from "../provider-gateway/sandbox-config";
+} from "../sandboxes/label-compat";
 
 // ---------------------------------------------------------------------------
 // Fleet limits — the REAL numbers behind the /agent/workspace "Limits" card.

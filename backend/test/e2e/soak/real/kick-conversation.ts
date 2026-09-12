@@ -23,6 +23,7 @@ import { openSync } from "node:fs";
 import postgres from "postgres";
 import { Recorder } from "../lib/report";
 import { deleteById, listUseAgent } from "../lib/daytona";
+import { readSandboxRunLabel } from "../../../../src/sandboxes/label-compat";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
 const DB = process.env.SOAK_REAL_DB ?? "skynet_soak_real";
@@ -242,8 +243,8 @@ async function cleanup(): Promise<void> {
   const runIds = new Set((await sql`select id from runs`.catch(() => [])).map((r) => r.id as string));
   try {
     for (const sb of await listUseAgent()) {
-      const label = sb.labels["skynet-run"];
-      if (label && runIds.has(label)) createdSandboxes.add(sb.id);
+      const label = readSandboxRunLabel(sb.labels);
+      if (!label.conflict && label.value && runIds.has(label.value)) createdSandboxes.add(sb.id);
     }
   } catch { /* best-effort */ }
   const ids = [...createdSandboxes];

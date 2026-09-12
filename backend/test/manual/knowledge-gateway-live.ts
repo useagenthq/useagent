@@ -13,6 +13,7 @@
 import { closeSync, openSync, readFileSync } from "node:fs";
 import { Daytona } from "@daytona/sdk";
 import postgres from "postgres";
+import { readSandboxRunLabel } from "../../src/sandboxes/label-compat";
 import { stopOwnedProcess, stopOwnedProcesses } from "../e2e/lib/process-lifecycle";
 import {
   startPublicTunnel,
@@ -173,8 +174,8 @@ async function cleanupSandboxes() {
   const d = new Daytona({ apiKey: process.env.DAYTONA_API_KEY!, target: process.env.DAYTONA_TARGET ?? "us" });
   try {
     for await (const sb of d.list()) {
-      const label = (sb as { labels?: Record<string, string> }).labels?.["skynet-run"];
-      if (label && runIds.has(label)) ids.add(sb.id);
+      const label = readSandboxRunLabel((sb as { labels?: Record<string, string> }).labels ?? {});
+      if (!label.conflict && label.value && runIds.has(label.value)) ids.add(sb.id);
     }
   } catch {
     /* best effort */
