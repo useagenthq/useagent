@@ -20,7 +20,9 @@ services:
       # defeats stale host env pins while letting each image use its own default,
       # so rollback selects the previous generation automatically.
       USEAGENT_RUNTIME_GENERATION: ""
-      ARTIFACT_STORAGE_DIR: /app/backend/.artifacts
+      # Artifact bytes are shared with the gateway: same host directory, same
+      # path inside both containers, because the gateway publishes too.
+      ARTIFACT_STORAGE_DIR: /var/lib/useagent/artifacts
       RUNS_ROOT: /app/backend/.runs
       SLACK_UPLOAD_STAGING_ROOT: /app/backend/.slack-uploads
       SCRATCH_DIR: /var/lib/useagent/scratch/${USEAGENT_RELEASE_COLOR}
@@ -39,7 +41,7 @@ services:
     tmpfs:
       - /tmp:size=256m,mode=1777
     volumes:
-      - /var/lib/useagent/artifacts:/app/backend/.artifacts
+      - /var/lib/useagent/artifacts:/var/lib/useagent/artifacts
       - /var/lib/useagent/runs:/app/backend/.runs
       - /var/lib/useagent/slack-uploads:/app/backend/.slack-uploads
       - /var/lib/useagent/scratch:/var/lib/useagent/scratch
@@ -63,6 +65,10 @@ services:
       NODE_ENV: production
       GATEWAY_PORT: ${USEAGENT_GATEWAY_PORT:?set the inactive-color gateway port}
       USEAGENT_BIND_HOST: 127.0.0.1
+      # The gateway's artifact_publish tool writes the bytes it receives from a
+      # sandbox. Without this override and the matching mount below, the read-only
+      # root filesystem turns every publish into EROFS.
+      ARTIFACT_STORAGE_DIR: /var/lib/useagent/artifacts
       USEAGENT_RELEASE_COMMIT: ${USEAGENT_RELEASE_COMMIT:?set the exact release commit}
       NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt
       SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
@@ -79,6 +85,7 @@ services:
     tmpfs:
       - /tmp:size=128m,mode=1777
     volumes:
+      - /var/lib/useagent/artifacts:/var/lib/useagent/artifacts
       - ${USEAGENT_HOST_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}:/etc/ssl/certs/ca-certificates.crt:ro
     restart: unless-stopped
     stop_grace_period: 30s

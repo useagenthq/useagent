@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { chmod, link, lstat, mkdir, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, open, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export interface ArtifactByteRange {
@@ -287,6 +287,71 @@ const local = new LocalArtifactStorage();
 
 export function artifactStorage(): ArtifactStorage {
   return override ?? local;
+}
+
+/** The directory the local adapter writes into, as configured for this process. */
+export function artifactStorageRoot(): string {
+  return process.env.ARTIFACT_STORAGE_DIR ?? join(import.meta.dir, "..", "..", ".artifacts");
+}
+
+/**
+ * Prove at boot that this process can write artifact bytes. Every service that
+ * publishes (the backend and the sandbox gateway) calls this before it serves,
+ * so a deployment whose container lacks the mount or points ARTIFACT_STORAGE_DIR
+ * at a read-only path fails its health check instead of shipping a gateway
+ * where every artifact_publish returns EROFS to the agent.
+ */
+export async function assertArtifactStorageWritable(root = artifactStorageRoot()): Promise<void> {
+  const probe = join(root, `.write-probe.${randomUUID()}`);
+  const committedProbe = `${probe}.done`;
+  try {
+    await mkdir(root, { recursive: true });
+    const file = await open(probe, "wx");
+    try {
+      // An empty file can succeed on a full disk. Allocate and flush real bytes.
+      await file.writeFile("useagent artifact storage probe\n");
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    await chmod(probe, 0o660);
+    await rename(probe, committedProbe);
+    await unlink(committedProbe);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "error";
+    throw new Error(
+      `artifact storage is not writable (${code}) at ${root}: ` +
+        "mount a writable directory there or point ARTIFACT_STORAGE_DIR at one",
+    );
+  } finally {
+    await unlink(probe).catch(() => {});
+    await unlink(committedProbe).catch(() => {});
+  }
+}
+
+export type ArtifactStorageHealth = { readonly ok: true } | { readonly ok: false; readonly error: string };
+
+const HEALTH_CACHE_MS = 30_000;
+const healthCache = new Map<string, { at: number; result: ArtifactStorageHealth }>();
+
+/**
+ * The same probe for a health endpoint, cached per root so a 5-second
+ * container health check does not write a file every time. A mount that
+ * disappears or a disk that fills is checked again after the cache expires.
+ * This proves root writability, not every existing digest directory's permissions.
+ */
+export async function artifactStorageHealth(root = artifactStorageRoot(), now = Date.now()): Promise<ArtifactStorageHealth> {
+  const cached = healthCache.get(root);
+  if (cached && now - cached.at < HEALTH_CACHE_MS) return cached.result;
+  let result: ArtifactStorageHealth;
+  try {
+    await assertArtifactStorageWritable(root);
+    result = { ok: true };
+  } catch (error) {
+    result = { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  healthCache.set(root, { at: now, result });
+  return result;
 }
 
 /** Test-only storage substitution. Production always uses the configured

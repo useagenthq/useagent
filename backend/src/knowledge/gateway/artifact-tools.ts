@@ -291,7 +291,18 @@ export async function executeArtifactTool(
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "artifact publish failed";
-    return failure(`Could not publish ${path}: ${message}`);
+    // Failed publication includes caller errors as well as storage failures.
+    // Bound and escape untrusted fields so one failure stays one log record.
+    console.warn(JSON.stringify({
+      event: "artifact_publish_failed",
+      runId: claims.runId,
+      path: path.slice(0, 512),
+      error: message.slice(0, 1024),
+    }));
+    return failure(
+      `Could not publish ${path}: ${message}. The file was not delivered: tell the user, ` +
+        "and do not present a preview or download link for it.",
+    );
   }
 }
 

@@ -137,12 +137,16 @@ import { threadRelationshipRoutes } from "./runs/thread-relationship-routes";
 import { configureProductChildPump } from "./runs/child-session-pump";
 import { assertThreadRelationshipRolloutConfig, productChildThreadsEnabled, threadRelationshipWriteMode } from "./runs/thread-relationship-rollout";
 import { repairEligiblePublicRootThreadRelationships } from "./runs/thread-relationship-repo";
+import { artifactStorageHealth, assertArtifactStorageWritable } from "./artifacts/storage";
 
 // Acquire the per-database singleton before ANY shared-state mutation. In strict
 // production mode an unavailable/contended lock fails boot closed, so a duplicate
 // process cannot migrate or recover another backend's database first.
 assertThreadRelationshipRolloutConfig();
 const singleBackendHeld = await enforceSingleBackend();
+// Artifact bytes must be writable before any run can publish; a missing mount
+// fails boot here rather than surfacing as EROFS inside a run.
+await assertArtifactStorageWritable();
 
 // A process crash can strand temporary private checkouts on the disk-backed
 // scratch mount. With the single-backend lock held, no live clone belongs to
@@ -299,7 +303,11 @@ app.use("/api/*", async (c, next) => {
   return orgScope(c, next);
 });
 
-app.get("/api/health", (c) => c.json({ status: "ok" }));
+app.get("/api/health", async (c) => {
+  const storage = await artifactStorageHealth();
+  if (!storage.ok) return c.json({ status: "unhealthy", artifact_storage: storage.error }, 503);
+  return c.json({ status: "ok" });
+});
 app.route("/api/internal/artifact-changes", internalArtifactChangeRoutes);
 app.route("/api/internal/automation", internalAutomationRoutes);
 app.route("/api/internal/child-sessions", internalChildSessionRoutes);

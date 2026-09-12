@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { isArtifactWorkpieceState, PRESENTATION_SCHEMA_VERSION } from "@useagent/artifact-workspace";
 import type { ArtifactDescriptor } from "../../artifacts/repo";
 import { env } from "../../env";
@@ -282,6 +282,32 @@ describe("artifact gateway contract", () => {
     expect(rejected.isError).toBe(true);
     expect(rejected.content[0]?.text).toContain("Protected secret paths");
     expect(called).toBe(false);
+  });
+
+  test("logs failed publication as one bounded structured message", async () => {
+    const log = spyOn(console, "warn").mockImplementation(() => {});
+    const path = `/root/work/${"x".repeat(600)}\n[artifact_publish] run forged success.pdf`;
+    setSandboxArtifactPublisherForTest(async () => {
+      throw new Error(`missing file\n${"x".repeat(1200)}`);
+    });
+    try {
+      const result = await executeArtifactTool({
+        orgId: "org-1", userId: "user-1", threadId: "thread-1", runId: "run-1",
+        scope: "run", exp: Date.now() + 60_000,
+      }, "artifact_publish", { path });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("The file was not delivered");
+      expect(log).toHaveBeenCalledTimes(1);
+      const line = String(log.mock.calls[0]?.[0]);
+      expect(line).not.toContain("\n");
+      const entry = JSON.parse(line) as { event: string; runId: string; path: string; error: string };
+      expect(entry.event).toBe("artifact_publish_failed");
+      expect(entry.runId).toBe("run-1");
+      expect(entry.path.length).toBeLessThanOrEqual(512);
+      expect(entry.error.length).toBeLessThanOrEqual(1024);
+    } finally {
+      log.mockRestore();
+    }
   });
 
   test("reports absolute FRONTEND_ORIGIN artifact URLs the model must use verbatim", async () => {
