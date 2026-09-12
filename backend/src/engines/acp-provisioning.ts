@@ -19,12 +19,20 @@ export function buildAcpInstallClause(packages: { pkg: string; bin: string }[]):
         `echo "ACP provisioning failed for ${bin}: could not create install log" >&2; exit 1; }; ` +
         `if ! npm install -g --prefix $HOME/.local --silent "${pkg}" >"$acp_install_log" 2>&1 || ` +
         `[ ! -x "$HOME/.local/bin/${bin}" ]; then ` +
-        `if [ -z "$HOME" ] || [ "$HOME" = "/" ] || ! rm -rf -- "$HOME/.npm/_cacache"; then ` +
+        `if [ -z "$HOME" ] || [ "$HOME" = "/" ]; then ` +
         `rm -f "$acp_install_log"; ` +
-        `echo "ACP provisioning failed for ${bin}: could not reset npm cache" >&2; exit 1; fi; ` +
-        `if ! npm install -g --prefix $HOME/.local --silent "${pkg}" >"$acp_install_log" 2>&1 || ` +
-        `[ ! -x "$HOME/.local/bin/${bin}" ]; then rm -f "$acp_install_log"; ` +
+        `echo "ACP provisioning failed for ${bin}: could not isolate npm cache" >&2; exit 1; fi; ` +
+        `install -d -m 700 "$HOME/.npm" || { rm -f "$acp_install_log"; ` +
+        `echo "ACP provisioning failed for ${bin}: could not prepare npm cache" >&2; exit 1; }; ` +
+        `acp_retry_cache=$(mktemp -d "$HOME/.npm/useagent-retry.${bin}.XXXXXX") || { ` +
+        `rm -f "$acp_install_log"; ` +
+        `echo "ACP provisioning failed for ${bin}: could not prepare npm cache" >&2; exit 1; }; ` +
+        `if ! npm_config_cache="$acp_retry_cache" npm install -g --prefix $HOME/.local --silent "${pkg}" ` +
+        `>"$acp_install_log" 2>&1 || ` +
+        `[ ! -x "$HOME/.local/bin/${bin}" ]; then ` +
+        `rm -rf -- "$acp_retry_cache" >/dev/null 2>&1 || true; rm -f "$acp_install_log"; ` +
         `echo "ACP provisioning failed for ${bin}: executable missing after cache retry" >&2; exit 1; fi; ` +
+        `rm -rf -- "$acp_retry_cache" >/dev/null 2>&1 || true; ` +
         `fi; rm -f "$acp_install_log"; fi; ` +
         `[ -x "$HOME/.local/bin/${bin}" ] || { ` +
         `echo "ACP provisioning failed for ${bin}: executable verification failed" >&2; exit 1; }; }; `
