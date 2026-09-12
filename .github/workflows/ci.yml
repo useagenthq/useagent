@@ -219,7 +219,7 @@ jobs:
             if [ -f "$p/package.json" ]; then (cd "$p" && bun install --frozen-lockfile); fi
           done
       - name: Private release contracts
-        run: bun test deploy/hetzner scripts/assert-oss-sync-safe.test.ts
+        run: bun test deploy/hetzner deploy/compose scripts/assert-oss-sync-safe.test.ts
       - name: Private release TypeScript
         run: frontend/node_modules/.bin/tsc --project deploy/hetzner/tsconfig.json --noEmit
       - name: Private release shell syntax

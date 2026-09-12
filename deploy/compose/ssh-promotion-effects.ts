@@ -41,6 +41,12 @@ interface ProcessResult {
 	readonly stderr: string;
 }
 
+export interface PrepareReleaseOptions {
+	readonly allowLegacyBlue?: boolean;
+	readonly applyMigrations?: boolean;
+	readonly caddyConfig?: string;
+}
+
 const serviceNames: readonly Service[] = ["backend", "gateway", "frontend"];
 
 function shellQuote(value: string): string {
@@ -232,14 +238,14 @@ export class RemoteHost {
 	}
 }
 
-function releaseDirectory(
+export function releaseDirectory(
 	config: SshPromotionConfig,
 	record: ReleaseRecord,
 ): string {
 	return `${config.remoteRoot}/releases/${record.manifest.commit}-${record.color}`;
 }
 
-function composePromotionCommand(
+export function composePromotionCommand(
 	config: SshPromotionConfig,
 	record: ReleaseRecord,
 	args: string,
@@ -290,6 +296,7 @@ export class SshPromotionEffects implements PromotionEffects {
 		readonly kind: PromotionCommand;
 		readonly composeFile: string;
 		readonly caddyTemplate: string;
+		readonly operationId?: string;
 		readonly crash: () => Promise<never>;
 	}) {
 		this.#config = input.config;
@@ -297,7 +304,9 @@ export class SshPromotionEffects implements PromotionEffects {
 		this.#historyAtStart = input.history;
 		this.#target = input.target;
 		this.#kind = input.kind;
-		this.#operationId = `${input.kind}:${input.target.manifest.commit}:${input.target.color}`;
+		this.#operationId =
+			input.operationId ??
+			`${input.kind}:${input.target.manifest.commit}:${input.target.color}`;
 		this.#composeFile = input.composeFile;
 		this.#caddyTemplate = input.caddyTemplate;
 		this.#crash = input.crash;
@@ -314,7 +323,10 @@ export class SshPromotionEffects implements PromotionEffects {
 		);
 	}
 
-	async #stageRelease(record: ReleaseRecord): Promise<void> {
+	async #stageRelease(
+		record: ReleaseRecord,
+		caddyOverride?: string,
+	): Promise<void> {
 		const ports = releasePorts(record.color);
 		const directory = releaseDirectory(this.#config, record);
 		const env = {
@@ -333,7 +345,7 @@ export class SshPromotionEffects implements PromotionEffects {
 		const envText = Object.entries(env)
 			.map(([key, value]) => `${key}=${value}\n`)
 			.join("");
-		const caddy = await this.#renderCaddy(record);
+		const caddy = caddyOverride ?? (await this.#renderCaddy(record));
 		await this.#remote.writeAtomic(`${directory}/release.env`, envText);
 		await this.#remote.writeAtomic(
 			`${directory}/compose.prod.yaml`,
@@ -377,7 +389,7 @@ export class SshPromotionEffects implements PromotionEffects {
 		);
 	}
 
-	async #migrationInventory(image: string): Promise<MigrationFile[]> {
+	async migrationInventory(image: string): Promise<MigrationFile[]> {
 		const script =
 			'for file in /app/backend/drizzle/*.sql; do [ -f "$file" ] || continue; ' +
 			'printf "%s\\t" "$(basename "$file")"; base64 -w0 "$file"; printf "\\n"; done';
@@ -387,11 +399,24 @@ export class SshPromotionEffects implements PromotionEffects {
 		return parseMigrationInventory(result.stdout);
 	}
 
-	async preflight(record: ReleaseRecord): Promise<void> {
+	async applyMigrations(record: ReleaseRecord): Promise<void> {
+		await this.#remote.run(
+			composePromotionCommand(
+				this.#config,
+				record,
+				"run --rm --no-deps backend bun run scripts/migrate-release.ts",
+			),
+		);
+	}
+
+	async prepareRelease(
+		record: ReleaseRecord,
+		options: PrepareReleaseOptions = {},
+	): Promise<void> {
 		// Rebuild every staged specification from the immutable release record and
 		// the checked-out controller. Rollback never trusts mutable host-side files.
-		await this.#stageRelease(record);
-		if (!this.#historyAtStart.current) {
+		await this.#stageRelease(record, options.caddyConfig);
+		if (!this.#historyAtStart.current && !options.allowLegacyBlue) {
 			const ports = [
 				releasePorts("blue").backend,
 				releasePorts("green").backend,
@@ -439,10 +464,10 @@ export class SshPromotionEffects implements PromotionEffects {
 		}
 		const current = this.#historyAtStart.current;
 		if (current) {
-			const currentFiles = await this.#migrationInventory(
+			const currentFiles = await this.migrationInventory(
 				current.manifest.backend,
 			);
-			const targetFiles = await this.#migrationInventory(
+			const targetFiles = await this.migrationInventory(
 				record.manifest.backend,
 			);
 			const decision =
@@ -456,6 +481,13 @@ export class SshPromotionEffects implements PromotionEffects {
 					`migration transition is not ${this.#kind}-safe: ${JSON.stringify(decision)}`,
 				);
 		}
+		if (this.#kind === "promote" && options.applyMigrations !== false) {
+			await this.applyMigrations(record);
+		}
+	}
+
+	async preflight(record: ReleaseRecord): Promise<void> {
+		await this.prepareRelease(record);
 	}
 
 	async warmEdge(record: ReleaseRecord): Promise<void> {

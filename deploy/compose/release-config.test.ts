@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+	adoptLegacyCaddyUpstreams,
 	advanceOperation,
 	beginOperation,
 	classifyMigrations,
@@ -207,6 +208,137 @@ describe("release configuration", () => {
 				},
 			),
 		).toThrow("gateway release marker");
+	});
+
+	test("adopts the legacy production topology without changing unrelated Caddy directives", () => {
+		const source = [
+			"app.useagent.org, skynet.meow.gs {",
+			'\theader { X-Content-Type-Options "nosniff" }',
+			"\t@relay path /api/internal/codex-relay/*",
+			"\thandle @relay {",
+			"\t\treverse_proxy 127.0.0.1:3201",
+			"\t}",
+			"\t@api path /api/*",
+			"\thandle @api {",
+			"\t\treverse_proxy 127.0.0.1:3201",
+			"\t}",
+			"\t@oauth path /oauth/callback",
+			"\thandle @oauth { reverse_proxy 127.0.0.1:3300 }",
+			"\thandle {",
+			"\t\treverse_proxy 127.0.0.1:3400",
+			"\t}",
+			"}",
+			"gateway.sandbox.skynet.meow.gs {",
+			"\treverse_proxy 127.0.0.1:3202",
+			"}",
+			"registry.sandbox.skynet.meow.gs { reverse_proxy 127.0.0.1:5000 }",
+			"*.sandbox.skynet.meow.gs {",
+			"\ttls internal",
+			"\t@backend remote_ip 127.0.0.1 ::1",
+			"\thandle @backend { reverse_proxy 127.0.0.1:18080 }",
+			'\trespond "Forbidden" 403',
+			"}",
+			"",
+		].join("\r\n");
+		const rewritten = adoptLegacyCaddyUpstreams(
+			source,
+			{
+				backend: "127.0.0.1:3201",
+				frontend: "127.0.0.1:3400",
+				gateway: "127.0.0.1:3202",
+			},
+			{
+				backend: "127.0.0.1:3211",
+				frontend: "127.0.0.1:3410",
+				gateway: "127.0.0.1:3212",
+			},
+		);
+
+		expect(rewritten.match(/# useagent-release: backend/g)).toHaveLength(2);
+		expect(rewritten).toContain(
+			"\t\t# useagent-release: frontend\r\n\t\treverse_proxy 127.0.0.1:3410",
+		);
+		expect(rewritten).toContain(
+			"\t# useagent-release: gateway\r\n\treverse_proxy 127.0.0.1:3212",
+		);
+		for (const preserved of [
+			'header { X-Content-Type-Options "nosniff" }',
+			"handle @oauth { reverse_proxy 127.0.0.1:3300 }",
+			"registry.sandbox.skynet.meow.gs { reverse_proxy 127.0.0.1:5000 }",
+			"*.sandbox.skynet.meow.gs {",
+			"handle @backend { reverse_proxy 127.0.0.1:18080 }",
+			'respond "Forbidden" 403',
+		]) {
+			expect(rewritten).toContain(preserved);
+		}
+		expect(rewritten.endsWith("\r\n")).toBe(true);
+		expect(
+			adoptLegacyCaddyUpstreams(
+				rewritten,
+				{
+					backend: "127.0.0.1:3201",
+					frontend: "127.0.0.1:3400",
+					gateway: "127.0.0.1:3202",
+				},
+				{
+					backend: "127.0.0.1:3211",
+					frontend: "127.0.0.1:3410",
+					gateway: "127.0.0.1:3212",
+				},
+			),
+		).toBe(rewritten);
+	});
+
+	test("legacy Caddy adoption fails closed on ambiguous or inconsistent topology", () => {
+		const legacy = {
+			backend: "127.0.0.1:3201",
+			frontend: "127.0.0.1:3400",
+			gateway: "127.0.0.1:3202",
+		};
+		const target = {
+			backend: "127.0.0.1:3211",
+			frontend: "127.0.0.1:3410",
+			gateway: "127.0.0.1:3212",
+		};
+		const valid = [
+			"reverse_proxy 127.0.0.1:3201",
+			"reverse_proxy 127.0.0.1:3400",
+			"reverse_proxy 127.0.0.1:3202",
+		].join("\n");
+		expect(() =>
+			adoptLegacyCaddyUpstreams(
+				`${valid}\nreverse_proxy 127.0.0.1:3400\n`,
+				legacy,
+				target,
+			),
+		).toThrow("frontend upstream is ambiguous");
+		expect(() =>
+			adoptLegacyCaddyUpstreams(
+				valid.replace("reverse_proxy 127.0.0.1:3202", ""),
+				legacy,
+				target,
+			),
+		).toThrow("missing the gateway upstream");
+		expect(() =>
+			adoptLegacyCaddyUpstreams(
+				`# useagent-release: frontend\n${valid}`,
+				legacy,
+				target,
+			),
+		).toThrow("existing frontend release marker is inconsistent");
+		expect(() =>
+			adoptLegacyCaddyUpstreams(
+				`${valid}\n# useagent-release: backend\nreverse_proxy 127.0.0.1:9999`,
+				legacy,
+				target,
+			),
+		).toThrow("existing backend release marker is inconsistent");
+		expect(() =>
+			adoptLegacyCaddyUpstreams(valid, legacy, {
+				...target,
+				gateway: legacy.frontend,
+			}),
+		).toThrow("must identify one service");
 	});
 
 	test("persists exact operation phases and commits history only at cutover", () => {

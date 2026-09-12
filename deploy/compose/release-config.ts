@@ -439,6 +439,16 @@ export interface CaddyUpstreams {
 	gateway: string;
 }
 
+type ReleaseService = "frontend" | "backend" | "gateway";
+
+const releaseServices = ["frontend", "backend", "gateway"] as const;
+
+function validateCaddyUpstream(value: string, label: string): void {
+	if (!/^[a-zA-Z0-9_.:-]+$/.test(value)) {
+		throw new Error(`invalid Caddy ${label}`);
+	}
+}
+
 export function renderCaddyTemplate(
 	template: string,
 	upstreams: CaddyUpstreams,
@@ -473,11 +483,9 @@ export function rewriteCaddyUpstreams(
 	upstreams: Pick<CaddyUpstreams, "frontend" | "backend" | "gateway">,
 ): string {
 	const lines = config.split("\n");
-	for (const service of ["frontend", "backend", "gateway"] as const) {
+	for (const service of releaseServices) {
 		const value = upstreams[service];
-		if (!/^[a-zA-Z0-9_.:-]+$/.test(value)) {
-			throw new Error(`invalid Caddy ${service}`);
-		}
+		validateCaddyUpstream(value, service);
 		let replacements = 0;
 		for (let index = 0; index < lines.length; index += 1) {
 			if (lines[index]?.trim() !== `# useagent-release: ${service}`) continue;
@@ -496,6 +504,132 @@ export function rewriteCaddyUpstreams(
 		}
 	}
 	return lines.join("\n");
+}
+
+interface CaddyLine {
+	contents: string;
+	ending: string;
+}
+
+function caddyLines(config: string): CaddyLine[] {
+	return [...config.matchAll(/([^\r\n]*)(\r\n|\n|$)/g)]
+		.filter((match) => match[0].length > 0)
+		.map((match) => ({ contents: match[1] ?? "", ending: match[2] ?? "" }));
+}
+
+function markedService(line: string): ReleaseService | null {
+	const match = line.match(
+		/^\s*#\s*useagent-release:\s*(frontend|backend|gateway)\s*$/,
+	);
+	return (match?.[1] as ReleaseService | undefined) ?? null;
+}
+
+/**
+ * Converts the one-time legacy Caddy topology into the marked release topology.
+ * Every non-release line is retained byte-for-byte.
+ */
+export function adoptLegacyCaddyUpstreams(
+	config: string,
+	legacy: Pick<CaddyUpstreams, "frontend" | "backend" | "gateway">,
+	target: Pick<CaddyUpstreams, "frontend" | "backend" | "gateway">,
+): string {
+	for (const service of releaseServices) {
+		validateCaddyUpstream(legacy[service], `legacy ${service}`);
+		validateCaddyUpstream(target[service], `target ${service}`);
+	}
+	const owners = new Map<string, ReleaseService>();
+	for (const service of releaseServices) {
+		for (const upstream of [legacy[service], target[service]]) {
+			const owner = owners.get(upstream);
+			if (owner && owner !== service) {
+				throw new Error("Caddy release upstreams must identify one service");
+			}
+			owners.set(upstream, service);
+		}
+	}
+
+	const lines = caddyLines(config);
+	const matches = new Map<ReleaseService, number[]>();
+	for (const service of releaseServices) matches.set(service, []);
+
+	for (let index = 0; index < lines.length; index += 1) {
+		const marker = markedService(lines[index]?.contents ?? "");
+		if (marker) {
+			const proxy = lines[index + 1]?.contents.match(
+				/^\s*reverse_proxy\s+(\S+)(?:\s.*)?$/,
+			);
+			if (
+				!proxy ||
+				(proxy[1] !== legacy[marker] && proxy[1] !== target[marker])
+			) {
+				throw new Error(`existing ${marker} release marker is inconsistent`);
+			}
+		}
+
+		const proxy = lines[index]?.contents.match(
+			/^(\s*)reverse_proxy\s+(\S+)(.*)$/,
+		);
+		if (!proxy) continue;
+		for (const service of releaseServices) {
+			if (proxy[2] === legacy[service] || proxy[2] === target[service]) {
+				matches.get(service)?.push(index);
+			}
+		}
+	}
+
+	for (const service of releaseServices) {
+		const indexes = matches.get(service) ?? [];
+		if (indexes.length === 0) {
+			throw new Error(`legacy Caddy config is missing the ${service} upstream`);
+		}
+		if (service !== "backend" && indexes.length !== 1) {
+			throw new Error(`legacy Caddy ${service} upstream is ambiguous`);
+		}
+		const current = new Set(
+			indexes.map(
+				(index) =>
+					lines[index]?.contents.match(/^\s*reverse_proxy\s+(\S+)/)?.[1],
+			),
+		);
+		if (current.size !== 1) {
+			throw new Error(`legacy Caddy ${service} routes are inconsistent`);
+		}
+	}
+
+	const intended = new Map<number, ReleaseService>();
+	for (const service of releaseServices) {
+		for (const index of matches.get(service) ?? [])
+			intended.set(index, service);
+	}
+	for (let index = 0; index < lines.length; index += 1) {
+		const marker = markedService(lines[index]?.contents ?? "");
+		if (!marker) continue;
+		if (intended.get(index + 1) !== marker) {
+			throw new Error(`existing ${marker} release marker is inconsistent`);
+		}
+	}
+
+	const output: string[] = [];
+	for (let index = 0; index < lines.length; index += 1) {
+		const line = lines[index];
+		if (!line) continue;
+		const service = intended.get(index);
+		if (!service) {
+			output.push(line.contents, line.ending);
+			continue;
+		}
+		const proxy = line.contents.match(/^(\s*reverse_proxy\s+)\S+(.*)$/);
+		if (!proxy) throw new Error(`legacy Caddy ${service} route is invalid`);
+		if (markedService(lines[index - 1]?.contents ?? "") !== service) {
+			const indentation = line.contents.match(/^\s*/)?.[0] ?? "";
+			output.push(
+				`${indentation}# useagent-release: ${service}`,
+				line.ending || "\n",
+			);
+		}
+		output.push(`${proxy[1]}${target[service]}${proxy[2]}`, line.ending);
+	}
+	return output.join("");
 }
 
 export function beginOperation(
