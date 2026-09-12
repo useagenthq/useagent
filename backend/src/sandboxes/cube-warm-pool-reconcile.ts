@@ -8,7 +8,7 @@ import {
   LEGACY_SANDBOX_RUN_LABEL,
   LEGACY_SANDBOX_GENERATION_LABEL,
   readCompatibleSandboxLabel,
-} from "../provider-gateway/sandbox-config";
+} from "./label-compat";
 
 export const LEGACY_WARM_POOL_TEMPLATE_LABEL = "skynet-warm-pool-template";
 export const USEAGENT_WARM_POOL_TEMPLATE_LABEL = LEGACY_WARM_POOL_TEMPLATE_LABEL;
