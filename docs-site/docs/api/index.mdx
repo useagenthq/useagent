@@ -40,11 +40,14 @@ and organizations](/platform/auth-and-orgs).
 ### API-key bearer lane
 
 A request carrying `Authorization: Bearer uak_...` is authenticated against a
-stored key hash and gated by a **deny-by-default allowlist**: a valid key reaches
-only run dispatch and read paths, and an unknown, revoked, or off-allowlist call
-is `401`. A request without that header passes straight through to the session
-lane untouched. A bearer key can never mint or revoke keys - those routes are
-session-only (`403 session_required`). See [API keys](/api/automations#api-keys).
+stored key hash and gated by a **deny-by-default allowlist**. It may `POST
+/api/runs`, `POST /api/fleet/batches`, read one fleet batch, read the explicit
+run/event routes, read artifacts, and read `/api/config`. It cannot use broad
+route-prefix access, interactive terminal routes, Settings APIs, or
+`POST /api/threads/:id/messages`. An unknown, revoked, or off-allowlist call is
+`401`. Use `POST /api/runs` with `parent_run_id` for an API-key follow-up. A
+request without a `uak_` bearer passes to the session/public auth lanes. See
+[API keys](/api/automations#api-keys).
 
 ### Public paths
 
@@ -97,6 +100,7 @@ streaming](/concepts/events-and-streaming).
 | --- | --- | --- | --- |
 | GET | `/api/health` | Liveness. | `{ status: "ok" }`. Public. |
 | GET | `/api/config` | Client capability contract. | `auth` (`google`, `emailPassword`), `allowDevOrg`, `release`, readiness-filtered `engines` and `models`, `sandbox.provider`, `capabilities` (`github`, `slack`, `memory`, `toolGateway`), `artifacts.fidelity`. Public. |
+| GET | `/api/capabilities` | Actor-scoped pre-run catalog. | Session/org scoped. Reports engine/runtime readiness, policy and native model information, bots, and declared gateway tools. Exact current-run availability remains `null` until a run exists. |
 
 ## The rest of the surface
 
@@ -107,6 +111,10 @@ streaming](/concepts/events-and-streaming).
   </Card>
   <Card title="Artifacts and uploads" href="/api/artifacts" icon="file">
     Durable run artifacts, workpiece editing and proposals, and user uploads.
+  </Card>
+  <Card title="Bots and routines" href="/api/bots" icon="bot">
+    Session-authenticated bot presets, home-thread messages, mention handoffs,
+    and nested routine lifecycle routes.
   </Card>
   <Card title="Knowledge and wiki" href="/api/knowledge" icon="book">
     Knowledge records and search, documents, learning-lane drafts, and repo-wiki

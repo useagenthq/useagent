@@ -60,7 +60,7 @@ resolves. Inert without an OpenRouter credential (`503`).
 
 | Method | Path | Description | Notes |
 | --- | --- | --- | --- |
-| GET | `/api/commands` | The cached slash-command catalog for "/" autocomplete before a sandbox exists. | Query `engine` (`claude`/`codex`/... read an ACP engine's org-scoped catalog; default/`opencode` reads the default snapshot catalog). Returns `{engine, commands, fetched_at}`; `commands` is `[]` when uncached. |
+| GET | `/api/commands` | The cached slash-command catalog for "/" autocomplete before a sandbox exists. | Query `engine` to read that native engine's org-scoped catalog; default/`opencode` reads the default snapshot catalog. Returns `{engine, commands, fetched_at}`; `commands` is `[]` when uncached. |
 
 ## Gateway approvals
 
@@ -77,10 +77,11 @@ the member. See [Gateway tools and approvals](/concepts/gateway-tools-and-approv
 
 ## Sandbox transports
 
-Same-origin bridges into the live sandbox. These are transports, not enumerable
+Same-origin, browser-session bridges into the live sandbox. These are transports, not enumerable
 REST APIs: the WebSocket bridges carry their own message protocol, and the two
 `.all()` proxies forward arbitrary opencode/noVNC paths verbatim (injecting the
-Daytona preview token the browser cannot set).
+provider preview credential the browser cannot set). Org API keys cannot open
+these interactive transports.
 
 | Method | Path | Description | Notes |
 | --- | --- | --- | --- |

@@ -1,6 +1,6 @@
 ---
 title: Concepts
-description: The handful of ideas the rest of the platform is built on, and where each one is defined in depth.
+description: Learn the durable run, native engine, sandbox, gateway, event, knowledge, and artifact concepts that useAgent builds on.
 sidebar:
   label: The core model
   order: 1
@@ -15,8 +15,8 @@ rest of the system reads cleanly.
     truth. The sandbox runs the engine and the work; the UI renders the log.
   </Step>
   <Step title="The inner loop is rented">
-    Engine adapters drive each turn one-shot against a resident engine process
-    inside the thread's sandbox and translate each engine's stream into steps.
+    Native drivers steer a resident engine session inside the thread's sandbox
+    and translate each engine's stream into product events.
     No engine web UI, and no engine process outside the sandbox.
   </Step>
   <Step title="Output is canonicalized">
@@ -43,8 +43,8 @@ rest of the system reads cleanly.
     them to the UI.
   </Card>
   <Card title="Engines and adapters" href="/concepts/engines-and-adapters" icon="plug">
-    How Codex, Claude, and OpenCode are driven, the runtime path versus ACP, and
-    the Codex subscription relay.
+    How Codex, Claude Code, OpenCode, and Pi keep their native runtime while
+    sharing one product projection.
   </Card>
   <Card title="Sandboxes and desktop" href="/concepts/sandboxes-and-desktop" icon="box">
     Isolated Linux workstations, warm pools, the noVNC desktop, and restart

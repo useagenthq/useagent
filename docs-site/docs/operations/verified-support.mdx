@@ -1,0 +1,59 @@
+---
+title: Verified support
+description: What the current Pro snapshot implements, what has current live evidence, and which combinations still require certification.
+sidebar:
+  order: 2
+---
+
+This page separates three claims that should not be collapsed:
+
+- **Implemented** means the current Pro code contains the driver or adapter.
+- **Ready** means the deployment can expose it after configuration and policy
+  checks.
+- **Verified** means the named path has current end-to-end evidence for this
+  snapshot.
+
+The authoritative runtime answer for a signed-in actor is
+`GET /api/capabilities`. This page records the broader verification boundary at
+commit `70b111622bb3a96e43964bd20f072d78c2cc17e5`.
+
+## Current evidence
+
+| Path | Code state | Current evidence |
+| --- | --- | --- |
+| Codex on Box | Implemented | Cold start, retained resume, child isolation, and replay are verified. |
+| OpenCode on Box | Implemented | Cold execution, child isolation, and replay are verified. |
+| Pi on Box | Implemented | Cold execution, child isolation, and replay are verified. |
+| Claude Code on Box | Implemented | Cold-readiness repair is still under development; do not treat this combination as certified. |
+| Cube runtime template | Implemented | Rebuilt template is ready and cold fork/boot has proof, but it is not activated or fully engine-certified. |
+| Daytona matrix | Implemented | No fresh full engine/provider matrix is recorded for this snapshot. |
+
+## Conditions that still apply
+
+Verification never overrides runtime conditions. A path is available only when:
+
+1. the deployment selects and configures the sandbox provider;
+2. the engine's native runtime can run on that provider;
+3. the actor has the required connected account or API key;
+4. the chosen model is policy-allowed and its provider is ready;
+5. the current provider session advertises the needed lifecycle capability.
+
+If any condition fails, the product should show the typed reason and keep the
+combination unavailable. It must not fall back to ACP, another engine, another
+sandbox provider, or a reduced lifecycle.
+
+## Children and replay
+
+The verified Box rows include isolated provider-native child evidence and
+durable replay. That does not make every native child messageable. Product child
+threads are messageable because they are admitted useAgent threads. A
+provider-native child remains read-only until its exact driver and persisted
+session authority support a follow-up.
+
+## How to refresh this page
+
+Run deterministic tests first, then the provider-specific cold, resume, child,
+and replay journeys against the exact release image and credentials being
+claimed. Record results by engine, sandbox provider, auth mode, model, runtime
+generation, and commit. Do not carry certification forward across a changed
+fingerprint.

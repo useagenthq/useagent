@@ -1,89 +1,85 @@
 ---
 title: Overview
-description: A multi-harness agent platform. An event-sourced control plane drives replaceable coding engines in isolated sandboxes and renders every run from one canonical event log.
+description: Run serious work through Codex, Claude Code, OpenCode, or Pi while useAgent keeps the thread, tools, artifacts, and execution record together.
 ---
 
-UseAgent is a control plane for coding agents. It turns a prompt into a
-durable, replayable **run**: a coding engine works inside an isolated Linux
-sandbox, streams what it does as an ordered event log, and the product UI renders
-that log live and on reload. The same run can arrive from the web app, from Slack,
-or from a scheduled automation, and it flows through one durable command lane.
+useAgent is a workspace for assigning work to coding agents and keeping the
+result understandable. Choose an engine, connect the services it needs, attach
+repositories or files, and follow the work in one durable thread. The same
+thread can produce reviewable files, ask for approval, continue later, or hand a
+task to a named bot.
 
-New here and wondering why any of that matters? **[Explore the
-features](/features)**: seven deep dives into the agent contract, the trust
-lane, the reliability story, the engines, the workspace, self-improvement, and
-the product experience, every claim grounded in the shipped code.
+The backend, not a browser tab or sandbox process, owns the durable record. It
+stores runs and events in Postgres and streams a provider-neutral projection to
+the UI. Codex, Claude Code, OpenCode, and Pi keep their own native runtime and
+session grammar underneath that common product protocol.
 
-## The core idea
+## Start with a task
 
-UseAgent is built on three architectural commitments: verification is an
-evidence discipline, all state is event-sourced in Postgres, and engines are
-replaceable adapters behind one canonical contract.
+<Steps>
+  <Step title="Connect what the task needs">
+    Add a model-provider account or API key in Settings. Connect GitHub for
+    repositories. A deployment uses one sandbox provider - Box, Cube, or
+    Daytona - and may allow personal Box or Daytona connections.
+  </Step>
+  <Step title="Describe the outcome">
+    Start a thread, choose a ready engine and model, add repositories, files,
+    skills, or structured references, then send a concrete request.
+  </Step>
+  <Step title="Follow and review">
+    The session shows messages, commands, file changes, questions, approvals,
+    child activity, and artifacts as the backend records them. Reloading does
+    not discard the durable history.
+  </Step>
+  <Step title="Continue or delegate">
+    Reply in the same thread, mention a bot, schedule a routine, or use the API
+    and CLI to dispatch more work.
+  </Step>
+</Steps>
 
-<CardGroup cols={3}>
-  <Card title="Harness outside the sandbox" icon="shield">
-    The backend is the harness. The run and step event log in Postgres is the
-    source of truth. The UI renders the log, never a live process.
-  </Card>
-  <Card title="Engines are rented, not built" icon="plug">
-    The inner agent loop is Codex, Claude, or OpenCode behind a
-    [neutral adapter](/concepts/engines-and-adapters). UseAgent owns
-    orchestration, history, approvals, and rendering.
-  </Card>
-  <Card title="One canonical event contract" icon="git-branch">
-    Every engine's output is translated into provider-neutral canonical events,
-    so three different engines render through a single UI grammar.
-  </Card>
-</CardGroup>
-
-Because history lives in the event log rather than in a running process, a run
-survives a backend restart, reconnects with a fresh durable snapshot, and never
-loses work that actually completed.
-
-## Start here
+## What is included
 
 <CardGroup cols={2}>
-  <Card title="Features" href="/features" icon="sparkles">
-    Why UseAgent: the contract, trust lane, reliability story, engines,
-    workspace, and self-improvement, each as a deep dive.
+  <Card title="Threads and child work" href="/concepts/runs-threads-commands" icon="git-branch">
+    Durable conversations, messageable product child threads, and clearly
+    separated provider-native child observations.
   </Card>
-  <Card title="Getting started" href="/getting-started" icon="rocket">
-    Install the apps, run the two dev servers, and learn the repository layout.
+  <Card title="Four native engines" href="/concepts/engines-and-adapters" icon="terminal">
+    Codex and Claude Code through their native T3 drivers, OpenCode through its
+    native server or selected T3 path, and Pi through its native RPC bridge.
   </Card>
-  <Card title="Concepts" href="/concepts" icon="boxes">
-    Runs and threads, engines and adapters, sandboxes, the gateway, and the
-    self-improvement lane, each in one page.
+  <Card title="Bots and routines" href="/product/bots" icon="bot">
+    Named presets with a home thread, repository scope, standing rules,
+    scheduled routines, and `@`-mention handoffs.
   </Card>
-  <Card title="Architecture" href="/architecture" icon="network">
-    The architecture end to end: how a turn flows, how realtime works, and what the shared
-    packages contract.
+  <Card title="Apps and guarded tools" href="/product/review-and-apps" icon="plug">
+    Connected services and gateway tools whose current availability is resolved
+    for the actor and the active run.
   </Card>
-  <Card title="Operations" href="/operations" icon="server">
-    Deployment lanes, the verification arsenal, and the operational invariants
-    production depends on.
+  <Card title="Artifacts" href="/product/artifacts" icon="file-check">
+    Files, previews, editable workpieces, revision proposals, and native export
+    for documents, spreadsheets, presentations, and PDFs.
   </Card>
-  <Card title="Product" href="/product" icon="layout-grid">
-    Every product surface: the session view, task composer, skills and
-    playbooks, knowledge and wiki, memory hub, dashboard, and settings.
-  </Card>
-  <Card title="Platform" href="/platform" icon="building">
-    Auth and orgs, provider connections and models, the GitHub integration, and
-    fleet usage.
-  </Card>
-  <Card title="Channels" href="/channels" icon="message-square">
-    Slack as a first-class entry point into the same durable command lane.
-  </Card>
-  <Card title="API" href="/api" icon="code">
-    The HTTP surface: runs and realtime, artifacts, knowledge, memory, skills,
-    automations, and platform.
+  <Card title="API and CLI" href="/getting-started/cli" icon="braces">
+    Dispatch one task, fan out a JSONL batch, wait for results, or integrate
+    through the org-scoped HTTP and MCP surfaces.
   </Card>
 </CardGroup>
 
-## What UseAgent is not
+## Read support claims correctly
+
+Code support, deployment configuration, and live verification are different
+claims. A driver can exist while a provider credential is missing; an engine
+can be configured while its selected model is not ready; a sandbox adapter can
+implement an operation without that engine/provider combination having current
+end-to-end evidence.
+
+Use `GET /api/capabilities` for actor-scoped engine and model availability, and
+read [Verified support](/operations/verified-support) for the current evidence
+boundary of this documentation snapshot.
 
 :::note
-UseAgent does not run its harness inside the sandbox, does not embed an engine's
-own web UI, and does not build its own inner agent loop. Each of those was
-evaluated and set aside for reasons recorded in the architecture notes. The
-sandbox runs the engine and the work; everything authoritative lives outside it.
+These pages describe the private Pro codebase. The public OSS repository is not
+the source for every feature documented here, so this preview intentionally
+omits “Edit on GitHub” links.
 :::

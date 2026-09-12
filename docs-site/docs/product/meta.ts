@@ -8,6 +8,7 @@ export default defineMeta({
     "index",
     "task-composer",
     "session-view",
+    "bots",
     "dashboard",
     "skills-and-playbooks",
     "knowledge-and-wiki",

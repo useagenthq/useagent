@@ -1,98 +1,84 @@
 ---
-title: Engines and adapters
-description: How Codex, Claude, and OpenCode are driven behind a neutral adapter, the runtime path versus ACP, and the Codex subscription relay.
+title: Engines and native drivers
+description: How Codex, Claude Code, OpenCode, and Pi keep their native protocol while useAgent projects them into one product event contract.
 sidebar:
   order: 4
 ---
 
-An engine is the rented inner loop. UseAgent does not build the agent that decides
-what to do; it drives an existing one and owns everything around it.
+An engine is the provider's agent loop. useAgent does not replace that loop or
+force every provider through one runtime protocol. It owns the durable thread,
+authorization, sandbox binding, event delivery, UI projection, and recovery
+around the engine.
 
-## Engine
+## Native harness invariant
 
-The coding agent runtime, such as Codex, Claude, or OpenCode. It decides what to
-do and emits native events. The harness drives each turn one-shot from outside
-the sandbox, but the engine process itself is resident inside the thread's
-sandbox and reused across turns: OpenCode runs a persistent `opencode serve`
-(`backend/src/engines/opencode-server.ts`), and the ACP Claude and Codex route
-keeps a resident relay whose session is reloaded turn to turn
-(`backend/src/engines/acp-server.ts`). The settled invariants are narrower than
-"exits per run": no engine UI servers or iframes, and no engine process
-outliving its thread's sandbox.
+Codex, Claude Code, OpenCode, and Pi always use their provider-native driver,
+session identity, lifecycle, and event grammar. Choosing Box, Cube, or Daytona
+changes only the computer that hosts the runtime.
 
-## Engine adapter
+The common UI protocol is useAgent's canonical event and client contract. It is
+**not ACP**. ACP remains an explicitly registered compatibility engine for a
+future adapter and is not a fallback for any of the four native engines.
 
-The translator between an engine's protocol and UseAgent's thread, command, and
-event contracts. Adapters live in `backend/src/engines/`. The adapter's job is to
-turn an engine's native stream into canonical steps and to accept control (start,
-cancel, and reply turns) from the command lane.
+| Engine | Native execution path | Session shape |
+| --- | --- | --- |
+| Codex | Native Codex driver through the resident T3 orchestration runtime | A provider session with exact protocol, generation, and auth-epoch authority |
+| Claude Code | Native Claude Agent SDK driver through the resident T3 orchestration runtime | A provider session whose readiness is verified before each turn |
+| OpenCode | Native `opencode serve`; optionally the native OpenCode T3 driver when the explicit runtime gate selects it | A retained native OpenCode session inside the thread sandbox |
+| Pi | Native Pi RPC bridge | A versioned RPC session with provider frames mapped into the canonical lane |
 
-## Runtime path versus ACP
+## What the adapter boundary does
 
-There are two adapter routes, with different levels of authoritative lifecycle
-support:
+The production registry in `backend/src/engines/index.ts` resolves a
+`ProviderDriver` before dispatch. Drivers declare lifecycle and model
+capabilities, start or resume the provider session, accept a turn, cancel when
+supported, and emit provider-native evidence.
 
-<CardGroup cols={2}>
-  <Card title="Runtime path" icon="git-branch">
-    The primary orchestration route (`backend/src/engines/runtime-*`). It carries
-    authoritative history, approvals, questions, child agents, patches, todos,
-    reasoning, and usage. It is an adapter path, not a second product UI.
-  </Card>
-  <Card title="ACP" icon="cable">
-    Agent Client Protocol, used by the legacy resident Codex and Claude route
-    when the runtime path is not selected. It has fewer authoritative lifecycle
-    surfaces than the runtime path.
-  </Card>
-</CardGroup>
-
-Selection of the runtime path is operator-gated: `RUNTIME_RUN_ADAPTER_ENABLED`
-turns it on (off unless `1` or `true`), and `RUNTIME_RUN_ADAPTER_MODE` chooses
-`canary`, which uses a thread and run allowlist, or `all`
-(`backend/src/engines/runtime-adapter.ts`). With no
-`RUNTIME_RUN_ADAPTER_ENGINES` list configured, the runtime lane covers codex and
-opencode while claude stays on the ACP compatibility path. The shipped
-deployment enables the lane in `mode=all` (the provisioning scripts).
-
-The production worker resolves an engine registry before each turn. Native
-OpenCode and selected runtime-path routes receive a concrete `ProviderDriver`;
-legacy ACP Claude and Codex execution is declared as an `EngineAdapter`
-compatibility path.
-
-:::note
-**Naming.** Modules are named by function, so the runtime path is named for what
-it does, not for a vendor. A vendored protocol name appears only at true wire
-boundaries, such as the provider driver and the frame parsers that speak an
-engine's actual protocol.
-:::
-
-## Codex subscription relay
-
-A one-use, run-bound WebSocket capability. It lets a managed ChatGPT
-subscription drive a run without ever copying OAuth state into the sandbox: the
-Codex app-server and the ChatGPT OAuth stay on the trusted backend, while only
-the Codex exec-server runs inside Cube or Daytona.
-
-<figure style={{ margin: "1.5rem 0" }}>
-  <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "16px" }}>
-    <img
-      src="/diagrams/codex-subscription-relay.svg"
-      alt="Codex subscription relay: the backend writes a one-use, run-bound relay URL into the sandbox settings; the sandbox Codex provider instance dials the wss capability URL; Caddy routes only /api/internal/codex-relay/* straight to the backend on port 3201; the relay consumes the grant, spawns a codex app-server with the operator codexHome, and bridges exec and file calls back to the codex exec-server in the sandbox; ChatGPT OAuth never enters the sandbox"
-      style={{ display: "block", width: "100%", height: "auto" }}
-    />
-  </div>
-  <figcaption style={{ marginTop: "0.5rem", fontSize: "0.8125rem", color: "#737373", textAlign: "center" }}>
-    One grant per run: the backend issues a one-use relay URL, the sandbox dials it through the Caddy public origin, and the relay bridges to a backend codex app-server so OAuth never enters the sandbox.
-  </figcaption>
-</figure>
-
-It is proven end to end in production: first turns, multi-turn replies (the relay
-continues a bound thread when the driver restarts), and the run-bound tool
-surface all run live. This is also the one direct backend WebSocket ingress;
-other product traffic stays behind the frontend.
+The canonical layer then projects supported messages, reasoning, tools,
+questions, approvals, tasks, and usage into the shared contract from
+`@useagent/agent-harness`. Raw provider events remain available as bounded
+diagnostic evidence. Unknown provider detail is not silently invented as a
+canonical event.
 
 ## Engine readiness is credential-mode aware
 
-A release proves the path that matches how an engine authenticates. A
-subscription-only Codex release proves the connected account and the native turn
-path; an API-key engine proves its mapped gateway provider. Readiness checks do
-not assume a single credential shape across engines.
+Codex and Claude Code use their T3 drivers. OpenCode uses its own server unless
+`RUNTIME_RUN_ADAPTER_ENABLED` and the engine/mode selection choose the T3 path.
+Pi keeps its RPC driver. The generic `acp` engine id is separate and cannot be
+selected as a substitute when a native path is unavailable.
+
+Before dispatch, the backend checks all of these conditions:
+
+1. The engine is enabled on this deployment.
+2. Its authentication mode is configured.
+3. The selected model is allowed by engine policy.
+4. Any paid model provider has positive readiness evidence.
+5. The sandbox/provider combination can host the native runtime.
+
+A failure is returned as a typed unavailable or not-ready response. The backend
+does not switch engines, providers, or protocols behind the user's choice.
+
+## Codex managed-account path
+
+A connected ChatGPT/Codex account stays on the trusted backend. The backend
+hosts the Codex app-server and issues a one-use, run-bound relay capability to
+the sandbox runtime. OAuth state is never copied into the sandbox. Model choices
+come from a bounded native catalog for the current org and user, intersected
+with the deployment's Codex allowlist.
+
+## Provider-native children
+
+Some engines report their own child tasks or collaboration sessions. useAgent
+records and displays that provider evidence, including child identity and
+transcript status when available. A native child remains read-only unless the
+driver exposes a verified resume/steer contract for that exact session.
+
+That differs from a [product child thread](/concepts/runs-threads-commands#product-child-threads),
+which is an ordinary admitted useAgent thread and can receive follow-up turns.
+
+## Expected outcome
+
+Changing the sandbox provider does not change the selected engine's protocol.
+Changing engines starts a different root thread rather than rebinding an
+existing conversation. Within a thread, supported model changes are validated
+against the actor-scoped catalog before the turn is admitted.

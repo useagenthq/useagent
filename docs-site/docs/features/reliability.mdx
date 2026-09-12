@@ -1,6 +1,6 @@
 ---
 title: Reliability
-description: Work that survives. Runs outlive backend restarts, reconnects replay exactly what live viewers saw, retries are idempotent, and releases pass real engine journeys before they ship.
+description: Learn how durable commands, replayable events, idempotent retries, bounded recovery, and fingerprinted live journeys protect work.
 sidebar:
   order: 4
 ---
@@ -36,6 +36,8 @@ not kill a live run.
     src="/diagrams/run-survives-backend-restart.svg"
     alt="Two lanes over time: the sandbox keeps executing through a backend crash while boot recovery and the adaptive reconcile loop adopt the finished result"
     style={{ width: "100%", height: "auto", display: "block" }}
+    width="940"
+    height="512"
   />
   <p style={{ margin: "12px 4px 0", fontSize: "13px", color: "#737373" }}>
     The sandbox lane never stops: a one-shot boot pass settles the commands
@@ -98,14 +100,11 @@ Reliability claims are tested at two altitudes
   </Card>
 </CardGroup>
 
-Before a release candidate ships, the guarded lane runs a **22-case parity
-matrix of real engine journeys** (repository clone, desktop and recording,
-artifact publish, thread resume, model switch, subagent fanout, workpieces,
-memory, and more) against the candidate, then re-runs the hard journeys
-through the authenticated public APIs after atomic activation. A candidate
-that fails does not ship, and the lane rolls back. Releases are built from an
-**immutable checkout** of the committed HEAD, verified by tree hash; a dirty
-working tree refuses to deploy.
+Release evidence is recorded for the exact engine, credential mode, model,
+sandbox provider, runtime generation, and image fingerprint that ran. A green
+deterministic suite or one provider journey is not relabeled as a full matrix.
+See [Verified support](/operations/verified-support) for the current boundary
+and [Verification](/operations/verification) for the required evidence shape.
 
 :::note
 **What is not claimed.** There is no sandbox pause, checkpoint, or snapshot

@@ -1,6 +1,6 @@
 ---
 title: Session view
-description: The screen where a run comes alive. A structured timeline grammar plus a side rail of surfaces for the browser, terminal, files, diffs, agents, editors, and workpieces.
+description: Follow a durable run through its timeline, browser, terminal, files, diffs, child activity, editors, and artifact workspaces.
 sidebar:
   order: 3
 ---
@@ -61,9 +61,9 @@ also carries Editor and Workspace tabs:
     patch exists.
   </Card>
   <Card title="Agents" icon="bot">
-    Status rows for nested subagent runs; clicking a row opens a per-agent
-    slide-over pane. Child sessions queue as serial turns on the thread, never
-    in parallel.
+    A hierarchy of product child threads and provider-native child activity.
+    Product children open as ordinary messageable threads; native children stay
+    read-only unless their driver exposes a verified follow-up contract.
   </Card>
   <Card title="Editor" icon="file-pen">
     A tab strip of every file the run touched, over an honest detail view: the
