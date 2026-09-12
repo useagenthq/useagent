@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { db, type Executor } from "../db/client";
+import { db } from "../db/client";
 import { providerEvents } from "../db/schema";
 import { makeNativeFrame, publishNativeFrame } from "./native-events";
 import { errorMessage } from "../util/error-message";
@@ -100,6 +100,112 @@ interface RunSequencer {
 
 const runSequencers = new Map<string, RunSequencer>();
 
+// ---------------------------------------------------------------------------
+// Capture-quality contract. A capture write that still fails after the bounded retry
+// below is a LOST frame: the run's native history is missing something the provider
+// emitted. The loss goes into a per-run ledger - in memory at once, and durably in
+// run_capture_loss on a best-effort write that is retried whenever the ledger is read -
+// and the canonicalization outbox seals such a run as `complete_degraded`, never
+// `complete`, so no reader can mistake a shorter history for the whole one. Required
+// captures are excluded: their failure is returned to the caller, who retries or fails
+// the run loudly. The memory copy is process-local (single-replica scope, like the drain
+// barrier) and only bridges the gap until the durable row lands.
+// ---------------------------------------------------------------------------
+
+/** Delays before the second and third attempt of a failed capture write. */
+const CAPTURE_RETRY_DELAYS_MS = [100, 400] as const;
+
+interface CaptureLossEntry {
+  threadId: string;
+  /** Lost frames not yet counted in the durable row. */
+  pending: number;
+  lastError: string;
+  flushing: Promise<void> | null;
+}
+const captureLosses = new Map<string, CaptureLossEntry>();
+
+export interface CaptureLoss {
+  readonly lostFrames: number;
+  readonly lastError: string | null;
+}
+
+async function persistWithRetry(input: ProviderEventInput, seq: RunSequencer): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await persistAndPublish(input, seq);
+      return;
+    } catch (err) {
+      const delay = CAPTURE_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) throw err;
+      console.warn(
+        `[provider-events] capture attempt ${attempt + 1} failed (${input.eventType}); retrying in ${delay}ms:`,
+        errorMessage(err),
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+}
+
+function noteCaptureLoss(input: ProviderEventInput, error: string): void {
+  const entry = captureLosses.get(input.runId) ?? {
+    threadId: input.threadId, pending: 0, lastError: error, flushing: null,
+  };
+  entry.pending++;
+  entry.lastError = error;
+  captureLosses.set(input.runId, entry);
+  console.error(
+    `[provider-events] LOST frame for run ${input.runId} (${input.eventType}); the run will seal as complete_degraded:`,
+    error,
+  );
+  void flushCaptureLoss(input.runId).catch(() => {});
+}
+
+/** Push the in-memory loss count into run_capture_loss. One flush in flight per run; a
+ *  loss noted during a flush is carried by the next one. Rejects when the write fails,
+ *  and the memory copy then keeps the count until a later flush lands. */
+function flushCaptureLoss(runId: string): Promise<void> {
+  const entry = captureLosses.get(runId);
+  if (!entry || entry.pending === 0) return Promise.resolve();
+  if (entry.flushing) return entry.flushing;
+  const n = entry.pending;
+  const flush = db
+    .execute(sql`
+      insert into run_capture_loss (run_id, thread_id, lost_frames, last_error)
+      values (${runId}, ${entry.threadId}, ${n}, ${entry.lastError.slice(0, 500)})
+      on conflict (run_id) do update set
+        lost_frames = run_capture_loss.lost_frames + excluded.lost_frames,
+        last_error = excluded.last_error,
+        last_at = now()`)
+    .then(() => {
+      entry.pending -= n;
+      if (entry.pending === 0) captureLosses.delete(runId);
+    })
+    .finally(() => {
+      entry.flushing = null;
+    });
+  entry.flushing = flush;
+  return flush;
+}
+
+/** The run's capture loss as the seal sees it: the durable row plus anything still only
+ *  in memory, after one more attempt to land it. Null when nothing was lost. */
+export async function captureLossForRun(runId: string): Promise<CaptureLoss | null> {
+  await flushCaptureLoss(runId).catch(() => {});
+  const [row] = (await db.execute(sql`
+    select lost_frames, last_error from run_capture_loss where run_id = ${runId}`)) as unknown as Array<{
+    lost_frames: number | string; last_error: string | null;
+  }>;
+  const pending = captureLosses.get(runId);
+  const lostFrames = Number(row?.lost_frames ?? 0) + (pending?.pending ?? 0);
+  if (lostFrames === 0) return null;
+  return { lostFrames, lastError: pending?.lastError ?? row?.last_error ?? null };
+}
+
+/** Tests only: forget the in-memory ledger, as a process restart would. */
+export function resetCaptureLossMemoryForTest(): void {
+  captureLosses.clear();
+}
+
 /**
  * Drain/seal barrier: await every provider-event write CURRENTLY in flight for a run.
  * Captures are fire-and-forget (`void recordProviderEvent`), so at the moment the
@@ -135,8 +241,8 @@ export async function providerEventExists(id: string): Promise<boolean> {
 
 /** Highest seq already persisted for a run (−1 when none) — seeds the counter so
  *  a re-created sequencer continues the sequence instead of colliding. */
-async function highestSeq(runId: string, exec: Executor = db): Promise<number> {
-  const [row] = await exec
+async function highestSeq(runId: string): Promise<number> {
+  const [row] = await db
     .select({ max: sql<number | null>`max(${providerEvents.seq})` })
     .from(providerEvents)
     .where(eq(providerEvents.runId, runId));
@@ -156,13 +262,13 @@ async function highestSeq(runId: string, exec: Executor = db): Promise<number> {
  * earlier one in the run's chain) has persisted or been logged-and-swallowed.
  * `{ required: true }` returns the unswallowed attempt to its authoritative
  * caller while the stored sequencer chain still catches the failure and remains
- * usable for later events. `fence` makes the write conditional on an ownership check
- * run inside the write's own transaction (see WriteFence); a fenced write is always
- * `required`, since the caller must learn that its claim is gone.
+ * usable for later events. Every write gets the bounded retry; a write that still
+ * fails and was not `required` is counted as a lost frame (see the capture-quality
+ * contract above), so the run seals degraded instead of claiming completeness.
  */
 export function recordProviderEvent(
   input: ProviderEventInput,
-  opts: { critical?: boolean; required?: boolean; fence?: WriteFence } = {},
+  opts: { critical?: boolean; required?: boolean } = {},
 ): Promise<void> {
   let seq = runSequencers.get(input.runId);
   if (!seq) {
@@ -170,16 +276,17 @@ export function recordProviderEvent(
     runSequencers.set(input.runId, seq);
   }
   const entry = seq;
-  const fence = opts.fence;
-  const attempt = entry.chain.then(() => fence ? persistFencedAndPublish(input, entry, fence) : persistAndPublish(input, entry));
+  const attempt = entry.chain.then(() => persistWithRetry(input, entry));
   const done = attempt.catch((err) => {
-      if (err instanceof CaptureFenceError) return; // the fenced caller sees the rejection; nothing was written
       const msg = errorMessage(err);
       // The chain must stay resolved (a rejected link stalls the run's later captures), so
       // failures are logged, not thrown. `critical` raises the level so an authoritative frame
       // (a command catalog) fails VISIBLY instead of being silently dropped.
       if (opts.critical) console.error(`[provider-events] CRITICAL capture failed (${input.eventType}):`, msg);
       else console.warn("[provider-events] capture failed:", msg);
+      // A required capture hands its failure to the caller, who retries or fails the run.
+      // Anything else is a LOST frame: record it so the run seals degraded, never complete.
+      if (!opts.required) noteCaptureLoss(input, msg);
   });
   entry.chain = done;
   // Idle-evict when this link is the tail and has settled, so the map only holds
@@ -189,7 +296,7 @@ export function recordProviderEvent(
       runSequencers.delete(input.runId);
     }
   });
-  return opts.required || fence ? attempt : done; // a fenced write is always required
+  return opts.required ? attempt : done;
 }
 
 /**
@@ -277,72 +384,15 @@ async function persistAndPublishIfAbsent(
   return true;
 }
 
-/** Thrown by a fenced write whose fence no longer holds: the caller's claim on the run is
- *  gone, so nothing was written. Propagated to the caller (fenced writes are `required`). */
-export class CaptureFenceError extends Error {
-  constructor(runId: string) {
-    super(`capture fence lost for run ${runId}`);
-  }
-}
-
-/** Ownership predicate a fenced write runs INSIDE its own transaction, before the row is
- *  written; it should lock what it checks (a `select ... for update` on the claim row) so
- *  ownership and persistence are one atomic step. */
-export type WriteFence = (tx: Executor) => Promise<boolean>;
-
 async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): Promise<void> {
-  const { frame, assignedSeq } = await persistFrame(input, seq, db);
-  await writeGraphAfterDurable(input, assignedSeq);
-  publishNativeFrame(input.runId, frame);
-}
-
-/** Graph writes are additive and fail-open, and they publish their own org signal, so
- *  they run only after the native event is durable and always outside the write's own
- *  transaction: a graph error can neither roll the native upsert back nor notify a
- *  subscriber before the commit it describes. */
-async function writeGraphAfterDurable(input: ProviderEventInput, assignedSeq: number): Promise<void> {
-  if (executionGraphWriteEnabled()) {
-    await shadowWriteExecutionGraph(input, assignedSeq);
-  }
-}
-
-/** A write whose durability is conditional on `fence` holding at the moment of the write:
- *  the fence and the upsert share one transaction, so a competing claim on the fenced row
- *  either waits behind the lock or has already moved on, and a stale writer cannot land
- *  anything. The frame is published only after the transaction commits. */
-async function persistFencedAndPublish(
-  input: ProviderEventInput,
-  seq: RunSequencer,
-  fence: WriteFence,
-): Promise<void> {
-  const { frame, assignedSeq } = await db.transaction(async (tx) => {
-    if (!(await fence(tx))) throw new CaptureFenceError(input.runId);
-    return persistFrame(input, seq, tx);
-  });
-  await writeGraphAfterDurable(input, assignedSeq);
-  publishNativeFrame(input.runId, frame);
-}
-
-/** Persist one frame (idempotent upsert by native identity) on `exec` and return the frame
- *  to publish with its seq. Graph write and live-push happen in the caller AFTER the persist
- *  has committed, so a subscriber never sees a frame that isn't durable; inside the serial
- *  chain, so frames go out in ascending seq order (the reconnect cursor's guarantee). */
-async function persistFrame(
-  input: ProviderEventInput,
-  seq: RunSequencer,
-  exec: Executor,
-): Promise<{ frame: ReturnType<typeof makeNativeFrame>; assignedSeq: number }> {
-  // Seeded on the SAME connection as the write: a fenced write holds a pooled connection
-  // and the claim row's lock, so reaching for a second connection here could exhaust the
-  // pool when several first captures overlap.
-  if (seq.nextSeq === null) seq.nextSeq = (await highestSeq(input.runId, exec)) + 1;
+  if (seq.nextSeq === null) seq.nextSeq = (await highestSeq(input.runId)) + 1;
   const assignedSeq = seq.nextSeq++;
 
   let payload: string | null = null;
   if (input.payload !== undefined) {
     payload = serializeProviderPayload(input.payload, providerPayloadCapBytes(input));
   }
-  await exec
+  await db
     .insert(providerEvents)
     .values({
       id: input.id,
@@ -378,17 +428,29 @@ async function persistFrame(
       setWhere: sql`${providerEvents.seq} < ${assignedSeq}`,
     });
 
-  const frame = makeNativeFrame({
-    eventId: input.id,
-    seq: assignedSeq,
-    provider: input.provider,
-    eventType: input.eventType,
-    sessionId: input.nativeSessionId ?? null,
-    parentSessionId: input.nativeParentSessionId ?? null,
-    messageId: input.nativeMessageId ?? null,
-    partId: input.nativePartId ?? null,
-    callId: input.nativeCallId ?? null,
-    payloadText: payload,
-  });
-  return { frame, assignedSeq };
+  // Graph writes are additive and fail-open. They happen only after the native
+  // event is durable and before live publication, preserving one observed order.
+  if (executionGraphWriteEnabled()) {
+    await shadowWriteExecutionGraph(input, assignedSeq);
+  }
+
+  // Live-push the versioned native frame to any SSE subscriber (north star
+  // "Canonical Events"). AFTER the persist, so a subscriber never sees a frame
+  // that isn't durable; and inside the serial chain, so frames go out in ascending
+  // seq order — the guarantee the reconnect cursor relies on.
+  publishNativeFrame(
+    input.runId,
+    makeNativeFrame({
+      eventId: input.id,
+      seq: assignedSeq,
+      provider: input.provider,
+      eventType: input.eventType,
+      sessionId: input.nativeSessionId ?? null,
+      parentSessionId: input.nativeParentSessionId ?? null,
+      messageId: input.nativeMessageId ?? null,
+      partId: input.nativePartId ?? null,
+      callId: input.nativeCallId ?? null,
+      payloadText: payload,
+    }),
+  );
 }

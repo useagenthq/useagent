@@ -42,6 +42,13 @@ export interface CanonicalizationComplete {
   readonly threadId: string;
   readonly sourceFrameMax: number;
   readonly sourceStepCount: number;
+  /** True when the run sealed as `complete_degraded`: at least one provider frame was
+   *  lost at capture, so the canonical history is complete AS RECORDED but shorter than
+   *  what the provider emitted. Readers trust the lane exactly as for `complete` and
+   *  may tell the user part of the run's activity is missing. */
+  readonly degraded: boolean;
+  /** Frames the capture ledger counted as lost for this run (0 unless degraded). */
+  readonly lostFrames: number;
 }
 
 /** Subscribe to a THREAD's live canonical events (all runs, incl. later ones). */

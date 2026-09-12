@@ -329,3 +329,23 @@ describe("thread-store", () => {
     ]);
   });
 });
+
+describe("canonical completion: degraded seal", () => {
+  test("a degraded completion is trusted like complete, is marked, and never clears", () => {
+    const s = createThreadStore();
+    s.applySnapshot([makeRun("A", { status: "completed" }), makeRun("B", { status: "completed" })]);
+    s.markCanonicalComplete("A", true);
+    let a = s.getSnapshot().byId.get("A")!;
+    expect(a.canonicalComplete).toBe(true);
+    expect(a.canonicalDegraded).toBe(true);
+    // A later plain completion for the same run (replay after live) keeps the mark.
+    s.markCanonicalComplete("A");
+    a = s.getSnapshot().byId.get("A")!;
+    expect(a.canonicalDegraded).toBe(true);
+    // A clean completion is not degraded.
+    s.markCanonicalComplete("B");
+    const b = s.getSnapshot().byId.get("B")!;
+    expect(b.canonicalComplete).toBe(true);
+    expect(b.canonicalDegraded).toBe(false);
+  });
+});

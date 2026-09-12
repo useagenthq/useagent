@@ -40,6 +40,10 @@ export interface ThreadRunView {
    *  render path trusts the canonical lane ONLY when true - provisional rows (still being
    *  retried by the outbox) never drive the UI, so a partial snapshot can't render. */
   canonicalComplete: boolean;
+  /** The completion record was `complete_degraded`: the lane is trusted exactly as when
+   *  complete, but at least one provider frame was lost at capture, so the UI may say
+   *  part of the run's activity is missing. Never clears once set. */
+  canonicalDegraded: boolean;
   /** Store-owned execution summary scoped to this run's durable child lifecycle. */
   executionSummary: ExecutionSummarySnapshot | null;
 }
@@ -78,8 +82,9 @@ export interface ThreadStore {
   /** Add a canonical event to its run's lane (latest revision per eventId wins). */
   applyCanonical(event: StoredCanonicalEvent): void;
   /** Mark a run's canonicalization COMPLETE (H2): the render path may now trust its
-   *  canonical lane. Idempotent. */
-  markCanonicalComplete(runId: string): void;
+   *  canonical lane. `degraded` records a complete-degraded seal (lost capture frames).
+   *  Idempotent. */
+  markCanonicalComplete(runId: string, degraded?: boolean): void;
   /** Settle the addressed run and clear only its transient text. */
   applyDone(runId: string, status: RunStatus): void;
 }
@@ -129,6 +134,8 @@ export function createThreadStore(options: ThreadStoreOptions = {}): ThreadStore
   const canonicalByRun = new Map<string, Map<string, StoredCanonicalEvent>>();
   // H2: runs whose canonicalization reached the durable `complete` record (trustworthy).
   const canonicalCompleteRuns = new Set<string>();
+  // Runs whose completion record was `complete_degraded` (a subset of the above).
+  const canonicalDegradedRuns = new Set<string>();
   let executionSummaryAvailable = options.executionSummaryEnabled === true;
   // Construct lazily on the first accepted canonical SSE event. Thread stores
   // are seeded from a React state initializer, so eager construction here would
@@ -317,6 +324,7 @@ export function createThreadStore(options: ThreadStoreOptions = {}): ThreadStore
             native: ensureStore(id).getSnapshot(),
             canonical,
             canonicalComplete: canonicalCompleteRuns.has(id),
+            canonicalDegraded: canonicalDegradedRuns.has(id),
             executionSummary: executionSummaryForRun(executionSummary, id),
           };
           viewCache.set(id, view);
@@ -406,9 +414,11 @@ export function createThreadStore(options: ThreadStoreOptions = {}): ThreadStore
       touch(event.runId);
     },
 
-    markCanonicalComplete(runId) {
-      if (canonicalCompleteRuns.has(runId)) return; // idempotent - no rebuild on a repeat
+    markCanonicalComplete(runId, degraded = false) {
+      // idempotent - no rebuild on a repeat; a degraded mark never clears (a seal never regresses)
+      if (canonicalCompleteRuns.has(runId) && (!degraded || canonicalDegradedRuns.has(runId))) return;
       canonicalCompleteRuns.add(runId);
+      if (degraded) canonicalDegradedRuns.add(runId);
       touch(runId);
     },
 

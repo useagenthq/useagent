@@ -10,6 +10,10 @@
  *    marked done.
  *  - #3 partial-permanent: `complete` (with the watermark) is the explicit completion
  *    record; retries continue until then, replacing provisional output each attempt.
+ *  - #4 lost capture: a provider frame that failed to persist even after retry is counted
+ *    in the run's capture-loss ledger (provider-events.ts); the seal then writes
+ *    `complete_degraded`, never `complete`, so completeness is never claimed over a hole.
+ *    Readers treat both as final; the degraded one also carries the loss count.
  * Multi-instance safe (claim via FOR UPDATE SKIP LOCKED); crash-recovered (stuck
  * `translating` rows reset to `pending` at boot - safe because translation is an
  * idempotent full replace while still provisional).
@@ -29,7 +33,7 @@ import {
 import { canonicalizationOutbox } from "../db/schema";
 import { getNativeFramesSince } from "./native-events";
 import { getRun, getStepsApi } from "./repo";
-import { drainProviderEvents } from "./provider-events";
+import { captureLossForRun, drainProviderEvents } from "./provider-events";
 import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "../engines/opencode-canonical";
 import type { CanonicalAgentEvent } from "@useagent/agent-harness/canonical";
 import { canonicalEngine } from "../engines/engine-alias";
@@ -86,8 +90,8 @@ export async function enqueueCanonicalization(runId: string, threadId: string, e
     .onConflictDoUpdate({
       target: canonicalizationOutbox.runId,
       set: {
-        // never regress a completed canonicalization; otherwise re-arm for a retry.
-        state: sql`case when ${canonicalizationOutbox.state} = 'complete' then 'complete' else 'pending' end`,
+        // never regress a completed canonicalization (degraded or not); otherwise re-arm for a retry.
+        state: sql`case when ${canonicalizationOutbox.state} in ('complete', 'complete_degraded') then ${canonicalizationOutbox.state} else 'pending' end`,
         nextAttemptAt: sql`now()`,
         updatedAt: sql`now()`,
       },
@@ -130,13 +134,16 @@ async function claimDue(limit: number): Promise<Claimed[]> {
  *  publish happens AFTER this commits (see the worker), so subscribers only ever receive
  *  finalized rows. Returns the delivered rows to publish. */
 async function finalizeCanonicalForRun(
-  runId: string, events: readonly CanonicalAgentEvent[], w: Watermark,
+  runId: string, events: readonly CanonicalAgentEvent[], w: Watermark, degraded: boolean,
 ): Promise<DeliveredCanonicalEvent[]> {
   return db.transaction(async (tx) => {
     const delivered = await replaceCanonicalRowsTx(tx, runId, events);
     await tx
       .update(canonicalizationOutbox)
-      .set({ state: "complete", sourceFrameMax: w.frameMax, sourceStepCount: w.stepCount, lastError: null, updatedAt: new Date() })
+      .set({
+        state: degraded ? "complete_degraded" : "complete",
+        sourceFrameMax: w.frameMax, sourceStepCount: w.stepCount, lastError: null, updatedAt: new Date(),
+      })
       .where(eq(canonicalizationOutbox.runId, runId));
     return delivered;
   });
@@ -157,7 +164,9 @@ export async function markRetryOrDead(c: Claimed, err: string): Promise<void> {
  *  ATOMICALLY write the final rows + completion record. Steps carry the run's engine as
  *  provenance. Never publishes here (the worker publishes after the tx commits). Returns
  *  the finalized rows + watermark, or complete:false to retry against the newer source. */
-export async function canonicalizeRun(runId: string, threadId: string): Promise<{ complete: boolean; delivered: DeliveredCanonicalEvent[]; watermark: Watermark }> {
+export async function canonicalizeRun(runId: string, threadId: string): Promise<{
+  complete: boolean; degraded: boolean; lostFrames: number; delivered: DeliveredCanonicalEvent[]; watermark: Watermark;
+}> {
   // Seal in-flight provider-event writes BEFORE the first watermark read, so a queued
   // capture can't commit after both reads and be missed (drain barrier).
   await drainProviderEvents(runId);
@@ -173,10 +182,13 @@ export async function canonicalizeRun(runId: string, threadId: string): Promise<
   );
   const after = await sourceWatermark(runId);
   if (!watermarkStable(before, after)) {
-    return { complete: false, delivered: [], watermark: after }; // source moved - retry against the newer source
+    return { complete: false, degraded: false, lostFrames: 0, delivered: [], watermark: after }; // source moved - retry against the newer source
   }
-  const delivered = await finalizeCanonicalForRun(runId, events, before);
-  return { complete: true, delivered, watermark: before };
+  // The capture ledger is read AFTER the drain: a write that failed inside the run's chain
+  // has been counted by the time the chain settles, so the seal sees every loss.
+  const loss = await captureLossForRun(runId);
+  const delivered = await finalizeCanonicalForRun(runId, events, before, loss !== null);
+  return { complete: true, degraded: loss !== null, lostFrames: loss?.lostFrames ?? 0, delivered, watermark: before };
 }
 
 /** Process up to `limit` due canonicalizations. Returns how many completed. */
@@ -195,6 +207,7 @@ export async function runCanonicalizationOutboxOnce(limit = 20): Promise<number>
         publishCanonicalizationComplete({
           runId: c.runId, threadId: c.threadId,
           sourceFrameMax: res.watermark.frameMax, sourceStepCount: res.watermark.stepCount,
+          degraded: res.degraded, lostFrames: res.lostFrames,
         });
         done++;
       } else await markRetryOrDead(c, "source watermark moved during translate");
@@ -205,16 +218,27 @@ export async function runCanonicalizationOutboxOnce(limit = 20): Promise<number>
   return done;
 }
 
-/** The runs in a THREAD whose canonicalization has reached `complete` (H2 replay source).
- *  A reconnecting thread stream loads these so React knows which runs to trust the
- *  canonical lane for, independent of provisional rows still in flight. */
-export async function completeCanonicalRuns(threadId: string): Promise<Array<{ runId: string; sourceFrameMax: number; sourceStepCount: number }>> {
+/** The runs in a THREAD whose canonicalization has reached `complete` or
+ *  `complete_degraded` (H2 replay source). A reconnecting thread stream loads these so
+ *  React knows which runs to trust the canonical lane for, independent of provisional
+ *  rows still in flight; a degraded run is trusted the same way and carries its loss count. */
+export async function completeCanonicalRuns(threadId: string): Promise<Array<{
+  runId: string; sourceFrameMax: number; sourceStepCount: number; degraded: boolean; lostFrames: number;
+}>> {
   const rows = (await db.execute(sql`
-    select run_id, source_frame_max, source_step_count from canonicalization_outbox
-    where thread_id = ${threadId} and state = 'complete'`)) as unknown as Array<{
-    run_id: string; source_frame_max: number | null; source_step_count: number | null;
+    select o.run_id, o.source_frame_max, o.source_step_count, o.state, coalesce(l.lost_frames, 0) as lost_frames
+    from canonicalization_outbox o
+    left join run_capture_loss l on l.run_id = o.run_id
+    where o.thread_id = ${threadId} and o.state in ('complete', 'complete_degraded')`)) as unknown as Array<{
+    run_id: string; source_frame_max: number | null; source_step_count: number | null; state: string; lost_frames: number | string;
   }>;
-  return rows.map((r) => ({ runId: r.run_id, sourceFrameMax: Number(r.source_frame_max ?? -1), sourceStepCount: Number(r.source_step_count ?? 0) }));
+  return rows.map((r) => ({
+    runId: r.run_id,
+    sourceFrameMax: Number(r.source_frame_max ?? -1),
+    sourceStepCount: Number(r.source_step_count ?? 0),
+    degraded: r.state === "complete_degraded",
+    lostFrames: r.state === "complete_degraded" ? Number(r.lost_frames) : 0,
+  }));
 }
 
 /** Boot recovery: a crash mid-translate leaves a `translating` row stranded. Reset it

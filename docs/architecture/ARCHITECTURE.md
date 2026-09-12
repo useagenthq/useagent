@@ -109,7 +109,7 @@ These paths must not be collapsed into one claim:
 |---|---|---|
 | `runs` + `steps` | Durable lifecycle and compatibility projection. | Thread snapshot/run/step frames. |
 | `provider_events` | Durable bounded native capture with per-run sequence. | Replayed native frames and live native frames. |
-| `canonical_events` | Durable provider-neutral projection. A run is trusted as canonical only after its canonicalization outbox completes. | Canonical and canonical-complete frames. |
+| `canonical_events` | Durable provider-neutral projection. A run is trusted as canonical only after its canonicalization outbox completes: `complete`, or `complete_degraded` when the capture ledger (`run_capture_loss`) counted provider frames that failed to persist after retry. Both are final and trusted; the degraded seal carries the loss count so the UI can say part of the run's activity is missing. | Canonical and canonical-complete frames. |
 | `turnStream` | Process-local live answer/reasoning deltas. Answer text is capped and retained briefly; reasoning is live-only. Neither is reconnect truth. | `delta` frames, then cleared when the run settles. |
 
 The transient contract is defined in `backend/src/runs/turn-stream.ts:L1-L20`; buffering and

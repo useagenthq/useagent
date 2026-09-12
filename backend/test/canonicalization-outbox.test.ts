@@ -28,7 +28,12 @@ import {
   type CanonicalizationComplete,
   type DeliveredCanonicalEvent,
 } from "../src/runs/canonical-events";
-import { drainProviderEvents, recordProviderEvent } from "../src/runs/provider-events";
+import {
+  captureLossForRun,
+  drainProviderEvents,
+  recordProviderEvent,
+  resetCaptureLossMemoryForTest,
+} from "../src/runs/provider-events";
 import { updateStepCode } from "../src/runs/repo";
 import { waitFor } from "./helpers"; // side-effect: imports src/index -> migrate
 
@@ -197,9 +202,63 @@ describe("canonicalization outbox: complete signal (H2 - durable + live)", () =>
     expect(mine).toBeDefined();
     expect(mine!.sourceFrameMax).toBe(2);
     expect(mine!.sourceStepCount).toBe(1);
+    expect(mine!.degraded).toBe(false);
     // Replay: a reconnecting stream learns the run is complete from the durable table.
     const replay = (await completeCanonicalRuns(THREAD)).find((r) => r.runId === RUN);
-    expect(replay).toEqual({ runId: RUN, sourceFrameMax: 2, sourceStepCount: 1 });
+    expect(replay).toEqual({ runId: RUN, sourceFrameMax: 2, sourceStepCount: 1, degraded: false, lostFrames: 0 });
+  });
+});
+
+describe("canonicalization outbox: a lost capture seals complete_degraded, never complete (#4)", () => {
+  test("one dropped write with no later duplicate, then finalize: degraded seal live and on replay, surviving a process restart", async () => {
+    const { RUN, THREAD } = await seedRun("cob_degraded");
+    // A capture the database refuses (event_type is NOT NULL): every retry fails, the frame
+    // is lost, and nothing re-adds it later.
+    const frameMaxBefore = (await sourceWatermark(RUN)).frameMax;
+    await recordProviderEvent({
+      id: `${RUN}-lost`, runId: RUN, threadId: THREAD, provider: "opencode",
+      eventType: null as never, nativeMessageId: "m1", nativePartId: "plost", payload: { text: "gone" },
+    });
+    await drainProviderEvents(RUN);
+    expect((await sourceWatermark(RUN)).frameMax).toBe(frameMaxBefore); // the frame never landed
+    expect(await captureLossForRun(RUN)).toEqual({ lostFrames: 1, lastError: expect.any(String) });
+
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    try {
+      await enqueueCanonicalization(RUN, THREAD);
+      for (let i = 0; i < 30 && !(await outboxRow(RUN))?.state.startsWith("complete"); i++) {
+        await runCanonicalizationOutboxOnce();
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    } finally {
+      off();
+    }
+    expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+    expect(await canonCount(RUN)).toBeGreaterThan(0); // complete AS RECORDED: final rows exist and are trusted
+    const live = seen.find((e) => e.runId === RUN);
+    expect(live?.degraded).toBe(true);
+    expect(live?.lostFrames).toBe(1);
+    const replay = (await completeCanonicalRuns(THREAD)).find((r) => r.runId === RUN);
+    expect(replay).toEqual({ runId: RUN, sourceFrameMax: frameMaxBefore, sourceStepCount: 1, degraded: true, lostFrames: 1 });
+
+    // A process restart forgets the in-memory ledger; the durable row still marks the run,
+    // and a re-armed canonicalization can never promote it to a clean `complete`.
+    resetCaptureLossMemoryForTest();
+    expect(await captureLossForRun(RUN)).toEqual({ lostFrames: 1, lastError: expect.any(String) });
+    await db.execute(sql`update canonicalization_outbox set state = 'pending', next_attempt_at = now() where run_id = ${RUN}`);
+    for (let i = 0; i < 30 && (await outboxRow(RUN))?.state === "pending"; i++) {
+      await runCanonicalizationOutboxOnce();
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
+  });
+
+  test("re-enqueueing a degraded run never regresses its seal", async () => {
+    const { RUN, THREAD } = await seedRun("cob_degraded_keep");
+    await db.execute(sql`insert into canonicalization_outbox (run_id, thread_id, state) values (${RUN}, ${THREAD}, 'complete_degraded')`);
+    await enqueueCanonicalization(RUN, THREAD);
+    expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
   });
 });
 

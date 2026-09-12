@@ -109,6 +109,10 @@ export type Turn = {
    *  canonical lane drives the UI ONLY when true - otherwise the legacy native lane does,
    *  so a still-provisional (partial, retrying) snapshot never renders. */
   canonicalComplete?: boolean;
+  /** The completion record was `complete_degraded`: at least one provider frame was lost
+   *  at capture, so the recorded history is shorter than what the provider emitted. The
+   *  lane is trusted the same way; the turn says so to the user. */
+  canonicalDegraded?: boolean;
   /** Present ONLY on a not-yet-loaded outline stub (windowed initial loading):
    *  the cheap skeleton that sizes this turn's placeholder row. The turn window
    *  never materializes a stub; the full run (island fetch or SSE snapshot)
@@ -335,6 +339,11 @@ const TurnBlock = memo(function TurnBlock({
              burst is the answer, so the durable summary is re-rendered only when
              the timeline carried no narration (a tool-only turn). */
           <div data-timeline-source={timelineSource} className="space-y-3">
+            {turn.canonicalDegraded && (
+              <p className="text-text-tertiary text-caption-1-regular" data-capture-degraded="">
+                Part of this run's activity was not recorded. What is shown is complete as saved.
+              </p>
+            )}
             <Timeline
               nodes={timeline}
               live={live}

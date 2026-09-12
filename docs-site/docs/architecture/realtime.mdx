@@ -54,6 +54,12 @@ canonical events for fidelity and debugging. Four invariants govern the lane:
   source watermark (max native frame seq plus a step content signature) is
   stable across the translate; until then it retries, never freezing a partial
   snapshot.
+- **Honest completeness.** A provider frame whose capture write fails even
+  after a bounded retry is counted in the run's capture-loss ledger, and the
+  seal then writes `complete_degraded` instead of `complete`. Both are final and
+  trusted; the degraded record carries the lost-frame count on the
+  `canonical-complete` frame so the client can tell the user part of the run's
+  activity is missing.
 - **Persist before publish.** Canonical rows are written with an immutable
   thread-wide delivery cursor and append-only revisions, and only then emitted
   to live subscribers, so a reconnect replays exactly what live showed.
