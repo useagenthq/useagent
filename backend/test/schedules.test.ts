@@ -7,6 +7,7 @@ import { tick } from "../src/schedules/scheduler";
 import { acceptRunCommand, type RunCommandIntent } from "../src/commands";
 import { fireScheduleWithOutcome, firingKey } from "../src/schedules/fire";
 import { getScheduleForOrg } from "../src/schedules/repo";
+import { AUTOMATION_RUN_ORIGIN } from "../src/runs/origin";
 import { db } from "../src/db/client";
 import { runs, skillRevisions } from "../src/db/schema";
 import { createOrgSession, json, waitFor } from "./helpers";
@@ -269,7 +270,7 @@ describe("schedules API", () => {
       .from(runs)
       .where(eq(runs.id, runId))
       .limit(1);
-    expect(persisted?.origin).toBeNull();
+    expect(persisted?.origin).toBe(AUTOMATION_RUN_ORIGIN);
 
     // History shows the manual firing, enriched with the live run status.
     const hist = await json<FiringHistoryResponse>(
