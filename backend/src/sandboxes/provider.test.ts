@@ -27,6 +27,7 @@ describe("sandbox provider selection", () => {
     expect(sandboxRuntimeLayout("daytona")).toEqual({
       home: "/root",
       workdir: "/root/work",
+      bunExecutable: "/usr/local/bin/bun",
       runsAsRoot: true,
     });
     expect(sandboxRuntimeLayout("cube")).toEqual({

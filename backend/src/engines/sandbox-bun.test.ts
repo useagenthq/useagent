@@ -3,10 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
+import { daytonaPlugin } from "@useagent/sandbox-daytona";
+import type { SandboxHandle } from "../sandboxes/provider";
 import {
   SANDBOX_BUN_VERSION,
   buildSandboxBunInstallCommand,
   buildSandboxBunProbeCommand,
+  ensureSandboxBun,
 } from "./sandbox-bun";
 
 function hostArch(): "arm64" | "x64" {
@@ -36,6 +39,30 @@ async function linuxCommandEnvironment(home: string): Promise<Record<string, str
 }
 
 describe("sandbox Bun prerequisite", () => {
+  test("reuses the Bun baked into Daytona's shared native image without an upload", async () => {
+    const fixtureRoot = await mkdtemp(join(tmpdir(), "useagent-daytona-baked-bun-"));
+    try {
+      const executable = join(fixtureRoot, "baked-bun");
+      await Bun.write(executable, `#!/bin/sh\nprintf '%s\\n' '${SANDBOX_BUN_VERSION}'\n`);
+      await chmod(executable, 0o755);
+      const env = await linuxCommandEnvironment(fixtureRoot);
+      let calls = 0;
+      const sandbox = {
+        process: {
+          async executeCommand(command: string) {
+            calls++;
+            const result = Bun.spawnSync(["sh", "-c", command.replaceAll("/usr/local/bin/bun", executable)], { env });
+            return { exitCode: result.exitCode, result: result.stdout.toString() };
+          },
+        },
+      } as SandboxHandle;
+      await ensureSandboxBun(sandbox, { ...daytonaPlugin.runtime, runsAsRoot: daytonaPlugin.runsAsRoot }, new AbortController().signal);
+      expect(calls).toBe(1);
+    } finally {
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
   test("publishes root-prepared Bun for non-root runtime users without changing a retained workspace", async () => {
     const home = await mkdtemp(join(tmpdir(), "useagent-sandbox-bun-"));
     const workdir = join(home, "work");
