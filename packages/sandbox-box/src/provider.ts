@@ -12,6 +12,7 @@ import type {
   SandboxLabelStore,
   SandboxProviderPorts,
   SandboxSession,
+  SandboxTemplateStatus,
 } from "@useagent/sandbox-contract";
 import { SandboxTerminalUnavailableError, memorySandboxLabelStore } from "@useagent/sandbox-contract";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -71,6 +72,12 @@ interface BoxRecord {
   readonly subdomain?: string | null;
 }
 
+interface BoxNamedSnapshot {
+  readonly name: string;
+  readonly status: "saving" | "ready" | "failed";
+  readonly error?: string;
+}
+
 const HOME_DIR = "/home/user";
 const WORK_DIR = `${HOME_DIR}/work`;
 const STATE_DIR = `${HOME_DIR}/.useagent`;
@@ -80,6 +87,7 @@ const READY_POLL_MS = 2_000;
 const READY_TIMEOUT_MS = 240_000;
 const DESKTOP_READY_TIMEOUT_MS = 120_000;
 const ARCHIVE_SETTLE_TIMEOUT_MS = 120_000;
+const TEMPLATE_READY_TIMEOUT_MS = 300_000;
 const LONG_POLL_MS = 1_000;
 const BOX_CLI_HOME_PREFIX = "useagent-box-pty-";
 const BOX_CLI_CONFIG = '{\n  "api_url": "https://ascii.dev",\n  "channel": "ascii-prod"\n}\n';
@@ -273,6 +281,23 @@ class BoxApi {
   async box(id: string): Promise<BoxRecord> {
     const payload = await this.request<{ box: BoxRecord }>("GET", `/boxes/${encodeURIComponent(id)}`);
     return payload.box;
+  }
+
+  async namedSnapshot(name: string): Promise<BoxNamedSnapshot> {
+    const payload = await this.request<{ snapshot: BoxNamedSnapshot }>(
+      "GET",
+      `/named-snapshots/${encodeURIComponent(name)}`,
+    );
+    return payload.snapshot;
+  }
+
+  async saveNamedSnapshot(boxId: string, name: string): Promise<BoxNamedSnapshot> {
+    const payload = await this.request<{ snapshot: BoxNamedSnapshot }>(
+      "POST",
+      "/named-snapshots",
+      { boxId, name },
+    );
+    return payload.snapshot;
   }
 
   async waitUntilReady(id: string): Promise<BoxRecord> {
@@ -670,6 +695,29 @@ class BoxProvider implements SandboxProvider {
       throw error;
     }
     return new BoxSandboxHandle(this.api, this.labels, ready, labels);
+  }
+
+  async saveTemplate(sourceSandboxId: string, name: string): Promise<SandboxTemplateStatus> {
+    let snapshot: BoxNamedSnapshot | null = null;
+    try {
+      snapshot = await this.api.namedSnapshot(name);
+    } catch (error) {
+      if (!(error instanceof BoxApiError) || error.status !== 404) throw error;
+    }
+    if (!snapshot || snapshot.status === "failed") {
+      snapshot = await this.api.saveNamedSnapshot(sourceSandboxId, name);
+    }
+    const deadline = Date.now() + TEMPLATE_READY_TIMEOUT_MS;
+    while (snapshot.status === "saving" && Date.now() < deadline) {
+      await this.api.sleep(READY_POLL_MS);
+      snapshot = await this.api.namedSnapshot(name);
+    }
+    if (snapshot.status === "ready") return { name, state: "active" };
+    return {
+      name,
+      state: "error",
+      detail: snapshot.error ?? `template did not become ready within ${TEMPLATE_READY_TIMEOUT_MS / 1000}s`,
+    };
   }
 
   async get(sandboxId: string): Promise<SandboxHandle> {

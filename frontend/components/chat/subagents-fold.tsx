@@ -216,6 +216,32 @@ function ProductChildRow({
   );
 }
 
+function ProductChildResults({ children }: { children: readonly ThreadRelationship[] }) {
+  const completed = children.filter(
+    (child) => child.status === "completed" && child.latestSummary?.trim(),
+  );
+  if (children.length < 2 || completed.length !== children.length) return null;
+
+  return (
+    <li
+      className="border-border-card-soft bg-background-secondary-subtle mt-2 rounded-lg border px-3 py-2.5"
+      data-testid="product-child-results"
+    >
+      <p className="text-caption-1-medium text-text-secondary">Combined results</p>
+      <div className="mt-2 space-y-3">
+        {completed.map((child) => (
+          <div key={child.threadId}>
+            <p className="text-body-2-medium text-text-primary">{child.title}</p>
+            <p className="text-body-2-regular text-text-secondary mt-0.5 whitespace-pre-wrap">
+              {child.latestSummary}
+            </p>
+          </div>
+        ))}
+      </div>
+    </li>
+  );
+}
+
 /**
  * "N subagents" fold for one conversation turn. Renders nothing when the turn
  * spawned no children. Open by default while any child is still active (the
@@ -317,6 +343,7 @@ export function SubagentsFold({
               onOpen={onOpenProductChild}
             />
           ))}
+          <ProductChildResults children={productChildren} />
         </ul>
       )}
     </section>

@@ -177,6 +177,31 @@ describe("subagents fold (inline conversation group)", () => {
     expect(html).toContain("Codex · gpt-5.6-luna");
   });
 
+  test("shows complete combined results after every product child settles", () => {
+    const html = renderToStaticMarkup(
+      <SubagentsFold
+        steps={[]}
+        live={false}
+        productChildren={[
+          productChild({
+            threadId: "child-1",
+            title: "Poem: Paris",
+            latestSummary: "Paris line one.\nParis line two.",
+          }),
+          productChild({
+            threadId: "child-2",
+            title: "Poem: Rome",
+            latestSummary: "Rome line one.\nRome line two.",
+          }),
+        ]}
+      />,
+    );
+    expect(html).toContain('data-testid="product-child-results"');
+    expect(html).toContain("Combined results");
+    expect(html).toContain("Paris line two.");
+    expect(html).toContain("Rome line two.");
+  });
+
   test("a bot's thread is named after the bot and counted apart from subagents", () => {
     const html = renderToStaticMarkup(
       <SubagentsFold

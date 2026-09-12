@@ -83,7 +83,6 @@ import {
 } from "../provider-gateway/sandbox-config";
 import { opencodeAssistantError } from "./opencode-message";
 import { openCodeModelBody } from "./opencode-model";
-import { desktopUnavailableStep, ensureSandboxDesktopView } from "./desktop";
 import { createSecretRedactor } from "../secrets/redact";
 import { DEFAULT_OPENCODE_MODEL } from "../runs/model-policy";
 import {
@@ -117,6 +116,7 @@ import {
   SERVE_PORT,
   stopServerForConfigReload,
 } from "./opencode-serve";
+import { scheduleOpenCodeTemplatePreparation } from "./opencode-template";
 export { prewarmOpenCodeRuntime } from "./opencode-serve";
 import {
   assertSandboxResources,
@@ -848,6 +848,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
     const startedAt = Date.now();
     const binding = await resolveSandboxBindingForRun(ctx);
     const provider = binding.provider;
+    scheduleOpenCodeTemplatePreparation(ctx, binding);
     // Recorded next to the sandbox id: the binding that actually produced the sandbox.
     let effectiveBinding = binding;
     const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 600_000);
@@ -1006,8 +1007,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       // sandbox; if it is absent/unhealthy, ensureServer starts it AFTER the
       // current secret files are materialized so a resumed process cannot inherit
       // stale or revoked credentials.
-      const [desktop, cachedRuntimeServer, secretState, baseOpenCodeConfig] = await stagesTogether([
-        () => prepareStage("desktop", () => ensureSandboxDesktopView(box, ctx.signal)),
+      const [cachedRuntimeServer, secretState, baseOpenCodeConfig] = await stagesTogether([
         () =>
           prepareStage("resident_probe", () =>
             reuseHealthyResidentServer(rememberedServer, box.id, ctx.signal),
@@ -1026,9 +1026,6 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       // Prepare run-scoped gateways. A fresh server
       // reads this config from disk at boot; a warm server applies the same
       // immutable payload through OpenCode's runtime config API below.
-      if (!desktop.available) {
-        await ctx.emit(desktopUnavailableStep("opencode", desktop));
-      }
       const preparedConfig = await prepareStage("config_merge", () =>
         prepareOpencodeSandboxConfig(box, ctx, baseOpenCodeConfig),
       );
@@ -1179,18 +1176,14 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const dirQ = `?directory=${encodeURIComponent(workdir)}`;
 
       const negotiatedCapabilities = sessionCapabilities("opencode", {
-        desktop: desktop.available,
+        desktop: false,
         knowledgeTools: gatewayState.knowledge,
       });
       const executionCapabilities = buildExecutionCapabilitySnapshot({
         runtime: "sandbox",
         workspaceRoot: workdir,
         gatewayAvailable: gatewayState.knowledge,
-        desktopAvailability: desktop.available
-          ? "ready"
-          : gatewayState.knowledge
-            ? "on_demand"
-            : "unsupported",
+        desktopAvailability: gatewayState.knowledge ? "on_demand" : "unsupported",
       });
       const established = await establishProviderSession({
         driver,

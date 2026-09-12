@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import {
   providerConnections,
@@ -121,6 +121,32 @@ export async function upsertProviderConnectionUnlessRevoked(
   input: UpsertProviderConnectionInput,
 ): Promise<ProviderConnectionRecord | null> {
   return writeProviderConnection(input, true);
+}
+
+export async function setProviderSnapshotIfUnset(
+  scope: ProviderConnectionScope & {
+    provider: ProviderConnectionProvider;
+    snapshotName: string;
+    expectedUpdatedAt: string;
+  },
+): Promise<ProviderConnectionRecord | null> {
+  const [row] = await db
+    .update(providerConnections)
+    .set({
+      metadata: sql`${providerConnections.metadata} || jsonb_build_object('snapshotName', ${scope.snapshotName})`,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(providerConnections.orgId, scope.orgId),
+      eq(providerConnections.userId, scope.userId),
+      eq(providerConnections.provider, scope.provider),
+      eq(providerConnections.authMethod, "api_key"),
+      eq(providerConnections.status, "connected"),
+      sql`date_trunc('milliseconds', ${providerConnections.updatedAt}) = ${scope.expectedUpdatedAt}::timestamptz`,
+      sql`coalesce(${providerConnections.metadata}->>'snapshotName', '') = ''`,
+    ))
+    .returning();
+  return row ?? null;
 }
 
 export async function revokeProviderConnection(

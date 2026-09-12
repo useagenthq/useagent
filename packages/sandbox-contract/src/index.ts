@@ -221,6 +221,11 @@ export interface SandboxProvider {
     name: string,
     options?: { readonly onActivating?: () => void | Promise<void> },
   ): Promise<SandboxTemplateStatus>;
+  /** Freeze one sandbox's filesystem as a reusable named template. */
+  saveTemplate?(
+    sourceSandboxId: string,
+    name: string,
+  ): Promise<SandboxTemplateStatus>;
   /**
    * OPTIONAL capacity/inventory telemetry. Providers that can observe node-level
    * headroom (multi-node Cube) implement this; single-node or telemetry-less

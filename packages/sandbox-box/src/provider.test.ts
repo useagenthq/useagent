@@ -52,6 +52,7 @@ function fakeBoxApi(
   let desktopProvisioningPolls = options.desktopProvisioningPolls ?? 0;
   const commandResults = new Map<string, { stdout?: string; stderr?: string; exitCode?: number | null; timedOut?: boolean }>();
   const commands: string[] = [];
+  const namedSnapshots = new Map<string, { name: string; status: "saving" | "ready"; sourceBoxId: string }>();
 
   const json = (status: number, payload: unknown) =>
     new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
@@ -84,6 +85,23 @@ function fakeBoxApi(
       const page = all.slice(start, start + size);
       const next = start + size < all.length ? String(start + size) : null;
       return json(200, { ok: true, type: "box.list", boxes: page, pageInfo: { nextCursor: next, limit: size } });
+    }
+    if (method === "POST" && path === "/named-snapshots") {
+      const snapshot = {
+        name: String(body?.name),
+        status: "saving" as const,
+        sourceBoxId: String(body?.boxId),
+      };
+      namedSnapshots.set(snapshot.name, snapshot);
+      return json(202, { ok: true, type: "snapshot.named.saving", snapshot });
+    }
+    const namedSnapshot = /^\/named-snapshots\/([^/]+)$/.exec(path);
+    if (method === "GET" && namedSnapshot) {
+      const name = decodeURIComponent(namedSnapshot[1]!);
+      const snapshot = namedSnapshots.get(name);
+      if (!snapshot) return json(404, { ok: false, code: "not_found", message: "no snapshot" });
+      snapshot.status = "ready";
+      return json(200, { ok: true, type: "snapshot.named.info", snapshot });
     }
     const match = /^\/boxes\/([^/]+)(?:\/(.*))?$/.exec(path);
     if (!match) return json(404, { ok: false, code: "not_found", message: "no route" });
@@ -194,6 +212,20 @@ describe("Box sandbox provider", () => {
     expect((await box.get(sandbox.id)).labels).toEqual({ "useagent.run": "r1", "useagent.generation": "g7" });
     expect(boxTtlSeconds({ autoDeleteInterval: 0 })).toBeNull();
     expect(boxTtlSeconds({ autoDeleteInterval: 10_000_000 })).toBe(2_592_000);
+  });
+
+  test("saves a ready named template from a prepared box", async () => {
+    const api = fakeBoxApi([{ id: "bx_source", state: "ready", vcpu: 4, memoryGB: 8, subdomain: "source" }]);
+    const box = provider(api).provider;
+    expect(await box.saveTemplate?.("bx_source", "useagent-opencode-1-18-7")).toEqual({
+      name: "useagent-opencode-1-18-7",
+      state: "active",
+    });
+    expect(api.requests.some((request) =>
+      request.method === "POST" &&
+      request.path === "/named-snapshots" &&
+      (request.body as { boxId?: string }).boxId === "bx_source"
+    )).toBe(true);
   });
 
   test("an archived box keeps its labels through resume, and an archiving box settles before resume", async () => {

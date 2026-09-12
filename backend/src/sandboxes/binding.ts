@@ -32,6 +32,8 @@ export interface SandboxBinding {
   readonly snapshot: string | null;
   readonly credential: SandboxCredentialSource;
   readonly userId: string | null;
+  /** Version of the user connection used to build this provider instance. */
+  readonly connectionUpdatedAt?: string;
 }
 
 export interface SandboxBindingDeps {
@@ -95,6 +97,7 @@ async function userSandboxBinding(
       snapshot: row.metadata.snapshotName?.trim() || null,
       credential: "user",
       userId: scope.userId,
+      connectionUpdatedAt: row.updatedAt,
     };
   }
   const connections = deps.connections ?? listProviderConnections;
@@ -115,6 +118,7 @@ async function userSandboxBinding(
     snapshot: row.metadata.snapshotName?.trim() || null,
     credential: "user",
     userId: scope.userId,
+    connectionUpdatedAt: row.updatedAt.toISOString(),
   };
 }
 

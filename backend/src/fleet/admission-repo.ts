@@ -135,6 +135,7 @@ export async function listQueuedCapacityAdmissions(
         r.sandbox_id, r.org_id, r.thread_id
       from runs r
       where r.sandbox_id is not null
+        and coalesce(r.sandbox_credential, 'env') <> 'user'
         and (
           r.status in ('queued', 'running') or
           coalesce(r.settled_at, r.updated_at, r.created_at) >=
@@ -176,6 +177,7 @@ export async function listQueuedCapacityAdmissions(
     ), current_reclaimable as (
       select distinct on (r.org_id, r.thread_id)
         r.id, r.org_id, r.thread_id, r.sandbox_id, r.status,
+        r.sandbox_credential,
         coalesce(r.settled_at, r.updated_at, r.created_at) as last_used_at
       from runs r
       where r.sandbox_id is not null
@@ -184,6 +186,7 @@ export async function listQueuedCapacityAdmissions(
       select c.*
       from current_reclaimable c
       where c.status in ('completed', 'failed')
+        and coalesce(c.sandbox_credential, 'env') <> 'user'
         and not exists (
           select 1 from runs active
           where active.org_id = c.org_id

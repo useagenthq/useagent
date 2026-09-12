@@ -18,12 +18,14 @@ interface GatewayComputerApiKeyCredentialRow
   extends GatewayProviderApiKeyCredentialRow {
   readonly provider: ProviderConnectionProvider;
   readonly metadata: ProviderConnectionMetadata;
+  readonly updated_at: Date;
 }
 
 export interface GatewayComputerApiKeyConnection {
   readonly provider: ProviderConnectionProvider;
   readonly value: string;
   readonly metadata: ProviderConnectionMetadata;
+  readonly updatedAt: string;
 }
 
 export function openGatewayProviderApiKeyCredential(
@@ -85,7 +87,7 @@ export async function resolveGatewayComputerApiKeyConnection(input: {
 }): Promise<GatewayComputerApiKeyConnection | null> {
   if (input.providers.length === 0) return null;
   const rows = await client<GatewayComputerApiKeyCredentialRow[]>`
-    SELECT provider, auth_method, status, credential_ciphertext, iv, tag, metadata
+    SELECT provider, auth_method, status, credential_ciphertext, iv, tag, metadata, updated_at
     FROM gateway_provider_api_key_credentials
     WHERE org_id = ${input.orgId}
       AND user_id = ${input.userId}
@@ -99,6 +101,6 @@ export async function resolveGatewayComputerApiKeyConnection(input: {
   if (!row) return null;
   const value = openGatewayProviderApiKeyCredential(row);
   return value
-    ? { provider: row.provider, value, metadata: row.metadata ?? {} }
+    ? { provider: row.provider, value, metadata: row.metadata ?? {}, updatedAt: row.updated_at.toISOString() }
     : null;
 }

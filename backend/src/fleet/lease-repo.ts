@@ -50,7 +50,8 @@ export async function createLease(
 }
 
 /** Snapshot of currently-reserved capacity, including reclaiming leases and
- * retained thread sandboxes that no active lease currently owns. */
+ * deployment-owned retained thread sandboxes that no active lease owns.
+ * Personal remote computers are not host reservations once their run settles. */
 export interface ReservationSnapshot {
   readonly globalActiveSandboxes: number;
   readonly globalReservedCpuMillicores: number;
@@ -119,6 +120,7 @@ export async function oldestReclaimableRetainedSandbox(
     with current as (
       select distinct on (r.org_id, r.thread_id)
         r.id, r.org_id, r.thread_id, r.sandbox_id, r.status,
+        r.sandbox_credential,
         coalesce(r.settled_at, r.updated_at, r.created_at) as last_used_at
       from runs r
       where r.sandbox_id is not null
@@ -127,6 +129,7 @@ export async function oldestReclaimableRetainedSandbox(
     select c.id, c.org_id, c.thread_id, c.sandbox_id
     from current c
     where c.status in ('completed', 'failed')
+      and coalesce(c.sandbox_credential, 'env') <> 'user'
       ${orgFilter}
       and not exists (
         select 1 from runs active
@@ -194,6 +197,7 @@ export async function reservationSnapshot(
         r.sandbox_id, r.org_id, r.thread_id
       from runs r
       where r.sandbox_id is not null
+        and coalesce(r.sandbox_credential, 'env') <> 'user'
         and (
           r.status in ('queued', 'running') or
           coalesce(r.settled_at, r.updated_at, r.created_at) >=
