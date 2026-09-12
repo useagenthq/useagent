@@ -24,6 +24,7 @@ import {
   type ArtifactWorkpieceState,
 } from "@useagent/artifact-workspace";
 import { db } from "../db/client";
+import { sql } from "drizzle-orm";
 import { getRunForOrg } from "../runs/repo";
 import { recordProviderEvent } from "../runs/provider-events";
 import { materializeFinishedWorkArtifactIfActive } from "../runs/finished-work-materialization-context";
@@ -38,7 +39,9 @@ import {
 } from "./repo";
 import { publishOrgChange } from "../runs/org-signals";
 
-export const ARTIFACT_AUTHORING_SOURCE_PATH = "/.skynet/artifact-workspace";
+const LEGACY_ARTIFACT_AUTHORING_SOURCE_PATH = "/.skynet/artifact-workspace";
+const CANONICAL_ARTIFACT_AUTHORING_SOURCE_PATH = "/.useagent/artifact-workspace";
+export const ARTIFACT_AUTHORING_SOURCE_PATH = LEGACY_ARTIFACT_AUTHORING_SOURCE_PATH;
 
 export interface ArtifactExportBytes {
   readonly bytes: Uint8Array;
@@ -219,6 +222,20 @@ function authoredSourcePath(kind: ArtifactWorkpieceKind, stateId: string, filena
   return `${ARTIFACT_AUTHORING_SOURCE_PATH}/${kind}/${stateId}/${filename}`;
 }
 
+function authoredSourceAliases(sourcePath: string): readonly [string, string] {
+  const legacySourcePath = sourcePath.replace(
+    CANONICAL_ARTIFACT_AUTHORING_SOURCE_PATH,
+    LEGACY_ARTIFACT_AUTHORING_SOURCE_PATH,
+  );
+  return [
+    legacySourcePath,
+    legacySourcePath.replace(
+      LEGACY_ARTIFACT_AUTHORING_SOURCE_PATH,
+      CANONICAL_ARTIFACT_AUTHORING_SOURCE_PATH,
+    ),
+  ];
+}
+
 export async function createAuthoredArtifact(input: {
   readonly orgId: string;
   readonly userId: string | null;
@@ -287,9 +304,20 @@ export async function createAuthoredArtifact(input: {
     }
 
     const digest = createHash("sha256").update(sourceBytes).digest("hex");
-    const existingAuthored = input.uploadId
-      ? null
-      : await getArtifactForRunSourcePath(run.id, sourcePath, tx);
+    const existingAuthored = input.uploadId ? null : await (async () => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${[
+        "authored-artifact-publish",
+        run.id,
+        authoredSourceAliases(sourcePath)[0],
+      ].join(":")}))`);
+      const [legacySourcePath, canonicalSourcePath] = authoredSourceAliases(sourcePath);
+      const legacyMatch = await getArtifactForRunSourcePath(run.id, legacySourcePath, tx);
+      const canonicalMatch = await getArtifactForRunSourcePath(run.id, canonicalSourcePath, tx);
+      if (legacyMatch && canonicalMatch) {
+        throw new ArtifactAuthoringError(409, "artifact source identity aliases conflict");
+      }
+      return legacyMatch ?? canonicalMatch;
+    })();
     if (existingAuthored) {
       if (
         JSON.stringify(existingAuthored.workpieceState) !== JSON.stringify(state) ||
