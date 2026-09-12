@@ -252,14 +252,9 @@ export function DesktopPane({
     setInputCaptured(true);
   }, []);
 
-  // Collapsing the viewer always hands input back: the card is view-only.
-  const setViewer = useCallback(
-    (open: boolean) => {
-      if (!open) releaseCapture();
-      setViewerOpen(open);
-    },
-    [releaseCapture],
-  );
+  // Control survives collapsing the viewer: the card can hold the pointer too.
+  // Any click or focus outside the stage still releases it (the effect below).
+  const setViewer = useCallback((open: boolean) => setViewerOpen(open), []);
 
   // SessionView keeps the desktop mounted to preserve its WebSocket. When a
   // different rail surface becomes active, close the modal and release input
@@ -357,6 +352,7 @@ export function DesktopPane({
   }, [loaded, inputCaptured]);
 
   const connected = ready && loaded;
+  const frameInteractive = desktopFrameInteractive({ loaded, captured: inputCaptured });
 
   return (
     <div className="size-full overflow-y-auto p-3">
@@ -367,6 +363,7 @@ export function DesktopPane({
         loadingCaption={ready ? undefined : status}
         open={viewerOpen}
         onOpenChange={setViewer}
+        interactive={frameInteractive}
         controls={
           <Button
             variant="secondary"
@@ -393,15 +390,7 @@ export function DesktopPane({
                 event.currentTarget.blur();
               }}
               className="absolute inset-0 size-full border-0"
-              style={{
-                pointerEvents: desktopFrameInteractive({
-                  expanded: viewerOpen,
-                  loaded,
-                  captured: inputCaptured,
-                })
-                  ? "auto"
-                  : "none",
-              }}
+              style={{ pointerEvents: frameInteractive ? "auto" : "none" }}
               allow="clipboard-read; clipboard-write"
             />
           ) : null

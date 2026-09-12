@@ -85,8 +85,12 @@ export interface AgentScreenProps {
   /** Whether the full-width viewer is showing. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Viewer title-bar controls, left of Collapse (the take-control toggle). */
+  /** The controls (the take-control toggle): in the card's status row while
+   *  collapsed, in the viewer's title bar left of Collapse while open. */
   controls?: ReactNode;
+  /** The collapsed frame is taking pointer input, so the Open overlay must not
+   *  sit over it; Expand in the status row still opens the viewer. */
+  interactive?: boolean;
   /** The stage that holds the screen and the viewer chrome in both states. */
   ref?: Ref<HTMLDialogElement>;
   className?: string;
@@ -107,6 +111,7 @@ export function AgentScreen({
   open,
   onOpenChange,
   controls,
+  interactive = false,
   ref,
   className,
 }: AgentScreenProps) {
@@ -222,11 +227,12 @@ export function AgentScreen({
             >
               {screen}
               {loading && <AgentScreenLoading caption={loadingCaption} />}
-              {!open && !loading && (
+              {!open && !loading && !interactive && (
                 <>
                   {/* The whole frame opens the viewer; the pill is its visual,
                       revealed on hover and on keyboard focus. Nothing to open
-                      into while the screen is still connecting. */}
+                      into while the screen is still connecting, and nothing
+                      over the frame once the pointer belongs to the desktop. */}
                   <button
                     ref={openButtonRef}
                     type="button"
@@ -257,7 +263,24 @@ export function AgentScreen({
       </div>
       <div className="flex items-center justify-between gap-2 px-0.5">
         <span className="truncate text-body-2-medium text-text-primary">{label}</span>
-        <AgentScreenStatusPill status={status} />
+        <div className="flex shrink-0 items-center gap-1.5">
+          {!open && controls}
+          {!open && !loading && (
+            <Button
+              variant="ghost"
+              size="small"
+              iconOnly
+              leadingIcon={RiExpandDiagonal2Line}
+              aria-label="Expand"
+              title="Expand"
+              onClick={(event) => {
+                openerRef.current = event.currentTarget;
+                onOpenChange(true);
+              }}
+            />
+          )}
+          <AgentScreenStatusPill status={status} />
+        </div>
       </div>
     </div>
   );

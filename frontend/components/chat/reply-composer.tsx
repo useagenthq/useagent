@@ -70,7 +70,9 @@ export function ReplyComposer({
 }) {
   return (
     <div className="shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
-      <div className="mx-auto w-full max-w-5xl">
+      {/* Full column width, like the timeline above it: the two edges line up
+          however wide the conversation is dragged. */}
+      <div className="w-full">
         <Composer
           variant="compact"
           placeholder={placeholder}

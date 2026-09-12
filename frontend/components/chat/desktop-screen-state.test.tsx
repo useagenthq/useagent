@@ -16,15 +16,14 @@ describe("desktop screen status pill", () => {
 });
 
 describe("desktop frame interactivity", () => {
-  test("the collapsed card is view-only even after a take-control gesture", () => {
-    expect(desktopFrameInteractive({ expanded: false, loaded: true, captured: true })).toBe(false);
-    expect(desktopFrameInteractive({ expanded: false, loaded: true, captured: false })).toBe(false);
+  test("the frame is view-only until the explicit take-control gesture", () => {
+    expect(desktopFrameInteractive({ loaded: true, captured: false })).toBe(false);
+    expect(desktopFrameInteractive({ loaded: false, captured: false })).toBe(false);
   });
 
-  test("the expanded viewer is interactive only once loaded and after take control", () => {
-    expect(desktopFrameInteractive({ expanded: true, loaded: true, captured: true })).toBe(true);
-    expect(desktopFrameInteractive({ expanded: true, loaded: false, captured: true })).toBe(false);
-    expect(desktopFrameInteractive({ expanded: true, loaded: true, captured: false })).toBe(false);
+  test("taking control makes a loaded frame interactive, in the card and the viewer alike", () => {
+    expect(desktopFrameInteractive({ loaded: true, captured: true })).toBe(true);
+    expect(desktopFrameInteractive({ loaded: false, captured: true })).toBe(false);
   });
 });
 
@@ -42,7 +41,7 @@ describe("agent screen card", () => {
       />,
     );
 
-  test("collapsed: one Open control over the live screen, no viewer chrome", () => {
+  test("collapsed: the Open control over the live screen, the controls and Expand in the status row, no viewer chrome", () => {
     const html = render(false);
     expect(html).toContain('data-agent-screen="collapsed"');
     expect(html).toContain('aria-label="Open Nova&#x27;s screen"');
@@ -50,8 +49,16 @@ describe("agent screen card", () => {
     expect(html).toContain('data-status="working"');
     expect(html).toContain('data-testid="live"');
     expect(html).not.toContain('role="dialog"');
-    expect(html).not.toContain("Take control");
+    expect(html).toContain("Take control");
+    expect(html).toContain('aria-label="Expand"');
     expect(html).not.toContain('aria-label="Collapse"');
+  });
+
+  test("collapsed and interactive: the frame takes the pointer, so the Open overlay steps aside", () => {
+    const html = render(false, { interactive: true });
+    expect(html).not.toContain('aria-label="Open Nova&#x27;s screen"');
+    expect(html).toContain('aria-label="Expand"');
+    expect(html).toContain('data-testid="live"');
   });
 
   test("expanded: a dialog with the controls and Collapse around the same screen", () => {
