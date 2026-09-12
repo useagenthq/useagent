@@ -759,6 +759,7 @@ export const BOT_AVATAR_TONES = [
   "cyan",
   "fuchsia",
   "slate",
+  "prism",
 ] as const;
 export type BotAvatarTone = (typeof BOT_AVATAR_TONES)[number];
 

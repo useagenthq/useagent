@@ -61,6 +61,7 @@ import {
   orderRepos,
   fetchSkillsPicker,
 } from "@/components/chat/composer-mentions-data";
+import { MentionRowMark } from "./mention-row-mark";
 export type { MentionSkill } from "@/components/chat/composer-mentions-data";
 export { repoTreeUrl } from "@/components/chat/composer-mentions-data";
 export type { Mention } from "./composer-mentions";
@@ -112,7 +113,7 @@ type MentionRow =
   | { type: "repo"; full_name: string; private: boolean }
   | { type: "dir"; path: string; name: string }
   | { type: "file"; path: string; name: string }
-  | { type: "bot"; id: string; name: string; title: string; state: BotState };
+  | { type: "bot"; id: string; name: string; title: string; state: BotState; avatarTone: string; avatarIcon: string };
 
 export type UseComposerMentions = {
   mentions: Mention[];
@@ -443,7 +444,7 @@ function computeRows(input: {
     const rows = input.bots.items
       .filter((b) => includesQuery(b.name, query) || includesQuery(b.title, query))
       .slice(0, ROW_CAP)
-      .map((b) => ({ type: "bot" as const, id: b.id, name: b.name, title: b.title, state: b.state }));
+      .map((b) => ({ type: "bot" as const, ...b }));
     return { rows, status: input.bots.status };
   }
   if (view.level === "list" && view.kind === "thread") {
@@ -751,7 +752,7 @@ function MentionPopover({
                       : "hover:bg-background-primary-hover",
                   )}
                 >
-                  <Icon className="text-text-secondary size-4 shrink-0" aria-hidden />
+                  <MentionRowMark bot={row.type === "bot" ? row : undefined} icon={Icon} />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="text-body-2-medium text-text-primary truncate">{rowPrimary(row)}</span>
                     {row.type === "bot" ? (
