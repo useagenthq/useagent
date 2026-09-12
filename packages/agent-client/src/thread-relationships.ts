@@ -76,12 +76,17 @@ function runIdList(value: unknown): string[] | undefined {
   return value as string[];
 }
 
-function nullableNonNegativeInteger(value: unknown): number | null | undefined {
-  return value === null
-    ? null
-    : typeof value === "number" && Number.isInteger(value) && value >= 0
-      ? value
-      : undefined;
+/** Additive summary fields: a backend from before they were emitted omits them,
+ *  which decodes as "no summary yet" rather than rejecting the whole relationship. */
+function additiveNullableString(value: unknown): string | null | undefined {
+  return value === undefined ? null : nullableString(value);
+}
+
+function additiveNullableNonNegativeInteger(value: unknown): number | null | undefined {
+  if (value === undefined || value === null) return null;
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+    ? value
+    : undefined;
 }
 
 export function decodeThreadRelationship(value: unknown): ThreadRelationship | null {
@@ -97,8 +102,8 @@ export function decodeThreadRelationship(value: unknown): ThreadRelationship | n
   const updatedAt = string(raw.updated_at);
   const model = string(raw.model);
   const latestRunId = string(raw.latest_run_id);
-  const latestSummary = nullableString(raw.latest_summary);
-  const latestDurationMs = nullableNonNegativeInteger(raw.latest_duration_ms);
+  const latestSummary = additiveNullableString(raw.latest_summary);
+  const latestDurationMs = additiveNullableNonNegativeInteger(raw.latest_duration_ms);
   const latestActivityAt = string(raw.latest_activity_at);
   const bot = handoffBot(raw.bot);
   const followUpRunIds = runIdList(raw.follow_up_run_ids);
