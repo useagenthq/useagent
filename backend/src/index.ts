@@ -55,6 +55,8 @@ import {
 import { startCodeIndex } from "./context/code/index-sweep";
 import { secretsRoutes } from "./secrets/routes";
 import { apiKeysRoutes } from "./api-keys/routes";
+import { resetStuckWebhooks, startWebhookDelivery } from "./webhooks/delivery";
+import { webhooksRoutes } from "./webhooks/routes";
 import { seedDev } from "./seed";
 import { skillImportRoutes } from "./skills/import-routes";
 import { startSkillsResync } from "./skills/resync";
@@ -239,6 +241,9 @@ if (canonReset > 0)
 const learningReset = await resetStuckLearning();
 if (learningReset > 0)
   console.log(`[boot] learning recovery — ${learningReset} stuck rows re-armed`);
+const webhookReset = await resetStuckWebhooks();
+if (webhookReset > 0)
+  console.log(`[boot] webhook recovery — ${webhookReset} stuck rows re-armed`);
 
 const app = new Hono<AppEnv>();
 
@@ -485,6 +490,7 @@ app.route("/api/secrets", secretsRoutes);
 // secret is shown once at creation and only its hash is stored. See
 // src/api-keys/* and the bearer lane in src/middleware/bearer.ts.
 app.route("/api/api-keys", apiKeysRoutes);
+app.route("/api/webhooks", webhooksRoutes);
 // User-scoped provider credentials. Values are encrypted at rest and write-only
 // over HTTP; trusted backend consumers use src/provider-connections/service.ts.
 app.route("/api/provider-connections", providerConnectionsRoutes);
@@ -581,6 +587,10 @@ startCanonicalizationOutbox();
 // never fails an already-completed run. The verified-outcome gate (6.4) runs at
 // build time, so an unverified completion is a clean skip, not a candidate.
 startLearningOutbox();
+
+// Webhook delivery is at-least-once: a committed terminal run carries durable
+// delivery rows, retried with backoff without affecting run finalization.
+startWebhookDelivery();
 
 // Adaptive post-boot reconciler (#63, 15s tick). Re-probes runs PARKED by boot
 // recovery (native session may still be finishing after a fast restart): adopts

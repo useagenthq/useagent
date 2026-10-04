@@ -42,6 +42,7 @@ import { publishRunLifecycleChange } from "./org-signals";
 import { enqueueCanonicalization } from "./canonicalization-outbox";
 import { canonicalEngine } from "../engines/engine-alias";
 import { enqueueLearning } from "../learning/learning-outbox";
+import { enqueueRunWebhookDeliveries } from "../webhooks/outbox";
 import { releaseLeaseForRun } from "../fleet/lease-repo";
 import { executionGraphRolloutMode } from "./execution-graph-rollout";
 import {
@@ -381,6 +382,7 @@ export async function finalizeRun(
     }
     applied = true;
     await releaseLeaseForRun(runId, tx);
+    await enqueueRunWebhookDeliveries(tx, run, effectiveStatus, effectiveSummary, env.FRONTEND_ORIGIN);
     if (executionGraphMode !== "off" && run.orgId) {
       if (effectiveStatus !== "completed" && effectiveStatus !== "failed") {
         throw new Error("execution_graph_seal_requires_terminal_run");

@@ -1,0 +1,70 @@
+---
+title: Webhooks API
+description: Register organization webhook endpoints and verify signed run-completion events.
+sidebar:
+  label: Webhooks
+  order: 9
+---
+
+Webhooks notify an organization when a non-internal run completes or fails. All
+routes require an organization session and an `owner` or `admin` role. Bearer
+API keys cannot manage webhook endpoints.
+
+## Manage endpoints
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/webhooks` | List active endpoints. | `{webhooks}` contains IDs, URLs, and timestamps only. |
+| POST | `/api/webhooks` | Register an endpoint. | Body: `{ "url": "https://hooks.example.org/useagent" }`. Returns `201` with endpoint metadata and its signing secret, shown once. |
+| DELETE | `/api/webhooks/:id` | Disable an endpoint. | Clears the stored signing secret; pending deliveries are not sent. |
+
+Endpoints must use HTTPS and a hostname, not an IP literal. At delivery time,
+the worker rejects local or non-public DNS results, pins the resolved public
+address for the connection, and does not follow redirects.
+
+The generated `whsec_...` secret is encrypted at rest. Store it securely when
+creating the endpoint; there is no read-back route. To rotate it, disable the
+endpoint and register a new one.
+
+## Event delivery
+
+The event name is `run.completed` or `run.failed`. The JSON body includes an
+event ID, creation time, run and thread IDs, status, summary, a thread URL, and
+published artifact download links. Large summaries and artifact lists are
+bounded; `summary_truncated` and `artifacts_truncated` indicate when content was
+omitted.
+
+Each request includes:
+
+| Header | Meaning |
+| --- | --- |
+| `X-UseAgent-Signature` | `sha256=` followed by the HMAC-SHA256 hex digest of the exact UTF-8 request body. |
+| `X-UseAgent-Delivery` | Stable delivery ID. Retries reuse it; deduplicate on this value. |
+
+Return any `2xx` response to acknowledge delivery. Network errors and other
+status codes are retried with exponential backoff for up to eight attempts.
+Delivery is at-least-once: a receiver may see the same delivery ID again if the
+sender loses its connection after the receiver processes a request.
+
+## Verify a signature
+
+Verify the raw bytes before parsing JSON. Re-serializing a parsed object can
+change whitespace or escaping and will produce a different signature.
+
+```ts
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+export function verifyWebhook(
+  rawBody: Buffer,
+  signature: string | undefined,
+  secret: string,
+): boolean {
+  if (!signature?.startsWith("sha256=")) return false;
+  const expected = Buffer.from(
+    `sha256=${createHmac("sha256", secret).update(rawBody).digest("hex")}`,
+    "utf8",
+  );
+  const received = Buffer.from(signature, "utf8");
+  return expected.length === received.length && timingSafeEqual(expected, received);
+}
+```
