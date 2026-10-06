@@ -182,8 +182,8 @@ jobs:
         working-directory: apps/desktop
         run: bun install --frozen-lockfile
 
-      # No local runner on Linux. The app is a cloud client. AppImage auto-updates;
-      # the .deb does not.
+      # No local runner on Linux. The app is a cloud client. Both packaged
+      # Linux targets (AppImage and DEB) are configured for electron-updater.
       - name: Validate desktop shell
         working-directory: apps/desktop
         run: bun run typecheck && bun test
