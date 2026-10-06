@@ -17,15 +17,11 @@ export function trayIcon(platform: string): TrayIcon {
 }
 
 /**
- * electron-updater can install a newer macOS zip, Windows NSIS installer, or
- * Linux AppImage. The AppImage runtime sets `APPIMAGE`; a .deb package does
- * not, and it has no auto-update. Install a newer .deb with the system
- * package manager.
+ * electron-updater supports the packaged targets produced here: macOS,
+ * Windows NSIS, Linux AppImage, and Linux DEB.
  */
-export function autoUpdateSupported(platform: string, env: NodeJS.ProcessEnv): boolean {
-  if (platform === "darwin" || platform === "win32") return true;
-  if (platform === "linux") return typeof env.APPIMAGE === "string" && env.APPIMAGE.length > 0;
-  return false;
+export function autoUpdateSupported(platform: string, _env: NodeJS.ProcessEnv): boolean {
+  return platform === "darwin" || platform === "win32" || platform === "linux";
 }
 
 export type TrayEntry =
