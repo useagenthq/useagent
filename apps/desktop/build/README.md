@@ -43,4 +43,4 @@ also picks up `build/icon.icns`, `build/icon.ico` and `build/icons/` on its own.
 The tray loads `icon.ico` on Windows and `icons/32x32.png` on Linux, so those
 two files are also copied into the app. macOS keeps using `resources/trayTemplate.svg`.
 
-A Debian package does not auto-update. The NSIS installer and the AppImage do.
+The NSIS installer, AppImage, and Debian package are configured for auto-update through `electron-updater`.
