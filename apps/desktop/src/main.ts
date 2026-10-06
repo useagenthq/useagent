@@ -87,13 +87,8 @@ async function loadManifest(origin: string): Promise<{ image: string }> {
 
 function configureUpdater(): void {
   if (!app.isPackaged) return;
-  // NSIS and AppImage only. A .deb install does not set APPIMAGE and does not auto-update.
-  if (!autoUpdateSupported(process.platform, process.env)) {
-    if (process.platform === "linux") {
-      console.info("[desktop:update] Debian packages do not auto-update. Install a newer .deb to upgrade.");
-    }
-    return;
-  }
+  // Packaged macOS, NSIS, AppImage, and DEB targets are supported by electron-updater.
+  if (!autoUpdateSupported(process.platform, process.env)) return;
   const reportFailure = (): void => console.error("[desktop:update] UPDATE_FAILED");
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
