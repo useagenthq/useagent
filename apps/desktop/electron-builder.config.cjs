@@ -66,7 +66,7 @@ module.exports = {
     artifactName: "UseAgent-${version}-win-${arch}.${ext}",
     shortcutName: "useAgent",
   },
-  // AppImage auto-updates. The .deb does not: install a newer package instead.
+  // AppImage and DEB are both auto-updatable through electron-updater.
   // deb.mimeTypes repeats the useagent scheme so the Debian desktop entry
   // advertises x-scheme-handler/useagent next to the shared protocols list.
   linux: {
