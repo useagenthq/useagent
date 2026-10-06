@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   connectDesktopRunner,
+  localRunnerAvailable,
   machineLabel,
   resolveRunnerPlatform,
   runnerConnectionAction,
@@ -25,6 +26,12 @@ describe("desktop runner platform", () => {
         },
       }),
     ).toBeNull();
+  });
+
+  test("offers a local runner on macOS only", () => {
+    expect(localRunnerAvailable("darwin")).toBe(true);
+    expect(localRunnerAvailable("win32")).toBe(false);
+    expect(localRunnerAvailable("linux")).toBe(false);
   });
 
   test("uses plain machine labels", () => {

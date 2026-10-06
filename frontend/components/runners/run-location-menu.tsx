@@ -19,7 +19,7 @@ import {
   DropdownTrigger,
 } from "@/components/base/dropdown/dropdown";
 import { cx } from "@/utils/cx";
-import { type DesktopRunnerStatus, machineLabel, type UseAgentDesktopBridge } from "./desktop-bridge";
+import { type DesktopRunnerStatus, localRunnerAvailable, machineLabel, type UseAgentDesktopBridge } from "./desktop-bridge";
 
 export type { RunLocation };
 
@@ -129,7 +129,7 @@ export function RunLocationMenu({ bridge, location, onChange, disabled = false, 
   // Read the runner's status once, then keep reading while it is still
   // starting, so the default lands on Local the moment the machine can take work.
   useEffect(() => {
-    if (!bridge) return;
+    if (!bridge || !localRunnerAvailable(bridge.platform)) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
@@ -150,10 +150,12 @@ export function RunLocationMenu({ bridge, location, onChange, disabled = false, 
   }, [bridge]);
   // The default is chosen once, when the status has settled; a pick sticks.
   useEffect(() => {
-    if (bridge && location === null && runnerStatusSettled(status)) onChange(defaultRunLocation(status));
+    if (bridge && localRunnerAvailable(bridge.platform) && location === null && runnerStatusSettled(status)) {
+      onChange(defaultRunLocation(status));
+    }
   }, [bridge, status, location, onChange]);
   useEffect(() => {
-    if (!bridge || disabled) return;
+    if (!bridge || !localRunnerAvailable(bridge.platform) || disabled) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (!isRunLocationShortcut(event)) return;
       event.preventDefault();
@@ -162,7 +164,7 @@ export function RunLocationMenu({ bridge, location, onChange, disabled = false, 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [bridge, disabled, location, status, onChange]);
-  if (!bridge) return null;
+  if (!bridge || !localRunnerAvailable(bridge.platform)) return null;
   const current = location ?? defaultRunLocation(status);
   const face = FACES[current];
   return (

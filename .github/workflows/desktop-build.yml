@@ -117,3 +117,88 @@ jobs:
             apps/desktop/dist/packages/UseAgent-*-darwin-${{ matrix.arch }}.zip
           if-no-files-found: error
           retention-days: 30
+
+  windows:
+    name: Windows x64
+    needs: provenance
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.provenance.outputs.commit }}
+
+      - name: Verify exact release checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ needs.provenance.outputs.commit }}"
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install desktop dependencies
+        working-directory: apps/desktop
+        shell: bash
+        run: bun install --frozen-lockfile
+
+      # No local runner on Windows. The app is a cloud client.
+      - name: Validate desktop shell
+        working-directory: apps/desktop
+        shell: bash
+        run: bun run typecheck && bun test
+
+      - name: Build the NSIS installer
+        working-directory: apps/desktop
+        shell: bash
+        run: bun run package:win
+
+      - name: Upload desktop packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: UseAgent-${{ github.run_id }}-win-x64
+          path: apps/desktop/dist/packages/UseAgent-*-win-x64.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  linux:
+    name: Linux x64
+    needs: provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.provenance.outputs.commit }}
+
+      - name: Verify exact release checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ needs.provenance.outputs.commit }}"
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install desktop dependencies
+        working-directory: apps/desktop
+        run: bun install --frozen-lockfile
+
+      # No local runner on Linux. The app is a cloud client. AppImage auto-updates;
+      # the .deb does not.
+      - name: Validate desktop shell
+        working-directory: apps/desktop
+        run: bun run typecheck && bun test
+
+      - name: Build AppImage and deb packages
+        working-directory: apps/desktop
+        run: bun run package:linux
+
+      - name: Upload desktop packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: UseAgent-${{ github.run_id }}-linux-x64
+          # electron-builder writes AppImage arch as x86_64 and deb arch as amd64.
+          path: |
+            apps/desktop/dist/packages/UseAgent-*-linux-x86_64.AppImage
+            apps/desktop/dist/packages/UseAgent-*-linux-amd64.deb
+          if-no-files-found: error
+          retention-days: 30

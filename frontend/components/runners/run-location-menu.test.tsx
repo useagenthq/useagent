@@ -46,7 +46,7 @@ describe("run location menu", () => {
       "utf8",
     );
     expect(composer).toContain("useEffect(() => setBridge(desktopBridge()), []);");
-    expect(composer).toContain("const location = submittedRunLocation(runLocation, bridge !== null);");
+    expect(composer).toContain("const location = submittedRunLocation(runLocation, bridge !== null && localRunnerAvailable(bridge.platform));");
     expect(composer).toContain("if (location !== runLocation) setRunLocation(location);");
     expect(composer).toContain("...(location ? { run_location: location } : {}),");
     // Nothing changes the choice while a submission is in flight.
@@ -82,6 +82,14 @@ describe("run location menu", () => {
 
   test("renders only under the desktop bridge, naming the current location", () => {
     expect(renderToStaticMarkup(<RunLocationMenu bridge={null} location="local" onChange={() => {}} />)).toBe("");
+    const linux = renderToStaticMarkup(
+      <RunLocationMenu bridge={{ ...bridge, platform: "linux" }} location="local" onChange={() => {}} />,
+    );
+    const windows = renderToStaticMarkup(
+      <RunLocationMenu bridge={{ ...bridge, platform: "win32" }} location="local" onChange={() => {}} />,
+    );
+    expect(linux).toBe("");
+    expect(windows).toBe("");
     const local = renderToStaticMarkup(<RunLocationMenu bridge={bridge} location="local" onChange={() => {}} />);
     expect(local).toContain('aria-label="Run location: Local"');
     // Before the runner status is read, an unmade choice shows as Cloud.

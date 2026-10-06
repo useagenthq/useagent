@@ -3,6 +3,8 @@
   "version": "0.0.5",
   "description": "Thin desktop shell for a hosted UseAgent control plane",
   "author": "UseAgent",
+  "homepage": "https://useagent.org",
+  "desktopName": "useagent.desktop",
   "private": true,
   "main": "dist/main.cjs",
   "scripts": {
@@ -10,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "package:dev": "bun run build && USEAGENT_DESKTOP_DEV_PACKAGE=1 CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.config.cjs --mac dir --arm64",
-    "package:mac": "bun run build && electron-builder --config electron-builder.config.cjs --mac dmg zip --arm64 --x64"
+    "package:mac": "bun run build && electron-builder --config electron-builder.config.cjs --mac dmg zip --arm64 --x64",
+    "package:win": "bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish never",
+    "package:linux": "bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.config.cjs --linux AppImage deb --x64 --publish never"
   },
   "dependencies": {
     "@better-auth/electron": "1.6.25",
