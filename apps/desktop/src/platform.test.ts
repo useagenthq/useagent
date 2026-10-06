@@ -48,11 +48,12 @@ describe("tray icon and auto-update", () => {
     expect(trayIcon("win32")).toEqual({ relativePath: "build/icon.ico", template: false });
   });
 
-  test("auto-update covers NSIS and AppImage, not a Debian package", () => {
+  test("auto-update covers NSIS, AppImage, and Debian packages", () => {
     expect(autoUpdateSupported("darwin", {})).toBe(true);
     expect(autoUpdateSupported("win32", {})).toBe(true);
     expect(autoUpdateSupported("linux", { APPIMAGE: "/home/ava/Applications/UseAgent.AppImage" })).toBe(true);
-    expect(autoUpdateSupported("linux", {})).toBe(false);
-    expect(autoUpdateSupported("linux", { APPIMAGE: "" })).toBe(false);
+    expect(autoUpdateSupported("linux", {})).toBe(true);
+    expect(autoUpdateSupported("linux", { APPIMAGE: "" })).toBe(true);
+    expect(autoUpdateSupported("freebsd", {})).toBe(false);
   });
 });
