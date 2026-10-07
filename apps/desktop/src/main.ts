@@ -40,8 +40,12 @@ function completeSignIn(url: string): void {
 
 app.on("open-url", (event, url) => { event.preventDefault(); completeSignIn(url); });
 
+function hasLocalRunner(): boolean {
+  return process.platform === "darwin" && ["arm64", "x64"].includes(process.arch);
+}
+
 function runnerBinary(): string {
-  if (process.platform !== "darwin" || !["arm64", "x64"].includes(process.arch)) {
+  if (!hasLocalRunner()) {
     throw new Error("This desktop build does not include a runner for this platform.");
   }
   return join(process.resourcesPath, `useagent-runner-darwin-${process.arch}`);
@@ -51,6 +55,17 @@ function trusted(event: IpcMainInvokeEvent | IpcMainEvent, origin: string): void
   if (!trustedIpcSender(event.senderFrame?.url ?? "", event.senderFrame === mainWindow?.webContents.mainFrame, origin)) {
     throw new Error("Unauthorized desktop request.");
   }
+}
+
+function trayIconPath(): string {
+  const base = app.getAppPath();
+  if (process.platform === "win32") {
+    return join(base, "resources/icon.ico");
+  }
+  if (process.platform === "linux") {
+    return join(base, "resources/icon.png");
+  }
+  return join(base, "resources/trayTemplate.svg");
 }
 
 async function loadManifest(origin: string): Promise<{ image: string }> {
@@ -81,34 +96,41 @@ async function startDesktop(): Promise<void> {
   const manifest = await loadManifest(plane.origin);
   const runnerStore = createTokenStore(join(app.getPath("userData"), "runner-token"), plane.origin, safeStorage);
   let shellStatus: RunnerStatus | undefined;
-  const runner = createRunnerController({
-    binary: runnerBinary(),
-    plane: plane.origin,
-    shareLogins: [],
-    onTokenRejected: () => void runnerStore.remove(),
-  });
-  app.on("before-quit", (event) => {
-    quitting = true;
-    if (quitAfterRunnerStops) return;
-    event.preventDefault();
-    void stopRunnerBeforeQuit(
-      () => runner.stop(),
-      () => {
-        quitAfterRunnerStops = true;
-        app.quit();
-      },
-    ).catch(() => { quitting = false; });
-  });
+  const runnerSupported = hasLocalRunner();
+  const runner = runnerSupported
+    ? createRunnerController({
+        binary: runnerBinary(),
+        plane: plane.origin,
+        shareLogins: [],
+        onTokenRejected: () => void runnerStore.remove(),
+      })
+    : undefined;
 
-  try {
-    const token = await runnerStore.read();
-    if (token) await runner.start(token);
-  } catch {
-    shellStatus = { state: "error", detail: "Secure runner token storage could not be read.", progress: 0 };
+  if (runner) {
+    app.on("before-quit", (event) => {
+      quitting = true;
+      if (quitAfterRunnerStops) return;
+      event.preventDefault();
+      void stopRunnerBeforeQuit(
+        () => runner.stop(),
+        () => {
+          quitAfterRunnerStops = true;
+          app.quit();
+        },
+      ).catch(() => { quitting = false; });
+    });
+
+    try {
+      const token = await runnerStore.read();
+      if (token) await runner.start(token);
+    } catch {
+      shellStatus = { state: "error", detail: "Secure runner token storage could not be read.", progress: 0 };
+    }
   }
 
   ipcMain.handle(desktopChannels.connectRunner, async (event, token: unknown) => {
     trusted(event, plane.origin);
+    if (!runner) return;
     const validToken = runnerToken(token);
     await runnerStore.write(validToken);
     shellStatus = undefined;
@@ -116,6 +138,9 @@ async function startDesktop(): Promise<void> {
   });
   ipcMain.handle(desktopChannels.runnerStatus, async (event) => {
     trusted(event, plane.origin);
+    if (!runner) {
+      return { state: "offline", detail: "Cloud mode active.", progress: 0 };
+    }
     return shellStatus ?? runner.getStatus();
   });
   ipcMain.on(desktopChannels.openExternal, (event, url: unknown) => {
@@ -155,7 +180,15 @@ async function startDesktop(): Promise<void> {
   );
   // A failed restore has already cleared Chromium's auth cookies; only a verified session opens the product.
   const restored = await signIn.restore();
-  if (app.isPackaged) app.setAsDefaultProtocolClient("useagent");
+  if (app.isPackaged) {
+    app.setAsDefaultProtocolClient("useagent");
+  } else if (process.platform === "win32") {
+    app.setAsDefaultProtocolClient("useagent", process.execPath, [join(app.getAppPath(), "dist/main.cjs")]);
+  }
+  const initialDeepLink = process.argv.find((argument) => argument.startsWith("useagent:"));
+  if (initialDeepLink) {
+    completeSignIn(initialDeepLink);
+  }
   mainWindow.on("close", (event) => {
     if (keepRunningInBackground && !quitting) {
       event.preventDefault();
@@ -163,19 +196,43 @@ async function startDesktop(): Promise<void> {
     }
   });
 
-  const trayImage = nativeImage.createFromPath(join(app.getAppPath(), "resources/trayTemplate.svg"));
-  trayImage.setTemplateImage(true);
+  const trayImage = nativeImage.createFromPath(trayIconPath());
+  if (process.platform === "darwin") {
+    trayImage.setTemplateImage(true);
+  }
   tray = new Tray(trayImage);
   tray.setToolTip("UseAgent");
+  tray.on("click", () => {
+    if (mainWindow?.isVisible()) {
+      mainWindow.hide();
+    } else {
+      mainWindow?.show();
+      mainWindow?.focus();
+    }
+  });
   const refreshTray = (): void => {
-    const status = shellStatus ?? runner.getStatus();
+    const status = runner ? (shellStatus ?? runner.getStatus()) : null;
     tray?.setContextMenu(
       Menu.buildFromTemplate([
-        { label: `Runner: ${status.state}`, enabled: false },
-        { label: "Sandboxes: Unknown", enabled: false },
+        ...(runner
+          ? [
+              { label: `Runner: ${status?.state ?? "offline"}`, enabled: false },
+              { label: "Sandboxes: Unknown", enabled: false },
+            ]
+          : []),
         { label: `Image: ${manifest.image}`, enabled: false },
         { type: "separator" },
-        { label: mainWindow?.isVisible() ? "Hide UseAgent" : "Open UseAgent", click: () => (mainWindow?.isVisible() ? mainWindow.hide() : mainWindow?.show()) },
+        {
+          label: mainWindow?.isVisible() ? "Hide UseAgent" : "Open UseAgent",
+          click: () => {
+            if (mainWindow?.isVisible()) {
+              mainWindow.hide();
+            } else {
+              mainWindow?.show();
+              mainWindow?.focus();
+            }
+          },
+        },
         { label: "Quit", click: () => app.quit() },
       ]),
     );

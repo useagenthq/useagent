@@ -25,8 +25,14 @@ export function createDesktopWindow(plane: URL): BrowserWindow {
     responseHeaders[name] = [...(responseHeaders[name] ?? []), contentPolicy.policy];
     callback({ responseHeaders });
   });
+  const windowIcon = join(
+    app.getAppPath(),
+    process.platform === "win32" ? "resources/icon.ico" : "resources/icon.png",
+  );
   const window = new BrowserWindow({
     width: 1440, height: 960, minWidth: 900, minHeight: 640, show: false,
+    icon: windowIcon,
+    autoHideMenuBar: true,
     ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 14, y: 12 } } : {}),
     webPreferences: {
       preload: join(app.getAppPath(), "dist", "preload.cjs"),

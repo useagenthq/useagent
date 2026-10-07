@@ -13,7 +13,9 @@ test("desktop auth storage persists encrypted client state with owner-only permi
   createAuthStorage(file).setItem("better-auth.cookie", "encrypted-cookie-state");
 
   expect(createAuthStorage(file).getItem("better-auth.cookie")).toBe("encrypted-cookie-state");
-  expect((await stat(file)).mode & 0o777).toBe(0o600);
+  if (process.platform !== "win32") {
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+  }
   expect(JSON.parse(await readFile(file, "utf8"))).toEqual({ "better-auth.cookie": "encrypted-cookie-state" });
 });
 
