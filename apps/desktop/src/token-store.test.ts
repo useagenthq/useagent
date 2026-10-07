@@ -24,7 +24,9 @@ describe("runner token store", () => {
     const store = createTokenStore(file, "https://plane.example", storage, "darwin");
     await store.write("secret-token");
 
-    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") {
+      expect((await stat(file)).mode & 0o777).toBe(0o600);
+    }
     expect(await store.read()).toBe("secret-token");
     expect(await createTokenStore(file, "https://other.example", storage, "darwin").read()).toBeUndefined();
     expect(await readFile(file, "utf8")).not.toContain("secret-token");
