@@ -1,0 +1,53 @@
+/** The bundled local runner ships on macOS only. Windows and Linux are cloud clients. */
+export function localRunnerAvailable(platform: string): boolean {
+  return platform === "darwin";
+}
+
+export type TrayIcon = {
+  /** Path relative to the packaged app directory (`app.getAppPath()`). */
+  readonly relativePath: string;
+  /** macOS template images follow the menu bar. Linux and Windows use a color icon. */
+  readonly template: boolean;
+};
+
+export function trayIcon(platform: string): TrayIcon {
+  if (platform === "linux") return { relativePath: "build/icons/32x32.png", template: false };
+  if (platform === "win32") return { relativePath: "build/icon.ico", template: false };
+  return { relativePath: "resources/trayTemplate.svg", template: true };
+}
+
+/**
+ * electron-updater supports the packaged targets produced here: macOS,
+ * Windows NSIS, Linux AppImage, and Linux DEB.
+ */
+export function autoUpdateSupported(platform: string, _env: NodeJS.ProcessEnv): boolean {
+  return platform === "darwin" || platform === "win32" || platform === "linux";
+}
+
+export type TrayEntry =
+  | { readonly kind: "status"; readonly label: string }
+  | { readonly kind: "separator" }
+  | { readonly kind: "toggle-window"; readonly label: string }
+  | { readonly kind: "quit"; readonly label: string };
+
+/** Tray rows. Local runner status is omitted where the runner does not ship. */
+export function trayMenuEntries(input: {
+  readonly localRunner: boolean;
+  readonly runnerState: string;
+  readonly image: string;
+  readonly windowVisible: boolean;
+}): readonly TrayEntry[] {
+  const windowLabel = input.windowVisible ? "Hide UseAgent" : "Open UseAgent";
+  const tail: readonly TrayEntry[] = [
+    { kind: "separator" },
+    { kind: "toggle-window", label: windowLabel },
+    { kind: "quit", label: "Quit" },
+  ];
+  if (!input.localRunner) return [{ kind: "status", label: "Cloud client" }, ...tail];
+  return [
+    { kind: "status", label: `Runner: ${input.runnerState}` },
+    { kind: "status", label: "Sandboxes: Unknown" },
+    { kind: "status", label: `Image: ${input.image}` },
+    ...tail,
+  ];
+}

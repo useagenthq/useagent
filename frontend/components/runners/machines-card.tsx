@@ -9,6 +9,7 @@ import {
   connectDesktopRunner,
   type DesktopRunnerStatus,
   desktopBridge,
+  localRunnerAvailable,
   machineLabel,
   resolveRunnerPlatform,
   runnerConnectionAction,
@@ -263,7 +264,7 @@ export function MachinesCard() {
 
   return (
     <div className="flex flex-col gap-4">
-      {bridge ? <DesktopConnection bridge={bridge} /> : null}
+      {bridge && localRunnerAvailable(bridge.platform) ? <DesktopConnection bridge={bridge} /> : null}
       <div className="flex items-center justify-between gap-3">
         <p className="text-caption-1-regular text-text-secondary">
           {loading

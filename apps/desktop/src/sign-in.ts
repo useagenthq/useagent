@@ -1,5 +1,6 @@
 import { parseCookies } from "better-auth/cookies";
 import type { BrowserWindow } from "electron";
+import { oauthCallbackToken } from "./deep-link";
 
 export type DesktopAuthClient = {
   requestAuth(): Promise<void>;
@@ -19,15 +20,9 @@ export const desktopOrganizationLabel = (organization: DesktopOrganization): str
 const AUTH_COOKIE = /^(?:__Secure-|__Host-)?better-auth\.(?:session_token|session_data)$/;
 
 function callbackToken(value: string): string {
-  if (value.length > 16_384) throw new Error("Invalid desktop sign-in callback.");
-  let url: URL;
-  try { url = new URL(value); }
-  catch { throw new Error("Invalid desktop sign-in callback."); }
-  if (url.protocol !== "useagent:" || url.hostname !== "auth" || url.pathname !== "/callback"
-    || url.port || url.search || url.username || url.password || !/^#token=[A-Za-z0-9_-]+={0,2}$/.test(url.hash)) {
-    throw new Error("Invalid desktop sign-in callback.");
-  }
-  return url.hash.slice(7);
+  const token = oauthCallbackToken(value);
+  if (!token) throw new Error("Invalid desktop sign-in callback.");
+  return token;
 }
 
 /** Better Auth owns PKCE and the one-use exchange; only its session cookies enter the app partition. */

@@ -1,6 +1,6 @@
 "use client";
 
-import { desktopBridge, type UseAgentDesktopBridge } from "@/components/runners/desktop-bridge";
+import { desktopBridge, localRunnerAvailable, type UseAgentDesktopBridge } from "@/components/runners/desktop-bridge";
 import { useMachineRunsWork } from "@/components/runners/local-login-availability";
 import { type RunLocation, RunLocationMenu, submittedRunLocation } from "@/components/runners/run-location-menu";
 import { RiArrowUpLine, RiBookMarkedLine, RiFlashlightLine } from "@remixicon/react";
@@ -429,7 +429,7 @@ export function NewTaskComposer({
 
     // Pinned at the first submission: an unmade choice becomes the Cloud the
     // menu shows, so a retry of a lost response carries the same body and key.
-    const location = submittedRunLocation(runLocation, bridge !== null);
+    const location = submittedRunLocation(runLocation, bridge !== null && localRunnerAvailable(bridge.platform));
     if (location !== runLocation) setRunLocation(location);
     const body = {
       // Send a model only for engines with an explicit picker/catalog. Codex

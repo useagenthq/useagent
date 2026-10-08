@@ -24,6 +24,11 @@ export function desktopBridge(): UseAgentDesktopBridge | null {
   return (window as Window & { useagentDesktop?: UseAgentDesktopBridge }).useagentDesktop ?? null;
 }
 
+/** The desktop shell ships a local runner on macOS only. Other desktops are cloud clients. */
+export function localRunnerAvailable(platform: UseAgentDesktopBridge["platform"]): boolean {
+  return platform === "darwin";
+}
+
 export async function resolveRunnerPlatform(
   platform: UseAgentDesktopBridge["platform"],
   userAgentData: UserAgentData | undefined = typeof navigator === "undefined"

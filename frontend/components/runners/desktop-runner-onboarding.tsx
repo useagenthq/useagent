@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   type DesktopRunnerStatus,
   desktopBridge,
+  localRunnerAvailable,
   type UseAgentDesktopBridge,
 } from "./desktop-bridge";
 
@@ -12,7 +13,7 @@ export function DesktopRunnerOnboarding() {
   const [status, setStatus] = useState<DesktopRunnerStatus | null>(null);
   useEffect(() => setBridge(desktopBridge()), []);
   useEffect(() => {
-    if (!bridge) return;
+    if (!bridge || !localRunnerAvailable(bridge.platform)) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
@@ -32,7 +33,7 @@ export function DesktopRunnerOnboarding() {
     };
   }, [bridge]);
 
-  if (!status || (status.state !== "starting" && status.state !== "pulling")) return null;
+  if (!bridge || !localRunnerAvailable(bridge.platform) || !status || (status.state !== "starting" && status.state !== "pulling")) return null;
   const progress =
     status.state === "pulling" && typeof status.progress === "number"
       ? Math.max(0, Math.min(100, Math.round(status.progress * 100)))

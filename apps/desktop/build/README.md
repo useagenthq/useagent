@@ -40,3 +40,7 @@ mark still reads in the Dock and taskbar.
 
 `buildResources` is the default, so with the keys above unset electron-builder
 also picks up `build/icon.icns`, `build/icon.ico` and `build/icons/` on its own.
+The tray loads `icon.ico` on Windows and `icons/32x32.png` on Linux, so those
+two files are also copied into the app. macOS keeps using `resources/trayTemplate.svg`.
+
+The NSIS installer, AppImage, and Debian package are configured for auto-update through `electron-updater`.
