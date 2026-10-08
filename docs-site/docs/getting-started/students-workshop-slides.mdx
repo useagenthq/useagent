@@ -1,0 +1,126 @@
+---
+title: Student workshop slides
+description: A Markdown slide deck for the 60-minute student workshop. Present with any Markdown slides tool (Marp, Slidev, Deckset).
+sidebar:
+  order: 8
+---
+
+The deck below is written for [Marp](https://marp.app)-style tools: each `---`
+line starts a new slide. Copy everything inside the code block into a file like
+`workshop.md`, then present with your favorite Markdown slides app or export to
+PDF.
+
+````markdown
+---
+marp: true
+theme: default
+---
+
+# Code with an agent teammate
+
+A 60-minute hands-on intro to UseAgent
+
+---
+
+# What is UseAgent?
+
+- An open-source workspace for AI coding agents
+- You describe the work — the agent plans, writes, runs, and delivers
+- You watch every step live and keep the files
+
+> You are the reviewer now, not the typist.
+
+---
+
+# How a session flows
+
+1. You write a task in plain language
+2. The agent works in an isolated cloud workspace
+3. Files, diffs, and pull requests come back to you
+4. You review, ask for changes, ship
+
+---
+
+# Live demo
+
+Watch one small task go from prompt to finished page.
+
+(The facilitator runs this live at app.useagent.org)
+
+---
+
+# What to notice in the demo
+
+- The agent shows its plan before touching files
+- You can interrupt or redirect at any time
+- The output is real files you keep
+
+---
+
+# Your turn: sign up
+
+1. Go to **app.useagent.org**
+2. Create an account
+3. Open a new session
+
+Raise your hand when you see the session screen.
+
+---
+
+# Hands-on: portfolio sprint (25 min)
+
+First prompt — copy it as-is:
+
+> Create a single-page portfolio site with a hero section, a projects grid with three placeholder cards, and a contact footer. Use plain HTML, CSS, and a little JavaScript.
+
+---
+
+# Now make it yours
+
+Ask your agent for one change you actually care about:
+
+- Different colors or fonts
+- Your real name and projects
+- A new section
+
+Being picky is the skill.
+
+---
+
+# Show and tell
+
+Two volunteers: show your page, read us the follow-up prompt you used.
+
+---
+
+# Discussion
+
+- What did the agent do well?
+- Where did it guess wrong?
+- What would you not trust it with yet?
+
+---
+
+# Keep going this week
+
+Two more starter projects in the student guide:
+
+1. Data-analysis notebook → written report
+2. Small web app with passing tests
+
+**useagent.org/docs** → Getting started → Students and campus clubs
+
+---
+
+# Thanks!
+
+Feedback welcome on the workshop kit —
+github.com/useagenthq/useagent/issues/51
+````
+
+## Presenting tips
+
+- **Marp CLI:** `npx @marp-team/marp-cli@latest workshop.md -o slides.pdf`
+- **VS Code:** the Marp extension previews the deck live while you edit.
+- **No tooling at all:** the file reads fine as plain Markdown projected
+  full-screen; each slide is short by design.

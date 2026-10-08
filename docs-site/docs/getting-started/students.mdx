@@ -1,0 +1,97 @@
+---
+title: Students and campus clubs
+description: A plain-language intro to UseAgent for students, plus three weekend starter projects you can finish and show off.
+sidebar:
+  order: 6
+---
+
+UseAgent is an open-source workspace where AI coding agents (Claude Code, Codex,
+OpenCode, or Pi) do real work for you in an isolated cloud environment. You
+describe what you want — from the web app, Slack, or the API — and the agent
+researches, writes code, runs it, and hands you back files or a pull request.
+You watch every step live and can jump in at any time.
+
+Think of it as a teammate who never sleeps, types fast, and shows its work.
+
+## Sign up in two minutes
+
+1. Open [app.useagent.org](https://app.useagent.org) and create an account.
+2. Connect a model provider key when prompted (the app walks you through it).
+3. Start your first session: type a task in plain language and watch the agent
+   work in the live timeline.
+
+:::tip
+You do not need to install anything to try the hosted app. If you later want to
+self-host or contribute, the [Quickstart](/getting-started/quickstart) gets a
+local stack running with Bun and Postgres.
+:::
+
+## Three weekend starter projects
+
+Each project below fits in a weekend, produces something you can put on a
+resume, and teaches you a different way to work with an agent.
+
+### 1. A personal portfolio site
+
+**You build:** a static site with your bio, projects, and contact links.
+
+**How to prompt it:**
+
+> Create a single-page portfolio site with a hero section, a projects grid with
+> three placeholder cards, and a contact footer. Use plain HTML, CSS, and a
+> little JavaScript. Keep it to one folder I can open in a browser.
+
+**What you practice:** writing a clear spec, reviewing the agent's file output,
+and asking for follow-up changes ("make the projects grid two columns on
+mobile").
+
+**Stretch goal:** ask the agent to deploy instructions for GitHub Pages and
+follow them yourself.
+
+### 2. A data-analysis notebook turned into a report
+
+**You build:** a short written report with charts, generated from a public CSV
+dataset.
+
+**How to prompt it:**
+
+> Download the CSV at &lt;dataset URL&gt;, explore it with Python, and produce a
+> report.md that answers: what are the top 5 categories, how do they trend over
+> time, and what is surprising? Save any charts as PNG files next to the report.
+
+**What you practice:** iterating on analysis ("now break it down by month"),
+checking the agent's numbers against the raw data, and turning output into a
+document you could hand to a professor or club.
+
+**Stretch goal:** ask for the same analysis as a small static page with the
+charts embedded.
+
+### 3. A small web app with tests
+
+**You build:** a tiny notes app (add, list, delete) with a test suite that
+passes.
+
+**How to prompt it:**
+
+> Build a minimal notes web app with an in-memory store: create, list, and
+> delete notes. Include automated tests for each operation and a README with the
+> exact commands to run the app and the tests.
+
+**What you practice:** the loop that matters most in real engineering — ask for
+a feature, run the tests the agent wrote, read them critically, and ask for the
+edge cases it missed (empty titles, duplicate names).
+
+**Stretch goal:** ask the agent to open a pull request against your own repo so
+you can review the diff like a maintainer.
+
+## Run a workshop for your club
+
+Want to introduce your club to agent-assisted coding? We maintain a
+[60-minute workshop outline](/getting-started/students-workshop) and a
+[Markdown slide deck](/getting-started/students-workshop-slides) you can present
+as-is or adapt.
+
+If you run it, tell us how it went on
+[issue #51](https://github.com/useagenthq/useagent/issues/51) — real-world
+feedback shapes this kit. Please share it only where sharing is welcome; no
+spam in forums that do not want it.
