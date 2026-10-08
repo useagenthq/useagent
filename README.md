@@ -24,6 +24,10 @@
   <a href="#hacktoberfest-2026"><b>Contribute</b></a>
 </p>
 
+<p align="center">
+  <a href="docs/readme/README.es.md">Español</a> · <a href="docs/readme/README.zh-CN.md">简体中文</a> · <a href="docs/readme/README.hi.md">हिन्दी</a> · <a href="docs/readme/README.pt-BR.md">Português (BR)</a>
+</p>
+
 UseAgent gives Claude Code, Codex, OpenCode and Pi a shared workspace with
 repositories, a terminal, a browser and your team's tools. Ask for research, a
 website, a spreadsheet or a code change from the web app, Slack or the API.
