@@ -58,6 +58,10 @@ export function ChatTabStrip({
   onClose: (id: string) => void;
 }) {
   if (tabs.length === 0) return null;
+  // Keyboard model: arrow keys move focus between tab links, Enter opens the
+  // focused one (native anchor), Delete/Backspace closes it. The handler lives
+  // on the pills row (the focused link's DOM ancestor) - see the tablist note
+  // below for why the tablist element itself owns nothing in the DOM.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const links = Array.from(event.currentTarget.querySelectorAll<HTMLAnchorElement>('[role="tab"]'));
     const index = links.indexOf(document.activeElement as HTMLAnchorElement);
@@ -68,13 +72,25 @@ export function ChatTabStrip({
     else links[action.focus]?.focus();
   };
   return (
-    <div
-      role="tablist"
-      aria-label="Open chats"
-      data-testid="chat-tabs"
-      onKeyDown={onKeyDown}
-      className="flex h-12 shrink-0 items-center gap-2 overflow-x-auto px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-    >
+    <div className="flex h-12 shrink-0 items-center gap-2 px-2">
+      {/* The tablist OWNS its tabs through aria-owns instead of DOM containment:
+          each capsule also carries a per-tab close mark, and a tablist's DOM
+          children must be tabs and only tabs (aria-required-children), while a
+          button inside the tab link would nest interactive controls. So the
+          capsules live in the sibling pills row below and the tablist re-parents
+          the tab links in the accessibility tree, where they belong. */}
+      <div
+        role="tablist"
+        aria-label="Open chats"
+        aria-owns={tabs.map((tab) => tab.id).join(" ")}
+        data-testid="chat-tabs"
+        className="sr-only"
+      />
+      <div
+        data-chat-tabs-pills
+        onKeyDown={onKeyDown}
+        className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
       {tabs.map((tab) => {
         const active = tab.id === activeId;
         const Mark = engineMarkFor(tab.engine ?? "");
@@ -96,6 +112,7 @@ export function ChatTabStrip({
             <Mark className="size-3.5 shrink-0 text-foreground-icon-secondary" aria-hidden />
             <Link
               role="tab"
+              id={tab.id}
               aria-selected={active}
               aria-current={active ? "page" : undefined}
               href={tab.href}
@@ -123,6 +140,8 @@ export function ChatTabStrip({
           </div>
         );
       })}
+      </div>
+      {/* An action, not a tab: kept out of the tablist's owned elements. */}
       <Link
         href={NEW_CHAT_HREF}
         aria-label="New chat"

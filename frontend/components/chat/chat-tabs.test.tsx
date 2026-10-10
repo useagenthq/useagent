@@ -25,6 +25,11 @@ describe("ChatTabStrip", () => {
     const selected = html.match(/<a[^>]*aria-selected="true"[^>]*>/g) ?? [];
     expect(selected).toHaveLength(1);
     expect(selected[0]).toContain('href="/session/r2"');
+    // The tablist owns its tabs through aria-owns (each capsule also carries a
+    // close mark, which cannot be a tablist child or nest in the tab link).
+    const tablist = html.match(/<div[^>]*role="tablist"[^>]*>/)?.[0] ?? "";
+    expect(tablist).toContain(`aria-owns="${TABS.map((t) => t.id).join(" ")}"`);
+    for (const tab of TABS) expect(html).toContain(`id="${tab.id}"`);
   });
 
   test("tabs are capsules with the engine mark, a status dot in the rail's states and a plus for a new chat", () => {
