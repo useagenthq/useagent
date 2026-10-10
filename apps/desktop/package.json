@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "package:dev": "bun run build && USEAGENT_DESKTOP_DEV_PACKAGE=1 CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.config.cjs --mac dir --arm64",
-    "package:mac": "bun run build && electron-builder --config electron-builder.config.cjs --mac dmg zip --arm64 --x64"
+    "package:mac": "bun run build && electron-builder --config electron-builder.config.cjs --mac dmg zip --arm64 --x64",
+    "test:smoke": "bun run build:smoke && node dist/smoke.cjs",
+    "build:smoke": "bun build src/smoke/smoke.ts --target=node --format=cjs --external playwright-core --outfile=dist/smoke.cjs"
   },
   "dependencies": {
     "@better-auth/electron": "1.6.25",
@@ -21,6 +23,7 @@
     "@types/bun": "1.3.14",
     "electron": "44.2.0",
     "electron-builder": "26.15.3",
+    "playwright-core": "1.62.1",
     "typescript": "5.9.3"
   }
 }

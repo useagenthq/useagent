@@ -1,0 +1,76 @@
+name: Desktop smoke
+
+# Launches the real packaged desktop app on macOS and drives a full sign-in
+# through it: the window opens on the sign-in screen, the preload bridge
+# answers, and a useagent:// link completes the PKCE exchange with a local
+# mock control plane. A broken build is caught here before release packaging.
+# Linux joins under xvfb once Linux builds exist (issue #59).
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/desktop-smoke.yml"
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/desktop-smoke.yml"
+
+concurrency:
+  group: desktop-smoke-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  BUN_VERSION: "1.3.14"
+
+jobs:
+  smoke:
+    name: Launch the packaged app (macOS)
+    runs-on: macos-14
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Cache bun install store
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-store-macos-desktop-${{ hashFiles('apps/desktop/bun.lock') }}
+          restore-keys: bun-store-macos-desktop-
+      - name: Cache electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-macos-arm64-${{ hashFiles('apps/desktop/package.json') }}
+          restore-keys: electron-macos-arm64-
+      - name: Install desktop dependencies
+        working-directory: apps/desktop
+        run: bun install --frozen-lockfile
+      - name: Validate the desktop shell
+        working-directory: apps/desktop
+        run: bun run typecheck && bun test
+      # The unsigned directory target is the same app the release job signs:
+      # one asar, one protocol registration, one preload, without the release
+      # credentials.
+      - name: Package the app without signing
+        working-directory: apps/desktop
+        run: bun run package:dev
+      - name: Run the smoke test
+        working-directory: apps/desktop
+        run: bun run test:smoke
+      - name: Keep the smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-smoke-screenshots
+          path: apps/desktop/dist/smoke-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
