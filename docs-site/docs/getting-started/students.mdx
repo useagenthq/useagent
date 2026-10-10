@@ -1,0 +1,119 @@
+---
+title: Students and campus kit
+description: What useAgent is in plain words, how to get started, three weekend-sized starter projects, and a 60-minute workshop outline for clubs and classrooms.
+sidebar:
+  order: 6
+---
+
+useAgent is an open-source AI coworker for teams: you describe the result you
+want, a coding agent (Claude Code, Codex, OpenCode, or Pi) does the work in an
+isolated cloud computer with a terminal, a browser, and your repositories, and
+you follow the work in one durable thread. The setup is small and the result is
+files you can open, review, and reuse, which makes it a good fit for student
+clubs and classrooms.
+
+## What useAgent is, in plain words
+
+Think of it as giving an experienced collaborator their own computer. You attach
+a repository or a few files, write what you want in a sentence or two, and watch
+the agent plan, run commands, edit files, and ask when it needs a decision.
+Everything happens in a thread you can scroll through, reload without losing,
+and hand to someone else later.
+
+You do not need to install anything to try it: the hosted app at
+https://app.useagent.org is the quickest way to get going.
+
+## How to sign up and get started
+
+<Steps>
+  <Step title="Open the app">
+    Go to https://app.useagent.org and sign in. useAgent is alpha software, so
+    new accounts may be provisioned on request; if self-service sign-up is not
+    open yet, the fastest guaranteed path is to self-host (below).
+  </Step>
+  <Step title="Connect an engine">
+    In **Settings**, add a model-provider account or API key so the agent has an
+    engine to run on.
+  </Step>
+  <Step title="Connect GitHub (optional)">
+    Connect **GitHub** if you want the agent to work inside your repositories.
+  </Step>
+  <Step title="Start a thread">
+    Open a new thread, describe the outcome you want, and send it.
+  </Step>
+</Steps>
+
+To self-host instead, follow the [Quickstart](/getting-started/quickstart):
+clone the repository, install with Bun, start Postgres with pgvector, and run
+the backend and frontend dev servers. Self-hosting keeps everything on your own
+machine and has no account gate.
+
+## Three starter projects for a weekend
+
+Each project is sized for a single weekend. Use the sample prompt as a starting
+point and adjust it to your own data or repository.
+
+### 1. A portfolio site
+
+Ask the agent to build a small personal site from a short description of you and
+your projects.
+
+```text
+Build a single-page portfolio site for a student. Use plain HTML, CSS, and a
+little JavaScript. Include a hero section, an about section, a projects grid,
+and a contact footer. Make it responsive and keep it dependency-free. Save
+every file so I can open it afterwards.
+```
+
+You will learn how to describe an outcome, review the files the agent produces,
+and iterate by replying in the same thread.
+
+### 2. A data-analysis notebook turned into a report
+
+Give the agent a CSV or a notebook and ask it to analyze the data and produce a
+short written report.
+
+```text
+Here is my CSV of campus club event attendance. Summarize the trends, find the
+best-attended and least-attended events, and write a one-page report with a
+couple of charts. Keep the analysis reproducible and cite the numbers you used.
+```
+
+You will learn how to hand the agent a file, ask for evidence-backed
+conclusions, and turn a notebook into something you can share.
+
+### 3. A small web app with tests
+
+Ask the agent to build a tiny app and write tests for it, so you can see how it
+verifies its own work.
+
+```text
+Build a small to-do list web app with a JSON-file or in-memory backend, a REST
+API for adding and completing items, and a minimal front end. Write unit tests
+for the API, run them, and show me the test output.
+```
+
+You will learn how the agent uses a terminal to run tests, and why having tests
+makes a change safe to review.
+
+## Run a 60-minute workshop
+
+This outline fits a club meeting or a classroom session. Adjust the timings to
+your group.
+
+| Time | What happens |
+| --- | --- |
+| 0:00-0:10 | **Intro and demo.** Explain what useAgent is in one sentence, then start a live thread and let it build something small so attendees see the terminal, browser, and file edits in real time. |
+| 0:10-0:20 | **Get everyone set up.** Have attendees sign in at app.useagent.org (or self-host ahead of time), connect a model provider, and open their first thread. |
+| 0:20-0:45 | **Build.** Everyone picks one starter project above and runs it. The facilitator circulates and helps with prompts. |
+| 0:45-0:55 | **Review.** Attendees open the files the agent produced, look at the thread history, and note one thing they would change. |
+| 0:55-1:00 | **Wrap up.** Share results, collect the prompts that worked best, and point to the Quickstart for self-hosting. |
+
+Pair the session with the [workshop slides](/getting-started/students-workshop-slides)
+for the intro and demo section.
+
+:::tip
+Use the app while you prepare this session, so you see the flow the way
+attendees will. If you run it with a real group, come back to the issue and
+tell us how it went.
+:::
