@@ -1,0 +1,114 @@
+---
+title: Workshop slides
+description: Markdown slides for the 60-minute useAgent student workshop. Paste them into Marp, Reveal.js, or any Markdown-to-slides tool.
+sidebar:
+  order: 7
+---
+
+Markdown slides for the [students and campus kit](/getting-started/students)
+workshop. Copy everything below into a Markdown-to-slides tool: each `---` line
+starts a new slide.
+
+---
+
+# useAgent for students
+
+Describe the result. An agent builds it in its own cloud computer.
+
+Today: sign up, send one task, leave with a real project.
+
+---
+
+# What it is
+
+- You write what you want in a sentence or two.
+- A coding agent works in an isolated sandbox: terminal, editor, browser.
+- You watch every step in one durable thread and keep the files.
+
+---
+
+# Sign up (5 minutes)
+
+1. Open app.useagent.org, choose **New here? Create an account**.
+2. Confirm the email link, then sign in.
+3. In **Settings → Connections**, connect a Codex account or a provider API
+   key.
+
+No install needed. Self-hosting is an option later.
+
+---
+
+# Anatomy of a task
+
+- The composer at `/agent/new`: prompt, engine, model, optional repositories
+  and file uploads.
+- The session view: every command, edit, and question as a step you can open.
+- The rails: Files, Diff, Terminal, Browser - what changed, as it happens.
+
+---
+
+# Live demo
+
+Watch one run end to end: a small portfolio site from a single prompt.
+
+Look for the terminal commands, the files appearing, and the diff of each
+edit.
+
+---
+
+# Weekend project 1: portfolio site
+
+```text
+Build a single-page portfolio site for a student. Plain HTML, CSS, a little
+JavaScript. Hero, about, projects grid, contact footer. Responsive, no
+dependencies.
+```
+
+---
+
+# Weekend project 2: data report
+
+Attach a CSV in the composer.
+
+```text
+Load this CSV, chart the trends, find the best and worst events, and write a
+one-page report with two charts. Cite the numbers you used.
+```
+
+---
+
+# Weekend project 3: web app with tests
+
+```text
+Build a small to-do web app: REST API, minimal front end, unit tests. Run the
+tests and show me the output.
+```
+
+A green run you can read beats a claim you cannot.
+
+---
+
+# While it runs
+
+- Read the steps; open the reasoning disclosures.
+- Reply in the same thread to steer: restyle a section, add a chart, one more
+  test.
+- Reload the page. The thread is durable; nothing is lost.
+
+---
+
+# Review what it built
+
+- Files rail: everything the run produced.
+- Diff rail: every edit, line by line.
+- Artifacts at `/artifacts`: reports, spreadsheets, decks.
+
+Ask: did it do what I asked? What would I change next?
+
+---
+
+# Keep going
+
+- Quickstart: run the whole stack locally with Bun and Postgres.
+- CLI and MCP: dispatch tasks from a terminal.
+- Tell us how the session went on the issue. What prompts worked?
