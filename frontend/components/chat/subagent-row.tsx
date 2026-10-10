@@ -92,6 +92,12 @@ export function SubagentRow({
   );
   const [toggled, setToggled] = useTurnUiState<boolean | null>(`subagent:${card.id}`, null);
   const open = toggled ?? defaultOpen ?? active;
+  // The child's own step payloads open through the same controlled shape as the
+  // parent trace's rows (a Collapse/Expand-all sweep is a parent-trace control).
+  const [stepExpansion, setStepExpansion] = useTurnUiState<Record<string, boolean>>(
+    `subagent-steps:${card.id}`,
+    {},
+  );
   const rows = useMemo(() => {
     const nodes = turnNodesFromSteps(
       steps,
@@ -161,7 +167,15 @@ export function SubagentRow({
             <p className={cn(CHILD_META_CLASS, "px-1.5 py-0.5")}>{meta.join(" · ")}</p>
           )}
           {rows.map((row) => (
-            <TraceRowView key={row.key} row={row} />
+            <TraceRowView
+              key={row.key}
+              row={row}
+              expanded={stepExpansion[row.key] ?? false}
+              onToggle={(key) =>
+                setStepExpansion((current) => ({ ...current, [key]: !(current[key] ?? false) }))
+              }
+              highlighted={false}
+            />
           ))}
           {rows.length === 0 && progress && (
             <p className="px-1.5 py-0.5 text-[12.5px] leading-5 text-text-tertiary">{progress}</p>
