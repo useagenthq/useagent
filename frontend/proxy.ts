@@ -12,7 +12,14 @@ function routeResponse(request: NextRequest): NextResponse | null {
     canonical.pathname = pathname.replace(/\/+$/, "");
     return NextResponse.redirect(canonical, 308);
   }
-  if (pathname === "/healthz" || pathname === "/icon.svg") return NextResponse.next();
+  if (
+    pathname === "/healthz" ||
+    pathname === "/icon.svg" ||
+    pathname === "/opengraph-image" ||
+    pathname === "/twitter-image"
+  ) {
+    return NextResponse.next();
+  }
   return null;
 }
 

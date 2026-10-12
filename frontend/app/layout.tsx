@@ -28,9 +28,28 @@ const fontDisplay = Inter_Tight({
   display: 'swap',
 });
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.useagent.org';
+
 export const metadata: Metadata = {
+  metadataBase: new URL(appUrl),
   title: 'UseAgent - one interface for every coding agent',
-  description: 'Run coding agents in isolated workspaces with durable context, automations, and audit trails.',
+  description:
+    'Run coding agents in isolated workspaces with durable context, automations, and audit trails.',
+  openGraph: {
+    title: 'UseAgent - one interface for every coding agent',
+    description:
+      'Run coding agents in isolated workspaces with durable context, automations, and audit trails.',
+    url: appUrl,
+    siteName: 'UseAgent',
+    locale: 'en_US',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'UseAgent - one interface for every coding agent',
+    description:
+      'Run coding agents in isolated workspaces with durable context, automations, and audit trails.',
+  },
 };
 
 // `viewportFit: 'cover'` makes iOS report real safe-area insets, so the pinned
