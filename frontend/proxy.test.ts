@@ -125,6 +125,10 @@ describe("authentication proxy", () => {
       "/opengraph-image",
       "/opengraph-image?v=current",
       "/twitter-image",
+      // per-route OG images (issue #124) — must be public so link previews work
+      "/bots/opengraph-image",
+      "/settings/opengraph-image",
+      "/bots/twitter-image",
     ]) {
       expect(
         proxy(new NextRequest(`https://useagent.example.com${path}`)).headers.get(

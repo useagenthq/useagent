@@ -15,8 +15,8 @@ function routeResponse(request: NextRequest): NextResponse | null {
   if (
     pathname === "/healthz" ||
     pathname === "/icon.svg" ||
-    pathname === "/opengraph-image" ||
-    pathname === "/twitter-image"
+    pathname.endsWith("/opengraph-image") ||
+    pathname.endsWith("/twitter-image")
   ) {
     return NextResponse.next();
   }
