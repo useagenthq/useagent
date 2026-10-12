@@ -129,6 +129,9 @@ describe("authentication proxy", () => {
       "/bots/opengraph-image",
       "/settings/opengraph-image",
       "/bots/twitter-image",
+      // static PNG files in public/og/ — direct image URLs used by og:image meta tags
+      "/og/01-home.png",
+      "/og/05-agents.png",
     ]) {
       expect(
         proxy(new NextRequest(`https://useagent.example.com${path}`)).headers.get(
