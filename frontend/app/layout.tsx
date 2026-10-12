@@ -62,7 +62,7 @@ export async function generateMetadata(): Promise<Metadata> {
       type: 'website',
       images: [
         {
-          url: `${appUrl}/opengraph-image`,
+          url: `${appUrl}/og/01-home.png`,
           width: 1600,
           height: 900,
           alt: 'UseAgent - one interface for every coding agent',
@@ -74,7 +74,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title: 'UseAgent - one interface for every coding agent',
       description:
         'Run coding agents in isolated workspaces with durable context, automations, and audit trails.',
-      images: [`${appUrl}/opengraph-image`],
+      images: [`${appUrl}/og/01-home.png`],
     },
   };
 }

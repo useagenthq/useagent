@@ -47,6 +47,9 @@ describe("site-wide metadata (issue #124)", () => {
       siteName: "UseAgent",
       type: "website",
     });
+    // og:image must point directly to the static PNG in public/og/ (not a route handler)
+    const ogImages = rootMetadata.openGraph?.images as Array<{ url: string }>;
+    expect(ogImages[0].url).toContain("/og/01-home.png");
 
     expect(rootMetadata.twitter).toMatchObject({
       card: "summary_large_image",
@@ -54,6 +57,8 @@ describe("site-wide metadata (issue #124)", () => {
       description:
         "Run coding agents in isolated workspaces with durable context, automations, and audit trails.",
     });
+    const twImages = rootMetadata.twitter?.images as string[];
+    expect(twImages[0]).toContain("/og/01-home.png");
   });
 
   test("opengraph-image and twitter-image conform to Next.js route specifications", async () => {

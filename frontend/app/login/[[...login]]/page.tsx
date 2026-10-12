@@ -26,7 +26,7 @@ export async function generateMetadata({
   const h = await headers();
   const proto = h.get("x-forwarded-proto") ?? "https";
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "app.useagent.org";
-  const imageUrl = `${proto}://${host}/opengraph-image`;
+  const imageUrl = `${proto}://${host}/og/01-home.png`;
 
   return {
     title,
