@@ -13,6 +13,7 @@
     "lint": "biome lint",
     "lint:fix": "biome check --write",
     "test": "bun test components app lib",
+    "test:a11y": "bun test/a11y/sweep.ts",
     "analyze": "USEAGENT_BUILD_DIST=.next-build next experimental-analyze",
     "perf:routes": "bun test/perf/route-js.ts"
   },
@@ -52,6 +53,7 @@
     "tailwind-variants": "^3.3.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
     "@biomejs/biome": "^2.5.7",
     "@tailwindcss/postcss": "4",
     "@types/node": "^26.1.2",

@@ -4076,11 +4076,11 @@ html {
   box-shadow: var(--neo-stroke);
   border-radius: 5px;
 }
-.neobrutal [role="tablist"] > [role="presentation"].rounded-full {
+.neobrutal [data-chat-tabs-pills] > [role="presentation"].rounded-full {
   border-radius: 5px;
   box-shadow: var(--neo-stroke);
 }
-.neobrutal [role="tablist"] > [role="presentation"]:has(> a[role="tab"][aria-selected="true"]) {
+.neobrutal [data-chat-tabs-pills] > [role="presentation"]:has(> a[role="tab"][aria-selected="true"]) {
   background: var(--neo-main);
   color: #000;
   box-shadow: var(--neo-lift-2);
