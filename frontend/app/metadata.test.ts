@@ -6,6 +6,17 @@ mock.module("next/font/google", () => ({
   JetBrains_Mono: () => ({ variable: "font-mono" }),
 }));
 
+// Mock next/headers so generateMetadata can resolve the base URL in tests.
+mock.module("next/headers", () => ({
+  headers: () =>
+    Promise.resolve(
+      new Map([
+        ["host", "app.useagent.org"],
+        ["x-forwarded-proto", "https"],
+      ]),
+    ),
+}));
+
 import { generateMetadata as generateLoginMetadata } from "./login/[[...login]]/page";
 import ogImage, {
   alt as ogAlt,
@@ -20,7 +31,8 @@ import twitterImage, {
 
 describe("site-wide metadata (issue #124)", () => {
   test("root layout exports correct metadataBase, openGraph, and twitter metadata", async () => {
-    const { metadata: rootMetadata } = await import("./layout");
+    const { generateMetadata: rootGenerateMetadata } = await import("./layout");
+    const rootMetadata = await rootGenerateMetadata();
     expect(rootMetadata.metadataBase?.toString()).toBe("https://app.useagent.org/");
     expect(rootMetadata.title).toBe("UseAgent - one interface for every coding agent");
     expect(rootMetadata.description).toBe(
