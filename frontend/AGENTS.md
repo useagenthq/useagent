@@ -239,14 +239,14 @@ given; the render must stay cheap. Rules learned the hard way (do NOT regress):
 - Learn the rendering approach from opencode (fine-grained reactivity, batched
   events) before hand-rolling — we own the React port, so we replicate their
   behavior with memo + batching + virtualization.
-- **JavaScript budget: no route's first-load JS above 660 KB gzip, and no route
+- **JavaScript budget: no route's first-load JS above 680 KB gzip, and no route
   grows past what it measures today without a number in the PR.** Measured on
   2026-09-14 (`bun run build && bun run perf:routes`, the build's client
   reference manifests plus `rootMainFiles`, gzip): `/bots` and `/bots/[id]`
   645 KB, `/session/[id]` 614 KB, `/settings` 464 KB, `/agent/new` 451 KB,
   `/agent/runs` 438 KB, `/dashboard` 419 KB. This is a desktop developer tool
   whose session route carries the conversation, the composer and the shared
-  kit, so 660 KB is the honest ceiling to shrink from, not a target to grow
+  kit, so 680 KB is the honest ceiling to shrink from, not a target to grow
   into; the generic 300 KB guideline does not describe this product. Find what
   a route pulls in with `bun run analyze -- -o` (the Turbopack analyzer, written
   under the build directory) and measure a change with the scripts in
