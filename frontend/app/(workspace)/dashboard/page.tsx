@@ -27,6 +27,18 @@ import { compactNumber } from "@/utils/format";
 
 export const metadata: Metadata = {
   title: "Dashboard - UseAgent",
+  description: "Monitor agent fleet activity, workspace metrics, and execution history.",
+  openGraph: {
+    title: "Dashboard - UseAgent",
+    description: "Monitor agent fleet activity, workspace metrics, and execution history.",
+    images: [{ url: "/og/04-dashboard.png", width: 1600, height: 900, alt: "UseAgent Dashboard" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Dashboard - UseAgent",
+    description: "Monitor agent fleet activity, workspace metrics, and execution history.",
+    images: ["/og/04-dashboard.png"],
+  },
 };
 
 // Auth cookies are forwarded per-request, so this page must render dynamically.
