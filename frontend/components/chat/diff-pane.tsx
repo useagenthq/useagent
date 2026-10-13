@@ -7,6 +7,7 @@
 // sections recovered from the steps' own recorded patch text.
 
 import { useMemo } from "react";
+import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
 import {
   buildTimelineFromCanonical,
   shouldUseCanonicalTimeline,
@@ -25,6 +26,7 @@ const CANONICAL_TIMELINE = process.env.NEXT_PUBLIC_CANONICAL_TIMELINE === "1";
 /** The slice of a conversation Turn this pane reads (structural, so
  *  conversation's Turn assigns without importing its module). */
 export interface DiffTurn {
+  readonly run?: { readonly thread_id: string };
   readonly steps: ApiStep[];
   readonly live: boolean;
   readonly native?: NativeSnapshot;
@@ -58,6 +60,14 @@ export function DiffPane({ turns }: { turns: readonly DiffTurn[] }) {
     [turns],
   );
   const live = turns.some((turn) => turn.live);
+  // Line comments go back to the agent through the reply composer, so they are
+  // offered only inside a session that has one.
+  const prefill = useComposerPrefill();
+  const threadId = turns[0]?.run?.thread_id;
+  const review = useMemo(
+    () => (prefill && threadId ? { key: threadId, onSend: prefill } : null),
+    [prefill, threadId],
+  );
 
   if (files.length === 0) {
     return (
@@ -71,7 +81,7 @@ export function DiffPane({ turns }: { turns: readonly DiffTurn[] }) {
 
   return (
     <div className="h-full overflow-y-auto pt-3" data-testid="diff-pane">
-      <FileDiffView files={files} patches={patches} />
+      <FileDiffView files={files} patches={patches} review={review} />
     </div>
   );
 }
