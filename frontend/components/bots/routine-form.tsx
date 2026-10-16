@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
+import { cadenceLabel, isValidCron, nextRunLabel } from "@/app/agent/schedules/schedules-data";
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
 import * as Textarea from "@/components/base/textarea/textarea";
@@ -38,6 +39,18 @@ export function RoutineForm({ bot, routine, onSaved, onCancel }: { bot: ApiBot; 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timezone = routine ? routine.timezone : browserTimezone();
+
+  /** Live read of the cron field: the schedule in words and when it fires next. */
+  const cronText = cron.trim();
+  const cronValid = cronText.length > 0 && isValidCron(cronText);
+  const words = cronValid && cadenceLabel(cronText) !== cronText ? cadenceLabel(cronText) : null;
+  const nextRun = cronValid ? nextRunLabel(cronText, timezone) : null;
+  const preview =
+    cronText.length === 0
+      ? null
+      : !cronValid
+        ? "That expression is invalid."
+        : [words, nextRun ? `next run ${nextRun}` : null].filter(Boolean).join(" · ") || null;
 
   const clear = (field: Field) => setInvalid((current) => ({ ...current, [field]: undefined }));
 
@@ -138,6 +151,9 @@ export function RoutineForm({ bot, routine, onSaved, onCancel }: { bot: ApiBot; 
           hint={invalid.cron ?? (timezone ? `Times in ${timezone}.` : "Times in the server's timezone.")}
           fieldClassName="font-mono"
         />
+        {preview && (
+          <p className={cronValid ? "text-caption-1-regular text-text-tertiary" : "text-caption-1-regular text-text-error-primary"}>{preview}</p>
+        )}
       </div>
       {error && (
         <p role="alert" className="text-caption-1-regular text-text-error-primary">
