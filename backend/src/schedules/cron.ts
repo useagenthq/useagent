@@ -43,9 +43,19 @@ function expandField(field: string, min: number, max: number): Set<number> | nul
       hi = max;
     } else if (range.includes("-")) {
       const bounds = range.split("-");
-      if (bounds.length !== 2 || bounds[0] === "" || bounds[1] === "") return null;
-      const parsedLo = parsePlainInt(bounds[0]);
-      const parsedHi = parsePlainInt(bounds[1]);
+      const loToken = bounds[0];
+      const hiToken = bounds[1];
+      if (
+        bounds.length !== 2 ||
+        loToken === undefined ||
+        hiToken === undefined ||
+        loToken === "" ||
+        hiToken === ""
+      ) {
+        return null;
+      }
+      const parsedLo = parsePlainInt(loToken);
+      const parsedHi = parsePlainInt(hiToken);
       if (parsedLo === null || parsedHi === null) return null;
       lo = parsedLo;
       hi = parsedHi;
