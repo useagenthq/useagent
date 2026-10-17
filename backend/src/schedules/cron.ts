@@ -6,9 +6,17 @@
 /**
  * Expand one cron field into the set of matching integers within [min, max].
  * Supports `*`, `*​/n`, `a`, `a-b`, `a-b/n`, `a/n` (a→max step n), and comma
- * lists of any of those. Returns `null` on any syntax error (out-of-range,
- * malformed, reversed range, non-positive step).
+ * lists of any of those. Values, range ends and steps are plain digits
+ * (`/^\d+$/`) before they become numbers. Returns `null` on any syntax error
+ * (out-of-range, malformed, reversed range, non-positive step, empty range
+ * side, empty value before a slash).
  */
+function parsePlainInt(token: string): number | null {
+  if (!/^\d+$/.test(token)) return null;
+  const value = Number(token);
+  return Number.isInteger(value) ? value : null;
+}
+
 function expandField(field: string, min: number, max: number): Set<number> | null {
   if (field === "") return null;
   const out = new Set<number>();
@@ -16,14 +24,16 @@ function expandField(field: string, min: number, max: number): Set<number> | nul
   for (const part of field.split(",")) {
     if (part === "") return null;
 
-    // Optional `/step` suffix.
+    // Optional `/step` suffix. An empty value before the slash is not a number.
     let range = part;
     let step = 1;
     const slash = part.indexOf("/");
     if (slash !== -1) {
       range = part.slice(0, slash);
-      step = Number(part.slice(slash + 1));
-      if (!Number.isInteger(step) || step <= 0) return null;
+      if (range === "") return null;
+      const parsedStep = parsePlainInt(part.slice(slash + 1));
+      if (parsedStep === null || parsedStep <= 0) return null;
+      step = parsedStep;
     }
 
     let lo: number;
@@ -33,13 +43,16 @@ function expandField(field: string, min: number, max: number): Set<number> | nul
       hi = max;
     } else if (range.includes("-")) {
       const bounds = range.split("-");
-      if (bounds.length !== 2) return null;
-      lo = Number(bounds[0]);
-      hi = Number(bounds[1]);
-      if (!Number.isInteger(lo) || !Number.isInteger(hi)) return null;
+      if (bounds.length !== 2 || bounds[0] === "" || bounds[1] === "") return null;
+      const parsedLo = parsePlainInt(bounds[0]);
+      const parsedHi = parsePlainInt(bounds[1]);
+      if (parsedLo === null || parsedHi === null) return null;
+      lo = parsedLo;
+      hi = parsedHi;
     } else {
-      lo = Number(range);
-      if (!Number.isInteger(lo)) return null;
+      const parsedLo = parsePlainInt(range);
+      if (parsedLo === null) return null;
+      lo = parsedLo;
       // A bare value with a step ("5/10") means "from 5 to max, every 10".
       hi = slash !== -1 ? max : lo;
     }
