@@ -110,7 +110,7 @@ function ThreadItem({
             tabIndex={-1}
             aria-label={`${expanded ? "Collapse" : "Expand"} ${thread.label}`}
             onClick={onToggle}
-            className="flex size-4 items-center justify-center rounded-sm"
+            className="flex size-6 -mx-1 items-center justify-center rounded-sm"
           >
             {expanded
               ? <RiArrowDownSLine className="size-4" aria-hidden />
@@ -150,7 +150,7 @@ function ThreadItem({
           aria-label={`Pin ${thread.label}`}
           title="Pin to Bookmarks"
           onClick={onPin}
-          className="flex size-5 shrink-0 items-center justify-center rounded-md text-text-tertiary opacity-0 transition-opacity hover:bg-background-tertiary-hover hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring group-hover:opacity-100"
+          className="flex size-6 shrink-0 items-center justify-center rounded-md text-text-tertiary opacity-0 transition-opacity hover:bg-background-tertiary-hover hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring group-hover:opacity-100"
         >
           <RiPushpinLine className="size-3.5" aria-hidden />
         </button>

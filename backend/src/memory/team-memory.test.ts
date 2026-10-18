@@ -41,7 +41,7 @@ function enableMemory(): void {
  *  (what atomic/search is scoped to); `actorUserId` is provenance. */
 const IDENT: MemoryIdentity = {
   teamId: "team-1",
-  agentId: "skynet-backend",
+  agentId: "useagent-backend",
   userId: "u-42",
   actorUserId: "u-42",
   sessionId: "thread-9",
@@ -127,7 +127,7 @@ describe("searchTeamMemory", () => {
     // isolation ids come from the identity, not static env
     const body = lastBody(fn);
     expect(body.team_id).toBe("team-1");
-    expect(body.agent_id).toBe("skynet-backend");
+    expect(body.agent_id).toBe("useagent-backend");
     expect(body.user_id).toBe("u-42");
     expect(body.query).toBe("how do runs work?");
   });
@@ -436,7 +436,7 @@ describe("recallScopedMemory (layered L0-L3) degrades honestly", () => {
         return new Response(JSON.stringify({ code: 0, data: { items: [{ id: "l1o", type: "fact", content: "org distilled fact", score: 0.6 }] } }));
       }
       if (path === "/v3/scenario/ls") {
-        expect(body).toMatchObject({ agent_id: "skynet-backend", user_id: `org:${body.team_id}`, path_prefix: "" });
+        expect(body).toMatchObject({ agent_id: "useagent-backend", user_id: `org:${body.team_id}`, path_prefix: "" });
         expect(body).not.toHaveProperty("query");
         expect(body).not.toHaveProperty("limit");
         expect(body).not.toHaveProperty("session_id");
@@ -454,14 +454,14 @@ describe("recallScopedMemory (layered L0-L3) degrades honestly", () => {
         }));
       }
       if (path === "/v3/scenario/read") {
-        expect(body).toMatchObject({ agent_id: "skynet-backend", user_id: `org:${body.team_id}` });
+        expect(body).toMatchObject({ agent_id: "useagent-backend", user_id: `org:${body.team_id}` });
         expect(body).toHaveProperty("path");
         expect(body).not.toHaveProperty("id");
         const scene = body.team_id === "org-2" ? "second org scene summary" : `org scene ${body.path}`;
         return new Response(JSON.stringify({ code: 0, data: { path: body.path, content: scene } }));
       }
       if (path === "/v3/core/read") {
-        expect(body).toMatchObject({ agent_id: "skynet-backend", user_id: `org:${body.team_id}` });
+        expect(body).toMatchObject({ agent_id: "useagent-backend", user_id: `org:${body.team_id}` });
         return new Response(JSON.stringify({ code: 0, data: { content: `${body.team_id} bounded org persona` } }));
       }
       return new Response(JSON.stringify({ code: 0, data: {} }));

@@ -7,6 +7,7 @@ import {
   isSandboxPath,
   Markdown,
 } from "./markdown";
+import { mermaidThemeName } from "./mermaid-diagram";
 
 describe("Markdown links", () => {
   test("renders downloadable artifacts as compact typed chips", () => {
@@ -232,5 +233,45 @@ describe("Markdown links", () => {
 
     expect(html).toContain('href="/api/artifacts/deck-1/content?download=1"');
     expect(html).toContain('target="_blank"');
+  });
+});
+
+describe("Markdown mermaid blocks", () => {
+  const diagram = "```mermaid\ngraph TD\n  A[Start] --> B[End]\n```";
+
+  test("falls back to the plain code block, source and copy button intact", () => {
+    // Server render (and any client state before the lazily loaded library
+    // arrives, or after a parse failure) is the fallback: the source in a
+    // code block card, never an error or a blank.
+    const html = renderToStaticMarkup(<Markdown>{diagram}</Markdown>);
+
+    expect(html).toContain("graph TD");
+    expect(html).toContain("Start");
+    expect(html).toContain(">Mermaid<"); // header label on the fallback card
+    expect(html).toContain("Copy"); // the copy button still copies the source
+    expect(html).not.toContain("mermaid-diagram-");
+  });
+
+  test("a broken mermaid block shows its source the same way", () => {
+    const broken = "```mermaid\ngraph TD\n  A -->>>\n```";
+    const html = renderToStaticMarkup(<Markdown>{broken}</Markdown>);
+
+    expect(html).toContain("graph TD");
+    expect(html).toContain(">Mermaid<");
+    expect(html).toContain("Copy");
+  });
+
+  test("picks the mermaid palette that follows the app theme", () => {
+    expect(mermaidThemeName(true)).toBe("dark");
+    expect(mermaidThemeName(false)).toBe("default");
+  });
+
+  test("other fenced blocks keep the code block path", () => {
+    const html = renderToStaticMarkup(
+      <Markdown>{"```ts\nconst answer = 42;\n```"}</Markdown>,
+    );
+
+    expect(html).toContain("const answer = 42;");
+    expect(html).toContain(">TypeScript<");
   });
 });

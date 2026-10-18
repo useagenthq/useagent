@@ -41,6 +41,8 @@ import {
   setCodexSubscriptionRelayDependenciesForTest,
   type CodexSubscriptionRelayBinding,
 } from "./codex-subscription-relay";
+import { DEV_ORG_ID } from "../dev-org";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 // The per-run app-server runs on the backend host: every default-on feature
 // that could start a process, browser or plugin there stays off. Shell and
@@ -111,7 +113,7 @@ describe("Codex subscription relay public origin", () => {
   test("uses an explicit relay host without changing the Better Auth origin", () => {
     expect(
       codexSubscriptionRelayPublicOrigin({
-        BETTER_AUTH_URL: "https://skynet.meow.gs",
+        BETTER_AUTH_URL: "https://legacy.example.com",
         CODEX_SUBSCRIPTION_RELAY_PUBLIC_ORIGIN: "https://app.useagent.org/path",
       }),
     ).toBe("https://app.useagent.org");
@@ -120,7 +122,7 @@ describe("Codex subscription relay public origin", () => {
   test("rejects non-HTTP relay origins", () => {
     expect(() =>
       codexSubscriptionRelayPublicOrigin({
-        BETTER_AUTH_URL: "https://skynet.meow.gs",
+        BETTER_AUTH_URL: "https://legacy.example.com",
         CODEX_SUBSCRIPTION_RELAY_PUBLIC_ORIGIN: "file:///tmp/socket",
       }),
     ).toThrow("must be an HTTP(S) origin");
@@ -190,7 +192,7 @@ describe("Codex subscription run relay", () => {
     expect(registration).toMatchObject({
       method: "environment/add",
       params: {
-        environmentId: "skynet-sandbox-1-run-1",
+        environmentId: `${SANDBOX_NAME_PREFIX}-sandbox-1-run-1`,
         execServerUrl: "ws://127.0.0.1:43111/opaque-exec-grant",
         connectTimeoutMs: 15_000,
       },
@@ -291,7 +293,7 @@ describe("Codex subscription run relay", () => {
         model: "gpt-5.5",
         threadId: "provider-thread-1",
         environments: [{
-          environmentId: "skynet-sandbox-1-run-1",
+          environmentId: `${SANDBOX_NAME_PREFIX}-sandbox-1-run-1`,
           cwd: "/root/work",
           runtimeWorkspaceRoots: ["/root/work"],
         }],
@@ -611,7 +613,7 @@ describe("Codex subscription run relay", () => {
       expect(frame).not.toContain("result");
       expect(frame).not.toContain("unknownPrivateField");
     }
-    const finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    const finished = await listFinishedWorkForRun(DEV_ORG_ID, fixture.runId);
     expect(finished.obligations).toHaveLength(1);
     expect(finished.obligations[0]?.state).toBe("satisfied");
     expect(finished.receipts).toHaveLength(1);
@@ -648,7 +650,7 @@ describe("Codex subscription run relay", () => {
     const capability = issueCodexSubscriptionRelayCapability({
       binding: {
         ...binding(),
-        orgId: "org-skynet-dev",
+        orgId: DEV_ORG_ID,
         threadId: fixture.runId,
         runId: fixture.runId,
       },
@@ -706,7 +708,7 @@ describe("Codex subscription run relay", () => {
     expect(forwarded[3]).not.toContain(imagePath);
     expect(forwarded[4]).toBe(turnCompleted);
 
-    const finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    const finished = await listFinishedWorkForRun(DEV_ORG_ID, fixture.runId);
     expect(finished.obligations).toHaveLength(1);
     expect(finished.obligations[0]?.state).toBe("satisfied");
     expect(finished.receipts).toHaveLength(1);
@@ -736,7 +738,7 @@ describe("Codex subscription run relay", () => {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
       Promise.all(candidates.map((candidate) => importCodexNativeOutput({
-        orgId: "org-skynet-dev",
+        orgId: DEV_ORG_ID,
         userId: "user-1",
         productThreadId: fixture.runId,
         runId: fixture.runId,
@@ -751,7 +753,7 @@ describe("Codex subscription run relay", () => {
       if (timeout) clearTimeout(timeout);
     });
 
-    const finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    const finished = await listFinishedWorkForRun(DEV_ORG_ID, fixture.runId);
     expect(finished.obligations).toHaveLength(12);
     expect(finished.receipts).toHaveLength(12);
     expect(finished.obligations.every((item) => item.state === "satisfied")).toBe(true);
@@ -778,7 +780,7 @@ describe("Codex subscription run relay", () => {
       relay.child.stdout.write(`${nativeImageFrame(imagePath, { itemId: stage })}\n`);
       await reached.promise;
 
-      const during = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+      const during = await listFinishedWorkForRun(DEV_ORG_ID, fixture.runId);
       expect(during.obligations).toHaveLength(1);
       expect(during.obligations[0]?.state).toBe("open");
       if (stage === "before_receipt") {
@@ -800,7 +802,7 @@ describe("Codex subscription run relay", () => {
       await forwarded;
       expect(await finalization).toMatchObject({ applied: true, status: "completed" });
       expect((await getRun(fixture.runId))?.status).toBe("completed");
-      const finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+      const finished = await listFinishedWorkForRun(DEV_ORG_ID, fixture.runId);
       expect(finished.obligations[0]?.state).toBe("satisfied");
       expect(finished.receipts).toHaveLength(1);
       setCodexNativeOutputImportHookForTest(null);
@@ -826,7 +828,7 @@ describe("Codex subscription run relay", () => {
     const firstForwarded = collectMessages(relay.socket, 1);
     relay.child.stdout.write(`${nativeImageFrame(imagePath)}\n`);
     expect((await firstForwarded)[0]).not.toContain(imagePath);
-    let finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    let finished = await listFinishedWorkForRun(DEV_ORG_ID, fixture.runId);
     expect(finished.obligations[0]?.state).toBe("open");
     expect(finished.obligations[0]?.failureCode).toBeNull();
     expect(finished.receipts).toHaveLength(0);
@@ -836,7 +838,7 @@ describe("Codex subscription run relay", () => {
     const repaired = collectMessages(relay.socket, 1);
     relay.child.stdout.write(`${nativeImageFrame(imagePath)}\n`);
     expect((await repaired)[0]).not.toContain(imagePath);
-    finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    finished = await listFinishedWorkForRun(DEV_ORG_ID, fixture.runId);
     expect(finished.obligations[0]?.state).toBe("satisfied");
     expect(finished.receipts).toHaveLength(1);
     expect(await db.select().from(providerEvents).where(and(
@@ -870,7 +872,7 @@ describe("Codex subscription run relay", () => {
     relay.child.stdout.write(`${completion}\n`);
     const [first] = await firstForwarded;
     expect(first).not.toContain(imagePath);
-    let finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    let finished = await listFinishedWorkForRun(DEV_ORG_ID, fixture.runId);
     expect(finished.obligations[0]?.state).toBe("open");
     expect(finished.receipts).toHaveLength(0);
 
@@ -878,7 +880,7 @@ describe("Codex subscription run relay", () => {
     relay.child.stdout.write(`${completion}\n`);
     const [second] = await repaired;
     expect(second).toBe(first);
-    finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    finished = await listFinishedWorkForRun(DEV_ORG_ID, fixture.runId);
     expect(finished.obligations[0]?.state).toBe("satisfied");
     expect(finished.receipts).toHaveLength(1);
     expect(relay.child.wasKilled()).toBe(false);
@@ -905,7 +907,7 @@ describe("Codex subscription run relay", () => {
     const firstForwarded = collectMessages(relay.socket, 1);
     relay.child.stdout.write(`${nativeImageFrame(imagePath)}\n`);
     await firstForwarded;
-    let finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    let finished = await listFinishedWorkForRun(DEV_ORG_ID, fixture.runId);
     expect(finished.obligations[0]?.state).toBe("open");
     expect(finished.obligations[0]?.failureCode).toBeNull();
     expect(finished.receipts).toHaveLength(0);
@@ -913,7 +915,7 @@ describe("Codex subscription run relay", () => {
     const repaired = collectMessages(relay.socket, 1);
     relay.child.stdout.write(`${nativeImageFrame(imagePath)}\n`);
     await repaired;
-    finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    finished = await listFinishedWorkForRun(DEV_ORG_ID, fixture.runId);
     expect(finished.obligations[0]?.state).toBe("satisfied");
     expect(finished.receipts).toHaveLength(1);
     expect(relay.child.wasKilled()).toBe(false);
@@ -955,7 +957,7 @@ describe("Codex subscription run relay", () => {
     expect(relay.child.wasKilled()).toBe(false);
     expect(forwarded.every((frame) => !frame.includes(fixture.root) && !frame.includes("savedPath")))
       .toBe(true);
-    const finished = await listFinishedWorkForRun("org-skynet-dev", fixture.runId);
+    const finished = await listFinishedWorkForRun(DEV_ORG_ID, fixture.runId);
     expect(finished.obligations).toHaveLength(cases.length);
     expect(finished.receipts).toHaveLength(0);
     expect(finished.obligations.map((row) => row.failureCode).toSorted()).toEqual([
@@ -982,7 +984,7 @@ describe("Codex subscription run relay", () => {
     const [forwarded] = await message;
     expect(forwarded).not.toContain(imagePath);
     expect(forwarded).not.toContain("savedPath");
-    expect(await listFinishedWorkForRun("org-skynet-dev", fixture.runId)).toEqual({
+    expect(await listFinishedWorkForRun(DEV_ORG_ID, fixture.runId)).toEqual({
       obligations: [],
       receipts: [],
     });
@@ -1014,7 +1016,7 @@ describe("Codex relay sessions across runs", () => {
     params: {
       model,
       threadId: "provider-thread-1",
-      environments: [{ environmentId: "skynet-sandbox-1-run-1", cwd: "/root/work", runtimeWorkspaceRoots: ["/root/work"] }],
+      environments: [{ environmentId: `${SANDBOX_NAME_PREFIX}-sandbox-1-run-1`, cwd: "/root/work", runtimeWorkspaceRoots: ["/root/work"] }],
     },
   });
 
@@ -1240,7 +1242,7 @@ describe("Codex relay sessions across runs", () => {
     const fixture = await nativeOutputFixture();
     const nextRunId = crypto.randomUUID();
     await createRun({
-      id: nextRunId, prompt: "next turn", model: "gpt-5.5", engine: "codex", orgId: "org-skynet-dev",
+      id: nextRunId, prompt: "next turn", model: "gpt-5.5", engine: "codex", orgId: DEV_ORG_ID,
       userId: null, parentRunId: null, threadId: fixture.runId, repos: [], memoryScope: "org",
     });
     const server = startRelayServer();
@@ -1252,7 +1254,7 @@ describe("Codex relay sessions across runs", () => {
       spawnAppServer: () => child.process,
     });
     const session = openCodexRelaySession({
-      scope: { ...scope(), orgId: "org-skynet-dev", threadId: fixture.runId },
+      scope: { ...scope(), orgId: DEV_ORG_ID, threadId: fixture.runId },
       runtime: selected, execServerUrl: EXEC, codeModeHostUrl: CODE_MODE,
       toolGateway: null, reusable: true, publicOrigin: `http://127.0.0.1:${server.port}`,
     });
@@ -1297,7 +1299,7 @@ async function nativeOutputFixture() {
     prompt: "generate a native image",
     model: "gpt-5.5",
     engine: "codex",
-    orgId: "org-skynet-dev",
+    orgId: DEV_ORG_ID,
     userId: null,
     parentRunId: null,
     threadId: runId,
@@ -1319,7 +1321,7 @@ async function initializedNativeOutputRelay(runId: string, codexHome: string) {
   const capability = issueCodexSubscriptionRelayCapability({
     binding: {
       ...binding(),
-      orgId: "org-skynet-dev",
+      orgId: DEV_ORG_ID,
       threadId: runId,
       runId,
     },
@@ -1399,7 +1401,7 @@ function binding(): CodexSubscriptionRelayBinding {
     model: "gpt-5.5",
     sandboxId: "sandbox-1",
     sandboxGeneration: "t3-v2",
-    environmentId: "skynet-sandbox-1-run-1",
+    environmentId: `${SANDBOX_NAME_PREFIX}-sandbox-1-run-1`,
     cwd: "/root/work",
   };
 }

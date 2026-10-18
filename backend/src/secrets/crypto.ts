@@ -16,7 +16,8 @@ import { authSecretMaterial, runtimeDevModeEnabled } from "../security/runtime-s
 
 const KEY_LEN = 32; // AES-256
 const IV_LEN = 12; // GCM standard nonce length
-const HKDF_INFO = "skynet-org-secrets-v1";
+// Stored ciphertext was sealed under this context; changing it makes it unreadable.
+export const ORG_SECRETS_HKDF_INFO = "skynet-org-secrets-v1";
 const CIPHERTEXT_VERSION = "v2";
 
 /** An accepted secret NAME: an environment-variable identifier - an uppercase
@@ -121,7 +122,7 @@ function encryptionKey(material = encryptionMaterial()): Buffer {
   // Empty salt is fine: the input is already secret,
   // high-entropy key material, and the info string domain-separates this key.
   return Buffer.from(
-    hkdfSync("sha256", material, new Uint8Array(0), HKDF_INFO, KEY_LEN),
+    hkdfSync("sha256", material, new Uint8Array(0), ORG_SECRETS_HKDF_INFO, KEY_LEN),
   );
 }
 

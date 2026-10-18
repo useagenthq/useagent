@@ -46,6 +46,7 @@ import {
 } from "../src/runs/capture-loss";
 import { drainProviderEvents, recordProviderEvent } from "../src/runs/provider-events";
 import { updateStepCode } from "../src/runs/repo";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import { waitFor } from "./helpers"; // side-effect: imports src/index -> migrate
 
 beforeAll(async () => {
@@ -283,7 +284,7 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
     try {
       // A post-finalize producer (follow-up suggestions run after the seal) loses its frame.
       await recordProviderEvent({
-        id: `folup_${RUN}`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never,
+        id: `folup_${RUN}`, runId: RUN, threadId: THREAD, provider: PLATFORM_EVENT_LANES.platform, eventType: null as never,
       });
       await drainProviderEvents(RUN);
       await flushCaptureLoss(RUN);
@@ -355,7 +356,7 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
     const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
     try {
       simulateAnnouncementFailureForTest(RUN);
-      await recordProviderEvent({ id: `${RUN}-late`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await recordProviderEvent({ id: `${RUN}-late`, runId: RUN, threadId: THREAD, provider: PLATFORM_EVENT_LANES.platform, eventType: null as never });
       await drainProviderEvents(RUN);
       await flushCaptureLoss(RUN); // the rows are down; the failed announcement is not the flush's failure
       expect((await outboxRow(RUN))?.state).toBe("complete_degraded"); // the correction committed
@@ -381,7 +382,7 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
       // Batch A lands and is acknowledged; its correction commits but its announcement fails,
       // so the announcement is owed and its retry timer is 5 s away.
       simulateAnnouncementFailureForTest(RUN, 1);
-      await recordProviderEvent({ id: `${RUN}-owed-a`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await recordProviderEvent({ id: `${RUN}-owed-a`, runId: RUN, threadId: THREAD, provider: PLATFORM_EVENT_LANES.platform, eventType: null as never });
       await drainProviderEvents(RUN);
       await flushCaptureLoss(RUN);
       expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
@@ -390,7 +391,7 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
       // A distinct batch B keeps failing (every commit loses its acknowledgement). That must
       // not hold back the announcement A already owes.
       simulateLostFlushAcknowledgementForTest(RUN, 5);
-      await recordProviderEvent({ id: `${RUN}-owed-b`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await recordProviderEvent({ id: `${RUN}-owed-b`, runId: RUN, threadId: THREAD, provider: PLATFORM_EVENT_LANES.platform, eventType: null as never });
       await drainProviderEvents(RUN);
       await expect(flushCaptureLoss(RUN)).rejects.toThrow("simulated lost acknowledgement");
       expect(pendingCaptureLossForTest(RUN)).toBe(1); // B is still pending
@@ -415,7 +416,7 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
     try {
       // The correction lands; its announcement fails twice in a row.
       simulateAnnouncementFailureForTest(RUN, 2);
-      await recordProviderEvent({ id: `${RUN}-overlap`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await recordProviderEvent({ id: `${RUN}-overlap`, runId: RUN, threadId: THREAD, provider: PLATFORM_EVENT_LANES.platform, eventType: null as never });
       await drainProviderEvents(RUN);
       await new Promise((r) => setTimeout(r, 30));
       expect((await outboxRow(RUN))?.state).toBe("complete_degraded");
@@ -431,7 +432,7 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
       const held = flushCaptureLoss(RUN); // attempt 3 clears the timer, reads the seal, then waits
       await new Promise((r) => setTimeout(r, 60));
       expect(announceRetryTimersForTest(RUN)).toBe(0);
-      await recordProviderEvent({ id: `${RUN}-overlap-late`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await recordProviderEvent({ id: `${RUN}-overlap-late`, runId: RUN, threadId: THREAD, provider: PLATFORM_EVENT_LANES.platform, eventType: null as never });
       await drainProviderEvents(RUN); // its flush lands and joins the held attempt
       await new Promise((r) => setTimeout(r, 60));
       expect(seen.some((e) => e.runId === RUN)).toBe(false); // nothing published while held
@@ -462,7 +463,7 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
       // right after it read the still-clean seal.
       simulateFlushFailureBeforeCommitForTest(RUN, 1);
       const hold = holdAnnouncementForTest(RUN);
-      await recordProviderEvent({ id: `${RUN}-gen-a`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await recordProviderEvent({ id: `${RUN}-gen-a`, runId: RUN, threadId: THREAD, provider: PLATFORM_EVENT_LANES.platform, eventType: null as never });
       await drainProviderEvents(RUN);
       await new Promise((r) => setTimeout(r, 60));
       expect((await outboxRow(RUN))?.state).toBe("complete");
@@ -498,7 +499,7 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
     const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
     const hold = holdAnnouncementForTest(RUN);
     try {
-      await recordProviderEvent({ id: `${RUN}-stream-0`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+      await recordProviderEvent({ id: `${RUN}-stream-0`, runId: RUN, threadId: THREAD, provider: PLATFORM_EVENT_LANES.platform, eventType: null as never });
       await drainProviderEvents(RUN);
       await until(() => lastAnnouncementReadOfTest(RUN) !== null); // the first attempt is held on pass 1
       const caller = flushCaptureLoss(RUN); // joins that attempt
@@ -507,7 +508,7 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
       // A new loss lands during every held pass, so the generation moves before each step.
       const land = async (n: number) => {
         const before = announcementGenerationForTest(RUN);
-        await recordProviderEvent({ id: `${RUN}-stream-${n}`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+        await recordProviderEvent({ id: `${RUN}-stream-${n}`, runId: RUN, threadId: THREAD, provider: PLATFORM_EVENT_LANES.platform, eventType: null as never });
         await drainProviderEvents(RUN);
         await until(() => announcementGenerationForTest(RUN) > before); // its flush committed and owed anew
       };
@@ -541,7 +542,7 @@ describe("canonicalization outbox: a lost capture seals complete_degraded, never
       await Promise.all([
         runCanonicalizationOutboxOnce(),
         (async () => {
-          await recordProviderEvent({ id: `${RUN}-concurrent`, runId: RUN, threadId: THREAD, provider: "skynet", eventType: null as never });
+          await recordProviderEvent({ id: `${RUN}-concurrent`, runId: RUN, threadId: THREAD, provider: PLATFORM_EVENT_LANES.platform, eventType: null as never });
           await drainProviderEvents(RUN);
           await flushCaptureLoss(RUN);
         })(),

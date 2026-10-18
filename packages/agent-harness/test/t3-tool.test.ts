@@ -32,8 +32,8 @@ describe("T3 semantic tool names", () => {
       server: "useagent",
       tool: "github_clone_repository",
     });
-    expect(t3SummaryToolIdentity("skynet-knowledge · computer_screenshot started")).toEqual({
-      server: "skynet-knowledge",
+    expect(t3SummaryToolIdentity("useagent-browser · computer_screenshot started")).toEqual({
+      server: "useagent-browser",
       tool: "computer_screenshot",
     });
     expect(t3SummaryToolIdentity("Mcp tool call")).toBeNull();

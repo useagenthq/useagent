@@ -25,8 +25,9 @@ import {
 } from "../src/runs/finished-work-lock";
 import { createRun, getRun } from "../src/runs/repo";
 import "./helpers";
+import { DEV_ORG_ID } from "../src/dev-org";
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 const previousRollout = process.env.FINISHED_WORK_ROLLOUT;
 const previousEngines = process.env.FINISHED_WORK_ENFORCE_ENGINES;
 const previousRuns = process.env.FINISHED_WORK_ENFORCE_RUN_IDS;

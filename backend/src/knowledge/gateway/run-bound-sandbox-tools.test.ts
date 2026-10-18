@@ -9,6 +9,7 @@ import { executeComputerUseTool } from "./computer-use-tools";
 import { executeRecordingTool } from "./recording-tools";
 import { childSessionToolsEnabled, executeChildSessionTool } from "./child-session-tools";
 import type { ToolTokenClaims } from "./token";
+import { SANDBOX_NAME_PREFIX } from "../../sandboxes/sandbox-names";
 
 const ORG = "org-run-bound-sandbox-tools-test";
 
@@ -57,7 +58,7 @@ test("computer and recording operations resolve the full fenced run", async () =
         commands.push(command);
         return {
           exitCode: 0,
-          result: command.startsWith("skynet-record-start")
+          result: command.startsWith(`${SANDBOX_NAME_PREFIX}-record-start`)
             ? "/home/user/work/recordings/proof.mp4\n"
             : "",
         };

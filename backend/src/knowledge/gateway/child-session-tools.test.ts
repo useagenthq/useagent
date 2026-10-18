@@ -145,7 +145,7 @@ describe("child session gateway tools", () => {
     );
 
     // Gateway child sessions are engine-independent: a plain ACP codex run (no
-    // runtime `skynet-thread-*` session id) is granted the tools too.
+    // runtime thread session id) is granted the tools too.
     const acpCodexClaims = await fixture("codex");
     const acpCodexToken = mintToolToken(acpCodexClaims, 60_000);
     const acpCodex = await app.request("/api/mcp/knowledge", {

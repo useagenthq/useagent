@@ -6,6 +6,7 @@ import { buildTimeline, deriveTurnSources, hasNarration, parseFollowups } from "
 import { createNativeStore } from "./native-store";
 import type { NativeFrame } from "./native-events";
 import type { ApiStep, StepKind } from "./types";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
 type Ids = Partial<NativeFrame["native"]>;
 function frame(
@@ -141,16 +142,16 @@ describe("buildTimeline", () => {
 });
 
 // useAgent-lane context markers (skill.loaded / context.retrieved) share the frame()
-// helper but override provider to "skynet".
-function skynetFrame(eventId: string, seq: number, eventType: string, payload: unknown): NativeFrame {
-  return { ...frame(eventId, seq, eventType, {}, payload), provider: "skynet" };
+// helper but override provider to the platform lane.
+function platformFrame(eventId: string, seq: number, eventType: string, payload: unknown): NativeFrame {
+  return { ...frame(eventId, seq, eventType, {}, payload), provider: PLATFORM_EVENT_LANES.platform };
 }
 
 describe("canonical context markers", () => {
   test("skill.loaded + context.retrieved render as the turn's LEADING marker rows", () => {
     const s = turnStore();
     s.ingestNative(
-      skynetFrame("skillloaded_run-1", 0, "skill.loaded", {
+      platformFrame("skillloaded_run-1", 0, "skill.loaded", {
         skillId: "sk1",
         version: 2,
         name: "Haiku answers",
@@ -161,7 +162,7 @@ describe("canonical context markers", () => {
       0,
     );
     s.ingestNative(
-      skynetFrame("ctxret_run-1", 1, "context.retrieved", { source: "memory", itemCount: 3, query: "q" }),
+      platformFrame("ctxret_run-1", 1, "context.retrieved", { source: "memory", itemCount: 3, query: "q" }),
       0,
     );
     const nodes = buildTimeline(s.getSnapshot(), false)!;
@@ -175,7 +176,7 @@ describe("canonical context markers", () => {
   test("a playbook skill.loaded frame flags the marker as a playbook; a plain skill does not", () => {
     const pb = turnStore();
     pb.ingestNative(
-      skynetFrame("skillloaded_run-1", 0, "skill.loaded", {
+      platformFrame("skillloaded_run-1", 0, "skill.loaded", {
         skillId: "pb1",
         version: 1,
         kind: "playbook",
@@ -193,7 +194,7 @@ describe("canonical context markers", () => {
     // A frame without kind (or a plain skill) defaults to playbook:false.
     const sk = turnStore();
     sk.ingestNative(
-      skynetFrame("skillloaded_run-1", 0, "skill.loaded", {
+      platformFrame("skillloaded_run-1", 0, "skill.loaded", {
         skillId: "sk1",
         version: 1,
         name: "Answer in haiku",
@@ -210,15 +211,15 @@ describe("canonical context markers", () => {
 
   test("an UNKNOWN UseAgent eventType is ignored (renders safely as nothing)", () => {
     const s = turnStore();
-    s.ingestNative(skynetFrame("weird_run-1", 0, "policy.denied.future", { foo: 1 }), 0);
+    s.ingestNative(platformFrame("weird_run-1", 0, "policy.denied.future", { foo: 1 }), 0);
     expect(buildTimeline(s.getSnapshot(), false)!.some((n) => n.kind === "marker")).toBe(false);
   });
 
   test("context.retrieved defaults its source to memory; a knowledge source is preserved", () => {
     const mem = createNativeStore();
     mem.reset([], 0);
-    mem.ingestNative(skynetFrame("ctxret_run-1", 0, "context.retrieved", { itemCount: 1 }), 0);
-    mem.ingestNative(skynetFrame("kn_run-1", 1, "context.retrieved", { source: "knowledge", itemCount: 2 }), 0);
+    mem.ingestNative(platformFrame("ctxret_run-1", 0, "context.retrieved", { itemCount: 1 }), 0);
+    mem.ingestNative(platformFrame("kn_run-1", 1, "context.retrieved", { source: "knowledge", itemCount: 2 }), 0);
     const markers = buildTimeline(mem.getSnapshot(), false)!.filter((n) => n.kind === "marker");
     expect(markers).toHaveLength(2);
     expect(markers[0]).toMatchObject({ marker: { source: "memory", itemCount: 1, degraded: false } });
@@ -228,7 +229,7 @@ describe("canonical context markers", () => {
   test("context.retrieved with degraded:true is an outage marker (legacy frames default to false)", () => {
     const s = createNativeStore();
     s.reset([], 0);
-    s.ingestNative(skynetFrame("ctxret_run-1", 0, "context.retrieved", { itemCount: 0, degraded: true, query: "q" }), 0);
+    s.ingestNative(platformFrame("ctxret_run-1", 0, "context.retrieved", { itemCount: 0, degraded: true, query: "q" }), 0);
     expect(buildTimeline(s.getSnapshot(), false)![0]).toMatchObject({
       kind: "marker",
       marker: { kind: "context", source: "memory", itemCount: 0, query: "q", degraded: true },
@@ -239,7 +240,7 @@ describe("canonical context markers", () => {
 // Memory tool chips (provider "useAgent-memory", frozen contract in
 // backend/src/knowledge/gateway/memory-tools.ts MEMORY_EVENTS).
 function memoryFrame(eventId: string, seq: number, eventType: string, payload: unknown): NativeFrame {
-  return { ...frame(eventId, seq, eventType, {}, payload), provider: "skynet-memory" };
+  return { ...frame(eventId, seq, eventType, {}, payload), provider: PLATFORM_EVENT_LANES.memory };
 }
 
 describe("memory tool markers", () => {
@@ -343,7 +344,7 @@ describe("run.reconciling marker (adaptive re-probe park)", () => {
     const s = createNativeStore();
     s.reset([], 0);
     s.ingestNative(
-      skynetFrame("rec_1", 0, "run.reconciling", { reason: "boot-restart", sinceMs: 1000, deadlineMs: 301000 }),
+      platformFrame("rec_1", 0, "run.reconciling", { reason: "boot-restart", sinceMs: 1000, deadlineMs: 301000 }),
       0,
     );
     expect(buildTimeline(s.getSnapshot(), false)![0]).toMatchObject({
@@ -356,7 +357,7 @@ describe("run.reconciling marker (adaptive re-probe park)", () => {
     const s = turnStore();
     const gatewayFrame = (eventId: string, seq: number, eventType: string, payload: unknown) => ({
       ...frame(eventId, seq, eventType, {}, payload),
-      provider: "skynet-gateway",
+      provider: PLATFORM_EVENT_LANES.gateway,
     });
     s.ingestNative(
       gatewayFrame("pe_run-1_gwappr_r1_requested", 150, "gateway.approval.requested", {
@@ -398,7 +399,7 @@ describe("run.reconciling marker (adaptive re-probe park)", () => {
   test("legacy ISO-deadline payload still parses safely (deadlineMs null)", () => {
     const s = createNativeStore();
     s.reset([], 0);
-    s.ingestNative(skynetFrame("rec_2", 0, "run.reconciling", { reason: "boot-restart", deadline: "2026-08-06T14:00:00Z" }), 0);
+    s.ingestNative(platformFrame("rec_2", 0, "run.reconciling", { reason: "boot-restart", deadline: "2026-08-06T14:00:00Z" }), 0);
     expect(buildTimeline(s.getSnapshot(), false)![0]).toMatchObject({
       marker: { kind: "reconciling", deadlineMs: null },
     });
@@ -409,7 +410,7 @@ describe("follow-ups + turn sources (beautiful-ui answer grammar)", () => {
   test("a followups.suggested frame becomes the turn's CLOSING node (after artifacts)", () => {
     const s = turnStore();
     s.ingestNative(
-      skynetFrame("art_1", 70, "artifact.created", {
+      platformFrame("art_1", 70, "artifact.created", {
         id: "a1",
         name: "report.pdf",
         size_bytes: 10,
@@ -419,7 +420,7 @@ describe("follow-ups + turn sources (beautiful-ui answer grammar)", () => {
       0,
     );
     s.ingestNative(
-      skynetFrame("folup_run-1", 71, "followups.suggested", {
+      platformFrame("folup_run-1", 71, "followups.suggested", {
         suggestions: ["Scale per plan tier?", "Add a Retry-After test"],
       }),
       0,

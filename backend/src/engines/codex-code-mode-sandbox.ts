@@ -4,6 +4,7 @@
 // as a WebSocket that admits only the current run's bearer, whose SHA-256 sits in
 // a private file the plane rewrites every run. The backend tunnels the
 // app-server's gRPC through it (provider-connections/codex-code-mode-bridge.ts).
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 import type { SandboxRuntimeLayout } from "../sandboxes/provider";
 import { sandboxBunExecutable } from "./sandbox-bun";
 import type { SandboxListenerOwner } from "./sandbox-listener-probe";
@@ -14,7 +15,7 @@ export const CODEX_CODE_MODE_HOST_PORT = 37_736;
  * forwarder below may reach it. */
 export const CODEX_CODE_MODE_HOST_ADDRESS = "127.0.0.2";
 export const CODEX_CODE_MODE_FORWARDER_PORT = 37_737;
-export const CODEX_CODE_MODE_SESSION = "skynet-codex-code-mode";
+export const CODEX_CODE_MODE_SESSION = `${SANDBOX_NAME_PREFIX}-codex-code-mode`;
 
 /** Runs under the sandbox's Bun: `bun <this file> <listenPort> <hostAddress> <hostPort> <tokenSha256File>`. */
 export const CODEX_CODE_MODE_FORWARDER_SOURCE = `

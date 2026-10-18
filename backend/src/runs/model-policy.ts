@@ -18,6 +18,9 @@ export const CODEX_ALLOWED_MODELS = [
   "gpt-5.6-terra",
   "gpt-5.6-sol",
   "gpt-6-astra",
+  "gpt-6-luna",
+  "gpt-6-sol",
+  "gpt-6.1-sol",
 ] as const;
 
 /** Models that the OpenCode picker and provider gateway are allowed to spend. */

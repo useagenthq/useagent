@@ -21,6 +21,8 @@ import { providerProtocolIdentity } from "@useagent/agent-harness/control";
 import { t3ProviderDrivers } from "../src/engines/t3-provider-driver";
 import { insertThreadRelationship } from "../src/runs/thread-relationship-repo";
 import { insertCommandWithRun } from "../src/commands/repo";
+import { DEV_ORG_ID } from "../src/dev-org";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
 
 // Regression for GAP 3: a restart could lose the final Slack reply. The reply used
@@ -37,8 +39,8 @@ import "./helpers"; // side-effect: imports src/index → migrate + seed
 // the durable INTENT is committed with the run — the delivery mechanism is already
 // covered by slack-outbox.test.ts + slack.test.ts.
 
-const ORG = "org-skynet-dev";
-const TEAM = "T-SKYNET-DURABLE";
+const ORG = DEV_ORG_ID;
+const TEAM = "T-USEAGENT-DURABLE";
 
 /** Root a Slack thread on a fresh run (channel/threadTs are the thread identity). */
 async function slackRootRun(prompt: string): Promise<{ runId: string; channel: string; ts: string }> {
@@ -218,7 +220,7 @@ describe("slack reply durability at finalization (GAP 3)", () => {
       id: `artifact.revised:${artifact.id}:1`,
       runId: revisionRunId,
       threadId: root.runId,
-      provider: "skynet",
+      provider: PLATFORM_EVENT_LANES.platform,
       eventType: "artifact.revised",
       payload: { id: artifact.id, sha256: "c".repeat(64), workpiece: { state_revision: 1 } },
     } as const;

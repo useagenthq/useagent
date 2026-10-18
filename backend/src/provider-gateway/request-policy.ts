@@ -4,8 +4,35 @@ import type { GatewayRun } from "./run-authorization";
 export type OutputLimitField = "max_tokens" | "max_output_tokens" | null;
 
 export type ProviderBodyPolicyResult =
-  | { readonly ok: false; readonly error: "invalid_json" | "model_not_allowed" | "request_not_allowed" | "output_limit_exceeded" }
+  | { readonly ok: false; readonly error: "invalid_json" | "request_too_deep" | "model_not_allowed" | "request_not_allowed" }
+  | { readonly ok: false; readonly error: "output_limit_exceeded"; readonly requested: unknown }
   | { readonly ok: true; readonly body: string; readonly requestedOutputTokens: number };
+
+/** How deep a request body may nest. Engine requests reach 12 (tool schemas);
+ *  serializing or walking 100,000 levels overflows the stack. */
+const MAX_REQUEST_DEPTH = 64;
+
+/** Whether a JSON text nests deeper than MAX_REQUEST_DEPTH, read in one pass
+ *  over its characters (strings skipped), before anything parses or walks it. */
+function nestsTooDeep(body: string): boolean {
+  let depth = 0;
+  let inString = false;
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body.charCodeAt(index);
+    if (inString) {
+      if (char === 0x5c) index += 1; // a backslash escapes the next character
+      else if (char === 0x22) inString = false;
+    } else if (char === 0x22) {
+      inString = true;
+    } else if (char === 0x7b || char === 0x5b) {
+      depth += 1;
+      if (depth > MAX_REQUEST_DEPTH) return true;
+    } else if (char === 0x7d || char === 0x5d) {
+      depth -= 1;
+    }
+  }
+  return false;
+}
 
 /** The chat-completion fields an OpenRouter request may carry through the
  * gateway: the run's model, the conversation, sampling, streaming, function
@@ -77,6 +104,7 @@ export function applyProviderBodyPolicy(
   maxOutputTokens: number,
   provider: ProviderId | null = null,
 ): ProviderBodyPolicyResult {
+  if (nestsTooDeep(rawBody)) return { ok: false, error: "request_too_deep" };
   let body: Record<string, unknown>;
   try {
     const parsed = JSON.parse(rawBody) as unknown;
@@ -111,7 +139,7 @@ export function applyProviderBodyPolicy(
       requested < 1 ||
       requested > maxOutputTokens
     ) {
-      return { ok: false, error: "output_limit_exceeded" };
+      return { ok: false, error: "output_limit_exceeded", requested };
     }
     requestedOutputTokens = body[outputLimitField] as number;
   }

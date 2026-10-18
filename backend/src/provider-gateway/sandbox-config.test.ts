@@ -1,3 +1,4 @@
+import { LEGACY_TOOL_SERVER_IDS } from "@useagent/agent-harness/canonical";
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -5,6 +6,7 @@ import { join } from "node:path";
 import type { SandboxHandle } from "../sandboxes/provider";
 import type { EngineRunContext } from "../engines/types";
 import {
+  mergeOpenCodeProviderConfig,
   opencodeProviderGatewayOptions,
   providerGatewayEnv,
   providerGatewaySandboxLabels,
@@ -18,8 +20,11 @@ import {
   SANDBOX_GENERATION,
 } from "./sandbox-config";
 import { verifyProviderToken } from "./token";
+import { OPENCODE_ALLOWED_MODELS } from "../runs/model-policy";
 import { verifyToolToken } from "../knowledge/gateway/token";
 import { TOOL_GATEWAY_SERVER_NAME } from "../knowledge/gateway/descriptor";
+import { LEGACY_SANDBOX_GENERATION_LABEL, LEGACY_SANDBOX_RUN_LABEL } from "../sandboxes/label-compat";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_DIR } from "../sandboxes/sandbox-names";
 
 const original = { ...process.env };
 
@@ -158,7 +163,7 @@ describe("sandbox provider gateway config", () => {
     const root = await mkdtemp(join(tmpdir(), "useagent-provider-private-writer-"));
     const sandbox = localShellSandbox(root);
     const canonicalDir = join(root, ".useagent");
-    const legacyDir = join(root, ".skynet");
+    const legacyDir = join(root, SANDBOX_STATE_DIR);
     const canonicalToken = join(canonicalDir, "provider-openai.token");
     const legacyToken = join(legacyDir, "provider-openai.token");
     const canonicalMarker = join(canonicalDir, "provider-gateway-generation");
@@ -223,7 +228,7 @@ describe("sandbox provider gateway config", () => {
         "codex",
       );
       expect(mode((await stat(join(freshRoot, ".useagent"))).mode)).toBe(0o700);
-      expect(mode((await stat(join(freshRoot, ".skynet"))).mode)).toBe(0o700);
+      expect(mode((await stat(join(freshRoot, SANDBOX_STATE_DIR))).mode)).toBe(0o700);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -235,7 +240,7 @@ describe("sandbox provider gateway config", () => {
     process.env.TOOL_GATEWAY_SECRET = "tool-test-0123456789abcdef0123456789abcdef";
     const root = await mkdtemp(join(tmpdir(), "useagent-provider-private-leaves-"));
     const canonicalDir = join(root, ".useagent");
-    const legacyDir = join(root, ".skynet");
+    const legacyDir = join(root, SANDBOX_STATE_DIR);
     const canonicalToken = join(canonicalDir, "provider-openai.token");
     const legacyToken = join(legacyDir, "provider-openai.token");
     const canonicalVictim = join(root, "canonical-victim");
@@ -285,7 +290,7 @@ describe("sandbox provider gateway config", () => {
     const root = await mkdtemp(join(tmpdir(), "useagent-provider-private-repair-"));
     const sandbox = localShellSandbox(root);
     const canonicalDir = join(root, ".useagent");
-    const legacyDir = join(root, ".skynet");
+    const legacyDir = join(root, SANDBOX_STATE_DIR);
     const canonicalToken = join(canonicalDir, "provider-openai.token");
     const legacyToken = join(legacyDir, "provider-openai.token");
     const canonicalMarker = join(canonicalDir, "provider-gateway-generation");
@@ -317,7 +322,7 @@ describe("sandbox provider gateway config", () => {
         const victim = join(aliasRoot, "victim");
         await mkdir(victim);
         await writeFile(join(victim, "sentinel"), "unchanged");
-        await symlink(victim, join(aliasRoot, parent === canonicalDir ? ".useagent" : ".skynet"));
+        await symlink(victim, join(aliasRoot, parent === canonicalDir ? ".useagent" : SANDBOX_STATE_DIR));
         await expect(prepareProviderGatewaySandbox(
           localShellSandbox(aliasRoot),
           privateWriterContext(`writer-parent-${parent}`),
@@ -336,7 +341,7 @@ describe("sandbox provider gateway config", () => {
     process.env.SANDBOX_SECRET_MODE = "gateway_only";
     const root = await mkdtemp(join(tmpdir(), "useagent-provider-private-reader-"));
     try {
-      const legacyDir = join(root, ".skynet");
+      const legacyDir = join(root, SANDBOX_STATE_DIR);
       const canonicalDir = join(root, ".useagent");
       await mkdir(legacyDir);
       await mkdir(canonicalDir);
@@ -399,23 +404,23 @@ describe("sandbox provider gateway config", () => {
   });
 
   test("reads legacy and canonical label aliases only when they agree", () => {
-    expect(readCompatibleSandboxLabel({}, "useagent-key", "skynet-key")).toEqual({
+    expect(readCompatibleSandboxLabel({}, "useagent-key", "legacy-key")).toEqual({
       value: null,
       conflict: false,
     });
-    expect(readCompatibleSandboxLabel({ "skynet-key": "value" }, "useagent-key", "skynet-key"))
+    expect(readCompatibleSandboxLabel({ "legacy-key": "value" }, "useagent-key", "legacy-key"))
       .toEqual({ value: "value", conflict: false });
-    expect(readCompatibleSandboxLabel({ "useagent-key": "value" }, "useagent-key", "skynet-key"))
+    expect(readCompatibleSandboxLabel({ "useagent-key": "value" }, "useagent-key", "legacy-key"))
       .toEqual({ value: "value", conflict: false });
     expect(readCompatibleSandboxLabel(
-      { "useagent-key": "value", "skynet-key": "value" },
+      { "useagent-key": "value", "legacy-key": "value" },
       "useagent-key",
-      "skynet-key",
+      "legacy-key",
     )).toEqual({ value: "value", conflict: false });
     expect(readCompatibleSandboxLabel(
-      { "useagent-key": "new", "skynet-key": "old" },
+      { "useagent-key": "new", "legacy-key": "old" },
       "useagent-key",
-      "skynet-key",
+      "legacy-key",
     )).toEqual({ value: null, conflict: true });
   });
 
@@ -439,7 +444,7 @@ describe("sandbox provider gateway config", () => {
     process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
     const claude = providerGatewayEnv(ctx(), "claude");
     expect(claude.ANTHROPIC_BASE_URL).toBe("https://gateway.example.test/api/provider/anthropic");
-    expect(claude.CLAUDE_CONFIG_DIR).toBe("/tmp/skynet-claude-config");
+    expect(claude.CLAUDE_CONFIG_DIR).toBe(`/tmp/${SANDBOX_NAME_PREFIX}-claude-config`);
     expect(claude).not.toHaveProperty("ANTHROPIC_API_KEY");
     expect(claude).not.toHaveProperty("ANTHROPIC_AUTH_TOKEN");
     expect(claude.ANTHROPIC_MODEL).toBe("claude-opus-5[1m]");
@@ -453,17 +458,17 @@ describe("sandbox provider gateway config", () => {
       { url: "https://gateway.example.test/api/mcp/knowledge", bearerToken: "tool-token" },
     );
     expect(config).toContain('model = "gpt-5.6-sol"');
-    expect(config).toContain('model_provider = "skynet"');
+    expect(config).toContain(`model_provider = "${SANDBOX_NAME_PREFIX}"`);
     expect(config).toContain('sandbox_mode = "danger-full-access"');
     expect(config).toContain('approval_policy = "never"');
     expect(config).toContain(
       'base_url = "https://gateway.example.test/api/provider/openai/v1"',
     );
-    expect(config).toContain("[model_providers.skynet.auth]");
+    expect(config).toContain(`[model_providers.${SANDBOX_NAME_PREFIX}.auth]`);
     expect(config).toContain('command = "sh"');
     expect(config).not.toContain("env_key");
     expect(config).toContain(`[mcp_servers.${TOOL_GATEWAY_SERVER_NAME}]`);
-    expect(config).not.toContain("mcp_servers.skynet-knowledge");
+    expect(config).not.toContain(`mcp_servers.${LEGACY_TOOL_SERVER_IDS.gateway}`);
     expect(config).toContain('url = "https://gateway.example.test/api/mcp/knowledge"');
     expect(config).toContain('http_headers = { Authorization = "Bearer tool-token" }');
     expect(config).toContain("enabled = true");
@@ -564,6 +569,59 @@ describe("sandbox provider gateway config", () => {
       provider: "anthropic",
       scope: "thread",
     });
+  });
+
+  test("Claude's settings name the run's model in every slot, cap output under the gateway ceiling and refresh the helper", async () => {
+    process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    const settingsOf = async (model: string) => {
+      const run = ctx();
+      run.threadId = `thread-claude-settings-${model}`;
+      run.model = model;
+      const { sandbox, files } = recordingSandbox();
+      await prepareProviderGatewaySandbox(sandbox, run, "claude");
+      const settings = JSON.parse(files["/tmp/useagent-claude-capability/useagent-settings.json"]!) as { env?: Record<string, string> };
+      expect(files["/tmp/useagent-claude-capability/settings.json"]).toBe(JSON.stringify(settings));
+      return settings;
+    };
+
+    // The native wrapper exports only the gateway URL and config dir, so the slots
+    // ride the settings: otherwise Claude Code's Haiku helper and subagent calls ask
+    // for another model, which the gateway refuses.
+    const slots = (model: string) => ({
+      ANTHROPIC_MODEL: model,
+      ANTHROPIC_DEFAULT_OPUS_MODEL: model,
+      ANTHROPIC_DEFAULT_SONNET_MODEL: model,
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
+      CLAUDE_CODE_SUBAGENT_MODEL: model,
+    });
+    // Claude Code asks 128K of a 1M-context Opus: past the gateway's 65,536 it was refused before the audit.
+    expect((await settingsOf("claude-opus-5")).env).toEqual({
+      ...slots("claude-opus-5[1m]"),
+      CLAUDE_CODE_API_KEY_HELPER_TTL_MS: "1",
+      CLAUDE_CODE_MAX_OUTPUT_TOKENS: "64000",
+    });
+    expect((await settingsOf("claude-haiku-4-5")).env).toEqual({
+      ...slots("claude-haiku-4-5"),
+      CLAUDE_CODE_API_KEY_HELPER_TTL_MS: "1",
+      CLAUDE_CODE_MAX_OUTPUT_TOKENS: "64000",
+    });
+  });
+
+  test("OpenCode asks every Anthropic model for no more output than the gateway takes", () => {
+    // OpenCode's catalog gives Opus 5, Sonnet 5 and Fable 5 128,000 output; the gateway refused (output_limit_exceeded).
+    const gateway = { baseURL: "https://gw/anthropic", apiKey: "cap" };
+    const retained = { models: { other: { name: "kept" } }, options: { timeout: 5 } };
+    const merged = mergeOpenCodeProviderConfig("anthropic", retained, gateway);
+    expect(merged.options).toEqual({ timeout: 5, ...gateway });
+    const models = merged.models as Record<string, unknown>;
+    expect(models.other).toEqual({ name: "kept" });
+    expect(models["claude-opus-5"]).toEqual({ limit: { context: 1_000_000, output: 64_000 } });
+    expect(models["claude-haiku-4-5"]).toEqual({ limit: { context: 200_000, output: 64_000 } });
+    for (const id of OPENCODE_ALLOWED_MODELS.anthropic) {
+      const { limit } = models[id] as { limit: { output: number } };
+      expect(limit.output).toBeLessThanOrEqual(65_536);
+    }
   });
 
   test("leaves 200K model ids unchanged", () => {
@@ -818,8 +876,8 @@ describe("sandbox provider gateway config", () => {
     let shellChecks = 0;
     const sandbox = {
       labels: {
-        "skynet-run": "run-a",
-        "skynet-provider-generation": "provider-gateway-v16-gateway-only-secrets",
+        [LEGACY_SANDBOX_RUN_LABEL]: "run-a",
+        [LEGACY_SANDBOX_GENERATION_LABEL]: "provider-gateway-v16-gateway-only-secrets",
       },
       process: {
         executeCommand: async () => {
@@ -844,7 +902,7 @@ describe("sandbox provider gateway config", () => {
 
     (sandbox as unknown as { labels: Record<string, string> }).labels = {
       [CANONICAL_SANDBOX_GENERATION_LABEL]: currentLabels[CANONICAL_SANDBOX_GENERATION_LABEL]!,
-      "skynet-provider-generation": "conflicting-generation",
+      [LEGACY_SANDBOX_GENERATION_LABEL]: "conflicting-generation",
     };
     expect(await providerGatewaySandboxIsCurrent(sandbox)).toBe(false);
     expect(shellChecks).toBe(2);

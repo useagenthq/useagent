@@ -1,0 +1,93 @@
+---
+title: Weekly operations report from a spreadsheet
+description: Hand OpenCode a raw CSV of daily cafe takings and get back one self-contained HTML page with headline totals, an inline SVG bar chart and a ranked category table.
+sidebar:
+  order: 1
+---
+
+A single-file report is the quickest way to check that an agent finished the job
+rather than describing it. This recipe gives the agent a spreadsheet it has to
+invent, a page it has to build, and a browser it has to open, so the result is
+something you can look at instead of take on trust.
+
+## The ask
+
+```
+Turn a raw spreadsheet into a weekly operations report for a small cafe.
+
+Create cafe_ops.csv in the workspace with 12 weeks of daily rows: date, category
+(Espresso, Pastry, Merch, Rent, Staff), and amount. Make the numbers realistic —
+steady weekdays, a weekend bump, one bad week, and a slow upward trend.
+
+Then build report.html, a single self-contained file (inline CSS, no CDN, no
+build step) that reads the CSV and renders:
+- a headline with total revenue and total cost for the 12 weeks
+- a bar chart of revenue by week, drawn with inline SVG (no chart library)
+- a table of the top 5 cost categories
+- a one-line callout naming the worst week and the best week
+
+Open report.html in the browser so I can see the rendered page.
+```
+
+## Engine and model
+
+OpenCode with GLM 5.3, on GLM credits from us on the hosted app. The run took 8 minutes 28 seconds and reported 12 commands, 4 files
+read, 2 files edited and 8 tool calls, with one failure the agent found and fixed
+before it finished.
+
+## What it made
+
+- **`cafe_ops.csv`**, 339 rows across 84 days, Mon Jul 20 to Sun Oct 11, 2026.
+  Daily rows for Espresso, Pastry and Merch as revenue and Staff as cost, with
+  Rent on the first of each month. Steady weekdays, a Saturday and Sunday bump of
+  55 to 70 percent, one bad week (Aug 24 to 30, revenue down 38 percent), and a
+  slow climb from $9.6k to $11.0k of revenue a week.
+- **`report.html`**, 21 KB, one self-contained file with inline CSS, inline SVG,
+  no CDN and no build step. It fetches `cafe_ops.csv` when the page is served
+  over HTTP and falls back to an embedded snapshot when it is opened straight
+  from disk, so it renders either way.
+
+<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "12px", margin: "16px 0 8px" }}>
+  <img
+    src="/recipes/cafe-report.png"
+    alt="The rendered report: headline cards reading $119,850 total revenue, $53,065 total cost and $66,785 net, a callout naming the worst and best week, a 12-bar inline SVG chart of revenue by week, and a table ranking all five ledger lines."
+    style={{ display: "block", width: "100%", height: "auto" }}
+    width="1265"
+    height="1331"
+  />
+</div>
+
+*The rendered page: $119,850 revenue, $53,065 cost, $66,785 net, a 12-bar inline SVG chart, and every ledger line ranked.*
+
+<div style={{ background: "#0e0e0e", border: "1px solid #ebebeb", borderRadius: "12px", padding: "12px", margin: "16px 0 8px" }}>
+  <img
+    src="/recipes/cafe-report-thread.png"
+    alt="The session view for the run, showing the agent's summary of the CSV and the report, the port proxy link to the rendered page, and report.html and cafe_ops.csv listed as durable session files."
+    style={{ display: "block", width: "100%", height: "auto" }}
+    width="1018"
+    height="577"
+  />
+</div>
+
+*The thread that produced it, with both files listed as durable session outputs.*
+
+## The thread
+
+https://app.useagent.org/session/e3840f0c-d2f5-4102-b1db-97cae6b928da
+
+## Tips
+
+- **Ask for the page to be opened.** "Open report.html in the browser so I can
+  see the rendered page" turns a file into evidence. The agent renders its own
+  work and reports what the page actually shows, instead of handing over a file
+  it never loaded.
+- **Name the awkward case in advance.** Reading a CSV with `fetch` fails on
+  `file://` URLs. Saying up front that the page has to work either way got both
+  paths handled in one pass rather than in a follow-up round.
+- **Say what the chart must not use.** "No chart library, no CDN" is what kept
+  the page to one file and 21 KB, and a page that small is one a reviewer can
+  actually read.
+- **Read the notes, not just the page.** The agent flagged that the CSV held only
+  two real cost categories, so a literal top 5 cost table would have had two
+  rows. Ranking all five ledger lines kept the table useful. A tighter prompt
+  would have hidden that choice instead of surfacing it.

@@ -13,6 +13,7 @@
 // messages by their min seq (the stable step-start anchor) and, within a message,
 // put the narration text before its tools in call order (ApiStep.idx).
 
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import { nativeOf } from "./native-ids";
 import type { NativeSnapshot } from "./native-store";
 import {
@@ -607,7 +608,7 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
   // enrich the creation row instead of rendering a provider-specific duplicate.
   const artifactReceipts: TimelineArtifactReceipt[] = [];
   for (const f of nativeFrames) {
-    if (f.provider !== "skynet") continue;
+    if (f.provider !== PLATFORM_EVENT_LANES.platform) continue;
     const parsed = parseArtifact(f.eventType, f.payload);
     if (!parsed) continue;
     artifactReceipts.push({
@@ -630,7 +631,7 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
   // Follow-up suggestions (emitted post-settle) CLOSE the turn: after the
   // answer and after any artifact receipts (k1 above the artifact band).
   for (const f of nativeFrames) {
-    if (f.provider !== "skynet") continue;
+    if (f.provider !== PLATFORM_EVENT_LANES.platform) continue;
     const suggestions = parseFollowups(f.eventType, f.payload);
     if (!suggestions) continue;
     ranked.push({
@@ -649,10 +650,10 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
   // other frame. An unknown useAgent eventType parses to null → rendered as nothing.
   for (const f of nativeFrames) {
     if (
-      f.provider !== "skynet" &&
-      f.provider !== "skynet-knowledge" &&
-      f.provider !== "skynet-memory" &&
-      f.provider !== "skynet-gateway" &&
+      f.provider !== PLATFORM_EVENT_LANES.platform &&
+      f.provider !== PLATFORM_EVENT_LANES.knowledge &&
+      f.provider !== PLATFORM_EVENT_LANES.memory &&
+      f.provider !== PLATFORM_EVENT_LANES.gateway &&
       f.provider !== "useagent"
     )
       continue;

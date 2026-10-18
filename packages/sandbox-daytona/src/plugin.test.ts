@@ -6,7 +6,7 @@ describe("Daytona plugin", () => {
   test("template reads the lane's env var and falls back to the plugin's own pin", () => {
     expect(daytonaPlugin.template({ DAYTONA_SNAPSHOT: " custom-v1 " })).toBe("custom-v1");
     expect(daytonaPlugin.template({ DAYTONA_SNAPSHOT: "  " })).toBe(DAYTONA_SNAPSHOT_DEFAULTS.DAYTONA_SNAPSHOT ?? "");
-    expect(daytonaPlugin.template({})).toBe("skynet-agent-v17");
+    expect(daytonaPlugin.template({})).toBe(DAYTONA_SNAPSHOT_DEFAULTS.DAYTONA_SNAPSHOT ?? "");
     expect(daytonaPlugin.template({ DAYTONA_OTHER_SNAPSHOT: "other-custom" }, "DAYTONA_OTHER_SNAPSHOT")).toBe("other-custom");
     expect(() => daytonaPlugin.template({}, "DAYTONA_OTHER_SNAPSHOT")).toThrow(/no default snapshot for DAYTONA_OTHER_SNAPSHOT/);
     // The default image is far below the product target, so a fallback there is refused unless the target says so.

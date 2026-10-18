@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 import type { SandboxExecuteResult, SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
 import { prefetchSandboxResult, takePrefetchedSandboxResult } from "../sandboxes/command-prefetch";
 import { sandboxPlugin } from "../sandboxes/plugins";
@@ -54,7 +55,7 @@ import {
 } from "./codex-thread-sessions";
 
 const CODEX_EXEC_SERVER_PORT = 37_734;
-const CODEX_EXEC_SERVER_SESSION = "skynet-codex-exec-server";
+const CODEX_EXEC_SERVER_SESSION = `${SANDBOX_NAME_PREFIX}-codex-exec-server`;
 const RUNTIME_SETTINGS_PATH = `${RUNTIME_ENVIRONMENT_HOME}/userdata/settings.json`;
 /** Display name carried only by the subscription (relay-backed) codex instance.
  * T3's legacy `providers.codex` synthesis uses the driver default ("Codex"), so
@@ -582,7 +583,7 @@ function codexExecutionEnvironmentId(sandboxId: string): string {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 56);
-  return `skynet-${suffix || "run"}`;
+  return `${SANDBOX_NAME_PREFIX}-${suffix || "run"}`;
 }
 
 function assertSafeEnvironmentId(value: string): void {

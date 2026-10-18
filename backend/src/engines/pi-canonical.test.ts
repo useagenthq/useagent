@@ -7,6 +7,7 @@ import {
 import { createPiRpcFrameMapper, piRpcFrameBodies } from "./pi-canonical";
 import { piBridgeProviderEvent } from "./pi-provider-events";
 import { translateOpenCode, type OpenCodeFrame } from "@useagent/agent-harness/opencode";
+import { LEGACY_TOOL_SERVER_IDS } from "@useagent/agent-harness/canonical";
 
 function providerFrame(
   event: ReturnType<typeof piBridgeProviderEvent>,
@@ -66,18 +67,18 @@ describe("Pi RPC canonical bridge mapping", () => {
     expect(piRpcFrameBodies({
       type: "tool_execution_start",
       toolCallId: "call-1",
-      toolName: "mcp__skynet-knowledge__skills_list",
+      toolName: `mcp__${LEGACY_TOOL_SERVER_IDS.gateway}__skills_list`,
       args: { query: "release" },
     })).toEqual([{
       kind: "tool.started",
       toolCallId: "call-1",
-      name: "mcp__skynet-knowledge__skills_list",
+      name: `mcp__${LEGACY_TOOL_SERVER_IDS.gateway}__skills_list`,
       input: { query: "release" },
     }]);
     expect(piRpcFrameBodies({
       type: "tool_execution_end",
       toolCallId: "call-1",
-      toolName: "mcp__skynet-knowledge__skills_list",
+      toolName: `mcp__${LEGACY_TOOL_SERVER_IDS.gateway}__skills_list`,
       result: { content: [{ type: "text", text: "ok" }] },
     })[0]).toMatchObject({ kind: "tool.completed", toolCallId: "call-1", status: "ok" });
   });

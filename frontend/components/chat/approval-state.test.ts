@@ -10,7 +10,7 @@ function frame(seq: number, eventType: string, payload: unknown): NativeFrame {
     provider: "t3",
     eventType,
     native: {
-      sessionId: "skynet-thread-1",
+      sessionId: "runtime-thread-1",
       parentSessionId: null,
       messageId: null,
       partId: null,
@@ -23,7 +23,7 @@ function frame(seq: number, eventType: string, payload: unknown): NativeFrame {
 describe("native approval state", () => {
   const requested = frame(1, "approval.requested", {
     id: "approval-1",
-    sessionID: "skynet-thread-1",
+    sessionID: "runtime-thread-1",
     requestKind: "command",
     detail: "git status",
   });
@@ -48,7 +48,7 @@ describe("native approval state", () => {
     expect(selectPendingApproval([
       frame(3, "approval.requested", {
         id: "approval-3",
-        sessionID: "skynet-thread-1",
+        sessionID: "runtime-thread-1",
         requestType: "unknown",
         detail: "*",
       }),

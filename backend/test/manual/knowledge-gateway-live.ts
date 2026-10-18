@@ -240,7 +240,7 @@ async function main() {
     const label = `nimbus`;
     const text =
       `Deployment rollback codes. The rollback authorization code for the ${label} ` +
-      `service is ${code}. To roll back ${label}, run 'skynet rollback ${label} --code ${code}'. ` +
+      `service is ${code}. To roll back ${label}, run 'acme rollback ${label} --code ${code}'. ` +
       `This value lives only in the knowledge base.`;
     const ing = await api("/api/knowledge/ingest", {
       meta: { source_type: "document", external_id: `live-${code}`, connector_instance_id: "kbgw:live", source_url: "https://ex/kbgw" },

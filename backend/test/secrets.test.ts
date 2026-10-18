@@ -13,6 +13,7 @@ import {
   SECRET_SOURCE_COMMAND,
 } from "../src/secrets/inject";
 import { createOrgSession, json, uid, type OrgSession } from "./helpers";
+import { SANDBOX_NAME_PREFIX } from "../src/sandboxes/sandbox-names";
 
 // Org Secrets API + injection (task #100). Values are write-only at the boundary:
 // GET returns names + timestamps ONLY. Two-org isolation: A's secrets are
@@ -339,7 +340,7 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
     });
 
     expect(SECRET_FILE_DIR).not.toMatch(/^\/(?:root|home)\//);
-    expect(SECRET_DOTENV_PATH).toBe(`${SECRET_FILE_DIR}/skynet-env.sh`);
+    expect(SECRET_DOTENV_PATH).toBe(`${SECRET_FILE_DIR}/${SANDBOX_NAME_PREFIX}-env.sh`);
     expect(SECRET_SOURCE_COMMAND).toBe(`. "${SECRET_DOTENV_PATH}"`);
     expect(injection.createEnv).toEqual({ BASH_ENV: SECRET_DOTENV_PATH });
     expect(JSON.stringify(injection)).not.toContain("/root/.secrets");
@@ -352,7 +353,7 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
   test("legacy GCP service-account file receives canonical credential and project aliases", () => {
     const value = JSON.stringify({
       type: "service_account",
-      project_id: "skynet-production",
+      project_id: "useagent-production",
       private_key: "redacted",
     });
     const injection = buildInjection({
@@ -365,9 +366,9 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
 
     expect(dotenv).toContain(`export GCP_SERVICE_ACCOUNT_KEY="${path}"`);
     expect(dotenv).toContain(`export GOOGLE_APPLICATION_CREDENTIALS="${path}"`);
-    expect(dotenv).toContain("export GOOGLE_CLOUD_PROJECT='skynet-production'");
-    expect(dotenv).toContain("export GCLOUD_PROJECT='skynet-production'");
-    expect(dotenv).toContain("export CLOUDSDK_CORE_PROJECT='skynet-production'");
+    expect(dotenv).toContain("export GOOGLE_CLOUD_PROJECT='useagent-production'");
+    expect(dotenv).toContain("export GCLOUD_PROJECT='useagent-production'");
+    expect(dotenv).toContain("export CLOUDSDK_CORE_PROJECT='useagent-production'");
     expect(injection.files).toContainEqual({ path, content: value });
     expect(injection.names).toEqual(["GCP_SERVICE_ACCOUNT_KEY"]);
   });
@@ -517,7 +518,7 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
     // The hooks run BEFORE the unchanged early-exit so warm sandboxes get them,
     // and the hook line carries no secret material.
     expect(cmd).toContain('"$HOME/.bashrc" "$HOME/.profile" "$HOME/.zshenv"');
-    expect(cmd).toContain("grep -qsF 'skynet-env.sh'");
+    expect(cmd).toContain(`grep -qsF '${SANDBOX_NAME_PREFIX}-env.sh'`);
     expect(cmd.indexOf("grep -qsF")).toBeLessThan(cmd.indexOf("printf unchanged; exit 0"));
   });
 

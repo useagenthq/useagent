@@ -2,7 +2,7 @@
  * Citation/link post-processing for LLM-generated wiki markdown.
  *
  * Ported to TypeScript from deepwiki-open (AsyncFuncAI/deepwiki-open, MIT
- * License, (c) 2024 Sheing Ng) — api/services/wiki/content.py. Turns the various
+ * License, Copyright (c) 2024 Sheing Ng) — api/services/wiki/content.py. Turns the various
  * empty-parenthesis citation forms the model emits (`Sources: [path:lines]()`)
  * into real repository blob links, and normalizes the "Relevant source files"
  * <details> block. Pure functions.

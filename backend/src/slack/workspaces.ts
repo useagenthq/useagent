@@ -12,6 +12,7 @@
  */
 import { and, eq } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
+import { dbErrorDetail, sqlStateOf } from "../db/pg-errors";
 import { member, slackUsers, slackWorkspaces } from "../db/schema";
 
 export interface SlackWorkspaceIdentity {
@@ -165,7 +166,7 @@ export async function syncSlackWorkspaceBindings(): Promise<void> {
         );
         continue;
       }
-      await upsertSlackWorkspace({ teamId, orgId, userId });
+      await skipStaleBinding(trimmed, () => upsertSlackWorkspace({ teamId, orgId, userId }));
     }
   }
 
@@ -183,6 +184,19 @@ export async function syncSlackWorkspaceBindings(): Promise<void> {
       );
       continue;
     }
-    await upsertSlackUser({ teamId, slackUserId, orgId, userId });
+    await skipStaleBinding(trimmed, () => upsertSlackUser({ teamId, slackUserId, orgId, userId }));
+  }
+}
+
+/** A binding the database refuses (its workspace was disconnected in
+ *  Settings, or its org or user is gone) is skipped loudly. It runs at boot,
+ *  so a throw here kept every backend down. */
+async function skipStaleBinding(entry: string, write: () => Promise<void>): Promise<void> {
+  try {
+    await write();
+  } catch (error) {
+    // Only integrity refusals (SQLSTATE class 23); a database that is down still fails boot.
+    if (!sqlStateOf(error)?.startsWith("23")) throw error;
+    console.error(`[slack] skipping env binding "${entry}": ${dbErrorDetail(error)}`);
   }
 }

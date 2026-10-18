@@ -24,7 +24,7 @@ const realFetch = globalThis.fetch;
 function personalIdentity(user: string): MemoryIdentity {
   return {
     teamId: "org-1",
-    agentId: "skynet-backend",
+    agentId: "useagent-backend",
     userId: user,
     actorUserId: user,
     sessionId: "thread-1",
@@ -82,7 +82,7 @@ describe("capture-outbox retry preserves the destination scope (spec test 10)", 
     const runId = uid("cap-org");
     const orgIdentity: MemoryIdentity = {
       teamId: "org-1",
-      agentId: "skynet-backend",
+      agentId: "useagent-backend",
       userId: "org:org-1",
       actorUserId: "alice",
       sessionId: "t",
@@ -104,7 +104,7 @@ describe("capture-outbox retry preserves the destination scope (spec test 10)", 
     // A duplicate finalization with a DIFFERENT destination must be ignored.
     await enqueueCapture(
       runId,
-      { teamId: "org-1", agentId: "skynet-backend", userId: "org:org-1", actorUserId: "m", sessionId: "t", runId },
+      { teamId: "org-1", agentId: "useagent-backend", userId: "org:org-1", actorUserId: "m", sessionId: "t", runId },
       { prompt: "p2", summary: "s2" },
       "org",
     );
@@ -173,7 +173,7 @@ describe("capture-outbox pure policy", () => {
 describe("buildCapturePayload — field-level cap (audit finding 1)", () => {
   const identity = {
     teamId: "org-x",
-    agentId: "skynet-backend",
+    agentId: "useagent-backend",
     userId: "org:org-x",
     sessionId: "s1",
     actorUserId: "u1",

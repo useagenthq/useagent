@@ -13,6 +13,7 @@ import { type OpenWorkpiece, useOpenWorkpiece } from "@/components/chat/workspac
 import { backendFetch } from "@/lib/backend-fetch";
 import { getFaviconUrl } from "@/lib/favicon";
 import { cx } from "@/utils/cx";
+import { MermaidDiagram } from "./mermaid-diagram";
 
 /** The site favicon ahead of an external link, so a source reads at a glance;
  *  nothing when the site has none (the link text stands alone). */
@@ -218,16 +219,17 @@ const INITIAL_COMPONENTS: Partial<Components> = {
     }
 
     const language = extractLanguage(className);
+    const source = String(children ?? "").replace(/\n$/, "");
+
+    // A mermaid block renders as a diagram (the component falls back to the
+    // plain code block while it loads and when the source does not parse).
+    if (language === "mermaid") {
+      return <MermaidDiagram className="my-3" code={source} />;
+    }
 
     // `my-3` gives fenced blocks the same vertical breathing room as paragraphs
     // (the CodeBlock card carries no margin of its own).
-    return (
-      <CodeBlock
-        className="my-3"
-        code={String(children ?? "").replace(/\n$/, "")}
-        language={language}
-      />
-    );
+    return <CodeBlock className="my-3" code={source} language={language} />;
   },
   pre: function PreComponent({ children }) {
     return <>{children}</>;

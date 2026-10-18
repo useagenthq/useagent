@@ -9,6 +9,7 @@
  * and render nothing.
  */
 
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import { recordProviderEvent } from "./provider-events";
 import { resolveProviderCredentialForRun } from "../provider-gateway/credentials";
 import { markGatewayProviderApiKeyRejected } from "../provider-gateway/api-key-credentials";
@@ -166,7 +167,7 @@ export async function recordRunFollowups(run: {
       id: `folup_${run.id}`,
       runId: run.id,
       threadId: run.threadId,
-      provider: "skynet",
+      provider: PLATFORM_EVENT_LANES.platform,
       eventType: FOLLOWUPS_EVENT_TYPE,
       payload: { suggestions },
     });

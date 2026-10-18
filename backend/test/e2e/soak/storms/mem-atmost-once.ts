@@ -26,7 +26,7 @@ const rec = new Recorder("mem-atmost-once");
 const rand = rng(SEED);
 
 const stack = new Stack({
-  db: `skynet_soak_memcrash_${PORT}`,
+  db: `useagent_soak_memcrash_${PORT}`,
   port: PORT,
   memPort: MEM_PORT,
   stepDelayMs: 3,

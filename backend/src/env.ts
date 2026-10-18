@@ -5,6 +5,7 @@
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import { ENGINE_IDS, type EngineId } from "./db/schema";
+import { DEV_ORG_ID } from "./dev-org";
 import {
   authSecretMaterial,
   runtimeDevModeEnabled,
@@ -444,7 +445,7 @@ export function githubTenantOrgId(): string | null {
   return (
     process.env.GITHUB_TENANT_ORG_ID?.trim() ||
     primaryOrgId() ||
-    (allowDevOrg() ? "org-skynet-dev" : null)
+    (allowDevOrg() ? DEV_ORG_ID : null)
   );
 }
 

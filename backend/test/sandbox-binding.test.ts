@@ -1,3 +1,4 @@
+import { LEGACY_GATEWAY_DATABASE_ROLE } from "../src/db/gateway-grants";
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { SandboxProvider } from "@useagent/sandbox-contract";
@@ -413,7 +414,7 @@ describe("sandbox binding", () => {
 
     const roles = await db.execute(sql`
       select rolname from pg_roles
-      where rolname in ('useagent_gateway', 'skynet_gateway')
+      where rolname in ('useagent_gateway', ${LEGACY_GATEWAY_DATABASE_ROLE})
       order by (rolname = 'useagent_gateway') desc
       limit 1
     `);

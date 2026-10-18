@@ -34,6 +34,7 @@ import { waitFor } from "./helpers"; // side-effect: imports src/index → migra
 import { enqueueReconcile } from "../src/runs/reconcile-queue";
 import { createSecretRedactor } from "../src/secrets/redact";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
+import { SANDBOX_NAME_PREFIX } from "../src/sandboxes/sandbox-names";
 
 test("reconciliation cannot append narration after settlement even while its lease is held", async () => {
   const runId = crypto.randomUUID();
@@ -89,7 +90,7 @@ test("concurrent settlement and recovery capture use run-before-claim lock order
 // worker never started, re-dispatch the queued next turn IN ORDER, and fail
 // legacy runs with no command.
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 const priorEnabledEngines = process.env.ENABLED_ENGINES;
 const priorPiReadiness = process.env.ENGINE_READINESS_PI;
 process.env.ENABLED_ENGINES = `${process.env.ENABLED_ENGINES ?? ""},pi`;
@@ -548,7 +549,7 @@ describe("command-lane restart recovery", () => {
       engine: "codex",
       runStatus: "running",
       commandState: "dispatched",
-      session: "skynet-thread-looks-runtime",
+      session: `${SANDBOX_NAME_PREFIX}-thread-looks-runtime`,
       sandbox: undefined,
     });
     await setRunSandbox(runId, "sb");

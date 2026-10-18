@@ -1,3 +1,4 @@
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_HOME } from "../sandboxes/sandbox-names";
 import type { EngineId } from "../db/schema";
 import type { EngineRunContext } from "../engines/types";
 import type { SandboxHandle } from "../sandboxes/provider";
@@ -44,6 +45,22 @@ export interface OpenCodeProviderOptions {
   readonly apiKey: string;
 }
 
+// The context of each Anthropic model OpenCode may run (models.dev, Oct 2026).
+// Its catalog gives every one but Claude Haiku 4.5 128,000 output tokens, past
+// the gateway's per-request ceiling (limits.ts), which refuses such a call
+// (output_limit_exceeded) before it is sent: OpenCode asks for all of it.
+const OPENCODE_ANTHROPIC_CONTEXT: Readonly<Record<string, number>> = {
+  "claude-opus-5": 1_000_000,
+  "claude-sonnet-5": 1_000_000,
+  "claude-fable-5": 1_000_000,
+  "claude-haiku-4-5": 200_000,
+};
+
+/** The most output an engine asks an Anthropic model for (OpenCode's model
+ *  limit, Claude Code's CLAUDE_CODE_MAX_OUTPUT_TOKENS): under the gateway's
+ *  default ceiling (limits.ts; its test holds the two apart). */
+export const ANTHROPIC_ENGINE_OUTPUT_TOKENS = 64_000;
+
 export function mergeOpenCodeProviderConfig(
   provider: string,
   current: unknown,
@@ -55,6 +72,21 @@ export function mergeOpenCodeProviderConfig(
   const existingOptions = existing.options && typeof existing.options === "object"
     ? existing.options as Record<string, unknown>
     : {};
+  if (provider === "anthropic") {
+    const existingModels = existing.models && typeof existing.models === "object"
+      ? existing.models as Record<string, unknown>
+      : {};
+    return {
+      ...existing,
+      // OpenCode takes a model's limit whole (context and output), on top of its catalog entry.
+      models: {
+        ...existingModels,
+        ...Object.fromEntries(Object.entries(OPENCODE_ANTHROPIC_CONTEXT).map(([id, context]) =>
+          [id, { limit: { context, output: ANTHROPIC_ENGINE_OUTPUT_TOKENS } }])),
+      },
+      options: { ...existingOptions, ...options },
+    };
+  }
   if (provider !== "cerebras") {
     return { ...existing, options: { ...existingOptions, ...options } };
   }
@@ -89,13 +121,16 @@ export function mergeOpenCodeProviderConfig(
 export const SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-gateway-only-secrets";
 const COMPATIBILITY_SANDBOX_GENERATION = "provider-gateway-v17-useagent-mcp-compatibility-secrets";
 export const SANDBOX_GENERATION_LABEL = CANONICAL_SANDBOX_GENERATION_LABEL;
-const LEGACY_SANDBOX_MARKER = "$HOME/.skynet/provider-gateway-generation";
+const LEGACY_SANDBOX_MARKER = `${SANDBOX_STATE_HOME}/provider-gateway-generation`;
 const CANONICAL_SANDBOX_MARKER = "$HOME/.useagent/provider-gateway-generation";
 const SANDBOX_MARKER = CANONICAL_SANDBOX_MARKER;
-const LEGACY_OPENAI_TOKEN_FILE = "$HOME/.skynet/provider-openai.token";
+const LEGACY_OPENAI_TOKEN_FILE = `${SANDBOX_STATE_HOME}/provider-openai.token`;
 const CANONICAL_OPENAI_TOKEN_FILE = "$HOME/.useagent/provider-openai.token";
 const OPENAI_TOKEN_FILE = CANONICAL_OPENAI_TOKEN_FILE;
-export const CLAUDE_CONFIG_DIR = "/tmp/skynet-claude-config";
+/** Claude Code keeps its sessions here; retained sandboxes resume from it. */
+export const CLAUDE_CONFIG_DIR = `/tmp/${SANDBOX_NAME_PREFIX}-claude-config`;
+/** Codex records the provider id on every session it starts; retained sessions resume under it. */
+const CODEX_MODEL_PROVIDER_ID = SANDBOX_NAME_PREFIX;
 export const CLAUDE_CAPABILITY_DIR = "/tmp/useagent-claude-capability";
 export const CLAUDE_CAPABILITY_GID = 1000;
 export const CLAUDE_ACP_SETTINGS_FILE = `${CLAUDE_CAPABILITY_DIR}/settings.json`;
@@ -283,6 +318,20 @@ export function providerGatewayEnv(
 export function claudeProviderGatewayEnvironment(model?: string): Record<string, string> {
   const baseUrl = providerGatewayEndpoint("anthropic", false);
   if (!baseUrl) return {};
+  return {
+    ANTHROPIC_BASE_URL: baseUrl,
+    // The snapshot's user-level Claude plugins/skills are neither tenant-owned
+    // nor bounded. A dedicated config root keeps the managed process deterministic;
+    // project CLAUDE.md instructions and selected useAgent instructions still load.
+    CLAUDE_CONFIG_DIR,
+    ...claudeModelSlots(model),
+    CLAUDE_CODE_API_KEY_HELPER_TTL_MS: "1",
+  };
+}
+
+/** Every Claude Code model slot names the run's model, so its Haiku helper and
+ *  subagent calls ask the gateway for that model too: it refuses any other. */
+function claudeModelSlots(model?: string): Record<string, string> {
   const selectedModel = model?.trim() || "claude-opus-5";
   // Claude Code's documented `[1m]` selector is local model metadata only; it
   // strips the suffix before calling the Anthropic-compatible gateway. Keep the
@@ -292,17 +341,11 @@ export function claudeProviderGatewayEnvironment(model?: string): Record<string,
     ? `${selectedModel}[1m]`
     : selectedModel;
   return {
-    ANTHROPIC_BASE_URL: baseUrl,
-    // The snapshot's user-level Claude plugins/skills are neither tenant-owned
-    // nor bounded. A dedicated config root keeps the managed process deterministic;
-    // project CLAUDE.md instructions and selected useAgent instructions still load.
-    CLAUDE_CONFIG_DIR,
     ANTHROPIC_MODEL: runtimeModel,
     ANTHROPIC_DEFAULT_OPUS_MODEL: runtimeModel,
     ANTHROPIC_DEFAULT_SONNET_MODEL: runtimeModel,
     ANTHROPIC_DEFAULT_HAIKU_MODEL: runtimeModel,
     CLAUDE_CODE_SUBAGENT_MODEL: runtimeModel,
-    CLAUDE_CODE_API_KEY_HELPER_TTL_MS: "1",
   };
 }
 
@@ -372,7 +415,7 @@ export function codexProviderConfigToml(
   if (!baseUrl) return null;
   return [
     `model = ${JSON.stringify(model)}`,
-    'model_provider = "skynet"',
+    `model_provider = "${CODEX_MODEL_PROVIDER_ID}"`,
     // Codex normally adds a Linux bubblewrap sandbox around every command. The
     // agent already runs inside its tenant-scoped Daytona sandbox, where nested
     // namespace/loopback setup is not permitted and fails intermittently. Disable
@@ -381,13 +424,13 @@ export function codexProviderConfigToml(
     'sandbox_mode = "danger-full-access"',
     'approval_policy = "never"',
     "",
-    "[model_providers.skynet]",
+    `[model_providers.${CODEX_MODEL_PROVIDER_ID}]`,
     'name = "UseAgent provider gateway"',
     `base_url = ${JSON.stringify(baseUrl)}`,
     'wire_api = "responses"',
     "requires_openai_auth = false",
     "",
-    "[model_providers.skynet.auth]",
+    `[model_providers.${CODEX_MODEL_PROVIDER_ID}.auth]`,
     'command = "sh"',
     `args = ["-c", ${JSON.stringify(readPresentCanonicalOrLegacyFile(
       CANONICAL_OPENAI_TOKEN_FILE,
@@ -441,7 +484,7 @@ export async function writePrivateFiles(
     if (alias) {
       const leaf = path.slice(path.lastIndexOf("/") + 1);
       const canonicalTemporary = `$HOME/.useagent/.${leaf}-${crypto.randomUUID()}.tmp`;
-      const legacyTemporary = `$HOME/.skynet/.${leaf}-${crypto.randomUUID()}.tmp`;
+      const legacyTemporary = `${SANDBOX_STATE_HOME}/.${leaf}-${crypto.randomUUID()}.tmp`;
       temporaryPaths.push(canonicalTemporary, legacyTemporary);
       return [
         `(umask 077; printf %s '${encoded}' | base64 -d > ${canonicalTemporary})`,
@@ -457,8 +500,8 @@ export async function writePrivateFiles(
   const result = await sandbox.process.executeCommand(
     [
       `trap 'rm -f -- ${temporaryPaths.join(" ")} 2>/dev/null || true' EXIT`,
-      "if [ -L $HOME/.skynet ] || [ -L $HOME/.useagent ]; then exit 1; fi",
-      "if [ -e $HOME/.skynet ]; then test -d $HOME/.skynet; else mkdir -m 700 $HOME/.skynet; fi",
+      `if [ -L ${SANDBOX_STATE_HOME} ] || [ -L $HOME/.useagent ]; then exit 1; fi`,
+      `if [ -e ${SANDBOX_STATE_HOME} ]; then test -d ${SANDBOX_STATE_HOME}; else mkdir -m 700 ${SANDBOX_STATE_HOME}; fi`,
       "if [ -e $HOME/.useagent ]; then test -d $HOME/.useagent; else mkdir -m 700 $HOME/.useagent; fi",
       "mkdir -p $HOME/.claude $HOME/.codex",
       ...leafChecks,
@@ -536,6 +579,22 @@ export async function writeUserClaudeCapabilityFiles(
   }
 }
 
+/** The `--settings` file the Claude wrapper passes, rewritten every turn: the
+ *  wrapper exports only the gateway URL and config dir, so per-run process
+ *  settings, the run's model slots among them, ride here. Claude Code's own
+ *  output default for the 1M-context models (128K) is past the gateway's
+ *  ceiling, which refused every call. */
+function claudeManagedSettings(model: string | undefined): Record<string, unknown> {
+  return {
+    apiKeyHelper: `cat \"${ANTHROPIC_TOKEN_FILE}\"`,
+    env: {
+      ...claudeModelSlots(model),
+      CLAUDE_CODE_API_KEY_HELPER_TTL_MS: "1",
+      CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(ANTHROPIC_ENGINE_OUTPUT_TOKENS),
+    },
+  };
+}
+
 /** Rewrite the exact current run capability without restarting the resident agent. */
 export async function prepareProviderGatewaySandbox(
   sandbox: SandboxHandle,
@@ -548,7 +607,7 @@ export async function prepareProviderGatewaySandbox(
   if (engine === "claude") {
     const token = mintResidentThreadToken(ctx, "claude", "anthropic");
     if (!token) throw new Error("provider gateway could not mint Claude capability");
-    const managedSettings = { apiKeyHelper: `cat \"${ANTHROPIC_TOKEN_FILE}\"` };
+    const managedSettings = claudeManagedSettings(ctx.model);
     const toolDescriptor = toolGatewayDescriptor(ctx, "claude");
     const files = [
       { path: ANTHROPIC_TOKEN_FILE, content: token },

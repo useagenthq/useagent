@@ -13,7 +13,7 @@ const UNIQUE_VIOLATION = "23505";
 /** SQLSTATE 55P03 — a lock was not acquired within lock_timeout. */
 const LOCK_NOT_AVAILABLE = "55P03";
 
-function sqlStateOf(err: unknown): string | undefined {
+export function sqlStateOf(err: unknown): string | undefined {
   // Walk the cause chain: drizzle wraps the driver error (DrizzleQueryError,
   // code=undefined — the SQLSTATE lives on err.cause), so inspecting only the
   // top level made every caller blind under drizzle (soak DEFECT-1: concurrent
@@ -27,6 +27,23 @@ function sqlStateOf(err: unknown): string | undefined {
     cur = (cur as { cause?: unknown }).cause;
   }
   return undefined;
+}
+
+/** The driver's own error for a log line: drizzle's wrapper message is the
+ *  whole statement and its parameters, the SQLSTATE and reason sit on its cause. */
+export function dbErrorDetail(err: unknown): string {
+  let cur: unknown = err;
+  let innermost: unknown = err;
+  for (let depth = 0; typeof cur === "object" && cur !== null && depth < 5; depth++) {
+    const { code, message, constraint_name: constraint } = cur as { code?: unknown; message?: unknown; constraint_name?: unknown };
+    if (typeof code === "string") {
+      return [code, String(message ?? ""), typeof constraint === "string" ? `(${constraint})` : ""].filter(Boolean).join(" ");
+    }
+    innermost = cur;
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  const message = innermost instanceof Error ? innermost.message : String(innermost);
+  return message.startsWith("Failed query") ? "query failed without a driver error" : message;
 }
 
 /** True when `err` is a unique-constraint violation (e.g. a concurrent request

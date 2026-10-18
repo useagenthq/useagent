@@ -5,7 +5,10 @@
  * the dev org/user/member are present by the time any test executes. No demo
  * skills or knowledge are seeded — those surfaces start empty.
  */
+import { eq } from "drizzle-orm";
 import server from "../src/index";
+import { member, user } from "../src/db/auth-schema";
+import { db } from "../src/db/client";
 
 // better-auth resolves same-origin against this base; a trusted Origin header is
 // required on its mutating routes (CSRF guard), so default it on every call.
@@ -211,6 +214,23 @@ export async function createOrgSession(label = "org"): Promise<OrgSession> {
   jar.absorb(setActive);
 
   return { jar, cookies: jar.header(), orgId, email };
+}
+
+export async function userIdOf(session: OrgSession): Promise<string> {
+  const [row] = await db.select({ id: user.id }).from(user).where(eq(user.email, session.email));
+  if (!row) throw new Error(`no user for ${session.email}`);
+  return row.id;
+}
+
+/** A second person inside `org`: their own account, switched into that organisation. */
+export async function joinOrg(org: OrgSession, label: string): Promise<OrgSession> {
+  const other = await createOrgSession(label);
+  await db.insert(member).values({ id: uid("member"), organizationId: org.orgId, userId: await userIdOf(other), role: "member", createdAt: new Date() });
+  const setActive = await fetchApi("/api/auth/organization/set-active", { method: "POST", cookies: other.cookies, body: { organizationId: org.orgId } });
+  if (setActive.status !== 200) throw new Error(`set-active failed: ${setActive.status}`);
+  other.jar.absorb(setActive);
+  other.cookies = other.jar.header();
+  return other;
 }
 
 /** Poll `fn` until it returns truthy or the timeout elapses. The default sits

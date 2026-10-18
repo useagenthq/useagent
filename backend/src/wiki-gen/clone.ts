@@ -19,12 +19,12 @@ import type { GithubRepositoryAccess } from "../github/auth";
 
 const exec = promisify(execFile);
 const CLONE_TIMEOUT_MS = 120_000;
+/** Directories left by releases before the product rename are still cleaned. */
+export const LEGACY_REPOSITORY_SCRATCH_PREFIXES = ["skynet-wiki-", "skynet-read-"] as const;
 const REPOSITORY_SCRATCH_PREFIXES = [
   "useagent-wiki-",
   "useagent-read-",
-  // Clean directories left by releases before the product rename.
-  "skynet-wiki-",
-  "skynet-read-",
+  ...LEGACY_REPOSITORY_SCRATCH_PREFIXES,
 ] as const;
 
 export function repositoryScratchRoot(

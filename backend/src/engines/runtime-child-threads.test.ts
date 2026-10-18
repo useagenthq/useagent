@@ -15,8 +15,9 @@ import type { FollowRuntimeThreadInput } from "./runtime-event-stream";
 import { runtimeActivityProviderEvent, shouldProjectRuntimeActivity } from "./runtime-orchestration";
 import { runtimeChildThreadActivities, runtimeThreadView } from "./runtime-v2-view";
 import { v2Item, v2Message, v2Projection, v2Snapshot } from "./runtime-v2.test-support";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
-const PARENT = "skynet-thread-thread-1";
+const PARENT = `${SANDBOX_NAME_PREFIX}-thread-thread-1`;
 const CHILD = "child-thread-1";
 /** The subagent's record id: its child id from its first revision on. */
 const SUBAGENT = "sa-1";

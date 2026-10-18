@@ -13,6 +13,7 @@ import {
   setRunStatus,
 } from "../src/runs/repo";
 import { terminalOnReturn } from "../src/worker";
+import { DEV_ORG_ID } from "../src/dev-org";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
 
 // Durable cancellation (Fix: durable cancel). These exercise the command-layer
@@ -20,7 +21,7 @@ import "./helpers"; // side-effect: imports src/index → migrate + seed
 // running run is left for its actor to settle, the `run.cancel` command is
 // ALWAYS written terminal (so a SIGKILL can never strand it), and idempotency.
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 
 /** Enqueue a root run (run + run.create command, both queued). Root: runId === threadId. */
 async function enqueueRoot(): Promise<string> {

@@ -1,3 +1,4 @@
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import { createHash, randomUUID } from "node:crypto";
 import { decodeArtifact, type ArtifactDescriptor } from "@useagent/agent-client/artifacts";
 import { getArtifactForOrg, toArtifactDescriptor, type ArtifactRecord } from "../../artifacts/repo";
@@ -365,7 +366,7 @@ async function materializedArtifactSnapshot(input: {
     threadId: input.claims.threadId,
   });
   if (!event) return null;
-  if (event.provider !== "skynet" || event.eventType !== input.eventType) {
+  if (event.provider !== PLATFORM_EVENT_LANES.platform || event.eventType !== input.eventType) {
     throw new Error("materialized artifact history has the wrong provider or event type");
   }
   let payload: unknown;
@@ -426,7 +427,7 @@ async function finishMaterializedOperation(
       id: eventId,
       runId: claims.runId,
       threadId: claims.threadId,
-      provider: "skynet",
+      provider: PLATFORM_EVENT_LANES.platform,
       eventType,
       payload: toArtifactDescriptor(artifact),
     };

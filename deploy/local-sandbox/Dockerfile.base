@@ -127,8 +127,6 @@ RUN npm install --global \
       "opencode-ai@${OPENCODE_VERSION}" \
       "t3@${T3_CODE_VERSION}" \
     && npm cache clean --force \
-    && mkdir -p /usr/local/share/skynet-provider-bin \
-    && ln -s /usr/local/bin/claude /usr/local/share/skynet-provider-bin/claude \
     && command -v claude && command -v codex && command -v opencode && command -v t3 \
     && t3 --version && codex --version && opencode --version && claude --version
 

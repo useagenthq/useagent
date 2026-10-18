@@ -1,8 +1,11 @@
+import { SANDBOX_STATE_DIR } from "../sandboxes/sandbox-names";
+
+const RUNTIME_STATE_ROOT = `/root/${SANDBOX_STATE_DIR}`;
 const ROOT_TRAVERSAL_PATHS = new Set([
   "/root",
-  "/root/.skynet",
-  "/root/.skynet/t3",
-  "/root/.skynet/t3/userdata",
+  RUNTIME_STATE_ROOT,
+  `${RUNTIME_STATE_ROOT}/t3`,
+  `${RUNTIME_STATE_ROOT}/t3/userdata`,
 ]);
 
 function shq(value: string): string {
@@ -76,7 +79,7 @@ export function buildAttachmentTreeAccessCommand(input: {
 }): string {
   const uid = numericIdentity(input.uid, "uid");
   const gid = numericIdentity(input.gid, "gid");
-  if (input.root !== "/root/.skynet/t3/userdata/attachments") {
+  if (input.root !== `${RUNTIME_STATE_ROOT}/t3/userdata/attachments`) {
     throw new Error("attachment access contains an unsupported root");
   }
   return [

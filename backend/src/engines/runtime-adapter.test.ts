@@ -27,12 +27,13 @@ import { SandboxUnresponsiveError } from "./turn-liveness";
 import { scriptedFollow, v2Projection, v2ProviderThread, v2Run, v2Session, v2Snapshot, v2Turn } from "./runtime-v2.test-support";
 import { runtimeThreadView } from "./runtime-v2-view";
 import { createForeignRunGuard, FOREIGN_RUN_REASON } from "./runtime-foreign-runs";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 /** A runtime thread whose provider session is `sessionStatus` after its latest run `runId` in `runState`. */
 function stuckThread(
   sessionStatus: string | null,
   runState: "running" | "completed" | null = "completed",
-  _threadId = "skynet-thread-thread-1",
+  _threadId = `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
   runId = "turn-1",
 ) {
   return v2Snapshot(1, v2Projection({
@@ -328,11 +329,11 @@ describe("T3 run adapter gate", () => {
         requestEnvironment: async <T>(_sandbox: SandboxHandle, request: RuntimeEnvironmentRequest) => {
           calls.push(request.path);
           return (request.path === "/api/orchestration/shell"
-            ? { projects: [], threads: [{ id: "skynet-thread-thread-1" }] }
+            ? { projects: [], threads: [{ id: `${SANDBOX_NAME_PREFIX}-thread-thread-1` }] }
             : stuckThread(
                 "starting",
                 "completed",
-                "skynet-thread-thread-1",
+                `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
                 "turn-previous",
               )) as T;
         },
@@ -350,7 +351,7 @@ describe("T3 run adapter gate", () => {
 
     expect(returned).toEqual({ error, stuckStartConfirmed: true });
     expect(calls).toEqual([
-      "/api/orchestration/threads/skynet-thread-thread-1/bounded",
+      `/api/orchestration/threads/${SANDBOX_NAME_PREFIX}-thread-thread-1/bounded`,
       "/api/orchestration/shell",
       "close-lease",
       "restart-runtime",
@@ -395,8 +396,8 @@ describe("T3 run adapter gate", () => {
         ) => {
           touched.push(sandbox);
           return (request.path === "/api/orchestration/shell"
-            ? { projects: [], threads: [{ id: "skynet-thread-thread-1" }] }
-            : stuckThread("starting", null, "skynet-thread-thread-1")) as T;
+            ? { projects: [], threads: [{ id: `${SANDBOX_NAME_PREFIX}-thread-thread-1` }] }
+            : stuckThread("starting", null, `${SANDBOX_NAME_PREFIX}-thread-thread-1`)) as T;
         },
         restart: async (sandbox) => { touched.push(sandbox); return {} as never; },
         invalidateAccess: (sandbox) => { touched.push(sandbox); },
@@ -462,8 +463,8 @@ describe("T3 run adapter gate", () => {
         requestEnvironment: async <T>(_sandbox: SandboxHandle, request: RuntimeEnvironmentRequest) => {
           calls.push(request.path);
           return (request.path === "/api/orchestration/shell"
-            ? { projects: [], threads: [{ id: "skynet-thread-thread-1" }] }
-            : stuckThread("starting", null, "skynet-thread-thread-1")) as T;
+            ? { projects: [], threads: [{ id: `${SANDBOX_NAME_PREFIX}-thread-thread-1` }] }
+            : stuckThread("starting", null, `${SANDBOX_NAME_PREFIX}-thread-thread-1`)) as T;
         },
         restart: async () => { calls.push("restart-runtime"); return {} as never; },
         invalidateAccess: () => { calls.push("invalidate-access"); },
@@ -474,7 +475,7 @@ describe("T3 run adapter gate", () => {
 
     expect(recovery).toEqual({ error: userStopped, stuckStartConfirmed: true });
     expect(calls).toEqual([
-      "/api/orchestration/threads/skynet-thread-thread-1/bounded",
+      `/api/orchestration/threads/${SANDBOX_NAME_PREFIX}-thread-thread-1/bounded`,
       "/api/orchestration/shell",
       "close-lease",
       "restart-runtime",
@@ -492,7 +493,7 @@ describe("T3 run adapter gate", () => {
     const dependencies = {
       requestEnvironment: async <T>() => {
         calls.push("read");
-        return stuckThread("starting", "completed", "skynet-thread-thread-1") as T;
+        return stuckThread("starting", "completed", `${SANDBOX_NAME_PREFIX}-thread-thread-1`) as T;
       },
       restart: async () => { calls.push("restart"); return {} as never; },
       invalidateAccess: () => { calls.push("invalidate"); },
@@ -557,21 +558,21 @@ describe("T3 run adapter gate", () => {
             ? {
                 projects: [],
                 threads: [
-                  { id: "skynet-thread-thread-1" },
-                  { id: "skynet-thread-another-active-thread" },
+                  { id: `${SANDBOX_NAME_PREFIX}-thread-thread-1` },
+                  { id: `${SANDBOX_NAME_PREFIX}-thread-another-active-thread` },
                 ],
               }
             : stuckThread(
                 "starting",
                 "completed",
-                "skynet-thread-thread-1",
+                `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
                 "turn-previous",
               )) as T;
         },
       },
     })).toEqual({ error: timeout, stuckStartConfirmed: false });
     expect(calls).toEqual([
-      "/api/orchestration/threads/skynet-thread-thread-1/bounded",
+      `/api/orchestration/threads/${SANDBOX_NAME_PREFIX}-thread-thread-1/bounded`,
       "/api/orchestration/shell",
     ]);
 
@@ -590,11 +591,11 @@ describe("T3 run adapter gate", () => {
             ? {
                 projects: [],
                 threads: [
-                  { id: "skynet-thread-thread-1", lineage: { rootThreadId: "skynet-thread-thread-1" } },
-                  { id: "child-of-thread-1", lineage: { rootThreadId: "skynet-thread-thread-1" } },
+                  { id: `${SANDBOX_NAME_PREFIX}-thread-thread-1`, lineage: { rootThreadId: `${SANDBOX_NAME_PREFIX}-thread-thread-1` } },
+                  { id: "child-of-thread-1", lineage: { rootThreadId: `${SANDBOX_NAME_PREFIX}-thread-thread-1` } },
                 ],
               }
-            : stuckThread("starting", "completed", "skynet-thread-thread-1", "turn-previous")) as T,
+            : stuckThread("starting", "completed", `${SANDBOX_NAME_PREFIX}-thread-thread-1`, "turn-previous")) as T,
       },
     })).toEqual({ error: timeout, stuckStartConfirmed: true });
     expect(calls).toEqual(["close", "restart", "invalidate"]);
@@ -620,8 +621,8 @@ describe("T3 run adapter gate", () => {
       dependencies: {
         requestEnvironment: async <T>(_sandbox: SandboxHandle, request: RuntimeEnvironmentRequest) =>
           (request.path === "/api/orchestration/shell"
-            ? { projects: [], threads: [{ id: "skynet-thread-thread-1" }] }
-            : stuckThread("starting", null, "skynet-thread-thread-1")) as T,
+            ? { projects: [], threads: [{ id: `${SANDBOX_NAME_PREFIX}-thread-thread-1` }] }
+            : stuckThread("starting", null, `${SANDBOX_NAME_PREFIX}-thread-thread-1`)) as T,
         restart: async () => {
           calls.push("restart-runtime");
           throw new Error("restart failed");
@@ -961,7 +962,7 @@ describe("T3 run adapter gate", () => {
       null, undefined, async () => { order.push("start"); },
     )).resolves.toBe("hello world");
     expect(order).toEqual(["start"]);
-    expect(calls[0]?.threadId).toBe("skynet-thread-thread-1");
+    expect(calls[0]?.threadId).toBe(`${SANDBOX_NAME_PREFIX}-thread-thread-1`);
     expect(deltas).toEqual(["hello", " world"]);
   });
 
@@ -1134,7 +1135,7 @@ describe("T3 run adapter gate", () => {
       runId: "run-terminal-drain",
       threadId: "thread-terminal-drain",
     } as Parameters<typeof readRuntimeTerminalSnapshot>[0];
-    const snapshotBody = JSON.stringify(v2Snapshot(1, v2Projection({}, "skynet-thread-thread-terminal-drain")));
+    const snapshotBody = JSON.stringify(v2Snapshot(1, v2Projection({}, `${SANDBOX_NAME_PREFIX}-thread-thread-terminal-drain`)));
     for (const result of [
       { cmdId: "cube", output: `${snapshotBody}\n__USEAGENT_T3_HTTP_STATUS__:200`, exitCode: 0 },
       { cmdId: "daytona", stdout: `${snapshotBody}\n__USEAGENT_T3_HTTP_STATUS__:200`, exitCode: 0 },
@@ -1158,7 +1159,7 @@ describe("T3 run adapter gate", () => {
         terminalSnapshotContext,
         sandbox,
         new AbortController().signal,
-      )).resolves.toMatchObject({ snapshotSequence: 1, thread: { id: "skynet-thread-thread-terminal-drain", latestTurn: null } });
+      )).resolves.toMatchObject({ snapshotSequence: 1, thread: { id: `${SANDBOX_NAME_PREFIX}-thread-thread-terminal-drain`, latestTurn: null } });
       expect(calls.some((call) => Array.isArray(call) && call[0] === "execute" && call[2] === false && call[3] === 2)).toBe(true);
       expect(calls.some((call) => Array.isArray(call) && call[0] === "delete")).toBe(true);
     }

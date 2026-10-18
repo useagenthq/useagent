@@ -1,7 +1,8 @@
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import { and, desc, eq, gt, lte, sql } from "drizzle-orm";
 import { db } from "../../db/client";
 import { gatewayApprovalRequests } from "../../db/schema";
-import { recordProviderEvent } from "../../runs/provider-events";
+import { recordProviderEventIfAbsent } from "../../runs/provider-events";
 import { getRunForOrg } from "../../runs/repo";
 import { approvalArgumentsHash, mintApprovalCapability } from "./approval-capability";
 import { isBotThread } from "../../bots/repo";
@@ -30,7 +31,7 @@ async function approvalTtlMs(orgId: string, threadId: string): Promise<number> {
 const LIST_LIMIT = 50;
 
 /** Timeline provider lane for approval cards (mirrors "useAgent-knowledge"). */
-const EVENT_PROVIDER = "skynet-gateway";
+const EVENT_PROVIDER = PLATFORM_EVENT_LANES.gateway;
 
 export type ApprovalRequestRecord = typeof gatewayApprovalRequests.$inferSelect;
 
@@ -110,12 +111,13 @@ export function approvalDecisionPrompt(
 
 /** Approval-card timeline frame. Awaited so the card is durable before the
  *  caller replies, but a capture failure never fails the lane (the durable
- *  request row is the source of truth; recordProviderEvent never rejects). */
+ *  request row is the source of truth). Insert-only: this runs in the gateway,
+ *  whose role may add an event but never rewrite one, so an upsert is refused. */
 async function emitApprovalEvent(
   request: ApprovalRequestRecord,
   state: "requested" | "resolved",
 ): Promise<void> {
-  await recordProviderEvent(
+  await recordProviderEventIfAbsent(
     {
       id: `pe_${request.runId}_gwappr_${request.id}_${state}`,
       runId: request.runId,
@@ -131,8 +133,7 @@ async function emitApprovalEvent(
         ...(request.resolvedBy ? { resolvedBy: request.resolvedBy } : {}),
       },
     },
-    { critical: true },
-  );
+  ).catch(() => false);
 }
 
 /** Lazily lapse an overdue pending row. Single transition (`status = 'pending'`

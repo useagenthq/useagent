@@ -2,7 +2,7 @@
  * Prompt builders for repo-wiki generation.
  *
  * Ported to TypeScript from deepwiki-open (AsyncFuncAI/deepwiki-open, MIT
- * License, (c) 2024 Sheing Ng) — api/services/wiki/prompts.py. The structure and
+ * License, Copyright (c) 2024 Sheing Ng) — api/services/wiki/prompts.py. The structure and
  * page prompts are kept faithful so the output shape (XML wiki structure; a
  * <details> source block, mermaid diagrams, and `Sources: [path:lines]()`
  * citations per page) matches the reference.

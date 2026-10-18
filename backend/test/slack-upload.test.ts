@@ -29,9 +29,10 @@ import { getArtifact, reviseArtifactPublication } from "../src/artifacts/repo";
 import { createHash } from "node:crypto";
 import { finalizeRun } from "../src/runs/finalize";
 import { insertThreadRelationship } from "../src/runs/thread-relationship-repo";
+import { DEV_ORG_ID } from "../src/dev-org";
 
-const ORG = "org-skynet-dev";
-const TEAM = "T-SKYNET-DEV";
+const ORG = DEV_ORG_ID;
+const TEAM = "T-USEAGENT-DEV";
 const storage = new InMemoryArtifactStorage();
 
 function claimsFor(runId: string): ToolTokenClaims {

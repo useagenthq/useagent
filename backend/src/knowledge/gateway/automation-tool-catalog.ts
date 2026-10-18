@@ -41,7 +41,7 @@ export const AUTOMATION_TOOLS = [
       properties: {
         name: { type: "string", description: "Human-readable automation name." },
         cron: { type: "string", description: "Five-field cron expression." },
-        timezone: { type: "string", description: "Optional IANA timezone, for example Asia/Kolkata." },
+        timezone: { type: "string", description: "IANA timezone the cron runs in, for example Asia/Kolkata. UTC when omitted." },
         prompt: { type: "string", description: "Prompt to run when the automation fires." },
         engine: { type: "string", description: "Optional UseAgent engine id." },
         model: { type: "string", description: "Optional model id allowed for the selected engine." },
@@ -84,7 +84,7 @@ export const AUTOMATION_TOOLS = [
         id: { type: "string", description: "Automation id returned by automation_list/create." },
         name: { type: "string" },
         cron: { type: "string" },
-        timezone: { type: ["string", "null"], description: "IANA timezone, or null/empty string to clear." },
+        timezone: { type: "string", description: "IANA timezone the cron runs in." },
         prompt: { type: "string" },
         engine: { type: "string" },
         model: { type: "string" },

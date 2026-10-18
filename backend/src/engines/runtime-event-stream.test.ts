@@ -10,8 +10,9 @@ import { buildRuntimeThreadSubscription, followRuntimeThread } from "./runtime-e
 import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
 import type { RuntimeSocket } from "./runtime-rpc-socket";
 import { v2Message, v2Projection, v2Run } from "./runtime-v2.test-support";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
-const THREAD = "skynet-thread-thread-1";
+const THREAD = `${SANDBOX_NAME_PREFIX}-thread-thread-1`;
 const sandbox = { id: "sandbox-1" } as SandboxHandle;
 
 type Batch = readonly unknown[];

@@ -68,7 +68,7 @@ describe("assertArtifactStorageWritable", () => {
 
 describe("LocalArtifactStorage", () => {
   test("makes shared artifact directories traversable and bytes group-readable", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-artifacts-"));
     roots.add(root);
     const key = "a".repeat(64);
     const storage = new LocalArtifactStorage(root);
@@ -85,7 +85,7 @@ describe("LocalArtifactStorage", () => {
   });
 
   test("does not try to change ownership-sensitive mode on existing bytes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-artifacts-"));
     roots.add(root);
     const key = "b".repeat(64);
     const storage = new LocalArtifactStorage(root);
@@ -100,7 +100,7 @@ describe("LocalArtifactStorage", () => {
   });
 
   test("preserves an existing shared digest directory owned by another publisher", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-artifacts-"));
     roots.add(root);
     const key = "c".repeat(64);
     const directory = join(root, "cc");
@@ -115,7 +115,7 @@ describe("LocalArtifactStorage", () => {
   });
 
   test("reclaims only old content-addressed bytes with no proven reference", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-artifacts-"));
     roots.add(root);
     const referenced = "d".repeat(64);
     const orphan = "e".repeat(64);
@@ -147,7 +147,7 @@ describe("LocalArtifactStorage", () => {
   });
 
   test("ignores digest-prefix entries that are not real directories", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-artifacts-"));
     roots.add(root);
     const storage = new LocalArtifactStorage(root);
     await writeFile(join(root, "ff"), "not a directory");
@@ -159,7 +159,7 @@ describe("LocalArtifactStorage", () => {
   });
 
   test("fails loudly when the storage root cannot be listed", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-artifacts-"));
     roots.add(root);
     const notDirectory = join(root, "not-a-directory");
     await writeFile(notDirectory, "invalid root");
@@ -170,7 +170,7 @@ describe("LocalArtifactStorage", () => {
   });
 
   test("continues reclaiming after an inaccessible digest-prefix directory", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-artifacts-"));
     roots.add(root);
     const inaccessible = "a".repeat(64);
     const reclaimable = "b".repeat(64);
@@ -206,7 +206,7 @@ describe("LocalArtifactStorage", () => {
   });
 
   test("restores quarantined bytes when a reference appears during reclaim", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-artifacts-"));
     roots.add(root);
     const key = "1".repeat(64);
     const storage = new LocalArtifactStorage(root);
@@ -224,7 +224,7 @@ describe("LocalArtifactStorage", () => {
   });
 
   test("does not delete a fresh canonical copy published after quarantine", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-artifacts-"));
     roots.add(root);
     const key = "2".repeat(64);
     const storage = new LocalArtifactStorage(root);
@@ -245,7 +245,7 @@ describe("LocalArtifactStorage", () => {
   });
 
   test("restores canonical bytes when the post-quarantine reference check fails", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-artifacts-"));
     roots.add(root);
     const key = "3".repeat(64);
     const storage = new LocalArtifactStorage(root);
@@ -262,7 +262,7 @@ describe("LocalArtifactStorage", () => {
   });
 
   test("recovers a stale quarantine before evaluating the canonical key", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-artifacts-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-artifacts-"));
     roots.add(root);
     const key = "4".repeat(64);
     const storage = new LocalArtifactStorage(root);

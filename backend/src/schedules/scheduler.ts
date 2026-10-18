@@ -1,10 +1,13 @@
-// Ported from a peer tool (Apache-2.0): src/kiro_crew/cron.py
-// a peer tool runs an asyncio timer that periodically fires due, enabled jobs;
+// Ported from KiroCrew (https://github.com/kirodotdev/KiroCrew), Apache-2.0:
+//   src/kiro_crew/cron.py
+// Copyright Amazon.com, Inc. or its affiliates. Changed: rewritten in
+// TypeScript for this codebase. License and NOTICE: third_party/licenses/kirocrew/.
+// KiroCrew runs an asyncio timer that periodically fires due, enabled jobs;
 // this is the Postgres-backed translation — a plain 60s interval tick.
 
 import { botsEnabled } from "../bots/rollout";
-import { cronMatches } from "./cron";
-import { listEnabledSchedules, markFired } from "./repo";
+import { isOccurrence } from "./cron";
+import { firedThisMinute, listEnabledSchedules, markFired } from "./repo";
 import { fireScheduleForOrg } from "./service";
 
 const TICK_MS = process.env.SCHEDULER_TICK_MS
@@ -13,14 +16,13 @@ const TICK_MS = process.env.SCHEDULER_TICK_MS
 
 let timer: ReturnType<typeof setInterval> | null = null;
 
-/** Two dates fall in the same clock minute (epoch-minute bucket). */
-function sameMinute(a: Date, b: Date): boolean {
-  return Math.floor(a.getTime() / 60_000) === Math.floor(b.getTime() / 60_000);
-}
-
 /**
- * One scheduler pass: fire every enabled schedule whose cron matches the
- * current minute and that hasn't already fired this minute. `markFired` stamps
+ * One scheduler pass: fire every enabled schedule whose occurrence (cron.ts
+ * isOccurrence, the rule nextOccurrence and so the API's next run follow) is
+ * the current minute and that the tick has not fired in it yet. One minute's
+ * check per schedule, however rare its cron. Across a DST change a fixed time
+ * fires once, at its first reading of a repeated hour or right after a skipped
+ * one. `markFired` stamps
  * the minute AFTER the durable command is accepted — stamping first opened a
  * loss window (accept fails after the stamp → that occurrence is skipped
  * forever; external audit finding). Duplicates from the reverse ordering are
@@ -38,8 +40,7 @@ export async function tick(now: Date = new Date()): Promise<void> {
   }
 
   for (const s of due) {
-    if (!cronMatches(s.cron, now, s.timezone)) continue;
-    if (s.lastFiredAt && sameMinute(new Date(s.lastFiredAt), now)) continue;
+    if (!isOccurrence(s.cron, s.timezone, now) || firedThisMinute(s, now)) continue;
     // Bot routines sit out while bots are switched off; they resume on the next
     // matching minute after the switch flips back.
     if (s.botId && !botsEnabled(s.orgId)) continue;

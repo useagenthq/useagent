@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+  AutomationRefusal,
   createSchedule,
   deleteSchedule,
   fetchHistory,
@@ -228,5 +229,20 @@ describe("Automations API client", () => {
         },
       },
     ]);
+  });
+
+  test("a refusal the backend put in words reaches the page in those words", async () => {
+    const words = "This automation runs as Dana Reyes, so only they can change it or run it now. An admin can pause or delete it.";
+    for (const call of [() => updateSchedule(automation.id, { prompt: "x" }), () => runScheduleNow(automation.id), () => deleteSchedule(automation.id)]) {
+      responses.push(Response.json({ error: "automation_creator_only", message: words }, { status: 403 }));
+      const refused = await call().catch((error: unknown) => error);
+      expect(refused).toBeInstanceOf(AutomationRefusal);
+      expect((refused as Error).message).toBe(words);
+    }
+    // A failure without words stays a plain error: the page keeps its own.
+    responses.push(Response.json({ error: "model_not_allowed" }, { status: 400 }));
+    const plain = await updateSchedule(automation.id, { name: "x" }).catch((error: unknown) => error);
+    expect(plain).not.toBeInstanceOf(AutomationRefusal);
+    expect((plain as Error).message).toBe("update automation 400");
   });
 });

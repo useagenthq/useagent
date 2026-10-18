@@ -11,8 +11,11 @@ const APPROVAL_TTL_MS = 2 * 60_000;
 const OPAQUE_APPROVAL_VERSION = "apr1";
 const APPROVAL_MINT_MODES = ["signed", "opaque"] as const;
 type ApprovalMintMode = (typeof APPROVAL_MINT_MODES)[number];
+/** Signed capabilities already issued verify under this label; changing it
+ *  rotates the key, so it keeps the product's first name. */
+export const APPROVAL_CAPABILITY_DERIVE_LABEL = "skynet-gateway-operation-approval-v1";
 const TOKEN_OPTIONS = {
-  deriveLabel: "skynet-gateway-operation-approval-v1",
+  deriveLabel: APPROVAL_CAPABILITY_DERIVE_LABEL,
   get explicitSecret(): string | undefined {
     return process.env.TOOL_GATEWAY_SECRET;
   },

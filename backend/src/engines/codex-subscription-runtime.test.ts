@@ -26,6 +26,7 @@ import {
   prewarmCodexServices,
   previewWebSocketUrl,
 } from "./codex-subscription-runtime";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 const priorGatewayUrl = process.env.PROVIDER_GATEWAY_PUBLIC_URL;
 const priorGatewaySecret = process.env.PROVIDER_GATEWAY_SECRET;
@@ -117,7 +118,7 @@ describe("T3 Codex subscription lease", () => {
       },
     });
 
-    expect(harness.createdSessions).toEqual(["skynet-codex-exec-server", "skynet-codex-code-mode"]);
+    expect(harness.createdSessions).toEqual([`${SANDBOX_NAME_PREFIX}-codex-exec-server`, `${SANDBOX_NAME_PREFIX}-codex-code-mode`]);
     expect(harness.sessionCommands).toHaveLength(2);
     expect(harness.sessionCommands[0]?.command).toContain(
       '"/usr/local/bin/codex" exec-server --listen ws://0.0.0.0:37734',
@@ -134,7 +135,7 @@ describe("T3 Codex subscription lease", () => {
         authEpoch: "credential-generation-123",
         sandboxId: "sandbox-1",
         sandboxGeneration: "useagent-runtime-v9",
-        environmentId: "skynet-sandbox-1",
+        environmentId: `${SANDBOX_NAME_PREFIX}-sandbox-1`,
         cwd: "/root/work",
       },
       runtime: runtime(),
@@ -327,7 +328,7 @@ describe("T3 Codex subscription lease", () => {
     expect(second.sessionReused).toBe(false);
     expect(closed.toSorted()).toEqual(["bridge", "code-mode", "relay"]);
     expect(relays.opened).toHaveLength(2);
-    expect(restarted.createdSessions).toEqual(["skynet-codex-code-mode"]);
+    expect(restarted.createdSessions).toEqual([`${SANDBOX_NAME_PREFIX}-codex-code-mode`]);
     await second.close();
   });
 
@@ -354,14 +355,14 @@ describe("T3 Codex subscription lease", () => {
     await lease.close();
     expect(closed.toSorted()).toEqual(["bridge", "code-mode", "relay"]);
     expect(harness.commands.at(-1)?.command).toContain("delete current.providerInstances.codex");
-    expect(harness.deletedSessions).toEqual(["skynet-codex-exec-server", "skynet-codex-exec-server"]);
+    expect(harness.deletedSessions).toEqual([`${SANDBOX_NAME_PREFIX}-codex-exec-server`, `${SANDBOX_NAME_PREFIX}-codex-exec-server`]);
   });
 
   test("a warm pool starts the services under the sandbox's environment id and admits no bearer", async () => {
     const pooled = fakeSandbox();
     await prewarmCodexServices(pooled.sandbox);
-    expect(pooled.createdSessions).toEqual(["skynet-codex-exec-server", "skynet-codex-code-mode"]);
-    expect(pooled.sessionCommands[0]?.command).toContain("--environment-id skynet-sandbox-1");
+    expect(pooled.createdSessions).toEqual([`${SANDBOX_NAME_PREFIX}-codex-exec-server`, `${SANDBOX_NAME_PREFIX}-codex-code-mode`]);
+    expect(pooled.sessionCommands[0]?.command).toContain(`--environment-id ${SANDBOX_NAME_PREFIX}-sandbox-1`);
     // No run's digest: the forwarder refuses everyone until a run admits its bearer.
     expect(pooled.commands.some(({ command }) => command.includes("code-mode-forwarder.sha256.tmp"))).toBe(false);
     expect(pooled.previewPorts).toEqual([]);
@@ -382,7 +383,7 @@ describe("T3 Codex subscription lease", () => {
         openRelaySession: relays.open,
       },
     });
-    expect(relays.opened[0]!.input.scope.environmentId).toBe("skynet-sandbox-1");
+    expect(relays.opened[0]!.input.scope.environmentId).toBe(`${SANDBOX_NAME_PREFIX}-sandbox-1`);
     expect(up.createdSessions).toEqual([]);
     await lease.close();
   });
@@ -445,7 +446,7 @@ describe("T3 Codex subscription lease", () => {
     };
     const probe = async (owner?: { exe: string; args: readonly string[] }) =>
       spawnSync("sh", ["-c", `${buildCodexExecServerReadinessCommand(0, layout)} ${await procRoot(owner)}`]).status;
-    const listening = ["codex", "exec-server", "--listen", "ws://0.0.0.0:37734", "--environment-id", "skynet-run-1"];
+    const listening = ["codex", "exec-server", "--listen", "ws://0.0.0.0:37734", "--environment-id", `${SANDBOX_NAME_PREFIX}-run-1`];
 
     expect(await probe()).toBe(1);
     expect(await probe({ exe: native, args: listening })).toBe(0);
@@ -476,7 +477,7 @@ describe("T3 Codex subscription lease", () => {
     });
 
     // Only the code-mode host and forwarder were missing; the exec-server was reused.
-    expect(harness.createdSessions).toEqual(["skynet-codex-code-mode"]);
+    expect(harness.createdSessions).toEqual([`${SANDBOX_NAME_PREFIX}-codex-code-mode`]);
     expect(harness.sessionCommands[0]?.command).toContain("code-mode-forwarder.js");
     expect(relays.opened[0]!.input.codeModeHostUrl).toBe("http://127.0.0.1:43112");
     expect(bridgeUpstream).toBe("wss://preview.example.test/");
@@ -536,7 +537,7 @@ describe("T3 Codex subscription lease", () => {
 
     const patch = buildCodexProviderInstanceCommand({
       relayUrl: "wss://useagent.example.test/api/internal/codex-relay/opaque",
-      environmentId: "skynet-run-1",
+      environmentId: `${SANDBOX_NAME_PREFIX}-run-1`,
       workdir: "/home/user/work",
     }, {
       home: "/home/user",
@@ -576,8 +577,8 @@ describe("T3 Codex subscription lease", () => {
     expect(closed).toEqual(["relay", "code-mode", "bridge"]);
     expect(liveCodexThreadSessions()).toBe(0);
     expect(harness.deletedSessions).toEqual([
-      "skynet-codex-exec-server",
-      "skynet-codex-exec-server",
+      `${SANDBOX_NAME_PREFIX}-codex-exec-server`,
+      `${SANDBOX_NAME_PREFIX}-codex-exec-server`,
     ]);
   });
 
@@ -601,8 +602,8 @@ describe("T3 Codex subscription lease", () => {
 
     expect(relays.opened).toEqual([]);
     expect(harness.deletedSessions).toEqual([
-      "skynet-codex-exec-server",
-      "skynet-codex-exec-server",
+      `${SANDBOX_NAME_PREFIX}-codex-exec-server`,
+      `${SANDBOX_NAME_PREFIX}-codex-exec-server`,
     ]);
   });
 
@@ -633,13 +634,13 @@ describe("T3 Codex subscription lease", () => {
   });
 
   test("builds shell-safe commands with no host credential material", () => {
-    expect(buildCodexExecServerCommand("skynet-run-1")).toBe(
+    expect(buildCodexExecServerCommand(`${SANDBOX_NAME_PREFIX}-run-1`)).toBe(
       [
         "set -eu",
-        'exec "/usr/local/bin/codex" exec-server --listen ws://0.0.0.0:37734 --environment-id skynet-run-1',
+        `exec "/usr/local/bin/codex" exec-server --listen ws://0.0.0.0:37734 --environment-id ${SANDBOX_NAME_PREFIX}-run-1`,
       ].join("\n"),
     );
-    expect(buildCodexExecServerCommand("skynet-run-1")).not.toContain("update_plan");
+    expect(buildCodexExecServerCommand(`${SANDBOX_NAME_PREFIX}-run-1`)).not.toContain("update_plan");
     expect(() => buildCodexExecServerCommand("unsafe; touch /tmp/pwned")).toThrow(
       "environment id is unsafe",
     );
@@ -647,7 +648,7 @@ describe("T3 Codex subscription lease", () => {
 
     const patch = buildCodexProviderInstanceCommand({
       relayUrl: "wss://useagent.example.test/api/internal/codex-relay/opaque",
-      environmentId: "skynet-run-1",
+      environmentId: `${SANDBOX_NAME_PREFIX}-run-1`,
       workdir: "/root/work",
     });
     expect(patch).not.toContain("CODEX_HOME");
@@ -678,7 +679,7 @@ describe("T3 Codex subscription lease", () => {
     // The probe marker matches the display name the provider-instance patch sets.
     const patch = buildCodexProviderInstanceCommand({
       relayUrl: "wss://useagent.example.test/api/internal/codex-relay/opaque",
-      environmentId: "skynet-run-1",
+      environmentId: `${SANDBOX_NAME_PREFIX}-run-1`,
       workdir: "/root/work",
     });
     const encoded = patch.match(/CODEX_INSTANCE_B64='([^']+)'/)?.[1] ?? "";

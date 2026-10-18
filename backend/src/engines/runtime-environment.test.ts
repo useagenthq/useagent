@@ -30,6 +30,7 @@ import {
   resolveRuntimeWorkspaceRoot,
 } from "./runtime-environment";
 import { NATIVE_RUNTIME_ARTIFACT, nativeRuntimeExecutable } from "./native-runtime-artifact";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_DIR } from "../sandboxes/sandbox-names";
 
 type RuntimeTestProcess = Pick<
   SandboxProcess,
@@ -143,13 +144,13 @@ describe("T3 Cube environment", () => {
   test("launches one isolated headless environment inside the Cube workstation", () => {
     const command = buildRuntimeEnvironmentLaunchCommand({});
 
-    expect(command).toContain('export T3CODE_HOME="/root/.skynet/t3"');
+    expect(command).toContain(`export T3CODE_HOME="/root/${SANDBOX_STATE_DIR}/t3"`);
     expect(command).toContain(NATIVE_RUNTIME_ARTIFACT.archiveSha256);
     expect(command).not.toContain("npm install");
     expect(command).toContain("export T3CODE_HOST=0.0.0.0");
     expect(command).toContain(`export T3CODE_PORT=${RUNTIME_ENVIRONMENT_PORT}`);
     expect(command).toContain("export T3_CODEX_REQUIRED_MCP_SERVERS=useagent");
-    expect(command).toContain('printf \'%s\\n\' "useagent" > "/root/.skynet/t3/.useagent-required-mcp"');
+    expect(command).toContain(`printf '%s\\n' "useagent" > "/root/${SANDBOX_STATE_DIR}/t3/.useagent-required-mcp"`);
     expect(command).toContain("export T3CODE_NO_BROWSER=true");
     expect(command).toContain('/bin/t3" serve --host 0.0.0.0 --port 37733 --base-dir "$T3CODE_HOME"');
     expect(command).toContain('"/root/work"');
@@ -159,7 +160,7 @@ describe("T3 Cube environment", () => {
     // provider adapter builds child environments from it and foreign variables
     // broke the subscription dial). Tool shells get secrets via rc hooks
     // installed by materializeSecretFiles instead.
-    expect(command).not.toContain("skynet-env.sh");
+    expect(command).not.toContain(`${SANDBOX_NAME_PREFIX}-env.sh`);
     expect(command).not.toContain("BASH_ENV");
     expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
     // Child transcripts come from the runtime's own subagent threads now.
@@ -176,7 +177,7 @@ describe("T3 Cube environment", () => {
 
     expect(command).toContain('export HOME="/home/user"');
     expect(command).toContain('export PATH="/home/user/.local/bin:$PATH"');
-    expect(command).toContain('export T3CODE_HOME="/home/user/.skynet/t3"');
+    expect(command).toContain(`export T3CODE_HOME="/home/user/${SANDBOX_STATE_DIR}/t3"`);
     expect(command).toContain('/home/user/.local/share/useagent/native-runtime/');
     expect(command).toContain('--no-browser "/home/user/work"');
     expect(command).not.toContain("/root");
@@ -217,7 +218,7 @@ describe("T3 Cube environment", () => {
 
       expect(result.exitCode).toBe(0);
       expect(await readFile(join(home, "t3-serve-args"), "utf8")).toContain(workdir);
-      expect(await readFile(join(home, ".skynet/t3/.useagent-required-mcp"), "utf8"))
+      expect(await readFile(join(home, `${SANDBOX_STATE_DIR}/t3/.useagent-required-mcp`), "utf8"))
         .toBe("useagent\n");
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -315,8 +316,8 @@ describe("T3 Cube environment", () => {
     await expect(
       ensureRuntimeEnvironment(sandbox, new AbortController().signal),
     ).resolves.toMatchObject({ sandboxId: "cube-t3-cold", port: RUNTIME_ENVIRONMENT_PORT });
-    expect(deleted).toEqual(["skynet-t3-environment", "skynet-t3-environment"]);
-    expect(created).toEqual(["skynet-t3-environment"]);
+    expect(deleted).toEqual([`${SANDBOX_NAME_PREFIX}-t3-environment`, `${SANDBOX_NAME_PREFIX}-t3-environment`]);
+    expect(created).toEqual([`${SANDBOX_NAME_PREFIX}-t3-environment`]);
     expect(launched).toHaveLength(1);
     expect(launched[0]).toContain('/bin/t3" serve');
     expect(probes).toBe(2);
@@ -410,7 +411,7 @@ describe("T3 Cube environment", () => {
     await expect(
       ensureRuntimeEnvironment(sandbox, new AbortController().signal),
     ).resolves.toMatchObject({
-      home: "/home/user/.skynet/t3",
+      home: `/home/user/${SANDBOX_STATE_DIR}/t3`,
       workdir: "/home/user/work",
     });
     expect(launched).toHaveLength(1);
@@ -459,8 +460,8 @@ describe("T3 Cube environment", () => {
     // it is relaunched.
     expect(killCommand).toContain("pkill");
     expect(killCommand).toContain("[t]3 serve");
-    expect(deleted).toContain("skynet-t3-environment");
-    expect(created).toEqual(["skynet-t3-environment"]);
+    expect(deleted).toContain(`${SANDBOX_NAME_PREFIX}-t3-environment`);
+    expect(created).toEqual([`${SANDBOX_NAME_PREFIX}-t3-environment`]);
     expect(launched).toHaveLength(1);
     expect(launched[0]).toContain('/bin/t3" serve');
   });
@@ -520,7 +521,7 @@ describe("runtime flags marker", () => {
   test("the launch records the flags it started with and readiness checks the plane still wants them", () => {
     expect(runtimeEnvironmentFlags()).toBe("mcp=off,continuations=off,instructions=off,telemetry=off");
     expect(buildRuntimeEnvironmentLaunchCommand({})).toContain(
-      `printf '%s\\n' "mcp=off,continuations=off,instructions=off,telemetry=off" > "/root/.skynet/t3/.useagent-runtime-flags"`,
+      `printf '%s\\n' "mcp=off,continuations=off,instructions=off,telemetry=off" > "/root/${SANDBOX_STATE_DIR}/t3/.useagent-runtime-flags"`,
     );
     expect(buildRuntimeEnvironmentReadinessCommand()).toContain('.useagent-runtime-flags" 2>/dev/null)" = "mcp=off,continuations=off,instructions=off,telemetry=off"');
   });
@@ -542,7 +543,7 @@ describe("runtime flags marker", () => {
     const home = await mkdtemp(join(tmpdir(), "runtime-launch-"));
     try {
       const layout = { ...sandboxRuntimeLayout("local"), home, workdir: join(home, "work") };
-      const userdata = join(home, ".skynet/t3/userdata");
+      const userdata = join(home, `${SANDBOX_STATE_DIR}/t3/userdata`);
       await mkdir(userdata, { recursive: true });
       await Bun.write(join(userdata, "settings.json"), JSON.stringify({ providers: { codex: { enabled: true } }, autoResumeLimitedThreads: true }));
       // No runtime is installed here, so the launch stops at the executable check, after the pins.

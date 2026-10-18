@@ -1,3 +1,4 @@
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import type { SlackConfig } from "../../env";
 import { resolveSlackClient, type DeliveryResult, type SlackClient } from "../client";
 import { assertNever } from "../../util/exhaustive";
@@ -464,7 +465,7 @@ async function recordSlackDeliveryFailure(
       id: `slack.delivery.failed:${row.id}`,
       runId: run.id,
       threadId: run.threadId,
-      provider: "skynet",
+      provider: PLATFORM_EVENT_LANES.platform,
       eventType: "delivery.failed",
       payload: {
         destination: "slack",

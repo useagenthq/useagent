@@ -670,7 +670,7 @@ export async function deleteScopedMemory(
 
 /** The dedicated, provider-visible session an explicit memory is written under,
  *  kept separate from a thread's conversation-capture session (identity.sessionId
- *  = threadId) so the two never collide within a pool. */
+ *  = threadId) so the two never collide within a pool; stored ones keep this id. */
 export const EXPLICIT_MEMORY_SESSION = "skynet-explicit-memory";
 
 /** One L0 message as /v3/conversation/{search,query} returns it. */

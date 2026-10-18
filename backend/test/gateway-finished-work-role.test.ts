@@ -1,3 +1,4 @@
+import { LEGACY_GATEWAY_DATABASE_ROLE } from "../src/db/gateway-grants";
 import { describe, expect, test } from "bun:test";
 import { eq, inArray, sql } from "drizzle-orm";
 import { createArtifactRecord } from "../src/artifacts/repo";
@@ -11,8 +12,10 @@ import {
 import { createRun } from "../src/runs/repo";
 import { readStableProviderEvent } from "../src/runs/provider-events";
 import "./helpers";
+import { DEV_ORG_ID } from "../src/dev-org";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 
 describe("restricted gateway FinishedWork grants", () => {
   test("reads scoped lifecycle history with only the gateway column grant", async () => {
@@ -47,13 +50,13 @@ describe("restricted gateway FinishedWork grants", () => {
         runId,
         threadId: runId,
         seq: 0,
-        provider: "skynet",
+        provider: PLATFORM_EVENT_LANES.platform,
         eventType: "artifact.created",
         payload: "{}",
       });
       await tx.execute(sql.raw(`SET LOCAL ROLE "${role}"`));
       expect(await readStableProviderEvent({ id: eventId, runId, threadId: runId }, tx))
-        .toMatchObject({ id: eventId, runId, threadId: runId, provider: "skynet", eventType: "artifact.created" });
+        .toMatchObject({ id: eventId, runId, threadId: runId, provider: PLATFORM_EVENT_LANES.platform, eventType: "artifact.created" });
       expect(await readStableProviderEvent({ id: eventId, runId: crypto.randomUUID(), threadId: runId }, tx))
         .toBeNull();
       throw rollback;
@@ -65,7 +68,7 @@ describe("restricted gateway FinishedWork grants", () => {
   test("SET ROLE can append receipts and resolve obligations without mutating semantics", async () => {
     const roles = await db.execute(sql`
       select rolname from pg_roles
-      where rolname in ('useagent_gateway', 'skynet_gateway')
+      where rolname in ('useagent_gateway', ${LEGACY_GATEWAY_DATABASE_ROLE})
       order by (rolname = 'useagent_gateway') desc
       limit 1
     `);
@@ -166,7 +169,7 @@ describe("restricted gateway FinishedWork grants", () => {
   test("artifact_publish create and revision events stay immutable under the restricted role", async () => {
     const roles = await db.execute(sql`
       select rolname from pg_roles
-      where rolname in ('useagent_gateway', 'skynet_gateway')
+      where rolname in ('useagent_gateway', ${LEGACY_GATEWAY_DATABASE_ROLE})
       order by (rolname = 'useagent_gateway') desc
       limit 1
     `);
@@ -202,7 +205,7 @@ describe("restricted gateway FinishedWork grants", () => {
         runId,
         threadId: runId,
         seq,
-        provider: "skynet",
+        provider: PLATFORM_EVENT_LANES.platform,
         eventType,
         payload: JSON.stringify({ id: artifactId, sha256 }),
       }).onConflictDoNothing({ target: providerEvents.id }).returning({ id: providerEvents.id });

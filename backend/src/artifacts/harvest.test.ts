@@ -15,7 +15,9 @@ import {
   parseFileListing,
   parseRepositoryListing,
   repositoryListCommand,
+  TooManyTurnOutputs,
 } from "./harvest";
+import { SANDBOX_STATE_DIR } from "../sandboxes/sandbox-names";
 
 const complete = (records = "") => `${records}__USEAGENT_LISTING_COMPLETE__\0`;
 
@@ -44,7 +46,7 @@ describe("listing commands", () => {
     // The inode change time, never the modification time: a preserved-mtime copy must be found.
     expect(command).toContain("-newerct '@1757000000.123456789'");
     expect(command).not.toContain("-newermt");
-    expect(command).toContain("-name '.skynet-inputs'");
+    expect(command).toContain(`-name '${SANDBOX_STATE_DIR}-inputs'`);
     expect(command).toContain("-path '/root/work/repo-69'");
     for (const extension of ["pdf", "txt", "json", "xml", "tar", "gz"]) {
       expect(command).toContain(`-iname '*.${extension}'`);
@@ -79,29 +81,42 @@ describe("listing parsers", () => {
       "5\t/root/work/screenshots/nested/customer.png",
       "",
     ].join("\0"));
-    expect(parseFileListing(listing, root, ["/root/work/deep/repo"])).toEqual([
+    expect(parseFileListing(listing, root, ["/root/work/deep/repo"]).candidates).toEqual([
       { path: "/root/work/notes\nfinal.md", size: 40 },
       { path: "/root/work/odd\tname.txt", size: 7 },
       { path: "/root/work/out/report.pdf", size: 1200 },
     ]);
   });
 
-  test("throws on incomplete, malformed, oversized and over-policy listings", () => {
+  test("throws on incomplete and malformed listings", () => {
     expect(() => parseFileListing("", root, [])).toThrow("incomplete");
     expect(() => parseFileListing(complete("abc\t/root/work/x.pdf\0"), root, [])).toThrow("size is invalid");
-    expect(() => parseFileListing(complete("0\t/root/work/x.pdf\0"), root, [])).toThrow("size is invalid");
-    expect(() => parseFileListing(complete("52428801\t/root/work/x.pdf\0"), root, [])).toThrow("size is invalid");
+  });
+
+  test("withholds empty and oversized files instead of failing the whole listing", () => {
+    expect(parseFileListing(complete("0\t/root/work/empty.md\0" + "52428801\t/root/work/big.zip\0" + "12\t/root/work/report.pdf\0"), root, []))
+      .toEqual({ candidates: [{ path: "/root/work/report.pdf", size: 12 }], withheldPaths: ["/root/work/empty.md", "/root/work/big.zip"] });
+    expect(parseFileListing(complete("12\t/root/work/report.pdf\0"), root, []))
+      .toEqual({ candidates: [{ path: "/root/work/report.pdf", size: 12 }], withheldPaths: [] });
+  });
+
+  test("reports more outputs than one turn delivers as its own error", () => {
     const tooManyRecords = Array.from(
       { length: MAX_LISTING_RECORDS + 1 },
       (_, index) => `/root/work/repo-${index}\0`,
     ).join("");
-    expect(() => parseRepositoryListing(complete(tooManyRecords), root)).toThrow("exceeded 3000");
+    expect(() => parseRepositoryListing(complete(tooManyRecords), root)).toThrow(TooManyTurnOutputs);
 
     const tooManyCandidates = Array.from(
       { length: MAX_HARVESTED_FILES + 1 },
       (_, index) => `10\t/root/work/file-${index}.pdf\0`,
     ).join("");
-    expect(() => parseFileListing(complete(tooManyCandidates), root, [])).toThrow("exceeded 20 candidates");
+    expect(() => parseFileListing(complete(tooManyCandidates), root, [])).toThrow(TooManyTurnOutputs);
+  });
+
+  test("the top-level listing stays at the workspace root and Rust build trees are pruned", () => {
+    expect(fileListCommand(root, "1.0", [], { topLevelOnly: true })).toContain("find '/root/work' -maxdepth 1 -type f");
+    expect(fileListCommand(root, "1.0", [])).toContain("-name 'target'");
   });
 
   test("real GNU find keeps root-repo outputs, prunes nested trees, and reports invalid sizes", () => {
@@ -143,23 +158,26 @@ describe("listing parsers", () => {
       expect(listing).not.toContain("coverage/");
       const runtimeListing = listing.replaceAll(workspace, "/root/work");
       expect(parseFileListing(runtimeListing, "/root/work", ["/root/work/nested"]))
-        .toEqual([{ path: "/root/work/report.pdf", size: 1 }]);
+        .toEqual({ candidates: [{ path: "/root/work/report.pdf", size: 1 }], withheldPaths: [] });
+
+      const topLevel = runListing(fileListCommand(workspace, "0.0", [], { topLevelOnly: true }));
+      expect(parseFileListing(topLevel, workspace, []).candidates).toEqual([{ path: join(workspace, "report.pdf"), size: 1 }]);
 
       const oversized = join(workspace, "oversized.pdf");
       writeFileSync(oversized, "");
       truncateSync(oversized, 50 * 1024 * 1024 + 1);
       const oversizedListing = runListing(fileListCommand(workspace, "0.0", repositories));
       expect(oversizedListing).toContain(`52428801\t${oversized}\0`);
-      expect(() => parseFileListing(oversizedListing, workspace, repositories)).toThrow("size is invalid");
+      expect(parseFileListing(oversizedListing, workspace, repositories).withheldPaths).toEqual([oversized]);
 
       rmSync(oversized);
       const empty = join(workspace, "empty.pdf");
       writeFileSync(empty, "");
-      expect(() => parseFileListing(
+      expect(parseFileListing(
         runListing(fileListCommand(workspace, "0.0", repositories)),
         workspace,
         repositories,
-      )).toThrow("size is invalid");
+      ).withheldPaths).toEqual([empty]);
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }

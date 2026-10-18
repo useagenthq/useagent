@@ -58,7 +58,7 @@ function driver(
         steerInputs: ["prompt"],
       },
       model: { selection: "per_turn" },
-      tools: { mode: "skynet_brokered", approval: "skynet" },
+      tools: { mode: "useagent_brokered", approval: "useagent" },
     },
     async start() {
       calls.push("start");

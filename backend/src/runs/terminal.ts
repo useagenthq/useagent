@@ -93,7 +93,7 @@ terminalRoutes.get(
             // into replacement glyphs (the "gibberish on reattach" bug).
             const decodeChunk = createTerminalChunkDecoder();
             const handle = await sandbox.process.createPty({
-              id: `skynet-term-${run.id.slice(0, 8)}-${Math.random().toString(36).slice(2, 8)}`,
+              id: `useagent-term-${run.id.slice(0, 8)}-${Math.random().toString(36).slice(2, 8)}`,
               cols,
               rows,
               onData: (data: Uint8Array) => {

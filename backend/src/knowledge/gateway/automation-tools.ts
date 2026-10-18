@@ -13,7 +13,7 @@ import {
   AUTOMATION_TOOLS as AUTOMATION_TOOL_CATALOG,
 } from "./automation-tool-catalog";
 import { getRunForOrg } from "../../runs/repo";
-import { getScheduleForOrg, listFirings, listSchedules, type ApiFiring, type ApiSchedule, type ScheduleRecord } from "../../schedules/repo";
+import { getScheduleForOrg, listFirings, listSchedules, nextRunAt, type ApiFiring, type ApiSchedule, type ScheduleRecord } from "../../schedules/repo";
 import {
   createScheduleForOrg,
   deleteScheduleForOrg,
@@ -161,6 +161,7 @@ function automationSummary(schedule: ApiSchedule | ScheduleRecord): Record<strin
     last_fired_at: api
       ? schedule.last_fired_at
       : schedule.lastFiredAt?.toISOString() ?? null,
+    next_due_at: api ? schedule.next_due_at : nextRunAt(schedule, new Date())?.toISOString() ?? null,
     created_at: api ? schedule.created_at : schedule.createdAt.toISOString(),
     updated_at: api ? schedule.updated_at : schedule.updatedAt.toISOString(),
   };
@@ -210,7 +211,7 @@ async function updateAutomation(
   delete patch.confirmEnable;
   delete patch.id;
   try {
-    const schedule = await updateScheduleForOrg(claims.orgId, id, patch);
+    const schedule = await updateScheduleForOrg(claims.orgId, id, patch, claims.userId || null);
     return textResult(`Updated automation ${schedule.name} (${schedule.id}).`, {
       automation: automationSummary(schedule),
     });
@@ -244,10 +245,10 @@ async function runAutomationNow(
   // Keep the standalone tool gateway importable without loading the backend's
   // command worker and authentication root. The execution graph is needed only
   // for this explicit mutating call.
-  const { fireScheduleForOrg } = await import("../../schedules/service");
+  const { runScheduleNow } = await import("../../schedules/service");
   let runId: string;
   try {
-    runId = await fireScheduleForOrg(schedule, "manual");
+    runId = await runScheduleNow(schedule, claims.userId || null);
   } catch (error) {
     if (error instanceof ScheduleServiceError) return serviceError(error);
     throw error;
@@ -280,7 +281,7 @@ async function deleteAutomation(
   const id = automationId(args);
   if (!id) return errorResult("automation_delete requires an automation id.");
   try {
-    await deleteScheduleForOrg(claims.orgId, id);
+    await deleteScheduleForOrg(claims.orgId, id, claims.userId || null);
     return textResult(`Deleted automation ${id}.`, { automation_id: id, deleted: true });
   } catch (error) {
     if (error instanceof ScheduleServiceError) return serviceError(error);

@@ -19,6 +19,7 @@
  * host-key fallback for it - so a tunnel is mandatory to run a live turn. The
  * config path measured here is: GATEWAY ACTIVE (tunnel), env-fallback credential.
  */
+import { daytonaPlugin } from "@useagent/sandbox-daytona";
 import { openSync, readFileSync } from "node:fs";
 import { Daytona } from "@daytona/sdk";
 import postgres from "postgres";
@@ -34,7 +35,7 @@ const PORT = 3515;
 const GATEWAY_PORT = 3516;
 const BASE = `http://localhost:${PORT}`;
 const GATEWAY_BASE = `http://localhost:${GATEWAY_PORT}`;
-const SNAPSHOT = process.env.LIVE_TIMINGS_SNAPSHOT ?? "skynet-opencode-ffa3be54bc";
+const SNAPSHOT = process.env.LIVE_TIMINGS_SNAPSHOT ?? daytonaPlugin.template(process.env);
 const MODEL = process.env.LIVE_TIMINGS_MODEL ?? DEFAULT_OPENCODE_MODEL;
 const COLD_PROMPT =
   process.env.LIVE_TIMINGS_COLD_PROMPT ??
@@ -45,8 +46,8 @@ const WARM_PROMPT =
 const TOOL_GATEWAY_ENABLED = process.env.LIVE_TIMINGS_TOOL_GATEWAY !== "off";
 const TURN_BUDGET_MS = 8 * 60 * 1000;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
-const backendLog = `${scratch}/skynet-e2e-timings-backend.log`;
-const tunnelLog = `${scratch}/skynet-e2e-timings-tunnel.log`;
+const backendLog = `${scratch}/useagent-e2e-timings-backend.log`;
+const tunnelLog = `${scratch}/useagent-e2e-timings-tunnel.log`;
 const backendDir = new URL("../..", import.meta.url).pathname;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

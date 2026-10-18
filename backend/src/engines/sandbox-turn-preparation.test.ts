@@ -584,7 +584,7 @@ describe("sandbox turn provider cleanup", () => {
     let closes = 0;
     const fresh = sandboxFixture({
       onCommand(command) {
-        if (command.includes(".skynet-inputs")) inputCommands += 1;
+        if (command.includes(".useagent-inputs")) inputCommands += 1;
       },
     });
     fresh.sandbox.fs.uploadFile = async () => { uploads += 1; };
@@ -597,7 +597,7 @@ describe("sandbox turn provider cleanup", () => {
       sizeBytes: 5,
       sha256: "0".repeat(64),
       storageKey: "run/input-1",
-      sandboxPath: "/root/work/.skynet-inputs/input-1-brief.txt",
+      sandboxPath: "/root/work/.useagent-inputs/input-1-brief.txt",
     }];
 
     await expect(prepareSandboxTurn(

@@ -7,12 +7,12 @@ import { resolveSandboxBindingForRun } from "../sandboxes/binding";
 import type { RunLocation } from "@useagent/agent-client/wire";
 import { listRunUploads } from "./repo";
 
-const INPUT_ROOT = "/root/work/.skynet-inputs";
+const INPUT_ROOT = "/root/work/.useagent-inputs";
 
 /** Root-run sandboxes keep inputs under /root; others under the runtime user's home. */
 export function sandboxInputRoot(kind: SandboxProviderKind | undefined): string {
   const plugin = sandboxPlugin(kind ?? sandboxProviderKind());
-  return plugin.runsAsRoot ? INPUT_ROOT : `${plugin.home}/work/.skynet-inputs`;
+  return plugin.runsAsRoot ? INPUT_ROOT : `${plugin.home}/work/.useagent-inputs`;
 }
 
 function safeName(name: string): string {

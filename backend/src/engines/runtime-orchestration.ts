@@ -1,4 +1,5 @@
 import type { EngineId } from "../db/schema";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 import {
   DEFAULT_CODEX_MODEL,
   DEFAULT_OPENCODE_MODEL,
@@ -308,7 +309,7 @@ export interface RuntimeThreadSnapshot {
       readonly startedAt?: string | null;
       readonly completedAt?: string | null;
       readonly assistantMessageId: string | null;
-      /** The message that started the run; the plane's own are `skynet-message-*`. */
+      /** The message that started the run; the plane's own come from `runtimeUserMessageId`. */
       readonly userMessageId?: string;
       /** The runtime's reason when the run failed. */
       readonly error?: string | null;
@@ -348,8 +349,9 @@ function runtimeModelSelection(engine: RuntimeEngineId, ctx: Pick<EngineRunConte
   return { instanceId: PROVIDER_INSTANCE[engine], model: runtimeModelId(engine, ctx.model), options };
 }
 
-function stableId(prefix: string, value: string): string {
-  return `${prefix}-${value}`.replace(/[^a-zA-Z0-9._~-]/g, "-");
+/** Ids the plane hands the in-sandbox runtime; retained runtimes hold them, so the prefix stays. */
+function stableId(kind: string, value: string): string {
+  return `${SANDBOX_NAME_PREFIX}-${kind}-${value}`.replace(/[^a-zA-Z0-9._~-]/g, "-");
 }
 
 function runtimePlanTodos(value: unknown): ReadonlyArray<Readonly<Record<string, unknown>>> {
@@ -365,22 +367,22 @@ function runtimePlanTodos(value: unknown): ReadonlyArray<Readonly<Record<string,
 }
 
 export function runtimeProjectId(ctx: Pick<EngineRunContext, "threadId" | "runId">): string {
-  return stableId("skynet-project", ctx.threadId ?? ctx.runId);
+  return stableId("project", ctx.threadId ?? ctx.runId);
 }
 export function runtimeThreadId(ctx: Pick<EngineRunContext, "threadId" | "runId">): string {
-  return stableId("skynet-thread", ctx.threadId ?? ctx.runId);
+  return stableId("thread", ctx.threadId ?? ctx.runId);
 }
-export const runtimeUserMessageId = (runId: string): string => stableId("skynet-message", runId);
+export const runtimeUserMessageId = (runId: string): string => stableId("message", runId);
 /** The plane's own messages; a run started by any other message is not the plane's. */
 export const isRuntimePlaneMessageId = (messageId: string | undefined): boolean =>
-  typeof messageId === "string" && messageId.startsWith("skynet-message-");
+  typeof messageId === "string" && messageId.startsWith(`${SANDBOX_NAME_PREFIX}-message-`);
 
 export function buildRuntimeProjectCreateCommand(
   ctx: Pick<EngineRunContext, "threadId" | "runId">,
   workspaceRoot: string,
 ): RuntimeCommand {
   return buildV2ProjectCreate({
-    commandId: stableId("skynet-project-create", ctx.runId),
+    commandId: stableId("project-create", ctx.runId),
     projectId: runtimeProjectId(ctx),
     title: `UseAgent ${ctx.threadId ?? ctx.runId}`,
     workspaceRoot,
@@ -395,7 +397,7 @@ export function buildRuntimeThreadCreateCommand(
   const threadId = runtimeThreadId(ctx);
   return {
     ...buildV2ThreadCreate({
-      commandId: stableId("skynet-thread-create", ctx.runId),
+      commandId: stableId("thread-create", ctx.runId),
       threadId,
       projectId: runtimeProjectId(ctx),
       title: `UseAgent ${ctx.threadId ?? ctx.runId}`,
@@ -415,7 +417,7 @@ export function buildRuntimeTurnStartCommand(
   const threadId = runtimeThreadId(ctx);
   return {
     ...buildV2MessageDispatch({
-      commandId: stableId("skynet-turn", ctx.runId),
+      commandId: stableId("turn", ctx.runId),
       threadId,
       messageId: runtimeUserMessageId(ctx.runId),
       text: prompt,
@@ -432,7 +434,7 @@ export function buildRuntimeTurnInterruptCommand(
 ): RuntimeCommand & { readonly threadId: string } {
   return {
     ...buildV2RunInterrupt({
-      commandId: stableId("skynet-turn-interrupt", crypto.randomUUID()),
+      commandId: stableId("turn-interrupt", crypto.randomUUID()),
       threadId,
       runId,
       ...(reason ? { reason } : {}),

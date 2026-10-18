@@ -1,3 +1,4 @@
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import { createHash } from "node:crypto";
 import { basename, posix } from "node:path";
 import { contentTypeForName } from "./mime";
@@ -598,7 +599,7 @@ export async function publishSandboxArtifact(input: {
       id: `artifact.revised:${revised.id}:${revised.workpieceRevision}`,
       runId: run.id,
       threadId: run.threadId,
-      provider: "skynet",
+      provider: PLATFORM_EVENT_LANES.platform,
       eventType: "artifact.revised",
       payload: toArtifactDescriptor(eventRecord),
     }, { signal: opts.signal, beforeCommit: opts.beforeCommit });
@@ -669,7 +670,7 @@ export async function publishSandboxArtifact(input: {
     id: `artifact.created:${stored.row.id}`,
     runId: run.id,
     threadId: run.threadId,
-    provider: "skynet",
+    provider: PLATFORM_EVENT_LANES.platform,
     eventType: "artifact.created",
     payload: toArtifactDescriptor(eventRecord),
   }, { signal: opts.signal, beforeCommit: opts.beforeCommit });
@@ -764,7 +765,7 @@ export async function publishTrustedArtifact(input: {
     id: eventId,
     runId: run.id,
     threadId: run.threadId,
-    provider: "skynet",
+    provider: PLATFORM_EVENT_LANES.platform,
     eventType: "artifact.created",
     payload: descriptor,
   });

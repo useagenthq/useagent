@@ -2,7 +2,7 @@
  * Parse the LLM's XML wiki-structure response into a typed model.
  *
  * Ported to TypeScript from deepwiki-open (AsyncFuncAI/deepwiki-open, MIT
- * License, (c) 2024 Sheing Ng) — api/services/wiki/structure.py. The reference
+ * License, Copyright (c) 2024 Sheing Ng) — api/services/wiki/structure.py. The reference
  * tries strict ElementTree parsing then falls back to regex; the model's XML is
  * routinely malformed (bare `&`, unclosed tags), so we parse by regex directly,
  * which is exactly the reference's robust fallback path. Raises if no

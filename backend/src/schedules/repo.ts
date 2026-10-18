@@ -8,6 +8,7 @@ import {
   type EngineId,
   type ScheduleTrigger,
 } from "../db/schema";
+import { nextOccurrence } from "./cron";
 
 // ---------------------------------------------------------------------------
 // API serialization — snake_case wire contract, matching the runs/skills style.
@@ -22,8 +23,8 @@ export interface ApiSchedule {
   user_id: string | null;
   name: string;
   cron: string;
-  /** IANA timezone the cron runs in; null = server local time. */
-  timezone: string | null;
+  /** IANA timezone the cron runs in. */
+  timezone: string;
   prompt: string;
   engine: EngineId;
   model: string;
@@ -44,6 +45,9 @@ export interface ApiSchedule {
   enabled: boolean;
   /** The cron loop's last tick for this schedule (its same-minute guard). */
   last_fired_at: string | null;
+  /** The next run: the minute the scheduler fires it next (nextRunAt), in the
+   *  schedule's timezone. Null while disabled or when the cron names no date. */
+  next_due_at: string | null;
   /** When it last actually ran, by any trigger (cron or Run now): the newest
    *  firing in the log, falling back to last_fired_at. What a card shows. */
   last_run_at: string | null;
@@ -62,6 +66,30 @@ export interface ApiFiring {
   /** Live run status/summary, joined from the runs log. Null if the run is gone. */
   run_status: string | null;
   run_summary: string | null;
+}
+
+const MINUTE_MS = 60_000;
+
+/** The tick already fired `s` in the minute `now` falls in (its same-minute
+ *  guard): last_fired_at lies in that very minute, not a later one. */
+export function firedThisMinute(s: Pick<ScheduleRecord, "lastFiredAt">, now: Date): boolean {
+  return s.lastFiredAt !== null && Math.floor(s.lastFiredAt.getTime() / MINUTE_MS) === Math.floor(now.getTime() / MINUTE_MS);
+}
+
+/**
+ * When the scheduler fires `s` next: its first occurrence (cron.ts
+ * nextOccurrence) from the start of the minute `now` falls in, or from the next
+ * minute once the tick fired it in this one. Null while disabled. The tick fires
+ * a schedule in a minute that is an occurrence (cron.ts isOccurrence, the same
+ * rule) unless it fired it there already, so the two cannot disagree.
+ */
+export function nextRunAt(
+  s: Pick<ScheduleRecord, "cron" | "timezone" | "enabled" | "lastFiredAt">,
+  now: Date,
+): Date | null {
+  if (!s.enabled) return null;
+  const minute = Math.floor(now.getTime() / MINUTE_MS) * MINUTE_MS;
+  return nextOccurrence(s.cron, s.timezone, new Date(firedThisMinute(s, now) ? minute + MINUTE_MS : minute));
 }
 
 function toSchedule(s: ScheduleRecord, lastRunAt: Date | null = s.lastFiredAt): ApiSchedule {
@@ -91,6 +119,7 @@ function toSchedule(s: ScheduleRecord, lastRunAt: Date | null = s.lastFiredAt): 
     enablement_policy: s.enablementPolicy,
     enabled: s.enabled,
     last_fired_at: s.lastFiredAt ? s.lastFiredAt.toISOString() : null,
+    next_due_at: nextRunAt(s, new Date())?.toISOString() ?? null,
     last_run_at: (lastRunAt ?? s.lastFiredAt)?.toISOString() ?? null,
     created_at: s.createdAt.toISOString(),
     updated_at: s.updatedAt.toISOString(),
@@ -136,7 +165,7 @@ export async function createSchedule(input: {
   userId: string | null;
   name: string;
   cron: string;
-  timezone: string | null;
+  timezone: string;
   prompt: string;
   engine: EngineId;
   model: string;

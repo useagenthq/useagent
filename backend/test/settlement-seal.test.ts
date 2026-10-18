@@ -8,6 +8,7 @@ import { finalizeRun } from "../src/runs/finalize";
 import { drainProviderEvents } from "../src/runs/provider-events";
 import { createSecretRedactor } from "../src/secrets/redact";
 import { createOrgSession, waitFor } from "./helpers";
+import { SANDBOX_NAME_PREFIX } from "../src/sandboxes/sandbox-names";
 
 // The settlement seal, through the REAL projector, capture chain, finalization
 // and charge: a projection captures one usage figure, blocks on its step write,
@@ -49,7 +50,7 @@ test("a capture that resumes after settlement writes nothing, and the charge sta
   const snapshot = {
     snapshotSequence: 2,
     thread: {
-      id: `skynet-thread-${runId}`,
+      id: `${SANDBOX_NAME_PREFIX}-thread-${runId}`,
       latestTurn: { turnId: "turn-1", state: "completed" as const, assistantMessageId: null },
       messages: [],
       activities: [usage("task-a", 0.1), usage("task-b", 0.2)],

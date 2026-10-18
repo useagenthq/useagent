@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { chunkSlackText, SLACK_MSG_LIMIT } from "../src/slack/chunk";
 
-// Reply chunking (ported from a reference implementation split_message, format.py:361): long
+// Reply chunking (ported from KiroCrew's split_message, src/kiro_crew/slack/format.py:361): long
 // replies become sequential thread messages cut on paragraph/code-fence
 // boundaries, each within the 3,900-char bound, code blocks kept renderable.
 

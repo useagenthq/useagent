@@ -75,9 +75,9 @@ describe("Better Auth trusted origins", () => {
       betterAuthTrustedOrigins({
         FRONTEND_ORIGIN: "https://app.useagent.org",
         BETTER_AUTH_URL: "https://app.useagent.org",
-        BETTER_AUTH_TRUSTED_ORIGINS: "https://skynet.meow.gs, https://app.useagent.org/",
+        BETTER_AUTH_TRUSTED_ORIGINS: "https://legacy.example.com, https://app.useagent.org/",
       }),
-    ).toEqual(["https://app.useagent.org", "useagent:/", "https://skynet.meow.gs"]);
+    ).toEqual(["https://app.useagent.org", "useagent:/", "https://legacy.example.com"]);
   });
 
   test("rejects non-HTTP origins", () => {

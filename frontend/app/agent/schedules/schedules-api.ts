@@ -11,6 +11,16 @@ import type { FiringRecord, ScheduleRecord } from "./schedules-data";
 
 const jsonHeaders = { "content-type": "application/json" } as const;
 
+/** A call the backend refused in words for people (its `message`), such as an
+ *  automation only its creator may change. Other failures say only which call
+ *  failed, and the page keeps its own words for them. */
+export class AutomationRefusal extends Error {}
+
+async function failure(res: Response, call: string): Promise<Error> {
+  const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
+  return typeof body?.message === "string" ? new AutomationRefusal(body.message) : new Error(`${call} ${res.status}`);
+}
+
 export async function fetchSchedules(signal?: AbortSignal): Promise<ScheduleRecord[]> {
   const res = await backendFetch("/api/automations", { cache: "no-store", signal });
   if (!res.ok) throw new Error(`automations ${res.status}`);
@@ -52,7 +62,7 @@ export async function updateSchedule(
     headers: jsonHeaders,
     body: JSON.stringify(patch),
   });
-  if (!res.ok) throw new Error(`update automation ${res.status}`);
+  if (!res.ok) throw await failure(res, "update automation");
   return (await res.json()) as ScheduleRecord;
 }
 
@@ -61,7 +71,7 @@ export async function runScheduleNow(id: string): Promise<string> {
   const res = await backendFetch(`/api/automations/${id}/run-now`, {
     method: "POST",
   });
-  if (!res.ok) throw new Error(`run-now ${res.status}`);
+  if (!res.ok) throw await failure(res, "run-now");
   const data = (await res.json()) as { run_id: string };
   return data.run_id;
 }
@@ -70,7 +80,7 @@ export async function deleteSchedule(id: string): Promise<void> {
   const res = await backendFetch(`/api/automations/${id}`, {
     method: "DELETE",
   });
-  if (!res.ok) throw new Error(`delete automation ${res.status}`);
+  if (!res.ok) throw await failure(res, "delete automation");
 }
 
 export async function fetchHistory(id: string, signal?: AbortSignal): Promise<FiringRecord[]> {

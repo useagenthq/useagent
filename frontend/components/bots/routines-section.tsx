@@ -1,6 +1,6 @@
 "use client";
 
-import { RiAddLine, RiDeleteBinLine, RiPlayLine } from "@remixicon/react";
+import { RiAddLine, RiDeleteBinLine, RiEditLine, RiHistoryLine, RiPlayLine } from "@remixicon/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -9,7 +9,8 @@ import { Badge } from "@/components/base/badges/badge";
 import { Button } from "@/components/base/buttons/button";
 import * as Modal from "@/components/base/modal/modal";
 import { Switch } from "@/components/base/switch/switch";
-import { NewRoutineForm } from "./routine-form";
+import { RoutineForm } from "./routine-form";
+import { RoutineHistoryDrawer } from "./routine-history";
 import { deleteRoutine, fetchRoutines, runRoutineNow, updateRoutine } from "./routines-api";
 import { relativeTime } from "./roster-model";
 import { type ApiBot, type ApiRoutine, OFFLINE_MESSAGE } from "./types";
@@ -33,6 +34,8 @@ function RoutineRow({
   const now = useNow();
   const [busy, setBusy] = useState<"toggle" | "run" | "delete" | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   /** The run a test run started, until this row goes away. */
   const [started, setStarted] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +52,20 @@ function RoutineRow({
       setBusy(null);
     }
   };
+
+  if (editing) {
+    return (
+      <RoutineForm
+        bot={bot}
+        routine={routine}
+        onCancel={() => setEditing(false)}
+        onSaved={(saved) => {
+          setEditing(false);
+          onChange(saved);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-2 rounded-2xl border border-border-button-default p-3">
@@ -99,7 +116,21 @@ function RoutineRow({
               </Link>
             </span>
           )}
+          <Button variant="ghost" size="small" leadingIcon={RiHistoryLine} onClick={() => setHistoryOpen(true)}>
+            History
+          </Button>
         </div>
+        <Button
+          variant="ghost"
+          size="small"
+          iconOnly
+          className="ml-auto"
+          leadingIcon={RiEditLine}
+          aria-label={`Edit ${routine.name}`}
+          title="Edit routine"
+          disabled={busy !== null}
+          onClick={() => setEditing(true)}
+        />
         <Button
           variant="ghost"
           size="small"
@@ -114,6 +145,7 @@ function RoutineRow({
           {error}
         </p>
       )}
+      <RoutineHistoryDrawer bot={bot} routine={routine} open={historyOpen} onClose={() => setHistoryOpen(false)} />
       <Modal.Root open={confirming} onOpenChange={setConfirming}>
         <Modal.Content className="max-w-[400px] rounded-2xl border border-border-button-default bg-background-primary-default shadow-dropdown">
           <Modal.Header
@@ -181,15 +213,15 @@ export function RoutinesSection({ bot }: { bot: ApiBot }) {
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <h2 className="text-body-2-medium text-text-primary">Routines</h2>
-        {!adding && (
+        {!adding && bot.editable !== false && (
           <Button variant="ghost" size="small" iconOnly leadingIcon={RiAddLine} aria-label="Add routine" onClick={() => setAdding(true)} />
         )}
       </div>
       {adding && (
-        <NewRoutineForm
+        <RoutineForm
           bot={bot}
           onCancel={() => setAdding(false)}
-          onCreated={() => {
+          onSaved={() => {
             setAdding(false);
             changed();
           }}
@@ -198,7 +230,11 @@ export function RoutinesSection({ bot }: { bot: ApiBot }) {
       {routines === null && !error ? (
         <p className="text-caption-1-regular text-text-tertiary">Loading</p>
       ) : routines && routines.length === 0 && !adding ? (
-        <p className="text-body-2-regular text-text-tertiary">No routines yet. Add one and {bot.name} runs it on schedule into this thread.</p>
+        <p className="text-body-2-regular text-text-tertiary">
+          {bot.editable === false
+            ? "No routines yet."
+            : `No routines yet. Add one and ${bot.name} runs it on schedule into this thread.`}
+        </p>
       ) : (
         routines?.map((routine) => <RoutineRow key={routine.id} bot={bot} routine={routine} onChange={changed} />)
       )}

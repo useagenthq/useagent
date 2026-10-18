@@ -23,9 +23,10 @@ import { runtimeThreadView } from "./runtime-v2-view";
 import type { V2RunStatus, V2ThreadSnapshot, V2TurnItem } from "./runtime-v2-wire";
 import { v2Item, v2Projection, v2Run, v2Snapshot } from "./runtime-v2.test-support";
 import type { EngineRunContext } from "./types";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 const RUN_ID = "run-compact";
-const THREAD_ID = "skynet-thread-thread-1";
+const THREAD_ID = `${SANDBOX_NAME_PREFIX}-thread-thread-1`;
 const REQUEST_ID = runtimeUserMessageId(RUN_ID);
 
 const prior = v2Run({ id: "prior", ordinal: 1 });
@@ -105,7 +106,7 @@ test("compact completes from its own compaction while an unrelated one does not 
     dependencies({
       captured,
       script: async (apply) => {
-        const other = v2Run({ id: "other", ordinal: 2, userMessageId: "skynet-message-other" });
+        const other = v2Run({ id: "other", ordinal: 2, userMessageId: `${SANDBOX_NAME_PREFIX}-message-other` });
         expect(await apply(state(2, [prior, other], [compaction("completed", "other")]))).toBe(true);
         expect(await apply(state(3, [prior, other, { ...compactRun("running"), ordinal: 3 }], [compaction("completed", "other"), compaction("completed")])))
           .toBe(false);

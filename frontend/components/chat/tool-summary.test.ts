@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { listingEntryCount, summarizeToolStep, unwrapToolOutput } from "./tool-summary";
 import type { ApiStep } from "./types";
+import { LEGACY_TOOL_SERVER_IDS } from "@useagent/agent-harness/canonical";
 
 function step(over: Partial<ApiStep> & { code?: Record<string, unknown> }): ApiStep {
   const { code, ...rest } = over;
@@ -182,7 +183,7 @@ describe("summarizeToolStep", () => {
     expect(namespaced.label).toBe("Activated playbook: design-taste");
     const legacy = summarizeToolStep(
       step({
-        code: { tool: "skynet-knowledge_memory_read", input: { memoryRef: "tencent:l1:1" } },
+        code: { tool: `${LEGACY_TOOL_SERVER_IDS.gateway}_memory_read`, input: { memoryRef: "tencent:l1:1" } },
       }),
     );
     expect(legacy.label).toBe("Recalled memory");

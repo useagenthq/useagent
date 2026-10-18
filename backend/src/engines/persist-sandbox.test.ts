@@ -40,7 +40,7 @@ describe("persistSandboxBeforeExecution (P1-B: persist-before-execution, fail-cl
       runId: "r3",
       sandboxId: "sbx3",
       reused: false,
-      persist: async () => { throw new Error("connect ECONNREFUSED postgres://user:SUPERSECRET@10.0.0.1:5432/skynet"); },
+      persist: async () => { throw new Error("connect ECONNREFUSED postgres://user:SUPERSECRET@10.0.0.1:5432/useagent"); },
       deleteFreshSandbox: async () => {},
     }).catch((e) => { msg = e instanceof Error ? e.message : String(e); });
     expect(msg).not.toContain("SUPERSECRET");

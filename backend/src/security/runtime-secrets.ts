@@ -1,3 +1,5 @@
+/** Development fallback only. Dev databases hold org secrets sealed under a key
+ *  derived from it, so the value stays until they are rewrapped. */
 export const DEFAULT_DEV_AUTH_SECRET = "dev-skynet-secret-change-me";
 
 export function runtimeDevModeEnabled(

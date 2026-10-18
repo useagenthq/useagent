@@ -52,7 +52,7 @@ const ORIGIN = "http://localhost:3200";
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
 // Per-run unique db so concurrent runs never collide and a DROP can only ever hit
 // this run's own database.
-const DB = `skynet_thread_e2e_${crypto.randomUUID().slice(0, 8).replace(/-/g, "")}`;
+const DB = `useagent_thread_e2e_${crypto.randomUUID().slice(0, 8).replace(/-/g, "")}`;
 // The backend connects to the database on the SAME server the admin URL created
 // it on; only the path differs.
 const DB_URL = (() => { const url = new URL(ADMIN_URL); url.pathname = `/${DB}`; return url.toString(); })();
@@ -84,7 +84,7 @@ function assertSafeAdmin(): void {
   if (!local && process.env.TS_ALLOW_REMOTE_ADMIN !== "1") {
     throw new Error(`refusing to DROP DATABASE on non-local admin host "${host}" - set TS_ALLOW_REMOTE_ADMIN=1 to override`);
   }
-  if (!/^skynet_thread_e2e_[0-9a-f]{8}$/.test(DB)) {
+  if (!/^useagent_thread_e2e_[0-9a-f]{8}$/.test(DB)) {
     throw new Error(`refusing to DROP unexpected database name "${DB}"`);
   }
 }

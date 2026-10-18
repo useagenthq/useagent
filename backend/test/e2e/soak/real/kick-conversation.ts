@@ -26,7 +26,7 @@ import { deleteById, listUseAgent } from "../lib/daytona";
 import { readSandboxRunLabel } from "../../../../src/sandboxes/label-compat";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
-const DB = process.env.SOAK_REAL_DB ?? "skynet_soak_real";
+const DB = process.env.SOAK_REAL_DB ?? "useagent_soak_real";
 const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 const PORT = Number(process.env.SOAK_REAL_PORT ?? 3518);
 const BASE = `http://localhost:${PORT}`;
@@ -37,7 +37,7 @@ const DO_KILL = process.env.SOAK_REAL_KILL === "1";
 const DO_MEM = process.env.SOAK_REAL_MEM === "1";
 const backendDir = new URL("../../../..", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
-const backendLog = `${scratch}/skynet-soak-real.log`;
+const backendLog = `${scratch}/useagent-soak-real.log`;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const rec = new Recorder("real-kick-conversation");
