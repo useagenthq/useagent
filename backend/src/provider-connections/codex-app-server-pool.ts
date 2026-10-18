@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProviderConnectionScope } from "./repo";
@@ -209,8 +210,15 @@ export function codexHomeForScope(scope: ProviderConnectionScope): string {
   return join(defaultCodexHomeRoot(), digest);
 }
 
+/** Where logins lived before this default took the product name; still used when it is the only one. */
+const LEGACY_CODEX_HOME_ROOT = ".skynet/codex-app-server";
+
 function defaultCodexHomeRoot(): string {
-  return process.env.CODEX_APP_SERVER_HOME_ROOT?.trim() || join(process.cwd(), ".skynet/codex-app-server");
+  const configured = process.env.CODEX_APP_SERVER_HOME_ROOT?.trim();
+  if (configured) return configured;
+  const root = join(process.cwd(), ".useagent/codex-app-server");
+  const legacy = join(process.cwd(), LEGACY_CODEX_HOME_ROOT);
+  return !existsSync(root) && existsSync(legacy) ? legacy : root;
 }
 
 function scopeKey(scope: ProviderConnectionScope): string {

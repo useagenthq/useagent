@@ -1,3 +1,5 @@
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_HOME } from "../sandboxes/sandbox-names";
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import type { EngineRunContext } from "../engines/types";
@@ -42,7 +44,7 @@ import { decryptOrgSecrets, type DecryptedSecrets } from "./store";
 /** The native `eventType` for a secrets-injection marker. */
 export const SECRETS_INJECTED = "secrets.injected";
 
-const DEFAULT_SECRET_FILE_DIR = "$HOME/.skynet/secrets";
+const DEFAULT_SECRET_FILE_DIR = `${SANDBOX_STATE_HOME}/secrets`;
 const HOME_RELATIVE_DIR_RE = /^\$HOME(?:\/[A-Za-z0-9._-]+)+$/;
 const ABSOLUTE_DIR_RE = /^\/(?:[A-Za-z0-9._-]+\/?)+$/;
 
@@ -68,7 +70,9 @@ export const SECRET_FILE_DIR = resolveSecretFileDir();
 
 /** The dotenv explicitly sourced at engine boot (and exposed through BASH_ENV
  * for compatible non-interactive Bash commands). */
-export const SECRET_DOTENV_PATH = `${SECRET_FILE_DIR}/skynet-env.sh`;
+/** Retained sandboxes source this name from their shell rc files; it stays. */
+const SECRET_DOTENV_NAME = `${SANDBOX_NAME_PREFIX}-env.sh`;
+export const SECRET_DOTENV_PATH = `${SECRET_FILE_DIR}/${SECRET_DOTENV_NAME}`;
 
 const DOTENV_BASENAME_RE = /^\.env(?:\..+)?$/;
 
@@ -374,7 +378,7 @@ export async function recordSecretsInjected(
     id: `secretsinjected_${ctx.runId}`,
     runId: ctx.runId,
     threadId: ctx.threadId ?? ctx.runId,
-    provider: "skynet",
+    provider: PLATFORM_EVENT_LANES.platform,
     eventType: SECRETS_INJECTED,
     payload: {
       names: injection.names,
@@ -442,7 +446,7 @@ export async function materializeSecretFiles(
   const hookLine = `. ${SECRET_DOTENV_SHELL_PATH} 2>/dev/null || true`;
   const installRcHooks =
     `for rc in "$HOME/.bashrc" "$HOME/.profile" "$HOME/.zshenv"; do ` +
-    `grep -qsF 'skynet-env.sh' "$rc" || printf '\\n%s\\n' ${shellQuote(hookLine)} >> "$rc"; ` +
+    `grep -qsF '${SECRET_DOTENV_NAME}' "$rc" || printf '\\n%s\\n' ${shellQuote(hookLine)} >> "$rc"; ` +
     `done`;
   const cmds = [
     "umask 077",

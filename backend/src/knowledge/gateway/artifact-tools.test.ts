@@ -7,6 +7,7 @@ import {
   executeArtifactTool,
   setSandboxArtifactPublisherForTest,
 } from "./artifact-tools";
+import { SANDBOX_STATE_DIR } from "../../sandboxes/sandbox-names";
 
 type JsonSchemaLike = {
   readonly anyOf?: readonly JsonSchemaLike[];
@@ -282,7 +283,7 @@ describe("artifact gateway contract", () => {
     });
 
     for (const args of [
-      { path: "/root/work/../.skynet/secrets/credential.json" },
+      { path: `/root/work/../${SANDBOX_STATE_DIR}/secrets/credential.json` },
       { path: "/home/daytona/work/../.useagent/secrets/credential.json" },
       { path: "/root/work/report.docx", editable_path: "$HOME/.useagent/secrets/credential.html" },
     ]) {

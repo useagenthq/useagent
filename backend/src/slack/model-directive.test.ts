@@ -32,13 +32,15 @@ describe("slack model directives", () => {
 
   test("resolves exact ids, unique substrings, and rejects unknown/ambiguous tokens", () => {
     expect(resolveModelToken("codex", "gpt-5.6-sol")).toBe("gpt-5.6-sol");
-    expect(resolveModelToken("codex", "luna")).toBe("gpt-5.6-luna");
+    expect(resolveModelToken("codex", "gpt-6-luna")).toBe("gpt-6-luna");
     expect(resolveModelToken("codex", "terra")).toBe("gpt-5.6-terra");
-    // `sol` is a unique substring only if no other codex model contains it;
-    // gpt-5.6-sol-pro style entries would make it ambiguous - assert the
-    // resolver returns either the exact model or null, never a wrong pick.
-    const sol = resolveModelToken("codex", "sol");
-    expect(sol === "gpt-5.6-sol" || sol === null).toBe(true);
+    expect(resolveModelToken("codex", "astra")).toBe("gpt-6-astra");
+    expect(resolveModelToken("codex", "5.6-luna")).toBe("gpt-5.6-luna");
+    expect(resolveModelToken("codex", "6.1")).toBe("gpt-6.1-sol");
+    // `luna` and `sol` each name more than one codex model, so the resolver
+    // returns null and the caller replies with the catalog, never a wrong pick.
+    expect(resolveModelToken("codex", "luna")).toBeNull();
+    expect(resolveModelToken("codex", "sol")).toBeNull();
     expect(resolveModelToken("codex", "definitely-not-a-model")).toBeNull();
   });
 

@@ -162,9 +162,9 @@ export class Stack {
     if (this.mem) {
       e.MEMORY_API_URL = `http://localhost:${this.mem.port}`;
       e.MEMORY_API_KEY = "soak";
-      e.MEMORY_TEAM_ID = "skynet";
-      e.MEMORY_AGENT_ID = "skynet-backend";
-      e.MEMORY_USER_ID = "skynet";
+      e.MEMORY_TEAM_ID = "useagent";
+      e.MEMORY_AGENT_ID = "useagent-backend";
+      e.MEMORY_USER_ID = "useagent";
       e.MEMORY_OUTBOX_TICK_MS = e.MEMORY_OUTBOX_TICK_MS ?? "300";
     } else {
       delete e.MEMORY_API_URL;

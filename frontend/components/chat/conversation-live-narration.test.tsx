@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Conversation, type Turn } from "./conversation";
 import { createNativeStore } from "./native-store";
 import type { ApiRun, ApiStep } from "./types";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
 /** A running chat turn: no steps yet, no text in its native frames (the worker
  * records only timing spans for chat), and answer tokens on the delta channel. */
@@ -40,7 +41,7 @@ function chatTurn(liveText: string): Turn {
     schemaVersion: 1,
     eventId: "chat-run:timing:worker.accept_to_running",
     seq: 1,
-    provider: "skynet",
+    provider: PLATFORM_EVENT_LANES.platform,
     eventType: "timing.span",
     native: { sessionId: null, parentSessionId: null, messageId: null, partId: null, callId: null },
     payload: { stage: "worker.accept_to_running", durMs: 3 },

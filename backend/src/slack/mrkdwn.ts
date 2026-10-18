@@ -6,8 +6,9 @@
  * headings, no `[text](url)`. Posting raw Markdown renders `**bold**` as literal
  * asterisks and `## heading` as a literal hash - the user-visible bug this fixes.
  *
- * PORTED from the user's QM bot: a reference implementation/src/slack/mrkdwn.ts (toSlackMrkdwn),
- * verified by a reference implementation/test/slack-mrkdwn.test.ts. Kept the full markdown-conversion
+ * PORTED from QM (https://github.com/yc-software/qm), MIT License, Copyright (c) 2026 QM
+ * contributors (license in third_party/licenses/qm/LICENSE): src/slack/mrkdwn.ts
+ * (toSlackMrkdwn), verified by its test/slack-mrkdwn.test.ts. Kept the full markdown-conversion
  * pipeline and the mass-mention safety defuser (so an agent reply that literally
  * contains an encoded `<!channel>` cannot broadcast to a real workspace). Dropped
  * only the `@user`-mention arming (setMentionIndex/armUserMentions) - it needs a

@@ -44,16 +44,17 @@ Then wire the backend — add to `backend/.env`:
 ```bash
 MEMORY_API_URL=http://localhost:8420
 MEMORY_API_KEY=local-dev        # any non-empty while gateway auth is disabled
-MEMORY_SERVICE_ID=skynet        # must match instanceId in tdai-gateway.yaml
-MEMORY_TEAM_ID=skynet           # your team = the shared-memory boundary
-# optional (env.ts defaults): MEMORY_AGENT_ID=skynet-backend
-#                             MEMORY_USER_ID=skynet
-#                             MEMORY_SESSION_ID=skynet-runs
+MEMORY_SERVICE_ID=<instanceId>  # the instanceId in tdai-gateway.yaml
+MEMORY_TEAM_ID=useagent         # your team = the shared-memory boundary
+# optional (env.ts defaults): MEMORY_AGENT_ID=useagent-backend
+#                             MEMORY_USER_ID=useagent
 ```
 
-The `skynet` values above are existing provider partition identifiers and must
-continue to match the deployed `tdai-gateway.yaml` until that data is migrated;
-they are not customer-facing product names.
+The service, team, agent and user ids partition stored memory. A deployment
+that already holds memories keeps the values it was set up with (older
+versions of this guide used the product's first name for all of them, and
+`instanceId` still carries it): changing one hides everything written under
+the old value.
 
 Restart the backend. Done. (Leave `MEMORY_API_URL` unset to keep memory off.)
 
@@ -108,8 +109,9 @@ regardless of which bring-up you use.
 ## Verify
 
 ```bash
-H=(-H "Authorization: Bearer local-dev" -H "x-tdai-service-id: skynet" -H "Content-Type: application/json")
-ISO='"team_id":"skynet","agent_id":"skynet-backend","user_id":"skynet"'
+SERVICE=$(awk '/^instanceId:/ {print $2}' memory/tdai-gateway.yaml)
+H=(-H "Authorization: Bearer local-dev" -H "x-tdai-service-id: $SERVICE" -H "Content-Type: application/json")
+ISO='"team_id":"useagent","agent_id":"useagent-backend","user_id":"useagent"'
 
 # write a turn pair
 curl -sS -X POST "${H[@]}" http://localhost:8420/v3/conversation/add \

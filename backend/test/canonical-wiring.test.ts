@@ -54,7 +54,7 @@ async function loadRunCanonical() {
   return all.filter((e) => e.runId === RUN);
 }
 
-describe("canonical wiring: finalizeRun populates the canonical lane (skynet_test)", () => {
+describe("canonical wiring: finalizeRun populates the canonical lane (useagent_test)", () => {
   test("a settled OpenCode run gets canonical events (via the durable outbox)", async () => {
     await finalizeRun(RUN, "completed", "done", 100);
     // Translation is now durable+async via the outbox — drain it to the explicit

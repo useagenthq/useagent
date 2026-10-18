@@ -51,7 +51,7 @@ afterEach(() => {
 
 describe("github repo ref validation", () => {
   test("accepts owner/name", () => {
-    expect(isValidRepoRef("upstream-org/skynet")).toBe(true);
+    expect(isValidRepoRef("upstream-org/useagent")).toBe(true);
     expect(isValidRepoRef("a.b_c-d/e.f_g-h")).toBe(true);
   });
 
@@ -73,7 +73,7 @@ describe("github listing — unconfigured is a graceful no-op", () => {
   });
 
   test("a repo can't be accepted when the feature is off", async () => {
-    expect(await isKnownRepo("upstream-org/skynet", "org-test")).toBe(false);
+    expect(await isKnownRepo("upstream-org/useagent", "org-test")).toBe(false);
     // malformed refs are rejected before any lookup
     expect(await isKnownRepo("not-a-ref", "org-test")).toBe(false);
   });

@@ -33,7 +33,8 @@ import {
   SANDBOX_BUN_VERSION,
 } from "../engines/sandbox-bun";
 import { claudeProviderGatewayEnvironment } from "../provider-gateway/sandbox-config";
-import { desktopCdpRelaySource } from "../engines/desktop-cdp-relay";
+import { BROWSER_LAUNCH_SCRIPT, desktopCdpRelaySource } from "../engines/desktop-cdp-relay";
+import { SANDBOX_STATE_DIR } from "./sandbox-names";
 import { buildDesktopLaunchScript, DESKTOP_REQUIRED_BINARIES } from "../engines/desktop-workstation";
 
 /** Box accepts uploads of a few MB; larger files travel in parts and are joined in the sandbox. */
@@ -206,7 +207,7 @@ const DESKTOP_ITEMS = [
 const DESKTOP_LAUNCHERS: readonly [string, string, string, string][] = [
   ["files", "Files", "pcmanfm %U", "system-file-manager"],
   // The desktop's own browser launch: its sandbox flags, its profile, and no background traffic.
-  ["browser", "Browser", 'sh -c "exec sh $HOME/.skynet/browser-launch.sh"', "web-browser"],
+  ["browser", "Browser", `sh -c "exec sh ${BROWSER_LAUNCH_SCRIPT}"`, "web-browser"],
   ["terminal", "Terminal", "gnome-terminal", "org.gnome.Terminal"],
 ];
 
@@ -369,7 +370,7 @@ export function nativeImageSteps(
       name: "desktop",
       files: [
         { path: desktopLaunchPath(layout), bytes: Buffer.from(buildDesktopLaunchScript(), "utf8") },
-        { path: `${home}/.skynet/cdp-relay.mjs`, bytes: Buffer.from(desktopCdpRelaySource(), "utf8") },
+        { path: `${home}/${SANDBOX_STATE_DIR}/cdp-relay.mjs`, bytes: Buffer.from(desktopCdpRelaySource(), "utf8") },
       ],
       command: desktopToolchainCommand(layout),
       timeoutSeconds: 900,

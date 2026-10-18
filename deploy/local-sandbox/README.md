@@ -59,7 +59,8 @@ To prove the desktop on the base alone, start it the way the runner does
 and relay the recipe ships (`buildDesktopLaunchScript()` in
 `backend/src/engines/desktop-workstation.ts` at
 `/home/user/.local/bin/useagent-desktop-launch`, `desktopCdpRelaySource()` in
-`desktop-cdp-relay.ts` with a token beside it under `/home/user/.skynet`), run
+`desktop-cdp-relay.ts` with a token beside it in the state directory the
+recipe names in `backend/src/sandboxes/sandbox-names.ts`), run
 the launcher detached as `user`, and wait for `buildDesktopReadinessCommand()`
 to pass: Xorg on `:1`, the Budgie session, the relay, x11vnc answering `RFB`
 on 5900 and noVNC on 6080.

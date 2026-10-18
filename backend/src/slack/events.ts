@@ -544,7 +544,7 @@ export async function handleSlackEvent(
       prompt = rest;
       stablePrompt = stableRest || stablePrompt;
     } else if (files.length === 0) {
-      await guide("Include your request in the same message as the directive, e.g. `model:sol summarize this thread`.");
+      await guide("Include your request in the same message as the directive, e.g. `model:terra summarize this thread`.");
       return { status: "permanent_noop", reason: "directive_without_prompt" };
     }
     if (directives.engine) {

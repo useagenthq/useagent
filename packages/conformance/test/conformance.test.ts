@@ -165,7 +165,7 @@ describe("conformance: libraries are independently consumable (documented export
       prompt: "start",
       engine: "opencode",
       model: "openai/gpt-5.6-luna",
-      repos: ["acme/new-skynet"],
+      repos: ["acme/new-useagent"],
       memoryScope: "personal",
       idempotencyKey: "idem-root",
     })).resolves.toEqual({ runId: "run_root", status: "queued" });
@@ -191,7 +191,7 @@ describe("conformance: libraries are independently consumable (documented export
       prompt: "start",
       engine: "opencode",
       model: "openai/gpt-5.6-luna",
-      repos: ["acme/new-skynet"],
+      repos: ["acme/new-useagent"],
       memory_scope: "personal",
     });
     expect(requests[1]!.init?.headers).toMatchObject({ "Idempotency-Key": "idem-reply" });

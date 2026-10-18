@@ -172,7 +172,7 @@ function splitMarkdownParagraphs(text: string): Paragraph[] {
   });
 }
 
-const ORDERED_LIST_REFERENCE = "skynet-ordered-list";
+const ORDERED_LIST_REFERENCE = "useagent-ordered-list";
 const INLINE_HTML_TAGS = new Set(["a", "b", "br", "em", "i", "span", "strong", "u"]);
 const MAX_HTML_NESTING = 8;
 

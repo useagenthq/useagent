@@ -16,6 +16,7 @@ import {
 import { NATIVE_RUNTIME_ARTIFACT } from "../engines/native-runtime-artifact";
 import { SANDBOX_PROVIDER_KINDS } from "./plugins";
 import { sandboxRuntimeLayout, type SandboxRuntimeLayout } from "./provider";
+import { SANDBOX_STATE_DIR, SANDBOX_STATE_HOME } from "./sandbox-names";
 
 const BOX_LAYOUT: SandboxRuntimeLayout = {
   home: "/home/user",
@@ -134,7 +135,7 @@ ${command.replace(/\nif .*; then exit 0; fi\n/, "\n").split("\n").filter((line) 
     expect(await Bun.file(join(root, `${home}/.config/pcmanfm/useagent/desktop-items-0.conf`)).text()).toContain("wallpaper=/usr/share/backgrounds/gnome/adwaita-l.webp");
     const browser = await Bun.file(join(root, `${home}/Desktop/browser.desktop`)).text();
     // The icon runs the desktop's own browser launch: its sandbox flags, profile and background-traffic lockdown.
-    expect(browser).toContain('Exec=sh -c "exec sh $HOME/.skynet/browser-launch.sh"');
+    expect(browser).toContain(`Exec=sh -c "exec sh ${SANDBOX_STATE_HOME}/browser-launch.sh"`);
     expect(await Bun.file(join(root, `${home}/Desktop/files.desktop`)).text()).toContain("Exec=pcmanfm %U");
     await rm(root, { recursive: true, force: true });
   });
@@ -214,7 +215,7 @@ ${desktopToolchainCommand(CUBE_LAYOUT)}
     const desktop = steps.find((step) => step.name === "desktop")!;
     expect(desktop.files.map((file) => file.path)).toEqual([
       "/home/user/.local/bin/useagent-desktop-launch",
-      "/home/user/.skynet/cdp-relay.mjs",
+      `/home/user/${SANDBOX_STATE_DIR}/cdp-relay.mjs`,
     ]);
     expect(desktop.files[0]!.bytes.toString("utf8")).toContain("#!/bin/sh\n");
     expect(desktop.files[0]!.bytes.toString("utf8")).toContain("Xorg :1 -noreset -nolisten tcp -ac");
@@ -337,7 +338,7 @@ describe("applying the native image to a live sandbox", () => {
     expect(fake.commands.some((command) => command.includes("cat ") && command.includes("bun.part-0") && command.includes("bun.part-1"))).toBe(true);
     const stepCommands = fake.commands.filter((command) => command.startsWith("set -eu\nexport HOME="));
     expect(stepCommands).toHaveLength(9);
-    expect(fake.uploads.at(-1)!.path).toBe("/home/user/.skynet/cdp-relay.mjs");
+    expect(fake.uploads.at(-1)!.path).toBe(`/home/user/${SANDBOX_STATE_DIR}/cdp-relay.mjs`);
   });
 
   test("names the failing step", async () => {

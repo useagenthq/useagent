@@ -1,3 +1,4 @@
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import { and, desc, eq, gt, isNotNull, ne } from "drizzle-orm";
 import { db } from "../db/client";
 import { providerEvents, runs } from "../db/schema";
@@ -30,7 +31,7 @@ export async function recordSandboxReclaimed(input: {
     id: `sandboxreclaimed_${input.runId}_${input.sandboxId}`,
     runId: input.runId,
     threadId: input.threadId,
-    provider: "skynet",
+    provider: PLATFORM_EVENT_LANES.platform,
     eventType: SANDBOX_RECLAIMED,
     payload: { sandboxId: input.sandboxId, reason: "capacity" } satisfies SandboxReclaimedPayload,
   });

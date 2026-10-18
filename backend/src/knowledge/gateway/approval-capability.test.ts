@@ -10,6 +10,7 @@ import {
 } from "./approval-capability";
 import { verifyToolToken, type ToolTokenClaims } from "./token";
 import { mintSignedCapability } from "../../security/signed-capability";
+import { APPROVAL_CAPABILITY_DERIVE_LABEL } from "./approval-capability";
 
 const originalFetch = globalThis.fetch;
 const originalGatewayDatabaseUrl = process.env.GATEWAY_DATABASE_URL;
@@ -185,7 +186,7 @@ describe("gateway operation approval capability", () => {
       },
       60_000,
       {
-        deriveLabel: "skynet-gateway-operation-approval-v1",
+        deriveLabel: APPROVAL_CAPABILITY_DERIVE_LABEL,
         explicitSecret: process.env.TOOL_GATEWAY_SECRET,
       },
     );

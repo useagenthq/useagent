@@ -331,3 +331,161 @@ describe("em-dash ratchet (frontend)", () => {
     expect(stale).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Arbitrary font sizes
+// ---------------------------------------------------------------------------
+
+// Text sizes come from the type tokens (styles/typography.css, DESIGN-RAMP.md):
+// text-caption-1-* 12px, text-body-2-* 13px, text-body-* 14px, text-title-1-*
+// 24px. An arbitrary size (`text-[11.5px]`, `text-[0.8rem]`, `[font-size:..]`)
+// drifts from the measured density, so no file may add one (class strings;
+// comments do not count, and inline styles and CSS are reviewed by hand, since
+// chart and document models carry font sizes as data). The counts below
+// are the debt that predates this ratchet (the work log among it): each may
+// only shrink as its sizes move onto tokens, and is never a reason to add more.
+/** Source with comments removed: a comment may name a forbidden example. */
+const withoutComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+
+const ARBITRARY_FONT_SIZE =
+  /\btext-\[(?:length:[^\]]+|(?:\d+\.?\d*|\.\d+)(?:px|rem|em|pt|vw|vh|%)|(?:calc|clamp|min|max)\([^\]]*\))\]|\[font-size:[^\]]+\]/g;
+
+const FONT_SIZE_BASELINE: Record<string, number> = {
+  "app/(library)/secrets/secrets-manager.tsx": 1,
+  "app/(workspace)/settings/api-keys-card.tsx": 1,
+  "components/agent-ui/agent-loader.tsx": 2,
+  "components/agent-ui/ai-sidebar.tsx": 1,
+  "components/agent-ui/chat-app.tsx": 3,
+  "components/agent-ui/citations.tsx": 4,
+  "components/agent-ui/code-block.tsx": 2,
+  "components/agent-ui/image-generation.tsx": 1,
+  "components/agent-ui/message-bubble.tsx": 1,
+  "components/agent-ui/message.tsx": 6,
+  "components/agent-ui/plan-checklist.tsx": 1,
+  "components/agent-ui/rich-approval-card.tsx": 1,
+  "components/agent-ui/streaming-response.tsx": 2,
+  "components/agent-ui/tool-approval.tsx": 1,
+  "components/agent-ui/tool-result.tsx": 3,
+  "components/ai/code-block.tsx": 2,
+  "components/ai/context-card.tsx": 1,
+  "components/ai/filter-table.tsx": 1,
+  "components/ai/records-table.tsx": 2,
+  "components/ai/streaming-text.tsx": 1,
+  "components/ai/task-rows.tsx": 2,
+  "components/application/calendar/calendar-month-grid.tsx": 4,
+  "components/application/notification-center/template-notification-center-menu.tsx": 1,
+  "components/artifacts/workpiece-proposal-review.tsx": 3,
+  "components/base/avatar/avatar.tsx": 2,
+  "components/chat/chat-citations.tsx": 1,
+  "components/chat/orb-pill.tsx": 1,
+  "components/chat/source-chip.tsx": 1,
+  "components/chat/subagent-row.tsx": 4,
+  "components/chat/terminal-pane.tsx": 1,
+  "components/chat/tool-step-row.tsx": 2,
+  "components/chat/turn-trace.tsx": 11,
+  "components/prompt-kit/code-block.tsx": 1,
+  "components/prompt-kit/markdown.tsx": 4,
+  "components/session-ui/background-status-pill.tsx": 1,
+  "components/session-ui/changed-files-tree.tsx": 11,
+  "components/session-ui/context-window-meter.tsx": 5,
+  "components/session-ui/file-diff-view.tsx": 3,
+  "components/session-ui/git-chip.tsx": 1,
+  "components/session-ui/queued-message-pill.tsx": 1,
+  "components/session-ui/thread-row.tsx": 1,
+  "components/session-ui/work-entry-row.tsx": 2,
+  "components/session-ui/work-group.tsx": 2,
+  "components/session-ui/worked-for-fold.tsx": 1,
+  "components/session-ui/working-indicator.tsx": 1,
+  "components/sidebar-kit/button.tsx": 1,
+};
+
+function arbitraryFontSizes(): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const rel of firstPartyFiles()) {
+    if (isTest(rel)) continue;
+    const n = withoutComments(read(rel)).match(ARBITRARY_FONT_SIZE)?.length ?? 0;
+    if (n) counts.set(rel, n);
+  }
+  return counts;
+}
+
+describe("arbitrary font-size ratchet (frontend)", () => {
+  test("the pattern catches arbitrary sizes and leaves tokens alone", () => {
+    const hits = (s: string) => s.match(ARBITRARY_FONT_SIZE)?.length ?? 0;
+    expect(
+      hits('"text-[11px] text-[11.5px] text-[0.8rem] text-[.8rem] text-[12pt] text-[length:var(--size)] text-[clamp(1rem,2vw,2rem)] [font-size:13px]"'),
+    ).toBe(8);
+    expect(hits('"text-body-2-regular text-caption-1-medium text-[var(--x)] text-[#fff] w-[11px]"')).toBe(0);
+  });
+
+  test("no file adds an arbitrary font size; use the type tokens", () => {
+    const grew: string[] = [];
+    for (const [rel, n] of arbitraryFontSizes()) {
+      const allowed = FONT_SIZE_BASELINE[rel] ?? 0;
+      if (n > allowed) grew.push(`${rel}: ${n} > ${allowed}`);
+    }
+    if (grew.length)
+      console.log(
+        `[font-size-ratchet] new arbitrary font size - use text-caption-1-*, text-body-2-* or text-body-* (DESIGN-RAMP.md):\n${grew.join("\n")}`,
+      );
+    expect(grew).toEqual([]);
+  });
+
+  test("recorded font-size baselines are still needed and not stale", () => {
+    const counts = arbitraryFontSizes();
+    const loosen: string[] = [];
+    for (const [rel, base] of Object.entries(FONT_SIZE_BASELINE)) {
+      const n = counts.get(rel) ?? 0;
+      if (n < base) loosen.push(`${rel}: ${n} < ${base} (${n === 0 ? "drop the entry" : "lower the baseline"})`);
+    }
+    if (loosen.length) console.log(`[font-size-ratchet] baselines must be tightened:\n${loosen.join("\n")}`);
+    expect(loosen).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Typography utilities exist
+// ---------------------------------------------------------------------------
+
+// A type class that names no utility (`text-body-2` without its weight) renders
+// at whatever size it inherits, so a typo looks fine in one place and wrong in
+// a popover. Utilities come from styles/typography.css (`--text-*`), the
+// `@utility` rules in app/globals.css and the legacy scale in tailwind.config.ts.
+const TYPE_UTILITY =
+  /(?<![\w-])(?:[a-z0-9-]+:)*(text-(?:body|caption|title|headline|display|label|paragraph|subheading|footnote|callout|large-title)[a-z0-9-]*)(?![\w-])/g;
+
+function definedTypeUtilities(): Set<string> {
+  const defined = new Set<string>();
+  for (const css of ["styles/typography.css", "app/globals.css"]) {
+    const src = read(css);
+    for (const m of src.matchAll(/--text-([a-z0-9-]+?)(?:--[a-z-]+)?\s*:/g)) defined.add(`text-${m[1]}`);
+    for (const m of src.matchAll(/@utility\s+(text-[a-z0-9-]+)/g)) defined.add(`${m[1]}`);
+  }
+  // The legacy scale's keys: the `texts` object, however it is quoted or indented.
+  const config = read("tailwind.config.ts");
+  const start = config.indexOf("export const texts = {");
+  const texts = start === -1 ? "" : config.slice(start, config.indexOf("\n};", start));
+  for (const m of texts.matchAll(/^\s*['"]?([a-z0-9-]+)['"]?\s*:\s*\[/gm)) defined.add(`text-${m[1]}`);
+  return defined;
+}
+
+describe("typography utilities exist (frontend)", () => {
+  test("the defined set is read", () => {
+    const defined = definedTypeUtilities();
+    for (const name of ["text-body-regular", "text-body-2-medium", "text-caption-1-regular", "text-display-sm", "text-label-sm"])
+      expect(defined.has(name)).toBe(true);
+    expect(defined.has("text-body-2")).toBe(false);
+  });
+
+  test("every type class a source uses names a defined utility", () => {
+    const defined = definedTypeUtilities();
+    const missing: string[] = [];
+    for (const rel of firstPartyFiles()) {
+      if (isTest(rel)) continue;
+      for (const m of withoutComments(read(rel)).matchAll(TYPE_UTILITY)) if (!defined.has(`${m[1]}`)) missing.push(`${rel}: ${m[1]}`);
+    }
+    if (missing.length)
+      console.log(`[type-utility] not a utility - use text-caption-1-*, text-body-2-* or text-body-* with a weight:\n${missing.join("\n")}`);
+    expect(missing).toEqual([]);
+  });
+});

@@ -1,3 +1,4 @@
+// Legacy labels: sandboxes created before the rename carry them, and reads accept both.
 export const CANONICAL_SANDBOX_RUN_LABEL = "useagent-run";
 export const LEGACY_SANDBOX_RUN_LABEL = "skynet-run";
 export const CANONICAL_SANDBOX_GENERATION_LABEL = "useagent-provider-generation";

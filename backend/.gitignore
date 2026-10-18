@@ -18,3 +18,4 @@ node_modules/
 
 # NOTE: drizzle/ (migrations + meta/_journal.json) IS committed — the boot
 # migrator (src/index.ts) needs the journal to apply migrations on a fresh DB.
+.useagent/

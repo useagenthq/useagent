@@ -22,6 +22,7 @@ import { getNativeFramesSince } from "../src/runs/native-events";
 import { drainProviderEvents } from "../src/runs/provider-events";
 import type { SandboxHandle } from "../src/sandboxes/provider";
 import { createSecretRedactor } from "../src/secrets/redact";
+import { SANDBOX_NAME_PREFIX } from "../src/sandboxes/sandbox-names";
 
 // One Codex turn in the event shapes of the runtime's orchestration protocol 2
 // (packages/contracts/src/orchestrationV2.ts): the user message, the run, a
@@ -56,9 +57,9 @@ function codexTurn(threadId: string, userMessageId: string) {
     snapshotSequence: 10,
     projection: {
       thread: { id: threadId, runtimeMode: "full-access", activeProviderThreadId: "pt-1" },
-      runs: [{ id: "run-prior", threadId, ordinal: 1, userMessageId: "skynet-message-run-prior", status: "completed", providerThreadId: "pt-1", requestedAt: at(1), startedAt: at(1), completedAt: at(3) }],
+      runs: [{ id: "run-prior", threadId, ordinal: 1, userMessageId: `${SANDBOX_NAME_PREFIX}-message-run-prior`, status: "completed", providerThreadId: "pt-1", requestedAt: at(1), startedAt: at(1), completedAt: at(3) }],
       messages: [
-        { id: "skynet-message-run-prior", threadId, runId: "run-prior", role: "user", text: "hello", streaming: false, createdAt: at(1), updatedAt: at(1), attachments: [] },
+        { id: `${SANDBOX_NAME_PREFIX}-message-run-prior`, threadId, runId: "run-prior", role: "user", text: "hello", streaming: false, createdAt: at(1), updatedAt: at(1), attachments: [] },
         { id: "msg-prior", threadId, runId: "run-prior", role: "assistant", text: "Hi there.", streaming: false, createdAt: at(2), updatedAt: at(2), attachments: [] },
       ],
       turnItems: [{ ...item("i-prior", "command_execution", "completed", 2, 0, { input: "pwd" }), runId: "run-prior" }],

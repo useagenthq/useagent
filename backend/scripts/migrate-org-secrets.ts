@@ -1,8 +1,9 @@
+import { DEV_ORG_ID } from "../src/dev-org";
 import postgres from "postgres";
 import { openSecret } from "../src/secrets/crypto";
 
 const sourceDatabaseUrl = process.env.SOURCE_DATABASE_URL ?? process.env.DATABASE_URL;
-const sourceOrgId = process.env.SOURCE_ORG_ID ?? "org-skynet-dev";
+const sourceOrgId = process.env.SOURCE_ORG_ID ?? DEV_ORG_ID;
 const targetOrigin = process.env.TARGET_ORIGIN?.replace(/\/+$/, "");
 const targetEmail = process.env.TARGET_EMAIL;
 const targetPassword = process.env.TARGET_PASSWORD;

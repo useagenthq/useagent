@@ -21,7 +21,7 @@ const CONC = Number(process.env.SOAK_IDEM_CONCURRENCY ?? 50);
 const PORT = Number(process.env.SOAK_PORT ?? 3516);
 
 const rec = new Recorder("idempotency");
-const stack = new Stack({ db: `skynet_soak_idem_${PORT}`, port: PORT, stepDelayMs: 2 });
+const stack = new Stack({ db: `useagent_soak_idem_${PORT}`, port: PORT, stepDelayMs: 2 });
 
 async function round(i: number): Promise<void> {
   const key = `soak-idem-${SEED}-${i}`;

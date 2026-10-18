@@ -5,8 +5,8 @@ import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
 import * as Textarea from "@/components/base/textarea/textarea";
 import { cx } from "@/utils/cx";
-import { createRoutine } from "./routines-api";
-import { type ApiBot, OFFLINE_MESSAGE } from "./types";
+import { createRoutine, updateRoutine } from "./routines-api";
+import { type ApiBot, type ApiRoutine, OFFLINE_MESSAGE } from "./types";
 
 /** The reference's four cadences; a custom cron is one field away. */
 const CADENCES = [
@@ -26,18 +26,18 @@ function browserTimezone(): string | null {
 
 type Field = "name" | "prompt" | "cron";
 
-export function NewRoutineForm({ bot, onCreated, onCancel }: { bot: ApiBot; onCreated: () => void; onCancel: () => void }) {
+export function RoutineForm({ bot, routine, onSaved, onCancel }: { bot: ApiBot; routine?: ApiRoutine; onSaved: (saved: ApiRoutine) => void; onCancel: () => void }) {
   const promptErrorId = useId();
   const nameRef = useRef<HTMLInputElement>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const cronRef = useRef<HTMLInputElement>(null);
-  const [name, setName] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [cron, setCron] = useState<string>(CADENCES[2].cron);
+  const [name, setName] = useState(routine?.name ?? "");
+  const [prompt, setPrompt] = useState(routine?.prompt ?? "");
+  const [cron, setCron] = useState<string>(routine?.cron ?? CADENCES[2].cron);
   const [invalid, setInvalid] = useState<Partial<Record<Field, string>>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const timezone = browserTimezone();
+  const timezone = routine ? routine.timezone : browserTimezone();
 
   const clear = (field: Field) => setInvalid((current) => ({ ...current, [field]: undefined }));
 
@@ -56,8 +56,10 @@ export function NewRoutineForm({ bot, onCreated, onCancel }: { bot: ApiBot; onCr
     setBusy(true);
     setError(null);
     try {
-      await createRoutine(bot.id, { name: name.trim(), prompt: prompt.trim(), cron: cron.trim(), timezone });
-      onCreated();
+      const input = { name: name.trim(), prompt: prompt.trim(), cron: cron.trim(), timezone };
+      const saved = routine ? await updateRoutine(bot.id, routine.id, input) : await createRoutine(bot.id, input);
+      if (!saved) throw new Error("Unable to update the routine. Try again.");
+      onSaved(saved);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : OFFLINE_MESSAGE);
     } finally {
@@ -147,7 +149,7 @@ export function NewRoutineForm({ bot, onCreated, onCancel }: { bot: ApiBot; onCr
           Cancel
         </Button>
         <Button variant="primary" size="small" onClick={() => void submit()}>
-          {busy ? "Creating…" : "Add routine"}
+          {routine ? (busy ? "Saving…" : "Save changes") : (busy ? "Creating…" : "Add routine")}
         </Button>
       </div>
     </div>

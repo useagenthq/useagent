@@ -29,6 +29,7 @@ import {
   tunnelProviderOrder,
   waitForPublicHttp,
 } from "./lib/public-tunnel";
+import { DEV_ORG_ID } from "../../src/dev-org";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
 const DB = "useagent_memtun_e2e";
@@ -43,9 +44,9 @@ const GATEWAY_BASE = `http://localhost:${GATEWAY_PORT}`;
 const MODEL = process.env.PROOF_MODEL ?? "claude-opus-5";
 const backendDir = new URL("../..", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
-const backendLog = `${scratch}/skynet-memtun-backend.log`;
-const gatewayLog = `${scratch}/skynet-memtun-gateway.log`;
-const tunnelLog = `${scratch}/skynet-memtun-tunnel.log`;
+const backendLog = `${scratch}/useagent-memtun-backend.log`;
+const gatewayLog = `${scratch}/useagent-memtun-gateway.log`;
+const tunnelLog = `${scratch}/useagent-memtun-tunnel.log`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const providerSigningSecret = `provider-live-${crypto.randomUUID()}-${crypto.randomUUID()}`;
 const toolSigningSecret = `tool-live-${crypto.randomUUID()}-${crypto.randomUUID()}`;
@@ -53,7 +54,7 @@ const secretsEncryptionKey = `encryption-live-${crypto.randomUUID()}-${crypto.ra
 const MARKER = `teal-${crypto.randomUUID().slice(0, 8)}`;
 // Unauthenticated runs resolve to the seeded dev org (org middleware fallback),
 // so the memory pool is team_id=org-useAgent-dev / user_id=org:org-useAgent-dev.
-const POOL_TEAM = "org-skynet-dev";
+const POOL_TEAM = DEV_ORG_ID;
 const POOL_USER = `org:${POOL_TEAM}`;
 
 let pass = 0;
@@ -242,8 +243,8 @@ async function cleanupSandboxes(): Promise<void> {
 async function sweepMarker(): Promise<void> {
   const url = (process.env.MEMORY_API_URL ?? "").replace(/\/+$/, "");
   if (!url) return;
-  const base = { team_id: POOL_TEAM, agent_id: process.env.MEMORY_AGENT_ID ?? "skynet-backend", user_id: POOL_USER };
-  const h = { Authorization: `Bearer ${process.env.MEMORY_API_KEY ?? ""}`, "x-tdai-service-id": process.env.MEMORY_SERVICE_ID ?? "skynet", "Content-Type": "application/json" };
+  const base = { team_id: POOL_TEAM, agent_id: process.env.MEMORY_AGENT_ID ?? "useagent-backend", user_id: POOL_USER };
+  const h = { Authorization: `Bearer ${process.env.MEMORY_API_KEY ?? ""}`, "x-tdai-service-id": process.env.MEMORY_SERVICE_ID ?? "useagent", "Content-Type": "application/json" };
   const s = await fetch(`${url}/v3/atomic/search`, { method: "POST", headers: h, body: JSON.stringify({ ...base, query: MARKER, limit: 50 }) }).then((r) => r.json()).catch(() => null);
   const ids = (s?.data?.items ?? []).filter((i: any) => (i.content ?? "").includes(MARKER)).map((i: any) => i.id);
   if (ids.length) {
@@ -303,8 +304,8 @@ async function main(): Promise<void> {
     const memUrl = process.env.MEMORY_API_URL!.replace(/\/+$/, "");
     const l0search = await fetch(`${memUrl}/v3/conversation/search`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${process.env.MEMORY_API_KEY}`, "x-tdai-service-id": process.env.MEMORY_SERVICE_ID ?? "skynet", "Content-Type": "application/json" },
-      body: JSON.stringify({ team_id: POOL_TEAM, agent_id: process.env.MEMORY_AGENT_ID ?? "skynet-backend", user_id: POOL_USER, query: MARKER, limit: 10 }),
+      headers: { Authorization: `Bearer ${process.env.MEMORY_API_KEY}`, "x-tdai-service-id": process.env.MEMORY_SERVICE_ID ?? "useagent", "Content-Type": "application/json" },
+      body: JSON.stringify({ team_id: POOL_TEAM, agent_id: process.env.MEMORY_AGENT_ID ?? "useagent-backend", user_id: POOL_USER, query: MARKER, limit: 10 }),
     }).then((r) => r.json()).catch(() => null);
     check("fact is durable in Tencent L0 (provider truth)", JSON.stringify(l0search?.data?.messages ?? []).includes(MARKER));
 

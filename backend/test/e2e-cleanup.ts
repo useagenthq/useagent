@@ -9,7 +9,7 @@
  */
 import postgres from "postgres";
 
-const MARKER = "[e2e-skynet]";
+const MARKER = "[e2e-useagent]";
 const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/useagent";
 
@@ -60,19 +60,19 @@ await step("knowledge_records", async () => {
 await step("sessions", async () => {
   const rows = await sql`
     DELETE FROM session WHERE user_id IN (
-      SELECT id FROM "user" WHERE email LIKE 'e2e-skynet-%@example.com'
+      SELECT id FROM "user" WHERE email LIKE 'e2e-useagent-%@example.com'
     ) RETURNING id`;
   return rows.count;
 });
 await step("accounts", async () => {
   const rows = await sql`
     DELETE FROM account WHERE user_id IN (
-      SELECT id FROM "user" WHERE email LIKE 'e2e-skynet-%@example.com'
+      SELECT id FROM "user" WHERE email LIKE 'e2e-useagent-%@example.com'
     ) RETURNING id`;
   return rows.count;
 });
 await step("users", async () => {
-  const rows = await sql`DELETE FROM "user" WHERE email LIKE 'e2e-skynet-%@example.com' RETURNING id`;
+  const rows = await sql`DELETE FROM "user" WHERE email LIKE 'e2e-useagent-%@example.com' RETURNING id`;
   return rows.count;
 });
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Sql } from "postgres";
 import { applyGatewayGrants, GATEWAY_GRANTS } from "./gateway-grants";
+import { LEGACY_GATEWAY_DATABASE_ROLE } from "./gateway-grants";
 
 /** Normalize a GRANT statement for comparison: collapse whitespace, drop the
  *  trailing semicolon, uppercase keywords are already literal in both sources. */
@@ -90,6 +91,6 @@ describe("gateway grants single source of truth", () => {
     // The manifest plus the credentials view's SELECT and its rejected-key UPDATE.
     expect(applied).toHaveLength(GATEWAY_GRANTS.length + 2);
     expect(applied.every((grant) => !grant.includes("useagent_gateway"))).toBe(true);
-    expect(applied.every((grant) => grant.includes("skynet_gateway"))).toBe(true);
+    expect(applied.every((grant) => grant.includes(LEGACY_GATEWAY_DATABASE_ROLE))).toBe(true);
   });
 });

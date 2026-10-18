@@ -4,6 +4,7 @@ import { db } from "../src/db/client";
 import { GATEWAY_GRANTS } from "../src/db/gateway-grants";
 import { assertSandboxMinutes } from "../src/runs/sandbox-minutes";
 import "./helpers";
+import { DEV_ORG_ID } from "../src/dev-org";
 
 // The gateway process accepts new work through the single door (child sessions,
 // child batches, run-automation-now) under the restricted role, and the door
@@ -25,7 +26,7 @@ async function checkCapAsRestrictedRole(grants: readonly string[]): Promise<Erro
     }
     await tx.execute(sql.raw(`SET LOCAL ROLE "${role}"`));
     try {
-      await assertSandboxMinutes("org-skynet-dev", "user-under-the-cap", tx);
+      await assertSandboxMinutes(DEV_ORG_ID, "user-under-the-cap", tx);
     } catch (error) {
       const cause = (error as { cause?: unknown }).cause;
       failure = new Error(String(cause instanceof Error ? cause.message : error));

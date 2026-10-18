@@ -52,7 +52,7 @@ const BASE = `http://localhost:${PORT}`;
 const MODEL = process.env.PLAYBOOK_PROOF_MODEL ?? "deepseek/deepseek-v4-flash";
 const backendDir = new URL("../..", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
-const backendLog = `${scratch}/skynet-playbook-proof-backend.log`;
+const backendLog = `${scratch}/useagent-playbook-proof-backend.log`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let pass = 0;

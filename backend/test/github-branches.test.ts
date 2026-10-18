@@ -28,7 +28,7 @@ describe("github branch listing — honest degradation", () => {
   beforeEach(clearGithubEnv);
 
   test("unconfigured → configured:false, empty, never throws", async () => {
-    const listing = await listBranches("upstream-org/skynet", ORG);
+    const listing = await listBranches("upstream-org/useagent", ORG);
     expect(listing.configured).toBe(false);
     expect(listing.branches).toEqual([]);
     expect(listing.error).toBeUndefined();

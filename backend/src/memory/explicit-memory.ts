@@ -22,6 +22,7 @@
  * `content` originate from the caller.
  */
 
+/** Stored memories carry this tag; reads recognise explicit ones by it, so it stays. */
 export const EXPLICIT_MEMORY_TAG = "[skynet-explicit-memory]";
 
 export const EXPLICIT_MEMORY_KINDS = ["preference", "fact", "note"] as const;

@@ -20,7 +20,7 @@ thread through the API-key lane, use the allowed `POST /api/runs` route with
 | GET | `/api/bots` | List active bots with home-thread and handoff status. |
 | POST | `/api/bots` | Create a preset: `name`, `title`, `rules`, `engine`, optional `model`, `skillIds`, `repos`, `memoryScope`, `avatarTone`, and `avatarIcon`. |
 | GET | `/api/bots/:id` | Read one preset and its current status. |
-| PATCH | `/api/bots/:id` | Update allowed fields or archive/restore the bot. Execution-preset fields lock after the home thread exists. |
+| PATCH | `/api/bots/:id` | Update allowed fields or archive/restore the bot. Execution-preset fields lock after the home thread exists. Only the bot's creator changes it (`403 bot_owner_only` names them); an org owner or admin may archive or restore it. Every view carries `editable` and `ownerName` for the viewer. |
 | POST | `/api/bots/:id/messages` | Send `{"text":"..."}`. The first message creates the home thread; later messages reply to its current head. |
 
 An archived bot stays readable but rejects new messages with `409 bot_archived`.
@@ -30,8 +30,8 @@ Bot names are unique within the org, case-insensitively.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/bots/:id/routines` | List routines attached to the bot. |
-| POST | `/api/bots/:id/routines` | Create a routine from `name`, `cron`, `timezone`, `prompt`, and optional `enabled`. Engine, model, repos, and skill come from the bot preset. |
+| GET | `/api/bots/:id/routines` | List routines attached to the bot. Each carries its `timezone` and `nextDueAt`, the minute the scheduler fires it next (`null` while paused). |
+| POST | `/api/bots/:id/routines` | Create a routine from `name`, `cron`, `timezone` (IANA, `UTC` when omitted), `prompt`, and optional `enabled`. Engine, model, repos, and skill come from the bot preset. The bot's creator only; a routine anyone else added earlier answers `403 routine_not_bot_owner` and is never run with the bot's setup (once the bot is archived, its routines run as plain automations of their creator). |
 | PATCH | `/api/bots/:id/routines/:routineId` | Update name, cron, timezone, prompt, or enabled state. |
 | DELETE | `/api/bots/:id/routines/:routineId` | Delete the routine. Returns `204`. |
 | POST | `/api/bots/:id/routines/:routineId/run-now` | Fire immediately. Returns `202` with `runId` and the updated routine. |

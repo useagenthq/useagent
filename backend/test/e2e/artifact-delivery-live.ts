@@ -32,6 +32,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import type { SlackClient } from "../../src/slack/client";
 import type { ToolTokenClaims } from "../../src/knowledge/gateway/token";
+import { DEV_ORG_ID } from "../../src/dev-org";
 
 if (process.env.LIVE_ARTIFACT_E2E !== "1") {
   throw new Error("Set LIVE_ARTIFACT_E2E=1 to run the real Daytona artifact journey");
@@ -47,7 +48,7 @@ const baseUrl = `http://127.0.0.1:${port}`;
 const adminUrl = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
 const databaseUrl = new URL(adminUrl);
 databaseUrl.pathname = `/${databaseName}`;
-const storageRoot = await mkdtemp(join(tmpdir(), "skynet-artifact-live-"));
+const storageRoot = await mkdtemp(join(tmpdir(), "useagent-artifact-live-"));
 const runId = randomUUID();
 const expected = Buffer.from(`UseAgent real Daytona artifact proof\nrun=${runId}\n`, "utf8");
 const expectedSha = createHash("sha256").update(expected).digest("hex");
@@ -152,7 +153,7 @@ try {
     prompt: "artifact delivery live proof",
     model: "test",
     engine: "mock",
-    orgId: "org-skynet-dev",
+    orgId: DEV_ORG_ID,
     userId: null,
     parentRunId: null,
     threadId: runId,
@@ -163,8 +164,8 @@ try {
 
   const { executeArtifactTool } = await import("../../src/knowledge/gateway/artifact-tools");
   const claims: ToolTokenClaims = {
-    orgId: "org-skynet-dev",
-    userId: "user-skynet-dev",
+    orgId: DEV_ORG_ID,
+    userId: "user-useagent-dev",
     threadId: runId,
     runId,
     scope: "run",
@@ -214,11 +215,11 @@ try {
     ]);
   stopSlackOutboxRelay();
   await linkSlackThread({
-    teamId: "T-SKYNET-DEV",
+    teamId: "T-USEAGENT-DEV",
     channel: "CARTIFACTLIVE",
     threadTs: "1720000000.000001",
     rootRunId: runId,
-    orgId: "org-skynet-dev",
+    orgId: DEV_ORG_ID,
   });
   const firstSlack = await executeSlackTool(claims, "slack_upload", {
     artifactId,

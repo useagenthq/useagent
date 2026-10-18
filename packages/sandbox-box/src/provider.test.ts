@@ -329,12 +329,12 @@ describe("Box sandbox provider", () => {
       { pageSize: 2 },
     );
     const labels = memorySandboxLabelStore();
-    await labels.write("bx_5", { "skynet-run": "run-5" });
+    await labels.write("bx_5", { "useagent-run": "run-5" });
     const box = provider(api, {}, labels).provider;
     const seen: [string, Record<string, string>][] = [];
     for await (const handle of box.list()) seen.push([handle.id, handle.labels ?? {}]);
     expect(seen.map(([id]) => id)).toEqual(["bx_1", "bx_2", "bx_3", "bx_4", "bx_5"]);
-    expect(seen.at(-1)?.[1]).toEqual({ "skynet-run": "run-5" });
+    expect(seen.at(-1)?.[1]).toEqual({ "useagent-run": "run-5" });
     expect(api.requests.filter((r) => r.method === "GET" && r.path.startsWith("/boxes?") || r.path === "/boxes").length).toBe(3);
     expect(await box.inventory?.()).toEqual({ activeSandboxes: 5, pausedSandboxes: 0 });
   });
@@ -695,7 +695,7 @@ describe("Box sandbox provider", () => {
   test("a box that never becomes ready is deleted with its label row, and the error surfaces", async () => {
     const api = fakeBoxApi([], { createState: "failing" });
     const { provider: box, labels } = provider(api);
-    await expect(box.create({ labels: { "skynet-run": "r1" } })).rejects.toMatchObject({ code: "box_error" });
+    await expect(box.create({ labels: { "useagent-run": "r1" } })).rejects.toMatchObject({ code: "box_error" });
     const del = api.requests.find((r) => r.method === "DELETE")!;
     expect(del.path).toBe("/boxes/bx_1");
     expect(del.headers["X-Ascii-Confirm-Delete"]).toBe("bx_1");

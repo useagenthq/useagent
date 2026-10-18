@@ -33,8 +33,10 @@ interface RoutineBody {
   id: string;
   name: string;
   cron: string;
+  timezone: string;
   prompt: string;
   enabled: boolean;
+  nextDueAt: string | null;
 }
 
 async function createBot(cookies: string, name: string): Promise<BotBody> {
@@ -156,6 +158,32 @@ describe("bot routines", () => {
     expect(crossBot.status).toBe(404);
     const badCron = await fetchApi(`/api/bots/${a.id}/routines`, { method: "POST", cookies, body: { name: "x", cron: "not cron", prompt: "y" } });
     expect(badCron.status).toBe(400);
+  });
+
+  test("a routine runs in the zone it was saved with, UTC when none was given, and lists the minute it fires next", async () => {
+    const { cookies } = await createOrgSession("bot-routines-zone");
+    const bot = await createBot(cookies, "Clockwork");
+    const create = (body: Record<string, unknown>) =>
+      json<{ routine: RoutineBody }>(`/api/bots/${bot.id}/routines`, { method: "POST", cookies, body });
+    const zoned = await create({ name: "Island digest", cron: "45 1 * * *", timezone: "Australia/Lord_Howe", prompt: "Digest." });
+    const unzoned = await create({ name: "Plain digest", cron: "0 9 * * *", prompt: "Digest." });
+    try {
+      expect(zoned.status).toBe(201);
+      expect(unzoned.status).toBe(201);
+      expect(unzoned.body.routine.timezone).toBe("UTC");
+      const listed = await json<{ routines: RoutineBody[] }>(`/api/bots/${bot.id}/routines`, { cookies });
+      const island = listed.body.routines.find((routine) => routine.id === zoned.body.routine.id)!;
+      expect(island.timezone).toBe("Australia/Lord_Howe");
+      // 01:45 on the island's clock, whichever side of its half-hour DST change.
+      const wall = new Intl.DateTimeFormat("en-GB", { timeZone: "Australia/Lord_Howe", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+      expect(wall.format(new Date(island.nextDueAt!))).toBe("01:45");
+      expect(Date.parse(island.nextDueAt!)).toBeGreaterThan(Date.now() - 60_000);
+      expect(Date.parse(island.nextDueAt!)).toBeLessThan(Date.now() + 25 * 3_600_000);
+    } finally {
+      for (const created of [zoned, unzoned]) {
+        await json(`/api/bots/${bot.id}/routines/${created.body.routine.id}`, { method: "PATCH", cookies, body: { enabled: false } });
+      }
+    }
   });
 
   test("a retry recovers the winning home-thread follow-up after a first-fire race", async () => {

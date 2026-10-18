@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { CodexSubscriptionRelayBinding } from "./codex-subscription-relay";
 import { CodexSubscriptionProtocol } from "./codex-subscription-protocol";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 describe("CodexSubscriptionProtocol", () => {
   test("strips thread config the host owns and refuses a model provider override", async () => {
@@ -739,14 +740,14 @@ function binding(): CodexSubscriptionRelayBinding {
     model: "gpt-5.5",
     sandboxId: "sandbox-1",
     sandboxGeneration: "t3-v2",
-    environmentId: "skynet-sandbox-1-run-1",
+    environmentId: `${SANDBOX_NAME_PREFIX}-sandbox-1-run-1`,
     cwd: "/root/work",
   };
 }
 
 function remoteEnvironment() {
   return {
-    environmentId: "skynet-sandbox-1-run-1",
+    environmentId: `${SANDBOX_NAME_PREFIX}-sandbox-1-run-1`,
     cwd: "/root/work",
     runtimeWorkspaceRoots: ["/root/work"],
   };

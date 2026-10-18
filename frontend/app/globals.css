@@ -1780,6 +1780,210 @@ html {
     --social-zendesk: 0 0% 100%;
   }
 
+  .ember {
+    /* -------------------------------------------------------------------
+     * Ember - warm amber dark theme.
+     *
+     * A dark-scheme sibling of the Midnight/Aura/Harbor ramps: deep warm
+     * charcoal surfaces over brown-gray neutrals, with a soft amber
+     * accent and muted one-dark-style status hues. Values map into the
+     * SAME semantic token slots the `.dark`/`.aura` blocks use (canvas
+     * -> bg-white-0, raised -> bg-sub-300, accent -> the blue/primary
+     * ramp). The ladder puts panels LIGHTER than the canvas (editor
+     * darkest), so chrome/raised/muted-row sit above the canvas. The bright accent (#e09a2b) is too light for white button
+     * text, so the primary button base is a deeper amber. `color-scheme`
+     * is pinned dark so native controls treat Ember as dark even though
+     * the class is not `.dark`. Hex in comments is the sRGB value each
+     * HSL triple encodes.
+     * ------------------------------------------------------------------- */
+    color-scheme: dark;
+    --brand-orbit: 36.80 74.49% 52.35%; /* #e09a2b amber accent */
+
+    --neutral-0: 0 0% 100%;
+    --neutral-50: 32.00 42.86% 93.14%; /* #f5eee6 text */
+    --neutral-100: 34.62 30.95% 83.53%; /* #e2d7c8 */
+    --neutral-200: 33.91 25.84% 65.10%; /* #bda98f muted */
+    --neutral-300: 35.12 17.01% 47.25%; /* #8d7c64 */
+    --neutral-400: 31.03 18.01% 31.57%; /* #5f5142 stronger border */
+    --neutral-500: 34.29 19.18% 28.63%; /* #574b3b */
+    --neutral-600: 33.60 19.69% 24.90%; /* #4c4133 */
+    --neutral-700: 31.76 16.83% 19.80%; /* #3b332a raised */
+    --neutral-800: 30.00 17.24% 11.37%; /* #221d18 canvas */
+    --neutral-900: 30.00 16.22% 14.51%; /* #2b251f chrome (lighter than canvas) */
+    --neutral-950: 30.00 22.73% 8.63%; /* #1b1611 (derived) */
+
+    --neutral-alpha-24: 33.91 25.84% 65.10% / 24%;
+    --neutral-alpha-16: 33.91 25.84% 65.10% / 16%;
+    --neutral-alpha-10: 33.91 25.84% 65.10% / 10%;
+
+    /* Blue ramp slots carry the amber accent (primary + information + links
+       + send/loading affordances all read the blue ramp). */
+    --blue-950: 32.50 81.82% 34.51%; /* #a05e10 primary button (deeper for white text) */
+    --blue-900: 32.00 82.68% 24.90%; /* #74430b */
+    --blue-800: 32.95 82.43% 29.02%; /* #87500d primary active */
+    --blue-700: 34.81 72.97% 43.53%; /* #c07c1e */
+    --blue-600: 36.80 74.49% 52.35%; /* #e09a2b amber */
+    --blue-500: 36.80 74.49% 52.35%; /* #e09a2b amber */
+    --blue-400: 36.00 83.33% 64.71%; /* #f0b45a */
+    --blue-300: 32.31 100.00% 77.06%; /* #ffc98a */
+    --blue-200: 33.88 91.40% 63.53%; /* #f7ad4d */
+    --blue-100: 32.50 81.82% 34.51% / 24%;
+    --blue-50: 32.50 81.82% 34.51% / 16%;
+
+    --blue-alpha-24: 32.50 81.82% 34.51% / 24%;
+    --blue-alpha-16: 32.50 81.82% 34.51% / 16%;
+    --blue-alpha-10: 32.50 81.82% 34.51% / 10%;
+
+    --orange-600: 37.78 48.9% 60.87%; /* #cca86a */
+    --orange-500: 40.67 57.69% 69.41%; /* #dec184 warning */
+    --orange-400: 41.74 64.1% 74.5%; /* #e8ce94 */
+
+    --orange-alpha-24: 40.67 57.69% 69.41% / 24%;
+    --orange-alpha-16: 40.67 57.69% 69.41% / 16%;
+    --orange-alpha-10: 40.67 57.69% 69.41% / 10%;
+
+    --red-600: 356.81 50% 63.14%; /* #d07277 error */
+    --red-500: 356.94 54.66% 68.09%; /* #da8186 */
+    --red-400: 355.97 58.37% 74.89%; /* #e49a9f */
+
+    --red-alpha-24: 356.81 50% 63.14% / 24%;
+    --red-alpha-16: 356.81 50% 63.14% / 16%;
+    --red-alpha-10: 356.81 50% 63.14% / 10%;
+
+    --green-600: 98.61 26.41% 52.71%; /* #7da667 success */
+    --green-500: 93.32 34.3% 61.64%; /* #99bf7c */
+    --green-400: 90.08 43.26% 68.56%; /* #afd28c */
+
+    --green-alpha-24: 93.32 34.3% 61.64% / 24%;
+    --green-alpha-16: 93.32 34.3% 61.64% / 16%;
+    --green-alpha-10: 93.32 34.3% 61.64% / 10%;
+
+    --yellow-600: 37.78 48.9% 60.87%; /* #cca86a */
+    --yellow-500: 40.67 57.69% 69.41%; /* #dec184 */
+    --yellow-400: 41.74 64.1% 74.5%; /* #e8ce94 */
+
+    --yellow-alpha-24: 40.67 57.69% 69.41% / 24%;
+    --yellow-alpha-16: 40.67 57.69% 69.41% / 16%;
+    --yellow-alpha-10: 40.67 57.69% 69.41% / 10%;
+
+    --purple-600: 274.68 32.59% 58.47%; /* #9a73b8 */
+    --purple-500: 274.42 43.86% 68.31%; /* #b38bd2 feature */
+    --purple-400: 274.06 58.44% 77.87%; /* #cba6e8 */
+
+    --purple-alpha-24: 274.42 43.86% 68.31% / 24%;
+    --purple-alpha-16: 274.42 43.86% 68.31% / 16%;
+    --purple-alpha-10: 274.42 43.86% 68.31% / 10%;
+
+    --sky-600: 193.76 46.25% 53.07%; /* #50a5bf verified */
+    --sky-500: 194.05 57.04% 62%; /* #67bbd5 */
+    --sky-400: 194.43 64.83% 70.76%; /* #84cee5 */
+
+    --sky-alpha-24: 194.05 57.04% 62% / 24%;
+    --sky-alpha-16: 194.05 57.04% 62% / 16%;
+    --sky-alpha-10: 194.05 57.04% 62% / 10%;
+
+    --pink-600: 340.79 43.68% 62.16%; /* #c9748f highlighted */
+    --pink-500: 341.6 52.75% 70.69%; /* #dc8da5 secondary pink */
+    --pink-400: 342.53 56.76% 77.59%; /* #e6a5b8 */
+
+    --pink-alpha-24: 341.6 52.75% 70.69% / 24%;
+    --pink-alpha-16: 341.6 52.75% 70.69% / 16%;
+    --pink-alpha-10: 341.6 52.75% 70.69% / 10%;
+
+    --teal-600: 176.2 32.54% 48.87%; /* #54a5a0 stable */
+    --teal-500: 175.98 37.37% 57.61%; /* #6bbbb6 */
+    --teal-400: 175.83 45.55% 65.18%; /* #7ecfc9 */
+
+    --teal-alpha-24: 175.98 37.37% 57.61% / 24%;
+    --teal-alpha-16: 175.98 37.37% 57.61% / 16%;
+    --teal-alpha-10: 175.98 37.37% 57.61% / 10%;
+
+    --primary-dark: var(--blue-950);
+    --primary-darker: var(--blue-800);
+    --primary-base: var(--blue-950);
+    --primary-alpha-24: var(--blue-alpha-24);
+    --primary-alpha-16: var(--blue-alpha-16);
+    --primary-alpha-10: var(--blue-alpha-10);
+
+    --bg-strong-950: var(--neutral-50);
+    --bg-surface-800: var(--neutral-100);
+    --bg-sub-300: var(--neutral-700);
+    --bg-soft-200: var(--neutral-900);
+    --bg-weak-50: 27.69 16.05% 15.88%; /* #2f2822 - Ember muted row (lighter than canvas) */
+    --bg-white-0: var(--neutral-800);
+
+    --text-strong-950: var(--neutral-50);
+    --text-sub-600: var(--neutral-100);
+    --text-soft-400: var(--neutral-200);
+    --text-disabled-300: var(--neutral-300);
+    --text-white-0: var(--neutral-800);
+
+    --stroke-strong-950: var(--neutral-50);
+    --stroke-sub-300: var(--neutral-400);
+    --stroke-soft-200: 28.70 16.55% 27.25%; /* #51453a - Ember border */
+    --stroke-white-0: var(--neutral-800);
+
+    --faded-dark: var(--neutral-100);
+    --faded-base: var(--neutral-200);
+    --faded-light: var(--neutral-alpha-24);
+    --faded-lighter: var(--neutral-alpha-16);
+
+    --information-dark: var(--blue-400);
+    --information-base: var(--blue-950);
+    --information-light: var(--blue-alpha-24);
+    --information-lighter: var(--blue-alpha-16);
+
+    --warning-dark: var(--orange-400);
+    --warning-base: var(--orange-500);
+    --warning-light: var(--orange-alpha-24);
+    --warning-lighter: var(--orange-alpha-16);
+
+    --error-dark: var(--red-400);
+    --error-base: var(--red-600);
+    --error-light: var(--red-alpha-24);
+    --error-lighter: var(--red-alpha-16);
+
+    --success-dark: var(--green-400);
+    --success-base: var(--green-600);
+    --success-light: var(--green-alpha-24);
+    --success-lighter: var(--green-alpha-16);
+
+    --away-dark: var(--yellow-400);
+    --away-base: var(--yellow-600);
+    --away-light: var(--yellow-alpha-24);
+    --away-lighter: var(--yellow-alpha-16);
+
+    --feature-dark: var(--purple-400);
+    --feature-base: var(--purple-500);
+    --feature-light: var(--purple-alpha-24);
+    --feature-lighter: var(--purple-alpha-16);
+
+    --verified-dark: var(--sky-400);
+    --verified-base: var(--sky-600);
+    --verified-light: var(--sky-alpha-24);
+    --verified-lighter: var(--sky-alpha-16);
+
+    --highlighted-dark: var(--pink-400);
+    --highlighted-base: var(--pink-600);
+    --highlighted-light: var(--pink-alpha-24);
+    --highlighted-lighter: var(--pink-alpha-16);
+
+    --stable-dark: var(--teal-400);
+    --stable-base: var(--teal-600);
+    --stable-light: var(--teal-alpha-24);
+    --stable-lighter: var(--teal-alpha-16);
+
+    --overlay: 30.00 22.73% 8.63% / 72%; /* #1b1611 scrim */
+
+    --social-apple: 0 0% 100%;
+    --social-twitter: 0 0% 100%;
+    --social-github: 0 0% 100%;
+    --social-notion: 0 0% 100%;
+    --social-tidal: 0 0% 100%;
+    --social-amazon: 0 0% 100%;
+    --social-zendesk: 0 0% 100%;
+  }
+
   .neobrutal {
     /* -------------------------------------------------------------------
      * Neobrutal - poster-style LIGHT theme (black strokes, hard offset
@@ -2162,6 +2366,7 @@ html {
   .harbor,
   .phosphor,
   .slate,
+  .ember,
   .sakura-night {
     --illustration-white-0: var(--neutral-950);
     --illustration-weak-100: var(--neutral-900);
@@ -2173,7 +2378,7 @@ html {
 
 /* ===========================================================================
  * BoardUI semantic tokens for the Aura / Harbor / Phosphor / Sakura / Slate
- * / Phosphor Light / Sakura Night themes.
+ * / Phosphor Light / Sakura Night / Ember themes.
  *
  * styles/theme.css (vendor, untouched) only flips the BoardUI semantic slots
  * under `.dark`; the other theme classes are standalone, so without these
@@ -2199,6 +2404,8 @@ html {
  *   sakura-night - plum-night DARK variant of Sakura (canvas #241820,
  *              accent #e88fb4 soft rose): full dark slot list like
  *              aura/harbor.
+ *   ember    - warm amber DARK (canvas #221d18, accent #e09a2b amber):
+ *              full dark slot list like aura/harbor.
  *   neobrutal - poster-style LIGHT theme (canvas #dfe5f2, main #88aaee):
  *              same light re-tint recipe as sakura, plus the radius and
  *              shadow scales (one small corner, hard black offsets) and an
@@ -3350,6 +3557,213 @@ html {
   --color-chart-agents-bar-active: hsl(var(--purple-600));
 }
 
+.ember {
+  /* Accent ramp -> Ember amber. 500 mirrors AlignUI --primary-base
+   * (blue-950 #a05e10: the bright #e09a2b is too light under white text). */
+  --color-accent-50:  hsl(var(--blue-50));
+  --color-accent-100: hsl(var(--blue-100));
+  --color-accent-200: hsl(var(--blue-200));
+  --color-accent-300: hsl(var(--blue-300));
+  --color-accent-400: hsl(var(--blue-700));  /* #c07c1e hover-top */
+  --color-accent-500: hsl(var(--blue-950));  /* #a05e10 primary base */
+  --color-accent-600: hsl(var(--blue-800));  /* #87500d */
+  --color-accent-700: hsl(var(--blue-900));  /* #74430b */
+  --color-accent-800: hsl(var(--blue-800));
+  --color-accent-900: hsl(var(--blue-900));
+  --color-accent-950: hsl(var(--blue-950));
+
+  /* Foreground */
+  --color-foreground-full:            hsl(var(--neutral-400));
+  --color-foreground-icon-primary:    hsl(var(--neutral-50));
+  --color-foreground-icon-hover:      hsl(var(--neutral-0));
+  --color-foreground-icon-error:      hsl(var(--red-400));
+  --color-foreground-icon-tertiary:   hsl(var(--neutral-200));
+  --color-foreground-icon-quaternary: hsl(var(--neutral-300));
+  --color-foreground-icon-disabled:   hsl(28.70 16.55% 27.25%); /* #51453a */
+  --color-foreground-disabled:        hsl(var(--neutral-400));
+  --color-foreground-disabled-danger: hsl(var(--red-400));
+  --color-input-disabled-foreground:  hsl(var(--neutral-300));
+  --color-icon-button-disabled-foreground: hsl(var(--neutral-200));
+  --color-button-primary-disabled-foreground: hsl(var(--neutral-200));
+
+  /* Text */
+  --color-text-primary:   hsl(var(--neutral-50));
+  --color-text-secondary: hsl(var(--neutral-100));
+  --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-accent:    var(--color-accent-300);
+  --color-text-disabled:  hsl(28.70 16.55% 27.25%); /* #51453a */
+  --color-text-error-primary: hsl(var(--red-400));
+  --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
+
+  /* Background */
+  --color-background-full:              hsl(var(--neutral-800));
+  --color-background-primary-default:   hsl(var(--neutral-700));
+  --color-background-inner-default:     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+  --color-background-primary-hover:     color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-background-primary-active:    hsl(var(--neutral-700));
+  --color-background-primary-disabled:  hsl(var(--neutral-700));
+  --color-input-disabled-background:    color-mix(in srgb, hsl(var(--neutral-700)) 30%, transparent);
+  --color-switch-off-chip-start:        var(--color-background-tertiary-default);
+  --color-switch-off-chip-end:          var(--color-background-tertiary-default);
+  --color-background-secondary-default: hsl(var(--neutral-900));
+  --color-background-secondary-hover:   hsl(var(--neutral-700));
+  --color-background-tertiary-default:  hsl(var(--neutral-900)); /* #2b251f inset fills, between backdrop and panel */
+  --color-background-tertiary-hover:    hsl(var(--neutral-400));
+  --color-background-tertiary-error:    hsl(var(--red-alpha-16));
+  --color-background-quaternary-default: hsl(var(--neutral-400));
+  --color-background-quaternary-hover:   hsl(var(--neutral-300));
+  --color-background-recent-hire-role:  color-mix(in srgb, hsl(var(--neutral-900)) 60%, transparent);
+  --color-avatar-neutral-background:    var(--color-background-primary-default);
+  --color-file-upload-icon-background:  hsl(var(--neutral-300));
+  --color-file-upload-icon-foreground:  hsl(var(--neutral-100));
+  --color-file-upload-icon-foreground-hover: hsl(var(--neutral-50));
+  --color-stat-card-icon-background:    hsl(var(--neutral-700));
+  --color-segmented-control-background:          hsl(var(--neutral-800));
+  --color-segmented-control-selected-background: hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-background:       hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-selected-background: hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-background:       hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-hover-background: hsl(var(--neutral-300));
+  --color-composer-panel-tab-background:         hsl(var(--neutral-700) / 0.5);
+  --color-composer-panel-add-background:         hsl(var(--neutral-400));
+  --color-composer-panel-add-hover-background:   hsl(var(--neutral-300));
+  --color-composer-panel-tile-border:            hsl(var(--neutral-400));
+  --color-agent-progress-ring:                   color-mix(in srgb, hsl(var(--neutral-0)) 50%, transparent);
+  --color-questionnaire-key-background:          hsl(var(--neutral-400));
+  --color-questionnaire-key-hover-background:    hsl(var(--neutral-300));
+  --color-button-ghost-background:               hsl(var(--blue-900));
+  --color-button-ghost-hover:                    hsl(var(--blue-800));
+  --color-button-ghost-active:                   hsl(var(--blue-700));
+  --color-button-ghost-disabled:                 hsl(var(--neutral-700));
+  --color-button-ghost-foreground:               hsl(var(--blue-300));
+  --color-button-ghost-disabled-foreground:      hsl(var(--neutral-300));
+  --color-dropdown-item-hover-background:        color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-kbd-background:                        hsl(var(--neutral-400));
+  --color-kbd-foreground:                        hsl(var(--neutral-100));
+  --color-docs-file-chip-background:             hsl(var(--purple-alpha-16));
+  --color-docs-file-chip-border:                 color-mix(in srgb, hsl(var(--purple-500)) 40%, transparent);
+  --color-docs-file-chip-foreground:             hsl(var(--purple-400));
+  --color-docs-code-background:                  var(--color-background-full);
+  --color-docs-install-rail:                     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+
+  /* Elevation: same raised-black-alpha recipe as theme.css `.dark`. */
+  --shadow-2xs: 0 1px rgb(0 0 0 / 0.16);
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.18);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.12), 0 1px 3px 0 rgb(0 0 0 / 0.16);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.12), 0 4px 6px -1px rgb(0 0 0 / 0.18);
+  --shadow-lg: 0 4px 6px -2px rgb(0 0 0 / 0.10), 0 10px 15px -3px rgb(0 0 0 / 0.18);
+  --shadow-xl: 0 10px 10px -5px rgb(0 0 0 / 0.08), 0 20px 25px -5px rgb(0 0 0 / 0.20);
+  --shadow-card: 0 1px 1px 0 rgb(0 0 0 / 0.14);
+  --shadow-dropdown:
+    0 1px 1px 0 rgb(0 0 0 / 0.14),
+    0 4px 4px 0 rgb(0 0 0 / 0.10);
+  --shadow-sidebar:
+    0 1px 0 0 rgb(0 0 0 / 0.10),
+    0 1px 12px 0 rgb(0 0 0 / 0.16),
+    0 0 1px 0 rgb(0 0 0 / 0.42);
+  --shadow-waitlist:
+    0 0 6px 0 rgb(0 0 0 / 0.12),
+    0 0 64px 0 rgb(0 0 0 / 0.22),
+    0 0 1px 0 rgb(0 0 0 / 0.42),
+    0 1px 12px 0 rgb(0 0 0 / 0.14),
+    0 1px 0 0 rgb(0 0 0 / 0.08);
+
+  /* Badges */
+  --color-badge-neutral-background: hsl(var(--neutral-700));
+  --color-team-menu-count-background: hsl(var(--neutral-400));
+  --color-team-menu-count-foreground: hsl(var(--neutral-100));
+  --color-badge-new-background: hsl(var(--blue-alpha-24));
+  --color-badge-new-text:       hsl(var(--blue-400));
+  --color-tab-count-selected-background: color-mix(in srgb, hsl(var(--blue-800)) 60%, transparent);
+
+  /* Status discs */
+  --color-notification-information-background: color-mix(in srgb, hsl(var(--blue-800)) 50%, transparent);
+  --color-notification-information-foreground: hsl(var(--blue-300));
+  --color-notification-success-background:     hsl(var(--green-alpha-24));
+  --color-notification-success-foreground:     hsl(var(--green-400));
+  --color-notification-error-background:       hsl(var(--red-alpha-24));
+  --color-notification-error-foreground:       hsl(var(--red-400));
+  --color-notification-center-background:      hsl(var(--neutral-900));
+
+  /* Borders and separators */
+  --color-border-button-default:   hsl(var(--neutral-400));
+  --color-border-button-hover:     hsl(var(--neutral-200));
+  --color-border-button-active:    hsl(var(--neutral-300));
+  --color-border-button-white:     hsl(28.70 16.55% 27.25%); /* #51453a */
+  --color-border-error-default:    hsl(var(--red-400));
+  --color-border-checkbox-default: hsl(var(--neutral-400));
+  --color-border-checkbox-hover:   hsl(var(--neutral-200));
+  --color-border-checkbox-active:  hsl(var(--neutral-200));
+  --color-border-component-detail-container: hsl(28.70 16.55% 27.25%);
+  --color-border-ai-profile-card:  hsl(28.70 16.55% 27.25%);
+  --color-border-table:            hsl(28.70 16.55% 27.25%);
+  --color-border-button-group:     color-mix(in srgb, hsl(var(--neutral-300)) 60%, transparent);
+  --color-border-sidebar-profile-hover: hsl(var(--neutral-300));
+  --color-separator-border:        hsl(28.70 16.55% 27.25%); /* #51453a Ember border */
+  --color-separator-border-strong: color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+
+  /* Table status chips (lime->green, rose->red, cyan->sky, indigo->purple) */
+  --color-status-lime-background:   hsl(var(--green-alpha-24));
+  --color-status-lime-text:         hsl(var(--green-400));
+  --color-status-yellow-background: hsl(var(--yellow-alpha-24));
+  --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-orange-background: hsl(var(--orange-alpha-24));
+  --color-status-orange-text:       hsl(var(--orange-400));
+  --color-status-rose-background:   hsl(var(--red-alpha-24));
+  --color-status-rose-text:         hsl(var(--red-400));
+  --color-status-cyan-background:   hsl(var(--sky-alpha-24));
+  --color-status-cyan-text:         hsl(var(--sky-400));
+  --color-status-blue-background:   hsl(var(--blue-alpha-24));
+  --color-status-blue-text:         hsl(var(--blue-300));
+  --color-status-purple-background: hsl(var(--purple-alpha-24));
+  --color-status-purple-text:       hsl(var(--purple-400));
+  --color-status-dot-green-halo:    hsl(var(--green-alpha-24));
+  --color-status-dot-yellow-halo:   hsl(var(--yellow-alpha-24));
+  --color-status-dot-indigo-halo:   hsl(var(--purple-alpha-24));
+
+  --color-date-range-background:      hsl(var(--blue-alpha-24));
+  --color-date-range-edge-background: hsl(var(--blue-800));
+
+  --color-pill-tab-blue-selected-background: color-mix(in srgb, hsl(var(--blue-900)) 60%, transparent);
+  --color-pill-tab-blue-hover-background: hsl(var(--neutral-700));
+
+  /* Calendar event chips */
+  --color-calendar-event-blue-background:    hsl(var(--blue-alpha-24));
+  --color-calendar-event-blue-title:         hsl(var(--blue-300));
+  --color-calendar-event-blue-time:          hsl(var(--blue-300));
+  --color-calendar-event-pink-background:    hsl(var(--pink-alpha-24));
+  --color-calendar-event-pink-title:         hsl(var(--pink-400));
+  --color-calendar-event-pink-time:          hsl(var(--pink-400));
+  --color-calendar-event-purple-background:  hsl(var(--purple-alpha-24));
+  --color-calendar-event-purple-title:       hsl(var(--purple-400));
+  --color-calendar-event-purple-time:        hsl(var(--purple-400));
+  --color-calendar-event-lime-background:    hsl(var(--green-alpha-24));
+  --color-calendar-event-lime-title:         hsl(var(--green-400));
+  --color-calendar-event-lime-time:          hsl(var(--green-400));
+  --color-calendar-event-emerald-background: hsl(var(--teal-alpha-24));
+  --color-calendar-event-emerald-title:      hsl(var(--teal-400));
+  --color-calendar-event-emerald-time:       hsl(var(--teal-400));
+
+  /* Disabled CTAs */
+  --gradient-button-primary-disabled: linear-gradient(
+    180deg,
+    hsl(var(--neutral-400)) 0%,
+    hsl(var(--neutral-700)) 100%
+  );
+  --gradient-button-danger-disabled: linear-gradient(
+    180deg,
+    color-mix(in srgb, hsl(var(--red-600)) 45%, black) 0%,
+    color-mix(in srgb, hsl(var(--red-600)) 28%, black) 100%
+  );
+
+  /* Charts */
+  --color-chart-track:   hsl(var(--neutral-400)); /* one step above the raised surface (neutral-700), so a bar's track reads on a popover */
+  --color-chart-cursor:  hsl(var(--neutral-400));
+  --color-chart-neutral: hsl(var(--neutral-700));
+  --color-chart-agents-bar:        hsl(var(--purple-500));
+  --color-chart-agents-bar-active: hsl(var(--purple-600));
+}
+
 .sakura {
   /* LIGHT theme: same orientation as theme.css's `:root`, so this block
    * re-tints the light recipes through Sakura's blush AlignUI ramps instead
@@ -4076,11 +4490,11 @@ html {
   box-shadow: var(--neo-stroke);
   border-radius: 5px;
 }
-.neobrutal [role="tablist"] > [role="presentation"].rounded-full {
+.neobrutal [data-chat-tabs-pills] > .rounded-full {
   border-radius: 5px;
   box-shadow: var(--neo-stroke);
 }
-.neobrutal [role="tablist"] > [role="presentation"]:has(> a[role="tab"][aria-selected="true"]) {
+.neobrutal [data-chat-tabs-pills] > .rounded-full:has(> a[aria-current="page"]) {
   background: var(--neo-main);
   color: #000;
   box-shadow: var(--neo-lift-2);
@@ -4476,6 +4890,10 @@ html {
   --swatch-canvas: #282c33;
   --swatch-accent: #74ade8;
 }
+.theme-swatch-ember {
+  --swatch-canvas: #221d18;
+  --swatch-accent: #e09a2b;
+}
 .theme-swatch-phosphor-light {
   --swatch-canvas: #f2f8f3;
   --swatch-accent: #0a7e3a;
@@ -4794,6 +5212,8 @@ html {
 .phosphor .shiki span,
 .slate .shiki,
 .slate .shiki span,
+.ember .shiki,
+.ember .shiki span,
 .sakura-night .shiki,
 .sakura-night .shiki span {
   color: var(--shiki-dark) !important;
@@ -4921,7 +5341,7 @@ html {
 }
 
 /* Native form controls follow the active scheme. The dark-scheme themes
- * (Aura/Harbor/Phosphor/Slate/Sakura Night) must be pinned HERE (un-layered)
+ * (Aura/Harbor/Phosphor/Slate/Sakura Night/Ember) must be pinned HERE (un-layered)
  * because the `color-scheme` in their @layer'd token blocks loses to this
  * un-layered `html` rule. Sakura and Phosphor Light are light-scheme and
  * correctly stay off this list. */
@@ -4934,6 +5354,7 @@ html.aura,
 html.harbor,
 html.phosphor,
 html.slate,
+html.ember,
 html.sakura-night {
   color-scheme: dark;
 }
@@ -4956,6 +5377,8 @@ html.sakura-night {
 .phosphor .theme-asset-light,
 .slate .theme-logo-light,
 .slate .theme-asset-light,
+.ember .theme-logo-light,
+.ember .theme-asset-light,
 .sakura-night .theme-logo-light,
 .sakura-night .theme-asset-light {
   display: none;
@@ -4972,6 +5395,8 @@ html.sakura-night {
 .phosphor .theme-asset-dark,
 .slate .theme-logo-dark,
 .slate .theme-asset-dark,
+.ember .theme-logo-dark,
+.ember .theme-asset-dark,
 .sakura-night .theme-logo-dark,
 .sakura-night .theme-asset-dark {
   display: block;
@@ -4987,6 +5412,7 @@ html.sakura-night {
 .harbor .shadow-2xs,
 .phosphor .shadow-2xs,
 .slate .shadow-2xs,
+.ember .shadow-2xs,
 .sakura-night .shadow-2xs {
   --tw-shadow: var(--shadow-2xs);
 }
@@ -4996,6 +5422,7 @@ html.sakura-night {
 .harbor .shadow-xs,
 .phosphor .shadow-xs,
 .slate .shadow-xs,
+.ember .shadow-xs,
 .sakura-night .shadow-xs {
   --tw-shadow: var(--shadow-xs);
 }
@@ -5005,6 +5432,7 @@ html.sakura-night {
 .harbor .shadow-sm,
 .phosphor .shadow-sm,
 .slate .shadow-sm,
+.ember .shadow-sm,
 .sakura-night .shadow-sm {
   --tw-shadow: var(--shadow-sm);
 }
@@ -5014,6 +5442,7 @@ html.sakura-night {
 .harbor .shadow-md,
 .phosphor .shadow-md,
 .slate .shadow-md,
+.ember .shadow-md,
 .sakura-night .shadow-md {
   --tw-shadow: var(--shadow-md);
 }
@@ -5023,6 +5452,7 @@ html.sakura-night {
 .harbor .shadow-lg,
 .phosphor .shadow-lg,
 .slate .shadow-lg,
+.ember .shadow-lg,
 .sakura-night .shadow-lg {
   --tw-shadow: var(--shadow-lg);
 }
@@ -5032,6 +5462,7 @@ html.sakura-night {
 .harbor .shadow-xl,
 .phosphor .shadow-xl,
 .slate .shadow-xl,
+.ember .shadow-xl,
 .sakura-night .shadow-xl {
   --tw-shadow: var(--shadow-xl);
 }
@@ -5041,6 +5472,7 @@ html.sakura-night {
 .harbor .shadow-card,
 .phosphor .shadow-card,
 .slate .shadow-card,
+.ember .shadow-card,
 .sakura-night .shadow-card {
   --tw-shadow: var(--shadow-card);
 }
@@ -5050,6 +5482,7 @@ html.sakura-night {
 .harbor .shadow-dropdown,
 .phosphor .shadow-dropdown,
 .slate .shadow-dropdown,
+.ember .shadow-dropdown,
 .sakura-night .shadow-dropdown {
   --tw-shadow: var(--shadow-dropdown);
 }
@@ -5059,6 +5492,7 @@ html.sakura-night {
 .harbor .shadow-sidebar,
 .phosphor .shadow-sidebar,
 .slate .shadow-sidebar,
+.ember .shadow-sidebar,
 .sakura-night .shadow-sidebar {
   --tw-shadow: var(--shadow-sidebar);
 }
@@ -5068,6 +5502,7 @@ html.sakura-night {
 .harbor .shadow-waitlist,
 .phosphor .shadow-waitlist,
 .slate .shadow-waitlist,
+.ember .shadow-waitlist,
 .sakura-night .shadow-waitlist {
   --tw-shadow: var(--shadow-waitlist);
 }
@@ -5379,6 +5814,7 @@ input[type='search']::-webkit-search-cancel-button {
 .harbor .bui-agent-thinking-stars,
 .phosphor .bui-agent-thinking-stars,
 .slate .bui-agent-thinking-stars,
+.ember .bui-agent-thinking-stars,
 .sakura-night .bui-agent-thinking-stars {
   color: inherit;
 }
@@ -5397,22 +5833,6 @@ input[type='search']::-webkit-search-cancel-button {
   .bui-composer-loader-rect {
     animation: none !important;
   }
-}
-
-/* ── opencode inline element (Live tab) ─────────────────────────────────────
-   The custom element's internal root wrapper reproduces opencode's own
-   `#root { h-dvh }` — VIEWPORT height. Inside our shorter pane that pushes
-   their composer below the clip. Force it to fill the PANE instead, and let
-   the app's internal flex handle scrolling. */
-skynet-oc-session {
-  display: block;
-  height: 100%;
-  overflow: hidden;
-}
-skynet-oc-session > * {
-  height: 100% !important;
-  max-height: 100% !important;
-  min-height: 0 !important;
 }
 
 /* The vendored sidebar primitives (components/sidebar-kit) read the shadcn color names.

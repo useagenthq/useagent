@@ -12,6 +12,8 @@ import { botHandoffs, bots, commands, gatewayApprovalRequests, providerEvents, r
 
 type ScheduleRecord = typeof schedules.$inferSelect;
 import { isMemoryScope, type MemoryScope } from "../memory/scope";
+import { memberDisplayNames } from "../team/member-names";
+import { botEditableBy } from "./owner";
 
 const NAME_MAX = 60;
 const TITLE_MAX = 80;
@@ -50,6 +52,10 @@ export interface BotView {
   readonly handoffs: number;
   /** Root run ids of those delegated threads, newest first. */
   readonly handoffThreadIds: readonly string[];
+  /** Whether the viewer may change the bot's setup: only its creator (botEditableBy). */
+  readonly editable: boolean;
+  /** The creator as the member directory names them; null when it has no name for them. */
+  readonly ownerName: string | null;
 }
 
 export interface BotInput {
@@ -243,6 +249,17 @@ export async function updateBotRow(
   const [row] = await db
     .update(bots)
     .set({ ...input, ...(archived === undefined ? {} : { archived }), updatedAt: new Date() })
+    .where(and(eq(bots.orgId, orgId), eq(bots.id, id)))
+    .returning();
+  return row ?? null;
+}
+
+/** Archive or restore a bot and nothing else: who may only stop a bot (an org
+ *  admin) never rewrites its setup, whatever was read before their turn. */
+export async function setBotArchived(orgId: string, id: string, archived: boolean): Promise<BotRow | null> {
+  const [row] = await db
+    .update(bots)
+    .set({ archived, updatedAt: new Date() })
     .where(and(eq(bots.orgId, orgId), eq(bots.id, id)))
     .returning();
   return row ?? null;
@@ -455,6 +472,7 @@ function toView(
   pending: number,
   routines: number,
   handoffs: { threadIds: readonly string[]; live: number },
+  owner: { readonly editable: boolean; readonly name: string | null },
 ): BotView {
   return {
     id: row.id,
@@ -480,20 +498,23 @@ function toView(
     routines,
     handoffs: handoffs.threadIds.length,
     handoffThreadIds: [...handoffs.threadIds],
+    editable: owner.editable,
+    ownerName: owner.name,
   };
 }
 
 /** Attach the derived fields for many bots with batched queries only. */
-export async function describeBots(orgId: string, rows: readonly BotRow[]): Promise<BotView[]> {
+export async function describeBots(orgId: string, rows: readonly BotRow[], viewerId: string | null): Promise<BotView[]> {
   const botIds = rows.map((row) => row.id);
   const handoffs = await handoffThreads(orgId, botIds);
   const homeThreadIds = rows.flatMap((row) => (row.homeThreadId ? [row.homeThreadId] : []));
   const allThreadIds = [...homeThreadIds, ...[...handoffs.values()].flat()];
-  const [heads, pending, pendingNative, routines] = await Promise.all([
+  const [heads, pending, pendingNative, routines, ownerNames] = await Promise.all([
     threadHeads(orgId, allThreadIds),
     pendingApprovalCounts(orgId, allThreadIds),
     pendingNativeHumanInputCounts(orgId, allThreadIds),
     routineCounts(orgId, botIds),
+    memberDisplayNames(orgId, rows.flatMap((row) => (row.createdBy ? [row.createdBy] : []))),
   ]);
   return rows.map((row) => {
     const delegated = handoffs.get(row.id) ?? [];
@@ -518,12 +539,13 @@ export async function describeBots(orgId: string, rows: readonly BotRow[]): Prom
       pendingForBot,
       routines.get(row.id) ?? 0,
       { threadIds: delegated, live },
+      { editable: botEditableBy(row, viewerId), name: row.createdBy ? (ownerNames.get(row.createdBy) ?? null) : null },
     );
   });
 }
 
-export async function describeBot(orgId: string, row: BotRow): Promise<BotView> {
-  const [view] = await describeBots(orgId, [row]);
+export async function describeBot(orgId: string, row: BotRow, viewerId: string | null): Promise<BotView> {
+  const [view] = await describeBots(orgId, [row], viewerId);
   if (!view) throw new Error("describeBots returned no view");
   return view;
 }

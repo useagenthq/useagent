@@ -6,6 +6,8 @@ import { providerEvents } from "../src/db/schema";
 import { recordProviderEvent } from "../src/runs/provider-events";
 import { getNativeFramesSince, subscribeNative, type NativeFrame } from "../src/runs/native-events";
 import { createRun, setRunStatus } from "../src/runs/repo";
+import { DEV_ORG_ID } from "../src/dev-org";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
 // Regression for GAP 1: reconnect can lose native events. The reconnect cursor
 // (`?cursor=<highest seq seen>`, replayed as `seq > cursor`) is lossless ONLY if
@@ -23,7 +25,7 @@ async function runningRun(prompt: string): Promise<string> {
   const id = crypto.randomUUID();
   await createRun({
     id, prompt, model: "claude-opus-5", engine: "mock",
-    orgId: "org-skynet-dev", userId: null, parentRunId: null, threadId: id,
+    orgId: DEV_ORG_ID, userId: null, parentRunId: null, threadId: id,
   });
   await setRunStatus(id, "running"); // stays live so SSE replays + closes cleanly
   return id;
@@ -47,11 +49,11 @@ function nativeFrames(events: { event: string; data: string }[]) {
 describe("native lane — unique/monotonic seq (reconnect losslessness)", () => {
   test("cross-emitter captures never collide on a seq (retrieval-ledger + opencode)", async () => {
     const id = await runningRun("cross-emitter seq");
-    // The retrieval ledger emits at run START (provider "skynet"); opencode parts
+    // The retrieval ledger emits at run START (the platform lane); opencode parts
     // emit during the run. Both flow through recordProviderEvent, so the shared
     // per-run counter gives the ledger seq 0 and every part a strictly higher one.
     await recordProviderEvent({
-      id: `ctxret_${id}`, runId: id, threadId: id, provider: "skynet",
+      id: `ctxret_${id}`, runId: id, threadId: id, provider: PLATFORM_EVENT_LANES.platform,
       eventType: "context.retrieved", payload: { items: 3 },
     });
     await recordProviderEvent({

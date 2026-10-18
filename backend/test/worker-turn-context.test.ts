@@ -5,6 +5,7 @@ import { buildExecutionCapabilitySnapshot } from "../src/engines/execution-capab
 import { composeRunTurnPrompt, type EngineRunContext } from "../src/engines/types";
 import { createRun, getRun, setRunEngineSession } from "../src/runs/repo";
 import { liveActorRunIds, RUNS_ROOT, spawnWorker } from "../src/worker";
+import { DEV_ORG_ID } from "../src/dev-org";
 
 // The worker starts the engine adapter while the turn's prompt-only context is
 // still being gathered; the adapter awaits it just before composing the prompt.
@@ -16,7 +17,7 @@ const login = { ...(await import("../src/engines/sandbox-login")) };
 const bots = { ...(await import("../src/bots/prompt-context")) };
 const memory = { ...(await import("../src/memory/team-memory")) };
 
-const ORG_ID = "org-skynet-dev";
+const ORG_ID = DEV_ORG_ID;
 const EXECUTION = buildExecutionCapabilitySnapshot({
   runtime: "sandbox",
   workspaceRoot: "/work",

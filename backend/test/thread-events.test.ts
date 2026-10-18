@@ -15,6 +15,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { canonicalizationOutbox, providerEvents } from "../src/db/schema";
 import { translateOpenCode, type OpenCodeFrame } from "../src/engines/opencode-canonical";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
 // Deterministic tests for the ADDITIVE thread SSE stream
 // (GET /api/runs/:rootRunId/thread-events, final_fix.md §4.2/§5.2). These drive
@@ -530,7 +531,7 @@ describe("thread-events — resume cursor", () => {
   test("a native cursor at the seal watermark replays only the frames written after it", async () => {
     const { org, root, seqs, ids } = await seedSealed();
     // A frame landed after the seal (an artifact receipt, a follow-up): seq 3, above the watermark.
-    await recordProviderEvent({ id: `${root}::late`, runId: root, threadId: root, provider: "skynet", eventType: "followups.suggested", nativePartId: "late", payload: { suggestions: [] } });
+    await recordProviderEvent({ id: `${root}::late`, runId: root, threadId: root, provider: PLATFORM_EVENT_LANES.platform, eventType: "followups.suggested", nativePartId: "late", payload: { suggestions: [] } });
     const c = await open(`/api/runs/${root}/thread-events?${q({ canonicalAfter: String(seqs[2]), canonicalId: ids[2]!, epoch: STREAM_EPOCH })}&nativeAfter=${root}:${holdFor(root, 2)}`, org.cookies);
     await settled(c);
     expect(c.frames[0]).toMatchObject({ event: "resume", data: { resume: { canonicalAfter: seqs[2], reset: false } } });
@@ -569,7 +570,7 @@ describe("thread-events — resume cursor", () => {
   // a revision that moved a frame even when another frame took its old seq.
   test("a frame the other writer committed below the cursor after the seal sends the run back to a full replay", async () => {
     const { org, root } = await seedSealed();
-    await db.insert(providerEvents).values({ id: `${root}::late-low`, runId: root, threadId: root, seq: 1, provider: "skynet-memory", eventType: "memory.recalled", payload: "{}" });
+    await db.insert(providerEvents).values({ id: `${root}::late-low`, runId: root, threadId: root, seq: 1, provider: PLATFORM_EVENT_LANES.memory, eventType: "memory.recalled", payload: "{}" });
     const c = await open(`/api/runs/${root}/thread-events?epoch=${STREAM_EPOCH}&nativeAfter=${root}:${holdFor(root, 2)}`, org.cookies);
     await settled(c);
     expect(nativeSeqs(c, root)).toEqual([0, 1, 1, 2]);
@@ -586,7 +587,7 @@ describe("thread-events — resume cursor", () => {
   test("a revision that moved a frame while another frame took its old seq (same count, same seq total) sends the run back to a full replay", async () => {
     const { org, root } = await seedSealed();
     await db.update(providerEvents).set({ seq: 3 }).where(eq(providerEvents.id, `${root}::n2`));
-    await db.insert(providerEvents).values({ id: `${root}::g`, runId: root, threadId: root, seq: 2, provider: "skynet-memory", eventType: "memory.recalled", payload: "{}" });
+    await db.insert(providerEvents).values({ id: `${root}::g`, runId: root, threadId: root, seq: 2, provider: PLATFORM_EVENT_LANES.memory, eventType: "memory.recalled", payload: "{}" });
     const c = await open(`/api/runs/${root}/thread-events?epoch=${STREAM_EPOCH}&nativeAfter=${root}:${holdFor(root, 2)}`, org.cookies);
     await settled(c);
     expect(nativeSeqs(c, root)).toEqual([0, 1, 2, 3]);
@@ -597,7 +598,7 @@ describe("thread-events — resume cursor", () => {
     const c = await open(`/api/runs/${root}/thread-events?epoch=${STREAM_EPOCH}&nativeAfter=${root}:${holdFor(root, 2)}`, org.cookies);
     await settled(c);
     expect(nativeSeqs(c, root)).toEqual([]);
-    await db.insert(providerEvents).values({ id: `${root}::late-low`, runId: root, threadId: root, seq: 1, provider: "skynet-memory", eventType: "memory.recalled", payload: "{}" });
+    await db.insert(providerEvents).values({ id: `${root}::late-low`, runId: root, threadId: root, seq: 1, provider: PLATFORM_EVENT_LANES.memory, eventType: "memory.recalled", payload: "{}" });
     publishThreadChange(root, { runId: root, kind: "settled" });
     await c.waitFrame((f) => f.some((x) => x.event === "native" && x.data.frame.eventId === `${root}::late-low`));
     // Only the new frame: the pairs the browser proved it holds are never resent.

@@ -72,7 +72,7 @@ describe("release compatibility boundary", () => {
 
   test("says plainly when a reload already happened and cannot change the served bundle", () => {
     const win = installWindow();
-    window.sessionStorage.setItem("skynet.release.reload", CLIENT_RELEASE_FINGERPRINT);
+    window.sessionStorage.setItem("useagent.release.reload", CLIENT_RELEASE_FINGERPRINT);
 
     let caught: unknown;
     try {
@@ -98,15 +98,4 @@ describe("release compatibility boundary", () => {
     }
     expect(errors.map((e) => e.reloadedAlready)).toEqual([false, false]);
   });
-});
-
-test("legacy release-fingerprint header still satisfies the handshake", () => {
-  const fingerprint = "run-events-v1:abc";
-  const response = new Response(null, {
-    headers: { "x-skynet-release-fingerprint": fingerprint },
-  });
-  expect(
-    (response.headers.get("x-useagent-release-fingerprint") ??
-      response.headers.get("x-skynet-release-fingerprint")),
-  ).toBe(fingerprint);
 });

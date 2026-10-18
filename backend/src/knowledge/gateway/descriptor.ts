@@ -1,3 +1,4 @@
+import { LEGACY_TOOL_SERVER_IDS } from "@useagent/agent-harness/canonical";
 import { toolGatewayConfig, type ToolGatewayConfig } from "./config";
 import {
   mintToolToken,
@@ -61,7 +62,7 @@ export type GatewayToolExecutor = (
 ) => Promise<ToolCallResult<ToolCallContent>>;
 
 export const TOOL_GATEWAY_SERVER_NAME = "useagent";
-export const LEGACY_TOOL_GATEWAY_SERVER_NAME = "skynet-knowledge";
+export const LEGACY_TOOL_GATEWAY_SERVER_NAME = LEGACY_TOOL_SERVER_IDS.gateway;
 export const TOOL_GATEWAY_SERVER_NAMES = [
   TOOL_GATEWAY_SERVER_NAME,
   LEGACY_TOOL_GATEWAY_SERVER_NAME,

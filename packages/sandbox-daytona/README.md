@@ -19,8 +19,8 @@ snapshot pins live: `DAYTONA_SNAPSHOT` (the native Codex, Claude, OpenCode, Pi,
 and CLI lanes; a root image). Set that variable
 in the deployment env to move off the pin; `template(env, templateEnv)` resolves
 the variable first and the pin second.
-`skynet-agent-v23` exists in the product org too but lacks the desktop binaries
-the Browser surface needs.
+The newer v23 snapshot in the product org lacks the desktop binaries the
+Browser surface needs.
 
 The operator owns the snapshot named by `DAYTONA_SNAPSHOT`. In addition to the
 root runtime layout, it must provide an account named `user` at uid 1000 with

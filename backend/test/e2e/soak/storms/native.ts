@@ -14,11 +14,13 @@
  */
 import { recreateDb, dropDb, sleep } from "../lib/inproc";
 import { Recorder, rng } from "../lib/report";
+import { DEV_ORG_ID } from "../../../../src/dev-org";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
 const SEED = Number(process.env.SOAK_SEED ?? Date.now() % 2_000_000_000);
 const RUNS = Number(process.env.SOAK_NATIVE_RUNS ?? 24);
 const PORT = Number(process.env.SOAK_PORT ?? 3516) + 60;
-const DB = `skynet_soak_native_${PORT}`;
+const DB = `useagent_soak_native_${PORT}`;
 
 const rec = new Recorder("native");
 const rand = rng(SEED);
@@ -88,7 +90,7 @@ async function main(): Promise<void> {
   try {
     for (let run = 0; run < RUNS; run++) {
       const id = crypto.randomUUID();
-      await createRun({ id, prompt: "native soak", model: "m", engine: "mock", orgId: "org-skynet-dev", userId: null, parentRunId: null, threadId: id });
+      await createRun({ id, prompt: "native soak", model: "m", engine: "mock", orgId: DEV_ORG_ID, userId: null, parentRunId: null, threadId: id });
       await setRunStatus(id, "running");
       const live = rand() < 0.4; // half publish some frames after the first connect
       const nBatches = 4 + Math.floor(rand() * 6); // 4..9 batches of 5 = 20..45 frames
@@ -96,7 +98,7 @@ async function main(): Promise<void> {
       const ev = { seed: SEED, run, nBatches, revisions, live };
 
       // Cross-emitter ledger frame first (the seq-0 collision the sequencer fixed).
-      await recordProviderEvent({ id: `ctxret_${id}`, runId: id, threadId: id, provider: "skynet", eventType: "context.retrieved", payload: { items: 2 } });
+      await recordProviderEvent({ id: `ctxret_${id}`, runId: id, threadId: id, provider: PLATFORM_EVENT_LANES.platform, eventType: "context.retrieved", payload: { items: 2 } });
 
       const seedBatch = async (from: number, count: number) => {
         for (let b = 0; b < count; b++) {

@@ -1,3 +1,4 @@
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import { and, asc, eq, gt, ne, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { providerEvents } from "../db/schema";
@@ -13,7 +14,7 @@ import { recordProviderEvent } from "./provider-events";
 // never slow or fail a run.
 // ---------------------------------------------------------------------------
 
-export const TIMING_PROVIDER = "skynet-timing";
+export const TIMING_PROVIDER = PLATFORM_EVENT_LANES.timing;
 export const TIMING_SPAN = "timing.span";
 export const TIMING_MARK = "timing.mark";
 

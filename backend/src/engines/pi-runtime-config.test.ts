@@ -30,6 +30,7 @@ import {
   buildSandboxBunProbeCommand,
   SANDBOX_BUN_VERSION,
 } from "./sandbox-bun";
+import { SANDBOX_STATE_DIR, SANDBOX_STATE_HOME } from "../sandboxes/sandbox-names";
 
 const saved = { ...process.env };
 afterEach(() => {
@@ -685,10 +686,10 @@ describe("Pi runtime configuration", () => {
           if (command.includes("grep -Fxq") && command.includes(".lock-sha256") && runtimeProbeCount++ === 0) {
             return { exitCode: 10, result: "" };
           }
-          if (command.includes(".skynet/provider-gateway-generation") && command.includes("base64 -d")) {
+          if (command.includes(`${SANDBOX_STATE_DIR}/provider-gateway-generation`) && command.includes("base64 -d")) {
             gatewayMarkerWritten = true;
           }
-          if (command.includes('test "$(cat $HOME/.skynet/provider-gateway-generation')) {
+          if (command.includes(`test "$(cat ${SANDBOX_STATE_HOME}/provider-gateway-generation`)) {
             return { exitCode: gatewayMarkerWritten ? 0 : 1, result: "" };
           }
           return { exitCode: 0, result: "" };

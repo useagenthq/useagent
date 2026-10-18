@@ -1,6 +1,6 @@
 # memory-core runtime overrides
 
-`l1-extractor.ts` was copied from the live `skynet-memory-core` container on
+`l1-extractor.ts` was copied from the live memory-core container on
 2026-08-26. The container and repository default use the same pinned image:
 
 `agentmemory/memory-core@sha256:f9b286246d0e5020a7f0cb011b7074703d10b76b424a834a117482392f7bd424`

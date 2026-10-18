@@ -203,8 +203,8 @@ export interface ProviderToolDescriptor {
 
 export interface ProviderToolCapabilityDescriptor {
   /** No gateway, provider-native tools, or useAgent-brokered tools. */
-  mode: "none" | "provider_native" | "useagent_brokered" | "skynet_brokered";
-  approval: "none" | "provider" | "useagent" | "skynet";
+  mode: "none" | "provider_native" | "useagent_brokered";
+  approval: "none" | "provider" | "useagent";
   tools?: readonly ProviderToolDescriptor[];
 }
 
@@ -395,8 +395,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const MODEL_SELECTION_MODES = new Set(["fixed", "per_turn"]);
-const TOOL_MODES = new Set(["none", "provider_native", "useagent_brokered", "skynet_brokered"]);
-const TOOL_APPROVAL_MODES = new Set(["none", "provider", "useagent", "skynet"]);
+const TOOL_MODES = new Set(["none", "provider_native", "useagent_brokered"]);
+const TOOL_APPROVAL_MODES = new Set(["none", "provider", "useagent"]);
 const PROVIDER_OPERATION_SET = new Set<string>(PROVIDER_DRIVER_OPERATIONS);
 
 function isNonEmptyString(value: unknown): value is string {

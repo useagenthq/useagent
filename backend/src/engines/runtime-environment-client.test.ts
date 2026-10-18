@@ -18,6 +18,7 @@ import {
 } from "./runtime-environment-client";
 import { buildRuntimeEnvironmentReadinessCommand, RUNTIME_GENERATION } from "./runtime-environment";
 import { buildNativeRuntimeArtifactProbe } from "./native-runtime-artifact";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 const ROOT_LAYOUT = {
   home: "/root",
@@ -172,8 +173,8 @@ describe("T3 environment client", () => {
     const command = buildRuntimeEnvironmentRequestCommand({ method: "GET", path: "/api/orchestration/shell" });
     expect(command).toContain("-H 'x-t3-orchestration-protocol: 2'");
     expect(buildRuntimeEnvironmentRequestCommand({
-      method: "GET", path: "/api/orchestration/threads/skynet-thread-1/bounded",
-    })).toContain("'http://127.0.0.1:37733/api/orchestration/threads/skynet-thread-1/bounded'");
+      method: "GET", path: `/api/orchestration/threads/${SANDBOX_NAME_PREFIX}-thread-1/bounded`,
+    })).toContain(`'http://127.0.0.1:37733/api/orchestration/threads/${SANDBOX_NAME_PREFIX}-thread-1/bounded'`);
     expect(() => buildRuntimeEnvironmentRequestCommand({
       method: "POST", path: "/api/orchestration/dispatch" as never, payload: {},
     })).toThrow("invalid runtime loopback path");

@@ -1,4 +1,5 @@
 import type { SandboxProviderKind } from "@useagent/sandbox-contract";
+import { daytonaPlugin } from "@useagent/sandbox-daytona";
 import { sandboxProviderKind } from "../sandboxes/provider";
 import { operatorEnv } from "./runtime-env";
 import { runtimeGeneration } from "./runtime-environment";
@@ -45,7 +46,6 @@ export function runtimeRunSnapshot(
   }
   return (
     operatorEnv(env, "RUNTIME_DAYTONA_SNAPSHOT", "T3_DAYTONA_SNAPSHOT")?.trim() ||
-    env.DAYTONA_SNAPSHOT?.trim() ||
-    "skynet-agent-v17"
+    daytonaPlugin.template(env)
   );
 }

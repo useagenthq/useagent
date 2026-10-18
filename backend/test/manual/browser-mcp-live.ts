@@ -39,7 +39,7 @@ const command = await sandbox.process.executeSessionCommand(
       "$HOME/.local/bin/playwright-mcp --cdp-endpoint http://127.0.0.1:9222 " +
       `--caps vision --image-responses omit --snapshot-mode ${snapshotMode} ` +
       "--timeout-action 10000 --timeout-navigation 30000 --timeout-settle 300 " +
-      "--output-dir $HOME/work/.skynet-browser-proof",
+      "--output-dir $HOME/work/.useagent-browser-proof",
     runAsync: true,
     suppressInputEcho: true,
   },

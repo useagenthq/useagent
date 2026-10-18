@@ -23,30 +23,32 @@ import { createSecretRedactor } from "../secrets/redact";
 import { CEREBRAS_QWEN_MODEL, DEEPSEEK_V4_FLASH_MODEL } from "../runs/model-policy";
 import { makeNativeFrame } from "../runs/native-events";
 import { translateOpenCode } from "./opencode-canonical";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
+import { LEGACY_TOOL_SERVER_IDS } from "@useagent/agent-harness/canonical";
 
 const context = { runId: "run/unsafe", threadId: "thread unsafe", model: "gpt-5.6-luna" };
 const baselineRedactor = createSecretRedactor([]);
 
 describe("T3 orchestration projection", () => {
   test("interrupts a run by its id, never a whole thread", () => {
-    const command = buildRuntimeTurnInterruptCommand("skynet-thread-1", "run-7", "turn aborted");
-    expect(command).toMatchObject({ type: "run.interrupt", threadId: "skynet-thread-1", runId: "run-7", reason: "turn aborted" });
-    expect(command.commandId).toStartWith("skynet-turn-interrupt-");
+    const command = buildRuntimeTurnInterruptCommand(`${SANDBOX_NAME_PREFIX}-thread-1`, "run-7", "turn aborted");
+    expect(command).toMatchObject({ type: "run.interrupt", threadId: `${SANDBOX_NAME_PREFIX}-thread-1`, runId: "run-7", reason: "turn aborted" });
+    expect(command.commandId).toStartWith(`${SANDBOX_NAME_PREFIX}-turn-interrupt-`);
     expect(buildRuntimeTurnInterruptCommand("t", "r").commandId).not.toBe(buildRuntimeTurnInterruptCommand("t", "r").commandId);
   });
 
   test("derives stable transport-safe project and thread ids", () => {
-    expect(runtimeProjectId(context)).toBe("skynet-project-thread-unsafe");
-    expect(runtimeThreadId(context)).toBe("skynet-thread-thread-unsafe");
+    expect(runtimeProjectId(context)).toBe(`${SANDBOX_NAME_PREFIX}-project-thread-unsafe`);
+    expect(runtimeThreadId(context)).toBe(`${SANDBOX_NAME_PREFIX}-thread-thread-unsafe`);
   });
 
   test("sends the run's message to start now, as the plane's own message", () => {
     const command = buildRuntimeTurnStartCommand(context, "codex", "use every prompt without keyword routing");
     expect(command).toMatchObject({
       type: "message.dispatch",
-      commandId: "skynet-turn-run-unsafe",
-      threadId: "skynet-thread-thread-unsafe",
-      messageId: "skynet-message-run-unsafe",
+      commandId: `${SANDBOX_NAME_PREFIX}-turn-run-unsafe`,
+      threadId: `${SANDBOX_NAME_PREFIX}-thread-thread-unsafe`,
+      messageId: `${SANDBOX_NAME_PREFIX}-message-run-unsafe`,
       text: "use every prompt without keyword routing",
       attachments: [],
       createdBy: "user",
@@ -80,8 +82,8 @@ describe("T3 orchestration projection", () => {
       interactionMode: "default",
       branch: null,
       worktreePath: null,
-      threadId: "skynet-thread-thread-1",
-      projectId: "skynet-project-thread-1",
+      threadId: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
+      projectId: `${SANDBOX_NAME_PREFIX}-project-thread-1`,
       modelSelection: { instanceId: "codex", model: "gpt-5.6-luna" },
       runtimeMode: "full-access",
     });
@@ -164,7 +166,7 @@ describe("T3 orchestration projection", () => {
     };
     expect(runtimeActivityProviderEvent(
       { runId: "run-1", threadId: "thread-1" },
-      "skynet-thread-thread-1",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       activity,
       baselineRedactor,
     )).toMatchObject({
@@ -172,14 +174,14 @@ describe("T3 orchestration projection", () => {
       eventType: "approval.requested",
       payload: {
         id: "approval-1",
-        sessionID: "skynet-thread-thread-1",
+        sessionID: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
         requestKind: "command",
         detail: "git status",
       },
     });
     expect(runtimeActivityProviderEvent(
       { runId: "run-1", threadId: "thread-1" },
-      "skynet-thread-thread-1",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       {
         ...activity,
         id: "activity-approval-resolved",
@@ -199,9 +201,9 @@ describe("T3 orchestration projection", () => {
       buildRuntimeProjectCreateCommand(context, "/root/work"),
     ).toMatchObject({
       type: "project.create",
-      commandId: "skynet-project-create-run-unsafe",
+      commandId: `${SANDBOX_NAME_PREFIX}-project-create-run-unsafe`,
       title: "UseAgent thread unsafe",
-      projectId: "skynet-project-thread-unsafe",
+      projectId: `${SANDBOX_NAME_PREFIX}-project-thread-unsafe`,
       workspaceRoot: "/root/work",
     });
   });
@@ -249,13 +251,13 @@ describe("T3 orchestration projection", () => {
       id: "mcp-completed",
       tone: "tool" as const,
       kind: "tool.completed",
-      summary: "skynet-knowledge · memory_search",
+      summary: `${LEGACY_TOOL_SERVER_IDS.gateway} · memory_search`,
       payload: {
         itemType: "mcp_tool_call",
         data: {
           item: {
             id: "exec-login-1",
-            server: "skynet-knowledge",
+            server: LEGACY_TOOL_SERVER_IDS.gateway,
             tool: "memory_search",
             arguments: { query: "release process" },
             result: { items: [] },
@@ -271,7 +273,7 @@ describe("T3 orchestration projection", () => {
       label: "UseAgent · memory_search",
       code_json: {
         tool: "memory_search",
-        server: "skynet-knowledge",
+        server: LEGACY_TOOL_SERVER_IDS.gateway,
         input: { query: "release process" },
         native: { callID: "exec-login-1" },
       },
@@ -433,7 +435,7 @@ describe("T3 orchestration projection", () => {
       ...collabActivity,
       id: "anonymous-mcp-start",
       kind: "tool.started",
-      summary: "skynet-knowledge · computer_screenshot started",
+      summary: `${LEGACY_TOOL_SERVER_IDS.gateway} · computer_screenshot started`,
       payload: { itemType: "mcp_tool_call" },
     })).toBe(false);
     expect(shouldProjectRuntimeActivity({
@@ -447,26 +449,26 @@ describe("T3 orchestration projection", () => {
       ...collabActivity,
       id: "summary-only-mcp-complete",
       kind: "tool.completed",
-      summary: "skynet-knowledge · computer_screenshot started",
+      summary: `${LEGACY_TOOL_SERVER_IDS.gateway} · computer_screenshot started`,
       payload: { itemType: "mcp_tool_call", callId: "summary-only-1" },
     } as const;
     expect(shouldProjectRuntimeActivity(summaryOnlyMcp)).toBe(true);
     expect(activityStep(summaryOnlyMcp)).toMatchObject({
       label: "UseAgent · computer_screenshot",
       code_json: {
-        server: "skynet-knowledge",
+        server: LEGACY_TOOL_SERVER_IDS.gateway,
         tool: "computer_screenshot",
       },
     });
     expect(activityStep({
       ...collabActivity,
       id: "dynamic-complete",
-      summary: "skynet-knowledge_github_clone_repository",
+      summary: `${LEGACY_TOOL_SERVER_IDS.gateway}_github_clone_repository`,
       payload: {
         itemType: "dynamic_tool_call",
         detail: "repository cloned",
         data: {
-          server: "skynet-knowledge",
+          server: LEGACY_TOOL_SERVER_IDS.gateway,
           toolName: "github_clone_repository",
           toolCallId: "clone-1",
         },
@@ -474,18 +476,18 @@ describe("T3 orchestration projection", () => {
     })).toMatchObject({
       label: "UseAgent · github_clone_repository",
       code_json: {
-        server: "skynet-knowledge",
+        server: LEGACY_TOOL_SERVER_IDS.gateway,
         tool: "github_clone_repository",
       },
     });
     expect(activityStep({
       ...collabActivity,
       id: "dynamic-sequence",
-      summary: "skynet-knowledge_computer_sequence",
+      summary: `${LEGACY_TOOL_SERVER_IDS.gateway}_computer_sequence`,
       payload: {
         itemType: "dynamic_tool_call",
         data: {
-          server: "skynet-knowledge",
+          server: LEGACY_TOOL_SERVER_IDS.gateway,
           toolName: "computer_sequence",
           toolCallId: "sequence-1",
           arguments: {
@@ -500,7 +502,7 @@ describe("T3 orchestration projection", () => {
       },
     })).toMatchObject({
       code_json: {
-        server: "skynet-knowledge",
+        server: LEGACY_TOOL_SERVER_IDS.gateway,
         tool: "computer_sequence",
         input: {
           actions: [{ action: "hotkey" }, { action: "type" }, { action: "key" }],
@@ -511,20 +513,20 @@ describe("T3 orchestration projection", () => {
     expect(activityStep({
       ...collabActivity,
       id: "mcp-complete",
-      summary: "skynet-knowledge · computer_screenshot started",
+      summary: `${LEGACY_TOOL_SERVER_IDS.gateway} · computer_screenshot started`,
       payload: {
         itemType: "mcp_tool_call",
         tool: "mcp_tool_call",
         callId: "screenshot-1",
         data: {
-          server: "skynet-knowledge",
+          server: LEGACY_TOOL_SERVER_IDS.gateway,
           toolName: "computer_screenshot",
         },
       },
     })).toMatchObject({
       label: "UseAgent · computer_screenshot",
       code_json: {
-        server: "skynet-knowledge",
+        server: LEGACY_TOOL_SERVER_IDS.gateway,
         tool: "computer_screenshot",
         native: { callID: "screenshot-1" },
       },
@@ -540,7 +542,7 @@ describe("T3 orchestration projection", () => {
           toolCallId: "pr-1",
           item: {
             id: "pr-1",
-            server: "skynet-knowledge",
+            server: LEGACY_TOOL_SERVER_IDS.gateway,
             toolName: "github_create_pull_request",
             arguments: { title: "Fix MCP identity" },
             typedUsage: { inputTokens: 12, outputTokens: 3 },
@@ -551,7 +553,7 @@ describe("T3 orchestration projection", () => {
     expect(activityStep(structuredMcpActivity)).toMatchObject({
       label: "UseAgent · github_create_pull_request",
       code_json: {
-        server: "skynet-knowledge",
+        server: LEGACY_TOOL_SERVER_IDS.gateway,
         tool: "github_create_pull_request",
         input: { title: "Fix MCP identity" },
         native: {
@@ -615,13 +617,13 @@ describe("T3 orchestration projection", () => {
       id: "mcp-success-result",
       tone: "tool",
       kind: "tool.completed",
-      summary: "skynet-knowledge · computer_sequence",
+      summary: `${LEGACY_TOOL_SERVER_IDS.gateway} · computer_sequence`,
       payload: {
         itemType: "mcp_tool_call",
         data: {
           item: {
             id: "call-success",
-            server: "skynet-knowledge",
+            server: LEGACY_TOOL_SERVER_IDS.gateway,
             toolName: "computer_sequence",
             result: {
               content: [{ type: "text", text: "completed" }],
@@ -639,13 +641,13 @@ describe("T3 orchestration projection", () => {
       id: "mcp-error-result",
       tone: "tool" as const,
       kind: "tool.completed",
-      summary: "skynet-knowledge · computer_sequence",
+      summary: `${LEGACY_TOOL_SERVER_IDS.gateway} · computer_sequence`,
       payload: {
         itemType: "mcp_tool_call",
         data: {
           item: {
             id: "call-error",
-            server: "skynet-knowledge",
+            server: LEGACY_TOOL_SERVER_IDS.gateway,
             toolName: "computer_sequence",
           },
         },
@@ -707,7 +709,7 @@ describe("T3 orchestration projection", () => {
     const snapshot: RuntimeThreadSnapshot = {
       snapshotSequence: 12,
       thread: {
-        id: "skynet-thread-thread-1",
+        id: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
         latestTurn: {
           turnId: "turn-2",
           state: "completed",
@@ -741,7 +743,7 @@ describe("T3 orchestration projection", () => {
     const snapshot = {
       snapshotSequence: 12,
       thread: {
-        id: "skynet-thread-thread-1",
+        id: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
         latestTurn: {
           turnId: "turn-interrupted",
           state: "interrupted",
@@ -761,7 +763,7 @@ describe("T3 orchestration projection", () => {
     const snapshot: RuntimeThreadSnapshot = {
       snapshotSequence: 13,
       thread: {
-        id: "skynet-thread-thread-1",
+        id: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
         latestTurn: {
           turnId: "turn-2",
           state: "running",
@@ -804,7 +806,7 @@ describe("T3 orchestration projection", () => {
   test("keeps resumed-turn provider events on the product thread and current run", () => {
     expect(runtimeActivityProviderEvent(
       { runId: "run-2", threadId: "thread-1" },
-      "skynet-thread-thread-1",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       {
         id: "activity-resumed-turn",
         tone: "tool",
@@ -817,7 +819,7 @@ describe("T3 orchestration projection", () => {
     )).toMatchObject({
       runId: "run-2",
       threadId: "thread-1",
-      nativeSessionId: "skynet-thread-thread-1",
+      nativeSessionId: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       payload: { turnId: "provider-turn-2" },
     });
   });
@@ -1257,20 +1259,20 @@ describe("T3 orchestration projection", () => {
       },
       turnId: "turn-1",
     };
-    expect(runtimeQuestionRequest(activity, "skynet-thread-thread-1")).toMatchObject({
+    expect(runtimeQuestionRequest(activity, `${SANDBOX_NAME_PREFIX}-thread-thread-1`)).toMatchObject({
       id: "request-1",
-      sessionID: "skynet-thread-thread-1",
+      sessionID: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       questions: [{ multiple: false, custom: true }],
     });
     expect(runtimeActivityProviderEvent(
       { runId: "run-1", threadId: "thread-1" },
-      "skynet-thread-thread-1",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       activity,
       baselineRedactor,
     )).toMatchObject({
       provider: "t3",
       eventType: "question.asked",
-      nativeSessionId: "skynet-thread-thread-1",
+      nativeSessionId: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
     });
   });
 
@@ -1278,7 +1280,7 @@ describe("T3 orchestration projection", () => {
     const secret = "SYNTHETIC_T3_ACTIVITY_SECRET_123456";
     const event = runtimeActivityProviderEvent(
       { runId: "run-secret", threadId: "thread-secret" },
-      "skynet-thread-thread-secret",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-secret`,
       {
         id: "activity-secret",
         tone: "tool",
@@ -1307,7 +1309,7 @@ describe("T3 orchestration projection", () => {
     const secret = "SYNTHETIC_T3_QUESTION_LIFECYCLE_SECRET_123456";
     const event = runtimeActivityProviderEvent(
       { runId: "run-question", threadId: "thread-question" },
-      "skynet-thread-thread-question",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-question`,
       {
         id: "activity-question-resolved",
         tone: "info",

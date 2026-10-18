@@ -6,12 +6,13 @@ import {
   validateRuntimeApprovalDecision,
 } from "./runtime-approval";
 import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 function snapshot(resolved = false): RuntimeThreadSnapshot {
   return {
     snapshotSequence: resolved ? 3 : 2,
     thread: {
-      id: "skynet-thread-thread-1",
+      id: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       latestTurn: { turnId: "turn-1", state: "running", assistantMessageId: null },
       messages: [],
       activities: [
@@ -80,12 +81,12 @@ describe("T3 native approvals", () => {
   test("returns the pending request and fails closed once resolved", () => {
     expect(assertRuntimeApprovalPending(
       snapshot(),
-      "skynet-thread-thread-1",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       "approval-1",
     )).toMatchObject({ id: "approval-1", requestKind: "command" });
     expect(() => assertRuntimeApprovalPending(
       snapshot(true),
-      "skynet-thread-thread-1",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       "approval-1",
     )).toThrow(RuntimeApprovalError);
   });
@@ -104,7 +105,7 @@ describe("T3 native approvals", () => {
     };
     expect(assertRuntimeApprovalPending(
       generic,
-      "skynet-thread-thread-1",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       "approval-1",
     )).toMatchObject({ id: "approval-1", requestKind: "other" });
   });

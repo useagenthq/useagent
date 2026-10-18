@@ -128,7 +128,7 @@ describe("knowledge MCP gateway", () => {
         connector_instance_id: "gw:test",
         source_url: "https://ex/a",
       },
-      text: `Runbook ${canaryA}: to roll back the payments service run 'skynet rollback payments'. Unique fact ${canaryA}.`,
+      text: `Runbook ${canaryA}: to roll back the payments service run 'acme rollback payments'. Unique fact ${canaryA}.`,
     });
     recA = a.id!;
     const b = await ingestOne({

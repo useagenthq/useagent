@@ -10,8 +10,9 @@ import {
   recordArtifactQuality,
 } from "./quality";
 import "../../test/helpers";
+import { DEV_ORG_ID } from "../dev-org";
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 const hex = (value: string): string => createHash("sha256").update(value).digest("hex");
 
 async function createWorkpiece(kind: "presentation" | "spreadsheet") {

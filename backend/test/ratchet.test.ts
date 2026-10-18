@@ -9,7 +9,7 @@
  * automatically); it is pure fs work and needs no database.
  */
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
 // backend/test -> backend
@@ -176,5 +176,98 @@ describe("dependency law", () => {
     );
     if (violations.length) console.log("[dep-law] package importing backend/frontend:\n" + violations.join("\n"));
     expect(violations).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Product-name ratchet
+// ---------------------------------------------------------------------------
+
+/** The product's first name, in any case and with or without a separator. */
+const FIRST_NAME = /sky[-_.]?net/gi;
+
+// Files that keep the first name, and how often it appears in each. Every one
+// holds a value already persisted or deployed under it; the reasons are in
+// docs/architecture/legacy-identifiers.md. A count may only shrink, and a file
+// not listed here may not mention the name at all.
+const FIRST_NAME_ALLOWLIST: Record<string, number> = {
+  "backend/src/artifacts/authoring.ts": 1,
+  "backend/src/artifacts/publish.ts": 1,
+  "backend/src/db/gateway-grants.ts": 1,
+  "backend/src/dev-org.ts": 1,
+  "backend/src/knowledge/gateway/approval-capability.ts": 1,
+  "backend/src/knowledge/gateway/token.ts": 1,
+  "backend/src/memory/explicit-memory.ts": 1,
+  "backend/src/memory/team-memory.ts": 1,
+  "backend/src/provider-connections/codex-app-server-pool.ts": 1,
+  "backend/src/provider-gateway/token.ts": 1,
+  "backend/src/sandboxes/cube-warm-pool-reconcile.ts": 1,
+  "backend/src/sandboxes/label-compat.ts": 2,
+  "backend/src/sandboxes/sandbox-names.ts": 1,
+  "backend/src/secrets/crypto.ts": 1,
+  "backend/src/security/runtime-secrets.ts": 1,
+  "backend/src/wiki-gen/clone.ts": 2,
+  "backend/test/fixtures/runtime-v2/codex-turn-provider-failure.json": 238,
+  "backend/test/persisted-names.test.ts": 30,
+  "deploy/local-sandbox/rootfs/home/user/Desktop/browser.desktop": 1,
+  "docs/architecture/legacy-identifiers.md": 25,
+  "frontend/app/(library)/knowledge/knowledge-brand.test.tsx": 1,
+  "frontend/app/(library)/knowledge/knowledge-data.ts": 1,
+  "memory/docker-compose.yml": 2,
+  "memory/tdai-gateway.yaml": 1,
+  "packages/agent-harness/src/canonical.ts": 7,
+  "packages/agent-harness/test/fixtures/opencode-heavy.json": 1,
+  "packages/sandbox-cube/src/provider.test.ts": 5,
+  "packages/sandbox-cube/src/provider.ts": 3,
+  "packages/sandbox-daytona/src/plugin.ts": 1,
+};
+
+/** Tracked files (including ones added with intent), relative to the repo root. */
+function trackedFiles(): string[] {
+  const listed = Bun.spawnSync(["git", "ls-files", "-z"], { cwd: REPO_ROOT });
+  if (listed.exitCode !== 0) throw new Error(`git ls-files failed: ${listed.stderr.toString()}`);
+  // lstat, not exists: a dangling symlink is still checked, a deleted file is skipped.
+  return listed.stdout.toString().split("\0").filter((path) => path && lstatSync(join(REPO_ROOT, path), { throwIfNoEntry: false }));
+}
+
+/** A file's text, a symlink's target, or nothing for binary content. */
+function searchableText(abs: string): string {
+  if (lstatSync(abs).isSymbolicLink()) return readlinkSync(abs);
+  const bytes = readFileSync(abs);
+  return bytes.subarray(0, 8000).includes(0) ? "" : bytes.toString("utf8");
+}
+
+function firstNameCounts(): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const rel of trackedFiles()) {
+    const text = searchableText(join(REPO_ROOT, rel));
+    const n = (rel.match(FIRST_NAME)?.length ?? 0) + (text.match(FIRST_NAME)?.length ?? 0);
+    if (n > 0) counts.set(rel, n);
+  }
+  return counts;
+}
+
+describe("product-name ratchet", () => {
+  const counts = firstNameCounts();
+
+  test("the first name appears only in allowlisted files, no more often than recorded", () => {
+    const over = [...counts]
+      .filter(([rel, n]) => n > (FIRST_NAME_ALLOWLIST[rel] ?? 0))
+      .map(([rel, n]) => `${rel}: ${n} > ${FIRST_NAME_ALLOWLIST[rel] ?? 0}`);
+    if (over.length) {
+      console.log(
+        "[name-ratchet] use the product name; a value that is already persisted under the first name belongs in one named constant (docs/architecture/legacy-identifiers.md):\n" +
+          over.join("\n"),
+      );
+    }
+    expect(over).toEqual([]);
+  });
+
+  test("allowlist counts are exact", () => {
+    const stale = Object.entries(FIRST_NAME_ALLOWLIST)
+      .filter(([rel, n]) => (counts.get(rel) ?? 0) !== n)
+      .map(([rel, n]) => `${rel}: ${counts.get(rel) ?? 0} (recorded ${n})`);
+    if (stale.length) console.log("[name-ratchet] lower or drop these entries:\n" + stale.join("\n"));
+    expect(stale).toEqual([]);
   });
 });

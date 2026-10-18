@@ -33,7 +33,13 @@ export function explicitOutputLinks(markdown: string, workspaceRoot: string): Ou
   return links;
 }
 
+/** A code citation (path:line, path:line:col, path#L12, path#L12-L20) points
+ *  at source a reply discusses, not a file it delivers. Review agents cited
+ *  repo files this way and each finished run failed delivery. */
+const CODE_CITATION = /(?::\d+(?::\d+)?|#L\d+(?:-L?\d+)?)$/i;
+
 function outputPath(destination: string, workspaceRoot: string): string | null {
+  if (CODE_CITATION.test(destination)) return null;
   let path: string;
   if (/^file:/i.test(destination)) {
     path = destination.slice("file:".length);

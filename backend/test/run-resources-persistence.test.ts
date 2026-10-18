@@ -6,8 +6,9 @@ import { commands, runs } from "../src/db/schema";
 import type { RunResource } from "../src/resources/types";
 import { createRun, getRunWithSteps } from "../src/runs/repo";
 import { waitFor } from "./helpers";
+import { DEV_ORG_ID } from "../src/dev-org";
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 
 const pullRequestResource: RunResource = {
   kind: "code.change",

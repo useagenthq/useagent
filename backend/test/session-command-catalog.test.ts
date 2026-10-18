@@ -19,6 +19,7 @@ import { validateCommandIntent } from "../src/runs/command-intent";
 import { prepareExecutionGraphSeal } from "../src/runs/execution-graph-seal";
 import { drainProviderEvents, recordProviderEvent } from "../src/runs/provider-events";
 import { DEV_ORG_ID } from "../src/seed";
+import { SANDBOX_NAME_PREFIX } from "../src/sandboxes/sandbox-names";
 import { json, uid, waitFor } from "./helpers"; // side-effect: migrate + seed
 
 beforeAll(async () => {
@@ -115,7 +116,7 @@ describe("session command catalog table -> readSessionCommandCatalog", () => {
     const sessionId = runtimeThreadId({ runId, threadId });
     await recordRuntimeCommandCatalog({ ctx: { runId, threadId, signal: signal() }, engine: "claude", sandbox: sandboxAdvertising(recorded("claude")), session: { nativeSessionId: sessionId } });
     expect(await readSessionCommandCatalog(threadId, "codex", sessionId)).toBeNull();
-    expect(await readSessionCommandCatalog(threadId, "claude", "skynet-thread-other")).toBeNull();
+    expect(await readSessionCommandCatalog(threadId, "claude", `${SANDBOX_NAME_PREFIX}-thread-other`)).toBeNull();
     expect(await readSessionCommandCatalog(uid("thread"), "claude", sessionId)).toBeNull();
     expect((await readSessionCommandCatalog(threadId, "claude", sessionId))?.commands).toHaveLength(46);
   });
@@ -242,7 +243,7 @@ describe("session command catalog table -> readSessionCommandCatalog", () => {
     });
     // Another session of the thread never sees it; another org's thread answers exactly like
     // a thread with no catalog (200, the caller's own org snapshot), never a different status.
-    expect((await query(threadId, "skynet-thread-other")).body).toMatchObject({ revision: null, session: null });
+    expect((await query(threadId, `${SANDBOX_NAME_PREFIX}-thread-other`)).body).toMatchObject({ revision: null, session: null });
     const foreign = await seedRun("codex", undefined, uid("org"));
     const foreignSession = runtimeThreadId({ runId: foreign.runId, threadId: foreign.threadId });
     await recordRuntimeCommandCatalog({ ctx: { ...foreign, signal: signal() }, engine: "codex", sandbox: sandboxAdvertising(recorded("codex")), session: { nativeSessionId: foreignSession } });

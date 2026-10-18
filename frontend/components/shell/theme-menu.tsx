@@ -21,7 +21,7 @@ import { cx } from '@/utils/cx';
  * as "Dark Green" / "Light Green" and the red pair (blush light + plum-night
  * dark) as "Light Red" / "Dark Red" - the token classes on <html> stay
  * `dark` / `aura` / `harbor` / `phosphor` / `phosphor-light` / `sakura` /
- * `sakura-night` / `slate` (see globals.css). `swatch` is a fixed per-theme
+ * `sakura-night` / `slate` / `ember` (see globals.css). `swatch` is a fixed per-theme
  * preview class defined in globals.css.
  */
 export const THEME_OPTIONS = [
@@ -35,6 +35,7 @@ export const THEME_OPTIONS = [
   { value: 'sakura', label: 'Light Red', swatch: 'theme-swatch-sakura' },
   { value: 'sakura-night', label: 'Dark Red', swatch: 'theme-swatch-sakura-night' },
   { value: 'slate', label: 'Slate', swatch: 'theme-swatch-slate' },
+  { value: 'ember', label: 'Ember', swatch: 'theme-swatch-ember' },
   { value: 'neobrutal', label: 'Neobrutal', swatch: 'theme-swatch-neobrutal' },
 ] as const;
 
@@ -73,7 +74,7 @@ function applyThemeWithoutTransitions(setTheme: (value: string) => void, value: 
 
 /**
  * Theme picker menu (Light / Dark / Midnight / Dusk / Aura / Dark Green / Light
- * Green / Light Red / Dark Red / Slate) on the BoardUI base Dropdown's menu
+ * Green / Light Red / Dark Red / Slate / Ember / Neobrutal) on the BoardUI base Dropdown's menu
  * variant, so the rows are `menuitemradio`s with arrow-key navigation and the
  * menu closes on select. The caller supplies the trigger CONTENT via
  * `children` plus `triggerClassName`/`triggerAriaLabel` (the trigger button

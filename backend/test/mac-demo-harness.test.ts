@@ -31,7 +31,7 @@ describe("mac demo harness", () => {
   });
 
   test("start dry-run emits deterministic session and ffmpeg planning", async () => {
-    const baseDir = await mkdtemp(join(tmpdir(), "skynet-demo-harness-"));
+    const baseDir = await mkdtemp(join(tmpdir(), "useagent-demo-harness-"));
     try {
       const result = run(
         [
@@ -89,7 +89,7 @@ describe("mac demo harness", () => {
     expect(specialHotkey.exitCode).toBe(0);
     expect(specialHotkey.stdout).toContain("kp:arrow-left");
 
-    const shotDir = await mkdtemp(join(tmpdir(), "skynet-demo-harness-shot-"));
+    const shotDir = await mkdtemp(join(tmpdir(), "useagent-demo-harness-shot-"));
     try {
       const screenshot = run(["--dry-run", "shot", "--session-dir", shotDir, "login"]);
       expect(screenshot.exitCode).toBe(0);
@@ -106,7 +106,7 @@ describe("mac demo harness", () => {
   });
 
   test("pause/stop dry-run keeps the redaction boundary explicit", async () => {
-    const baseDir = await mkdtemp(join(tmpdir(), "skynet-demo-harness-stop-"));
+    const baseDir = await mkdtemp(join(tmpdir(), "useagent-demo-harness-stop-"));
     try {
       const sessionDir = join(baseDir, "fixed-session--login--codex--demo");
       mkdirSync(sessionDir, { recursive: true });
@@ -129,7 +129,7 @@ describe("mac demo harness", () => {
   });
 
   test("stop sends SIGINT so the recorder can finalize before probing", async () => {
-    const baseDir = await mkdtemp(join(tmpdir(), "skynet-demo-harness-sigint-"));
+    const baseDir = await mkdtemp(join(tmpdir(), "useagent-demo-harness-sigint-"));
     const fakeRecorder = join(baseDir, "fake-ffmpeg.sh");
     const fakeProbe = join(baseDir, "fake-ffprobe.sh");
     const signalFile = join(baseDir, "signal.txt");

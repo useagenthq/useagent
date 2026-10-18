@@ -40,6 +40,9 @@ export function BotThreadHeader({ bot, threadModel }: { bot: ApiBot; threadModel
     repos.length !== bot.repos.length ||
     repos.some((repo, index) => repo !== bot.repos[index]);
   const model = threadModel ?? bot.model;
+  // Only the bot's creator changes its setup; everyone else reads it (an older
+  // backend sends no answer and let them).
+  const editable = bot.editable !== false;
 
   const save = async () => {
     if (busy || !dirty) return;
@@ -104,31 +107,43 @@ export function BotThreadHeader({ bot, threadModel }: { bot: ApiBot; threadModel
               <AvatarMark tone={bot.avatarTone} icon={bot.avatarIcon} state={bot.state} size="size-16" />
             </div>
 
-            <Input
-              label="What it does"
-              placeholder="One line"
-              value={title}
-              onChange={(value) => {
-                setTitle(value);
-                setSaved(false);
-              }}
-            />
+            {editable ? (
+              <>
+                <Input
+                  label="What it does"
+                  placeholder="One line"
+                  value={title}
+                  onChange={(value) => {
+                    setTitle(value);
+                    setSaved(false);
+                  }}
+                />
 
-            <label className="flex flex-col gap-1.5">
-              <span className="text-body-2-medium text-text-primary">Standing rules</span>
-              <Textarea.Root
-                value={rules}
-                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => {
-                  setRules(event.target.value);
-                  setSaved(false);
-                }}
-                rows={5}
-                placeholder="Never send external messages without approval."
-              />
-              <span className="text-caption-1-regular text-text-tertiary">
-                Rules go to the bot with every turn, in its home thread and in any thread handed to it.
-              </span>
-            </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-body-2-medium text-text-primary">Standing rules</span>
+                  <Textarea.Root
+                    value={rules}
+                    onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => {
+                      setRules(event.target.value);
+                      setSaved(false);
+                    }}
+                    rows={5}
+                    placeholder="Never send external messages without approval."
+                  />
+                  <span className="text-caption-1-regular text-text-tertiary">
+                    Rules go to the bot with every turn, in its home thread and in any thread handed to it.
+                  </span>
+                </label>
+              </>
+            ) : (
+              <section className="flex flex-col gap-1.5" data-testid="bot-identity-read-only">
+                <h2 className="text-body-2-medium text-text-primary">Standing rules</h2>
+                <p className="whitespace-pre-wrap break-words text-body-2-regular text-text-secondary">{bot.rules || "No standing rules yet."}</p>
+                <span className="text-caption-1-regular text-text-tertiary">
+                  Only {bot.ownerName?.trim() || "the bot's creator"} can change this bot's rules.
+                </span>
+              </section>
+            )}
 
             <BotRepositories
               value={repos}
@@ -136,7 +151,7 @@ export function BotThreadHeader({ bot, threadModel }: { bot: ApiBot; threadModel
                 setRepos(next);
                 setSaved(false);
               }}
-              locked={bot.presetLocked}
+              locked={bot.presetLocked || !editable}
             />
 
             {(dirty || error || saved) && (

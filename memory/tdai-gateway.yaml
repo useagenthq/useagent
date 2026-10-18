@@ -3,6 +3,7 @@
 # This is the exact config used to smoke-test the useAgent integration.
 #
 # `instanceId` MUST match the backend's MEMORY_SERVICE_ID (x-tdai-service-id).
+# Running memory deployments were set up with this value, so it stays.
 # The production compose service overrides `llm.*` through TDAI_LLM_* variables
 # from a root-owned env file. These empty values are deliberate safe defaults:
 # writes still persist without credentials, but no facts are distilled.

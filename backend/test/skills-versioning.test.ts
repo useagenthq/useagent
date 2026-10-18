@@ -1,3 +1,4 @@
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import { describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/client";
@@ -174,7 +175,7 @@ describe("skill revisions + versioning", () => {
         );
       return r ?? null;
     });
-    expect(row.provider).toBe("skynet");
+    expect(row.provider).toBe(PLATFORM_EVENT_LANES.platform);
 
     // …and replays on the SSE stream as a native frame carrying metadata ONLY.
     const res = await fetchApi(`/api/runs/${runId}/events`, { cookies: s.cookies });

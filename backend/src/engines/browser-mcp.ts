@@ -2,6 +2,8 @@ import {
   previewLinkBase,
   type SandboxHandle,
 } from "../sandboxes/provider";
+import { LEGACY_TOOL_SERVER_IDS } from "@useagent/agent-harness/canonical";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_HOME } from "../sandboxes/sandbox-names";
 import { DESKTOP_CDP_LOCAL_PORT } from "./desktop-cdp-relay";
 import {
   desktopCdpRelayToken,
@@ -239,16 +241,16 @@ export async function navigateVisibleBrowserPage(
   await (browserControlOverride ?? productionBrowserControl).navigate(sandbox, url);
 }
 
-const BROWSER_MCP_PROCESS_SESSION = "skynet-browser-mcp";
+export const BROWSER_MCP_PROCESS_SESSION = `${SANDBOX_NAME_PREFIX}-browser-mcp`;
 const BROWSER_MCP_PORT = 8931;
 export const BROWSER_MCP_URL = `http://localhost:${BROWSER_MCP_PORT}/mcp`;
 export const BROWSER_MCP_SERVER_NAME = "useagent-browser";
-export const LEGACY_BROWSER_MCP_SERVER_NAME = "skynet-browser";
+export const LEGACY_BROWSER_MCP_SERVER_NAME = LEGACY_TOOL_SERVER_IDS.browser;
 export const BROWSER_MCP_SERVER_NAMES = [
   BROWSER_MCP_SERVER_NAME,
   LEGACY_BROWSER_MCP_SERVER_NAME,
 ] as const;
-const BROWSER_MCP_GUARD_FILE = "$HOME/.skynet/browser-mcp-guard.session";
+const BROWSER_MCP_GUARD_FILE = `${SANDBOX_STATE_HOME}/browser-mcp-guard.session`;
 
 function browserArgs(workdir: string): string[] {
   return [
@@ -270,7 +272,7 @@ function browserArgs(workdir: string): string[] {
     "--timeout-settle",
     "300",
     "--output-dir",
-    `${workdir}/.skynet-browser`,
+    `${workdir}/.useagent-browser`,
     "--viewport-size",
     "1440x900",
   ];
@@ -310,7 +312,7 @@ async function residentBrowserMcpListening(sandbox: SandboxHandle): Promise<bool
 function browserMcpGuardCommand(): string {
   const initialize = JSON.stringify({
     jsonrpc: "2.0",
-    id: "skynet-browser-guard-init",
+    id: "useagent-browser-guard-init",
     method: "initialize",
     params: {
       protocolVersion: "2025-06-18",
@@ -323,9 +325,9 @@ function browserMcpGuardCommand(): string {
     method: "notifications/initialized",
   });
   return [
-    'mkdir -p "$HOME/.skynet"',
-    'guard_headers="$HOME/.skynet/browser-mcp-guard.headers"',
-    'guard_body="$HOME/.skynet/browser-mcp-guard.body"',
+    `mkdir -p "${SANDBOX_STATE_HOME}"`,
+    `guard_headers="${SANDBOX_STATE_HOME}/browser-mcp-guard.headers"`,
+    `guard_body="${SANDBOX_STATE_HOME}/browser-mcp-guard.body"`,
     `curl -fsS -m 10 -D "$guard_headers" -o "$guard_body" ` +
       "-H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' " +
       `--data '${initialize}' ${BROWSER_MCP_URL}`,
@@ -349,7 +351,7 @@ async function residentBrowserMcpStatus(
 ): Promise<ResidentBrowserMcpStatus> {
   const ping = JSON.stringify({
     jsonrpc: "2.0",
-    id: "skynet-browser-guard-ping",
+    id: "useagent-browser-guard-ping",
     method: "ping",
     params: {},
   });

@@ -336,7 +336,7 @@ describe("Codex app-server JSON-RPC transport", () => {
   });
 
   test("evicts a timed-out cached client and cleanly spawns a replacement", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-codex-pool-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-codex-pool-"));
     const children = [new FakeAppServerProcess(), new FakeAppServerProcess()];
     let spawnCount = 0;
     const pool = new ManagedCodexAppServerClientPool(
@@ -367,7 +367,7 @@ describe("Codex app-server JSON-RPC transport", () => {
   });
 
   test("shares one client per scope and creates its home with owner-only permissions", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-codex-pool-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-codex-pool-"));
     const child = new FakeAppServerProcess();
     let spawnCount = 0;
     const pool = new ManagedCodexAppServerClientPool(
@@ -395,7 +395,7 @@ describe("Codex app-server JSON-RPC transport", () => {
   });
 
   test("binds refresh handling to the current scope", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-codex-pool-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-codex-pool-"));
     const child = new FakeAppServerProcess();
     const scope = { orgId: "org-bound", userId: "user-bound" };
     const refreshTokens = mock(async (input: {
@@ -443,7 +443,7 @@ describe("Codex app-server JSON-RPC transport", () => {
   });
 
   test("contains failed login completion, closes only the affected client, and evicts it", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-codex-pool-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-codex-pool-"));
     const children = [
       new FakeAppServerProcess(),
       new FakeAppServerProcess(),
@@ -500,7 +500,7 @@ describe("Codex app-server JSON-RPC transport", () => {
   });
 
   test("closes an abandoned login from the client creation deadline and allows replacement", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-codex-pool-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-codex-pool-"));
     const children = [new FakeAppServerProcess(), new FakeAppServerProcess()];
     let spawnCount = 0;
     const pool = new ManagedCodexAppServerClientPool(
@@ -530,7 +530,7 @@ describe("Codex app-server JSON-RPC transport", () => {
   });
 
   test("cancelling login evicts only that scope and does not leak a rejection", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-codex-pool-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-codex-pool-"));
     const children = [
       new FakeAppServerProcess(),
       new FakeAppServerProcess(),
@@ -606,7 +606,7 @@ describe("Codex app-server JSON-RPC transport", () => {
   });
 
   test("terminal login failure evicts only that scope while successful login remains reusable", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-codex-pool-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-codex-pool-"));
     const children = [
       new FakeAppServerProcess(),
       new FakeAppServerProcess(),
@@ -651,7 +651,7 @@ describe("Codex app-server JSON-RPC transport", () => {
   });
 
   test("rejects excess scopes without evicting another user or starting another process", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-codex-pool-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-codex-pool-"));
     const children = [new FakeAppServerProcess(), new FakeAppServerProcess()];
     let spawnCount = 0;
     const pool = new ManagedCodexAppServerClientPool(
@@ -686,7 +686,7 @@ describe("Codex app-server JSON-RPC transport", () => {
   });
 
   test("keeps delimiter-like org and user IDs in distinct pool scopes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-codex-pool-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-codex-pool-"));
     const children = [new FakeAppServerProcess(), new FakeAppServerProcess()];
     let spawnCount = 0;
     const pool = new ManagedCodexAppServerClientPool(

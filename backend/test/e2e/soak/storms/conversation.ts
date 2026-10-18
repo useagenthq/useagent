@@ -35,7 +35,7 @@ const rec = new Recorder("conversation");
 const rand = rng(SEED);
 
 const stack = new Stack({
-  db: `skynet_soak_conv_${PORT}`,
+  db: `useagent_soak_conv_${PORT}`,
   port: PORT,
   stepDelayMs: 3, // fast; the storm's stress is queue ordering, not step timing
 });

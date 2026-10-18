@@ -29,7 +29,7 @@ const realFetch = globalThis.fetch;
 function enableMemory(): void {
   process.env.MEMORY_API_URL = "http://memory.test:8420";
   process.env.MEMORY_API_KEY = "sk-mem-test";
-  // MEMORY_TEAM_ID intentionally unset → cfg default "skynet"; team_id must come
+  // MEMORY_TEAM_ID intentionally unset → cfg default "useagent"; team_id must come
   // from the run's orgId, so the default never leaks into an org-scoped pool.
 }
 
@@ -141,10 +141,10 @@ describe("resolveScopedMemory", () => {
 
   test("legacy run with no org falls back to the configured default team pool", () => {
     enableMemory();
-    process.env.MEMORY_TEAM_ID = "skynet";
+    process.env.MEMORY_TEAM_ID = "useagent";
     const plan = resolveScopedMemory({ orgId: null, userId: "alice", threadId: "t", id: "r", memoryScope: "org" })!;
-    expect(plan.orgId).toBe("skynet");
-    expect(plan.readPools[0]!.identity.userId).toBe("org:skynet");
+    expect(plan.orgId).toBe("useagent");
+    expect(plan.readPools[0]!.identity.userId).toBe("org:useagent");
   });
 
   test("product identity remains byte-for-byte unchanged when origin is null", () => {

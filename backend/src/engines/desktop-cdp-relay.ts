@@ -1,12 +1,15 @@
 import { randomBytes } from "node:crypto";
 import type { SandboxHandle } from "../sandboxes/provider";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_DIR, SANDBOX_STATE_HOME } from "../sandboxes/sandbox-names";
 
 export const DESKTOP_CDP_RELAY_PORT = 19_222;
 export const DESKTOP_CDP_RELAY_VERSION = "2";
 /** Loopback listener the sandbox's own browser tools use; it starts Chrome when it is not running. */
 export const DESKTOP_CDP_LOCAL_PORT = 9223;
 /** Where the desktop launcher writes the one-shot Chrome start script. */
-export const BROWSER_LAUNCH_SCRIPT = "$HOME/.skynet/browser-launch.sh";
+export const BROWSER_LAUNCH_SCRIPT = `${SANDBOX_STATE_HOME}/browser-launch.sh`;
+/** The relay answers with its version under this header; relays already running in retained sandboxes send it. */
+const RELAY_VERSION_HEADER = `x-${SANDBOX_NAME_PREFIX}-cdp-relay-version`;
 
 const RELAY_TOKEN_NAME = "cdp-relay.token";
 const relayTokens = new Map<string, string>();
@@ -23,7 +26,7 @@ const PORT = ${DESKTOP_CDP_RELAY_PORT};
 const LOCAL_PORT = ${DESKTOP_CDP_LOCAL_PORT};
 const VERSION = ${JSON.stringify(DESKTOP_CDP_RELAY_VERSION)};
 const TOKEN = readFileSync(new URL("./${RELAY_TOKEN_NAME}", import.meta.url), "utf8").trim();
-const LAUNCH = homedir() + "/.skynet/browser-launch.sh";
+const LAUNCH = homedir() + ${JSON.stringify(`/${SANDBOX_STATE_DIR}/browser-launch.sh`)};
 
 function authorized(request) {
   const expected = Buffer.from("Bearer " + TOKEN);
@@ -70,7 +73,7 @@ function ensureBrowser() {
 
 function proxyRequest(request, response) {
   const upstream = httpRequest({ hostname: "127.0.0.1", port: 9222, path: request.url, method: "GET" }, (upstreamResponse) => {
-    response.writeHead(upstreamResponse.statusCode ?? 502, { ...upstreamResponse.headers, "x-skynet-cdp-relay-version": VERSION });
+    response.writeHead(upstreamResponse.statusCode ?? 502, { ...upstreamResponse.headers, ${JSON.stringify(RELAY_VERSION_HEADER)}: VERSION });
     upstreamResponse.pipe(response);
   });
   upstream.on("error", () => reject(response, 502, "upstream unavailable"));
@@ -99,7 +102,7 @@ const server = createServer(async (request, response) => {
   if (!authorized(request)) return reject(response, 401, "unauthorized");
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
   if (request.method === "GET" && path === "/healthz") {
-    response.writeHead(200, { "content-type": "application/json", "x-skynet-cdp-relay-version": VERSION });
+    response.writeHead(200, { "content-type": "application/json", ${JSON.stringify(RELAY_VERSION_HEADER)}: VERSION });
     return response.end(JSON.stringify({ relay: VERSION }));
   }
   if (request.method !== "GET" || !["/json/list", "/json/version"].includes(path)) {
@@ -142,9 +145,9 @@ function validRelayToken(value: string): boolean {
 export function desktopCdpRelayProbeCommand(): string {
   return (
     "python3 -c \"import pathlib,urllib.request; " +
-    "token=pathlib.Path.home().joinpath('.skynet/cdp-relay.token').read_text().strip(); " +
+    `token=pathlib.Path.home().joinpath('${SANDBOX_STATE_DIR}/cdp-relay.token').read_text().strip(); ` +
     `request=urllib.request.Request('http://127.0.0.1:${DESKTOP_CDP_RELAY_PORT}/healthz',headers={'authorization':'Bearer '+token}); ` +
-    `response=urllib.request.urlopen(request,timeout=3); assert response.headers.get('x-skynet-cdp-relay-version') == '${DESKTOP_CDP_RELAY_VERSION}'\"`
+    `response=urllib.request.urlopen(request,timeout=3); assert response.headers.get('${RELAY_VERSION_HEADER}') == '${DESKTOP_CDP_RELAY_VERSION}'\"`
   );
 }
 
@@ -156,20 +159,20 @@ export async function ensureDesktopCdpRelayFiles(
   sandbox: SandboxHandle,
   home: string,
 ): Promise<string> {
-  const tokenPath = `${home}/.skynet/${RELAY_TOKEN_NAME}`;
+  const tokenPath = `${home}/${SANDBOX_STATE_DIR}/${RELAY_TOKEN_NAME}`;
   const existing = await sandbox.fs
     .downloadFile(tokenPath)
     .then((buffer) => buffer.toString("utf8").trim())
     .catch(() => "");
   const token = validRelayToken(existing) ? existing : randomBytes(32).toString("hex");
   await Promise.all([
-    sandbox.fs.uploadFile(Buffer.from(desktopCdpRelaySource()), `${home}/.skynet/cdp-relay.mjs`),
+    sandbox.fs.uploadFile(Buffer.from(desktopCdpRelaySource()), `${home}/${SANDBOX_STATE_DIR}/cdp-relay.mjs`),
     existing === token
       ? Promise.resolve()
       : sandbox.fs.uploadFile(Buffer.from(`${token}\n`), tokenPath),
   ]);
   const permissions = await sandbox.process.executeCommand(
-    'chmod 700 "$HOME/.skynet" && chmod 600 "$HOME/.skynet/cdp-relay.token"',
+    `chmod 700 "${SANDBOX_STATE_HOME}" && chmod 600 "${SANDBOX_STATE_HOME}/cdp-relay.token"`,
     undefined,
     undefined,
     5,
@@ -183,7 +186,7 @@ export async function desktopCdpRelayToken(sandbox: SandboxHandle): Promise<stri
   const cached = relayTokens.get(sandbox.id);
   if (cached) return cached;
   const result = await sandbox.process.executeCommand(
-    'cat "$HOME/.skynet/cdp-relay.token"',
+    `cat "${SANDBOX_STATE_HOME}/cdp-relay.token"`,
     undefined,
     undefined,
     5,

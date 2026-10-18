@@ -592,9 +592,9 @@ async function s10_rail(wf: string): Promise<Result> {
     await page.mouse.move(box.x - 180, box.y + box.height / 2, { steps: 12 });
     await page.mouse.up();
     await page.waitForTimeout(500);
-    const stored = await page.evaluate(() => localStorage.getItem("skynet.rail-width"));
+    const stored = await page.evaluate(() => localStorage.getItem("useagent.rail-width"));
     const after = await widthOf();
-    checks.push({ name: "rail: drag changes width + persists to localStorage 'skynet.rail-width'", ok: !!stored && Math.abs(after - before) > 20, note: `before=${Math.round(before)} after=${Math.round(after)} stored=${stored}` });
+    checks.push({ name: "rail: drag changes width + persists to localStorage 'useagent.rail-width'", ok: !!stored && Math.abs(after - before) > 20, note: `before=${Math.round(before)} after=${Math.round(after)} stored=${stored}` });
     // Reload → width restored from localStorage.
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2000);

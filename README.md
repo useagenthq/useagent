@@ -306,7 +306,7 @@ label, comment that you're taking it, and open a pull request.
 - **Want something bigger?** The channel issues (Discord, Telegram, Microsoft Teams)
   build on the existing connector framework, with the email connector as a worked example.
 - **How it counts:** merged, approved or `hacktoberfest-accepted` pull requests count.
-  Low-effort pull requests get the `spam` label.
+  Low-effort pull requests are closed.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before your first pull request.
 

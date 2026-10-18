@@ -226,7 +226,7 @@ describe("runs", () => {
     expect(done.model).toBe("claude-sonnet-4-5");
     expect(typeof done.summary).toBe("string");
     expect(typeof done.duration_ms).toBe("number");
-    expect(done.org_id).toBe("org-skynet-dev"); // dev fallback org
+    expect(done.org_id).toBe(DEV_ORG_ID); // dev fallback org
     expect(typeof done.created_at).toBe("string");
     expect(typeof done.updated_at).toBe("string");
 

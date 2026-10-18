@@ -5,23 +5,118 @@ This project is licensed under the GNU Affero General Public License v3.0
 (AGPL-3.0-only); see the LICENSE file at the repository root.
 
 This product includes software developed by third parties. Ported or adapted
-files carry their upstream attribution and license in per-file headers.
+files carry their upstream attribution and license in per-file headers. Each
+source's license text is in third_party/licenses/ (third_party/licenses/README.md
+lists the upstream commit of each), except Beautiful UI's, which stays with its
+snapshot in frontend/vendor/beautiful-ui/.
 
-- T3 Code (T3 Tools Inc, MIT) - https://t3.chat
+- T3 Code (T3 Tools Inc, MIT) - https://github.com/pingdotgg/t3code
   Session chrome components in frontend/components/session-ui/ (work rows,
   status pills, banners, copy affordances); each ported file carries the
-  upstream path and commit in its header.
+  upstream path and commit in its header. The license is in
+  third_party/licenses/t3code/LICENSE. The sandbox runtime is built outside
+  this repository from a fork of pingdotgg/t3code pinned in
+  third_party/t3code-fork.lock.
 
 - Beautiful UI (Shane Levine / Turbo, MIT) - https://www.beautifului.dev
   Vendored sources in frontend/vendor/beautiful-ui/ (manifest.json records the
   upstream record, hash, and fetch time per component) and ports in
-  frontend/components/ai/, frontend/components/agent-ui/, and derived chat
-  surfaces in frontend/components/chat/.
+  frontend/components/ai/ and derived chat surfaces in frontend/components/chat/.
 
-- BoardUI (free edition) - vendored UI foundations in frontend/components/base/
-  and frontend/styles/theme.css. Used under BoardUI's free-edition terms;
-  not covered by this repository's AGPL license.
+- beUI (Saurabh Chauhan, MIT) - https://beui.dev
+  Ported agent components in frontend/components/agent-ui/. The license is in
+  third_party/licenses/beui/LICENSE.
 
-- prompt-kit and thinking-orbs (Jakub Antalik, MIT) - ported UI primitives in
-  frontend/components/prompt-kit/ and brand motion in
-  frontend/components/foundations/ (see per-folder READMEs).
+- BoardUI free edition (Mertcan Dundar Esmergul, MIT) - https://www.boardui.com
+  UI foundations in frontend/components/base/ and frontend/styles/, plus
+  blocks, hooks and utilities elsewhere in frontend/ whose headers name
+  BoardUI, and the plugin icons in frontend/public/plugin-icons/. They remain
+  under BoardUI's MIT license, which is in third_party/licenses/boardui/LICENSE.
+
+- AlignUI (Doğukan Çavuş / AlignUI, MIT) - https://www.alignui.com
+  The semantic token scale in frontend/tailwind.config.ts, whose names
+  frontend/app/globals.css defines, and small helpers from the AlignUI starter
+  (alignui/alignui-nextjs-typescript-starter): frontend/utils/polymorphic.ts,
+  recursive-clone-children.tsx, tv.ts and cn.ts, and
+  frontend/hooks/use-tab-observer.ts. The starter's license is in
+  third_party/licenses/alignui-starter/LICENSE.
+
+- prompt-kit (Julien Thibeaut, MIT) - https://www.prompt-kit.com
+  Ported UI primitives in frontend/components/prompt-kit/. The license is in
+  third_party/licenses/prompt-kit/LICENSE.
+
+- shadcn/ui (shadcn, MIT) - https://ui.shadcn.com
+  The sidebar primitives in frontend/components/sidebar-kit/ and the Button in
+  frontend/components/prompt-kit/button.tsx. The license is in
+  third_party/licenses/shadcn-ui/LICENSE.
+
+- blocks.so (Ephraim Duncan, MIT) - https://blocks.so
+  The app sidebar frame in frontend/components/shell/app-sidebar-frame.tsx
+  follows its sidebar blocks. The license is in
+  third_party/licenses/blocks-so/LICENSE.
+
+- thinking-orbs (Jakub Antalik, MIT) - https://libraries.dev/orbs
+  The thinking orb in frontend/components/base/thinking-orb/. The license is in
+  third_party/licenses/thinking-orbs/LICENSE.
+
+- Transitions.dev (Jakub Antalik, Transitions.dev License) - https://transitions.dev
+  The "Texts reveal" transition in frontend/styles/globals.css, used by the
+  file upload dropzone in frontend/components/base/file-upload/file-upload.tsx.
+  The license allows use and modification in products but not republishing
+  the collection; its text is in third_party/licenses/transitions-dev/LICENSE.
+
+- t3themes (SunkenInTime) - https://t3themes.com
+  The Phosphor and Sakura themes in frontend/app/globals.css adapt the colour
+  palettes of its "Phosphor" and "Sakura" themes. Its repository
+  (https://github.com/SunkenInTime/t3-themes) has no license file, so there is
+  no license text to include.
+
+- KiroCrew (Amazon.com, Inc. or its affiliates, Apache-2.0) -
+  https://github.com/kirodotdev/KiroCrew
+  The channel contracts, run feed and email connector in
+  backend/src/connectors/, the cron parser and scheduler in
+  backend/src/schedules/cron.ts and scheduler.ts, and the reply splitting in
+  backend/src/slack/chunk.ts (with backend/test/slack-chunk.test.ts) are
+  ported from it; their headers name the upstream files. The license and
+  upstream NOTICE are in third_party/licenses/kirocrew/. That NOTICE reads, in
+  the part that applies here:
+
+    KiroCrew
+    Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+    This product includes software developed at
+    Amazon.com, Inc. (https://www.amazon.com/).
+
+- QM (QM contributors, MIT) - https://github.com/yc-software/qm
+  The Markdown to Slack mrkdwn converter in backend/src/slack/mrkdwn.ts (with
+  backend/test/slack-mrkdwn.test.ts) is ported from it, and
+  backend/src/runs/turn-stream.ts is adapted from it. The Slack event gating
+  in backend/src/slack/events.ts, the file upload sequence in
+  backend/src/slack/client.ts and backend/src/knowledge/gateway/slack-tools.ts,
+  and the stream headers in backend/src/runs/routes.ts follow it. The license
+  is in third_party/licenses/qm/LICENSE.
+
+- deepwiki-open (Sheing Ng, MIT) - https://github.com/AsyncFuncAI/deepwiki-open
+  The wiki prompts, structure parser and citation post-processor in
+  backend/src/wiki-gen/ (prompts.ts, structure.ts, citations.ts, with their
+  tests in backend/test/wiki-gen-*.test.ts) are ported from it, and the file
+  exclusion defaults in backend/src/wiki-gen/repo.ts follow its repo.json. The
+  license is in third_party/licenses/deepwiki-open/LICENSE.
+
+- TencentDB Agent Memory (Tencent, MIT) -
+  https://github.com/TencentCloud/TencentDB-Agent-Memory
+  The team memory service runs its memory-core. memory/prompt-overrides/ holds
+  English versions of its L1 extraction, L1 deduplication, scene and persona
+  prompts, and memory/runtime-overrides/l1-extractor.ts is its L1 extractor,
+  copied from the memory-core image with a language-policy change. The license
+  is in third_party/licenses/tencentdb-agent-memory/LICENSE.
+
+- Simple Icons (CC0-1.0) - https://simpleicons.org, SVG Logos (CC0-1.0) -
+  https://github.com/gilbarbara/logos, and Bootstrap Icons (The Bootstrap
+  Authors, MIT) - https://icons.getbootstrap.com
+  The brand glyph paths in
+  frontend/components/base/social-button/social-providers.ts and the colour
+  marks in frontend/components/base/social-button/social-color-logos.ts. Their
+  licenses are in third_party/licenses/simple-icons/,
+  third_party/licenses/svg-logos/ and third_party/licenses/bootstrap-icons/.
+  The logos are trademarks of their owners.

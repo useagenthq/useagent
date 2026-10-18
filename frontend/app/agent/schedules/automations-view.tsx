@@ -26,6 +26,7 @@ import { AutomationHistoryDrawer } from "./automation-history-drawer";
 import { AutomationOverview, EmptyAutomations } from "./automation-overview";
 import { AutomationEditorModal } from "./new-schedule-modal";
 import {
+  AutomationRefusal,
   createSchedule,
   deleteSchedule,
   fetchSchedules,
@@ -112,11 +113,11 @@ export function AutomationsView() {
         previous?.map((item) => (item.id === id ? updated : item)) ?? null,
       );
       setError(null);
-    } catch {
+    } catch (caught) {
       setAutomations((previous) =>
         previous?.map((item) => (item.id === id ? { ...item, enabled: !enabled } : item)) ?? null,
       );
-      setError("That status change didn’t save. The previous state was restored.");
+      setError(caught instanceof AutomationRefusal ? caught.message : "That status change didn’t save. The previous state was restored.");
     } finally {
       setBusy(setMutating, id, false);
     }
@@ -130,8 +131,8 @@ export function AutomationsView() {
       if (automation) setHistoryFor(automation);
       setError(null);
       await load();
-    } catch {
-      setError("The automation couldn’t start. No schedule settings were changed.");
+    } catch (caught) {
+      setError(caught instanceof AutomationRefusal ? caught.message : "The automation couldn’t start. No schedule settings were changed.");
     } finally {
       setBusy(setRunning, id, false);
     }
@@ -157,8 +158,8 @@ export function AutomationsView() {
       setAutomations((previous) => previous?.filter((item) => item.id !== id) ?? []);
       if (historyFor?.id === id) setHistoryFor(null);
       setError(null);
-    } catch {
-      setError("The automation wasn’t deleted. Try again.");
+    } catch (caught) {
+      setError(caught instanceof AutomationRefusal ? caught.message : "The automation wasn’t deleted. Try again.");
     } finally {
       setBusy(setMutating, id, false);
     }

@@ -129,9 +129,12 @@ export const kindChipColor: Record<
   outcome: "rose",
 };
 
+/** The product folder key older releases seeded; stored items keep it. */
+export const LEGACY_PRODUCT_FOLDER = "skynet-app";
+
 /** User-facing label for a persisted knowledge folder key. */
 export function knowledgeFolderLabel(folder: string): string {
-  return folder === "skynet-app" || folder === "useagent-app" ? "UseAgent" : folder;
+  return folder === LEGACY_PRODUCT_FOLDER || folder === "useagent-app" ? "UseAgent" : folder;
 }
 
 /** Row-safe display copy that leaves the stored item and folder key unchanged. */

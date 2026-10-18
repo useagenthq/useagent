@@ -28,14 +28,23 @@ export interface ThreadView {
 
 /** Full-thread load (`?thread=1`, oldest→newest) - the behavior for threads at
  *  or under the windowing limit, and the fallback when the outline or a
- *  windowed fetch is unavailable. [] on any failure. */
+ *  windowed fetch is unavailable. [] only when the backend says the thread is
+ *  not there (or not this member's); a transient failure (network, 5xx, a
+ *  deploy swap) is tried once more and then thrown, so the page shows an error
+ *  it can retry instead of a false "not found". */
 async function loadFullThread(id: string, fetcher: typeof backendFetch): Promise<ApiRun[]> {
-  try {
-    const res = await fetcher(`/api/runs/${id}?thread=1`);
-    if (!res.ok) return [];
-    return toThread(await res.json());
-  } catch {
-    return [];
+  for (let attempt = 1; ; attempt += 1) {
+    let failure: unknown;
+    try {
+      const res = await fetcher(`/api/runs/${id}?thread=1`);
+      if (res.ok) return toThread(await res.json());
+      if (res.status === 401 || res.status === 403 || res.status === 404) return [];
+      failure = new Error(`thread load failed: ${res.status}`);
+    } catch (error) {
+      failure = error;
+    }
+    if (attempt >= 2) throw failure;
+    await new Promise((resolve) => setTimeout(resolve, 400));
   }
 }
 

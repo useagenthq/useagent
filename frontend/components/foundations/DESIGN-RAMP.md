@@ -1,9 +1,15 @@
-# Design ramp — useAgent
+# Design ramp — UseAgent
 
-The single reference for **type**, **radius**, and **borders**. Read before adding any
-heading, card, row, or chrome. The house style is focused + soft (Vite+/composer
+The single reference for **type**, **radius**, **borders** and **surfaces**. Read before
+adding any heading, card, row, or chrome. The house style is focused + soft (Vite+/composer
 playbook): one compact display face against a neutral UI, generously rounded surfaces, and
 borders that are barely-there hairlines.
+
+These are the defaults of the standard themes. The theme tokens in `styles/theme.css`
+and each theme's overlay in `app/globals.css` (tokens plus its own rules) are authoritative:
+a theme may change radius, stroke, shadow and heading weight (Neobrutal draws 2px strokes and
+offset shadows on small radii, and sets heavier headings). Never hard-code a default to
+defeat a theme.
 
 ---
 
@@ -17,8 +23,6 @@ borders that are barely-there hairlines.
 | **UI / body** | **Inter** | `--font-sans`, applied to `<html>` | Neutral and highly readable at chat, navigation, form, table, and tool-output sizes. Tuned with `font-feature-settings: 'cv11','ss01','liga','calt'` + `text-rendering: optimizeLegibility` (set once on `<html>` in globals.css). |
 | **Mono** | **JetBrains Mono** | `--font-mono` | Code, IDs and technical values. |
 
-APK Protocol is the preferred licensed display face. Inter Tight is the current
-open-source substitute until licensed APK Protocol webfont files are available.
 
 ### When to use display vs sans
 
@@ -56,17 +60,16 @@ Large title tokens (`title-h1…h4`) were tightened (~-0.02em) in `tailwind.conf
 The blueprint calls for **SF Pro or closest**; Inter is already the app font, so the
 refinement lands as three token-level rules:
 
-- **Weights:** Inter **regular (400)** + **medium (500)** only — already the AlignUI split
- (`paragraph-*` = 400, `label-*` = 500). No other weights for UI text.
-- **Tracking = -0.15px** on all UI text (the SF-Pro-adjacent optical signature). Set as the
- global base on `<html>` (`letter-spacing: -0.15px`, catches all raw text) **and** baked into
- the core UI-text tokens `label-md/sm/xs` + `paragraph-md/sm/xs` in `tailwind.config.ts` so
- tokenized and raw text agree. The serif display ramp sets its own tracking and overrides
- this (correct, it is not UI text); `text-mono-label` follows the UI tracking.
-- **UI size scale = 12 / 13 / 14 / 24px.** 12–13px → captions + labels (`label-xs`
- `paragraph-xs` = 12px), 14px → body/default (`label-sm` `paragraph-sm` = 14px), 24px → the
- page display size (the `text-display-sm` hero). Keep UI text inside this range — don't
- reach for the large sans `title-*` tokens for chrome; the display face owns the display slot.
+- **Weights:** Inter **regular (400)** + **medium (500)** for UI text in the standard
+ themes (`*-regular` = 400, `*-medium` = 500). A theme may set its own heading weight.
+- **Tracking comes from the type tokens.** `<html>` keeps `letter-spacing: normal` (a fixed
+ px value does not scale); the body and body-2 tokens set 0, the caption tokens +0.15px, and
+ the display ramp its own em-based tracking. Do not add `tracking-*` to UI text.
+- **UI size scale = 12 / 13 / 14 / 24px.** 12px → captions and meta (`text-caption-1-*`),
+ 13px → body text and rows, menus and popovers included (`text-body-2-*`), 14px → chrome and
+ default controls (`text-body-*`), 24px → a page title (`text-title-1-*`, or the
+ `text-display-sm` hero). Keep UI text inside this range, always through these tokens; the
+ legacy `label-*` / `paragraph-*` scale in `tailwind.config.ts` is for old code only.
 
 ### Text hierarchy — three grays on the semantic ladder
 
@@ -77,8 +80,8 @@ lives in the BoardUI semantic text tokens — map onto them, never hard-code the
 | Blueprint role | Token | Light ≈ ratio | Dark (inverted) |
 | --------------------- | ----------------------- | ------------------- | -------------------- |
 | **Strong** (#292929) | `text-text-primary` | near-black ~13–16:1 | white |
-| **Mid** (#5D5D5D) | `text-text-secondary` | #525252, ~7:1 | warm mid-gray (58%L) |
-| **Muted** (#9E9E9E) | `text-text-tertiary` | #666666, 4.8 to 5.7:1 | dim gray (44%L) |
+| **Mid** (#5D5D5D) | `text-text-secondary` | #525252, ~7:1 | lighter grey |
+| **Muted** (#9E9E9E) | `text-text-tertiary` | #666666, 4.8 to 5.7:1 | dimmer grey |
 
 The muted step is deeper than the blueprint's #9E9E9E on purpose: tertiary carries real
 text (section labels, relative times, captions, secondary button labels, placeholders), so
@@ -123,8 +126,30 @@ Elevation comes from **background step + shadow**, not from stroke weight.
 - Static chrome uses a **single hairline**: `border border-border-button-default` (or `ring-1 ring-inset ring-border-button-default`).
 - **Never** `border-2` / `ring-2` for static chrome. (`focus-visible:ring-2` for keyboard focus is fine — it's not static.)
 - Do **not** re-brighten the dark border tokens. The global dark ramp already dims them
- (`--neutral-700` ≈ 13% L, `--neutral-600` ≈ 19% L) so borders read as faint hairlines on
- the #17181a canvas. Lean on `bg-*` elevation + `shadow-card`/`shadow-sm`/`shadow-md` for separation instead.
+ so borders read as faint hairlines on the dark canvas. Lean on `bg-*` elevation +
+ `shadow-card`/`shadow-sm`/`shadow-md` for separation instead.
+
+---
+
+## 4. Surfaces (the elevation ladder)
+
+One ladder, the same in every theme (each theme sets the values):
+
+| Role | Utility |
+| --- | --- |
+| Page canvas | `bg-background-full` |
+| Panel, card, composer | `bg-background-primary-default` |
+| Chrome, inset, field fill | `bg-background-secondary-default` |
+| Raised, active | `bg-background-tertiary-default` |
+| Hovered or selected row | `bg-background-secondary-hover` |
+| Hairline | `border-border-button-default` |
+| Text | `text-text-primary` / `text-text-secondary` / `text-text-tertiary` |
+
+The primary, secondary, tertiary and quaternary steps each have a `-hover` variant; primary
+also has `-active` (`styles/theme.css`). Separate surfaces by the
+background step first, a hairline second, a shadow for floating layers (menus, popovers,
+dialogs). The default dark ladder's values and contrast are pinned by
+`theme-tokens.test.ts`.
 
 ---
 
@@ -133,5 +158,4 @@ Elevation comes from **background step + shadow**, not from stroke weight.
 - Muted secondary text = `text-text-secondary`; tertiary = `text-text-tertiary`. Don't flatten.
 - **Icon sizes (blueprint):** navigation-row icons at **14px** (`size-3.5`); card leading icons
  at **20px** (`size-5`). Header/toolbar icon-buttons stay 20px (`size-5`).
-- Verify every surface on both the dark #17181a canvas AND light mode.
-</content>
+- Verify every surface on both the dark canvas AND light mode.

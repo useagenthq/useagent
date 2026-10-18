@@ -1,0 +1,1 @@
+By opening this pull request you agree to the [Contributor License Agreement](https://github.com/useagenthq/useagent/blob/main/CLA.md). On your first pull request a bot asks you to sign it with a one-line comment.

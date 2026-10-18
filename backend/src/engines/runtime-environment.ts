@@ -1,4 +1,5 @@
 import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_DIR, SANDBOX_STATE_HOME } from "../sandboxes/sandbox-names";
 import { executeSandboxCommandOnce } from "../sandboxes/command-prefetch";
 import { sandboxPlugin } from "../sandboxes/plugins";
 import { operatorEnv } from "./runtime-env";
@@ -39,10 +40,10 @@ export const RUNTIME_GENERATION = runtimeGeneration();
 export const RUNTIME_CUBE_WARM_POOL_NAME = RUNTIME_GENERATION;
 // Frozen VALUE: warm sandboxes already carry a process session under this name;
 // renaming the string would strand their resident server processes.
-const RUNTIME_ENVIRONMENT_PROCESS_SESSION = "skynet-t3-environment";
+const RUNTIME_ENVIRONMENT_PROCESS_SESSION = `${SANDBOX_NAME_PREFIX}-t3-environment`;
 // Frozen VALUE: the runtime binary's base-dir, baked into sandbox templates
 // (auth cookies, settings.json, and caches all live under it).
-export const RUNTIME_ENVIRONMENT_HOME = "$HOME/.skynet/t3";
+export const RUNTIME_ENVIRONMENT_HOME = `${SANDBOX_STATE_HOME}/t3`;
 export const RUNTIME_ENVIRONMENT_WORKDIR = "/root/work";
 export const RUNTIME_SANDBOX_HOME = "/root";
 const RUNTIME_MCP_SERVER_MARKER = `${RUNTIME_ENVIRONMENT_HOME}/.useagent-required-mcp`;
@@ -182,7 +183,7 @@ export function buildRuntimeEnvironmentLaunchCommand(
   env: Readonly<Record<string, string | undefined>> = process.env,
   layout: SandboxRuntimeLayout = ROOT_RUNTIME_LAYOUT,
 ): string {
-  const runtimeHome = `${layout.home}/.skynet/t3`;
+  const runtimeHome = `${layout.home}/${SANDBOX_STATE_DIR}/t3`;
   const localBin = `${layout.home}/.local/bin`;
   return [
     "set -eu",
@@ -318,7 +319,7 @@ async function provisionRuntimeEnvironment(
     return {
       sandboxId: sandbox.id,
       port: RUNTIME_ENVIRONMENT_PORT,
-      home: `${layout.home}/.skynet/t3`,
+      home: `${layout.home}/${SANDBOX_STATE_DIR}/t3`,
       workdir: layout.workdir,
     };
   } catch (error) {

@@ -1,14 +1,14 @@
-# useAgent Individual Contributor License Agreement
+# UseAgent Individual Contributor License Agreement
 
-Thank you for contributing to useAgent. This agreement clarifies the rights
+Thank you for contributing to UseAgent. This agreement clarifies the rights
 you grant on your contributions. You keep ownership of your work; you give
-the useAgent maintainers the rights needed to keep the project sustainable,
-including offering useAgent under commercial terms.
+UseAgent the rights needed to keep the project sustainable,
+including offering UseAgent under commercial terms.
 
 By submitting a contribution (a pull request, patch, or any other material
 you intentionally submit for inclusion), you agree:
 
-1. **Copyright license.** You grant the useAgent maintainers a perpetual,
+1. **Copyright license.** You grant UseAgent a perpetual,
    worldwide, non-exclusive, royalty-free, irrevocable license to reproduce,
    prepare derivative works of, publicly display, publicly perform,
    sublicense, and distribute your contribution and derivative works of it,

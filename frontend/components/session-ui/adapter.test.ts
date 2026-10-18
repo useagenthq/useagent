@@ -11,6 +11,7 @@ import {
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
 } from "./work-entry";
+import { LEGACY_TOOL_SERVER_IDS } from "@useagent/agent-harness/canonical";
 
 function step(over: Partial<ApiStep>): ApiStep {
   return {
@@ -120,7 +121,7 @@ describe("child-session fan-out heading regression (bare chevron+status rows)", 
         kind: "command",
         label: "",
         code_json: JSON.stringify({
-          tool: "skynet-knowledge_child_session_gather",
+          tool: `${LEGACY_TOOL_SERVER_IDS.gateway}_child_session_gather`,
           input: {},
         }),
       }),

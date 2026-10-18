@@ -187,7 +187,7 @@ describe("provider request body policy", () => {
         "max_output_tokens",
         100,
       );
-      expect(result).toEqual({ ok: false, error: "output_limit_exceeded" });
+      expect(result).toEqual({ ok: false, error: "output_limit_exceeded", requested: value });
     }
   });
 });

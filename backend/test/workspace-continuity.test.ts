@@ -7,13 +7,14 @@ import {
   recordSandboxReclaimed,
 } from "../src/engines/workspace-continuity";
 import type { EmitStep, EngineRunContext } from "../src/engines/types";
+import { DEV_ORG_ID } from "../src/dev-org";
 import "./helpers"; // side-effect: migrate + seed
 
 // Finding 11: a follow-up whose retained sandbox is gone must say so in the
 // timeline and in the turn context instead of silently starting from an empty
 // box. Release paths null runs.sandbox_id but keep sandbox_provider, and the
 // fleet's capacity reclaim leaves a durable marker naming the reason.
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 
 async function enqueue(id: string, threadId: string, parentRunId: string | null): Promise<void> {
   const out = await acceptRunCommand({

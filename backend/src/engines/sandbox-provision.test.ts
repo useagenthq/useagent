@@ -7,6 +7,7 @@ import type {
 } from "@useagent/sandbox-contract";
 import { provisionSandbox } from "./sandbox-provision";
 import type { EmitStep, EngineRunContext } from "./types";
+import { LEGACY_SANDBOX_RUN_LABEL } from "../sandboxes/label-compat";
 
 const TARGET = { cpu: 2, memory: 8 };
 
@@ -80,12 +81,12 @@ describe("provisionSandbox", () => {
       binding: { kind: "daytona", provider },
       snapshot: "snap",
       chip: "opencode",
-      create: { labels: { "skynet-run": "run-a" } },
+      create: { labels: { [LEGACY_SANDBOX_RUN_LABEL]: "run-a" } },
       resourceTarget: TARGET,
       noteLostWorkspace: quiet,
     });
     expect(provisioned).toMatchObject({ fromTemplate: true, sandbox: { id: "from-template" } });
-    expect(provider.creates).toEqual([{ labels: { "skynet-run": "run-a" }, snapshot: "snap" }]);
+    expect(provider.creates).toEqual([{ labels: { [LEGACY_SANDBOX_RUN_LABEL]: "run-a" }, snapshot: "snap" }]);
     expect(run.steps).toEqual([]);
   });
 
@@ -114,32 +115,32 @@ describe("provisionSandbox", () => {
   });
 
   test("an absent snapshot fails by name with no fallback create", async () => {
-    const provider = fakeProvider({ template: { name: "skynet-agent-v99", state: "absent" } });
+    const provider = fakeProvider({ template: { name: "useagent-agent-v99", state: "absent" } });
     await expect(provisionSandbox({
       ctx: ctx(),
       binding: { kind: "daytona", provider },
-      snapshot: "skynet-agent-v99",
+      snapshot: "useagent-agent-v99",
       chip: "opencode",
       create: {},
       resourceTarget: { cpu: 1, memory: 1 },
       noteLostWorkspace: quiet,
-    })).rejects.toThrow("snapshot skynet-agent-v99 is not in this Daytona org");
+    })).rejects.toThrow("snapshot useagent-agent-v99 is not in this Daytona org");
     expect(provider.creates).toEqual([]);
   });
 
   test("a snapshot that stays inactive surfaces the provider's reason instead of a CPU/RAM error", async () => {
     const provider = fakeProvider({
-      template: { name: "skynet-acp-v3", state: "activating", detail: "still building after 360s" },
+      template: { name: "useagent-acp-v3", state: "activating", detail: "still building after 360s" },
     });
     await expect(provisionSandbox({
       ctx: ctx(),
       binding: { kind: "daytona", provider },
-      snapshot: "skynet-acp-v3",
+      snapshot: "useagent-acp-v3",
       chip: "codex",
       create: {},
       resourceTarget: TARGET,
       noteLostWorkspace: quiet,
-    })).rejects.toThrow("snapshot skynet-acp-v3 is activating (still building after 360s)");
+    })).rejects.toThrow("snapshot useagent-acp-v3 is activating (still building after 360s)");
     // The 1 vCPU default image can never meet a 2 CPU / 8 GiB target, so no doomed box is created.
     expect(provider.creates).toEqual([]);
   });
@@ -169,12 +170,12 @@ describe("provisionSandbox", () => {
       binding: { kind: "daytona", provider },
       snapshot: "snap",
       chip: "opencode",
-      create: { labels: { "skynet-run": "run-a" } },
+      create: { labels: { [LEGACY_SANDBOX_RUN_LABEL]: "run-a" } },
       resourceTarget: { cpu: 1, memory: 1 },
       noteLostWorkspace: quiet,
     });
     expect(provisioned).toMatchObject({ fromTemplate: false, sandbox: { id: "from-base" } });
-    expect(provider.creates).toEqual([{ labels: { "skynet-run": "run-a" } }]);
+    expect(provider.creates).toEqual([{ labels: { [LEGACY_SANDBOX_RUN_LABEL]: "run-a" } }]);
     expect(run.steps).toEqual([
       {
         kind: "task",

@@ -3,7 +3,7 @@ export const USEAGENT_API_COMPAT = "run-events-v1";
 const CLIENT_COMMIT = process.env.NEXT_PUBLIC_USEAGENT_RELEASE_COMMIT?.trim().toLowerCase() || "dev";
 export const CLIENT_RELEASE_FINGERPRINT = `${USEAGENT_API_COMPAT}:${CLIENT_COMMIT}`;
 
-const RELOAD_MARKER = "skynet.release.reload";
+const RELOAD_MARKER = "useagent.release.reload";
 
 export class FrontendReleaseMismatchError extends Error {
   constructor(
@@ -70,9 +70,7 @@ export function scheduleReleaseReload(): ReleaseReloadOutcome {
 }
 
 export function handleReleaseMismatch(response: Response, init?: RequestInit): void {
-  const serverFingerprint =
-    response.headers.get("x-useagent-release-fingerprint") ??
-    response.headers.get("x-skynet-release-fingerprint");
+  const serverFingerprint = response.headers.get("x-useagent-release-fingerprint");
   if (!serverFingerprint || serverFingerprint === CLIENT_RELEASE_FINGERPRINT) return;
   if (serverFingerprint.endsWith(":dev")) return;
   const outcome = scheduleReleaseReload();

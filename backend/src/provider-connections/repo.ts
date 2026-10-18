@@ -1,6 +1,8 @@
 import { and, asc, eq, sql } from "drizzle-orm";
-import { db } from "../db/client";
+import { db, type Executor } from "../db/client";
+import { withOrgLock } from "../org-lock";
 import {
+  member,
   providerConnections,
   providerConnectionThreads,
   type ProviderConnectionAuthMethod,
@@ -10,6 +12,23 @@ import {
 } from "../db/schema";
 
 export type ProviderConnectionRecord = typeof providerConnections.$inferSelect;
+
+/** Whether the person is an owner or admin of the organization (exact roles). */
+export async function isOrgAdmin(orgId: string, userId: string, exec: Executor = db): Promise<boolean> {
+  const [row] = await exec
+    .select({ role: member.role })
+    .from(member)
+    .where(and(eq(member.organizationId, orgId), eq(member.userId, userId)))
+    .limit(1);
+  return row?.role === "owner" || row?.role === "admin";
+}
+
+/** `act` for an org owner or admin, authorized in the organisation's turn
+ *  (org-lock.ts) as role changes are, so one demoted meanwhile gets nothing
+ *  done; null for anyone else. */
+export function asOrgAdmin<T>(orgId: string, userId: string, act: () => Promise<T>): Promise<{ readonly value: T } | null> {
+  return withOrgLock(orgId, async () => ((await isOrgAdmin(orgId, userId)) ? { value: await act() } : null));
+}
 
 export interface ProviderConnectionScope {
   orgId: string;
