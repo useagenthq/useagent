@@ -22,7 +22,7 @@ import {
   safeComputerMetadata,
   statusLabel,
 } from "./provider-connections-data";
-import { relTime } from "./relative-time";
+import { relativeTime } from "@/utils/format";
 import { useProviderConnections } from "./use-provider-connections";
 
 const MASK = "••••••••";
@@ -217,7 +217,7 @@ function ComputerSection({
             </p>
             <div className="flex items-center gap-2">
               {connection ? (
-                <span className="text-caption-1-regular text-text-tertiary">Updated {relTime(connection.updatedAt)}</span>
+                <span className="text-caption-1-regular text-text-tertiary">Updated {relativeTime(connection.updatedAt)}</span>
               ) : null}
               {connected ? (
                 <Button
