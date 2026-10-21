@@ -667,7 +667,7 @@ export function fleetCapacityConfig(): FleetCapacityConfig {
     globalMaxActiveSandboxes: fleetInt("FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES", 5),
     orgMaxActiveSandboxes: fleetInt("FLEET_ORG_MAX_ACTIVE_SANDBOXES", 3),
     orgMaxQueueDepth: fleetInt("FLEET_ORG_MAX_QUEUE_DEPTH", 40),
-    maxDispatchConcurrency: fleetInt("FLEET_MAX_DISPATCH_CONCURRENCY", 4),
+    maxDispatchConcurrency: Math.max(1, fleetInt("FLEET_MAX_DISPATCH_CONCURRENCY", 4)),
     safetyMarginPct: Math.min(fleetInt("FLEET_SAFETY_MARGIN_PCT", 15), 90),
     hostCpuMillicores: fleetInt("FLEET_HOST_CPU_MILLICORES", 12_000),
     hostMemoryMib: fleetInt("FLEET_HOST_MEMORY_MIB", 63_488),
