@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome lint",
     "lint:fix": "biome check --write",
-    "test": "bun test components app lib",
+    "test": "bun test components app lib utils",
     "test:a11y": "bun test/a11y/sweep.ts",
     "analyze": "USEAGENT_BUILD_DIST=.next-build next experimental-analyze",
     "perf:routes": "bun test/perf/route-js.ts"

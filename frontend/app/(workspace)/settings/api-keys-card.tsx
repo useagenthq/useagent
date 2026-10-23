@@ -13,7 +13,7 @@ import { IconButton } from "@/components/base/buttons/icon-button";
 import { InputBase, TextField } from "@/components/base/input/input";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { cx } from "@/utils/cx";
-import { relTime } from "./relative-time";
+import { relativeTime } from "@/utils/format";
 import { createApiKey, fetchApiKeys, revokeApiKey } from "./api-keys-api";
 import type { ApiKeyMeta, CreatedApiKey } from "./api-keys-data";
 
@@ -248,7 +248,7 @@ export function ApiKeysCard() {
                 </div>
                 {mounted && (
                   <span className="hidden text-caption-1-regular text-text-tertiary sm:inline">
-                    {k.lastUsedAt ? `Used ${relTime(k.lastUsedAt)}` : "Never used"}
+                    {k.lastUsedAt ? `Used ${relativeTime(k.lastUsedAt)}` : "Never used"}
                   </span>
                 )}
                 {revoked ? (
