@@ -77,7 +77,7 @@ function RecentTasks({ runs }: { runs: RecentRun[] }) {
 export default async function NewTaskPage({
   searchParams,
 }: {
-  searchParams: Promise<{ repo?: string | string[]; prompt?: string | string[] }>;
+  searchParams: Promise<{ repo?: string | string[]; prompt?: string | string[]; fork?: string | string[] }>;
 }) {
   const params = await searchParams;
   const requestedRepo = params.repo;
@@ -85,6 +85,8 @@ export default async function NewTaskPage({
   // Deep-link prefill: surfaces like "Discuss PR" open the composer with the
   // prompt already drafted (e.g. the repo + PR number the agent should read).
   const initialPrompt = typeof params.prompt === "string" ? params.prompt : "";
+  // "Fork from here" on a thread message: the key of the history it stashed.
+  const forkKey = typeof params.fork === "string" ? params.fork : null;
   const [skills, recentRuns] = await Promise.all([fetchSkills(), fetchRecentRuns()]);
 
   return (
@@ -101,6 +103,7 @@ export default async function NewTaskPage({
               skills={skills}
               initialRepository={initialRepository}
               initialPrompt={initialPrompt}
+              forkKey={forkKey}
             />
           </div>
 

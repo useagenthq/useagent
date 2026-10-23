@@ -53,6 +53,8 @@ import {
   turnNodesFromSteps,
   withTransientLiveReasoning,
 } from "@/components/chat/turn-trace-model";
+import { parseForkPrompt } from "@/components/chat/fork-prompt";
+import { ForkFromHereButton, ForkOrigin, useForkStash } from "@/components/chat/thread-fork-controls";
 import { TurnSender } from "@/components/chat/turn-sender";
 import { TurnWindow } from "@/components/chat/turn-window";
 import { CaptureDegradedNote, FailedNote } from "@/components/chat/turn-notices";
@@ -195,6 +197,7 @@ const TurnBlock = memo(function TurnBlock({
   windowOwnsRunMarker = false,
   assistantIdentity,
   canonicalTimeline,
+  onFork,
 }: {
   turn: Turn;
   /** Gateway approvals this run raised: pending is actionable, resolved is its record. */
@@ -218,8 +221,11 @@ const TurnBlock = memo(function TurnBlock({
   /** Resolved once by Conversation; injectable so canonical composition tests
    *  never depend on module-import order or shared process.env mutation. */
   canonicalTimeline: boolean;
+  /** Stashes the conversation through this turn for "Fork from here". */
+  onFork: (runId: string) => boolean;
 }) {
   const { run, steps, status, summary, live, liveText, liveReasoning } = turn;
+  const forkSource = parseForkPrompt(run.prompt)?.source;
   // The steps a subagent ran render under its row in the fold below, never as
   // the parent's own work: the same attribution the fold reads.
   const childSteps = useChildSteps(turn);
@@ -294,6 +300,7 @@ const TurnBlock = memo(function TurnBlock({
     >
       <div className="space-y-2">
         <TurnSender connector={run.connector} />
+        {forkSource && <ForkOrigin source={forkSource} />}
         <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
         <InboundAttachments uploads={run.uploads} />
         <PermissionModeTag mode={run.permission_mode} />
@@ -401,10 +408,11 @@ const TurnBlock = memo(function TurnBlock({
           onOpenProductChild={onOpenProductChild}
         />
 
-        {/* Hover copy and answer time on the settled answer; the durable summary IS the answer markdown on both render paths. */}
-        {!live && summary && (
+        {/* Hover copy, fork and answer time on the settled answer; the durable summary IS the answer markdown on both render paths. */}
+        {!live && (
           <div className="flex items-center gap-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/turn:opacity-100">
-            <MessageCopyButton text={summary} />
+            {summary && <MessageCopyButton text={summary} />}
+            <ForkFromHereButton runId={run.id} onFork={onFork} />
             <AnsweredAt iso={run.updated_at} />
           </div>
         )}
@@ -533,6 +541,7 @@ export const Conversation = memo(function Conversation({
   handoffNotice?: string | null;
   onDismissHandoffNotice?: () => void;
 }) {
+  const stashFork = useForkStash(turns);
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
   // stream, but ONLY while the user is already near the bottom — scrolling up
   // to read history must never be yanked back down. `stick` flips on scroll.
@@ -697,6 +706,7 @@ export const Conversation = memo(function Conversation({
                 windowOwnsRunMarker={windowOwnsRunMarker}
                 assistantIdentity={assistantIdentity}
                 canonicalTimeline={canonicalTimeline}
+                onFork={stashFork}
               />
             )}
           />
