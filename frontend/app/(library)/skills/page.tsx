@@ -4,8 +4,19 @@ import { mockSkills } from "./skills-data";
 import { SkillsView } from "./skills-view";
 
 export const metadata: Metadata = {
-  title: "Skills",
+  title: "Skills - UseAgent",
   description: "Reusable skills UseAgent follows for repeatable work.",
+  openGraph: {
+    title: "Skills - UseAgent",
+    description: "Reusable skills UseAgent follows for repeatable work.",
+    images: [{ url: "/og/15-skills.png", width: 1600, height: 900, alt: "UseAgent Skills" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Skills - UseAgent",
+    description: "Reusable skills UseAgent follows for repeatable work.",
+    images: ["/og/15-skills.png"],
+  },
 };
 
 export default async function SkillsPage() {
