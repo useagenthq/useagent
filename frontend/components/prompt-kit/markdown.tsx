@@ -4,7 +4,7 @@
 // per-block memoization keep re-renders cheap while text streams in.
 
 import { marked } from "marked";
-import { memo, useEffect, useId, useMemo, useState } from "react";
+import { isValidElement, memo, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components, defaultUrlTransform } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -197,6 +197,22 @@ function isArtifactRoute(url: string): boolean {
   return /^\/(?:api\/artifacts\/[^/]+\/content|agent\/artifacts\/[^/]+)$/.test(parsed.pathname);
 }
 
+/** The words a reader sees inside a link, however Markdown formats them.
+ *  `[**Quarterly** report]` and ``[`data.csv`]`` arrive as React elements,
+ *  which stringify to "[object Object]", and a single wrapped run fell through
+ *  to "Open". Walk the rendered children to their text instead: a line break
+ *  reads as a space, and an image with no text of its own reads as its alt. */
+function linkLabelText(children: ReactNode): string {
+  if (typeof children === "string" || typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(linkLabelText).join("");
+  if (!isValidElement(children)) return "";
+  if (children.type === "br") return " ";
+  const props = children.props as { children?: ReactNode; alt?: unknown };
+  const nested = linkLabelText(props.children);
+  if (nested) return nested;
+  return typeof props.alt === "string" ? props.alt : "";
+}
+
 const INITIAL_COMPONENTS: Partial<Components> = {
   code: function CodeComponent({ className, children, ...props }) {
     const isInline =
@@ -277,12 +293,7 @@ const INITIAL_COMPONENTS: Partial<Components> = {
     // Artifact/media links render as dense source chips (type badge + label +
     // arrow), matching the retrieval-chip grammar; ordinary links stay links.
     const workspaceLinks = openWorkpiece !== null;
-    const label =
-      typeof children === "string"
-        ? children
-        : Array.isArray(children)
-          ? children.join("")
-          : "Open";
+    const label = linkLabelText(children).trim() || "Open";
     // A local filesystem path cannot be opened from the browser, whatever its
     // file type, so name it without pretending it was published or is a link.
     // Artifact routes, web URLs, protocol-relative links and anchors stay links.
