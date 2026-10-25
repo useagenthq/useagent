@@ -5,8 +5,19 @@ import { TasksBoard } from "./tasks-board";
 import { ALL_PROJECTS, initialProjectFilter, type Task } from "./tasks-data";
 
 export const metadata: Metadata = {
-  title: "Tasks",
+  title: "Tasks - UseAgent",
   description: "Durable, org-scoped tasks grouped per project on a Kanban board.",
+  openGraph: {
+    title: "Tasks - UseAgent",
+    description: "Durable, org-scoped tasks grouped per project on a Kanban board.",
+    images: [{ url: "/og/10-library.png", width: 1600, height: 900, alt: "UseAgent Tasks" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Tasks - UseAgent",
+    description: "Durable, org-scoped tasks grouped per project on a Kanban board.",
+    images: ["/og/10-library.png"],
+  },
 };
 
 export default async function TasksPage({

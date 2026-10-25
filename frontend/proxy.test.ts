@@ -118,15 +118,33 @@ describe("authentication proxy", () => {
     );
   });
 
-  test("allows health and the exact icon but protects similarly named routes", () => {
-    for (const path of ["/healthz", "/icon.svg?v=current"]) {
+  test("allows health, icons, and og images but protects similarly named routes", () => {
+    for (const path of [
+      "/healthz",
+      "/icon.svg?v=current",
+      "/opengraph-image",
+      "/opengraph-image?v=current",
+      "/twitter-image",
+      // per-route OG images (issue #124) — must be public so link previews work
+      "/bots/opengraph-image",
+      "/settings/opengraph-image",
+      "/bots/twitter-image",
+      // static PNG files in public/og/ — direct image URLs used by og:image meta tags
+      "/og/01-home.png",
+      "/og/05-agents.png",
+    ]) {
       expect(
         proxy(new NextRequest(`https://useagent.example.com${path}`)).headers.get(
           "x-middleware-next",
         ),
       ).toBe("1");
     }
-    for (const path of ["/icon.svg-private", "/icon.svg/private"]) {
+    for (const path of [
+      "/icon.svg-private",
+      "/icon.svg/private",
+      "/opengraph-image-private",
+      "/twitter-image-private",
+    ]) {
       expect(proxy(new NextRequest(`https://useagent.example.com${path}`)).status).toBe(307);
     }
   });
