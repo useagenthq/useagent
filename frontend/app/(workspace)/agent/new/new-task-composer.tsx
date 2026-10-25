@@ -3,7 +3,7 @@
 import { desktopBridge, type UseAgentDesktopBridge } from "@/components/runners/desktop-bridge";
 import { useMachineRunsWork } from "@/components/runners/local-login-availability";
 import { type RunLocation, RunLocationMenu, submittedRunLocation } from "@/components/runners/run-location-menu";
-import { RiArrowUpLine, RiBookMarkedLine, RiFlashlightLine } from "@remixicon/react";
+import { RiArrowUpLine, RiBookMarkedLine, RiFlashlightLine, RiGitBranchLine } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
@@ -74,6 +74,9 @@ import {
   useStartFree,
 } from "./start-free-prompt";
 import { mentionedBotIds } from "@/components/chat/composer-mentions";
+import { composeForkPrompt } from "@/components/chat/fork-prompt";
+import { discardForkDraft, type ForkDraft, readForkDraft } from "@/components/chat/thread-fork";
+import { CloseButton } from "@/components/base/buttons/close-button";
 
 /**
  * The New Task composer: a prompt textarea over a control row of searchable
@@ -85,15 +88,21 @@ import { mentionedBotIds } from "@/components/chat/composer-mentions";
  * engine exposes a curated catalog), selected repos, per-repo branches, memory
  * scope and the pinned skill all ride into POST /api/runs; on success it routes
  * to the run's /session view.
+ *
+ * A fork (`forkKey`, from "Fork from here" on a thread message) starts on the
+ * source turn's repositories and model, and its first prompt carries the
+ * source conversation up to that message ahead of what the person types.
  */
 export function NewTaskComposer({
   skills,
   initialRepository = null,
   initialPrompt = "",
+  forkKey = null,
 }: {
   skills: Skill[];
   initialRepository?: string | null;
   initialPrompt?: string;
+  forkKey?: string | null;
 }) {
   const router = useRouter();
 
@@ -150,6 +159,17 @@ export function NewTaskComposer({
     .filter((entry) => entry.dispatchable && isFreeModel(entry.id) && !keyAccess?.missing("opencode", entry.provider))
     .map((entry) => entry.id);
   const modelPicked = useRef(false);
+  const [fork, setFork] = useState<ForkDraft | null>(null);
+  // Read after mount: the draft lives in this tab's sessionStorage.
+  useEffect(() => {
+    const draft = forkKey ? readForkDraft(forkKey) : null;
+    if (!draft) return;
+    setFork(draft);
+    modelPicked.current = true;
+    setEngine(draft.engine);
+    setModel(draft.model);
+    setReasoningEffort(draft.reasoningEffort);
+  }, [forkKey]);
   const freeModel =
     engineConfig.loaded && !onMachine ? startFreeModel(startFree, runnableFree, lockedBy !== null) : null;
   useEffect(() => {
@@ -304,6 +324,18 @@ export function NewTaskComposer({
     };
   }, [initialRepository]);
 
+  // A fork reopens the source turn's repositories and branches that are still offered.
+  useEffect(() => {
+    if (!fork || repos.length === 0) return;
+    const offered = fork.repos.filter((spec) => repos.some((repo) => repo.full_name === spec.repo));
+    setSelectedRepos(offered.map((spec) => spec.repo));
+    setBranches(
+      Object.fromEntries(
+        offered.flatMap((spec) => (spec.branch ? [[spec.repo, spec.branch] as const] : [])),
+      ),
+    );
+  }, [fork, repos]);
+
   // Live while the FIRST token is being typed ("/rev" but not "/review x"); a
   // trailing space ends completion. Mirrors composer.tsx exactly.
   const cmdToken = /^\/([^\s]*)$/.exec(prompt.trimStart())?.[1];
@@ -434,7 +466,7 @@ export function NewTaskComposer({
     const body = {
       // Send a model only for engines with an explicit picker/catalog. Codex
       // uses bare backend-policy ids; OpenCode uses provider-qualified ids.
-      prompt: text,
+      prompt: fork ? composeForkPrompt(fork.source, fork.context, text) : text,
       engine,
       memory_scope: "org",
       permission_mode: permissionMode,
@@ -463,6 +495,7 @@ export function NewTaskComposer({
       const data = (await res.json()) as { id?: string };
       if (!data.id) throw new Error("missing run id");
       runCreateAttempt.current = null;
+      if (forkKey) discardForkDraft(forkKey);
       router.push(`/session/${data.id}`);
       // Keep `submitting` true through the navigation.
     } catch {
@@ -553,11 +586,25 @@ export function NewTaskComposer({
               onRemove={(upload) => void runUploads.remove(upload)}
               className="px-3 pt-3"
             />
+            {fork ? (
+              <div className="px-3 pt-3">
+                <div
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border-button-default py-1 pr-1 pl-2.5 text-caption-1-regular text-text-secondary"
+                  data-testid="fork-chip"
+                >
+                  <RiGitBranchLine className="size-3.5 shrink-0" aria-hidden />
+                  <span className="min-w-0 truncate">
+                    Forked from {fork.title}, through turn {fork.source.turn}
+                  </span>
+                  <CloseButton size="2xs" aria-label="Remove fork" onClick={() => setFork(null)} />
+                </div>
+              </div>
+            ) : null}
             {/* Structured "@" mentions render as removable chips above the input. */}
             {mentions.mentions.length > 0 ? <div className="px-3 pt-3">{mentions.chips}</div> : null}
             <PromptInputTextarea
-              placeholder="Work on anything"
-              aria-label="Work on anything"
+              placeholder={fork ? "Where should it go from here?" : "Work on anything"}
+              aria-label={fork ? "Where should it go from here?" : "Work on anything"}
               onSelect={mentions.onTextareaSelect}
               onKeyDown={(event) => {
                 mentions.onTextareaKeyDown(event); // "@" popover claims arrows/Enter/Esc first
