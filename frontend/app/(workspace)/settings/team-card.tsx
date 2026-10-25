@@ -11,7 +11,7 @@ import * as Modal from "@/components/base/modal/modal";
 import { Select, SelectItem } from "@/components/base/select/select";
 import { ROLE_LABEL, useAuthConfig, useSession } from "@/lib/auth";
 import { AVATAR_GRADIENT } from "./general-card";
-import { relTime } from "./relative-time";
+import { relativeTime } from "@/utils/format";
 import {
   type AccessRequest,
   allowAccessRequest,
@@ -155,7 +155,7 @@ export function TeamCard() {
                   {row.userId === me ? <span className="text-text-tertiary"> (you)</span> : null}
                 </p>
                 <p className="truncate text-caption-1-regular text-text-secondary">
-                  {row.email} · joined {relTime(row.joinedAt)}
+                  {row.email} · joined {relativeTime(row.joinedAt)}
                 </p>
               </div>
               {editable ? (
@@ -342,7 +342,7 @@ function AccessRequestRow({
           {request.account
             ? `previously let in as ${request.account}`
             : (request.email ?? "Email unknown")}{" "}
-          · asked {relTime(request.createdAt)}
+          · asked {relativeTime(request.createdAt)}
         </p>
       </div>
       {!known && (

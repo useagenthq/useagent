@@ -19,7 +19,7 @@ import {
   statusLabel,
 } from "./provider-connections-data";
 import { ProviderKeyForm } from "./provider-key-form";
-import { relTime } from "./relative-time";
+import { relativeTime } from "@/utils/format";
 
 const MASK = "••••••••";
 
@@ -138,7 +138,7 @@ export function ProviderConnectionPanel({
             {connection ? (
               <>
                 <span className="text-text-tertiary">·</span>
-                <span>Updated {relTime(connection.updatedAt)}</span>
+                <span>Updated {relativeTime(connection.updatedAt)}</span>
               </>
             ) : null}
           </div>
