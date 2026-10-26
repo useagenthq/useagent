@@ -123,7 +123,7 @@ const SubagentPaneBody = dynamic(() => import("@/components/chat/subagent-pane-b
   ssr: false,
   loading: () => (
     <PaneStub label="Run">
-      <LoadingState label="Loading run" />
+      <LoadingState label="Loading helper agent" />
     </PaneStub>
   ),
 });
@@ -155,7 +155,7 @@ export function SubagentPane() {
   return createPortal(
     <aside
       aria-hidden={!open}
-      aria-label={`${target?.childSession ? "Subagent" : "Session"} pane`}
+      aria-label={`${target?.childSession ? "Helper agent" : "Conversation"} pane`}
       className={cn(
         "border-border-button-default bg-background-primary-default shadow-sidebar fixed inset-y-0 right-0 z-40 flex h-dvh w-[440px] max-w-[92vw] flex-col border-l",
         "transition-transform duration-300 ease-out",
@@ -245,7 +245,7 @@ export function SubagentPeekButton({
   return (
     <button
       type="button"
-      aria-label="Peek run"
+      aria-label="Peek at this task"
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();

@@ -85,7 +85,7 @@ function GatewayChildRow({ child }: { child: GatewayChildSession }) {
       </div>
       <Link
         href={`/session/${child.id}`}
-        aria-label={`Open spawned session: ${firstLine(child.prompt)}`}
+        aria-label={`Open the task started here: ${firstLine(child.prompt)}`}
         title="Open as its own thread"
         className={ROW_LINK_CLASS}
       >

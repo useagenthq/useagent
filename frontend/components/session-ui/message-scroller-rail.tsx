@@ -116,7 +116,7 @@ export function MessageScrollerRail({
   return (
     <nav
       data-session-ui="message-scroller-rail"
-      aria-label="Jump to a turn"
+      aria-label="Jump to a message"
       className="pointer-events-none absolute inset-y-4 right-2 z-20 hidden flex-col items-end justify-center gap-1 overflow-hidden lg:flex"
     >
       {ticks.map((tick, index) => {
@@ -126,7 +126,7 @@ export function MessageScrollerRail({
             key={tick.id}
             type="button"
             title={tick.snippet}
-            aria-label={`Jump to turn ${index + 1}: ${tick.snippet}`}
+            aria-label={`Jump to message ${index + 1}: ${tick.snippet}`}
             aria-current={active ? "true" : undefined}
             onClick={() => jumpTo(index)}
             className="group pointer-events-auto flex h-3.5 w-3 items-center justify-end rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"

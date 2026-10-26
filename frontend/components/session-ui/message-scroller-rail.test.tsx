@@ -88,7 +88,7 @@ describe("render gating", () => {
     // Four ticks, each a titled button.
     expect(html.match(/<button/g)?.length).toBe(4);
     expect(html).toContain('title="first turn"');
-    expect(html).toContain('aria-label="Jump to turn 4: fourth turn"');
+    expect(html).toContain('aria-label="Jump to message 4: fourth turn"');
     // First tick is active on first paint (activeIndex defaults to 0).
     expect(html).toContain('aria-current="true"');
   });

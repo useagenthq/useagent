@@ -95,7 +95,7 @@ export function SessionDetailsRail({
                   rail says so instead of presenting the request as a fact. */}
               <span
                 className="truncate"
-                title="The model this run asked for. The runtime does not report which model answered."
+                title="The model this task asked for. Which model actually answered is not sent back."
               >
                 {engineDisplayLabel(newest.engine)} · {modelLabel(newest.model, newest.engine)}{" "}
                 <span data-testid="runtime-model-requested" className="text-text-tertiary">
