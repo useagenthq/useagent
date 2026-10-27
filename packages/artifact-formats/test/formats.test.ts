@@ -107,6 +107,72 @@ describe("artifact native formats", () => {
     expect(new TextDecoder().decode(csv.bytes)).toContain("APAC,1200000");
   });
 
+  test("exports sheet names Excel forbids and points formulas at the exported names", async () => {
+    const sheet = (id: string, name: string, cells: Workbook["sheets"][number]["cells"] = {}) => ({
+      id,
+      name,
+      rowCount: 1,
+      colCount: 1,
+      cells,
+    });
+    const workbook: Workbook = {
+      schemaVersion: 2,
+      activeSheetId: "sheet-1",
+      sheets: [
+        sheet("sheet-1", "Summary", {
+          A1: { v: 3, f: "='Q1/Q2'!A1 + 'Budget: 2026'!A1 + Summary!B1" },
+          // The string literal keeps the old name; PLAN resolves to the later
+          // "PLAN" sheet, as in the formula engine.
+          A2: { v: "Q1/Q2!A1", f: "=IF(Plan!A1 > 0, \"Q1/Q2!A1\", PLAN!A1)" },
+        }),
+        sheet("sheet-2", "Q1/Q2", { A1: { v: 1 } }),
+        sheet("sheet-3", "Budget: 2026", { A1: { v: 2 } }),
+        sheet("sheet-4", "Plan"),
+        sheet("sheet-5", "PLAN"),
+      ],
+    };
+
+    const output = await renderArtifactExport({ workbook }, "xlsx");
+    const reloaded = new ExcelJS.Workbook();
+    const buffer = Buffer.from(output.bytes);
+    await reloaded.xlsx.load(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+
+    expect(reloaded.worksheets.map((ws) => ws.name)).toEqual([
+      "Summary",
+      "Q1_Q2",
+      "Budget_ 2026",
+      "Plan",
+      "PLAN (2)",
+    ]);
+    const summary = reloaded.getWorksheet("Summary")!;
+    expect(summary.getCell("A1").formula).toBe("'Q1_Q2'!A1 + 'Budget_ 2026'!A1 + Summary!B1");
+    expect(summary.getCell("A2").formula).toBe("IF('PLAN (2)'!A1 > 0, \"Q1/Q2!A1\", 'PLAN (2)'!A1)");
+  });
+
+  test("keeps exported sheet names within 31 characters, unique and free of edge apostrophes", async () => {
+    const long = "Quarterly revenue by region and channel";
+    const names = [long, `${long} (draft)`, "'Notes'", "''", "History", "Sheet"];
+    const workbook: Workbook = {
+      schemaVersion: 2,
+      activeSheetId: "sheet-1",
+      sheets: names.map((name, index) => ({ id: `sheet-${index + 1}`, name, rowCount: 1, colCount: 1, cells: {} })),
+    };
+
+    const output = await renderArtifactExport({ workbook }, "xlsx");
+    const reloaded = new ExcelJS.Workbook();
+    const buffer = Buffer.from(output.bytes);
+    await reloaded.xlsx.load(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+
+    expect(reloaded.worksheets.map((ws) => ws.name)).toEqual([
+      "Quarterly revenue by region and",
+      "Quarterly revenue by region (2)",
+      "Notes",
+      "Sheet",
+      "History (2)",
+      "Sheet (2)",
+    ]);
+  });
+
   test("brands text-only XLSX exports with the UseAgent creator", async () => {
     const output = await renderArtifactExport({ text: "Region,Pipeline\nAPAC,1200000" }, "xlsx");
     const reloaded = new ExcelJS.Workbook();
