@@ -156,7 +156,12 @@ export function ApprovalCard({
       {body}
 
       {note && <p className="text-caption-1-regular text-text-secondary">{note}</p>}
-      {error && <p className="text-caption-1-regular text-text-error-primary">{error}</p>}
+      {/* Both lanes send their error here, so role="alert" reads it out once (#350). */}
+      {error && (
+        <p role="alert" className="text-caption-1-regular text-text-error-primary">
+          {error}
+        </p>
+      )}
 
       {reason}
 

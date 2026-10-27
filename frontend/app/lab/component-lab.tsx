@@ -55,6 +55,7 @@ import * as Modal from "@/components/base/modal/modal";
 import { ARTIFACT_CAPABILITY_ROWS } from "./artifact-capability-matrix";
 import { BeautifulUiExtras } from "./beautiful-ui-extras";
 import { BeuiAgentShowcase } from "./beui-agent-showcase";
+import { AnnouncerShowcase } from "./announcer-showcase";
 import { ComposerRetrievalShowcase } from "./composer-retrieval-showcase";
 import { ModelPickerShowcase } from "./model-picker-showcase";
 import { ProductTourShowcase } from "./product-tour-showcase";
@@ -504,6 +505,10 @@ export function ComponentLab() {
               }}
             />
           </div>
+        </Section>
+
+        <Section label="Chat · Screen-reader announcements (one polite live region)">
+          <AnnouncerShowcase />
         </Section>
 
         <Section label="AI kit · Context cards">
