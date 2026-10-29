@@ -260,6 +260,10 @@ export function PlaybooksView({
         playbook={detail}
         onEdit={openEdit}
         onRun={runPlaybook}
+        onDeleted={() => {
+          setDetailOpen(false);
+          void refetch();
+        }}
       />
       <PlaybookEditor
         open={editorOpen}
