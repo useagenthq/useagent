@@ -112,7 +112,7 @@ function FileDetail({ entry }: { entry: FileEntry }) {
           filename={entry.base}
           language={langForFile(entry.base)}
           code={entry.content ?? ""}
-          emptyLabel="Content capture lands with the engine event mirror."
+          emptyLabel="This file's contents will show here once the agent saves it."
         />
       </div>
     </div>

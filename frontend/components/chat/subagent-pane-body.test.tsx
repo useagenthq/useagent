@@ -46,7 +46,7 @@ describe("run peek body", () => {
   ])("renders a %s as a session without child controls", (_name, initialRun) => {
     const html = renderToStaticMarkup(<LoadedPane initialRun={initialRun} />);
 
-    expect(html).toContain(">Session<");
+    expect(html).toContain(">Thread<");
     expect(html).toContain('href="/session/root"');
     expect(html).toContain("Open thread");
     expect(html).not.toContain(">Subagent<");
@@ -64,7 +64,7 @@ describe("run peek body", () => {
   });
 
   test("loading and error shells are neutral unless the caller knows it is a child", () => {
-    expect(renderToStaticMarkup(<PaneStub>Loading</PaneStub>)).toContain(">Session<");
+    expect(renderToStaticMarkup(<PaneStub>Loading</PaneStub>)).toContain(">Thread<");
     expect(renderToStaticMarkup(<PaneStub label="Run">Loading</PaneStub>)).toContain(">Run<");
     expect(renderToStaticMarkup(<PaneStub childSession>Loading</PaneStub>)).toContain(
       ">Subagent<",

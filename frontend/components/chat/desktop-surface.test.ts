@@ -62,7 +62,7 @@ describe("Desktop product surface", () => {
 
     expect(desktopPane).toContain(`\`/api/desktop-proxy/${threadInterpolation}/ready\``);
     expect(desktopPane).toContain('fetch(readySrc, { cache: "no-store" })');
-    expect(desktopPane).toContain("Starting sandbox desktop…");
+    expect(desktopPane).toContain("Starting the browser…");
     // Retries on bounded exponential backoff, not a fixed one-second interval.
     expect(desktopPane).toContain("delay = nextDesktopProbeDelay(delay)");
     expect(desktopPane).toContain("setTimeout(() => void probe(), delay)");
@@ -129,7 +129,10 @@ describe("Desktop product surface", () => {
     expect(desktopPane).toContain("desktopFrameInteractive({ loaded, captured: inputCaptured })");
     expect(desktopPane).toContain('pointerEvents: frameInteractive ? "auto" : "none"');
     expect(desktopPane).toContain("interactive={frameInteractive}");
-    expect(desktopPane).toContain('aria-label="Control sandbox desktop"');
+    // The control button has no fixed aria-label: its visible text (Take
+    // control / Release control) is its accessible name.
+    expect(desktopPane).not.toContain('aria-label="Control sandbox desktop"');
+    expect(desktopPane).toContain('inputCaptured ? "Release control" : "Take control"');
     expect(desktopPane).toContain('window.addEventListener("focusin", releaseDesktopInput, true)');
     expect(desktopPane).toContain(
       'window.addEventListener("pointerdown", releaseDesktopInput, true)',
@@ -302,7 +305,7 @@ describe("Desktop probe copy", () => {
     expect(
       desktopProbeStatus(502, "desktop proxy failed: missing desktop binaries: budgie-panel"),
     ).toBe(
-      "Browser is unavailable on this sandbox image: it is missing budgie-panel. Rebuild the image with those packages to enable it.",
+      "The browser is not available here: it is missing budgie-panel. Rebuild the environment with those packages to enable it.",
     );
     expect(
       desktopProbeStatus(
@@ -314,12 +317,12 @@ describe("Desktop probe copy", () => {
 
   test("keeps the waiting and no-sandbox states for every other answer", () => {
     expect(desktopProbeStatus(409, "no live sandbox for this conversation yet")).toBe(
-      "No active sandbox. Send a message to start one.",
+      "Nothing is running yet. Send a message to start one.",
     );
     expect(desktopProbeStatus(502, "desktop proxy failed: connect ECONNREFUSED")).toBe(
-      "Starting sandbox desktop…",
+      "Starting the browser…",
     );
-    expect(desktopProbeStatus(500, null)).toBe("Starting sandbox desktop…");
+    expect(desktopProbeStatus(500, null)).toBe("Starting the browser…");
   });
 
   test("the pane reads the probe body so the copy can be honest", () => {

@@ -78,7 +78,7 @@ const SURFACES: readonly SurfaceOption[] = [
 export function railTabLabelFor(
   railTab: SurfaceChoice | "editor" | "workspace" | null,
 ): string {
-  if (railTab === null) return "Surface";
+  if (railTab === null) return "Panels";
   const labels = {
     agents: "Agents",
     artifacts: "Files",
@@ -114,7 +114,7 @@ export function SurfaceChooser({
   return (
     <div className="flex h-full justify-center overflow-y-auto px-6 py-10">
       <div className="w-full max-w-md">
-        <h2 className="sr-only">Open a surface</h2>
+        <h2 className="sr-only">Open a panel</h2>
         {facts.length > 0 && (
           <ul className="mb-6 flex flex-wrap gap-1.5" aria-label="This thread">
             {facts.map((fact) => (

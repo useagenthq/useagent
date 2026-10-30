@@ -38,7 +38,7 @@ export function AgentScreenShowcase() {
         agentName="Nova"
         status="loading"
         loading
-        loadingCaption="No active sandbox. Send a message to start one."
+        loadingCaption="Nothing is running yet. Send a message to start one."
         screen={null}
         open={false}
         onOpenChange={() => {}}

@@ -114,7 +114,7 @@ export const TerminalPane = memo(function TerminalPane({
       >
         {entries.length === 0 ? (
           <p className="text-static-white/50" data-testid="terminal-log-empty">
-            {live ? "Booting session…" : "No commands were run."}
+            {live ? "Starting up…" : "No commands were run."}
           </p>
         ) : (
           <>

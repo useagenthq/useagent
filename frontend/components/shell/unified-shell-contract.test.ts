@@ -293,12 +293,12 @@ describe("unified shell contract", () => {
     expect(sidebarFrame).toContain("<UserMenu");
   });
 
-  test("provides a direct Open a surface chooser for the right inspector", () => {
+  test("provides a direct Open a panel chooser for the right inspector", () => {
     const sessionView = readFromFrontend("components/chat/session-view.tsx");
     const chooser = readFromFrontend("components/chat/surface-chooser.tsx");
 
     expect(sessionView).toContain("<SurfaceChooser");
-    expect(chooser).toContain("Open a surface");
+    expect(chooser).toContain("Open a panel");
     for (const label of ["Browser", "Terminal", "Files", "Diff", "Agents"]) {
       expect(chooser).toContain(label);
     }

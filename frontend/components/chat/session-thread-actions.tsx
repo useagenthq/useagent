@@ -87,8 +87,8 @@ export function SessionThreadActions({
           iconOnly
           leadingIcon={RiLayoutRightLine}
           onClick={onOpenSurfaces}
-          title="Open surfaces panel"
-          aria-label="Open surfaces panel"
+          title="Open side panel"
+          aria-label="Open side panel"
           className={cx(RAIL_ICON_BUTTON, !splitTooNarrow && "md:hidden")}
         />
       )}

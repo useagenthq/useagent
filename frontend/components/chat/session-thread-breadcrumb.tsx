@@ -10,7 +10,7 @@ export function SessionThreadBreadcrumb({
   readonly parent: ThreadRelationship | null;
 }) {
   if (!relationship?.parentThreadId) {
-    return <span className="text-mono-label text-text-tertiary">Session</span>;
+    return <span className="text-mono-label text-text-tertiary">Thread</span>;
   }
   // Two truncated titles read as near-duplicates ("@bot/Nova compare..." /
   // "Nova: @bot/Nova compare..."), so the parent crumb is a fixed word carrying

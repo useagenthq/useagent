@@ -38,12 +38,12 @@ export const DESKTOP_PROBE_MAX_DELAY = 2_000;
 /** Product copy for one readiness probe answer. A sandbox image that lacks the
  *  desktop binaries never becomes ready, so name them instead of waiting. */
 export function desktopProbeStatus(status: number, error: string | null): string {
-  if (status === 409) return "No active sandbox. Send a message to start one.";
+  if (status === 409) return "Nothing is running yet. Send a message to start one.";
   const missing = /missing desktop binaries:\s*(.+)$/i.exec(error ?? "")?.[1]?.trim();
   if (missing) {
-    return `Browser is unavailable on this sandbox image: it is missing ${missing.split(/\s+/).join(", ")}. Rebuild the image with those packages to enable it.`;
+    return `The browser is not available here: it is missing ${missing.split(/\s+/).join(", ")}. Rebuild the environment with those packages to enable it.`;
   }
-  return "Starting sandbox desktop…";
+  return "Starting the browser…";
 }
 
 export function nextDesktopProbeDelay(previous: number | null): number {
@@ -151,7 +151,7 @@ export function DesktopPane({
   const [frameKey, setFrameKey] = useState(0);
   const [inputCaptured, setInputCaptured] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
-  const [status, setStatus] = useState("No active sandbox. Send a message to start one.");
+  const [status, setStatus] = useState("Nothing is running yet. Send a message to start one.");
   // The Agent Screen stage: the frame plus, while expanded, the viewer chrome.
   // Pointer and focus activity inside it never releases captured input.
   const surfaceRef = useRef<HTMLDivElement>(null);
@@ -177,7 +177,7 @@ export function DesktopPane({
     setFrameConnected(false);
     inputCapturedRef.current = false;
     setInputCaptured(false);
-    setStatus("No active sandbox. Send a message to start one.");
+    setStatus("Nothing is running yet. Send a message to start one.");
 
     const probe = async (): Promise<void> => {
       try {
@@ -198,7 +198,7 @@ export function DesktopPane({
         );
       } catch {
         if (cancelled) return;
-        setStatus("Reconnecting to sandbox desktop…");
+        setStatus("Reconnecting…");
       }
       delay = nextDesktopProbeDelay(delay);
       retry = setTimeout(() => void probe(), delay);
@@ -349,7 +349,6 @@ export function DesktopPane({
           <Button
             variant="secondary"
             size="small"
-            aria-label="Control sandbox desktop"
             aria-pressed={inputCaptured}
             disabled={!connected}
             onClick={inputCaptured ? releaseCapture : captureInput}
@@ -364,7 +363,7 @@ export function DesktopPane({
               key={frameKey}
               ref={frameRef}
               data-testid="desktop-frame"
-              title="Sandbox desktop"
+              title="Browser"
               src={src}
               sandbox={DESKTOP_FRAME_SANDBOX}
               tabIndex={-1}

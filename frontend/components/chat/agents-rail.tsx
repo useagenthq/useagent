@@ -478,7 +478,7 @@ export function AgentsRail({
     <div
       ref={treeRef}
       role="tree"
-      aria-label="Child sessions"
+      aria-label="Subagents"
       aria-live="polite"
       aria-relevant="additions text"
       className="h-full space-y-2 overflow-y-auto p-3"

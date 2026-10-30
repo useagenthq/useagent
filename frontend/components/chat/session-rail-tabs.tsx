@@ -48,7 +48,7 @@ export function SessionRailTabs({
   );
   return (
     <PillTabList
-      aria-label="Surface"
+      aria-label="Panels"
       className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       {hasSubagents && tab("agents", RiRobot2Line, "Agents")}

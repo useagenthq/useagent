@@ -211,8 +211,8 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
             waitingShown = true;
             term?.write(
               idleNoticeSeen
-                ? "\r\n\x1b[2m• no active sandbox - send a message to start one…\x1b[0m\r\n"
-                : "\r\n\x1b[2m• reconnecting to sandbox…\x1b[0m\r\n",
+                ? "\r\n\x1b[2m• nothing is running - send a message to start one…\x1b[0m\r\n"
+                : "\r\n\x1b[2m• reconnecting…\x1b[0m\r\n",
             );
           }
           reconnectTimer = setTimeout(connect, reconnectDelay);

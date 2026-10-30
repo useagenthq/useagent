@@ -87,10 +87,10 @@ describe("agent screen card", () => {
     const html = render(false, {
       status: "loading",
       loading: true,
-      loadingCaption: "No active sandbox. Send a message to start one.",
+      loadingCaption: "Nothing is running yet. Send a message to start one.",
     });
     expect(html).toContain("Connecting to agent&#x27;s screen");
-    expect(html).toContain("No active sandbox. Send a message to start one.");
+    expect(html).toContain("Nothing is running yet. Send a message to start one.");
     expect(html).toContain('data-status="loading"');
     // Nothing to open into yet: the connecting card offers no Open control.
     expect(html).not.toContain('aria-label="Open Nova&#x27;s screen"');

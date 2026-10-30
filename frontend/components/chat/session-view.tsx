@@ -730,7 +730,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
             )}
             resourceMentions={!isProductChild}
             composerLocked={composerRelationshipBlocked || readOnlyMessage !== undefined}
-            composerLockedMessage={readOnlyMessage ?? "Verifying child session…"}
+            composerLockedMessage={readOnlyMessage ?? "Verifying this thread…"}
             onTurnsNeeded={initialOutline ? handleTurnsNeeded : undefined}
             productChildren={productChildren}
             onOpenProductChild={openProductChild}
@@ -773,7 +773,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
         {railOpen && sheetSurfacesOpen && (
           <button
             type="button"
-            aria-label="Close surfaces panel"
+            aria-label="Close side panel"
             onClick={() => setRailOverride(false)}
             className={cx(
               "fixed inset-0 z-40 bg-black/50 backdrop-blur-sm",
@@ -873,7 +873,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
               {/* On the sheet a single Close X replaces Expand/Collapse. */}
               <CloseButton
                 size="md"
-                aria-label="Close surfaces panel"
+                aria-label="Close side panel"
                 onClick={() => setRailOverride(false)}
                 className={cx(RAIL_ICON_BUTTON, !splitTooNarrow && "md:hidden")}
               />

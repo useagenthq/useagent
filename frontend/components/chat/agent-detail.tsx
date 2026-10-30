@@ -218,7 +218,7 @@ export function AgentDetail({
               onClick={() => void continueAsSession()}
               className="border-border-button-default bg-background-secondary-default text-body-2-medium text-text-primary hover:bg-background-tertiary-hover mb-2 rounded-lg border px-3 py-2 disabled:cursor-wait disabled:opacity-60"
             >
-              {continuing ? "Creating session…" : "Continue as session"}
+              {continuing ? "Creating thread…" : "Continue as thread"}
             </button>
           ) : null}
           {continueError ? (

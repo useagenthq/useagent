@@ -52,8 +52,8 @@ test("a bot thread's own crumb is the bot's name", () => {
   expect(html).not.toContain(">Nova: @bot/Nova compare the EU tiers<");
 });
 
-test("an ordinary root keeps the compact session label", () => {
+test("an ordinary root keeps the compact thread label", () => {
   expect(renderToStaticMarkup(
     <SessionThreadBreadcrumb relationship={relationship("root", null, "Calendar app")} parent={null} />,
-  )).toContain("Session");
+  )).toContain("Thread");
 });

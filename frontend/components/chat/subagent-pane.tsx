@@ -107,7 +107,7 @@ export function PaneStub({
     <>
       <header className="border-border-button-default flex shrink-0 items-center gap-2 border-b px-4 py-3">
         <span className="text-mono-label text-text-tertiary">
-          {label ?? (childSession ? "Subagent" : "Session")}
+          {label ?? (childSession ? "Subagent" : "Thread")}
         </span>
         <span className="ml-auto" />
         <CloseButton />
@@ -155,7 +155,7 @@ export function SubagentPane() {
   return createPortal(
     <aside
       aria-hidden={!open}
-      aria-label={`${target?.childSession ? "Subagent" : "Session"} pane`}
+      aria-label={`${target?.childSession ? "Subagent" : "Thread"} pane`}
       className={cn(
         "border-border-button-default bg-background-primary-default shadow-sidebar fixed inset-y-0 right-0 z-40 flex h-dvh w-[440px] max-w-[92vw] flex-col border-l",
         "transition-transform duration-300 ease-out",
