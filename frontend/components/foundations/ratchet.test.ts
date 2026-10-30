@@ -145,7 +145,7 @@ function lineCount(text: string): number {
 // Recorded baselines for the files that are ALREADY over the 800-line cap. A
 // number here may only SHRINK; new files get no baseline and are capped at 800.
 const FRONTEND_SIZE_BASELINE: Record<string, number> = {
-  "app/(library)/agent/artifacts/[id]/artifact-editor-surfaces.tsx": 1075,
+  "app/(library)/agent/artifacts/[id]/artifact-editor-surfaces.tsx": 1054,
   "components/agent-ui/rich-approval-card.tsx": 880,
   "components/chat/session-view.tsx": 990,
 };

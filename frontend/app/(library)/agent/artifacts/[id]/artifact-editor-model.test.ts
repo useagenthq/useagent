@@ -7,6 +7,7 @@ import {
 } from "@useagent/artifact-workspace";
 import {
   artifactEditorMode,
+  isMarkdownArtifact,
   parseCsv,
   richDocumentTemplate,
   sanitizeRichHtml,
@@ -28,6 +29,17 @@ describe("artifact editor model", () => {
     expect(artifactEditorMode(artifact("spreadsheet", "Model.csv"))).toBe("sheet-grid");
     expect(artifactEditorMode(artifact("presentation", "Deck.pptx"))).toBe("slides-json");
     expect(artifactEditorMode(artifact("pdf", "Report.pdf"))).toBe("pdf-text");
+  });
+
+  test("recognizes markdown source documents by extension", () => {
+    expect(isMarkdownArtifact("AGENTS.md")).toBe(true);
+    expect(isMarkdownArtifact("README.markdown")).toBe(true);
+    expect(isMarkdownArtifact("Notes.MD")).toBe(true);
+    expect(isMarkdownArtifact("guide.mdx")).toBe(true);
+    expect(isMarkdownArtifact("script.py")).toBe(false);
+    expect(isMarkdownArtifact("data.json")).toBe(false);
+    expect(isMarkdownArtifact("plain.txt")).toBe(false);
+    expect(isMarkdownArtifact("Makefile")).toBe(false);
   });
 
   test("round-trips quoted CSV cells", () => {

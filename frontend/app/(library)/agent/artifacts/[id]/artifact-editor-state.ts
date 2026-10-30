@@ -26,6 +26,7 @@ import type { OrgChange } from "@/lib/org-changes";
 import {
   type ArtifactEditorMode,
   artifactEditorMode,
+  isMarkdownArtifact,
   presentationTemplate,
   richDocumentTemplate,
   sanitizeRichHtml,
@@ -171,6 +172,9 @@ export interface WorkpieceEditorController {
   readonly isRich: boolean;
   readonly isSlidesEditor: boolean;
   readonly isSheetGrid: boolean;
+  /** A markdown source document: the Rendered view shows formatted markdown and
+   * the Code view holds the editable source. */
+  readonly isMarkdown: boolean;
   /** A byte-authoritative (published) PDF: render the embedded preview, never
    * the text editor or raw bytes. */
   readonly pdfEmbed: boolean;
@@ -237,6 +241,7 @@ export function useWorkpieceEditor(
   const isRich = editorMode === "rich-document";
   const isSlidesEditor = editorMode === "slides-json";
   const isSheetGrid = editorMode === "sheet-grid";
+  const isMarkdown = editorMode === "source-document" && isMarkdownArtifact(artifact.name);
 
   const normalizeValue = useCallback(
     (next: string) => (isRich ? sanitizeRichHtml(next) : next),
@@ -478,6 +483,7 @@ export function useWorkpieceEditor(
     isRich,
     isSlidesEditor,
     isSheetGrid,
+    isMarkdown,
     pdfEmbed,
     pdfPreviewUrl: pdfEmbed ? withCacheBust(artifact.preview_url, reloadNonce) : artifact.preview_url,
     sizeBytes: artifact.size_bytes,
