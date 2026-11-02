@@ -1,29 +1,24 @@
 // The shared delete flow used by the skill detail dialog and the playbook
-// detail. Mounted directly (no Modal, so no portal) under happy-dom: confirming
-// calls deleteSkill and then onDeleted (the caller's list refresh + close),
-// Cancel leaves it untouched, and a failed delete shows a plain error line.
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+// detail. Mounted directly (no Modal, so no portal) under happy-dom, with the
+// real skills-api over a stubbed fetch: confirming sends DELETE and then calls
+// onDeleted (the caller's list refresh + close), a teammate's earlier delete
+// (404) refreshes the same way, a refusal because automations still use it
+// (409) names them in the confirm strip, and any other failure shows a plain
+// line there.
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 if (typeof window === "undefined") GlobalRegistrator.register();
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-let deleteCalls: string[] = [];
-let deleteShouldFail = false;
-
-// Dispatch through a per-file globalThis hook: bun shares one module registry
-// across test files, so the last mock of this module wins for every importer.
-type SkillsApiHook = { deleteSkill: (id: string) => Promise<void> };
-const hookHolder = globalThis as unknown as { __skillsApiHook?: SkillsApiHook };
-
-mock.module("@/app/(library)/skills/skills-api", () => ({
-  deleteSkill: (id: string) => hookHolder.__skillsApiHook?.deleteSkill(id),
-}));
-
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { SkillDeleteAction } = await import("./skill-delete-action");
+
+const originalFetch = globalThis.fetch;
+let calls: { url: string; method: string | undefined }[] = [];
+let reply: () => Response = () => Response.json({ deleted: true, id: "k1" });
 
 let root: ReturnType<typeof createRoot> | null = null;
 let container: HTMLElement | null = null;
@@ -31,7 +26,7 @@ let container: HTMLElement | null = null;
 async function flush() {
   // Let the delete promise and the state updates it schedules settle.
   await act(async () => {
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
@@ -54,9 +49,7 @@ async function mount(onDeleted: () => void | Promise<void>) {
 /** First button whose label contains `label`, scoped to the confirm strip when
  *  asked so the trigger Delete and the strip's Delete don't collide. */
 function button(label: string, inConfirm = false): HTMLButtonElement {
-  const scope = inConfirm
-    ? (container?.querySelector('[data-testid="inline-delete-confirm"]') as HTMLElement | null)
-    : container;
+  const scope = inConfirm ? confirmStrip() : container;
   const match = Array.from(scope?.querySelectorAll("button") ?? []).find((el) =>
     (el.textContent ?? "").includes(label),
   );
@@ -68,24 +61,34 @@ function confirmStrip(): HTMLElement | null {
   return container?.querySelector('[data-testid="inline-delete-confirm"]') ?? null;
 }
 
+/** The problem line, which lives inside the confirm strip. */
+function stripAlert(): string | null {
+  return confirmStrip()?.querySelector('[role="alert"]')?.textContent ?? null;
+}
+
 async function click(el: HTMLButtonElement) {
   await act(async () => {
     el.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   });
 }
 
+async function confirmDelete() {
+  await click(button("Delete"));
+  await click(button("Delete", true));
+  await flush();
+}
+
 beforeEach(() => {
-  deleteCalls = [];
-  deleteShouldFail = false;
-  hookHolder.__skillsApiHook = {
-    deleteSkill: async (id: string) => {
-      deleteCalls.push(id);
-      if (deleteShouldFail) throw new Error("delete skill 500");
-    },
-  };
+  calls = [];
+  reply = () => Response.json({ deleted: true, id: "k1" });
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), method: init?.method });
+    return reply();
+  }) as typeof fetch;
 });
 
 afterEach(() => {
+  globalThis.fetch = originalFetch;
   if (root) act(() => root?.unmount());
   container?.remove();
   root = null;
@@ -107,7 +110,7 @@ describe("SkillDeleteAction", () => {
     await click(button("Delete", true));
     await flush();
 
-    expect(deleteCalls).toEqual(["k1"]);
+    expect(calls).toEqual([{ url: "/api/skills/k1", method: "DELETE" }]);
     expect(refreshed).toBe(1);
     // The flow finished, so the confirm strip is gone again.
     expect(confirmStrip()).toBeNull();
@@ -122,26 +125,84 @@ describe("SkillDeleteAction", () => {
     await click(button("Delete"));
     await click(button("Cancel", true));
 
-    expect(deleteCalls).toEqual([]);
+    expect(calls).toEqual([]);
     expect(refreshed).toBe(0);
     expect(confirmStrip()).toBeNull();
   });
 
-  test("a failed delete shows a plain error line and does not refresh", async () => {
-    deleteShouldFail = true;
+  test("already deleted by a teammate refreshes the list instead of failing", async () => {
+    reply = () => Response.json({ error: "skill not found" }, { status: 404 });
     let refreshed = 0;
     await mount(() => {
       refreshed += 1;
     });
 
-    await click(button("Delete"));
+    await confirmDelete();
+
+    expect(refreshed).toBe(1);
+    expect(confirmStrip()).toBeNull();
+    expect(container?.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  test("still used by enabled automations: the strip names them and says what to do", async () => {
+    reply = () =>
+      Response.json(
+        {
+          error: "skill_in_use",
+          used_by: [
+            { name: "Nightly digest", bot: null },
+            { name: "Weekly metrics", bot: "Ledger" },
+          ],
+          total: 2,
+        },
+        { status: 409 },
+      );
+    let refreshed = 0;
+    await mount(() => {
+      refreshed += 1;
+    });
+
+    await confirmDelete();
+
+    expect(refreshed).toBe(0);
+    expect(stripAlert()).toBe(
+      "Nightly digest and Weekly metrics (Ledger's routine) still use this. Pause them or change what they use, then delete.",
+    );
+  });
+
+  test("one holder reads in the singular, and many are counted past the named few", async () => {
+    reply = () =>
+      Response.json({ error: "skill_in_use", used_by: [{ name: "Nightly digest", bot: null }], total: 1 }, { status: 409 });
+    await mount(() => {});
+    await confirmDelete();
+    expect(stripAlert()).toBe("Nightly digest still uses this. Pause it or change what it uses, then delete.");
+
+    reply = () =>
+      Response.json(
+        {
+          error: "skill_in_use",
+          used_by: ["A", "B", "C", "D", "E"].map((name) => ({ name, bot: null })),
+          total: 7,
+        },
+        { status: 409 },
+      );
     await click(button("Delete", true));
     await flush();
+    expect(stripAlert()).toBe("A, B, C, D, E, and 2 more still use this. Pause them or change what they use, then delete.");
+  });
 
-    expect(deleteCalls).toEqual(["k1"]);
+  test("a failed delete shows a plain line in the strip and does not refresh", async () => {
+    reply = () => new Response("boom", { status: 500 });
+    let refreshed = 0;
+    await mount(() => {
+      refreshed += 1;
+    });
+
+    await confirmDelete();
+
+    expect(calls).toEqual([{ url: "/api/skills/k1", method: "DELETE" }]);
     expect(refreshed).toBe(0);
-    const alert = container?.querySelector('[role="alert"]');
-    expect(alert?.textContent ?? "").toContain("Delete failed");
+    expect(stripAlert()).toBe("Couldn't delete this right now. Try again in a moment.");
     // Still confirming, so the user can retry after the error.
     expect(confirmStrip()).not.toBeNull();
   });

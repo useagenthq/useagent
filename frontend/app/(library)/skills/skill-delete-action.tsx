@@ -5,14 +5,29 @@ import { RiDeleteBinLine } from "@remixicon/react";
 
 import { Button } from "@/components/base/buttons/button";
 import { InlineDeleteConfirm } from "@/components/shared/inline-delete-confirm";
-import { deleteSkill } from "./skills-api";
+import { deleteSkill, type SkillHolder } from "./skills-api";
+
+const NAMES = new Intl.ListFormat("en", { type: "conjunction" });
+
+/** Why a delete was refused, in plain words: who still uses it and what to do. */
+function inUseMessage(holders: readonly SkillHolder[], total: number): string {
+  const names = holders.map((holder) =>
+    holder.bot ? `${holder.name} (${holder.bot}'s routine)` : holder.name,
+  );
+  const more = total - names.length;
+  const list = NAMES.format(more > 0 ? [...names, `${more} more`] : names);
+  return total === 1
+    ? `${list} still uses this. Pause it or change what it uses, then delete.`
+    : `${list} still use this. Pause them or change what they use, then delete.`;
+}
 
 /**
  * The whole delete flow for one skill or playbook (both are skills, one DELETE
  * endpoint): a Delete button that opens the shared confirm strip, the backend
- * call, and a plain error line if it fails. On success the caller refreshes its
- * list (and closes the dialog) via `onDeleted`. Reused by the skill detail
- * dialog and the playbook detail so delete asks and behaves the same in both.
+ * call, and a plain line in the strip when it does not go through. On success
+ * (or when a teammate already deleted it) the caller refreshes its list (and
+ * closes the dialog) via `onDeleted`. Reused by the skill detail dialog and the
+ * playbook detail so delete asks and behaves the same in both.
  */
 export function SkillDeleteAction({
   skillId,
@@ -28,17 +43,21 @@ export function SkillDeleteAction({
 }) {
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
 
   const onConfirm = async () => {
     setDeleting(true);
-    setError(null);
+    setProblem(null);
     try {
-      await deleteSkill(skillId);
+      const outcome = await deleteSkill(skillId);
+      if (outcome.kind === "in-use") {
+        setProblem(inUseMessage(outcome.holders, outcome.total));
+        return;
+      }
       setConfirming(false);
       await onDeleted();
     } catch {
-      setError("Delete failed. Check the backend and try again.");
+      setProblem("Couldn't delete this right now. Try again in a moment.");
     } finally {
       setDeleting(false);
     }
@@ -51,26 +70,23 @@ export function SkillDeleteAction({
         size="small"
         leadingIcon={RiDeleteBinLine}
         disabled={deleting}
-        onClick={() => setConfirming(true)}
+        onClick={() => {
+          setProblem(null);
+          setConfirming(true);
+        }}
         className="self-start"
       >
         Delete
       </Button>
       {confirming && (
-        <>
-          <InlineDeleteConfirm
-            question={question}
-            consequence={consequence}
-            busy={deleting}
-            onCancel={() => setConfirming(false)}
-            onConfirm={onConfirm}
-          />
-          {error && (
-            <p role="alert" className="text-caption-1-regular text-text-error-primary">
-              {error}
-            </p>
-          )}
-        </>
+        <InlineDeleteConfirm
+          question={question}
+          consequence={consequence}
+          problem={problem}
+          busy={deleting}
+          onCancel={() => setConfirming(false)}
+          onConfirm={onConfirm}
+        />
       )}
     </div>
   );
