@@ -28,6 +28,7 @@
     "@useagent/agent-client": "file:../packages/agent-client",
     "@useagent/agent-harness": "file:../packages/agent-harness",
     "@useagent/artifact-workspace": "file:../packages/artifact-workspace",
+    "aria-hidden": "1.2.6",
     "better-auth": "1.6.25",
     "class-variance-authority": "^0.7",
     "clsx": "^2.1.1",

@@ -53,4 +53,29 @@ describe("session workspace rail expand mode", () => {
     // Sheet mode = the phone breakpoint OR a measured too-narrow md+ split.
     expect(sessionView).toContain("const surfacesSheet = isMobile || splitTooNarrow");
   });
+
+  test("makes the open sheet a named modal dialog over an inert conversation", () => {
+    const sessionView = read("./session-view.tsx");
+
+    expect(sessionView).toContain("const sheetDialogOpen = surfacesSheet && sheetSurfacesOpen");
+    expect(sessionView).toContain("useSheetDialog(sheetDialogOpen, railRef, surfaceOpenerRef, closeSheet)");
+    expect(sessionView).toContain('{...sheetDialogProps(sheetDialogOpen, "Side panel")}');
+    expect(sessionView).toContain("inert={sheetDialogOpen}");
+  });
+
+  test("uncovers the composer when a sheet surface seeds it", () => {
+    const sessionView = read("./session-view.tsx");
+
+    // "Ask agent to redo" runs inside the sheet; the composer behind it is inert.
+    expect(sessionView).toContain("if (surfacesSheet) closeSheet();");
+  });
+
+  test("keeps the opener mounted under the sheet so closing can return focus to it", () => {
+    const sessionView = read("./session-view.tsx");
+    const threadActions = read("./session-thread-actions.tsx");
+
+    expect(sessionView).toContain("showSurfaceOpener={hasRuntimeSurfaces}");
+    expect(sessionView).toContain("surfaceOpenerRef={surfaceOpenerRef}");
+    expect(threadActions).toContain("ref={surfaceOpenerRef}");
+  });
 });

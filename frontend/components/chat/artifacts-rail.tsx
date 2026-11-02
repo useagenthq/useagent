@@ -23,54 +23,22 @@ function SpinningRefreshIcon({
   return <RiRefreshLine {...props} className={cx("animate-spin", className)} />;
 }
 
-export function ArtifactsRail({
-  threadId,
-  live,
+/** The Files rail, driven entirely by its props: the list, whether the backend
+ * answered at all, and whether a manual refresh is in flight. `refreshing` is
+ * the viewer's own click only; the background poll never sets it, so the icon
+ * spins when they ask for a refresh and stays still while a task streams in
+ * new files on its own. */
+export function ArtifactsRailView({
+  artifacts,
+  available,
+  refreshing,
+  onRefresh,
 }: {
-  readonly threadId: string;
-  readonly live: boolean;
+  readonly artifacts: readonly ArtifactDescriptor[];
+  readonly available: boolean | null;
+  readonly refreshing: boolean;
+  readonly onRefresh: () => void;
 }) {
-  const [artifacts, setArtifacts] = useState<ArtifactDescriptor[]>([]);
-  const [available, setAvailable] = useState<boolean | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const load = useCallback(
-    async (signal?: AbortSignal) => {
-      setRefreshing(true);
-      try {
-        const response = await backendFetch(artifactQueryForThread(threadId), {
-          cache: "no-store",
-          signal,
-        });
-        if (!response.ok) throw new Error(`artifact request failed (${response.status})`);
-        const parsed = extractArtifacts(await response.json());
-        if (!parsed) throw new Error("artifact response was invalid");
-        setArtifacts(parsed);
-        setAvailable(true);
-      } catch {
-        if (!signal?.aborted) setAvailable(false);
-      } finally {
-        if (!signal?.aborted) setRefreshing(false);
-      }
-    },
-    [threadId],
-  );
-
-  useOrgChanges((change) => {
-    if (change.type === "artifact" && change.threadId === threadId) void load();
-  });
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    if (!live) return () => controller.abort();
-    const interval = setInterval(() => void load(controller.signal), LIVE_REFRESH_MS);
-    return () => {
-      controller.abort();
-      clearInterval(interval);
-    };
-  }, [live, load]);
-
   return (
     <div className="absolute inset-0 overflow-y-auto p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -83,7 +51,7 @@ export function ArtifactsRail({
         <IconButton
           size="small"
           icon={refreshing ? SpinningRefreshIcon : RiRefreshLine}
-          onClick={() => void load()}
+          onClick={onRefresh}
           disabled={refreshing}
           aria-label="Refresh session files"
           title="Refresh"
@@ -115,5 +83,65 @@ export function ArtifactsRail({
         </div>
       )}
     </div>
+  );
+}
+
+export function ArtifactsRail({
+  threadId,
+  live,
+}: {
+  readonly threadId: string;
+  readonly live: boolean;
+}) {
+  const [artifacts, setArtifacts] = useState<ArtifactDescriptor[]>([]);
+  const [available, setAvailable] = useState<boolean | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(
+    async ({ manual = false, signal }: { manual?: boolean; signal?: AbortSignal } = {}) => {
+      // Only a viewer's click spins the icon; the 5-second poll and org-change
+      // reloads refresh quietly so the control is not in constant motion.
+      if (manual) setRefreshing(true);
+      try {
+        const response = await backendFetch(artifactQueryForThread(threadId), {
+          cache: "no-store",
+          signal,
+        });
+        if (!response.ok) throw new Error(`artifact request failed (${response.status})`);
+        const parsed = extractArtifacts(await response.json());
+        if (!parsed) throw new Error("artifact response was invalid");
+        setArtifacts(parsed);
+        setAvailable(true);
+      } catch {
+        if (!signal?.aborted) setAvailable(false);
+      } finally {
+        if (manual) setRefreshing(false);
+      }
+    },
+    [threadId],
+  );
+
+  useOrgChanges((change) => {
+    if (change.type === "artifact" && change.threadId === threadId) void load();
+  });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void load({ signal: controller.signal });
+    if (!live) return () => controller.abort();
+    const interval = setInterval(() => void load({ signal: controller.signal }), LIVE_REFRESH_MS);
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+    };
+  }, [live, load]);
+
+  return (
+    <ArtifactsRailView
+      artifacts={artifacts}
+      available={available}
+      refreshing={refreshing}
+      onRefresh={() => void load({ manual: true })}
+    />
   );
 }
