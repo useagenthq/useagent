@@ -12,6 +12,7 @@ import { AgentAnnouncer } from "@/components/chat/agent-announcer";
 const IDLE_ACTIVITY: AgentActivity = {
   running: false,
   outcome: null,
+  turnId: null,
   approvalId: null,
   questionId: null,
   pendingApprovalIds: [],
@@ -33,6 +34,7 @@ export function AnnouncerShowcase() {
       <AgentAnnouncer
         running={activity.running}
         outcome={activity.outcome}
+        turnId={activity.turnId}
         approvalId={activity.approvalId}
         questionId={activity.questionId}
         pendingApprovalIds={activity.pendingApprovalIds}

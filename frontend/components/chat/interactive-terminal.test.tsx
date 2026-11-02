@@ -3,7 +3,11 @@
 // turn, a dropped connection and a switch to another thread. The backend gives
 // each socket its own PTY and kills it on close, so a closed socket is a lost
 // shell (its directory, scrollback and running command).
-import { afterEach, expect, mock, test } from "bun:test";
+//
+// The stand-ins go in through the pane's own seam and globals, and come back out
+// in afterAll: bun's mock.module would leak the fake ghostty-web into every test
+// file loaded after this one.
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 if (typeof window === "undefined") GlobalRegistrator.register();
@@ -22,14 +26,6 @@ class FakeTerminal {
   onData() {}
   onResize() {}
 }
-
-mock.module("ghostty-web", () => ({
-  Ghostty: { load: async () => ({}) },
-  Terminal: FakeTerminal,
-  FitAddon: class {
-    fit() {}
-  },
-}));
 
 class FakeSocket {
   static CONNECTING = 0;
@@ -58,17 +54,37 @@ class FakeSocket {
   }
 }
 
-const realWebSocket = globalThis.WebSocket;
-globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
-globalThis.ResizeObserver ??= class {
-  observe() {}
-  disconnect() {}
-  unobserve() {}
-} as unknown as typeof ResizeObserver;
-
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { TerminalPane } = await import("./terminal-pane");
+const { terminalLibrary } = await import("./interactive-terminal");
+
+const realLoad = terminalLibrary.load;
+const realWebSocket = globalThis.WebSocket;
+const realResizeObserver = globalThis.ResizeObserver;
+
+beforeAll(() => {
+  terminalLibrary.load = async () =>
+    ({
+      Ghostty: { load: async () => ({}) },
+      Terminal: FakeTerminal,
+      FitAddon: class {
+        fit() {}
+      },
+    }) as unknown as Awaited<ReturnType<typeof realLoad>>;
+  globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  } as unknown as typeof ResizeObserver;
+});
+
+afterAll(() => {
+  terminalLibrary.load = realLoad;
+  globalThis.WebSocket = realWebSocket;
+  globalThis.ResizeObserver = realResizeObserver;
+});
 
 /** Lets the terminal's async boot (dynamic import, fonts) reach `connect()`. */
 async function settle() {
@@ -199,5 +215,4 @@ test("leaving the pane closes its shell", async () => {
   await settle();
   await pane.cleanup();
   expect(FakeSocket.opened[0]?.closed).toBe(true);
-  globalThis.WebSocket = realWebSocket;
 });

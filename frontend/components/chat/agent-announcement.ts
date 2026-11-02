@@ -11,11 +11,13 @@ export interface AgentActivity {
   readonly running: boolean;
   /** Newest settled turn's outcome, or null while running or on a real failure. */
   readonly outcome: TurnOutcome | null;
+  /** The newest turn's run id: two replies in a row are two events. */
+  readonly turnId: string | null;
   /** Waiting native approval / question ids, null when none waits. */
   readonly approvalId: string | null;
   readonly questionId: string | null;
-  /** Gateway (tool) approvals currently waiting. */
-  readonly pendingApprovalIds: readonly string[];
+  /** Gateway (tool) approvals currently waiting, null until that lane first loads. */
+  readonly pendingApprovalIds: readonly string[] | null;
 }
 
 const MESSAGES = {
@@ -31,7 +33,9 @@ function appeared(prevId: string | null, nextId: string | null): boolean {
   return nextId !== null && nextId !== prevId;
 }
 
-function gatewayAppeared(prev: readonly string[], next: readonly string[]): boolean {
+/** The first loaded list is that lane's baseline, like the first snapshot. */
+function gatewayAppeared(prev: readonly string[] | null, next: readonly string[] | null): boolean {
+  if (prev === null || next === null) return false;
   const before = new Set(prev);
   return next.some((id) => !before.has(id));
 }
@@ -55,8 +59,8 @@ export function agentAnnouncement(prev: AgentActivity | null, next: AgentActivit
     return MESSAGES.question;
   }
 
-  // Turn just settled.
-  if (next.outcome !== null && next.outcome !== prev.outcome) {
+  // Turn just settled, even when no running snapshot came between two turns.
+  if (next.outcome !== null && (next.outcome !== prev.outcome || next.turnId !== prev.turnId)) {
     return MESSAGES[next.outcome];
   }
 

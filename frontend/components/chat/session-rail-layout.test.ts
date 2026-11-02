@@ -67,7 +67,10 @@ describe("session workspace rail expand mode", () => {
     const sessionView = read("./session-view.tsx");
 
     // "Ask agent to redo" runs inside the sheet; the composer behind it is inert.
-    expect(sessionView).toContain("if (surfacesSheet) closeSheet();");
+    expect(sessionView).toContain("if (sheetDialogOpen) closeSheet();");
+    // A follow-up pick while the sheet is closed must not record a collapse: on a
+    // narrow desktop window that would keep the side panel shut once it widens.
+    expect(sessionView).not.toContain("if (surfacesSheet) closeSheet();");
   });
 
   test("keeps the opener mounted under the sheet so closing can return focus to it", () => {
@@ -77,5 +80,20 @@ describe("session workspace rail expand mode", () => {
     expect(sessionView).toContain("showSurfaceOpener={hasRuntimeSurfaces}");
     expect(sessionView).toContain("surfaceOpenerRef={surfaceOpenerRef}");
     expect(threadActions).toContain("ref={surfaceOpenerRef}");
+  });
+
+  test("keeps the screen-reader announcer outside the panes that get hidden", () => {
+    const sessionView = read("./session-view.tsx");
+    const conversation = read("./conversation.tsx");
+
+    // The conversation section is hidden while the side panel is expanded and
+    // inert under the phone dialog, so a live region inside it goes unheard.
+    const split = sessionView.indexOf('<div ref={bodyRef} className="flex h-full min-h-0 flex-col md:flex-row">');
+    const announcer = sessionView.indexOf("<ConversationAnnouncer");
+    const conversationSection = sessionView.indexOf("aria-hidden={railExpanded}");
+    expect(split).toBeGreaterThan(-1);
+    expect(announcer).toBeGreaterThan(split);
+    expect(announcer).toBeLessThan(conversationSection);
+    expect(conversation).not.toContain("<ConversationAnnouncer");
   });
 });

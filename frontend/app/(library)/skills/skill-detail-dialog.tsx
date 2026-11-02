@@ -6,6 +6,7 @@ import { RiPlayMiniLine, RiRefreshLine } from "@remixicon/react";
 import { Chip, type ChipProps } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
 import * as Modal from "@/components/base/modal/modal";
+import { SkillDeleteAction } from "./skill-delete-action";
 import { fetchSkill, importSkillPaths } from "./skills-api";
 import {
   sourceRepoLabel,
@@ -113,6 +114,7 @@ function VariantBlock({
   onRun,
   resync,
   onResync,
+  onDeleted,
 }: {
   skill: Skill;
   detail: VariantDetail;
@@ -120,6 +122,8 @@ function VariantBlock({
   onRun: (skill: Skill) => void;
   resync: ResyncState | undefined;
   onResync: (skill: Skill) => void;
+  /** A variant was deleted - refetch the library (and close if it was last). */
+  onDeleted: () => void | Promise<void>;
 }) {
   const imported = Boolean(skill.sourceRepo && skill.sourcePath);
   const syncing = resync?.status === "syncing";
@@ -207,6 +211,13 @@ function VariantBlock({
           </span>
         )}
       </div>
+
+      <SkillDeleteAction
+        skillId={skill.id}
+        question="Delete this skill?"
+        consequence="It leaves your library. Runs that already used it keep their recorded version."
+        onDeleted={onDeleted}
+      />
     </section>
   );
 }
@@ -328,6 +339,7 @@ export function SkillDetailDialog({
                   onRun={onRun}
                   resync={resyncById[skill.id]}
                   onResync={onResync}
+                  onDeleted={onChanged}
                 />
               </div>
             ))}
