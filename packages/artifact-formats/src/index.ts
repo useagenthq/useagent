@@ -891,25 +891,49 @@ function sanitizeBundleName(name: string): string {
     .trim();
   return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : "artifact";
 }
-function uniqueBundleName(used: Map<string, number>, name: string): string {
-  const base = sanitizeBundleName(name);
-  const seen = used.get(base) ?? 0;
-  used.set(base, seen + 1);
-  if (seen === 0) return base;
+
+/** How a name is compared: unzipping on macOS or Windows folds case, and macOS
+ * also treats the composed and decomposed forms of a letter as one file. */
+function bundleNameKey(name: string): string {
+  return name.normalize("NFC").toLowerCase();
+}
+
+/** The first file with a name keeps it. A later one takes the lowest free suffix,
+ * which `taken` marks once used. */
+function uniqueBundleName(taken: Set<string>, kept: Set<string>, base: string): string {
+  const key = bundleNameKey(base);
+  if (!kept.has(key)) {
+    kept.add(key);
+    return base;
+  }
   const dot = base.lastIndexOf(".");
-  const suffix = ` (${seen + 1})`;
-  return dot > 0 ? `${base.slice(0, dot)}${suffix}${base.slice(dot)}` : `${base}${suffix}`;
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const extension = dot > 0 ? base.slice(dot) : "";
+  for (let copy = 2; ; copy += 1) {
+    const candidate = `${stem} (${copy})${extension}`;
+    const candidateKey = bundleNameKey(candidate);
+    if (taken.has(candidateKey)) continue;
+    taken.add(candidateKey);
+    return candidate;
+  }
 }
 
 /** Package multiple artifacts' bytes into one ZIP. Colliding filenames are
- * disambiguated with a numeric suffix so every entry survives the bundle. */
+ * disambiguated with a numeric suffix so every entry survives the bundle. Every
+ * real name is reserved up front, so a suffix never takes one, wherever that
+ * file sits in the list. */
 export async function buildArtifactBundle(
   entries: readonly ArtifactBundleEntry[],
 ): Promise<FormatExport> {
   const zip = new JSZip();
-  const used = new Map<string, number>();
-  for (const entry of entries) {
-    zip.file(uniqueBundleName(used, entry.name), entry.bytes);
+  const files = entries.map((entry) => ({
+    base: sanitizeBundleName(entry.name),
+    bytes: entry.bytes,
+  }));
+  const taken = new Set(files.map((file) => bundleNameKey(file.base)));
+  const kept = new Set<string>();
+  for (const file of files) {
+    zip.file(uniqueBundleName(taken, kept, file.base), file.bytes);
   }
   const bytes = await zip.generateAsync({ type: "uint8array" });
   return { bytes, contentType: ARTIFACT_BUNDLE_CONTENT_TYPE, extension: "zip" };

@@ -555,6 +555,93 @@ describe("artifact native formats", () => {
     expect(await zip.file("report.txt")?.async("string")).toBe("alpha");
     expect(await zip.file("report (2).txt")?.async("string")).toBe("beta");
   });
+
+  // Each entry's bytes are its input position, so a dropped or overwritten file
+  // shows as a missing index, not only a short list.
+  async function bundledContents(names: readonly string[]): Promise<Record<string, string>> {
+    const bundle = await buildArtifactBundle(
+      names.map((name, index) => ({ name, bytes: new TextEncoder().encode(String(index)) })),
+    );
+    const zip = await JSZip.loadAsync(bundle.bytes);
+    const contents: Record<string, string> = {};
+    for (const name of Object.keys(zip.files)) {
+      contents[name] = (await zip.file(name)?.async("string")) ?? "";
+    }
+    return contents;
+  }
+
+  test("keeps a real file's name when a copy would otherwise generate it", async () => {
+    expect(await bundledContents(["a.txt", "a.txt", "a (2).txt"])).toEqual({
+      "a.txt": "0",
+      "a (3).txt": "1",
+      "a (2).txt": "2",
+    });
+  });
+
+  test("numbers repeats of a suffixed name and of a plain name without clashing", async () => {
+    expect(await bundledContents(["a.txt", "a.txt", "a (2).txt", "a (2).txt"])).toEqual({
+      "a.txt": "0",
+      "a (3).txt": "1",
+      "a (2).txt": "2",
+      "a (2) (2).txt": "3",
+    });
+  });
+
+  test("skips a suffix a real file already took, whatever the order", async () => {
+    expect(await bundledContents(["a (2).txt", "a.txt", "a.txt"])).toEqual({
+      "a (2).txt": "0",
+      "a.txt": "1",
+      "a (3).txt": "2",
+    });
+  });
+
+  test("treats names differing only by case as one file, keeping each spelling", async () => {
+    expect(await bundledContents(["Report.pdf", "report.pdf", "REPORT (2).pdf"])).toEqual({
+      "Report.pdf": "0",
+      "report (3).pdf": "1",
+      "REPORT (2).pdf": "2",
+    });
+  });
+
+  test("treats composed and decomposed letters as one file", async () => {
+    const composed = "café.txt";
+    const decomposed = "café.txt";
+    expect(await bundledContents([composed, decomposed])).toEqual({
+      [composed]: "0",
+      "café (2).txt": "1",
+    });
+  });
+
+  test("suffixes names with no extension and dotfiles at the end", async () => {
+    expect(await bundledContents(["notes", "notes", ".env", ".env"])).toEqual({
+      notes: "0",
+      "notes (2)": "1",
+      ".env": "2",
+      ".env (2)": "3",
+    });
+  });
+
+  test("suffixes before the last extension of a double extension", async () => {
+    expect(await bundledContents(["a.tar.gz", "a.tar.gz"])).toEqual({
+      "a.tar.gz": "0",
+      "a.tar (2).gz": "1",
+    });
+  });
+
+  test("keeps all 100 entries of a full archive sharing one name", async () => {
+    const names = Array.from({ length: 100 }, (_, index) => (index % 2 ? "A.TXT" : "a.txt"));
+    const contents = await bundledContents(names);
+    expect(Object.values(contents).toSorted()).toEqual(names.map((_, index) => String(index)).toSorted());
+  });
+
+  test("keeps every entry when names sanitize to the same fallback", async () => {
+    expect(await bundledContents(["..", "/", "artifact", "artifact (2)"])).toEqual({
+      artifact: "0",
+      "artifact (3)": "1",
+      "artifact (4)": "2",
+      "artifact (2)": "3",
+    });
+  });
 });
 
 const decoder = new TextDecoder();
