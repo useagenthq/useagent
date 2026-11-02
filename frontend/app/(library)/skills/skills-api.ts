@@ -72,9 +72,30 @@ export async function updateSkill(
   return recordToSkill((await res.json()) as SkillRecord);
 }
 
-export async function deleteSkill(id: string): Promise<void> {
+/** An enabled automation, or a bot routine (`bot` names its bot), that still
+ *  uses a skill. */
+export interface SkillHolder {
+  name: string;
+  bot: string | null;
+}
+
+/** What a delete did. "deleted" also covers a 404: a teammate deleted it first,
+ *  and the caller wants the same refresh. "in-use" is the 409 the backend sends
+ *  while enabled automations still use the skill; `holders` names a few and
+ *  `total` counts them all. Any other failure throws. */
+export type DeleteSkillOutcome =
+  | { kind: "deleted" }
+  | { kind: "in-use"; holders: SkillHolder[]; total: number };
+
+export async function deleteSkill(id: string): Promise<DeleteSkillOutcome> {
   const res = await backendFetch(`/api/skills/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(`delete skill ${res.status}`);
+  if (res.ok || res.status === 404) return { kind: "deleted" };
+  if (res.status === 409) {
+    const body = (await res.json()) as { used_by?: SkillHolder[]; total?: number };
+    const holders = body.used_by ?? [];
+    return { kind: "in-use", holders, total: body.total ?? holders.length };
+  }
+  throw new Error(`delete skill ${res.status}`);
 }
 
 /* -------------------------------------------------------------------------- */

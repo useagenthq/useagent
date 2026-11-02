@@ -5,17 +5,20 @@ import { Button } from "@/components/base/buttons/button";
 /**
  * The in-row "are you sure" strip a list row shows before a destructive action:
  * one question, one line of consequence, Cancel and Delete. Shared by every
- * row-level delete so the product asks the same way everywhere.
+ * row-level delete so the product asks the same way everywhere. `problem` is
+ * why the last Delete did not go through, announced in the strip itself.
  */
 export function InlineDeleteConfirm({
   question,
   consequence,
+  problem,
   busy = false,
   onCancel,
   onConfirm,
 }: {
   question: string;
   consequence: string;
+  problem?: string | null;
   busy?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -28,6 +31,11 @@ export function InlineDeleteConfirm({
       <div>
         <p className="text-body-2-medium text-text-primary">{question}</p>
         <p className="mt-0.5 text-caption-1-regular text-text-secondary">{consequence}</p>
+        {problem && (
+          <p role="alert" className="mt-1 text-caption-1-regular text-text-error-primary">
+            {problem}
+          </p>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <Button variant="secondary" size="small" onClick={onCancel}>

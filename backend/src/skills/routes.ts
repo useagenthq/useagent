@@ -34,6 +34,7 @@ import { resolveRunIntake, RunIntakeError } from "../resources/run-intake";
 import {
   bumpSkillUsage,
   createSkillWithRevision,
+  enabledSchedulesPinningSkill,
   getSkillForOrg,
   resolveSkillSelection,
   updateSkillWithRevision,
@@ -217,13 +218,27 @@ skillsRoutes.patch("/:id", async (c) => {
   return c.json(toSkill(row));
 });
 
+// How many in-use names a refused delete lists; `total` counts them all, so the
+// confirm strip can name a few and say how many more.
+const IN_USE_NAMES_SHOWN = 5;
+
 // Delete a skill (revisions cascade). A historical run keeps its own recorded
-// skill_id/version/hash for provenance even after the skill is gone.
+// skill_id/version/hash for provenance even after the skill is gone. Refused
+// with 409 while an enabled automation or bot routine in this org pins it:
+// every later firing would fail, so the member pauses or repoints those first.
 skillsRoutes.delete("/:id", async (c) => {
   const id = c.req.param("id");
+  const orgId = c.get("orgId");
+  const holders = await enabledSchedulesPinningSkill(orgId, id);
+  if (holders.length > 0) {
+    return c.json(
+      { error: "skill_in_use", used_by: holders.slice(0, IN_USE_NAMES_SHOWN), total: holders.length },
+      409,
+    );
+  }
   const [row] = await db
     .delete(skills)
-    .where(and(eq(skills.id, id), eq(skills.orgId, c.get("orgId"))))
+    .where(and(eq(skills.id, id), eq(skills.orgId, orgId)))
     .returning({ id: skills.id });
   if (!row) return c.json({ error: "skill not found" }, 404);
   return c.json({ deleted: true, id: row.id });

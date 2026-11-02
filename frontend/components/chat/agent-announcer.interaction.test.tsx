@@ -20,6 +20,7 @@ type Props = ComponentProps<typeof AgentAnnouncer>;
 const IDLE: Props = {
   running: false,
   outcome: null,
+  turnId: null,
   approvalId: null,
   questionId: null,
   pendingApprovalIds: [],

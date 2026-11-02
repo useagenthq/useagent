@@ -11,6 +11,7 @@ if (typeof window === "undefined") GlobalRegistrator.register();
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { ConversationAnnouncer } = await import("./conversation-announcer");
+const { useGatewayApprovals } = await import("./use-gateway-approvals");
 
 import type { GatewayApproval } from "@/lib/gateway-approvals";
 import type { Turn } from "./conversation";
@@ -109,5 +110,52 @@ describe("ConversationAnnouncer mapping", () => {
     mount(RUNNING);
     rerender({ ...RUNNING, gatewayApprovals: [gateway("g1", "pending")] });
     expect(text()).toBe("The agent needs your approval.");
+  });
+
+  test("two turns that finish back to back are two replies", () => {
+    const settled: Props = { ...RUNNING, running: false, turns: [turn("root", "completed", "Done.")] };
+    mount(settled);
+    rerender({ ...settled, turns: [turn("root", "completed", "Done."), turn("r2", "completed", "Also done.")] });
+    expect(text()).toBe("The agent replied.");
+  });
+
+  test("an approval already waiting when the thread opens is not announced", async () => {
+    // The real fetch lane: its list arrives after the first render.
+    function OpenedThread({ turns }: { turns: readonly Turn[] }) {
+      const { approvals } = useGatewayApprovals("thread-1", turns);
+      return (
+        <ConversationAnnouncer
+          running={false}
+          turns={turns}
+          pendingApproval={null}
+          pendingQuestion={null}
+          gatewayApprovals={approvals}
+        />
+      );
+    }
+    const realFetch = globalThis.fetch;
+    let fetches = 0;
+    globalThis.fetch = (async () => {
+      fetches += 1;
+      return Response.json({
+        requests: [
+          { id: "g1", run_id: "root", tool_name: "deploy_service", status: "pending", requested_at: "2026-01-01T00:00:00Z" },
+        ],
+      });
+    }) as unknown as typeof fetch;
+    try {
+      container = document.createElement("div");
+      document.body.appendChild(container);
+      root = createRoot(container);
+      const turns = [turn("root", "completed", "Waiting for approval.")];
+      await act(async () => root?.render(<OpenedThread turns={turns} />));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(fetches).toBe(1);
+      expect(text()).toBe("");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });

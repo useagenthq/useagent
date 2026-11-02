@@ -40,6 +40,10 @@ import {
  * pieces live in `terminal-surface.ts`.
  */
 
+/** Where the pane loads ghostty-web from. Tests swap in a stand-in here and put
+ * it back: bun's mock.module is process-wide and cannot be undone. */
+export const terminalLibrary = { load: () => import("ghostty-web") };
+
 const TERMINAL_FONT_SIZE = 13;
 /** The PTY only hears settled dimensions: notifying every drag step makes the
  * shell reprint its prompt mid-drag, which reads as jitter. */
@@ -118,7 +122,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
     let unavailable = false;
 
     void (async () => {
-      const { Ghostty, Terminal, FitAddon } = await import("ghostty-web");
+      const { Ghostty, Terminal, FitAddon } = await terminalLibrary.load();
       // Load isolated parser memory and wait for
       // the web fonts so glyph metrics are measured against JetBrains Mono, not
       // a fallback (otherwise the grid misaligns until the font swaps in).
