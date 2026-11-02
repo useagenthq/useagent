@@ -957,7 +957,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
                       steps={allSteps}
                       live={live}
                       engine={newest.engine}
-                      runId={terminalRunId}
+                      runId={terminalRunId} threadId={rootId}
                     />
                   )}
                 </div>
