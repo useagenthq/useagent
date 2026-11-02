@@ -28,6 +28,7 @@ import {
   type HandoffReceipt,
   HandoffReceipts,
 } from "@/components/chat/handoff-receipts";
+import { ConversationAnnouncer } from "@/components/chat/conversation-announcer";
 import { InboundAttachments } from "@/components/chat/inbound-attachments";
 import { NativeApprovalCard } from "@/components/chat/native-approval-card";
 import { PermissionModeTag } from "@/components/pro/permission-mode-chip";
@@ -667,6 +668,14 @@ export const Conversation = memo(function Conversation({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {/* Screen-reader announcements: reply done, stopped, new approval/question (#350). */}
+      <ConversationAnnouncer
+        running={!!running}
+        turns={turns}
+        pendingApproval={pendingApproval ?? null}
+        pendingQuestion={pendingQuestion ?? null}
+        gatewayApprovals={gatewayApprovals}
+      />
       <div className="relative min-h-0 flex-1">
         <div
           ref={scrollRef}
