@@ -47,6 +47,7 @@ import { useAgentsRailDeepLink } from "@/components/chat/use-agents-rail-deep-li
 import { terminalRunIdForThread } from "@/components/chat/terminal-run-state";
 import type { TimelineArtifact } from "@/components/chat/timeline";
 import { ComposerPrefillProvider } from "@/components/chat/composer-prefill-context";
+import { ConversationAnnouncer } from "@/components/chat/conversation-announcer";
 import { SessionLatestRunProvider } from "@/components/chat/session-run-context";
 import { SessionThreadBreadcrumb } from "@/components/chat/session-thread-breadcrumb";
 import { SessionThreadActions } from "@/components/chat/session-thread-actions";
@@ -226,10 +227,8 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
     return null;
   }, [turns]);
 
-  // Gateway approvals (#77): the thread's durable requests, pending AND resolved
-  // (history survives reload), from GET /api/gateway/approvals. The turns' approval
-  // SIGNATURES (not a poll) drive revalidation: an approval event on the thread SSE
-  // re-projects the turn and triggers exactly one refetch (see use-gateway-approvals).
+  // Gateway approvals (#77): the thread's durable requests, pending and resolved; undefined
+  // until the first fetch answers. Turn approval signatures drive refetch (use-gateway-approvals).
   const { approvals: gatewayApprovals, refresh: refreshGatewayApprovals } =
     useGatewayApprovals(rootId, turns);
 
@@ -534,9 +533,9 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   const [composerPrefill, setComposerPrefill] = useState<{ text: string; nonce: number } | null>(null);
   const prefillComposer = useCallback((text: string) => {
     setComposerPrefill((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }));
-    // The composer sits behind the sheet: uncover it so it can take focus.
-    if (surfacesSheet) closeSheet();
-  }, [surfacesSheet, closeSheet]);
+    // Uncover the composer behind an OPEN sheet; closing a closed one collapses the wide layout.
+    if (sheetDialogOpen) closeSheet();
+  }, [sheetDialogOpen, closeSheet]);
 
   // Default to whichever pane actually has content; an explicit pick wins.
   // A quiet thread starts on the provider-neutral surface chooser.
@@ -644,6 +643,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
       <SessionLatestRunProvider value={newest.id}>
       {/* Conversation and full-height inspector share one responsive split. */}
       <div ref={bodyRef} className="flex h-full min-h-0 flex-col md:flex-row">
+        <ConversationAnnouncer running={runningTurn !== null} turns={turns} pendingApproval={activeApproval?.request ?? null} pendingQuestion={activeQuestion?.request ?? null} gatewayApprovals={gatewayApprovals} />
         {/* Conversation */}
         <section
           aria-hidden={railExpanded}
