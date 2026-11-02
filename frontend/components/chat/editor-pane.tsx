@@ -112,7 +112,7 @@ function FileDetail({ entry }: { entry: FileEntry }) {
           filename={entry.base}
           language={langForFile(entry.base)}
           code={entry.content ?? ""}
-          emptyLabel="This file's contents will show here once the agent saves it."
+          emptyLabel="The contents aren't shown here. Open Diff to see what changed, or ask the agent to show you this file."
         />
       </div>
     </div>

@@ -39,7 +39,7 @@ import { SessionRailTabs } from "@/components/chat/session-rail-tabs";
 import { SubagentChips } from "@/components/chat/subagent-pane";
 import {
   RAIL_ICON_BUTTON,
-  railTabLabelFor,
+  railPanelName,
   type SurfaceChoice,
   SurfaceChooser, threadFacts,
 } from "@/components/chat/surface-chooser";
@@ -611,7 +611,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
     },
     [activeWorkpieceId, openWorkpieces, railTabOverride],
   );
-  const railTabLabel = railTabLabelFor(railTab);
+  const railPanel = railPanelName(railTab);
   const [desktopEverOpened, setDesktopEverOpened] = useState(false);
   const desktopActive = railTab === "desktop" && (!surfacesSheet || sheetSurfacesOpen);
   useEffect(() => {
@@ -847,11 +847,11 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
                 iconOnly
                 leadingIcon={railExpanded ? RiCollapseDiagonal2Line : RiExpandDiagonal2Line}
                 onClick={() => setRailExpanded((expanded) => !expanded)}
-                title={railExpanded ? "Restore panel" : `Expand ${railTabLabel}`}
+                title={railExpanded ? "Restore panel" : `Expand ${railPanel}`}
                 aria-label={
                   railExpanded
-                    ? `Restore ${railTabLabel} panel to side rail`
-                    : `Expand ${railTabLabel} panel to main canvas`
+                    ? `Restore ${railPanel} to side rail`
+                    : `Expand ${railPanel} to main canvas`
                 }
                 aria-pressed={railExpanded}
                 aria-keyshortcuts={railExpanded ? "Escape" : undefined}

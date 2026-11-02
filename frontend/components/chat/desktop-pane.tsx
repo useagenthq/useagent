@@ -349,7 +349,6 @@ export function DesktopPane({
           <Button
             variant="secondary"
             size="small"
-            aria-pressed={inputCaptured}
             disabled={!connected}
             onClick={inputCaptured ? releaseCapture : captureInput}
             className="rounded-full"

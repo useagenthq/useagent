@@ -196,7 +196,6 @@ describe("Desktop product surface", () => {
     const desktopPane = read("./desktop-pane.tsx");
     const agentScreen = read("../ai/agent-screen.tsx");
 
-    expect(desktopPane).toContain("aria-pressed={inputCaptured}");
     expect(desktopPane).toContain('{inputCaptured ? "Release control" : "Take control"}');
     expect(desktopPane).toContain("onClick={inputCaptured ? releaseCapture : captureInput}");
     expect(desktopPane).not.toContain("if (!open) releaseCapture();");
