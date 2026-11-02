@@ -4,6 +4,7 @@ import { type AgentActivity, agentAnnouncement } from "./agent-announcement";
 const IDLE: AgentActivity = {
   running: false,
   outcome: null,
+  turnId: null,
   approvalId: null,
   questionId: null,
   pendingApprovalIds: [],
@@ -28,6 +29,11 @@ describe("agentAnnouncement", () => {
     expect(agentAnnouncement(before, after)).toBe("The agent replied.");
     // The same settled snapshot repeated is not a new event.
     expect(agentAnnouncement(after, after)).toBeNull();
+  });
+
+  test("a second reply is announced even when no running snapshot came between", () => {
+    const first: AgentActivity = { ...IDLE, outcome: "replied", turnId: "r1" };
+    expect(agentAnnouncement(first, { ...first, turnId: "r2" })).toBe("The agent replied.");
   });
 
   test("a user stop is announced, distinct from a reply", () => {
@@ -66,6 +72,15 @@ describe("agentAnnouncement", () => {
     );
     // A pending approval already present at baseline is not a fresh event.
     expect(agentAnnouncement(before, before)).toBeNull();
+  });
+
+  test("the first loaded gateway list is a baseline, not a new approval", () => {
+    // Opening a thread whose approval already waits: the lane loads after the first snapshot.
+    const loading = running({ pendingApprovalIds: null });
+    expect(agentAnnouncement(loading, running({ pendingApprovalIds: ["g1"] }))).toBeNull();
+    expect(
+      agentAnnouncement(running({ pendingApprovalIds: ["g1"] }), running({ pendingApprovalIds: ["g1", "g2"] })),
+    ).toBe("The agent needs your approval.");
   });
 
   test("a new native question is announced", () => {

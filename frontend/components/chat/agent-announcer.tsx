@@ -10,18 +10,20 @@ import { type AgentActivity, agentAnnouncement, type TurnOutcome } from "./agent
 export function AgentAnnouncer({
   running,
   outcome,
+  turnId,
   approvalId,
   questionId,
   pendingApprovalIds,
 }: {
   readonly running: boolean;
   readonly outcome: TurnOutcome | null;
+  readonly turnId: string | null;
   readonly approvalId: string | null;
   readonly questionId: string | null;
-  readonly pendingApprovalIds: readonly string[];
+  readonly pendingApprovalIds: readonly string[] | null;
 }) {
   // Join the ids so the effect dep is a string, not a new array every render.
-  const pendingKey = pendingApprovalIds.join("\u0000");
+  const pendingKey = pendingApprovalIds?.join("\u0000") ?? null;
   const prevActivityRef = useRef<AgentActivity | null>(null);
   const seqRef = useRef(0);
   const [announcement, setAnnouncement] = useState<{ text: string; seq: number } | null>(null);
@@ -30,9 +32,10 @@ export function AgentAnnouncer({
     const activity: AgentActivity = {
       running,
       outcome,
+      turnId,
       approvalId,
       questionId,
-      pendingApprovalIds: pendingKey ? pendingKey.split("\u0000") : [],
+      pendingApprovalIds: pendingKey === null ? null : pendingKey ? pendingKey.split("\u0000") : [],
     };
     const message = agentAnnouncement(prevActivityRef.current, activity);
     prevActivityRef.current = activity;
@@ -40,7 +43,7 @@ export function AgentAnnouncer({
       seqRef.current += 1;
       setAnnouncement({ text: message, seq: seqRef.current });
     }
-  }, [running, outcome, approvalId, questionId, pendingKey]);
+  }, [running, outcome, turnId, approvalId, questionId, pendingKey]);
 
   return (
     <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
