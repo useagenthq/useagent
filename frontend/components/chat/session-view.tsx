@@ -67,6 +67,7 @@ import {
 } from "@/components/chat/types";
 import { shouldRetireOptimistic, useThreadStream } from "@/components/chat/use-thread-stream";
 import { useReplyCommandCatalog } from "@/components/chat/use-reply-command-catalog";
+import { sheetDialogProps, useSheetDialog } from "@/components/chat/use-sheet-dialog";
 import { useWindowedThread } from "@/components/chat/use-windowed-thread";
 import type { ApiThreadOutlineTurn } from "@/components/chat/windowed-thread";
 import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
@@ -497,6 +498,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   const isMobile = useIsMobile();
   const bodyRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLElement>(null);
+  const surfaceOpenerRef = useRef<HTMLButtonElement>(null);
   // The sheet's md+ trigger is INSUFFICIENT WIDTH, not a second breakpoint: when the
   // split container cannot hold the conversation floor plus the rail minimum side by
   // side (SPLIT_MIN, e.g. the sidebar re-expanded on a tablet-width window), the same
@@ -505,6 +507,9 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   const splitTooNarrow = useSplitTooNarrow(bodyRef);
   const surfacesSheet = isMobile || splitTooNarrow;
   const sheetSurfacesOpen = railOverride ?? false;
+  const sheetDialogOpen = surfacesSheet && sheetSurfacesOpen;
+  const closeSheet = useCallback(() => setRailOverride(false), []);
+  useSheetDialog(sheetDialogOpen, railRef, surfaceOpenerRef, closeSheet);
   // Rail resize: a dragger between the conversation and the rail (side-by-side
   // only); the width state + zero-React drag mechanics live in rail-resizer.
   const { railWidth, resizeRailFromPointer, persistRailWidth, resetRailWidth, resizeRailWithKeyboard } =
@@ -526,12 +531,12 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   // Lets a rail surface (e.g. a conflicted workpiece proposal) seed the reply
   // composer. The nonce re-applies a repeat of the same text; SessionView owns it
   // and hands the setter to the rail via context.
-  const [composerPrefill, setComposerPrefill] = useState<{ text: string; nonce: number } | null>(
-    null,
-  );
+  const [composerPrefill, setComposerPrefill] = useState<{ text: string; nonce: number } | null>(null);
   const prefillComposer = useCallback((text: string) => {
     setComposerPrefill((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }));
-  }, []);
+    // The composer sits behind the sheet: uncover it so it can take focus.
+    if (surfacesSheet) closeSheet();
+  }, [surfacesSheet, closeSheet]);
 
   // Default to whichever pane actually has content; an explicit pick wins.
   // A quiet thread starts on the provider-neutral surface chooser.
@@ -629,15 +634,6 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   useEffect(() => {
     if (surfacesSheet && railExpanded) setRailExpanded(false);
   }, [surfacesSheet, railExpanded]);
-  // The sheet dismisses like the nav drawer: Close X, backdrop, or Escape.
-  useEffect(() => {
-    if (!surfacesSheet || !sheetSurfacesOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setRailOverride(false);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [surfacesSheet, sheetSurfacesOpen]);
 
   return (
     <WorkspaceOpenProvider value={openWorkpiece}>
@@ -651,6 +647,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
         {/* Conversation */}
         <section
           aria-hidden={railExpanded}
+          inert={sheetDialogOpen}
           className={cx(
             // min-h-0 pins the internal scroller/composer; md:min-w-80 protects the split.
             "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-w-80",
@@ -672,9 +669,10 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
             <SessionThreadActions
               runId={newest.id}
               exportData={{ threadId: rootId, turns, snapshot }}
-              showSurfaceOpener={hasRuntimeSurfaces && !sheetSurfacesOpen}
+              showSurfaceOpener={hasRuntimeSurfaces}
               splitTooNarrow={splitTooNarrow}
               onOpenSurfaces={openSurfacesSheet}
+              surfaceOpenerRef={surfaceOpenerRef}
             />
           </div>
 
@@ -773,8 +771,9 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
         {railOpen && sheetSurfacesOpen && (
           <button
             type="button"
+            tabIndex={-1} aria-hidden
             aria-label="Close surfaces panel"
-            onClick={() => setRailOverride(false)}
+            onClick={closeSheet}
             className={cx(
               "fixed inset-0 z-40 bg-black/50 backdrop-blur-sm",
               !splitTooNarrow && "md:hidden",
@@ -790,6 +789,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
             ref={railRef}
             inert={surfacesSheet && !sheetSurfacesOpen}
             aria-hidden={surfacesSheet && !sheetSurfacesOpen ? true : undefined}
+            {...sheetDialogProps(sheetDialogOpen, "Side panel")}
             style={
               railWidth !== null
                 ? ({ "--rail-w": `${railWidth}px` } as React.CSSProperties)
@@ -805,7 +805,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
               // two chrome panels read as one system in every theme - the old
               // primary-default card token diverged visibly in Midnight's
               // inverted dark ladder.
-              "bg-background-secondary-default flex min-h-0 min-w-0 flex-col overflow-hidden transition-[width] peer-data-[dragging=true]:transition-none",
+              "bg-background-secondary-default flex min-h-0 min-w-0 flex-col overflow-hidden outline-none transition-[width] peer-data-[dragging=true]:transition-none",
               // Below md this SAME panel is a bottom slide-over sheet (fixed,
               // safe-area padded, pill-tab header unchanged) with a translate-y
               // open/close transition per the subagent-pane mechanics.
@@ -874,7 +874,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
               <CloseButton
                 size="md"
                 aria-label="Close surfaces panel"
-                onClick={() => setRailOverride(false)}
+                onClick={closeSheet}
                 className={cx(RAIL_ICON_BUTTON, !splitTooNarrow && "md:hidden")}
               />
             </div>

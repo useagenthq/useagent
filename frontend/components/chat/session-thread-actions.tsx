@@ -1,5 +1,6 @@
 "use client";
 
+import type { Ref } from "react";
 import { RiCodeSSlashLine, RiLayoutRightLine, RiMarkdownLine, RiMore2Line } from "@remixicon/react";
 import { Button } from "@/components/base/buttons/button";
 import {
@@ -25,12 +26,14 @@ export function SessionThreadActions({
   showSurfaceOpener,
   splitTooNarrow,
   onOpenSurfaces,
+  surfaceOpenerRef,
 }: {
   runId: string;
   exportData: ThreadExportData;
   showSurfaceOpener: boolean;
   splitTooNarrow: boolean;
   onOpenSurfaces: () => void;
+  surfaceOpenerRef: Ref<HTMLButtonElement>;
 }) {
   const exportThread = (format: ThreadExportFormat) => {
     const content =
@@ -79,9 +82,11 @@ export function SessionThreadActions({
             </DropdownMenuItem>
           </DropdownMenu>
         </Dropdown>
-      {/* In sheet mode (below md, or a too-narrow md+ split) this opens the surfaces rail. */}
+      {/* In sheet mode (below md, or a too-narrow md+ split) this opens the surfaces rail.
+          It stays mounted under the open sheet: closing returns focus here. */}
       {showSurfaceOpener && (
         <Button
+          ref={surfaceOpenerRef}
           variant="ghost"
           size="small"
           iconOnly
