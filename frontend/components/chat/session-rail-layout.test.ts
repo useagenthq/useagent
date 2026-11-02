@@ -19,11 +19,11 @@ describe("session workspace rail expand mode", () => {
   test("offers explicit accessible expand and restore controls for the active tab", () => {
     const sessionView = read("./session-view.tsx");
 
-    expect(sessionView).toContain("const railTabLabel =");
-    const railTabInterpolation = "$" + "{railTabLabel}";
-    expect(sessionView).toContain(`Expand ${railTabInterpolation}`);
-    expect(sessionView).toContain(`Expand ${railTabInterpolation} panel to main canvas`);
-    expect(sessionView).toContain(`Restore ${railTabInterpolation} panel to side rail`);
+    expect(sessionView).toContain("const railPanel = railPanelName(railTab);");
+    const railPanelInterpolation = "$" + "{railPanel}";
+    expect(sessionView).toContain(`Expand ${railPanelInterpolation}`);
+    expect(sessionView).toContain(`Expand ${railPanelInterpolation} to main canvas`);
+    expect(sessionView).toContain(`Restore ${railPanelInterpolation} to side rail`);
     expect(sessionView).toContain("aria-pressed={railExpanded}");
     expect(sessionView).toContain('aria-keyshortcuts={railExpanded ? "Escape" : undefined}');
     expect(sessionView).toContain('if (event.key === "Escape") setRailExpanded(false)');

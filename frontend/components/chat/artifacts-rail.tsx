@@ -43,9 +43,9 @@ export function ArtifactsRailView({
     <div className="absolute inset-0 overflow-y-auto p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-body-2-medium text-text-primary">Session files</p>
+          <p className="text-body-2-medium text-text-primary">Files</p>
           <p className="text-caption-1-regular text-text-tertiary">
-            Durable outputs you can preview, edit, or download
+            Finished files like a report or spreadsheet. Preview, edit, or download them.
           </p>
         </div>
         <IconButton
@@ -53,7 +53,7 @@ export function ArtifactsRailView({
           icon={refreshing ? SpinningRefreshIcon : RiRefreshLine}
           onClick={onRefresh}
           disabled={refreshing}
-          aria-label="Refresh session files"
+          aria-label="Refresh files"
           title="Refresh"
           className="shrink-0"
         />

@@ -100,8 +100,8 @@ describe("TerminalPane log", () => {
     expect(html).not.toContain("terminal-log-working");
   });
 
-  test("empty log reads as booting while live, idle when settled", () => {
-    expect(render([], true)).toContain("Booting session");
+  test("empty log reads as starting while live, idle when settled", () => {
+    expect(render([], true)).toContain("Starting up");
     expect(render([], false)).toContain("No commands were run.");
     // A boot-phase live run with zero commands does not also show the footer.
     expect(render([], true)).not.toContain("terminal-log-working");

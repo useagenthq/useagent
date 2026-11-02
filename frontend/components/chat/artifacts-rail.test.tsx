@@ -119,7 +119,7 @@ test("a background load never spins the icon; a manual click does", async () => 
       root.render(<ArtifactsRail threadId="t1" live={true} />);
     });
     const button = host.querySelector<HTMLButtonElement>(
-      'button[aria-label="Refresh session files"]',
+      'button[aria-label="Refresh files"]',
     );
     if (!button) throw new Error("refresh button not found");
     expect(resolvers.length).toBe(1); // the initial (non-manual) load is pending

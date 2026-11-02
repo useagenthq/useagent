@@ -39,7 +39,7 @@ import { SessionRailTabs } from "@/components/chat/session-rail-tabs";
 import { SubagentChips } from "@/components/chat/subagent-pane";
 import {
   RAIL_ICON_BUTTON,
-  railTabLabelFor,
+  railPanelName,
   type SurfaceChoice,
   SurfaceChooser, threadFacts,
 } from "@/components/chat/surface-chooser";
@@ -610,7 +610,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
     },
     [activeWorkpieceId, openWorkpieces, railTabOverride],
   );
-  const railTabLabel = railTabLabelFor(railTab);
+  const railPanel = railPanelName(railTab);
   const [desktopEverOpened, setDesktopEverOpened] = useState(false);
   const desktopActive = railTab === "desktop" && (!surfacesSheet || sheetSurfacesOpen);
   useEffect(() => {
@@ -728,7 +728,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
             )}
             resourceMentions={!isProductChild}
             composerLocked={composerRelationshipBlocked || readOnlyMessage !== undefined}
-            composerLockedMessage={readOnlyMessage ?? "Verifying child session…"}
+            composerLockedMessage={readOnlyMessage ?? "Verifying this thread…"}
             onTurnsNeeded={initialOutline ? handleTurnsNeeded : undefined}
             productChildren={productChildren}
             onOpenProductChild={openProductChild}
@@ -772,7 +772,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
           <button
             type="button"
             tabIndex={-1} aria-hidden
-            aria-label="Close surfaces panel"
+            aria-label="Close side panel"
             onClick={closeSheet}
             className={cx(
               "fixed inset-0 z-40 bg-black/50 backdrop-blur-sm",
@@ -847,11 +847,11 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
                 iconOnly
                 leadingIcon={railExpanded ? RiCollapseDiagonal2Line : RiExpandDiagonal2Line}
                 onClick={() => setRailExpanded((expanded) => !expanded)}
-                title={railExpanded ? "Restore panel" : `Expand ${railTabLabel}`}
+                title={railExpanded ? "Restore panel" : `Expand ${railPanel}`}
                 aria-label={
                   railExpanded
-                    ? `Restore ${railTabLabel} panel to side rail`
-                    : `Expand ${railTabLabel} panel to main canvas`
+                    ? `Restore ${railPanel} to side rail`
+                    : `Expand ${railPanel} to main canvas`
                 }
                 aria-pressed={railExpanded}
                 aria-keyshortcuts={railExpanded ? "Escape" : undefined}
@@ -873,7 +873,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
               {/* On the sheet a single Close X replaces Expand/Collapse. */}
               <CloseButton
                 size="md"
-                aria-label="Close surfaces panel"
+                aria-label="Close side panel"
                 onClick={closeSheet}
                 className={cx(RAIL_ICON_BUTTON, !splitTooNarrow && "md:hidden")}
               />
