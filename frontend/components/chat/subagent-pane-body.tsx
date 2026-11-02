@@ -73,7 +73,7 @@ export default function SubagentPaneBody({
   if (!run) {
     return (
       <PaneStub childSession={childSession}>
-        <LoadingState label="Loading run" />
+        <LoadingState label="Loading helper agent" />
       </PaneStub>
     );
   }

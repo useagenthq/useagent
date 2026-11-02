@@ -47,7 +47,7 @@ export function QueuedMessagePill({
           <button
             type="button"
             onClick={onSendNow}
-            title="Stops the current turn; this message starts immediately"
+            title="Skips the waiting messages; this message is sent next"
             className="shrink-0 cursor-pointer text-accent-500 underline-offset-2 outline-none hover:underline focus-visible:underline"
           >
             Send now

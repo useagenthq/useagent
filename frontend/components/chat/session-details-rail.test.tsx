@@ -115,7 +115,7 @@ describe("SessionDetailsRail", () => {
     expect(html).toContain("Codex");
     expect(html).toContain('data-testid="runtime-model-requested"');
     expect(html).toContain(">requested<");
-    expect(html).toContain("does not report which model answered");
+    expect(html).toContain("not sent back");
   });
 
   test("a thread with unloaded outline turns says its plan and totals are partial", () => {
