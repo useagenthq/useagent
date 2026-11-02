@@ -43,6 +43,16 @@ describe("markdown workpiece surfaces", () => {
     expect(html).toContain("Switch to Code to edit");
   });
 
+  test("Rendered body text carries the body scale so headings sit above it", () => {
+    const html = renderToStaticMarkup(
+      <WorkpieceSurfaces editor={editor({ isMarkdown: true })} viewMode="rendered" />,
+    );
+    // The markdown root sets the 13px body token; without it paragraphs fall
+    // back to the 16px browser default and read larger than the 14px headings.
+    const root = html.match(/<div class="([^"]*)"><h2>/)?.[1] ?? "";
+    expect(root.split(" ")).toEqual(expect.arrayContaining(["text-body-2-regular", "text-text-primary"]));
+  });
+
   test("Code view holds the editable raw markdown source", () => {
     const html = renderToStaticMarkup(
       <WorkpieceSurfaces editor={editor({ isMarkdown: true })} viewMode="code" />,

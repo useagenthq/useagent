@@ -67,7 +67,7 @@ export function MarkdownWorkpieceSurface({
         {editor.loading ? (
           <p className="text-body-2-regular text-text-tertiary">Loading…</p>
         ) : editor.value.trim() ? (
-          <Markdown>{editor.value}</Markdown>
+          <Markdown className="text-body-2-regular text-text-primary">{editor.value}</Markdown>
         ) : (
           <p className="text-body-2-regular text-text-tertiary">This document is empty.</p>
         )}

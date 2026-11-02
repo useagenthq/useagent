@@ -35,7 +35,9 @@ describe("artifact editor model", () => {
     expect(isMarkdownArtifact("AGENTS.md")).toBe(true);
     expect(isMarkdownArtifact("README.markdown")).toBe(true);
     expect(isMarkdownArtifact("Notes.MD")).toBe(true);
-    expect(isMarkdownArtifact("guide.mdx")).toBe(true);
+    // MDX carries imports and JSX that a markdown renderer shows as plain
+    // paragraphs, so it stays on the editable source surface.
+    expect(isMarkdownArtifact("guide.mdx")).toBe(false);
     expect(isMarkdownArtifact("script.py")).toBe(false);
     expect(isMarkdownArtifact("data.json")).toBe(false);
     expect(isMarkdownArtifact("plain.txt")).toBe(false);
