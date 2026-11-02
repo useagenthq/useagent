@@ -65,6 +65,8 @@ describe("ApprovalCard", () => {
   test("error renders the actionable error line (the submission-error state)", () => {
     const html = render({ error: "Could not send your decision - try again" });
     expect(html).toContain("Could not send your decision - try again");
+    // The error line is a live alert so a screen reader hears it at once (#350).
+    expect(html).toContain('role="alert"');
   });
 
   test("note and chip render when supplied; reason slot renders its content", () => {
