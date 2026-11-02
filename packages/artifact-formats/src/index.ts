@@ -519,11 +519,80 @@ function applyCellStyle(target: ExcelJS.Cell, fmt: SheetCellFormat): void {
   if (numFmt) target.numFmt = numFmt;
 }
 
-function setCellValue(target: ExcelJS.Cell, cell: SheetCell): void {
+const EXCEL_SHEET_NAME_MAX = 31;
+
+function trimApostrophes(name: string): string {
+  return name.replace(/^'+|'+$/g, "");
+}
+
+/** The names the sheets are exported under, in order. Excel rejects * ? : \ / [ ]
+ * and a leading or trailing apostrophe, allows 31 characters, compares names
+ * case-insensitively and reserves "History", so a clashing name gets " (2)",
+ * " (3)" and so on, cut to fit. */
+function excelSheetNames(names: readonly string[]): string[] {
+  const taken = new Set(["history"]);
+  return names.map((name) => {
+    const cleaned = trimApostrophes(name.replace(/[*?:\\/[\]]/g, "_"));
+    const fit = (length: number) => trimApostrophes(cleaned.slice(0, length)) || "Sheet";
+    let candidate = fit(EXCEL_SHEET_NAME_MAX);
+    for (let n = 2; taken.has(candidate.toLowerCase()); n += 1) {
+      const suffix = ` (${n})`;
+      candidate = `${fit(EXCEL_SHEET_NAME_MAX - suffix.length)}${suffix}`;
+    }
+    taken.add(candidate.toLowerCase());
+    return candidate;
+  });
+}
+
+/** Point a formula's sheet prefixes (`Data!A1`, `'Q1/Q2'!A1`) at the exported
+ * names. `exportedNames` is keyed by the lower-cased app name, like the formula
+ * engine's sheet lookup; text inside "string literals" is copied unchanged. */
+function renameFormulaSheets(formula: string, exportedNames: ReadonlyMap<string, string>): string {
+  let out = "";
+  let i = 0;
+  while (i < formula.length) {
+    const ch = formula[i]!;
+    if (ch === '"') {
+      let end = i + 1;
+      while (end < formula.length) {
+        if (formula[end] === '"' && formula[end + 1] !== '"') break;
+        end += formula[end] === '"' ? 2 : 1;
+      }
+      out += formula.slice(i, end + 1);
+      i = end + 1;
+      continue;
+    }
+    let name: string | null = null;
+    let end = i + 1;
+    if (ch === "'") {
+      const close = formula.indexOf("'", i + 1);
+      if (close < 0) return out + formula.slice(i);
+      name = formula.slice(i + 1, close);
+      end = close + 1;
+    } else if (/[A-Za-z_]/.test(ch)) {
+      name = /^[A-Za-z_][A-Za-z0-9_.]*/.exec(formula.slice(i))![0];
+      end = i + name.length;
+    }
+    const exported =
+      name !== null && /^\s*!/.test(formula.slice(end)) ? exportedNames.get(name.toLowerCase()) : undefined;
+    out +=
+      exported !== undefined && exported.toLowerCase() !== name!.toLowerCase()
+        ? `'${exported.replace(/'/g, "''")}'`
+        : formula.slice(i, end);
+    i = end;
+  }
+  return out;
+}
+
+function setCellValue(
+  target: ExcelJS.Cell,
+  cell: SheetCell,
+  exportedNames: ReadonlyMap<string, string>,
+): void {
   if (cell.f !== undefined) {
     // A real Excel formula (exceljs stores the formula without the leading =),
     // plus the cached result so a viewer that does not recompute still shows it.
-    target.value = { formula: cell.f.replace(/^=/, ""), result: cell.v };
+    target.value = { formula: renameFormulaSheets(cell.f.replace(/^=/, ""), exportedNames), result: cell.v };
   } else {
     target.value = cell.v;
   }
@@ -533,17 +602,20 @@ function setCellValue(target: ExcelJS.Cell, cell: SheetCell): void {
 function renderWorkbookXlsx(book: Workbook): Promise<Buffer | ArrayBuffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "UseAgent";
-  for (const sheetModel of book.sheets) {
-    const sheet = workbook.addWorksheet(sheetModel.name.slice(0, 31) || "Sheet");
+  const names = excelSheetNames(book.sheets.map((sheet) => sheet.name));
+  // A later sheet wins a name clash, as it does in the formula engine's lookup.
+  const exportedNames = new Map(book.sheets.map((sheet, index) => [sheet.name.toLowerCase(), names[index]!]));
+  book.sheets.forEach((sheetModel, index) => {
+    const sheet = workbook.addWorksheet(names[index]!);
     for (const [ref, cell] of Object.entries(sheetModel.cells)) {
       const position = parseA1(ref);
       if (!position) continue;
-      setCellValue(sheet.getCell(position.row + 1, position.col + 1), cell);
+      setCellValue(sheet.getCell(position.row + 1, position.col + 1), cell, exportedNames);
     }
     for (const [label, px] of Object.entries(sheetModel.colWidths ?? {})) {
       sheet.getColumn(label).width = excelColumnWidth(px);
     }
-  }
+  });
   return workbook.xlsx.writeBuffer();
 }
 
