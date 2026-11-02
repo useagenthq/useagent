@@ -28,12 +28,15 @@ export const TerminalPane = memo(function TerminalPane({
   live,
   engine,
   runId,
+  threadId,
 }: {
   steps: ApiStep[];
   live: boolean;
   engine: EngineId;
   /** Any run in the conversation — the shell attaches to the THREAD's sandbox. */
   runId?: string;
+  /** The conversation the shell belongs to: a new one starts a new shell. */
+  threadId?: string;
 }) {
   // Compress once PER STEP LIST, not per render: the row render, the in-flight
   // detection, and the autoscroll signature all read the same transcript.
@@ -101,7 +104,7 @@ export const TerminalPane = memo(function TerminalPane({
       </div>
 
       {tab === "shell" && runId ? (
-        <InteractiveTerminal runId={runId} />
+        <InteractiveTerminal key={threadId} runId={runId} />
       ) : (
       <div
         ref={bodyRef}

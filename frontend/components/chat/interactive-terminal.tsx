@@ -21,6 +21,15 @@ import {
  * same filesystem the agent works in. Mounted only while the Shell tab is
  * active; the socket and PTY die with unmount.
  *
+ * One connection per mount, not per run: the PTY lives only as long as its
+ * socket, so reconnecting when a new turn takes over `runId` would replace the
+ * viewer's shell (its directory, scrollback and running command) with a fresh
+ * one in ~/work. Every run of a thread reaches the same thread sandbox, so the
+ * open socket stays put and only a reconnect reads the newest run. A new run
+ * while no shell is open (no sandbox yet, or one that was unavailable) is a
+ * reason to try again at once. The parent keys this component by thread, so
+ * another thread always gets its own shell.
+ *
  * The ~400KB WASM ships INLINED in the ghostty-web bundle as a base64 data URL,
  * so it loads in-process with no separate asset or public-path wiring.
  * Each mounted pane owns its WASM instance: freed pages from an old terminal
@@ -74,6 +83,15 @@ async function ensureTerminalFontsLoaded(family: string): Promise<void> {
 
 export function InteractiveTerminal({ runId }: { runId: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const runIdRef = useRef(runId);
+  // Set by the connection below: reconnects now if no shell is open.
+  const retryNowRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (runIdRef.current === runId) return;
+    runIdRef.current = runId;
+    retryNowRef.current?.();
+  }, [runId]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -176,7 +194,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
         if (disposed || !term) return;
         notifiedGrid = { cols: term.cols, rows: term.rows };
         const sock = new WebSocket(
-          `${proto}://${location.host}/api/runs/${runId}/terminal?cols=${term.cols}&rows=${term.rows}`,
+          `${proto}://${location.host}/api/runs/${runIdRef.current}/terminal?cols=${term.cols}&rows=${term.rows}`,
         );
         ws = sock;
         // `disposed` guards: a buffered message or OUR OWN close event can
@@ -185,7 +203,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
           reconnectDelay = 3000;
         };
         sock.onmessage = (e) => {
-          if (disposed) return;
+          if (disposed || sock !== ws) return;
           const text = String(e.data);
           // Swallow the backend's repeated idle notices - we show a single calm
           // waiting line (below) instead of letting them spam each reconnect.
@@ -205,7 +223,8 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
           term?.write(text);
         };
         sock.onclose = () => {
-          if (disposed || unavailable) return;
+          // A socket replaced by an early retry must not schedule another.
+          if (disposed || unavailable || sock !== ws) return;
           // One friendly line per idle stretch, not a disconnect message every retry.
           if (!waitingShown) {
             waitingShown = true;
@@ -215,11 +234,24 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
                 : "\r\n\x1b[2m• reconnecting…\x1b[0m\r\n",
             );
           }
-          reconnectTimer = setTimeout(connect, reconnectDelay);
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            // An early retry already replaced this socket.
+            if (sock === ws) connect();
+          }, reconnectDelay);
           reconnectDelay = Math.min(reconnectDelay * 2, 15000);
         };
       };
       connect();
+      retryNowRef.current = () => {
+        if (disposed || !term) return;
+        if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+        unavailable = false;
+        reconnectDelay = 3000;
+        connect();
+      };
       term.onData((data) => {
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "input", data }));
@@ -262,6 +294,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
 
     return () => {
       disposed = true;
+      retryNowRef.current = null;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (resizeNotifyTimer) clearTimeout(resizeNotifyTimer);
       if (refitTimer) clearTimeout(refitTimer);
@@ -278,7 +311,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
       term?.dispose();
       term = null;
     };
-  }, [runId]);
+  }, []);
 
   // `relative` makes this the positioning context for ghostty's absolutely-
   // positioned hidden input textarea (`position:absolute; left:0; top:0`).
