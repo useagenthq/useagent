@@ -32,6 +32,11 @@ import { WorkpieceProposalReview } from "@/components/artifacts/workpiece-propos
 import { StatusDot } from "@/components/base/badges/status-dot";
 import { Button, ButtonLink } from "@/components/base/buttons/button";
 import { PillTab, PillTabList } from "@/components/base/tabs/pill-tab";
+import {
+  useWorkpieceCloseGuard,
+  type WorkpieceEditorHandle,
+  type WorkpieceEditors,
+} from "@/components/chat/workpiece-close-guard";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cx } from "@/utils/cx";
 
@@ -247,9 +252,13 @@ export function WorkpieceHeader({
  * never steals focus from an edit in progress. */
 function WorkpieceEditorView({
   artifact,
+  tabId,
+  editors,
   onDirtyChange,
 }: {
   readonly artifact: ArtifactDescriptor;
+  readonly tabId: string;
+  readonly editors?: WorkpieceEditors;
   readonly onDirtyChange?: (dirty: boolean) => void;
 }) {
   const editor = useWorkpieceEditor(artifact, { autosave: true });
@@ -270,6 +279,20 @@ function WorkpieceEditorView({
   // inside the workspace surface below.
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
+  // Lets the pane read this tab's unsaved state and save it when its tab closes.
+  const saveRef = useRef(editor.save);
+  saveRef.current = editor.save;
+  useEffect(() => {
+    if (!editors) return;
+    const handle: WorkpieceEditorHandle = {
+      dirty: () => dirtyRef.current,
+      save: () => saveRef.current(),
+    };
+    editors.set(tabId, handle);
+    return () => {
+      if (editors.get(tabId) === handle) editors.delete(tabId);
+    };
+  }, [editors, tabId]);
   const lastActivityRef = useRef<number | null>(null);
   const markActivity = useCallback(() => {
     lastActivityRef.current = Date.now();
@@ -345,9 +368,11 @@ function WorkpieceEditorView({
  * canonical workpiece opens here; anything else keeps its download affordance. */
 function WorkpieceEditorPane({
   artifactId,
+  editors,
   onDirtyChange,
 }: {
   readonly artifactId: string;
+  readonly editors?: WorkpieceEditors;
   readonly onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [state, setState] = useState<
@@ -452,7 +477,14 @@ function WorkpieceEditorPane({
       </div>
     );
   }
-  return <WorkpieceEditorView artifact={state.artifact} onDirtyChange={onDirtyChange} />;
+  return (
+    <WorkpieceEditorView
+      artifact={state.artifact}
+      tabId={artifactId}
+      editors={editors}
+      onDirtyChange={onDirtyChange}
+    />
+  );
 }
 
 /** The session side-pane Workspace surface: an internal tab strip over each open
@@ -476,6 +508,7 @@ export function WorkspacePane({
    * in-progress edit from an auto-open focus switch. */
   readonly onDirtyChange?: (id: string, dirty: boolean) => void;
 }) {
+  const closeGuard = useWorkpieceCloseGuard({ tabs, onClose, onSelect });
   if (tabs.length === 0) {
     return (
       <div className="grid h-full place-items-center p-6 text-center">
@@ -496,7 +529,7 @@ export function WorkspacePane({
         activeId={activeId}
         unseenIds={unseenIds}
         onSelect={onSelect}
-        onClose={onClose}
+        onClose={closeGuard.requestClose}
       />
       <div className="relative min-h-0 flex-1">
         {tabs.map((tab) => (
@@ -512,11 +545,13 @@ export function WorkspacePane({
           >
             <WorkpieceEditorPane
               artifactId={tab.id}
+              editors={closeGuard.editors}
               onDirtyChange={onDirtyChange ? (dirty) => onDirtyChange(tab.id, dirty) : undefined}
             />
           </div>
         ))}
       </div>
+      {closeGuard.dialog}
     </div>
   );
 }
