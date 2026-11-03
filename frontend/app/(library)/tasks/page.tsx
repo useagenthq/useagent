@@ -42,7 +42,7 @@ export default async function TasksPage({
           <div className="flex flex-col gap-0.5">
             <h1 className="text-title-2-medium text-text-primary">Tasks</h1>
             <p className="text-body-2-regular text-text-secondary">
-              Durable tasks grouped per project - agents create them mid-run and they outlive the session
+              Things to do for each project. Agents can add tasks here while they work.
             </p>
           </div>
         </div>

@@ -24,7 +24,7 @@ import {
 } from "./tasks-data";
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
-  todo: "Todo",
+  todo: "To Do",
   in_progress: "In progress",
   done: "Done",
   archived: "Archived",
@@ -226,9 +226,19 @@ export function TasksBoard({
       </div>
 
       {error ? (
-        <p className="text-body-regular text-text-error-primary">
-          Could not reach the task service. Retry in a moment.
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-body-regular text-text-error-primary">
+            Could not reach the task service. Retry in a moment.
+          </p>
+          <Button
+            variant="secondary"
+            size="xs"
+            disabled={loading}
+            onClick={() => void refetch(scoped)}
+          >
+            Try again
+          </Button>
+        </div>
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
