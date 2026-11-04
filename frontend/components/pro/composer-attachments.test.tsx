@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { RunUpload } from "@/components/chat/run-uploads";
-import { ComposerAttachmentRow, composerAttachment } from "./composer-attachments";
+import {
+  ComposerAttachmentRow,
+  ComposerUploadNotice,
+  composerAttachment,
+} from "./composer-attachments";
 import { ComposerAddButton } from "./composer-panel/composer-panel";
 
 function upload(over: Partial<RunUpload> = {}): RunUpload {
@@ -147,5 +151,39 @@ describe("composer add button", () => {
     );
     expect(open).toContain('aria-expanded="true"');
     expect(open).toContain("rotate-45");
+  });
+});
+
+describe("why a tile failed", () => {
+  test("a failed upload carries its reason to the tile's label and tooltip", () => {
+    const failed = upload({
+      status: "error",
+      name: "report.pdf",
+      kind: "document",
+      previewUrl: null,
+      error: "is over the 25 MB limit",
+    });
+    expect(composerAttachment(failed)).toMatchObject({
+      failed: true,
+      failedReason: "is over the 25 MB limit",
+    });
+    const html = row([failed]);
+    expect(html).toContain('aria-label="Upload failed: report.pdf is over the 25 MB limit"');
+    expect(html).toContain('title="report.pdf is over the 25 MB limit"');
+  });
+
+  test("the notice line is a live region, quiet and hidden when there is nothing to say", () => {
+    const empty = renderToStaticMarkup(<ComposerUploadNotice notice={null} />);
+    expect(empty).toContain('role="status"');
+    expect(empty).toContain("sr-only");
+    const error = renderToStaticMarkup(
+      <ComposerUploadNotice
+        notice={{ tone: "error", text: "Remove report.pdf to send. It is empty." }}
+        className="px-3"
+      />,
+    );
+    expect(error).toContain("text-text-error-primary");
+    expect(error).toContain("Remove report.pdf to send. It is empty.");
+    expect(error).not.toContain("sr-only");
   });
 });
