@@ -89,8 +89,14 @@ describe("stop reaches delegated threads", () => {
     const later = await followUp(parent, parent);
 
     expect(await stopRun({ orgId: ORG, actorId: null, runId: later })).toEqual({ status: "cancelling", replay: false, children: 0 });
+    // The delegated thread is never touched. The Stop frees its own thread, so
+    // the earlier turn queued there starts; it must finish on its own, not stopped.
     expect((await record(child)).status).toBe("queued");
-    expect((await record(parent)).status).toBe("queued");
+    const settled = await waitFor(async () => {
+      const row = await record(parent);
+      return row.status === "queued" || row.status === "running" ? null : row;
+    });
+    expect(settled.status).toBe("completed");
   });
 
   test("a stopped turn cannot delegate afterwards, but a batch it created still replays", async () => {
