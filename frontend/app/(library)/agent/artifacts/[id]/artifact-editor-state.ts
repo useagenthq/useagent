@@ -201,7 +201,8 @@ export interface WorkpieceEditorController {
   readonly setDocumentTheme: (theme: DocumentTheme) => void;
   readonly setSource: (value: string) => void;
   readonly onRichChange: (html: string) => void;
-  readonly save: () => Promise<void>;
+  /** Resolves true once the current edits are stored, false when they were not. */
+  readonly save: () => Promise<boolean>;
   readonly currentValue: () => string;
   /** Human-readable canonical serialization for the read-only Code view. */
   readonly canonicalSource: () => string;
@@ -341,8 +342,8 @@ export function useWorkpieceEditor(
     return currentValue();
   }, [currentValue, deck, documentTheme, isRich, isSheetGrid, isSlidesEditor, workbook]);
 
-  const save = useCallback(async () => {
-    if (!workpiece) return;
+  const save = useCallback(async (): Promise<boolean> => {
+    if (!workpiece) return false;
     setSaving(true);
     setError(null);
     const nextValue = currentValue();
@@ -352,7 +353,7 @@ export function useWorkpieceEditor(
     } catch (cause) {
       setSaving(false);
       setError(cause instanceof Error ? cause.message : "The workpiece state is invalid.");
-      return;
+      return false;
     }
     try {
       const response = await backendFetch(workpiece.state_url, {
@@ -386,7 +387,7 @@ export function useWorkpieceEditor(
           setSavedValue(latest);
         }
         setError("A newer edit was saved. The latest revision has been loaded.");
-        return;
+        return false;
       }
       if (!response.ok || !result) throw new Error(`save failed (${response.status})`);
       // Advance only the baseline: text typed while the PATCH was in flight stays
@@ -394,8 +395,10 @@ export function useWorkpieceEditor(
       setRevision(result.workpiece.state_revision);
       setSavedValue(nextValue);
       setSavedThemeKey(JSON.stringify(documentTheme));
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The workpiece could not be saved.");
+      return false;
     } finally {
       setSaving(false);
     }
