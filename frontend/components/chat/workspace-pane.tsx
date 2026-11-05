@@ -254,14 +254,17 @@ function WorkpieceEditorView({
   artifact,
   tabId,
   editors,
+  closing,
   onDirtyChange,
 }: {
   readonly artifact: ArtifactDescriptor;
   readonly tabId: string;
   readonly editors?: WorkpieceEditors;
+  /** The close question is open for this tab: autosave holds off until it is answered. */
+  readonly closing: boolean;
   readonly onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const editor = useWorkpieceEditor(artifact, { autosave: true });
+  const editor = useWorkpieceEditor(artifact, { autosave: !closing });
   const [viewMode, setViewMode] = useState<ViewMode>("rendered");
   const dirty = editor.dirty;
   // Report dirty by identity-stable ref so the effect fires only on real change
@@ -369,10 +372,12 @@ function WorkpieceEditorView({
 function WorkpieceEditorPane({
   artifactId,
   editors,
+  closing,
   onDirtyChange,
 }: {
   readonly artifactId: string;
   readonly editors?: WorkpieceEditors;
+  readonly closing: boolean;
   readonly onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [state, setState] = useState<
@@ -482,6 +487,7 @@ function WorkpieceEditorPane({
       artifact={state.artifact}
       tabId={artifactId}
       editors={editors}
+      closing={closing}
       onDirtyChange={onDirtyChange}
     />
   );
@@ -546,6 +552,7 @@ export function WorkspacePane({
             <WorkpieceEditorPane
               artifactId={tab.id}
               editors={closeGuard.editors}
+              closing={closeGuard.asking?.id === tab.id}
               onDirtyChange={onDirtyChange ? (dirty) => onDirtyChange(tab.id, dirty) : undefined}
             />
           </div>

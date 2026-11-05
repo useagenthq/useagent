@@ -54,9 +54,12 @@ export function useWorkpieceCloseGuard({
   const [saving, setSaving] = useState(false);
   // Set at once, so a second click before the re-render cannot start a second save.
   const busyRef = useRef(false);
-  // Read after an awaited save: the tab may have gone in the meantime.
+  // Read after an awaited save: the tab may have gone, or the question been
+  // cancelled, in the meantime.
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+  const askingRef = useRef(asking);
+  askingRef.current = asking;
 
   const requestClose = useCallback(
     (id: string) => {
@@ -72,11 +75,14 @@ export function useWorkpieceCloseGuard({
 
   const choose = async (choice: WorkpieceCloseChoice) => {
     const tab = asking;
-    if (!tab || busyRef.current) return;
+    if (!tab) return;
+    // Cancel always answers, even while a save runs: a save that never returns
+    // must not trap the page behind the dialog.
     if (choice === "cancel") {
       setAsking(null);
       return;
     }
+    if (busyRef.current) return;
     let closes = true;
     const editor = editorsRef.current.get(tab.id);
     // Autosave may have stored the edits while the dialog was open.
@@ -92,6 +98,7 @@ export function useWorkpieceCloseGuard({
         setSaving(false);
       }
     }
+    if (askingRef.current !== tab) return;
     setAsking(null);
     if (!tabsRef.current.some((open) => open.id === tab.id)) return;
     if (closes) onClose(tab.id);
@@ -111,36 +118,40 @@ export function useWorkpieceCloseGuard({
           description="Your latest edits are not saved yet. Closing without saving discards them."
         />
         <Modal.Footer className="justify-end">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="small"
-              disabled={saving}
-              onClick={() => void choose("cancel")}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="secondary"
-              size="small"
-              disabled={saving}
-              onClick={() => void choose("discard")}
-            >
-              Discard
-            </Button>
-            <Button
-              variant="primary"
-              size="small"
-              disabled={saving}
-              onClick={() => void choose("save")}
-            >
-              {saving ? "Saving..." : "Save"}
-            </Button>
-          </div>
+          <WorkpieceCloseActions saving={saving} onChoose={(choice) => void choose(choice)} />
         </Modal.Footer>
       </Modal.Content>
     </Modal.Root>
   );
 
   return { editors: editorsRef.current, requestClose, asking, saving, choose, dialog };
+}
+
+/** The dialog's answers, free of Radix so tests can render them without its portal.
+ * Cancel stays live while a save runs; Discard waits, since that save may still land. */
+export function WorkpieceCloseActions({
+  saving,
+  onChoose,
+}: {
+  readonly saving: boolean;
+  readonly onChoose: (choice: WorkpieceCloseChoice) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Button variant="secondary" size="small" onClick={() => onChoose("cancel")}>
+        Cancel
+      </Button>
+      <Button
+        variant="secondary"
+        size="small"
+        disabled={saving}
+        onClick={() => onChoose("discard")}
+      >
+        Discard
+      </Button>
+      <Button variant="primary" size="small" disabled={saving} onClick={() => onChoose("save")}>
+        {saving ? "Saving..." : "Save"}
+      </Button>
+    </div>
+  );
 }
