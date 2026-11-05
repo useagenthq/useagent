@@ -32,6 +32,51 @@ export interface SmtpMessage {
   html?: string;
 }
 
+/** The most UTF-8 bytes one encoded word carries: 45 bytes are 60 base64
+ *  characters, which with the "=?UTF-8?B?" and "?=" around them stay inside
+ *  the 75 characters RFC 2047 allows a word. */
+const ENCODED_WORD_BYTES = 45;
+/** Longer plain text is encoded too, so the folded words keep every header line
+ *  under the 998 characters a relay accepts. */
+const PLAIN_HEADER_MAX = 900;
+
+/**
+ * Header text as an SMTP relay may carry it. Printable ASCII goes as typed;
+ * anything else (an accented or emoji name, a control character, a line too
+ * long for one header line) becomes RFC 2047 encoded words of UTF-8, one per
+ * folded line, each cut on a character boundary. Without it a relay or client
+ * that is not told the header's charset shows the name garbled, and a long
+ * subject breaks the line limit.
+ */
+function encodeHeaderText(value: string): string {
+  if (/^[\x20-\x7e]*$/.test(value) && !value.includes("=?") && value.length <= PLAIN_HEADER_MAX) return value;
+  const words: string[] = [];
+  let word = "";
+  for (const char of value) {
+    if (word && Buffer.byteLength(word + char) > ENCODED_WORD_BYTES) {
+      words.push(word);
+      word = "";
+    }
+    word += char;
+  }
+  if (word) words.push(word);
+  return words.map((text) => `=?UTF-8?B?${Buffer.from(text).toString("base64")}?=`).join("\r\n ");
+}
+
+/** The From header: a display name quoted when it is plain ASCII, encoded otherwise. */
+function fromHeader(address: string, name: string | undefined): string {
+  const display = name?.replace(/["\r\n]/g, "");
+  if (!display) return address;
+  const encoded = encodeHeaderText(display);
+  return `${encoded === display ? `"${display}"` : encoded} <${address}>`;
+}
+
+/** A Message-ID under the sender's own domain, as RFC 5322 asks of every message. */
+function messageId(from: string): string {
+  const domain = from.slice(from.lastIndexOf("@") + 1);
+  return `<${crypto.randomUUID()}@${/^[a-z0-9.-]+$/i.test(domain) ? domain : "localhost"}>`;
+}
+
 export async function sendSmtp(cfg: SmtpConfig, msg: SmtpMessage): Promise<void> {
   let buffer = "";
   let onData: (() => void) | null = null;
@@ -178,12 +223,13 @@ export async function sendSmtp(cfg: SmtpConfig, msg: SmtpMessage): Promise<void>
 
     write("DATA");
     await expect(354);
-    const from = msg.fromName ? `"${msg.fromName.replace(/["\r\n]/g, "")}" <${msg.from}>` : msg.from;
     const boundary = `=_useagent_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
     const headers = [
-      `From: ${from}`,
+      `Date: ${new Date().toUTCString().replace(/GMT$/, "+0000")}`,
+      `Message-ID: ${messageId(msg.from)}`,
+      `From: ${fromHeader(msg.from, msg.fromName)}`,
       `To: ${msg.to.join(", ")}`,
-      `Subject: ${msg.subject}`,
+      `Subject: ${encodeHeaderText(msg.subject)}`,
       "MIME-Version: 1.0",
       msg.html ? `Content-Type: multipart/alternative; boundary="${boundary}"` : 'Content-Type: text/plain; charset="utf-8"',
     ].join("\r\n");
