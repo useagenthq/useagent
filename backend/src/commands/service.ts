@@ -47,7 +47,10 @@ function payloadBytes(value: string): number {
   return textEncoder.encode(value).byteLength;
 }
 
-function serializeRunCommandPayload(
+/** The bounded audit copy every accepted run command stores. Always valid JSON:
+ * an oversized request drops the duplicate intent prompt first, then keeps only
+ * identifiers plus the prompt's size and hash. */
+export function serializeRunCommandPayload(
   input: RunCommandInput,
   intent: RunCommandIntent,
   fingerprint: string,
