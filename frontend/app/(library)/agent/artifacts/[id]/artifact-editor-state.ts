@@ -389,8 +389,9 @@ export function useWorkpieceEditor(
         return;
       }
       if (!response.ok || !result) throw new Error(`save failed (${response.status})`);
+      // Advance only the baseline: text typed while the PATCH was in flight stays
+      // in the editor, keeps it dirty and goes out with the next save.
       setRevision(result.workpiece.state_revision);
-      setEditorValue(nextValue);
       setSavedValue(nextValue);
       setSavedThemeKey(JSON.stringify(documentTheme));
     } catch (cause) {
