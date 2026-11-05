@@ -53,6 +53,18 @@ export async function sendSmtp(cfg: SmtpConfig, msg: SmtpMessage): Promise<void>
   });
   expired.catch(() => {}); // observed through the race below, or not at all
   let socket: Awaited<ReturnType<typeof Bun.connect>> | null = null;
+
+  // Bun's socket.write hands the kernel only what fits in its send buffer and
+  // returns that many bytes; it keeps nothing back. The bytes it did not take
+  // wait here and go out on each `drain`, so a long message reaches the relay
+  // whole instead of losing its tail and the "." that ends it.
+  let unsent = new Uint8Array(0);
+  const flush = (): void => {
+    if (!socket || unsent.byteLength === 0) return;
+    const written = socket.write(unsent);
+    if (written > 0) unsent = unsent.subarray(written);
+  };
+
   const deadline = cfg.timeoutMs
     ? setTimeout(() => {
         const error = new Error("SMTP timeout");
@@ -72,6 +84,9 @@ export async function sendSmtp(cfg: SmtpConfig, msg: SmtpMessage): Promise<void>
           const wake = onData;
           onData = null;
           wake?.();
+        },
+        drain() {
+          flush();
         },
         error(_s, error) {
           fail(error instanceof Error ? error : new Error("SMTP socket error"));
@@ -120,8 +135,18 @@ export async function sendSmtp(cfg: SmtpConfig, msg: SmtpMessage): Promise<void>
     }
   };
 
+  const encoder = new TextEncoder();
   const write = (line: string): void => {
-    live.write(`${line}\r\n`);
+    const bytes = encoder.encode(`${line}\r\n`);
+    if (unsent.byteLength === 0) {
+      unsent = bytes;
+    } else {
+      const queued = new Uint8Array(unsent.byteLength + bytes.byteLength);
+      queued.set(unsent);
+      queued.set(bytes, unsent.byteLength);
+      unsent = queued;
+    }
+    flush();
   };
   const expect = async (family: number): Promise<void> => {
     const reply = await readReply();

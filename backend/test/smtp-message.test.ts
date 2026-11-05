@@ -66,4 +66,54 @@ describe("smtp message form", () => {
     expect(wire).toContain('Content-Type: text/plain; charset="utf-8"\r\n\r\nplain\r\n.\r\n');
     expect(wire).not.toContain("multipart");
   });
+
+  test("a message larger than the socket's send buffer reaches the relay whole", async () => {
+    // Far more than one socket write hands the kernel (Linux's default send
+    // buffer tops out at 4 MiB), in multibyte text so a partial write can end
+    // inside a character.
+    const line = "Grüße, 東京 🙂 the agent's long answer goes on\n";
+    const text = line.repeat(Math.ceil((16 * 1024 * 1024) / Buffer.byteLength(line)));
+    const chunks: Uint8Array[] = [];
+    let inData = false;
+    let tail = "";
+    const server = Bun.listen({
+      hostname: "127.0.0.1",
+      port: 0,
+      socket: {
+        open(s) {
+          s.write("220 test\r\n");
+        },
+        data(s, chunk) {
+          if (inData) {
+            chunks.push(new Uint8Array(chunk));
+            tail = (tail + chunk.toString("latin1")).slice(-5);
+            if (tail === "\r\n.\r\n") {
+              inData = false;
+              s.write("250 queued\r\n");
+            }
+            return;
+          }
+          const command = chunk.toString();
+          if (command.startsWith("DATA")) {
+            inData = true;
+            s.write("354 go\r\n");
+          } else if (command.startsWith("QUIT")) s.write("221 bye\r\n");
+          else if (command.startsWith("EHLO")) s.write("250-test\r\n250 OK\r\n");
+          else s.write("250 OK\r\n");
+        },
+      },
+    });
+    try {
+      await sendSmtp(
+        { host: "127.0.0.1", port: server.port, secure: false, timeoutMs: 10_000 },
+        { from: "noreply@example.test", to: ["new@example.test"], subject: "hi", text },
+      );
+    } finally {
+      server.stop(true);
+    }
+    const wire = Buffer.concat(chunks).toString("utf8");
+    const body = `${text.replace(/\n/g, "\r\n")}\r\n.\r\n`;
+    expect(wire.endsWith(body)).toBe(true);
+    expect(wire.slice(0, -body.length)).toEndWith('Content-Type: text/plain; charset="utf-8"\r\n\r\n');
+  });
 });
