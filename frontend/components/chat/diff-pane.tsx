@@ -65,7 +65,11 @@ export function DiffPane({ turns }: { turns: readonly DiffTurn[] }) {
   const prefill = useComposerPrefill();
   const threadId = turns[0]?.run?.thread_id;
   const review = useMemo(
-    () => (prefill && threadId ? { key: threadId, onSend: prefill } : null),
+    // Appended, so sending the review never wipes a half-written reply.
+    () =>
+      prefill && threadId
+        ? { key: threadId, onSend: (message: string) => prefill(message, { append: true }) }
+        : null,
     [prefill, threadId],
   );
 

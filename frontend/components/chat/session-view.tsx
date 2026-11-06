@@ -46,7 +46,7 @@ import {
 import { useAgentsRailDeepLink } from "@/components/chat/use-agents-rail-deep-link";
 import { terminalRunIdForThread } from "@/components/chat/terminal-run-state";
 import type { TimelineArtifact } from "@/components/chat/timeline";
-import { ComposerPrefillProvider } from "@/components/chat/composer-prefill-context";
+import { type ComposerPrefill, ComposerPrefillProvider, type PrefillComposer } from "@/components/chat/composer-prefill-context";
 import { ConversationAnnouncer } from "@/components/chat/conversation-announcer";
 import { SessionLatestRunProvider } from "@/components/chat/session-run-context";
 import { SessionThreadBreadcrumb } from "@/components/chat/session-thread-breadcrumb";
@@ -530,9 +530,9 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   // Lets a rail surface (e.g. a conflicted workpiece proposal) seed the reply
   // composer. The nonce re-applies a repeat of the same text; SessionView owns it
   // and hands the setter to the rail via context.
-  const [composerPrefill, setComposerPrefill] = useState<{ text: string; nonce: number } | null>(null);
-  const prefillComposer = useCallback((text: string) => {
-    setComposerPrefill((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }));
+  const [composerPrefill, setComposerPrefill] = useState<ComposerPrefill | null>(null);
+  const prefillComposer = useCallback<PrefillComposer>((text, options) => {
+    setComposerPrefill((prev) => ({ text, append: options?.append, nonce: (prev?.nonce ?? 0) + 1 }));
     // Uncover the composer behind an OPEN sheet; closing a closed one collapses the wide layout.
     if (sheetDialogOpen) closeSheet();
   }, [sheetDialogOpen, closeSheet]);

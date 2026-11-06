@@ -38,6 +38,7 @@ import { ThreadErrorBanner, type ThreadErrorResend } from "@/components/session-
 import { ComposerAttachmentRow, ComposerUploadNotice } from "@/components/pro/composer-attachments";
 import { ComposerAddButton } from "@/components/pro/composer-panel/composer-panel";
 import { composerPlaceholder, getComposerAction } from "@/components/chat/composer-model";
+import type { ComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { cx as cn } from "@/utils/cx";
 type Variant = "hero" | "compact";
@@ -160,8 +161,9 @@ export type ComposerProps = {
   /** Externally seed the composer with a ready-to-send message and focus it. The
    *  `nonce` makes each request re-apply even when the text repeats (e.g. a second
    *  "Ask agent to redo"); the text replaces the current draft so the user can send
-   *  or edit it. Absent leaves the composer fully user-driven. */
-  prefill?: { readonly text: string; readonly nonce: number } | null;
+   *  or edit it, or with `append` goes under a non-empty draft. Absent leaves the
+   *  composer fully user-driven. */
+  prefill?: ComposerPrefill | null;
   /** The status tray under the card (location, branch, project, engine, spend, context). Compact only. */
   tab?: ReactNode;
   /** The permission chip for the footer's second column. Compact only. */
@@ -232,20 +234,22 @@ export function Composer({
     else window.localStorage.removeItem(key);
   }, [draftKey, value]);
   // External prefill (e.g. "Ask agent to redo" on a conflicted proposal): apply
-  // once per nonce so a repeat request still lands, replacing the draft and moving
-  // focus + caret to the end so the message is one keystroke from sending.
+  // once per nonce so a repeat request still lands, replacing the draft (or adding
+  // under it, for an `append` request) and moving focus + caret to the end so the
+  // message is one keystroke from sending.
   const rootRef = useRef<HTMLDivElement>(null);
   const appliedPrefillNonce = useRef(0);
   useEffect(() => {
     if (!prefill || prefill.nonce === appliedPrefillNonce.current) return;
     appliedPrefillNonce.current = prefill.nonce;
-    setValue(prefill.text);
+    const next = prefill.append && value.trim() ? `${value.trimEnd()}\n\n${prefill.text}` : prefill.text;
+    setValue(next);
     const textarea = rootRef.current?.querySelector("textarea");
     if (textarea) {
       textarea.focus();
-      textarea.setSelectionRange(prefill.text.length, prefill.text.length);
+      textarea.setSelectionRange(next.length, next.length);
     }
-  }, [prefill]);
+  }, [prefill, value]);
   // Single fixed engine here; there is no setter (this composer serves replies -
   // a thread is pinned to one engine - and the no-sandbox Chat surface). Engine
   // SELECTION for a new task lives in NewTaskComposer. Kept as state so `engineProp`
