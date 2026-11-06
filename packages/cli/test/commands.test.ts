@@ -140,4 +140,76 @@ describe("fanCommand", () => {
       error: "verifier unavailable",
     });
   });
+  test("with --qc a verifier run that fails or times out is a verification error, not a pass", async () => {
+    const io = captureIO(tasksFile);
+    const client = fakeClient({
+      verify: async (runId) => ({
+        verdict: runId === "run_0" ? "pass" : "unknown",
+        evidence: runId === "run_0" ? "VERDICT: PASS" : "",
+        runId: `${runId}:qc`,
+        status: runId === "run_0" ? "failed" : "timeout",
+        url: `https://fleet.test/session/${runId}:qc`,
+      }),
+    });
+    const code = await fanCommand(client, { file: "tasks.jsonl", parallel: 2, qc: "verify" }, io);
+    expect(code).toBe(1);
+    const rows = io.stdout.join("\n").trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(rows[0]).toMatchObject({
+      status: "verification_error",
+      answer: "done",
+      verdict: "unknown",
+      error: "verifier run run_0:qc did not complete (failed)",
+    });
+    expect(rows[1]).toMatchObject({
+      status: "verification_error",
+      verdict: "unknown",
+      error: "verifier run run_1:qc did not complete (timeout)",
+    });
+  });
+
+  test("with --qc a verifier that gives no verdict fails the batch", async () => {
+    const io = captureIO(tasksFile);
+    const client = fakeClient({
+      verify: async (runId) => ({
+        verdict: "unknown",
+        evidence: "Looks fine to me.",
+        runId: `${runId}:qc`,
+        status: "completed",
+        url: `https://fleet.test/session/${runId}:qc`,
+      }),
+    });
+    const code = await fanCommand(client, { file: "tasks.jsonl", parallel: 2, qc: "verify" }, io);
+    expect(code).toBe(1);
+    const rows = io.stdout.join("\n").trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(rows.map((row) => [row.status, row.verdict])).toEqual([
+      ["completed", "unknown"],
+      ["completed", "unknown"],
+    ]);
+    expect(io.stderr.join("\n")).toContain("verdicts: 2 unknown");
+  });
+
+  test("with --qc only completed work is sent to the verifier", async () => {
+    const io = captureIO(tasksFile);
+    const verified: string[] = [];
+    const client = fakeClient({
+      awaitSettled: async (runId) => ({
+        runId,
+        status: runId === "run_0" ? "completed" : "timeout",
+        run: null,
+        answer: runId === "run_0" ? "done" : "",
+        url: `https://fleet.test/session/${runId}`,
+      }),
+      verify: async (runId) => {
+        verified.push(runId);
+        return { verdict: "pass", evidence: "VERDICT: PASS", runId: `${runId}:qc`, status: "completed", url: `https://fleet.test/session/${runId}:qc` };
+      },
+    });
+    const code = await fanCommand(client, { file: "tasks.jsonl", parallel: 2, qc: "verify" }, io);
+    expect(code).toBe(1);
+    expect(verified).toEqual(["run_0"]);
+    const rows = io.stdout.join("\n").trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(rows[0]).toMatchObject({ status: "completed", verdict: "pass" });
+    expect(rows[1]).toMatchObject({ status: "timeout" });
+    expect(rows[1].verdict).toBeUndefined();
+  });
 });

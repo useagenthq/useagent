@@ -145,6 +145,8 @@ export function codexLoginConfigToml(model: string, toolGateway?: { readonly url
     // The agent already runs inside its container; Codex's inner sandbox is redundant there.
     'sandbox_mode = "danger-full-access"',
     'approval_policy = "never"',
+    // Native goals let Codex start turns on its own, outside admission and spend checks.
+    "features.goals = false",
     "",
     ...(toolGateway
       ? [

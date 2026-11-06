@@ -56,6 +56,10 @@ const LANGUAGE_LABEL: Record<string, string> = {
   yaml: "YAML",
   sql: "SQL",
   plaintext: "Text",
+  "c++": "C++",
+  "c#": "C#",
+  "objective-c": "Objective-C",
+  "f#": "F#",
 };
 
 function languageLabel(language: string): string {

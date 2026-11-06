@@ -70,3 +70,10 @@ reformat, rename or add noise get the `spam` label and do not count.
 UseAgent is AGPL-3.0. By opening a pull request you agree to the
 [Contributor License Agreement](CLA.md): you keep ownership of your work and grant the
 maintainers the rights to ship it, including under commercial terms.
+
+On your first pull request a bot asks you to sign the CLA: reply with the one line it
+gives you. It records your signature on the `cla-signatures` branch of this repository,
+so later pull requests pass without asking again. The bot matches commits to people by
+their GitHub account, so commit with an email address that is on your GitHub profile.
+It reads only the first 30 comments on a pull request; on a longer thread, ask a maintainer
+to record your signature.

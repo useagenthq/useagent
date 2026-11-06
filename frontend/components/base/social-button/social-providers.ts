@@ -3,7 +3,8 @@
  *
  * Path data is copied verbatim from two upstream sets, never redrawn:
  *   - Simple Icons (https://simple-icons.org), CC0 1.0 — the 24×24 glyphs.
- *   - Bootstrap Icons (https://icons.getbootstrap.com), MIT — the 16×16
+ *   - Bootstrap Icons (https://icons.getbootstrap.com), MIT License,
+ *     Copyright (c) 2019-2024 The Bootstrap Authors — the 16×16
  *     glyphs, used only for LinkedIn, Slack, Microsoft and Amazon, which
  *     Simple Icons removed at the trademark holders' request.
  * Each entry carries its own `viewBox` because the two sets are drawn on

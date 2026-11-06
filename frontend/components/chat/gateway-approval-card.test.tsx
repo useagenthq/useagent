@@ -30,14 +30,14 @@ describe("GatewayApprovalCard", () => {
   test("pending renders the tool name, argument summary, and Approve/Deny actions", () => {
     const html = render(approval());
     expect(html).toContain('data-testid="gateway-approval-card"');
+    expect(html).toContain("Tool approval:");
     expect(html).toContain("deploy_service");
-    expect(html).toContain("Allow deploy_service?");
     // One-level argument summary: key + value (long values truncated).
     expect(html).toContain("service");
     expect(html).toContain("billing");
     expect(html).toContain(`${"x".repeat(79)}…`);
     expect(html).not.toContain("x".repeat(81));
-    // The composed vendored approval card provides the actions.
+    // The shared shell renders the Approve/Deny footer.
     expect(html).toContain(">Approve<");
     expect(html).toContain(">Deny<");
     expect(html).toContain(">Pending<");

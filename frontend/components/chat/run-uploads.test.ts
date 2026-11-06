@@ -2,8 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
   attachmentIntake,
   attachmentKind,
+  MAX_UPLOAD_BYTES,
+  preflightFailure,
   releasePreview,
   type RunUpload,
+  uploadFailureReason,
+  uploadNotice,
   withoutSent,
 } from "./run-uploads";
 
@@ -142,5 +146,86 @@ describe("thumbnail release", () => {
       URL.revokeObjectURL = original;
     }
     expect(revoked).toEqual(["blob:local/one"]);
+  });
+});
+
+describe("why an upload failed", () => {
+  test("the backend's refusals become words that follow the file name", () => {
+    expect(uploadFailureReason(413, "file exceeds 25 MB limit")).toBe("is over the 25 MB limit");
+    expect(uploadFailureReason(400, "file is empty")).toBe("is empty");
+    expect(uploadFailureReason(400, "invalid file name")).toBe(
+      "has a name that cannot be uploaded",
+    );
+    expect(uploadFailureReason(422, "upload_scan_failed")).toBe("did not pass the upload scan");
+    expect(uploadFailureReason(401, "authenticated user required")).toBe(
+      "did not upload because you are signed out",
+    );
+  });
+
+  test("a status without a known message still says what it can", () => {
+    // A proxy in front of the backend answers 413 with its own page.
+    expect(uploadFailureReason(413)).toBe("is over the 25 MB limit");
+    expect(uploadFailureReason(422)).toBe("did not pass the upload scan");
+    expect(uploadFailureReason(500, "internal error")).toBe("did not upload");
+    expect(uploadFailureReason(null)).toBe(
+      "did not upload because the server could not be reached",
+    );
+  });
+
+  test("a file over 25 MB or an empty one fails before it is sent", () => {
+    expect(preflightFailure({ size: 30 * 1024 * 1024 })).toBe("is over the 25 MB limit");
+    expect(preflightFailure({ size: 0 })).toBe("is empty");
+    expect(preflightFailure({ size: MAX_UPLOAD_BYTES })).toBeNull();
+    expect(preflightFailure({ size: MAX_UPLOAD_BYTES + 1 })).toBe("is over the 25 MB limit");
+    expect(preflightFailure({ size: 1 })).toBeNull();
+  });
+});
+
+describe("the composer's upload notice", () => {
+  const ready = { name: "a.png", status: "ready" as const };
+  test("nothing to say when every file landed and none was left out", () => {
+    expect(uploadNotice([ready], 0)).toBeNull();
+    expect(uploadNotice([{ name: "b.png", status: "uploading" }], 0)).toBeNull();
+  });
+
+  test("files past the 10-file cap are counted", () => {
+    expect(uploadNotice([ready], 2)).toEqual({
+      tone: "info",
+      text: "2 files were left out. A message can carry up to 10 files.",
+    });
+    expect(uploadNotice([], 1)?.text).toBe(
+      "1 file was left out. A message can carry up to 10 files.",
+    );
+  });
+
+  test("a failed file says why, and that removing it frees Send", () => {
+    const failed = {
+      name: "report.pdf",
+      status: "error" as const,
+      error: "is over the 25 MB limit",
+    };
+    expect(uploadNotice([ready, failed], 0)).toEqual({
+      tone: "error",
+      text: "Remove report.pdf to send. It is over the 25 MB limit.",
+    });
+    // It blocks Send, so it outranks the left-out count.
+    expect(uploadNotice([failed], 3)?.tone).toBe("error");
+    // A record from before reasons were kept still reads as a sentence.
+    expect(uploadNotice([{ name: "x.zip", status: "error" }], 0)?.text).toBe(
+      "Remove x.zip to send. It did not upload.",
+    );
+  });
+
+  test("several failed files are counted, with the first one's reason", () => {
+    const notice = uploadNotice(
+      [
+        { name: "big.mov", status: "error", error: "is over the 25 MB limit" },
+        { name: "empty.txt", status: "error", error: "is empty" },
+      ],
+      0,
+    );
+    expect(notice?.text).toBe(
+      "Remove the 2 failed files to send. big.mov is over the 25 MB limit.",
+    );
   });
 });

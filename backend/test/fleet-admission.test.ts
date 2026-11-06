@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { db } from "../src/db/client";
+import { fleetCapacityConfig } from "../src/env";
 import { acceptRunCommand } from "../src/commands";
 import { acceptRunCancel } from "../src/commands/cancel";
 import { admitClaimedRun } from "../src/fleet/admission";
@@ -45,6 +46,7 @@ import { createOrgSession, json, uid, waitFor } from "./helpers";
 // The wide limits the general suite runs under (preload.ts) — restored after each
 // test that narrows them.
 const PRELOAD_FLEET: Record<string, string | undefined> = {
+  FLEET_MAX_DISPATCH_CONCURRENCY: process.env.FLEET_MAX_DISPATCH_CONCURRENCY,
   FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES: process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES,
   FLEET_ORG_MAX_ACTIVE_SANDBOXES: process.env.FLEET_ORG_MAX_ACTIVE_SANDBOXES,
   FLEET_ORG_MAX_QUEUE_DEPTH: process.env.FLEET_ORG_MAX_QUEUE_DEPTH,
@@ -152,6 +154,23 @@ afterEach(async () => {
 });
 
 describe("durable admission — capacity enforcement", () => {
+  test.each(["0", "0.5"])("reconciliation resolves with dispatch concurrency %s and a queued task", async (concurrency) => {
+    process.env.FLEET_MAX_DISPATCH_CONCURRENCY = concurrency;
+    process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES = "0";
+    const orgId = track(`org-${uid("dispatch-concurrency")}`);
+    const runId = await accept(orgId);
+    expect((await getAdmission(runId))?.state).toBe("queued");
+
+    // Check the bound before reconciliation so a regression fails without hanging the suite.
+    expect(fleetCapacityConfig().maxDispatchConcurrency).toBe(1);
+    expect(fleetCapacityConfig().globalMaxActiveSandboxes).toBe(0);
+    const summary = await reconcileFleetOnce();
+
+    expect(summary.pumped).toBe(0);
+    expect((await getAdmission(runId))?.queueReason).toBe("global_limit");
+    expect((await getRun(runId))?.status).toBe("queued");
+  });
+
   test("capacity queue ordering uses the matching partial keyset index", async () => {
     const plan = await db.transaction(async (tx) => {
       await tx.execute(sql`set local enable_seqscan = off`);

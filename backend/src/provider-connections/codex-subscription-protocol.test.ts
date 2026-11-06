@@ -686,14 +686,33 @@ describe("CodexSubscriptionProtocol V2 methods", () => {
     }))).rejects.toThrow("background terminal id is required");
   });
 
-  test("keeps refusing fork, revert, turn listing and feedback upload", async () => {
+  test("keeps refusing fork, revert, turn listing, goals and feedback upload, answering them itself", async () => {
     const protocol = makeProtocol({ providerThreadId: "provider-thread-1" });
     await confirmResume(protocol, 1, "provider-thread-1");
-    for (const method of ["thread/fork", "thread/revert", "thread/turns/list", "feedback/upload"]) {
-      await expect(protocol.acceptClientFrame(JSON.stringify({
-        id: 9, method, params: { threadId: "provider-thread-1" },
-      }))).rejects.toThrow("unavailable through the run relay");
+    for (const method of [
+      "thread/fork", "thread/revert", "thread/turns/list", "feedback/upload",
+      "thread/goal/get", "thread/goal/set", "thread/goal/clear", "thread/inject_items",
+    ]) {
+      const frame = JSON.stringify({ id: 9, method, params: { threadId: "provider-thread-1" } });
+      await expect(protocol.acceptClientFrame(frame)).rejects.toThrow("unavailable through the run relay");
+      // The runtime gets a refusal it can handle; the session (and its app-server) stays up.
+      expect(JSON.parse((await protocol.answerLocally(frame))!)).toEqual({
+        id: 9,
+        error: { code: -32601, message: `${method} is unavailable through the run relay` },
+      });
     }
+  });
+
+  test("unarchives only the bound thread", async () => {
+    const protocol = makeProtocol({ providerThreadId: "provider-thread-1" });
+    const unarchive = (id: number, threadId: string) =>
+      JSON.stringify({ id, method: "thread/unarchive", params: { threadId } });
+    expect(await protocol.answerLocally(unarchive(1, "provider-thread-1"))).toBeNull();
+    expect(await protocol.acceptClientFrame(unarchive(1, "provider-thread-1"))).toBe(unarchive(1, "provider-thread-1"));
+    await expect(protocol.acceptClientFrame(unarchive(2, "provider-thread-foreign")))
+      .rejects.toThrow("unarchive thread binding mismatch");
+    await expect(makeProtocol().acceptClientFrame(unarchive(3, "provider-thread-1")))
+      .rejects.toThrow("unarchive thread binding mismatch");
   });
 });
 

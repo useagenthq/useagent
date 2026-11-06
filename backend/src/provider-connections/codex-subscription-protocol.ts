@@ -5,6 +5,7 @@ const CLIENT_METHODS = new Set([
   "initialized",
   "thread/start",
   "thread/resume",
+  "thread/unarchive",
   "config/mcpServer/reload",
   "mcpServerStatus/list",
   "turn/start",
@@ -15,6 +16,22 @@ const CLIENT_METHODS = new Set([
   "thread/compact/start",
   "thread/backgroundTerminals/list",
   "thread/backgroundTerminals/terminate",
+]);
+
+/** Thread methods the runtime calls that the relay does not carry: forks,
+ *  reverts and turn listing, native goals (Codex would start goal turns on its
+ *  own, outside admission), context injection and feedback upload. Each is
+ *  refused with an error the runtime handles; any other unknown method still
+ *  ends the session. */
+const REFUSED_METHODS = new Set([
+  "thread/fork",
+  "thread/revert",
+  "thread/turns/list",
+  "thread/goal/get",
+  "thread/goal/set",
+  "thread/goal/clear",
+  "thread/inject_items",
+  "feedback/upload",
 ]);
 
 // Sandbox-originated (client) frames stay tightly bounded; frames from OUR
@@ -165,6 +182,12 @@ export class CodexSubscriptionProtocol {
    * told it unsubscribed and the app-server keeps it. */
   async answerLocally(raw: string): Promise<string | null> {
     const frame = parseCodexSubscriptionFrame(raw, "client");
+    if (frame.method !== undefined && frame.id !== undefined && REFUSED_METHODS.has(frame.method)) {
+      return JSON.stringify({
+        id: frame.id,
+        error: { code: -32601, message: `${frame.method} is unavailable through the run relay` },
+      });
+    }
     if (frame.method !== "thread/unsubscribe") return null;
     if (frame.id === undefined) throw new Error("Codex unsubscribe request id is required");
     await this.#assertKnownThread(frame.params?.threadId);
@@ -279,6 +302,14 @@ export class CodexSubscriptionProtocol {
         const expected = await this.#dependencies.loadThreadBinding();
         if (!expected || values.threadId !== expected) {
           throw new Error("Codex resume thread binding mismatch");
+        }
+        return;
+      }
+      // A resume of an archived session unarchives the bound thread first.
+      case "thread/unarchive": {
+        const expected = await this.#dependencies.loadThreadBinding();
+        if (!expected || values.threadId !== expected) {
+          throw new Error("Codex unarchive thread binding mismatch");
         }
         return;
       }

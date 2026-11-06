@@ -10,7 +10,7 @@ import {
 } from "./permission-mode-chip";
 
 const BYPASS_ONLY =
-  "This engine runs its tools itself and cannot ask first, so it works in Bypass all only.";
+  "This agent cannot stop to ask you first, so it always works without asking.";
 
 describe("permission mode faces", () => {
   test("every stored mode wears one of the panel's four faces", () => {
@@ -33,7 +33,7 @@ describe("permission mode faces", () => {
     expect(rows.map((row) => row.title)).toEqual([
       "File edits go through without asking; commands still ask.",
       "Asks before running a command or changing a file.",
-      "Reads and answers; refuses every command and file change in the sandbox.",
+      "Reads and answers; never runs commands or changes files.",
       "Runs commands and changes files without asking.",
     ]);
     // Codex's workspace-write policy also runs workspace-bound commands unasked; Auto says so there.

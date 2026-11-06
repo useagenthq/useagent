@@ -4,7 +4,7 @@ import { RiAddLine, RiDeleteBinLine, RiEditLine, RiHistoryLine, RiPlayLine } fro
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { cadenceLabel } from "@/app/agent/schedules/schedules-data";
+import { cadenceLabel, nextRunLabelAt } from "@/app/agent/schedules/schedules-data";
 import { Badge } from "@/components/base/badges/badge";
 import { Button } from "@/components/base/buttons/button";
 import * as Modal from "@/components/base/modal/modal";
@@ -39,6 +39,9 @@ function RoutineRow({
   /** The run a test run started, until this row goes away. */
   const [started, setStarted] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /** When this routine fires next, as the server reports it; a paused routine reports no next run. */
+  const nextRun = nextRunLabelAt(routine.nextDueAt, routine.timezone);
 
   const guard = async (kind: "toggle" | "run" | "delete", work: () => Promise<ApiRoutine | undefined>) => {
     if (busy) return;
@@ -79,8 +82,9 @@ function RoutineRow({
           </p>
           <p className="text-caption-1-regular text-text-tertiary">
             {cadenceLabel(routine.cron)}
-            {routine.timezone ? ` (${routine.timezone})` : ""}
+            {` (${routine.timezone})`}
             {routine.lastFiredAt ? ` · last run ${relativeTime(routine.lastFiredAt, now) || "just now"}` : " · never run"}
+            {nextRun ? ` · next run ${nextRun}` : ""}
           </p>
         </div>
         <Switch
@@ -213,7 +217,7 @@ export function RoutinesSection({ bot }: { bot: ApiBot }) {
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <h2 className="text-body-2-medium text-text-primary">Routines</h2>
-        {!adding && (
+        {!adding && bot.editable !== false && (
           <Button variant="ghost" size="small" iconOnly leadingIcon={RiAddLine} aria-label="Add routine" onClick={() => setAdding(true)} />
         )}
       </div>
@@ -230,7 +234,11 @@ export function RoutinesSection({ bot }: { bot: ApiBot }) {
       {routines === null && !error ? (
         <p className="text-caption-1-regular text-text-tertiary">Loading</p>
       ) : routines && routines.length === 0 && !adding ? (
-        <p className="text-body-2-regular text-text-tertiary">No routines yet. Add one and {bot.name} runs it on schedule into this thread.</p>
+        <p className="text-body-2-regular text-text-tertiary">
+          {bot.editable === false
+            ? "No routines yet."
+            : `No routines yet. Add one and ${bot.name} runs it on schedule into this thread.`}
+        </p>
       ) : (
         routines?.map((routine) => <RoutineRow key={routine.id} bot={bot} routine={routine} onChange={changed} />)
       )}

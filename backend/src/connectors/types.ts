@@ -1,5 +1,8 @@
-// Ported from a peer tool (Apache-2.0): src/kiro_crew/messaging/transport.py
-// Ported from a peer tool (Apache-2.0): src/kiro_crew/messaging/renderer.py
+// Ported from KiroCrew (https://github.com/kirodotdev/KiroCrew), Apache-2.0:
+//   src/kiro_crew/messaging/transport.py
+//   src/kiro_crew/messaging/renderer.py
+// Copyright Amazon.com, Inc. or its affiliates. Changed: rewritten in
+// TypeScript for this codebase. License and NOTICE: third_party/licenses/kirocrew/.
 //
 // The channel-neutral connector contracts: a `Transport` (inbound/outbound for a
 // messaging surface), a `Renderer` (maps abstract output events onto that
@@ -83,7 +86,7 @@ export interface InboundMessage {
 
 /** Channel-neutral inbound/outbound contract for a messaging channel. A new
  *  channel = implement this interface + an inbound adapter, with zero change to
- *  the shared run-feed core (connectors/runFeed.ts). Mirrors a peer tool's
+ *  the shared run-feed core (connectors/runFeed.ts). Mirrors KiroCrew's
  *  `MessagingTransport` ABC. */
 export interface Transport {
   readonly channelType: string;
@@ -154,7 +157,7 @@ export interface OutputEvent {
 }
 
 /** Maps abstract `OutputEvent`s onto a transport's native surface. Mirrors
- *  a peer tool's `Renderer` ABC (approval `on_prompt_choice` omitted). Handlers may
+ *  KiroCrew's `Renderer` ABC (approval `on_prompt_choice` omitted). Handlers may
  *  be sync or async. */
 export interface Renderer {
   readonly channelType: string;

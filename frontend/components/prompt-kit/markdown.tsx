@@ -48,7 +48,8 @@ function parseMarkdownIntoBlocks(markdown: string): string[] {
 
 function extractLanguage(className?: string): string {
   if (!className) return "plaintext";
-  const match = className.match(/language-(\w+)/);
+  // The whole class token, so c++, c#, objective-c and f# keep their symbols.
+  const match = className.match(/language-(\S+)/);
   return match ? match[1] : "plaintext";
 }
 
@@ -420,6 +421,11 @@ export function artifactWorkspaceTarget(
 // merges with caller classes winning). Historically this lived only in the
 // conversation surface, which left every other consumer with bulletless lists.
 const FLOW_CLASS = cx(
+  // Long unbroken words (URLs, paths, hashes) wrap inside the column instead of
+  // scrolling the whole conversation sideways. Tables reset it so cells keep
+  // their natural width and scroll in their own wrapper; code blocks are <pre>
+  // inside their own overflow box and need nothing.
+  "[overflow-wrap:anywhere] [&_table]:[overflow-wrap:normal]",
   // First/last block flush to the container's edges; even rhythm elsewhere.
   "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
   "[&_p]:my-2",

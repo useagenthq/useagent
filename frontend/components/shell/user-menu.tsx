@@ -4,6 +4,7 @@ import {
   RiApps2Line,
   RiBuilding4Line,
   RiCheckLine,
+  RiCompass3Line,
   RiFlagLine,
   RiLoginBoxLine,
   RiLogoutBoxRLine,
@@ -31,6 +32,7 @@ import {
   useSession,
 } from "@/lib/auth";
 import { firstRunApplies } from "@/lib/first-run";
+import { startTour } from "@/lib/product-tour";
 
 /**
  * Account affordance in the sidebar clusters: an avatar that opens a BoardUI
@@ -87,6 +89,7 @@ export function UserMenu(props: UserMenuProps = {}) {
       workspaces={profile.signedIn ? (workspaces ?? []) : undefined}
       workspacesLoaded={workspaces !== undefined}
       setupPending={setupPending}
+      onStartTour={profile.signedIn ? () => startTour(session?.user.id ?? null) : undefined}
       workspaceAccessError={workspaceSwitchError}
       onSelectWorkspace={async (organizationId) => {
         if (workspaces?.some((workspace) => workspace.id === organizationId && workspace.active)) {
@@ -161,6 +164,7 @@ function UserMenuView({
   workspaces,
   workspacesLoaded = true,
   setupPending = false,
+  onStartTour,
   workspaceAccessError,
   onSelectWorkspace,
   onSignOut = signOut,
@@ -170,6 +174,8 @@ function UserMenuView({
   workspacesLoaded?: boolean;
   /** The active workspace is still on its first run: offer the page the landing redirect may have stood aside from. */
   setupPending?: boolean;
+  /** Restarts the product tour on the current page; absent when signed out. */
+  onStartTour?: () => void;
   workspaceAccessError?: string | null;
   onSelectWorkspace?: (organization: string) => Promise<void>;
   onSignOut?: () => Promise<void>;
@@ -273,6 +279,16 @@ function UserMenuView({
           <RiSettings3Line className="size-5 shrink-0 text-foreground-icon-secondary" aria-hidden />
           <span className="text-body-2-medium">Settings</span>
         </DropdownMenuItem>
+        {onStartTour ? (
+          <DropdownMenuItem
+            id="tour"
+            textValue="Take the tour"
+            onAction={onStartTour}
+          >
+            <RiCompass3Line className="size-5 shrink-0 text-foreground-icon-secondary" aria-hidden />
+            <span className="text-body-2-medium">Take the tour</span>
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem id="apps" textValue="Apps" onAction={() => go("/apps")}>
           <RiApps2Line className="size-5 shrink-0 text-foreground-icon-secondary" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-body-2-medium">Apps</span>

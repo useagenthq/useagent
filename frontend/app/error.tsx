@@ -4,18 +4,22 @@ import { RiErrorWarningLine, RiRefreshLine } from "@remixicon/react";
 import { Button } from "@/components/base/buttons/button";
 
 /**
- * Root error boundary: what happened, and a Retry that re-renders the failed
- * segment. The root layout and its providers survive, so theme tokens apply.
+ * Root error boundary: what happened, and a Retry that asks the server for the
+ * failed segment again and re-renders it. `reset` alone re-renders from what
+ * the client already holds, so a server render that failed (a thread that
+ * could not load) failed again on every click; `retry` refreshes first.
+ * The root layout and its providers survive, so theme tokens apply.
  * It deliberately renders no shell: this file is a client entry of every
  * route, public pages included, so anything it imports ships on first load
  * everywhere (the shell once cost the sign-in page the sidebar, two component
  * libraries and the command palette).
  */
 export default function ErrorPage({
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
+  retry: () => void;
 }) {
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background-full p-6">
@@ -33,7 +37,7 @@ export default function ErrorPage({
             size="xs"
             className="rounded-full"
             leadingIcon={RiRefreshLine}
-            onClick={reset}
+            onClick={retry}
           >
             Retry
           </Button>

@@ -55,6 +55,24 @@ interface PageReport {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Wait for the page's content to load, not for a guessed number of
+ *  milliseconds: block until the network has been idle for a beat (capped -
+ *  the thread page streams, so networkidle may never fully arrive) and two
+ *  animation frames have fired, so React has rendered and painted. Fixed
+ *  sleeps here used to be either wasted wall time or, on a slow runner, too
+ *  short; waiting on the page's own network + render is correct in both. */
+async function waitForSettled(page: Page, timeoutMs = 10_000): Promise<void> {
+  await page.waitForLoadState("networkidle", { timeout: timeoutMs }).catch(() => {});
+  await page
+    .evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    )
+    .catch(() => {});
+}
+
 function provenance(): string {
   const sha = (() => {
     try {
@@ -200,7 +218,7 @@ async function main(): Promise<void> {
     const { page, context } = await newSessionPage(browser);
     await page.goto(`${FE}/agent/new`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector("h1", { state: "attached", timeout: 20_000 });
-    await sleep(1200); // let the recent-runs list and composer settle
+    await waitForSettled(page); // recent-runs list and composer fetch on mount
     const report = await audit(page, "1. home (new thread)", page.url());
     await page.screenshot({ path: `${OUT}01-home.png`, fullPage: true }).catch(() => {});
     reports.push(report);
@@ -215,7 +233,7 @@ async function main(): Promise<void> {
       await page.goto(`${FE}/session/${thread.id}`, { waitUntil: "domcontentloaded" });
       // The thread page streams in its timeline; wait for real content.
       await page.waitForSelector("main, [data-row-key], article", { timeout: 20_000 }).catch(() => {});
-      await sleep(1500);
+      await waitForSettled(page); // the timeline streams; settle on its own network
     } else {
       await page.goto(`${FE}/agent/new`, { waitUntil: "domcontentloaded" });
       await page.waitForSelector("h1", { state: "attached", timeout: 20_000 });
@@ -232,7 +250,7 @@ async function main(): Promise<void> {
     const { page, context } = await newSessionPage(browser);
     await page.goto(`${FE}/settings`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector("h1", { state: "attached", timeout: 20_000 });
-    await sleep(1500); // provider/integration cards fetch on mount
+    await waitForSettled(page); // provider/integration cards fetch on mount
     const report = await audit(page, "3. Settings", page.url());
     await page.screenshot({ path: `${OUT}03-settings.png`, fullPage: true }).catch(() => {});
     reports.push(report);
@@ -248,13 +266,13 @@ async function main(): Promise<void> {
     // wait for it to be ATTACHED, then for the roster or onboarding to paint.
     await page.waitForSelector("h1", { state: "attached", timeout: 20_000 });
     await page.waitForSelector("main, [role=grid], [role=list]", { state: "attached", timeout: 10_000 }).catch(() => {});
-    await sleep(1200);
+    await waitForSettled(page);
     const newBot = page.getByRole("button", { name: /new bot/i }).first();
     if ((await newBot.count()) > 0) {
       await newBot.click().catch(() => {});
-      await page.waitForTimeout(800);
-      const dialog = page.getByRole("dialog").first();
-      if ((await dialog.count()) > 0) await sleep(400);
+      // Wait for the dialog itself to appear instead of a fixed pause.
+      await page.getByRole("dialog").first().waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
+      await waitForSettled(page);
     }
     const report = await audit(page, "4. Bots", page.url());
     await page.screenshot({ path: `${OUT}04-bots.png`, fullPage: true }).catch(() => {});
@@ -268,7 +286,7 @@ async function main(): Promise<void> {
     const { page, context } = await newSessionPage(browser);
     await page.goto(`${FE}/tasks`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector("h1", { state: "attached", timeout: 20_000 });
-    await sleep(1200); // board fetches SSR, columns settle client-side
+    await waitForSettled(page); // board fetches SSR, columns settle client-side
     const report = await audit(page, "5. Tasks", page.url());
     await page.screenshot({ path: `${OUT}05-tasks.png`, fullPage: true }).catch(() => {});
     reports.push(report);

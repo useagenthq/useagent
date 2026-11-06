@@ -14,12 +14,18 @@ combination. Passing the first layer does not imply the second.
 ```bash
 bun run typecheck
 (cd backend && bun run test)
-(cd frontend && bun test components)
+(cd frontend && bun run test)
+(cd frontend && bun run lint)
+for p in packages/*/; do (cd "$p" && bun run typecheck && bun run test); done
+bun test scripts/agent-docs.test.ts
 ```
 
-The backend suite uses an isolated test database. Shared package suites cover
-the provider-neutral client, harness, sandbox, artifact, CLI, and conformance
-contracts.
+The backend suite uses an isolated test database. The frontend test script runs
+`components`, `app`, and `lib`, the same tests CI runs. Shared package suites
+cover the provider-neutral client, harness, sandbox, artifact, CLI, and
+conformance contracts. Each package installs on its own, so run
+`bun install --frozen-lockfile` in the frontend, the backend, and every package
+folder first.
 
 For the documentation site:
 

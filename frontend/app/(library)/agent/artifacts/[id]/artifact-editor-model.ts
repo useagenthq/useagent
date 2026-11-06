@@ -21,6 +21,16 @@ export type ArtifactEditorMode =
   | "slides-json"
   | "pdf-text";
 
+/** Text documents whose source is markdown: the Rendered view formats them
+ * (headings, bold, lists, code) instead of showing the raw source. MDX is left
+ * out: its imports and JSX would render as plain paragraphs. */
+const MARKDOWN_EXTENSIONS = new Set(["md", "markdown"]);
+
+/** True when a source document should render as formatted markdown. */
+export function isMarkdownArtifact(name: string): boolean {
+  return MARKDOWN_EXTENSIONS.has(artifactFileExtension(name));
+}
+
 export function artifactEditorMode(
   artifact: Pick<ArtifactDescriptor, "content_type" | "name" | "size_bytes"> &
     Readonly<{
