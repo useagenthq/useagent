@@ -460,6 +460,8 @@ describe("sandbox provider gateway config", () => {
     expect(config).toContain('model = "gpt-5.6-sol"');
     expect(config).toContain(`model_provider = "${SANDBOX_NAME_PREFIX}"`);
     expect(config).toContain('sandbox_mode = "danger-full-access"');
+    // Top-level, before any table: Codex never starts goal turns on its own.
+    expect(config!.split("\n[")[0]).toContain("features.goals = false");
     expect(config).toContain('approval_policy = "never"');
     expect(config).toContain(
       'base_url = "https://gateway.example.test/api/provider/openai/v1"',

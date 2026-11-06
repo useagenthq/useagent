@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AgentScreen } from "@/components/ai/agent-screen";
+import { DesktopPane } from "./desktop-pane";
 import { desktopFrameInteractive, desktopScreenStatus } from "./desktop-screen-state";
 
 describe("desktop screen status pill", () => {
@@ -87,12 +88,23 @@ describe("agent screen card", () => {
     const html = render(false, {
       status: "loading",
       loading: true,
-      loadingCaption: "No active sandbox. Send a message to start one.",
+      loadingCaption: "Nothing is running yet. Send a message to start one.",
     });
     expect(html).toContain("Connecting to agent&#x27;s screen");
-    expect(html).toContain("No active sandbox. Send a message to start one.");
+    expect(html).toContain("Nothing is running yet. Send a message to start one.");
     expect(html).toContain('data-status="loading"');
     // Nothing to open into yet: the connecting card offers no Open control.
     expect(html).not.toContain('aria-label="Open Nova&#x27;s screen"');
+  });
+});
+
+describe("desktop control button", () => {
+  test("says what it does in its label alone, with no pressed state on top", () => {
+    const html = renderToStaticMarkup(<DesktopPane threadId="t1" live={false} active={false} />);
+    const control = html.match(/<button[^>]*><span[^>]*>Take control<\/span><\/button>/)?.[0];
+    expect(control).toBeDefined();
+    // The label already flips to "Release control"; a pressed state as well
+    // would read "Release control, pressed".
+    expect(control).not.toContain("aria-pressed");
   });
 });

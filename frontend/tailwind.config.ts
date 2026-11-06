@@ -1,3 +1,6 @@
+// Token scale adapted from the AlignUI starter (alignui/alignui-nextjs-typescript-starter),
+// MIT License. Copyright (c) 2024 Doğukan Çavuş.
+
 import type { Config } from 'tailwindcss';
 import tailwindcssAnimate from 'tailwindcss-animate';
 

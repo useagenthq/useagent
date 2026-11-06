@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { SandboxHandle, SandboxExecuteResult } from "../sandboxes/provider";
@@ -26,6 +26,7 @@ import {
   prewarmCodexServices,
   previewWebSocketUrl,
 } from "./codex-subscription-runtime";
+import { buildSandboxListenerProbeCommand, LISTENER_ABSENT, LISTENER_FOREIGN, LISTENER_STALE } from "./sandbox-listener-probe";
 import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 const priorGatewayUrl = process.env.PROVIDER_GATEWAY_PUBLIC_URL;
@@ -52,9 +53,17 @@ function relaySessions(log: string[] = []) {
     runs: CodexRelayRun[];
     serving: CodexRelayRun | null;
     closed: boolean;
+    /** Whether the sandbox's runtime holds a connection to it. */
+    connected: boolean;
   }> = [];
   const open: typeof openCodexRelaySession = (input) => {
-    const record = { input, runs: [] as CodexRelayRun[], serving: null as CodexRelayRun | null, closed: false };
+    const record = {
+      input,
+      runs: [] as CodexRelayRun[],
+      serving: null as CodexRelayRun | null,
+      closed: false,
+      connected: true,
+    };
     opened.push(record);
     return {
       url: "wss://useagent.example.test/api/internal/codex-relay/opaque",
@@ -65,7 +74,7 @@ function relaySessions(log: string[] = []) {
       deactivate() {
         record.serving = null;
       },
-      get connected() { return false; },
+      get connected() { return record.connected; },
       get closed() { return record.closed; },
       close: () => {
         record.closed = true;
@@ -221,6 +230,40 @@ describe("T3 Codex subscription lease", () => {
     await second.close();
     expect(relays.opened[0]!.serving).toBeNull();
     expect(liveCodexThreadSessions()).toBe(1);
+  });
+
+  test("a kept session whose runtime connection dropped gets a new relay under a new instance name", async () => {
+    // Prod 2026-10-11: the host pauses an idle sandbox about two minutes after a
+    // turn, which cuts the runtime's relay socket. The next turn must not take
+    // that relay back: its runtime session is gone, so it dials a new relay.
+    const relays = relaySessions();
+    const dependencies = {
+      loadThreadBinding: async () => "provider-thread-1",
+      openExecBridge: () => ({ url: "ws://127.0.0.1:43111/grant", close() {} }),
+      openCodeModeBridge: codeModeBridges(),
+      openRelaySession: relays.open,
+    };
+    const first = await prepareCodexSubscription({
+      sandbox: fakeSandbox().sandbox, ctx: context(), workdir: "/root/work", runtime: runtime(), dependencies,
+    });
+    await first.close();
+    relays.opened[0]!.connected = false;
+
+    const resumed = fakeSandbox({ execServerListening: true, codeModeListening: true });
+    const second = await prepareCodexSubscription({
+      sandbox: resumed.sandbox, ctx: { ...context(), runId: "run-2" }, workdir: "/root/work", runtime: runtime(), dependencies,
+    });
+
+    expect(second.sessionReused).toBe(false);
+    expect(relays.opened).toHaveLength(2);
+    expect(relays.opened[0]!.closed).toBe(true);
+    expect(second.codexInstanceName).toMatch(/^Codex subscription [0-9a-f]{8}$/);
+    expect(second.codexInstanceName).not.toBe(first.codexInstanceName);
+    // The runtime is told the new relay under the new name.
+    const patch = resumed.commands.map(({ command }) => command).find((command) => command.includes("CODEX_INSTANCE_B64"));
+    const encoded = patch?.match(/CODEX_INSTANCE_B64='([^']+)'/)?.[1] ?? "";
+    expect(JSON.parse(Buffer.from(encoded, "base64").toString("utf8")).displayName).toBe(second.codexInstanceName);
+    await second.close();
   });
 
   test("a warm turn takes the services probe issued during acquisition, bearer and all", async () => {
@@ -454,6 +497,91 @@ describe("T3 Codex subscription lease", () => {
     expect(await probe({ exe: native, args: ["codex", "app-server", "--listen", "ws://0.0.0.0:37734"] })).toBe(2);
   });
 
+  test("reads our exec-server left on a replaced Codex as stale, and stops only that process", async () => {
+    // A Codex reinstall (an engine bump) unlinks the binary a running exec-server
+    // started from, so /proc names it "<path> (deleted)". It is still ours: it is
+    // stopped and started again instead of refusing the port as another process's.
+    const home = await mkdtemp(join(tmpdir(), "useagent-exec-stale-"));
+    const layout = { home, workdir: `${home}/work`, runsAsRoot: false, bunExecutable: "/usr/local/bin/bun" };
+    const nativeDir = `${home}/.local/share/useagent/native-engines/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin`;
+    await mkdir(nativeDir, { recursive: true });
+    const replaced = `${await realpath(nativeDir)}/codex (deleted)`;
+    const elsewhere = `${await realpath(home)}/codex (deleted)`;
+    const listening = ["codex", "exec-server", "--listen", "ws://0.0.0.0:37734", "--environment-id", `${SANDBOX_NAME_PREFIX}-run-1`];
+    const procRoot = async (pid: number, exe: string, args: readonly string[]) => {
+      const proc = await mkdtemp(join(home, "proc-"));
+      await mkdir(join(proc, "net"));
+      await writeFile(join(proc, "net/tcp"),
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n" +
+        "   0: 00000000:9366 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 4242 1 0 100 0 0 10 0\n");
+      await mkdir(join(proc, `${pid}/fd`), { recursive: true });
+      await symlink("socket:[4242]", join(proc, `${pid}/fd/3`));
+      await symlink(exe, join(proc, `${pid}/exe`));
+      await writeFile(join(proc, `${pid}/cmdline`), `${args.join("\0")}\0`);
+      return proc;
+    };
+    const verdicts = async (command: string, pid: number, exe: string, args: readonly string[]) => {
+      const run = spawnSync("sh", ["-c", `${command} ${await procRoot(pid, exe, args)}`]);
+      return JSON.parse(String(run.stdout).trim().split("\n").at(-1) ?? "null") as Record<string, number>;
+    };
+    const read = buildCodexExecServerReadinessCommand(0, layout);
+
+    expect(await verdicts(read, 77, replaced, listening)).toEqual({ 37734: LISTENER_STALE });
+    expect(await verdicts(read, 77, elsewhere, listening)).toEqual({ 37734: LISTENER_FOREIGN });
+    expect(await verdicts(read, 77, replaced, ["codex", "app-server", "--listen", "ws://0.0.0.0:37734"]))
+      .toEqual({ 37734: LISTENER_FOREIGN });
+
+    // Stopping kills the stale holder (a real process here) and never a foreign one.
+    const stop = buildSandboxListenerProbeCommand([codexExecServerOwner(layout)], 300, { stopStale: true });
+    const stale = Bun.spawn(["sleep", "30"]);
+    const foreign = Bun.spawn(["sleep", "30"]);
+    try {
+      await verdicts(stop, stale.pid, replaced, listening);
+      await verdicts(stop, foreign.pid, elsewhere, listening);
+      expect(await Promise.race([stale.exited.then(() => true), Bun.sleep(5_000).then(() => false)])).toBe(true);
+      expect(stale.signalCode).toBe("SIGKILL");
+      expect(foreign.exitCode).toBeNull();
+      expect(foreign.signalCode).toBeNull();
+    } finally {
+      stale.kill();
+      foreign.kill();
+    }
+  });
+
+  test("a stop waits out the polls where its killed holder reads as nobody's", async () => {
+    // While a killed holder exits, its LISTEN entry can outlive the fd that held it, and
+    // a port with no visible holder reads as foreign. The stop keeps polling until the
+    // port is free instead of ending on that and failing the turn as another process's.
+    const home = await mkdtemp(join(tmpdir(), "useagent-exec-stop-"));
+    const layout = { home, workdir: `${home}/work`, runsAsRoot: false, bunExecutable: "/usr/local/bin/bun" };
+    const nativeDir = `${home}/.local/share/useagent/native-engines/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin`;
+    await mkdir(nativeDir, { recursive: true });
+    const header = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n";
+    const stale = Bun.spawn(["sleep", "30"]);
+    try {
+      const proc = await mkdtemp(join(home, "proc-"));
+      await mkdir(join(proc, "net"));
+      await writeFile(join(proc, "net/tcp"), header +
+        "   0: 00000000:9366 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 4242 1 0 100 0 0 10 0\n");
+      await mkdir(join(proc, `${stale.pid}/fd`), { recursive: true });
+      await symlink("socket:[4242]", join(proc, `${stale.pid}/fd/3`));
+      await symlink(`${await realpath(nativeDir)}/codex (deleted)`, join(proc, `${stale.pid}/exe`));
+      await writeFile(join(proc, `${stale.pid}/cmdline`), "codex\0exec-server\0--listen\0ws://0.0.0.0:37734\0");
+      const stop = buildSandboxListenerProbeCommand([codexExecServerOwner(layout)], 5_000, { stopStale: true });
+      const probe = Bun.spawn(["sh", "-c", `${stop} ${proc}`], { stdout: "pipe" });
+
+      expect(await Promise.race([stale.exited.then(() => true), Bun.sleep(5_000).then(() => false)])).toBe(true);
+      await rm(join(proc, String(stale.pid)), { recursive: true }); // the socket is still listed, held by nobody
+      await Bun.sleep(200);
+      await writeFile(join(proc, "net/tcp"), header); // then it is gone
+
+      expect(await probe.exited).toBe(1);
+      expect(JSON.parse((await new Response(probe.stdout).text()).trim())).toEqual({ 37734: LISTENER_ABSENT });
+    } finally {
+      stale.kill();
+    }
+  });
+
   test("points the app-server's code mode at the sandbox host through this run's bearer", async () => {
     const harness = fakeSandbox({ execServerListening: true });
     const relays = relaySessions();
@@ -486,6 +614,63 @@ describe("T3 Codex subscription lease", () => {
     expect(harness.commands[0]?.command).toContain(digest);
     expect(harness.commands[0]?.command).not.toContain(bearers[0]!);
 
+    await lease.close();
+  });
+
+  test("stops an exec-server left on a replaced Codex, then starts it again", async () => {
+    // After an engine bump the sandbox's earlier exec-server still holds its port,
+    // running the unlinked binary; the turn must not fail on it, now or later.
+    const harness = fakeSandbox({ execServerStale: true, codeModeListening: true });
+    const relays = relaySessions();
+
+    const lease = await prepareCodexSubscription({
+      sandbox: harness.sandbox,
+      ctx: context(),
+      workdir: "/root/work",
+      runtime: runtime(),
+      dependencies: {
+        loadThreadBinding: async () => null,
+        openExecBridge: () => ({ url: "ws://127.0.0.1:43111/grant", close() {} }),
+        openCodeModeBridge: codeModeBridges(),
+        openRelaySession: relays.open,
+      },
+    });
+
+    const commands = harness.commands.map(({ command }) => command);
+    const stopAt = commands.findIndex((command) => command.includes("const stop=true;"));
+    expect(stopAt).toBeGreaterThan(0);
+    expect(commands.findIndex((command) => command.includes("const deadline=Date.now()+15000;"))).toBeGreaterThan(stopAt);
+    expect(harness.createdSessions).toEqual([`${SANDBOX_NAME_PREFIX}-codex-exec-server`]);
+    expect(harness.sessionCommands.map(({ command }) => command).join("\n")).toContain("exec-server --listen");
+    expect(relays.opened).toHaveLength(1);
+    await lease.close();
+  });
+
+  test("starts the code-mode host again when its earlier session still exists", async () => {
+    // Stopping a stale host leaves its process session behind. A provider that refuses a
+    // duplicate session id must not fail the relaunch; deleting the session instead would
+    // also stop a live forwarder running in it.
+    const harness = fakeSandbox({
+      execServerListening: true,
+      createSessionRejects: [`${SANDBOX_NAME_PREFIX}-codex-code-mode`],
+    });
+    const relays = relaySessions();
+
+    const lease = await prepareCodexSubscription({
+      sandbox: harness.sandbox,
+      ctx: context(),
+      workdir: "/root/work",
+      runtime: runtime(),
+      dependencies: {
+        loadThreadBinding: async () => null,
+        openExecBridge: () => ({ url: "ws://127.0.0.1:43111/grant", close() {} }),
+        openCodeModeBridge: codeModeBridges(),
+        openRelaySession: relays.open,
+      },
+    });
+
+    expect(harness.sessionCommands.map(({ sessionId }) => sessionId)).toEqual([`${SANDBOX_NAME_PREFIX}-codex-code-mode`]);
+    expect(relays.opened).toHaveLength(1);
     await lease.close();
   });
 
@@ -539,6 +724,7 @@ describe("T3 Codex subscription lease", () => {
       relayUrl: "wss://useagent.example.test/api/internal/codex-relay/opaque",
       environmentId: `${SANDBOX_NAME_PREFIX}-run-1`,
       workdir: "/home/user/work",
+      instanceName: "Codex subscription 0a1b2c3d",
     }, {
       home: "/home/user",
       workdir: "/home/user/work",
@@ -650,6 +836,7 @@ describe("T3 Codex subscription lease", () => {
       relayUrl: "wss://useagent.example.test/api/internal/codex-relay/opaque",
       environmentId: `${SANDBOX_NAME_PREFIX}-run-1`,
       workdir: "/root/work",
+      instanceName: "Codex subscription 0a1b2c3d",
     });
     expect(patch).not.toContain("CODEX_HOME");
     expect(patch).not.toContain("access_token");
@@ -670,23 +857,25 @@ describe("T3 Codex subscription lease", () => {
     )).toThrow("outside the Cube sandbox domain");
   });
 
-  test("readiness probe keys on the subscription instance display name in the cache", () => {
-    const command = buildCodexProviderReadyProbeCommand();
-    // Reads the status cache CONTENT (not mtime) for the subscription-only marker.
+  test("readiness probe keys on this relay's instance name in the cache", () => {
+    const command = buildCodexProviderReadyProbeCommand("Codex subscription 0a1b2c3d");
+    // Reads the status cache CONTENT (not mtime) for this relay's own marker:
+    // an instance an earlier relay published does not pass.
     expect(command).toContain("caches/codex.json");
     expect(command).toContain("displayName");
-    expect(command).toContain("Codex subscription");
+    expect(command).toContain("Codex subscription 0a1b2c3d");
     // The probe marker matches the display name the provider-instance patch sets.
     const patch = buildCodexProviderInstanceCommand({
       relayUrl: "wss://useagent.example.test/api/internal/codex-relay/opaque",
       environmentId: `${SANDBOX_NAME_PREFIX}-run-1`,
       workdir: "/root/work",
+      instanceName: "Codex subscription 0a1b2c3d",
     });
     const encoded = patch.match(/CODEX_INSTANCE_B64='([^']+)'/)?.[1] ?? "";
     const instance = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
       displayName?: string;
     };
-    expect(instance.displayName).toBe("Codex subscription");
+    expect(instance.displayName).toBe("Codex subscription 0a1b2c3d");
   });
 
   test("readiness barrier confirms once the status cache reports the remote instance", async () => {
@@ -703,12 +892,12 @@ describe("T3 Codex subscription lease", () => {
 
     // A zero-length deadline that never confirms falls back (returns false).
     await expect(
-      awaitCodexProviderReady(sandbox, new AbortController().signal, 0),
+      awaitCodexProviderReady(sandbox, new AbortController().signal, 0, "Codex subscription 0a1b2c3d"),
     ).resolves.toBe(false);
     // Once the cache reports the subscription instance, the barrier confirms.
     ready = true;
     await expect(
-      awaitCodexProviderReady(sandbox, new AbortController().signal, 0),
+      awaitCodexProviderReady(sandbox, new AbortController().signal, 0, "Codex subscription 0a1b2c3d"),
     ).resolves.toBe(true);
     expect(commands.every((command) => command.includes("caches/codex.json"))).toBe(true);
   });
@@ -727,7 +916,7 @@ describe("T3 Codex subscription lease", () => {
     } as unknown as SandboxHandle;
 
     await expect(
-      awaitCodexProviderReady(sandbox, controller.signal, 5_000),
+      awaitCodexProviderReady(sandbox, controller.signal, 5_000, "Codex subscription 0a1b2c3d"),
     ).resolves.toBe(false);
     expect(calls).toBe(0);
   });
@@ -766,7 +955,11 @@ function runtime(): CodexSubscriptionRuntimeSelection {
 function fakeSandbox(options: {
   execServerListening?: boolean;
   execServerPortForeign?: boolean;
+  /** The exec-server port is held by ours on a replaced Codex until a stop probe kills it. */
+  execServerStale?: boolean;
   codeModeListening?: boolean;
+  /** Session ids the provider refuses to create again (it already has them). */
+  createSessionRejects?: readonly string[];
   failProviderPatch?: boolean;
   launchExit?: number;
   providerKind?: "box" | "cube" | "daytona";
@@ -784,14 +977,17 @@ function fakeSandbox(options: {
     process: {
       async executeCommand(command: string) {
         const providerPatch = command.includes("CODEX_INSTANCE_B64");
-        const quickProbe = command.includes("const deadline=Date.now()+0;");
-        const readinessProbe = command.includes("const deadline=Date.now()+15000;");
-        if (quickProbe || readinessProbe) {
+        const stopProbe = command.includes("const stop=true;");
+        const quickProbe = !stopProbe && command.includes("const deadline=Date.now()+0;");
+        const readinessProbe = !stopProbe && command.includes("const deadline=Date.now()+15000;");
+        if (quickProbe || readinessProbe || stopProbe) {
           const owners = JSON.parse(Buffer.from(command.trim().split(" ").at(-1) ?? "", "base64").toString("utf8")) as Array<{ port: number }>;
           const verdicts = Object.fromEntries(owners.map(({ port }) => [port, readinessProbe
             ? 0
             : port === 37_734
-              ? options.execServerPortForeign ? 2 : options.execServerListening ? 0 : 1
+              ? options.execServerPortForeign ? 2
+                : options.execServerStale ? stopProbe ? 1 : 3
+                : options.execServerListening ? 0 : 1
               : options.codeModeListening ? 0 : 1]));
           const values = Object.values(verdicts);
           const result = { exitCode: values.includes(2) ? 2 : values.every((v) => v === 0) ? 0 : 1, result: JSON.stringify(verdicts) };
@@ -803,6 +999,7 @@ function fakeSandbox(options: {
         return result;
       },
       async createSession(sessionId: string) {
+        if (options.createSessionRejects?.includes(sessionId)) throw new Error(`session ${sessionId} already exists`);
         createdSessions.push(sessionId);
       },
       async deleteSession(sessionId: string) {

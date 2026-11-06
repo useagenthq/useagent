@@ -1,3 +1,6 @@
+// Adapted from the AlignUI starter (alignui/alignui-nextjs-typescript-starter), MIT License.
+// Copyright (c) 2024 Doğukan Çavuş.
+
 import { borderRadii, shadows, texts } from '@/tailwind.config';
 import { TEXT_STYLE_SUFFIXES } from '@/utils/cx';
 import clsx from 'clsx';

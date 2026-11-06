@@ -4,6 +4,7 @@ import { resolveSession, type IdentitySession } from "../auth/session";
 import { db } from "../db/client";
 import { member } from "../db/schema";
 import { allowDevOrg } from "../env";
+import { isOrgAdmin } from "../provider-connections/repo";
 import type { AppEnv } from "../http";
 import { parsePreviewViewPath } from "../runs/preview-capability";
 import { firstOrgForUser, getDevContext } from "../seed";
@@ -147,14 +148,6 @@ export const orgAdminScope = createMiddleware<AppEnv>(async (c, next) => {
   const orgId = c.get("orgId");
   const userId = c.get("userId");
   if (!orgId || !userId) return c.json({ error: "forbidden" }, 403);
-
-  const [membership] = await db
-    .select({ role: member.role })
-    .from(member)
-    .where(and(eq(member.organizationId, orgId), eq(member.userId, userId)))
-    .limit(1);
-  if (membership?.role !== "owner" && membership?.role !== "admin") {
-    return c.json({ error: "organization_admin_required" }, 403);
-  }
+  if (!(await isOrgAdmin(orgId, userId))) return c.json({ error: "organization_admin_required" }, 403);
   return next();
 });

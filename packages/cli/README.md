@@ -61,6 +61,11 @@ Each result line: `{ runId, status, verdict?, answer, url }` (plus `prompt`, and
 on a dispatch failure). A summary table prints to stderr; the JSONL goes to `--out` (or
 stdout when omitted).
 
+`fan` exits 0 only when every run completed and, with `--qc`, every verifier answered
+`VERDICT: PASS`. Only completed runs are sent to the verifier. A verifier run that fails
+or times out is reported as `verification_error`, and a verifier that gives no verdict
+leaves `verdict: "unknown"`; both make `fan` exit 1.
+
 ### `useagent status <runId>`
 
 One-shot current status + answer for a run.

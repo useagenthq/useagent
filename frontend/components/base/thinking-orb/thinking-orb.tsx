@@ -6,7 +6,9 @@
 // the tab is hidden (visibilitychange). Reduced-motion users get a
 // static representative frame that still follows the live theme.
 //
-// Vendored from thinking-orbs (see README.md). Adapted for the Next.js
+// Vendored from thinking-orbs (https://libraries.dev/orbs), MIT License,
+// Copyright (c) 2026 Jakub Antalik; license in third_party/licenses/thinking-orbs/.
+// Adapted for the Next.js
 // app router by marking the module a client component — the canvas paint
 // loop and theme observers all touch the DOM, so it can only run on the
 // client. The upstream theme resolver already keys off an ancestor

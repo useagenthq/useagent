@@ -23,7 +23,8 @@ import {
   resolveRunIntake,
 } from "../resources/run-intake";
 import { resolveExecutableSkillPin } from "../skills/pins";
-import { botFiringTarget } from "../bots/repo";
+import { botFiringTarget, getBotRow } from "../bots/repo";
+import { botEditableBy, RoutineOwnerError } from "../bots/owner";
 import { BotsDisabledError, botsEnabled } from "../bots/rollout";
 import { acceptExistingThreadFollowup } from "../runs/thread-followups";
 import type { MemoryScope } from "../memory/scope";
@@ -100,6 +101,10 @@ export async function fireScheduleWithOutcome(
   const target = schedule.botId
     ? await botFiringTarget(schedule.orgId, schedule.botId)
     : null;
+  // Judged on the bot itself, archived or not: archiving must not turn a routine
+  // someone else added into a plain automation that fires.
+  const bot = schedule.botId ? (target?.bot ?? (await getBotRow(schedule.orgId, schedule.botId))) : null;
+  if (bot && !botEditableBy(bot, schedule.userId)) throw new RoutineOwnerError(bot.name);
   const home = target?.head ?? null;
   const threadId = home ? home.threadId : runId;
   const memoryScope: MemoryScope = target ? target.bot.memoryScope : "org";

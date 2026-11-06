@@ -1,5 +1,8 @@
-// Ported from a peer tool (Apache-2.0): src/kiro_crew/messaging/renderer.py (Renderer contract)
-// Ported from a peer tool (Apache-2.0): src/kiro_crew/slack/renderer.py (accumulate → flush shape)
+// Ported from KiroCrew (https://github.com/kirodotdev/KiroCrew), Apache-2.0:
+//   src/kiro_crew/messaging/renderer.py (Renderer contract)
+//   src/kiro_crew/slack/renderer.py (accumulate → flush shape)
+// Copyright Amazon.com, Inc. or its affiliates. Changed: rewritten in
+// TypeScript for this codebase. License and NOTICE: third_party/licenses/kirocrew/.
 //
 // The email Renderer: accumulates a run's output events during the turn, then on
 // onDone reads the durable run row for the final summary/status and delivers a

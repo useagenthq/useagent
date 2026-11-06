@@ -7,6 +7,8 @@ interface BridgeSocketData {
 }
 
 const DEFAULT_MAX_PENDING_BYTES = 1024 * 1024;
+/** Concurrent app-server connections one bridge takes; Codex holds one and briefly a second while it recovers. */
+const MAX_CONNECTIONS = 4;
 
 export interface CodexExecServerBridge {
   readonly url: string;
@@ -26,8 +28,7 @@ export function openCodexExecServerBridge(input: {
   }
   const capability = crypto.randomUUID();
   const pathname = `/codex-exec/${capability}`;
-  let accepted = false;
-  let activeClient: ServerWebSocket<BridgeSocketData> | null = null;
+  const clients = new Set<ServerWebSocket<BridgeSocketData>>();
   let closed = false;
 
   const server: Server<BridgeSocketData> = Bun.serve<BridgeSocketData>({
@@ -35,28 +36,38 @@ export function openCodexExecServerBridge(input: {
     port: 0,
     fetch(request, currentServer) {
       const url = new URL(request.url);
-      if (closed || accepted || url.pathname !== pathname) {
+      // The capability admits its session's app-server for the bridge's whole
+      // life, not once: after a dropped link Codex dials the same URL again to
+      // resume its executor session (a 25 s window). Browsers never get in.
+      if (
+        closed || url.pathname !== pathname || request.headers.has("origin") ||
+        clients.size >= MAX_CONNECTIONS
+      ) {
         return new Response("not found", { status: 404 });
       }
       const upgraded = currentServer.upgrade(request, {
         data: { upstream: null, pending: [], pendingBytes: 0 },
       });
-      if (upgraded) {
-        accepted = true;
-        return undefined;
-      }
+      if (upgraded) return undefined;
       return new Response("websocket upgrade required", { status: 426 });
     },
     websocket: {
       open(client) {
-        activeClient = client;
+        if (closed) {
+          client.close(1001, "bridge closed");
+          return;
+        }
+        clients.add(client);
         const upstream = new WebSocket(input.upstreamUrl, { headers: input.headers });
         client.data.upstream = upstream;
         upstream.binaryType = "arraybuffer";
         upstream.onopen = () => flushPending(client);
         upstream.onmessage = (event) => forwardToClient(client, event.data);
         upstream.onerror = () => client.close(1011, "exec-server upstream failed");
-        upstream.onclose = () => client.close(1011, "exec-server upstream closed");
+        upstream.onclose = (event) => {
+          if (!closed) console.log(`[codex-exec-bridge] exec-server link closed code=${event.code}`);
+          client.close(1011, "exec-server upstream closed");
+        };
       },
       message(client, message) {
         const payload = typeof message === "string"
@@ -76,7 +87,7 @@ export function openCodexExecServerBridge(input: {
         upstream.send(payload);
       },
       close(client) {
-        if (activeClient === client) activeClient = null;
+        clients.delete(client);
         closeWebSocket(client.data.upstream);
         client.data.upstream = null;
         client.data.pending.length = 0;
@@ -90,8 +101,8 @@ export function openCodexExecServerBridge(input: {
     close() {
       if (closed) return;
       closed = true;
-      activeClient?.close(1001, "bridge closed");
-      activeClient = null;
+      for (const client of clients) client.close(1001, "bridge closed");
+      clients.clear();
       server.stop(true);
     },
   };

@@ -53,7 +53,7 @@ function isCodexConfigProbe(command: string): boolean {
 
 async function runColdClaudeBootstrap(
   binaryScript: (home: string) => string,
-  packageVersion = "2.1.285",
+  packageVersion = "2.1.296",
 ): Promise<{
   home: string;
   result: ReturnType<typeof Bun.spawnSync>;
@@ -102,7 +102,7 @@ async function runColdClaudeBootstrap(
 }
 
 async function runColdOpenCodeBootstrap(
-  packageVersion = "2.0.18",
+  packageVersion = "2.0.26",
   installedBinary: Uint8Array = nativeElfHeaderFixture,
 ): Promise<{
   home: string;
@@ -149,7 +149,7 @@ async function runColdOpenCodeBootstrap(
 async function installFakeClaudePackage(
   home: string,
   script: string,
-  version = "2.1.285",
+  version = "2.1.296",
 ): Promise<void> {
   const packageDirectory = join(
     home,
@@ -384,7 +384,7 @@ describe("T3 provider bridge", () => {
     expect(command).toContain('useagent-claude-bun.XXXXXX');
     expect(command).toContain('BUN_INSTALL_GLOBAL_DIR="$NATIVE_GLOBAL_DIR"');
     expect(command).toContain('BUN_INSTALL_BIN="$NATIVE_PREFIX/bin"');
-    expect(command).toContain('@anthropic-ai/claude-code@2.1.285');
+    expect(command).toContain('@anthropic-ai/claude-code@2.1.296');
     expect(command).toContain('node_modules/@anthropic-ai/claude-code');
     expect(command).toContain('manifest.version!==expectedVersion');
     expect(command).toContain('allowedRoots.some');
@@ -570,15 +570,15 @@ describe("T3 provider bridge", () => {
     const engines = [
       {
         id: "codex" as const,
-        package: "@openai/codex@0.159.3",
+        package: "@openai/codex@0.162.1",
         binary: "codex",
-        version: "codex-cli 0.159.3",
+        version: "codex-cli 0.162.1",
       },
       {
         id: "opencode" as const,
-        package: "@opencode/cli@2.0.18",
+        package: "@opencode/cli@2.0.26",
         binary: "opencode",
-        version: "2.0.18",
+        version: "2.0.26",
       },
     ];
     for (const engine of engines) {
@@ -598,7 +598,7 @@ describe("T3 provider bridge", () => {
           await Bun.write(packageBin, nativeElfHeaderFixture);
           await Bun.write(join(packageDir, "package.json"), JSON.stringify({
             name: "@opencode/cli",
-            version: "2.0.18",
+            version: "2.0.26",
             bin: { opencode: "./bin/opencode.exe" },
           }));
           await Bun.$`chmod 700 ${packageBin}`;
@@ -622,13 +622,13 @@ describe("T3 provider bridge", () => {
           await Bun.write(packageBin, `#!/bin/sh\necho '${engine.version}'\n`);
           await Bun.write(join(packageDir, "package.json"), JSON.stringify({
             name: "@openai/codex",
-            version: "0.159.3",
+            version: "0.162.1",
             bin: { codex: "bin/codex.js" },
           }));
           await Bun.write(nativeBin, "native fixture");
           await Bun.write(join(platformDir, "package.json"), JSON.stringify({
             name: "@openai/codex",
-            version: `0.159.3-${platform.suffix}`,
+            version: `0.162.1-${platform.suffix}`,
           }));
           await Bun.$`chmod 700 ${packageBin} ${nativeBin}`;
           await symlink(packageBin, join(bin, engine.binary));
@@ -652,9 +652,9 @@ describe("T3 provider bridge", () => {
         expect(result.exitCode).toBe(0);
         expect(command).toContain(engine.package);
         for (const otherPackage of [
-          "@openai/codex@0.159.3",
-          "@anthropic-ai/claude-code@2.1.285",
-          "@opencode/cli@2.0.18",
+          "@openai/codex@0.162.1",
+          "@anthropic-ai/claude-code@2.1.296",
+          "@opencode/cli@2.0.26",
         ]) {
           if (otherPackage !== engine.package) expect(command).not.toContain(otherPackage);
         }
@@ -765,7 +765,7 @@ exit 17
       expect(run.result.exitCode).toBe(1);
       const output = `${run.result.stdout?.toString() ?? ""}${run.result.stderr?.toString() ?? ""}`;
       expect(output).toContain(
-        "useagent-native-version-probe: install_identity_mismatch expected=2.0.18",
+        "useagent-native-version-probe: install_identity_mismatch expected=2.0.26",
       );
       expect(output.length).toBeLessThan(160);
     } finally {
@@ -774,11 +774,11 @@ exit 17
   });
 
   test("rejects the executable placeholder shipped before OpenCode postinstall", async () => {
-    const run = await runColdOpenCodeBootstrap("2.0.18", Buffer.from(openCodePostinstallPlaceholder));
+    const run = await runColdOpenCodeBootstrap("2.0.26", Buffer.from(openCodePostinstallPlaceholder));
     try {
       expect(Buffer.byteLength(openCodePostinstallPlaceholder)).toBe(229);
       expect(run.result.exitCode).toBe(1);
-      expect(run.result.stderr?.toString() ?? "").toContain("install_identity_mismatch expected=2.0.18");
+      expect(run.result.stderr?.toString() ?? "").toContain("install_identity_mismatch expected=2.0.26");
       expect(await Bun.file(run.launchMarker).exists()).toBe(false);
     } finally {
       await rm(run.home, { recursive: true, force: true });
@@ -820,7 +820,7 @@ exit 17
       expect(run.result.exitCode).toBe(1);
       const output = `${run.result.stdout?.toString() ?? ""}${run.result.stderr?.toString() ?? ""}`;
       expect(output).toContain(
-        "useagent-native-version-probe: install_identity_mismatch expected=2.1.285",
+        "useagent-native-version-probe: install_identity_mismatch expected=2.1.296",
       );
       expect(output.length).toBeLessThan(160);
     } finally {
@@ -881,7 +881,7 @@ exit 17
         displayName: readiness.displayName,
         enabled: true,
         installed: true,
-        version: "2.1.285",
+        version: "2.1.296",
         status: "ready",
         auth: { status: "authenticated" },
         checkedAt: "2026-09-05T00:00:11.000Z",
@@ -987,9 +987,9 @@ exit 17
 
     const bootstraps = commands.filter((command) => command.includes("NATIVE_PACKAGE="));
     expect(bootstraps).toHaveLength(3);
-    expect(bootstraps[0]).toContain("@openai/codex@0.159.3");
-    expect(bootstraps[1]).toContain("@anthropic-ai/claude-code@2.1.285");
-    expect(bootstraps[2]).toContain("@opencode/cli@2.0.18");
+    expect(bootstraps[0]).toContain("@openai/codex@0.162.1");
+    expect(bootstraps[1]).toContain("@anthropic-ai/claude-code@2.1.296");
+    expect(bootstraps[2]).toContain("@opencode/cli@2.0.26");
     // Only OpenCode trusts its package scripts: its postinstall places the native binary.
     expect(bootstraps[2]).toContain("add --global --exact --trust --no-progress");
     expect(bootstraps[0]).not.toContain("--trust");
@@ -1046,7 +1046,7 @@ exit 17
 
     const bootstraps = commands.filter((command) => command.includes("NATIVE_PACKAGE="));
     expect(bootstraps).toHaveLength(2);
-    expect(bootstraps[0]).toContain("@openai/codex@0.159.3");
+    expect(bootstraps[0]).toContain("@openai/codex@0.162.1");
     expect(bootstraps[0]).not.toContain("providerInstances");
     expect(commands.some((command) => command.includes("exec-server"))).toBe(false);
     expect(commands.some((command) => command.includes("codex-relay"))).toBe(false);
@@ -1160,7 +1160,7 @@ exit 17
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
-          if (command.includes('NATIVE_PACKAGE="@openai/codex@0.159.3"')) {
+          if (command.includes('NATIVE_PACKAGE="@openai/codex@0.162.1"')) {
             bootstraps += 1;
             identityValid = true;
             return { exitCode: 0, result: "" };
@@ -1268,7 +1268,7 @@ exit 17
       providerKind: "cube",
       process: {
         executeCommand: async (command: string) => {
-          if (command.includes('NATIVE_PACKAGE="@openai/codex@0.159.3"')) {
+          if (command.includes('NATIVE_PACKAGE="@openai/codex@0.162.1"')) {
             bootstraps += 1;
             return { exitCode: 0, result: "" };
           }
@@ -1336,7 +1336,7 @@ exit 17
       true,
     );
 
-    expect(commands.filter((command) => command.includes('NATIVE_PACKAGE="@opencode/cli@2.0.18"')))
+    expect(commands.filter((command) => command.includes('NATIVE_PACKAGE="@opencode/cli@2.0.26"')))
       .toHaveLength(1);
     expect(commands.filter((command) =>
       command.includes(buildOpenCodeInstallIdentityProbeCommand({
@@ -1367,8 +1367,8 @@ exit 17
       process: {
         executeCommand: async (command: string) => {
           const nativePackage = engine === "claude"
-            ? '@anthropic-ai/claude-code@2.1.285'
-            : '@opencode/cli@2.0.18';
+            ? '@anthropic-ai/claude-code@2.1.296'
+            : '@opencode/cli@2.0.26';
           if (command.includes(`NATIVE_PACKAGE="${nativePackage}"`)) {
             fullBootstraps += 1;
             if (!bootstrapSucceeds) return { exitCode: 1, result: "" };

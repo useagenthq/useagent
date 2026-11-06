@@ -30,21 +30,64 @@ import { RunAdmissionClosedError } from "../commands";
 import { SpendAllowanceExceededError } from "../runs/spend";
 import { SandboxMinutesExceededError } from "../runs/sandbox-minutes";
 import { BotsDisabledError } from "../bots/rollout";
+import { RoutineOwnerError } from "../bots/owner";
+import { asOrgAdmin } from "../provider-connections/repo";
+import { memberDisplayNames } from "../team/member-names";
 import {
   assertRunPromptLimit,
   RunPromptTooLargeError,
 } from "../commands/prompt-policy";
-import { isValidCron, isValidTimezone } from "./cron";
+import { isValidCron, isValidTimezone, nextOccurrence } from "./cron";
 import {
   createSchedule,
   deleteSchedule,
   getScheduleForOrg,
+  nextRunAt,
   updateSchedule,
   type ApiSchedule,
   type ScheduleRecord,
 } from "./repo";
 
 type AutomationChange = Extract<OrgChange, { readonly type: "automation" }>;
+
+/**
+ * Who may act on an automation, a bot's routines included. Every firing runs as
+ * its creator: their keys, allowance, sandbox minutes and personal connections,
+ * where reads need no approval. So only the creator changes what it does,
+ * switches it on or runs it now. An org owner or admin may also pause or delete
+ * it, which runs nothing as anyone; that is authorized in the organisation's
+ * turn, as role changes are (org-lock.ts), so an admin demoted meanwhile gets
+ * nothing done. One with no creator runs as nobody, so any member may act on
+ * it. The service asks it around the change itself (update, delete, run now),
+ * so every door gets it: the automations API, the bot page and an agent's
+ * automation tools, where the agent acts as its run's owner.
+ */
+async function asAutomationActor<T>(
+  orgId: string,
+  scheduleId: string,
+  actorId: string | null,
+  intent: "change" | "stop",
+  act: () => Promise<T>,
+): Promise<T> {
+  const schedule = await getScheduleForOrg(orgId, scheduleId);
+  if (!schedule) throw new ScheduleServiceError(404, { error: "schedule not found" });
+  const creator = schedule.userId;
+  if (creator === null || creator === actorId) return act();
+  if (intent === "stop" && actorId !== null) {
+    const stopped = await asOrgAdmin(orgId, actorId, act);
+    if (stopped) return stopped.value;
+  }
+  const name = (await memberDisplayNames(orgId, [creator])).get(creator) ?? "the person who created it";
+  throw new ScheduleServiceError(403, {
+    error: "automation_creator_only",
+    message: `This automation runs as ${name}, so only they can change it or run it now. An admin can pause or delete it.`,
+  });
+}
+
+/** A change that only pauses: the one an admin may make to someone else's automation. */
+function pausesOnly(body: Record<string, unknown>): boolean {
+  return body.enabled === false && Object.keys(body).every((key) => key === "enabled");
+}
 
 function publishAutomationChange(orgId: string, change: AutomationChange): void {
   publishOrgChange(orgId, change);
@@ -151,9 +194,9 @@ async function parseSkillPin(
   };
 }
 
-function parseTimezone(value: unknown): string | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null || value === "") return null;
+/** The zone a request names, validated; none for absent, null or "". */
+function parseTimezone(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
   const timezone = typeof value === "string" ? value.trim() : "";
   if (!isValidTimezone(timezone)) {
     throw new ScheduleServiceError(400, { error: "timezone must be a valid IANA name" });
@@ -258,7 +301,10 @@ export async function createScheduleForOrg(
   if (!prompt) throw new ScheduleServiceError(400, { error: "prompt is required" });
   assertSchedulePromptLimit(prompt);
 
-  const timezone = parseTimezone(body.timezone) ?? null;
+  // Every schedule names the zone its cron runs in. A create that sends none
+  // (an API client, an agent's tool call) runs in UTC; the web app sends its
+  // creator's browser zone.
+  const timezone = parseTimezone(body.timezone) ?? "UTC";
   // Creation is an inert draft operation. Persist valid engine/model intent
   // even while a paid provider is temporarily unavailable; readiness is
   // enforced at enable and by the shared command lane at execution time.
@@ -318,7 +364,45 @@ export async function createScheduleForOrg(
   return schedule;
 }
 
-export async function updateScheduleForOrg(
+/** How many runs a schedule preview names. */
+const PREVIEW_RUNS = 3;
+/** Longer than any cron a person types (every minute listed is 170 characters):
+ *  the preview refuses more before parsing, as it answers while typing. */
+const PREVIEW_CRON_MAX_LENGTH = 512;
+
+/**
+ * The next runs a schedule with this cron and zone would have if enabled now,
+ * by the rule the scheduler fires by (repo.ts nextRunAt, then cron.ts
+ * nextOccurrence): what an editor shows while a person types a schedule,
+ * before anything is saved. The first is this minute when it is an
+ * occurrence, as the tick would still fire it. The zone defaults to UTC as a
+ * create's does; fewer runs (none) when the cron names fewer dates.
+ */
+export function previewNextRuns(query: { cron?: unknown; timezone?: unknown }, now: Date = new Date()): string[] {
+  const cron = typeof query.cron === "string" ? query.cron.trim() : "";
+  if (cron.length > PREVIEW_CRON_MAX_LENGTH || !isValidCron(cron)) {
+    throw new ScheduleServiceError(400, { error: "cron must be a valid 5-field expression" });
+  }
+  const timezone = parseTimezone(query.timezone) ?? "UTC";
+  const runs: string[] = [];
+  let next = nextRunAt({ cron, timezone, enabled: true, lastFiredAt: null }, now);
+  while (next && runs.length < PREVIEW_RUNS) {
+    runs.push(next.toISOString());
+    if (runs.length < PREVIEW_RUNS) next = nextOccurrence(cron, timezone, new Date(next.getTime() + 60_000));
+  }
+  return runs;
+}
+
+export function updateScheduleForOrg(
+  orgId: string,
+  id: string,
+  body: Record<string, unknown>,
+  actorId: string | null,
+): Promise<ApiSchedule> {
+  return asAutomationActor(orgId, id, actorId, pausesOnly(body) ? "stop" : "change", () => updateSchedulePatch(orgId, id, body));
+}
+
+async function updateSchedulePatch(
   orgId: string,
   id: string,
   body: Record<string, unknown>,
@@ -326,7 +410,7 @@ export async function updateScheduleForOrg(
   const patch: Partial<{
     name: string;
     cron: string;
-    timezone: string | null;
+    timezone: string;
     prompt: string;
     engine: EngineId;
     model: string;
@@ -348,6 +432,9 @@ export async function updateScheduleForOrg(
 
   if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
 
+  // A patch may move the schedule to another zone. One that names none (a
+  // client still holding the schedule from before every schedule named one
+  // sends null) leaves the zone as it is.
   const timezone = parseTimezone(body.timezone);
   if (timezone !== undefined) patch.timezone = timezone;
 
@@ -459,18 +546,34 @@ export async function updateScheduleForOrg(
   return updated;
 }
 
-export async function deleteScheduleForOrg(orgId: string, id: string): Promise<void> {
-  const deleted = await deleteSchedule(orgId, id);
-  if (!deleted) throw new ScheduleServiceError(404, { error: "schedule not found" });
-  publishAutomationChange(orgId, {
-    type: "automation",
-    action: "deleted",
-    automationId: id,
+export function deleteScheduleForOrg(orgId: string, id: string, actorId: string | null): Promise<void> {
+  return asAutomationActor(orgId, id, actorId, "stop", async () => {
+    const deleted = await deleteSchedule(orgId, id);
+    if (!deleted) throw new ScheduleServiceError(404, { error: "schedule not found" });
+    publishAutomationChange(orgId, {
+      type: "automation",
+      action: "deleted",
+      automationId: id,
+    });
+    await removeFromContextIndex(orgId, `automation:${id}`);
   });
-  await removeFromContextIndex(orgId, `automation:${id}`);
 }
 
-export async function fireScheduleForOrg(
+/** Run now: a manual firing, which runs as the creator like every firing. */
+export function runScheduleNow(schedule: ScheduleRecord, actorId: string | null): Promise<string> {
+  return asAutomationActor(schedule.orgId, schedule.id, actorId, "change", () => fireSchedule(schedule, "manual"));
+}
+
+/** The scheduler's firing of a due occurrence. A person's firing is runScheduleNow. */
+export function fireScheduleForOrg(
+  schedule: ScheduleRecord,
+  trigger: Extract<ScheduleTrigger, "cron">,
+  occurrence: Date = new Date(),
+): Promise<string> {
+  return fireSchedule(schedule, trigger, occurrence);
+}
+
+async function fireSchedule(
   schedule: ScheduleRecord,
   trigger: ScheduleTrigger,
   occurrence: Date = new Date(),
@@ -485,6 +588,7 @@ export async function fireScheduleForOrg(
     if (error instanceof BotsDisabledError) {
       throw new ScheduleServiceError(409, { error: error.code, retryable: false });
     }
+    if (error instanceof RoutineOwnerError) throw new ScheduleServiceError(403, { error: error.code, message: error.message });
     if (error instanceof SkillPinIntegrityError) {
       throw new ScheduleServiceError(error.code === "invalid_skill_pin" ? 400 : 409, {
         error: error.code,

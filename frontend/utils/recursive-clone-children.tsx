@@ -1,3 +1,6 @@
+// From the AlignUI starter (alignui/alignui-nextjs-typescript-starter), MIT License.
+// Copyright (c) 2024 Doğukan Çavuş.
+
 import * as React from 'react';
 
 /**

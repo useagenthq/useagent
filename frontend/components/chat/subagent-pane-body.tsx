@@ -143,7 +143,7 @@ export function LoadedPane({ initialRun }: { initialRun: ApiRun }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="text-mono-label text-text-tertiary">
-              {childSession ? "Subagent" : "Session"}
+              {childSession ? "Subagent" : "Thread"}
             </span>
             <span className="text-text-tertiary">·</span>
             <span className="text-mono-label text-text-tertiary">
