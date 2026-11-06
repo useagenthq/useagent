@@ -9,10 +9,10 @@ changes, and how to take the next upstream release. Update the log table on ever
 | Item | Value |
 |---|---|
 | Upstream base | nightly `v0.1.1-nightly.20261018.3315` (`9c161462c9`, on upstream main), with a fork commit that reports that version (orchestrator V2) |
-| Fork head | `42ef3397fa38` (branch `useagent-v2`; bundle and patch attached to the release) |
-| Runtime release | `native-runtime-42ef3397fa38` (pro and public `useagenthq/useagent`) |
+| Fork head | `c3a1dd480534` (branch `useagent-v2`; bundle and patch attached to the release) |
+| Runtime release | `native-runtime-c3a1dd480534` (pro and public `useagenthq/useagent`) |
 | Pins in `third_party/t3code-fork.lock` and `backend/runtime-assets/manifest.json` | contract `orchestrator-v2-hosted-codex-host-switches-v7` |
-| Engines | Codex `0.162.1`, Claude Code `2.1.296`, OpenCode `@opencode/cli 2.0.26` (installed with `--trust`), Pi (bypasses T3) |
+| Engines | Codex `0.162.1`, Claude Code `2.1.296`, OpenCode `@opencode/cli 2.2.5` (installed with `--trust`), Pi (bypasses T3) |
 | Runtime generation | `useagent-runtime-v9`, the image default (compose blanks any host env pin, so each image brings its own) |
 
 ## What our fork changes
@@ -70,6 +70,10 @@ move the code they touch.
 12. A Codex file change item lists every file of its patch in `changes` (operation and path, a
     move's old path as `oldPath`); `fileName` and `diffStr` stay the first file's, which is what
     the plane reads.
+13. OpenCode 2.1+ on the bundled 2.0.28 client: upstream's compaction history decode (t3code
+    #22661, cherry-picked; drop it when a rebase brings it), and the event stream fills the
+    `recent` OpenCode 2.1 dropped from `session.compaction.started` and
+    `session.compaction.ended` before decoding them (upstream still skips both).
 
 The relay still fills in the run's environment when a turn arrives without one
 (`codex-subscription-protocol.ts`), and answers the runtime's known thread methods it does not carry
@@ -128,3 +132,4 @@ and the model manifest.
 | 2026-10-17 | v0.1.0 (`81493efb71`) | `23456795847f` | `native-runtime-23456795847f` | `z4l5cmr17dkj74ujxvh9` | a Codex file change lists every file of its patch (`changes`), on top of `a72f0dfb8a6e` |
 | 2026-10-19 | nightly 20261018.3315 (`9c161462c9`) | `7a5654cc7499` | `native-runtime-7a5654cc7499` | `e69y4jc119uv2tlpryt9` | 499 upstream commits (live command output on its own RPC, which the plane does not use; restart wakes for subagents' cut background work; follow-ups queued while a thread compacts; one resolver for project and worktree folders; Claude subagent fixes); our 22 commits carried, upstream's two v0.1.0 release-branch commits left out (main has them); engines unchanged |
 | 2026-10-19 | nightly 20261018.3315 (`9c161462c9`) | `42ef3397fa38` | `native-runtime-42ef3397fa38` | `ofm96owqkopgr9uzp5e5` | follow-up on `7a5654cc7499`: with continuations off the runtime refuses at dispatch any message a person did not send, and OpenCode steers wait behind the freeze gate (then go out, never dropped); reviewed by gpt-5.6-sol (astra out of quota) |
+| 2026-11-06 | nightly 20261018.3315 (`9c161462c9`) | `c3a1dd480534` | `native-runtime-c3a1dd480534` | see host env | OpenCode 2.0.26 -> 2.2.5 (2.1.4+ never stops a location's runs while one waits on a person); upstream #22661 cherry-picked and compaction events decoded without `recent` |

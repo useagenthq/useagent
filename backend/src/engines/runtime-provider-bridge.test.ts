@@ -102,7 +102,7 @@ async function runColdClaudeBootstrap(
 }
 
 async function runColdOpenCodeBootstrap(
-  packageVersion = "2.0.26",
+  packageVersion = "2.2.5",
   installedBinary: Uint8Array = nativeElfHeaderFixture,
 ): Promise<{
   home: string;
@@ -576,9 +576,9 @@ describe("T3 provider bridge", () => {
       },
       {
         id: "opencode" as const,
-        package: "@opencode/cli@2.0.26",
+        package: "@opencode/cli@2.2.5",
         binary: "opencode",
-        version: "2.0.26",
+        version: "2.2.5",
       },
     ];
     for (const engine of engines) {
@@ -598,7 +598,7 @@ describe("T3 provider bridge", () => {
           await Bun.write(packageBin, nativeElfHeaderFixture);
           await Bun.write(join(packageDir, "package.json"), JSON.stringify({
             name: "@opencode/cli",
-            version: "2.0.26",
+            version: "2.2.5",
             bin: { opencode: "./bin/opencode.exe" },
           }));
           await Bun.$`chmod 700 ${packageBin}`;
@@ -654,7 +654,7 @@ describe("T3 provider bridge", () => {
         for (const otherPackage of [
           "@openai/codex@0.162.1",
           "@anthropic-ai/claude-code@2.1.296",
-          "@opencode/cli@2.0.26",
+          "@opencode/cli@2.2.5",
         ]) {
           if (otherPackage !== engine.package) expect(command).not.toContain(otherPackage);
         }
@@ -765,7 +765,7 @@ exit 17
       expect(run.result.exitCode).toBe(1);
       const output = `${run.result.stdout?.toString() ?? ""}${run.result.stderr?.toString() ?? ""}`;
       expect(output).toContain(
-        "useagent-native-version-probe: install_identity_mismatch expected=2.0.26",
+        "useagent-native-version-probe: install_identity_mismatch expected=2.2.5",
       );
       expect(output.length).toBeLessThan(160);
     } finally {
@@ -774,11 +774,11 @@ exit 17
   });
 
   test("rejects the executable placeholder shipped before OpenCode postinstall", async () => {
-    const run = await runColdOpenCodeBootstrap("2.0.26", Buffer.from(openCodePostinstallPlaceholder));
+    const run = await runColdOpenCodeBootstrap("2.2.5", Buffer.from(openCodePostinstallPlaceholder));
     try {
       expect(Buffer.byteLength(openCodePostinstallPlaceholder)).toBe(229);
       expect(run.result.exitCode).toBe(1);
-      expect(run.result.stderr?.toString() ?? "").toContain("install_identity_mismatch expected=2.0.26");
+      expect(run.result.stderr?.toString() ?? "").toContain("install_identity_mismatch expected=2.2.5");
       expect(await Bun.file(run.launchMarker).exists()).toBe(false);
     } finally {
       await rm(run.home, { recursive: true, force: true });
@@ -989,7 +989,7 @@ exit 17
     expect(bootstraps).toHaveLength(3);
     expect(bootstraps[0]).toContain("@openai/codex@0.162.1");
     expect(bootstraps[1]).toContain("@anthropic-ai/claude-code@2.1.296");
-    expect(bootstraps[2]).toContain("@opencode/cli@2.0.26");
+    expect(bootstraps[2]).toContain("@opencode/cli@2.2.5");
     // Only OpenCode trusts its package scripts: its postinstall places the native binary.
     expect(bootstraps[2]).toContain("add --global --exact --trust --no-progress");
     expect(bootstraps[0]).not.toContain("--trust");
@@ -1336,7 +1336,7 @@ exit 17
       true,
     );
 
-    expect(commands.filter((command) => command.includes('NATIVE_PACKAGE="@opencode/cli@2.0.26"')))
+    expect(commands.filter((command) => command.includes('NATIVE_PACKAGE="@opencode/cli@2.2.5"')))
       .toHaveLength(1);
     expect(commands.filter((command) =>
       command.includes(buildOpenCodeInstallIdentityProbeCommand({
@@ -1368,7 +1368,7 @@ exit 17
         executeCommand: async (command: string) => {
           const nativePackage = engine === "claude"
             ? '@anthropic-ai/claude-code@2.1.296'
-            : '@opencode/cli@2.0.26';
+            : '@opencode/cli@2.2.5';
           if (command.includes(`NATIVE_PACKAGE="${nativePackage}"`)) {
             fullBootstraps += 1;
             if (!bootstrapSucceeds) return { exitCode: 1, result: "" };

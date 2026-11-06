@@ -7,7 +7,7 @@ asset, not committed to Git.
 `backend/runtime-assets/manifest.json` pins the release filename, archive hash,
 embedded checksum-manifest hash, source commit, dependency version, and frozen
 Bun dependency-lock hash. The archive is built from reviewed fork commit
-`42ef3397fa38befec011b840c953adbff7c8770a`, based on upstream nightly
+`c3a1dd480534347b5bfddfebd33aafd016d5b78b`, based on upstream nightly
 `v0.1.1-nightly.20261018.3315` (`9c161462c94f7d9d6d9169da5c841457cbadf213`) plus a fork
 commit that sets the version, on the V2 orchestrator line. It is the server's `dist`
 directory with its bundled web client, plus a `T3_SOURCE_COMMIT` marker and a
@@ -50,7 +50,7 @@ that sandbox, as the process that ran it does.
 ## Staging
 
 ```sh
-bun run deploy/stage-native-runtime.ts /path/to/native-runtime-42ef3397fa38.tar.gz
+bun run deploy/stage-native-runtime.ts /path/to/native-runtime-c3a1dd480534.tar.gz
 ```
 
 Without an argument, the script downloads the exact filename from the public
@@ -75,7 +75,7 @@ bundle and patch on a new private release. A runtime distribution change does
 not change harness protocol selection: Codex, Claude Code, OpenCode, and Pi
 remain on their native engine drivers.
 
-The matching `t3code-fork-42ef3397fa38.bundle` and `.patch` preserve the custom
+The matching `t3code-fork-c3a1dd480534.bundle` and `.patch` preserve the custom
 source; their hashes and upstream prerequisite commit are recorded in
 `third_party/t3code-fork.lock`. Fetch the upstream prerequisite before using
 the Git bundle. The fork's contract label (`orchestrator-v2-hosted-codex-host-switches-v7`)
@@ -137,3 +137,7 @@ carries no runtime state.
 - 2026-10-19: fork `42ef3397fa38` on top of it: with continuations off the runtime refuses at
   dispatch any message a person did not send, and OpenCode steers wait behind the freeze gate.
   Engines unchanged.
+- 2026-11-06: fork `c3a1dd480534` on top of it, for OpenCode 2.1 and later: upstream's
+  compaction history decode (t3code #22661) and the compaction started and ended events,
+  which OpenCode 2.1 sends without `recent`, decode again. Engines: `@opencode/cli` 2.2.5
+  (was 2.0.26; 2.1.4+ never stops a location's runs while one is waiting on a person).
