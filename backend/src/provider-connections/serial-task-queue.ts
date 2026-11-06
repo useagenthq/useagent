@@ -2,12 +2,16 @@ export interface SerialTaskQueue {
   enqueue(task: () => Promise<void>): void;
 }
 
+/** Runs tasks one at a time, in order; the first that throws ends the queue
+ *  (`onError`). Past `maxPendingTasks` waiting tasks it fails closed, for a
+ *  producer that must not build an unbounded backlog; a trusted one whose
+ *  output must arrive whole passes Number.POSITIVE_INFINITY. */
 export function createSerialTaskQueue(
   onError: (error: unknown) => void,
   options: { readonly maxPendingTasks?: number } = {},
 ): SerialTaskQueue {
   const maxPendingTasks = options.maxPendingTasks ?? 256;
-  if (!Number.isSafeInteger(maxPendingTasks) || maxPendingTasks < 1) {
+  if (!(maxPendingTasks === Number.POSITIVE_INFINITY || Number.isSafeInteger(maxPendingTasks)) || maxPendingTasks < 1) {
     throw new Error("serial task queue limit is invalid");
   }
   const pending: Array<() => Promise<void>> = [];

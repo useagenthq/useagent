@@ -313,6 +313,59 @@ describe("Codex subscription run relay", () => {
     ]);
   });
 
+  test("a burst of app-server output while its frames wait is delivered whole, never ending the turn", async () => {
+    // 35 minutes into a Codex turn the relay's frame queue passed 256 waiting
+    // lines, closed with 1008 ("serial task queue limit exceeded"), and the
+    // turn failed as "The provider event stream closed unexpectedly".
+    const server = startRelayServer();
+    const child = fakeAppServer();
+    let stall: PromiseWithResolvers<void> | null = null;
+    let stalled = 0;
+    setCodexSubscriptionRelayDependenciesForTest({
+      // Every frame is authorized before it is forwarded: a slow read holds them all.
+      selectRuntime: async () => {
+        if (stall) {
+          stalled += 1;
+          await stall.promise;
+        }
+        return runtime();
+      },
+      loadThreadBinding: async () => "provider-thread-1",
+      spawnAppServer: () => child.process,
+    });
+    const capability = issueCodexSubscriptionRelayCapability({
+      binding: binding(),
+      runtime: runtime(),
+      execServerUrl: "ws://127.0.0.1:43111/opaque-exec-grant",
+      codeModeHostUrl: "http://127.0.0.1:43112",
+      publicOrigin: `http://127.0.0.1:${server.port}`,
+    });
+    const socket = await opened(capability.url);
+    sockets.push(socket);
+    const closed = new Promise<string>((resolve) => socket.addEventListener("close", (event) => resolve(`closed ${event.code}`)));
+    socket.send(JSON.stringify({ id: 1, method: "initialize", params: { clientInfo: { name: "t3", version: "1.0.0" } } }));
+    await eventually(() => expect(child.received).toHaveLength(1));
+    await finishRelayInitialization(socket, child, 1);
+    socket.send(JSON.stringify({ id: 20, method: "thread/resume", params: { threadId: "provider-thread-1", cwd: "/root/work", model: "gpt-5.5" } }));
+    await eventually(() => expect(child.received.some((frame) => frame.includes('"thread/resume"'))).toBe(true));
+    const resumed = collectMessages(socket, 1);
+    child.stdout.write(`${JSON.stringify({ id: 20, result: { thread: { id: "provider-thread-1" } } })}\n`);
+    await resumed;
+
+    stall = Promise.withResolvers<void>();
+    const burst = Array.from({ length: 600 }, (_, index) =>
+      JSON.stringify({ method: "item/agentMessage/delta", params: { threadId: "provider-thread-1", turnId: "turn-1", itemId: "msg-1", delta: `d${index}` } }));
+    const forwarded = collectMessages(socket, burst.length);
+    for (const frame of burst) child.stdout.write(`${frame}\n`);
+    // The first frame waits on its authorization while the relay reads every other one.
+    await eventually(() => {
+      expect(stalled).toBeGreaterThan(0);
+      expect(child.stdout.writableLength + child.stdout.readableLength).toBe(0);
+    });
+    stall.resolve();
+    expect(await Promise.race([forwarded, closed])).toEqual(burst);
+  });
+
   test("makes capabilities one-use and rejects host account methods", async () => {
     const server = startRelayServer();
     const firstChild = fakeAppServer();
