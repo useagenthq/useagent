@@ -12,6 +12,7 @@ import {
 } from "@/components/sidebar-kit/sidebar";
 import { TooltipProvider } from "@/components/sidebar-kit/tooltip";
 import { useIsTabletBand } from "@/hooks/use-is-mobile";
+import { ProductTour } from "./product-tour";
 import { SidebarThreadsProvider } from "./sidebar-threads-provider";
 import { TaskSoundCues } from "./task-sound-cues";
 import { useWorkingSignal } from "./working-signal";
@@ -53,6 +54,7 @@ export function AppShell({
           </a>
           <AutoCollapse collapseSidebarAtTablet={collapseSidebarAtTablet} />
           <TaskSoundCues />
+          <ProductTour />
           {sidebar}
           {panel}
           <SidebarInset className="relative min-h-0 min-w-0 overflow-hidden bg-background-full md:peer-data-[variant=inset]:mt-0 md:peer-data-[variant=inset]:rounded-t-none md:peer-data-[variant=inset]:shadow-md md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-0">

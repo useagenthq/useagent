@@ -25,11 +25,11 @@ import {
 import { FollowUpRows } from "@/components/chat/follow-up-rows";
 import { ChatTabStrip } from "@/components/chat/chat-tabs";
 import { ReplyComposer } from "@/components/chat/reply-composer";
-import type { RunUpload } from "@/components/chat/run-uploads";
+import { type RunUpload, uploadNotice } from "@/components/chat/run-uploads";
 import { SubagentRow } from "@/components/chat/subagent-row";
 import { SessionDetailsRail } from "@/components/chat/session-details-rail";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
-import { ComposerAttachmentRow } from "@/components/pro/composer-attachments";
+import { ComposerAttachmentRow, ComposerUploadNotice } from "@/components/pro/composer-attachments";
 import { ComposerStatusBar } from "@/components/pro/composer-status-bar";
 import { RunningFooter } from "@/components/pro/running-footer";
 import { UsageCard } from "@/components/pro/usage-card";
@@ -499,7 +499,8 @@ export function SessionSample() {
               <p className="text-caption-1-regular text-text-tertiary">
                 Picked, dropped or pasted files sit above the prompt as tiles: an image
                 shows its thumbnail, any other file its typed icon over the name, each
-                with a remove mark. Past eight, the rest fold behind a count. Image
+                with a remove mark. Past eight, the rest fold behind a count. A failed
+                file says why under the tiles, and that removing it frees Send. Image
                 content itself renders as an artifact card (with a click-to-expand
                 lightbox) in the conversation above.
               </p>
@@ -511,6 +512,7 @@ export function SessionSample() {
                   }
                   className="p-3"
                 />
+                <ComposerUploadNotice notice={uploadNotice(uploads, 0)} className="px-3 pb-3" />
               </div>
               <a
                 href="#turn-1"

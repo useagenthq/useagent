@@ -117,6 +117,16 @@ describe("POST /api/knowledge/upload", () => {
       status: 422,
       body: { error: "empty_document" },
     });
+    // Bun parses an empty part, or one whose filename is "", into a File with
+    // no name (#412): the same reasons as a named file, never a 500.
+    expect(await upload(new File([], "empty.md"))).toMatchObject({
+      status: 422,
+      body: { error: "empty_document", message: "This file is empty" },
+    });
+    expect(await upload(new File(["# Runbook"], ""))).toMatchObject({
+      status: 400,
+      body: { error: "unsupported_type" },
+    });
     const missing = await fetchApi("/api/knowledge/upload", {
       method: "POST",
       body: new FormData(),

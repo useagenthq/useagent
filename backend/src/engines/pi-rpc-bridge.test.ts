@@ -876,9 +876,10 @@ describe("Pi RPC frame parsing", () => {
   });
 
   test("bounds startup when PTY connection never settles", async () => {
+    const control: BridgeTestControl = { lifecycle: [] };
     const manager = new DefaultPiBridgeManager(5, 5);
     const startup = manager.ensure({
-      sandbox: sandboxWithBracketedPastePrefix([], { hangConnection: true }),
+      sandbox: sandboxWithBracketedPastePrefix([], { control, hangConnection: true }),
       workdir: "/work",
       runtime: {
         model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
@@ -891,16 +892,19 @@ describe("Pi RPC frame parsing", () => {
       },
     });
 
-    await expect(Promise.race([
-      startup,
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("startup stayed pending")), 40)),
-    ])).rejects.toThrow("RPC readiness timed out");
+    // Only the readiness bound may end startup: an outside timer races the
+    // retry's fresh bound when the event loop stalls. Awaited plainly, since
+    // expect().rejects on a pending promise holds off Bun's test timeout.
+    const failure = await startup.catch((error: unknown) => error);
+    expect(failure).toMatchObject({ message: expect.stringContaining("RPC readiness timed out") });
+    expect(control.lifecycle).toEqual(["create-1", "kill-1", "disconnect-1", "create-2", "kill-2", "disconnect-2"]);
   });
 
   test("bounds startup when initial PTY input never settles", async () => {
+    const control: BridgeTestControl = { lifecycle: [] };
     const manager = new DefaultPiBridgeManager(5, 5);
     const startup = manager.ensure({
-      sandbox: sandboxWithBracketedPastePrefix([], { hangStartupSend: true }),
+      sandbox: sandboxWithBracketedPastePrefix([], { control, hangStartupSend: true }),
       workdir: "/work",
       runtime: {
         model: { provider: "openai", modelId: "gpt-5.6-luna", selector: "openai/gpt-5.6-luna" },
@@ -913,10 +917,12 @@ describe("Pi RPC frame parsing", () => {
       },
     });
 
-    await expect(Promise.race([
-      startup,
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("startup stayed pending")), 40)),
-    ])).rejects.toThrow("RPC readiness timed out");
+    // Only the readiness bound may end startup: an outside timer races the
+    // retry's fresh bound when the event loop stalls. Awaited plainly, since
+    // expect().rejects on a pending promise holds off Bun's test timeout.
+    const failure = await startup.catch((error: unknown) => error);
+    expect(failure).toMatchObject({ message: expect.stringContaining("RPC readiness timed out") });
+    expect(control.lifecycle).toEqual(["create-1", "kill-1", "disconnect-1", "create-2", "kill-2", "disconnect-2"]);
   });
 
   test("delivers prompt frames larger than Linux MAX_CANON intact", async () => {

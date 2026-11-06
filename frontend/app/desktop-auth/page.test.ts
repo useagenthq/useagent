@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { desktopAuthRequest, restartElectronRedirect, startDesktopGoogleSignIn } from "./page";
+import { desktopAuthRequest, restartElectronRedirect, startDesktopGoogleSignIn } from "./request";
 import { desktopAuthClient } from "@/lib/desktop-auth-client";
 
 const valid = `https://plane.example/desktop-auth?client_id=electron&state=${"A".repeat(16)}&code_challenge=${"B".repeat(43)}&code_challenge_method=S256`;

@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
-import { skillRevisions, skills, type SkillKind, type SkillSections } from "../db/schema";
+import { bots, schedules, skillRevisions, skills, type SkillKind, type SkillSections } from "../db/schema";
 import { syncSkillToContextIndex } from "../context/projector";
 import { formatSkillMarkdown, hashSkillContent, type SkillContent } from "./format";
 
@@ -207,6 +207,29 @@ export async function getSkillForOrg(
     .where(and(eq(skills.id, id), eq(skills.orgId, orgId)))
     .limit(1);
   return row ?? null;
+}
+
+/** An enabled automation, or a bot routine (`bot` names its bot), that pins a skill. */
+export interface SkillPinHolder {
+  readonly name: string;
+  readonly bot: string | null;
+}
+
+/**
+ * The enabled automations and bot routines in this org that pin `skillId`,
+ * ordered by name. Deleting the skill would make every one of their firings
+ * fail with missing_skill_revision, so delete refuses while any exist.
+ */
+export async function enabledSchedulesPinningSkill(
+  orgId: string,
+  skillId: string,
+): Promise<SkillPinHolder[]> {
+  return db
+    .select({ name: schedules.name, bot: bots.name })
+    .from(schedules)
+    .leftJoin(bots, and(eq(bots.id, schedules.botId), eq(bots.orgId, schedules.orgId)))
+    .where(and(eq(schedules.orgId, orgId), eq(schedules.skillId, skillId), eq(schedules.enabled, true)))
+    .orderBy(schedules.name, schedules.id);
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   createSchedule,
   deleteSchedule,
   fetchHistory,
+  fetchSchedulePreview,
   fetchSchedules,
   runScheduleNow,
   updateSchedule,
@@ -210,6 +211,28 @@ describe("Automations API client", () => {
         },
       },
     ]);
+  });
+
+  test("previews a schedule's next runs from the scheduler, with its zone", async () => {
+    responses.push(Response.json({ next_runs: ["2026-10-13T13:00:00.000Z", "2026-10-14T13:00:00.000Z"] }));
+    const controller = new AbortController();
+
+    const result = await fetchSchedulePreview("0 9 * * *", "America/New_York", controller.signal);
+
+    expect(result).toEqual(["2026-10-13T13:00:00.000Z", "2026-10-14T13:00:00.000Z"]);
+    expect(calls).toHaveLength(1);
+    const input = String(calls[0]?.input);
+    expect(input.startsWith("/api/automations/preview?")).toBeTrue();
+    const query = new URLSearchParams(input.slice(input.indexOf("?") + 1));
+    expect(query.get("cron")).toBe("0 9 * * *");
+    expect(query.get("timezone")).toBe("America/New_York");
+    expect(calls[0]?.init?.signal).toBe(controller.signal);
+  });
+
+  test("surfaces the preview endpoint's refusal for an unreadable cron", async () => {
+    responses.push(Response.json({ error: "cron must be a valid 5-field expression" }, { status: 400 }));
+
+    await expect(fetchSchedulePreview("61 9 * * *", "UTC")).rejects.toThrow("schedule preview 400");
   });
 
   test("deletes an Automation through its canonical item endpoint", async () => {

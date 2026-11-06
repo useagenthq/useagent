@@ -183,6 +183,8 @@ export interface ComposerAttachment {
   progress?: number;
   /** useAgent: the upload did not land; the warning mark stands where the ring was. */
   failed?: boolean;
+  /** useAgent: why it did not land, worded to follow the name ("is empty"). */
+  failedReason?: string;
 }
 
 export interface ComposerAttachmentTileProps {
@@ -235,14 +237,14 @@ export function ComposerAttachmentTile({
   onRemove,
   className,
 }: ComposerAttachmentTileProps) {
-  const { name, kind, src, progress, failed = false } = attachment;
+  const { name, kind, src, progress, failed = false, failedReason } = attachment;
   const uploading = !failed && progress !== undefined;
   const icon = KIND_ICONS[kind];
   return (
     <div
       data-attachment-kind={kind}
       data-status={failed ? "error" : uploading ? "uploading" : "ready"}
-      title={name}
+      title={failed && failedReason ? `${name} ${failedReason}` : name}
       className={cx("relative size-16 shrink-0", className)}
     >
       <div className="relative flex size-full flex-col items-center justify-center gap-1 overflow-hidden rounded-xl border border-composer-panel-tile-border bg-background-secondary-default">
@@ -262,7 +264,7 @@ export function ComposerAttachmentTile({
         {failed && (
           <span
             role="img"
-            aria-label="Upload failed"
+            aria-label={failedReason ? `Upload failed: ${name} ${failedReason}` : "Upload failed"}
             className="absolute inset-0 flex items-center justify-center bg-background-primary-default/75"
           >
             <RiErrorWarningLine aria-hidden className="size-5 text-text-error-primary" />

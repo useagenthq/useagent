@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { json, uid } from "./helpers";
+import { eq } from "drizzle-orm";
+import { db } from "../src/db/client";
+import { schedules } from "../src/db/schema";
+import { createOrgSession, json, uid } from "./helpers";
 
 describe("skills CRUD + run", () => {
   test("create → get in list → run increments usage → patch → delete → 404", async () => {
@@ -227,5 +230,141 @@ describe("skill kind (skills vs playbooks over one substrate)", () => {
     const list = await json<{ skills: any[] }>("/api/skills?kind=workflow");
     expect(list.status).toBe(200);
     expect(list.body.skills).toEqual([]);
+  });
+});
+
+describe("deleting a skill that automations still use", () => {
+  async function createSkill(cookies: string, label: string): Promise<string> {
+    const res = await json<{ id: string }>("/api/skills", {
+      method: "POST",
+      cookies,
+      body: { name: `${label} ${uid()}`, description: "d", sections: { procedure: ["p"] } },
+    });
+    expect(res.status).toBe(201);
+    return res.body.id;
+  }
+
+  test("refuses while an enabled automation or bot routine in the org pins it, then allows", async () => {
+    const org = await createOrgSession("skill-in-use");
+    const other = await createOrgSession("skill-in-use-other");
+    const { cookies } = org;
+    const skillId = await createSkill(cookies, "Pinned");
+    const otherSkillId = await createSkill(cookies, "Replacement");
+
+    // An automation pinned to the skill, turned on (automations start paused).
+    const automation = await json<{ id: string }>("/api/schedules", {
+      method: "POST",
+      cookies,
+      body: { name: "Nightly digest", cron: "0 3 * * *", prompt: "digest", engine: "mock", skill: { id: skillId } },
+    });
+    expect(automation.status).toBe(201);
+    // Paused, it does not hold the skill.
+    const paused = await json<{ id: string }>("/api/schedules", {
+      method: "POST",
+      cookies,
+      body: { name: "Paused digest", cron: "0 4 * * *", prompt: "digest", engine: "mock", skill: { id: skillId } },
+    });
+    expect(paused.status).toBe(201);
+    expect(
+      (await json(`/api/schedules/${automation.body.id}`, { method: "PATCH", cookies, body: { enabled: true } })).status,
+    ).toBe(200);
+
+    // A bot whose preset pins the skill; its routine carries that pin and is on.
+    const bot = await json<{ bot: { id: string } }>("/api/bots", {
+      method: "POST",
+      cookies,
+      body: { name: "Ledger", engine: "mock", skillIds: [skillId] },
+    });
+    expect(bot.status).toBe(201);
+    const routine = await json<{ routine: { id: string; enabled: boolean } }>(`/api/bots/${bot.body.bot.id}/routines`, {
+      method: "POST",
+      cookies,
+      body: { name: "Weekly metrics", cron: "0 7 * * 1", prompt: "metrics" },
+    });
+    expect(routine.status).toBe(201);
+    expect(routine.body.routine.enabled).toBe(true);
+
+    // Another org's enabled automation naming the same skill id never counts.
+    await db.insert(schedules).values({
+      orgId: other.orgId,
+      name: "Other org digest",
+      cron: "0 5 * * *",
+      timezone: "UTC",
+      prompt: "digest",
+      engine: "mock",
+      skillId,
+      enabled: true,
+    });
+
+    const refused = await json<any>(`/api/skills/${skillId}`, { method: "DELETE", cookies });
+    expect(refused.status).toBe(409);
+    expect(refused.body).toEqual({
+      error: "skill_in_use",
+      used_by: [
+        { name: "Nightly digest", bot: null },
+        { name: "Weekly metrics", bot: "Ledger" },
+      ],
+      total: 2,
+    });
+
+    // Repoint the automation and pause the routine: only the routine is left,
+    // then nothing in this org holds it.
+    expect(
+      (
+        await json(`/api/schedules/${automation.body.id}`, {
+          method: "PATCH",
+          cookies,
+          body: { skill: { id: otherSkillId } },
+        })
+      ).status,
+    ).toBe(200);
+    const stillRoutine = await json<any>(`/api/skills/${skillId}`, { method: "DELETE", cookies });
+    expect(stillRoutine.status).toBe(409);
+    expect(stillRoutine.body.used_by).toEqual([{ name: "Weekly metrics", bot: "Ledger" }]);
+
+    expect(
+      (
+        await json(`/api/bots/${bot.body.bot.id}/routines/${routine.body.routine.id}`, {
+          method: "PATCH",
+          cookies,
+          body: { enabled: false },
+        })
+      ).status,
+    ).toBe(200);
+    const deleted = await json<any>(`/api/skills/${skillId}`, { method: "DELETE", cookies });
+    expect(deleted.status).toBe(200);
+    expect(deleted.body).toEqual({ deleted: true, id: skillId });
+
+    await db.delete(schedules).where(eq(schedules.orgId, other.orgId));
+  });
+
+  test("a refusal names a few holders and counts them all", async () => {
+    const { cookies, orgId } = await createOrgSession("skill-in-use-many");
+    const skillId = await createSkill(cookies, "Popular");
+    await db.insert(schedules).values(
+      Array.from({ length: 7 }, (_, n) => ({
+        orgId,
+        name: `Digest ${n}`,
+        cron: "0 3 * * *",
+        timezone: "UTC",
+        prompt: "digest",
+        engine: "mock" as const,
+        skillId,
+        enabled: true,
+      })),
+    );
+
+    const refused = await json<any>(`/api/skills/${skillId}`, { method: "DELETE", cookies });
+    expect(refused.status).toBe(409);
+    expect(refused.body.total).toBe(7);
+    expect(refused.body.used_by.map((holder: { name: string }) => holder.name)).toEqual([
+      "Digest 0",
+      "Digest 1",
+      "Digest 2",
+      "Digest 3",
+      "Digest 4",
+    ]);
+
+    await db.delete(schedules).where(eq(schedules.orgId, orgId));
   });
 });

@@ -19,11 +19,11 @@ describe("session workspace rail expand mode", () => {
   test("offers explicit accessible expand and restore controls for the active tab", () => {
     const sessionView = read("./session-view.tsx");
 
-    expect(sessionView).toContain("const railTabLabel =");
-    const railTabInterpolation = "$" + "{railTabLabel}";
-    expect(sessionView).toContain(`Expand ${railTabInterpolation}`);
-    expect(sessionView).toContain(`Expand ${railTabInterpolation} panel to main canvas`);
-    expect(sessionView).toContain(`Restore ${railTabInterpolation} panel to side rail`);
+    expect(sessionView).toContain("const railPanel = railPanelName(railTab);");
+    const railPanelInterpolation = "$" + "{railPanel}";
+    expect(sessionView).toContain(`Expand ${railPanelInterpolation}`);
+    expect(sessionView).toContain(`Expand ${railPanelInterpolation} to main canvas`);
+    expect(sessionView).toContain(`Restore ${railPanelInterpolation} to side rail`);
     expect(sessionView).toContain("aria-pressed={railExpanded}");
     expect(sessionView).toContain('aria-keyshortcuts={railExpanded ? "Escape" : undefined}');
     expect(sessionView).toContain('if (event.key === "Escape") setRailExpanded(false)');
@@ -52,5 +52,48 @@ describe("session workspace rail expand mode", () => {
     );
     // Sheet mode = the phone breakpoint OR a measured too-narrow md+ split.
     expect(sessionView).toContain("const surfacesSheet = isMobile || splitTooNarrow");
+  });
+
+  test("makes the open sheet a named modal dialog over an inert conversation", () => {
+    const sessionView = read("./session-view.tsx");
+
+    expect(sessionView).toContain("const sheetDialogOpen = surfacesSheet && sheetSurfacesOpen");
+    expect(sessionView).toContain("useSheetDialog(sheetDialogOpen, railRef, surfaceOpenerRef, closeSheet)");
+    expect(sessionView).toContain('{...sheetDialogProps(sheetDialogOpen, "Side panel")}');
+    expect(sessionView).toContain("inert={sheetDialogOpen}");
+  });
+
+  test("uncovers the composer when a sheet surface seeds it", () => {
+    const sessionView = read("./session-view.tsx");
+
+    // "Ask agent to redo" runs inside the sheet; the composer behind it is inert.
+    expect(sessionView).toContain("if (sheetDialogOpen) closeSheet();");
+    // A follow-up pick while the sheet is closed must not record a collapse: on a
+    // narrow desktop window that would keep the side panel shut once it widens.
+    expect(sessionView).not.toContain("if (surfacesSheet) closeSheet();");
+  });
+
+  test("keeps the opener mounted under the sheet so closing can return focus to it", () => {
+    const sessionView = read("./session-view.tsx");
+    const threadActions = read("./session-thread-actions.tsx");
+
+    expect(sessionView).toContain("showSurfaceOpener={hasRuntimeSurfaces}");
+    expect(sessionView).toContain("surfaceOpenerRef={surfaceOpenerRef}");
+    expect(threadActions).toContain("ref={surfaceOpenerRef}");
+  });
+
+  test("keeps the screen-reader announcer outside the panes that get hidden", () => {
+    const sessionView = read("./session-view.tsx");
+    const conversation = read("./conversation.tsx");
+
+    // The conversation section is hidden while the side panel is expanded and
+    // inert under the phone dialog, so a live region inside it goes unheard.
+    const split = sessionView.indexOf('<div ref={bodyRef} className="flex h-full min-h-0 flex-col md:flex-row">');
+    const announcer = sessionView.indexOf("<ConversationAnnouncer");
+    const conversationSection = sessionView.indexOf("aria-hidden={railExpanded}");
+    expect(split).toBeGreaterThan(-1);
+    expect(announcer).toBeGreaterThan(split);
+    expect(announcer).toBeLessThan(conversationSection);
+    expect(conversation).not.toContain("<ConversationAnnouncer");
   });
 });

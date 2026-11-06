@@ -8,7 +8,7 @@
 // touch the container's own stick-to-bottom logic (it only reads scroll offset).
 
 import { RiArrowDownLine } from "@remixicon/react";
-import { type RefObject, useEffect, useState } from "react";
+import { type MouseEvent, type RefObject, useEffect, useState } from "react";
 
 /** Distance from the bottom (px) under which the reader counts as "at the end" -
  *  matches the conversation's own stick-to-bottom threshold. */
@@ -43,10 +43,19 @@ export function ScrollToEndPill({ scrollRef }: { scrollRef: RefObject<HTMLElemen
 
   if (atBottom) return null;
 
-  const scrollToEnd = () => {
+  const scrollToEnd = (event: MouseEvent<HTMLButtonElement>) => {
     const el = scrollRef.current;
     if (!el) return;
     jumpToEnd(el);
+    // The pill unmounts once the reader is at the end, taking its focus with
+    // it; hand focus to the reply box so keyboard users keep their place.
+    // Pointer taps skip the hand-off: focusing an input pops open the
+    // on-screen keyboard on phones.
+    if (event.detail === 0) {
+      document
+        .querySelector<HTMLElement>('[data-session-ui="reply-composer"] textarea')
+        ?.focus();
+    }
   };
 
   return (

@@ -8,6 +8,7 @@ import { relativeTimeShort } from "@/utils/format";
 import { FirstRunNotice } from "./first-run-notice";
 import { NewTaskComposer } from "./new-task-composer";
 import { fetchSkills } from "./skills-data";
+import { TourLauncher } from "./tour-launcher";
 
 export const metadata: Metadata = {
   title: "New thread",
@@ -24,21 +25,22 @@ interface RecentRun {
   latest_updated_at?: string;
 }
 
-/** Three most-recent real runs for the "Recent tasks" list. Empty on any
- * failure so the section simply doesn't render (never a broken card). */
-async function fetchRecentRuns(): Promise<RecentRun[]> {
+/** Three most-recent real runs for the "Recent tasks" list. Null on any
+ * failure so the section simply doesn't render (never a broken card), and an
+ * unanswered list is never read as "this person has no threads yet". */
+async function fetchRecentRuns(): Promise<RecentRun[] | null> {
   try {
     const res = await backendFetch("/api/runs?view=summary&limit=3", { cache: "no-store" });
-    if (!res.ok) return [];
+    if (!res.ok) return null;
     const data: unknown = await res.json();
     const runs = Array.isArray(data)
       ? (data as RecentRun[])
       : Array.isArray((data as { runs?: RecentRun[] })?.runs)
         ? (data as { runs: RecentRun[] }).runs
-        : [];
+        : null;
     return runs;
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -104,7 +106,8 @@ export default async function NewTaskPage({
             />
           </div>
 
-          {recentRuns.length > 0 ? <RecentTasks runs={recentRuns} /> : null}
+          {recentRuns && recentRuns.length > 0 ? <RecentTasks runs={recentRuns} /> : null}
+          <TourLauncher newUser={recentRuns?.length === 0} />
         </div>
       </div>
   );

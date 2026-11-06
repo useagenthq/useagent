@@ -4,7 +4,7 @@ import { RiAddLine, RiDeleteBinLine, RiEditLine, RiHistoryLine, RiPlayLine } fro
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { cadenceLabel } from "@/app/agent/schedules/schedules-data";
+import { cadenceLabel, nextRunLabelAt } from "@/app/agent/schedules/schedules-data";
 import { Badge } from "@/components/base/badges/badge";
 import { Button } from "@/components/base/buttons/button";
 import * as Modal from "@/components/base/modal/modal";
@@ -39,6 +39,9 @@ function RoutineRow({
   /** The run a test run started, until this row goes away. */
   const [started, setStarted] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /** When this routine fires next, as the server reports it; a paused routine reports no next run. */
+  const nextRun = nextRunLabelAt(routine.nextDueAt, routine.timezone);
 
   const guard = async (kind: "toggle" | "run" | "delete", work: () => Promise<ApiRoutine | undefined>) => {
     if (busy) return;
@@ -79,8 +82,9 @@ function RoutineRow({
           </p>
           <p className="text-caption-1-regular text-text-tertiary">
             {cadenceLabel(routine.cron)}
-            {routine.timezone ? ` (${routine.timezone})` : ""}
+            {` (${routine.timezone})`}
             {routine.lastFiredAt ? ` · last run ${relativeTime(routine.lastFiredAt, now) || "just now"}` : " · never run"}
+            {nextRun ? ` · next run ${nextRun}` : ""}
           </p>
         </div>
         <Switch
