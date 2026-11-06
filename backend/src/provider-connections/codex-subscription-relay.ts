@@ -383,8 +383,14 @@ codexSubscriptionRelayRoutes.get(
       environmentBootstrap?.close();
       closeChild();
     };
+    // The sandbox's frames fail closed past the queue's limit. The app-server's
+    // are our own Codex's output, which must arrive whole: it writes bursts of
+    // hundreds of deltas faster than each frame is authorized and checked, and
+    // Bun reads a child's output whatever a pause asks, so its frames wait here
+    // without a limit. With one, 256 waiting frames closed the relay and failed
+    // a long turn as "The provider event stream closed unexpectedly".
     const clientFrames = createSerialTaskQueue(rejectRelay);
-    const serverFrames = createSerialTaskQueue(rejectRelay);
+    const serverFrames = createSerialTaskQueue(rejectRelay, { maxPendingTasks: Number.POSITIVE_INFINITY });
 
     return {
       onOpen: (_event, socket) => {
