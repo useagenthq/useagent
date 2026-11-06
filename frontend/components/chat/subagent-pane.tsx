@@ -101,7 +101,7 @@ export function PaneStub({
 }: {
   children: React.ReactNode;
   childSession?: boolean;
-  label?: "Run";
+  label?: "Task";
 }) {
   return (
     <>
@@ -122,8 +122,8 @@ export function PaneStub({
 const SubagentPaneBody = dynamic(() => import("@/components/chat/subagent-pane-body"), {
   ssr: false,
   loading: () => (
-    <PaneStub label="Run">
-      <LoadingState label="Loading run" />
+    <PaneStub label="Task">
+      <LoadingState label="Loading task" />
     </PaneStub>
   ),
 });
@@ -245,7 +245,7 @@ export function SubagentPeekButton({
   return (
     <button
       type="button"
-      aria-label="Peek run"
+      aria-label="Preview task"
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();

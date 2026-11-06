@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createCanonicalThreadStore, type CanonicalThreadEvent } from "@useagent/agent-client";
 import type { ThreadRelationship } from "@useagent/agent-client";
 import type { CanonicalChildEventLike } from "./canonical-children";
+import { childKindLabel } from "./child-labels";
 import { EXECUTION_SUMMARY_ROLLOUT_MODE } from "./execution-summary-rollout";
 import { type GatewayChildSession, SubagentsFold } from "./subagents-fold";
 
@@ -106,7 +107,7 @@ describe("subagents fold (inline conversation group)", () => {
       />,
     );
     expect(html).toContain('data-testid="subagents-fold"');
-    expect(html).toContain("1 subagent, 1 spawned session");
+    expect(html).toContain("1 subagent, 1 helper agent");
     // Native child row: title, agent-type, model, tokens, live state.
     expect(html).toContain("Verify checkout");
     expect(html).toContain("verifier");
@@ -117,6 +118,12 @@ describe("subagents fold (inline conversation group)", () => {
     expect(html).toContain("Summarize the wiki for onboarding");
     expect(html).toContain("Queued");
     expect(html).toContain('href="/session/child-run-1"');
+    // The link's name comes from the shared kind label, so this row and the Agents
+    // rail never call the same child two different things (#339).
+    expect(html).toContain(
+      `aria-label="Open ${childKindLabel("spawned_session")}: Summarize the wiki for onboarding"`,
+    );
+    expect(html).not.toContain("spawned");
     expect(html).not.toContain("parallel");
   });
 
@@ -139,7 +146,7 @@ describe("subagents fold (inline conversation group)", () => {
         childSessions={[gatewayChild({ status: "completed", summary: "Wiki summarized." })]}
       />,
     );
-    expect(html).toContain("1 subagent, 1 spawned session");
+    expect(html).toContain("1 subagent, 1 helper agent");
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("Suite green.");
   });

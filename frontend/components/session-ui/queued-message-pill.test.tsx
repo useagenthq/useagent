@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { queuedPillLabel, QueuedMessagePill } from "./queued-message-pill";
 
 test("labels state the honest FIFO position, never a countdown", () => {
-  expect(queuedPillLabel(1)).toBe("Queued - sends after the current run");
+  expect(queuedPillLabel(1)).toBe("Queued - sends after the current reply");
   expect(queuedPillLabel(1, false)).toBe("Queued - waiting to start");
   expect(queuedPillLabel(2)).toBe("Queued #2 - 1 reply ahead");
   expect(queuedPillLabel(3)).toBe("Queued #3 - 2 replies ahead");
@@ -14,7 +14,7 @@ test("head queued pill is right-aligned and carries the Send now steering", () =
   expect(html).toContain('data-session-ui="queued-message-pill"');
   expect(html).toContain("justify-end");
   expect(html).toContain('role="status"');
-  expect(html).toContain("Queued - sends after the current run");
+  expect(html).toContain("Queued - sends after the current reply");
   expect(html).toContain("Send now");
 });
 

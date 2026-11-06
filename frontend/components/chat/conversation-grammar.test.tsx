@@ -217,7 +217,7 @@ test("a gateway child-session turn folds under its parent, never a second turn b
   // Its truth lives in the parent's subagent fold: honest serial Queued state
   // plus the open-as-own-session affordance.
   expect(html).toContain('data-testid="subagents-fold"');
-  expect(html).toContain("1 spawned session");
+  expect(html).toContain("1 helper agent");
   expect(html).toContain("Delegated: audit the docs");
   expect(html).toContain("Queued");
   expect(html).toContain('href="/session/run-child"');

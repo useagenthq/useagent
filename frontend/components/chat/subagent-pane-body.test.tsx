@@ -65,7 +65,7 @@ describe("run peek body", () => {
 
   test("loading and error shells are neutral unless the caller knows it is a child", () => {
     expect(renderToStaticMarkup(<PaneStub>Loading</PaneStub>)).toContain(">Thread<");
-    expect(renderToStaticMarkup(<PaneStub label="Run">Loading</PaneStub>)).toContain(">Run<");
+    expect(renderToStaticMarkup(<PaneStub label="Task">Loading</PaneStub>)).toContain(">Task<");
     expect(renderToStaticMarkup(<PaneStub childSession>Loading</PaneStub>)).toContain(
       ">Subagent<",
     );

@@ -14,7 +14,7 @@ import { RiTimeLine } from "@remixicon/react";
  *  positions also wait on the replies ahead of them. */
 export function queuedPillLabel(position: number, waitingOnCurrentRun = true): string {
   if (!waitingOnCurrentRun) return "Queued - waiting to start";
-  if (position <= 1) return "Queued - sends after the current run";
+  if (position <= 1) return "Queued - sends after the current reply";
   const ahead = position - 1;
   return `Queued #${position} - ${ahead} ${ahead === 1 ? "reply" : "replies"} ahead`;
 }
@@ -47,7 +47,7 @@ export function QueuedMessagePill({
           <button
             type="button"
             onClick={onSendNow}
-            title="Stops the current turn; this message starts immediately"
+            title="Stops what the agent is doing now and sends this message right away"
             className="shrink-0 cursor-pointer text-accent-500 underline-offset-2 outline-none hover:underline focus-visible:underline"
           >
             Send now

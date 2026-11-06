@@ -79,7 +79,7 @@ function Row({
         <button
           type="button"
           onClick={onSendNow}
-          title="Stops the current turn; this message starts immediately"
+          title="Stops what the agent is doing now and sends this message right away"
           className="shrink-0 cursor-pointer text-caption-1-medium text-accent-500 underline-offset-2 outline-none hover:underline focus-visible:underline"
         >
           Send now
