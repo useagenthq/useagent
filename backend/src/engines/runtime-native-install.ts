@@ -8,7 +8,7 @@ import { buildSandboxBunProbeCommand } from "./sandbox-bun";
 // probes that prove an installed engine is exactly that package.
 export const CODEX_VERSION = "0.162.1";
 export const CLAUDE_CODE_VERSION = "2.1.296";
-export const OPENCODE_VERSION = "2.0.26";
+export const OPENCODE_VERSION = "2.2.5";
 export const OPENCODE_PACKAGE = "@opencode/cli";
 /** The pinned driver versions the bootstrap installs; the native image name is derived from them. */
 export const RUNTIME_ENGINE_VERSIONS = {

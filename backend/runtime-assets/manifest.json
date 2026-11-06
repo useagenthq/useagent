@@ -1,8 +1,8 @@
 {
-  "archiveName": "native-runtime-42ef3397fa38.tar.gz",
-  "archiveSha256": "311a81889490e525df5ec3f5dbb660a40b04059467d7907a81d90f38017efc8f",
-  "manifestSha256": "d33c54581f880d3aa2d37f87580ee6fc4f232c19948b3938cc54e527880b9c88",
-  "sourceCommit": "42ef3397fa38befec011b840c953adbff7c8770a",
+  "archiveName": "native-runtime-c3a1dd480534.tar.gz",
+  "archiveSha256": "fb4fc5a879aa102a2764c537a5ba085b20b0d4a1d71d915070a28086fbeedbd4",
+  "manifestSha256": "6118efc14e27b7432b8b906c32fed87a51dbf71735a17a3f565eb3df8d158efb",
+  "sourceCommit": "c3a1dd480534347b5bfddfebd33aafd016d5b78b",
   "dependencyVersion": "0.1.1-nightly.20261018.3315",
   "dependencyLockSha256": "280ff1023e238377733a87b07bf86c83ff18ae9953fb8d06281d767c8340779d"
 }

@@ -100,7 +100,7 @@ describe("T3 environment client", () => {
     const command = buildRuntimeEnvironmentAuthenticationCommand();
 
     expect(command).toContain(
-      '"/root/.local/share/useagent/native-runtime/42ef3397fa38befec011b840c953adbff7c8770a/bin/t3" auth pairing create',
+      '"/root/.local/share/useagent/native-runtime/c3a1dd480534347b5bfddfebd33aafd016d5b78b/bin/t3" auth pairing create',
     );
     expect(command).not.toMatch(/(^|\s)t3 auth pairing create/);
     expect(command).toContain('--json >"$PAIRING"');
@@ -118,7 +118,7 @@ describe("T3 environment client", () => {
     const command = buildRuntimeEnvironmentAuthenticationCommand(BOX_LAYOUT);
 
     expect(command).toContain(
-      '"/home/user/.local/share/useagent/native-runtime/42ef3397fa38befec011b840c953adbff7c8770a/bin/t3" auth pairing create',
+      '"/home/user/.local/share/useagent/native-runtime/c3a1dd480534347b5bfddfebd33aafd016d5b78b/bin/t3" auth pairing create',
     );
     expect(command).not.toContain("/root");
     expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
