@@ -1,4 +1,7 @@
-// Ported from a peer tool (Apache-2.0): src/kiro_crew/messaging/transport.py (TransportCapabilities)
+// Ported from KiroCrew (https://github.com/kirodotdev/KiroCrew), Apache-2.0:
+//   src/kiro_crew/messaging/transport.py (TransportCapabilities)
+// Copyright Amazon.com, Inc. or its affiliates. Changed: rewritten in
+// TypeScript for this codebase. License and NOTICE: third_party/licenses/kirocrew/.
 import { defaultCapabilities, type TransportCapabilities } from "../types";
 
 /** Email surface capabilities. v1 is a single plain-text, outbound message: no

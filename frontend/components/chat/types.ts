@@ -561,7 +561,7 @@ export function deriveTrace(step: ApiStep): StepTrace {
   if (step.chip === "subagent") {
     const prompt = pickString(input, ["prompt"]);
     const desc =
-      pickString(input, ["description"]) ?? prompt ?? label.replace(/^Subagent\s*—\s*/, "");
+      pickString(input, ["description"]) ?? prompt ?? label.replace(/^Subagent\s*(?:\u2014|:)\s*/, "");
     return {
       ...base,
       verb: "Subagent",

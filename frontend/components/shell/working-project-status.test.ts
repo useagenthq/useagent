@@ -34,13 +34,13 @@ describe("sidebar live status helpers", () => {
     expect(
       explicitRunRepos(
         run({
-          prompt: "Fix acme/new-skynet",
+          prompt: "Fix acme/new-useagent",
           repo: null,
           repos: [],
         }),
       ),
     ).toEqual([]);
-    expect(explicitRunRepos(run({ repo: "acme/new-skynet" }))).toEqual(["acme/new-skynet"]);
+    expect(explicitRunRepos(run({ repo: "acme/new-useagent" }))).toEqual(["acme/new-useagent"]);
     expect(explicitRunRepos(run({ repos: ["acme/a", 123, "", "acme/b"] as string[] }))).toEqual([
       "acme/a",
       "acme/b",
@@ -48,13 +48,13 @@ describe("sidebar live status helpers", () => {
   });
 
   test("maps the newest active run to each project from real repo fields", () => {
-    const first = run({ id: "first", repos: ["acme/new-skynet"] });
-    const second = run({ id: "second", repos: ["acme/new-skynet"] });
+    const first = run({ id: "first", repos: ["acme/new-useagent"] });
+    const second = run({ id: "second", repos: ["acme/new-useagent"] });
     const completed = run({ id: "done", status: "completed", repos: ["acme/done"] });
 
     const byRepo = activeRunByRepo([first, second, completed]);
 
-    expect(byRepo.get("acme/new-skynet")?.id).toBe("first");
+    expect(byRepo.get("acme/new-useagent")?.id).toBe("first");
     expect(byRepo.has("acme/done")).toBe(false);
   });
 

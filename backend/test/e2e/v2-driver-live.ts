@@ -31,6 +31,7 @@ import { homedir, tmpdir } from "node:os";
 import { Sandbox } from "e2b";
 import postgres from "postgres";
 import { startPublicTunnel, tunnelProviderOrder, type PublicTunnel } from "./lib/public-tunnel";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_DIR } from "../../src/sandboxes/sandbox-names";
 
 const HOME = homedir();
 const CREDS_PATH = process.env.V2_E2E_CREDS ?? "";
@@ -281,7 +282,7 @@ async function startRecorder(name: string, runId: string) {
       }
     })());
   };
-  follow(`skynet-thread-${row.thread_id ?? runId}`);
+  follow(`${SANDBOX_NAME_PREFIX}-thread-${row.thread_id ?? runId}`);
   return async () => {
     await sleep(1_500);
     controller.abort();
@@ -433,7 +434,7 @@ const scenarios: Record<Scenario, () => Promise<void>> = {
     walk([...threads.values()]);
     // What the fresh runtime thread received: the plane's history, once, and no handoff of its own.
     const text = records
-      .filter((entry) => entry.role === "user" && entry.id === `skynet-message-${second}` && typeof entry.text === "string")
+      .filter((entry) => entry.role === "user" && entry.id === `${SANDBOX_NAME_PREFIX}-message-${second}` && typeof entry.text === "string")
       .map((entry) => String(entry.text)).at(-1) ?? "";
     const histories = text.split("This is an ONGOING conversation").length - 1;
     const handoffs = new Set(records.flatMap((entry) => [
@@ -526,7 +527,7 @@ async function saveRuntimeTraces(name: string): Promise<void> {
   for (const id of await labelledSandboxes(new Set(scenarioRuns))) {
     const sandbox = await Sandbox.connect(id, e2b);
     const trace = await sandbox.commands.run(
-      "for home in /root /home/user; do f=$home/.skynet/t3/userdata/logs/server.trace.ndjson; [ -f $f ] && tail -c 600000 $f; done",
+      `for home in /root /home/user; do f=$home/${SANDBOX_STATE_DIR}/t3/userdata/logs/server.trace.ndjson; [ -f $f ] && tail -c 600000 $f; done`,
       { user: "root", timeoutMs: 30_000 },
     );
     const path = `${LOG_DIR}/${name}-${id}.trace.ndjson`;

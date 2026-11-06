@@ -27,7 +27,7 @@ const ORG_B = "org-other-test";
 function orgIdentity(orgId: string, runId: string): MemoryIdentity {
   return {
     teamId: orgId,
-    agentId: "skynet-backend",
+    agentId: "useagent-backend",
     userId: `org:${orgId}`,
     actorUserId: "u-1",
     sessionId: "thread-1",

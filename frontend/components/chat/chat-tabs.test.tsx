@@ -3,36 +3,65 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ChatTabStrip, tabKeyAction } from "./chat-tabs";
 
 const TABS = [
-  { id: "r1", title: "Fix the login bug", href: "/session/r1", engine: "codex", status: "running" as const },
-  { id: "r2", title: "Deploy to staging", href: "/session/r2", engine: "claude", status: "failed" as const },
-  { id: "r3", title: "Write the release notes", href: "/session/r3", engine: "opencode", status: "completed" as const },
+  {
+    id: "r1",
+    title: "Fix the login bug",
+    href: "/session/r1",
+    engine: "codex",
+    status: "running" as const,
+  },
+  {
+    id: "r2",
+    title: "Deploy to staging",
+    href: "/session/r2",
+    engine: "claude",
+    status: "failed" as const,
+  },
+  {
+    id: "r3",
+    title: "Write the release notes",
+    href: "/session/r3",
+    engine: "opencode",
+    status: "completed" as const,
+  },
 ];
 
 describe("ChatTabStrip", () => {
   test("nothing renders until a chat is open", () => {
-    expect(renderToStaticMarkup(<ChatTabStrip tabs={[]} activeId={null} onClose={() => {}} />)).toBe("");
+    expect(
+      renderToStaticMarkup(<ChatTabStrip tabs={[]} activeId={null} onClose={() => {}} />),
+    ).toBe("");
   });
 
   test("one tab per open chat, the current one selected, each closable", () => {
-    const html = renderToStaticMarkup(<ChatTabStrip tabs={TABS} activeId="r2" onClose={() => {}} />);
+    const html = renderToStaticMarkup(
+      <ChatTabStrip tabs={TABS} activeId="r2" onClose={() => {}} />,
+    );
     expect(html).toContain('data-testid="chat-tabs"');
-    expect(html).toContain('role="tablist"');
-    expect(html.match(/role="tab"/g)).toHaveLength(3);
+    // The row is a nav of plain links: these tabs navigate to threads, so the
+    // active one is marked aria-current="page" and no tab roles exist (an
+    // empty sr-only tablist with aria-owns reads poorly in VoiceOver).
+    const nav = html.match(/<nav[^>]*>/)?.[0] ?? "";
+    expect(nav).toContain('aria-label="Open chats"');
+    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain('role="tab"');
+    expect(html).not.toContain("aria-owns");
     expect(html).toContain('href="/session/r1"');
     expect(html).toContain(">Deploy to staging<");
-    expect(html).toContain('aria-selected="true"');
     expect(html).toContain('aria-label="Close Fix the login bug"');
-    const selected = html.match(/<a[^>]*aria-selected="true"[^>]*>/g) ?? [];
-    expect(selected).toHaveLength(1);
-    expect(selected[0]).toContain('href="/session/r2"');
+    const current = html.match(/<a[^>]*aria-current="page"[^>]*>/g) ?? [];
+    expect(current).toHaveLength(1);
+    expect(current[0]).toContain('href="/session/r2"');
   });
 
   test("tabs are capsules with the engine mark, a status dot in the rail's states and a plus for a new chat", () => {
-    const html = renderToStaticMarkup(<ChatTabStrip tabs={TABS} activeId="r2" onClose={() => {}} />);
+    const html = renderToStaticMarkup(
+      <ChatTabStrip tabs={TABS} activeId="r2" onClose={() => {}} />,
+    );
     // The strip has no bottom border; every tab is a rounded-full pill.
-    const strip = html.match(/<div[^>]*role="tablist"[^>]*>/)?.[0] ?? "";
+    const strip = html.match(/<nav[^>]*>/)?.[0] ?? "";
     expect(strip).not.toContain("border-b");
-    expect(html.match(/role="presentation"[^>]*class="[^"]*rounded-full/g)).toHaveLength(3);
+    expect(html.match(/<div[^>]*class="group flex h-8 max-w-56/g)).toHaveLength(3);
     // The status dot reads the same states as the rail rows: running, failed, done.
     expect(html).toContain('aria-label="Running"');
     expect(html).toContain('aria-label="Failed"');
@@ -41,7 +70,11 @@ describe("ChatTabStrip", () => {
     // A tab whose thread the rail list does not hold yet shows no dot at all:
     // an unknown state must not read as done.
     const unknown = renderToStaticMarkup(
-      <ChatTabStrip tabs={[{ id: "r9", title: "Chat", href: "/session/r9" }]} activeId="r9" onClose={() => {}} />,
+      <ChatTabStrip
+        tabs={[{ id: "r9", title: "Chat", href: "/session/r9" }]}
+        activeId="r9"
+        onClose={() => {}}
+      />,
     );
     expect(unknown).not.toContain('role="img"');
     expect(unknown).not.toContain("Completed");

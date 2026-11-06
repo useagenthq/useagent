@@ -25,10 +25,10 @@ async function probe(): Promise<boolean> {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.MEMORY_API_KEY ?? ""}`,
-        "x-tdai-service-id": process.env.MEMORY_SERVICE_ID ?? "skynet",
+        "x-tdai-service-id": process.env.MEMORY_SERVICE_ID ?? "useagent",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ team_id: "skynet", agent_id: "skynet-backend", user_id: "org:skynet", query: "ping", limit: 1 }),
+      body: JSON.stringify({ team_id: "useagent", agent_id: "useagent-backend", user_id: "org:useagent", query: "ping", limit: 1 }),
     });
     return res.ok;
   } catch {

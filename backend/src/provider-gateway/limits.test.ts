@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { providerRequestLimits } from "./limits";
+import { ANTHROPIC_ENGINE_OUTPUT_TOKENS } from "./sandbox-config";
 
 describe("provider request limits", () => {
   test("uses bounded defaults when environment values are unsafe", () => {
@@ -15,6 +16,10 @@ describe("provider request limits", () => {
       maxOutputTokens: 65_536,
       upstreamTimeoutMs: 600_000,
     });
+  });
+
+  test("the default output ceiling takes the most output an engine asks an Anthropic model for", () => {
+    expect(providerRequestLimits({}).maxOutputTokens).toBeGreaterThanOrEqual(ANTHROPIC_ENGINE_OUTPUT_TOKENS);
   });
 
   test("caps requests per run only when the operator sets one", () => {

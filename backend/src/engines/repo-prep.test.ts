@@ -13,6 +13,7 @@ import {
   shq,
 } from "./repo-prep";
 import { RUN_TIMING_OUTCOMES, RUN_TIMING_STAGES, type TimingSpanEnd } from "../runs/run-timing";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_DIR } from "../sandboxes/sandbox-names";
 
 // Slice 1 + Phase 5 (non-destructive hardening): ONE shared, engine-neutral repository preparer.
 // Exercised with a fake sandbox (records every executeCommand + env) so script construction,
@@ -155,7 +156,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(clone?.cmd).toContain("git clone");
     expect(clone?.cmd).toContain("'https://github.com/acme/widget.git'");
     expect(clone?.cmd).toContain("/home/daytona/work/acme/widget"); // <owner>/<name>, not bare <name>
-    expect(clone?.cmd).toContain("STAGE_ROOT='/root/.skynet/repo-staging'");
+    expect(clone?.cmd).toContain(`STAGE_ROOT='/root/${SANDBOX_STATE_DIR}/repo-staging'`);
     expect(clone?.cmd).toContain('mktemp -d "$STAGE_ROOT/clone.XXXXXX"');
     expect(clone?.cmd).not.toContain('mktemp -d "$PARENT/');
     expect(clone?.cmd).toContain('stat -c %u "$PARENT"');
@@ -164,7 +165,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(clone?.cmd).toContain('mv "$DIR" "$BAK"'); // owned/absent replace moves the old aside atomically first
     expect(clone?.cmd).not.toContain('rm -rf "$DIR"'); // never rm the destination (race-safe move-aside instead)
     expect(clone?.cmd).toContain("ALLOW=no"); // absent destination -> never replace
-    expect(clone?.cmd).toContain("skynet-owned"); // stamps the ownership marker
+    expect(clone?.cmd).toContain(`${SANDBOX_NAME_PREFIX}-owned`); // stamps the ownership marker
     expect(emits.some((e) => e.label === "Cloning acme/widget")).toBe(true);
   });
 
@@ -180,17 +181,17 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     const clone = cloneCmd(calls)?.cmd ?? "";
     expect(identity).toContain('CURRENT_UID="$(id -u)"');
     expect(identity).toContain('if [ "$O" = "$CURRENT_UID" ]');
-    expect(identity).toContain("'/home/user/.skynet/repo-runtime-ownership/");
+    expect(identity).toContain(`'/home/user/${SANDBOX_STATE_DIR}/repo-runtime-ownership/`);
     expect(clone).toContain("DIR='/home/user/work/acme/widget'");
-    expect(clone).toContain("STAGE_ROOT='/home/user/.skynet/repo-staging'");
-    expect(clone).toContain("OWNERSHIP_ROOT='/home/user/.skynet/repo-runtime-ownership'");
+    expect(clone).toContain(`STAGE_ROOT='/home/user/${SANDBOX_STATE_DIR}/repo-staging'`);
+    expect(clone).toContain(`OWNERSHIP_ROOT='/home/user/${SANDBOX_STATE_DIR}/repo-runtime-ownership'`);
     expect(clone).toContain('"$(stat -c %u "$PARENT" 2>/dev/null)" != "$CURRENT_UID"');
     expect(clone).toContain('printf \'uid=%s\n\' "$CURRENT_UID"');
     expect(`${identity}\n${clone}`).not.toContain("/root");
     expect(`${identity}\n${clone}`).not.toContain('"$O" = 1000');
     expect(`${identity}\n${clone}`).not.toContain('"$O" = 0');
     expect(clone).not.toContain("-o 0");
-    expect(clone).not.toContain('|| [ -f "$DIR/.git/skynet-owned" ]');
+    expect(clone).not.toContain(`|| [ -f "$DIR/.git/${SANDBOX_NAME_PREFIX}-owned" ]`);
     expect(cloneCmd(calls)?.env).toEqual({});
     expect(composeBoxCommand(clone, undefined, cloneCmd(calls)?.env)).not.toContain(SENTINEL);
   });
@@ -391,7 +392,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     const identity = idCmd(calls)?.cmd ?? "";
     expect(identity).toContain('CURRENT_UID="$(id -u)"');
     expect(identity).toContain('"$O" = "$CURRENT_UID"');
-    expect(identity).toContain("'/home/user/.skynet/repo-runtime-ownership/");
+    expect(identity).toContain(`'/home/user/${SANDBOX_STATE_DIR}/repo-runtime-ownership/`);
     expect(identity).not.toContain("/root");
     expect(cloneCmd(calls)).toBeUndefined();
   });
@@ -490,10 +491,10 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(checkout).toBeDefined();
     expect(checkout?.cmd).toContain("DIR='/home/daytona/work with spaces/acme/widget'");
     expect(checkout?.cmd).toContain(
-      "git -c safe.directory=\"$DIR\" -C \"$DIR\" fetch --force --quiet origin 'refs/pull/42/head:refs/skynet/pull/42/head'",
+      "git -c safe.directory=\"$DIR\" -C \"$DIR\" fetch --force --quiet origin 'refs/pull/42/head:refs/useagent/pull/42/head'",
     );
     expect(checkout?.cmd).toContain(
-      "git -c safe.directory=\"$DIR\" -C \"$DIR\" checkout --detach 'refs/skynet/pull/42/head'",
+      "git -c safe.directory=\"$DIR\" -C \"$DIR\" checkout --detach 'refs/useagent/pull/42/head'",
     );
     expect(checkout?.cmd).toContain(`EXPECTED='${expectedHead}'`);
     expect(checkout?.cmd).not.toContain("github.com/acme/widget/pull/42");
@@ -524,7 +525,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     const command = pullCmd(calls)?.cmd ?? "";
     expect(command).toContain('CURRENT_UID="$(id -u)"');
     expect(command).toContain('"$OWNER" != "$CURRENT_UID"');
-    expect(command).toContain("'/home/user/.skynet/repo-runtime-ownership/");
+    expect(command).toContain(`'/home/user/${SANDBOX_STATE_DIR}/repo-runtime-ownership/`);
     expect(command).toContain('printf \'uid=%s\n\' "$CURRENT_UID"');
     expect(command).not.toContain("/root");
     expect(command).not.toContain('"$OWNER" = 1000');

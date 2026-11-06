@@ -44,8 +44,8 @@ function makeDriver(): ProviderDriver {
         availableModels: [{ id: "gpt-test", displayName: "GPT Test" }],
       },
       tools: {
-        mode: "skynet_brokered",
-        approval: "skynet",
+        mode: "useagent_brokered",
+        approval: "useagent",
         tools: [{ name: "shell", description: "Run a bounded shell command" }],
       },
     },

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { CodexSubscriptionRelayBinding } from "./codex-subscription-relay";
 import { CodexSubscriptionProtocol } from "./codex-subscription-protocol";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 describe("CodexSubscriptionProtocol", () => {
   test("strips thread config the host owns and refuses a model provider override", async () => {
@@ -685,14 +686,33 @@ describe("CodexSubscriptionProtocol V2 methods", () => {
     }))).rejects.toThrow("background terminal id is required");
   });
 
-  test("keeps refusing fork, revert, turn listing and feedback upload", async () => {
+  test("keeps refusing fork, revert, turn listing, goals and feedback upload, answering them itself", async () => {
     const protocol = makeProtocol({ providerThreadId: "provider-thread-1" });
     await confirmResume(protocol, 1, "provider-thread-1");
-    for (const method of ["thread/fork", "thread/revert", "thread/turns/list", "feedback/upload"]) {
-      await expect(protocol.acceptClientFrame(JSON.stringify({
-        id: 9, method, params: { threadId: "provider-thread-1" },
-      }))).rejects.toThrow("unavailable through the run relay");
+    for (const method of [
+      "thread/fork", "thread/revert", "thread/turns/list", "feedback/upload",
+      "thread/goal/get", "thread/goal/set", "thread/goal/clear", "thread/inject_items",
+    ]) {
+      const frame = JSON.stringify({ id: 9, method, params: { threadId: "provider-thread-1" } });
+      await expect(protocol.acceptClientFrame(frame)).rejects.toThrow("unavailable through the run relay");
+      // The runtime gets a refusal it can handle; the session (and its app-server) stays up.
+      expect(JSON.parse((await protocol.answerLocally(frame))!)).toEqual({
+        id: 9,
+        error: { code: -32601, message: `${method} is unavailable through the run relay` },
+      });
     }
+  });
+
+  test("unarchives only the bound thread", async () => {
+    const protocol = makeProtocol({ providerThreadId: "provider-thread-1" });
+    const unarchive = (id: number, threadId: string) =>
+      JSON.stringify({ id, method: "thread/unarchive", params: { threadId } });
+    expect(await protocol.answerLocally(unarchive(1, "provider-thread-1"))).toBeNull();
+    expect(await protocol.acceptClientFrame(unarchive(1, "provider-thread-1"))).toBe(unarchive(1, "provider-thread-1"));
+    await expect(protocol.acceptClientFrame(unarchive(2, "provider-thread-foreign")))
+      .rejects.toThrow("unarchive thread binding mismatch");
+    await expect(makeProtocol().acceptClientFrame(unarchive(3, "provider-thread-1")))
+      .rejects.toThrow("unarchive thread binding mismatch");
   });
 });
 
@@ -739,14 +759,14 @@ function binding(): CodexSubscriptionRelayBinding {
     model: "gpt-5.5",
     sandboxId: "sandbox-1",
     sandboxGeneration: "t3-v2",
-    environmentId: "skynet-sandbox-1-run-1",
+    environmentId: `${SANDBOX_NAME_PREFIX}-sandbox-1-run-1`,
     cwd: "/root/work",
   };
 }
 
 function remoteEnvironment() {
   return {
-    environmentId: "skynet-sandbox-1-run-1",
+    environmentId: `${SANDBOX_NAME_PREFIX}-sandbox-1-run-1`,
     cwd: "/root/work",
     runtimeWorkspaceRoots: ["/root/work"],
   };

@@ -2,7 +2,8 @@
  * Read a cloned repository's text files into memory and derive the file-tree /
  * README the structure prompt needs. Pure with respect to the DB and network —
  * it only touches the local clone directory. The exclusion defaults mirror
- * deepwiki-open's repo.json (AsyncFuncAI/deepwiki-open, MIT), trimmed to the
+ * deepwiki-open's repo.json (AsyncFuncAI/deepwiki-open, MIT License, Copyright
+ * (c) 2024 Sheing Ng), trimmed to the
  * common noise, plus a binary/size guard so a page prompt stays bounded.
  */
 import type { Dirent } from "node:fs";

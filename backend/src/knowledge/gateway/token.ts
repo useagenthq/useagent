@@ -21,7 +21,8 @@ import { authSecretMaterial } from "../../security/runtime-secrets";
 // ---------------------------------------------------------------------------
 
 const VERSION = "v1";
-const DERIVE_LABEL = "skynet-tool-gateway-v1";
+// Key-derivation label: tokens already held by live sandboxes verify under it.
+export const TOOL_TOKEN_DERIVE_LABEL = "skynet-tool-gateway-v1";
 
 /** How the capability binds to a turn (perf run-invariant-config slice):
  *  "run" (legacy default) is inert unless the exact minted run is running now;
@@ -64,7 +65,7 @@ function signingKey(): Buffer {
   if (explicit) return Buffer.from(explicit, "utf8");
   // Domain-separated HKDF-lite: HMAC the auth secret under a fixed label so the
   // gateway key is independent of (and non-invertible to) the cookie key.
-  return createHmac("sha256", authSecretMaterial()).update(DERIVE_LABEL).digest();
+  return createHmac("sha256", authSecretMaterial()).update(TOOL_TOKEN_DERIVE_LABEL).digest();
 }
 
 function b64url(buf: Buffer): string {

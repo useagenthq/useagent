@@ -18,6 +18,7 @@ import {
 } from "./runtime-environment-client";
 import { buildRuntimeEnvironmentReadinessCommand, RUNTIME_GENERATION } from "./runtime-environment";
 import { buildNativeRuntimeArtifactProbe } from "./native-runtime-artifact";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 const ROOT_LAYOUT = {
   home: "/root",
@@ -99,7 +100,7 @@ describe("T3 environment client", () => {
     const command = buildRuntimeEnvironmentAuthenticationCommand();
 
     expect(command).toContain(
-      '"/root/.local/share/useagent/native-runtime/dd2b1389590f13819dfa6ecbf894454a72400770/bin/t3" auth pairing create',
+      '"/root/.local/share/useagent/native-runtime/42ef3397fa38befec011b840c953adbff7c8770a/bin/t3" auth pairing create',
     );
     expect(command).not.toMatch(/(^|\s)t3 auth pairing create/);
     expect(command).toContain('--json >"$PAIRING"');
@@ -117,7 +118,7 @@ describe("T3 environment client", () => {
     const command = buildRuntimeEnvironmentAuthenticationCommand(BOX_LAYOUT);
 
     expect(command).toContain(
-      '"/home/user/.local/share/useagent/native-runtime/dd2b1389590f13819dfa6ecbf894454a72400770/bin/t3" auth pairing create',
+      '"/home/user/.local/share/useagent/native-runtime/42ef3397fa38befec011b840c953adbff7c8770a/bin/t3" auth pairing create',
     );
     expect(command).not.toContain("/root");
     expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
@@ -172,8 +173,8 @@ describe("T3 environment client", () => {
     const command = buildRuntimeEnvironmentRequestCommand({ method: "GET", path: "/api/orchestration/shell" });
     expect(command).toContain("-H 'x-t3-orchestration-protocol: 2'");
     expect(buildRuntimeEnvironmentRequestCommand({
-      method: "GET", path: "/api/orchestration/threads/skynet-thread-1/bounded",
-    })).toContain("'http://127.0.0.1:37733/api/orchestration/threads/skynet-thread-1/bounded'");
+      method: "GET", path: `/api/orchestration/threads/${SANDBOX_NAME_PREFIX}-thread-1/bounded`,
+    })).toContain(`'http://127.0.0.1:37733/api/orchestration/threads/${SANDBOX_NAME_PREFIX}-thread-1/bounded'`);
     expect(() => buildRuntimeEnvironmentRequestCommand({
       method: "POST", path: "/api/orchestration/dispatch" as never, payload: {},
     })).toThrow("invalid runtime loopback path");

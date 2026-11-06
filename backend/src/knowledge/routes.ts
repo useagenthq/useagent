@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
+import { multipartFileName } from "../uploads/validate";
 import { embeddingsEnabled, embeddingsUnavailableReason, embedOne } from "./embed";
 import {
   DocumentExtractionError,
@@ -119,6 +120,10 @@ knowledgeRoutes.post("/upload", knowledgeUploadBodyLimit, async (c) => {
   }
   const file = form.get("file");
   if (!(file instanceof File)) return c.json({ error: "file_required", message: "Choose a file to add" }, 400);
+  // An empty part arrives with no name (see multipartFileName), so it is
+  // answered here with the extractor's own reason instead of by extension.
+  if (file.size === 0) return c.json({ error: "empty_document", message: "This file is empty" }, 422);
+  const name = multipartFileName(file);
   if (file.size > KNOWLEDGE_UPLOAD_MAX_BYTES) {
     return c.json({ error: "file_too_large", message: uploadTooLarge }, 413);
   }
@@ -127,14 +132,14 @@ knowledgeRoutes.post("/upload", knowledgeUploadBodyLimit, async (c) => {
   const bytes = new Uint8Array(await file.arrayBuffer());
   let extracted: ExtractedDocument;
   try {
-    extracted = await extractDocumentText(file.name, bytes);
+    extracted = await extractDocumentText(name, bytes);
   } catch (e) {
     if (e instanceof DocumentExtractionError) {
       return c.json({ error: e.code, message: e.message }, e.code === "unsupported_type" ? 400 : 422);
     }
     throw e;
   }
-  const title = file.name.replace(/\.[^.]+$/, "");
+  const title = name.replace(/\.[^.]+$/, "");
   try {
     const result = await ingestOne({
       meta: {
@@ -150,7 +155,7 @@ knowledgeRoutes.post("/upload", knowledgeUploadBodyLimit, async (c) => {
     });
     return c.json({
       ...result,
-      file: { name: file.name, bytes: file.size, pages: extracted.pages, chars: extracted.text.length },
+      file: { name, bytes: file.size, pages: extracted.pages, chars: extracted.text.length },
     });
   } catch (e) {
     if (e instanceof IngestValidationError) return c.json({ error: e.message }, 400);

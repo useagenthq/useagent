@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   cleanupRepositoryScratch,
+  LEGACY_REPOSITORY_SCRATCH_PREFIXES,
   repositoryScratchRoot,
 } from "../src/wiki-gen/clone";
 
@@ -22,8 +23,7 @@ describe("repository clone scratch root", () => {
       await Promise.all([
         mkdir(join(root, "useagent-wiki-current")),
         mkdir(join(root, "useagent-read-current")),
-        mkdir(join(root, "skynet-wiki-legacy")),
-        mkdir(join(root, "skynet-read-legacy")),
+        ...LEGACY_REPOSITORY_SCRATCH_PREFIXES.map((prefix) => mkdir(join(root, `${prefix}legacy`))),
         mkdir(join(root, "unrelated")),
       ]);
 

@@ -11,6 +11,7 @@
 // sourceScope (personal|org), plus orgId + actorUserId, so a future "Context
 // used" UI can label each item by pool. No credentials are ever included.
 
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import { sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { recordProviderEvent } from "../runs/provider-events";
@@ -111,7 +112,7 @@ export async function recordContextRetrieval(
     id: `ctxret_${runId}`,
     runId,
     threadId,
-    provider: "skynet",
+    provider: PLATFORM_EVENT_LANES.platform,
     eventType: CONTEXT_RETRIEVED,
     payload: buildRetrievalPayload(plan, query, recall),
   });

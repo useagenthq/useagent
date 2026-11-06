@@ -13,7 +13,7 @@
 services:
   memory-core:
     image: "${MEMORY_CORE_IMAGE:-agentmemory/memory-core@sha256:f9b286246d0e5020a7f0cb011b7074703d10b76b424a834a117482392f7bd424}"
-    container_name: skynet-memory-core
+    container_name: useagent-memory-core
     ports:
       - "${MEMORY_CORE_BIND:-127.0.0.1}:${MEMORY_CORE_PORT:-8420}:8420"
     environment:
@@ -48,5 +48,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  # Memory lives in this Docker-managed volume, never in the repo.
+  # Memory lives in this Docker-managed volume, never in the repo. Existing
+  # deployments already hold their memories under this name, so it stays.
   skynet-memory-core-data:

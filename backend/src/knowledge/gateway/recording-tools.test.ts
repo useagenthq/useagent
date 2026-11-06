@@ -10,6 +10,7 @@ import {
   stopRecordingInSandbox,
 } from "./recording-tools";
 import type { ToolTokenClaims } from "./token";
+import { SANDBOX_NAME_PREFIX } from "../../sandboxes/sandbox-names";
 
 const claims: ToolTokenClaims = {
   orgId: "org-1",
@@ -126,7 +127,7 @@ describe("recording gateway tools", () => {
     );
 
     expect(path).toBe("/root/work/recordings/proof.mp4");
-    expect(commands).toEqual(["skynet-record-start 'proof'"]);
+    expect(commands).toEqual([`${SANDBOX_NAME_PREFIX}-record-start 'proof'`]);
     expect(environments).toEqual([{ DISPLAY: expectedDisplay }]);
   });
 
@@ -186,7 +187,7 @@ describe("recording gateway tools", () => {
 
     expect(path).toBe("/root/work/recordings/proof.mp4");
     expect(readinessCalls).toBe(1);
-    expect(commands).toEqual(["skynet-record-start 'proof'"]);
+    expect(commands).toEqual([`${SANDBOX_NAME_PREFIX}-record-start 'proof'`]);
   });
 
   test("stops and validates a real H.264 recording before publishing", async () => {
@@ -229,7 +230,7 @@ describe("recording gateway tools", () => {
       durationSeconds: 2.2,
     });
     expect(commands).toHaveLength(1);
-    expect(commands[0]).toContain("skynet-record-stop");
+    expect(commands[0]).toContain(`${SANDBOX_NAME_PREFIX}-record-stop`);
   });
 
   test("returns a durable authenticated artifact reference from stop", async () => {

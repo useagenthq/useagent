@@ -6,11 +6,12 @@ import { buildRuntimeTurnStartCommand, type RuntimeMode, type RuntimeThreadSnaps
 import { ensureRuntimeThreadMode } from "./runtime-thread-mode";
 import type { RuntimeCommand } from "./runtime-v2-wire";
 import { v2Projection, v2Snapshot } from "./runtime-v2.test-support";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 type RequestFn = NonNullable<Parameters<typeof ensureRuntimeThreadMode>[0]["request"]>;
 type DispatchFn = NonNullable<Parameters<typeof ensureRuntimeThreadMode>[0]["dispatch"]>;
 const SANDBOX = {} as SandboxHandle;
-const THREAD = "skynet-thread-thread-1";
+const THREAD = `${SANDBOX_NAME_PREFIX}-thread-thread-1`;
 
 function view(runtimeMode: RuntimeMode | undefined, sequence = 1): RuntimeThreadSnapshot {
   return {

@@ -29,10 +29,11 @@ import { RuntimeRpcError, type RuntimeCommand, type V2ThreadSnapshot } from "./r
 import {
   at, v2Item, v2Message, v2Projection, v2ProviderThread, v2Run, v2Session, v2Snapshot,
 } from "./runtime-v2.test-support";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 type Dependencies = Parameters<typeof makeT3ProviderDriver>[1];
 
-const THREAD = "skynet-thread-thread-1";
+const THREAD = `${SANDBOX_NAME_PREFIX}-thread-thread-1`;
 const SANDBOX = { id: "cube-t3-resume" } as SandboxHandle;
 const unreachable = async (): Promise<never> => { throw new Error("unreachable"); };
 
@@ -104,9 +105,9 @@ const expectedSandbox = {
 /** One finished plane run and its answer. */
 function answered(runId: string, text: string, extra: Partial<Parameters<typeof v2Projection>[0]> = {}) {
   return v2Snapshot(8, v2Projection({
-    runs: [v2Run({ id: `run-of-${runId}`, userMessageId: `skynet-message-${runId}` })],
+    runs: [v2Run({ id: `run-of-${runId}`, userMessageId: `${SANDBOX_NAME_PREFIX}-message-${runId}` })],
     messages: [
-      v2Message({ id: `skynet-message-${runId}`, role: "user", runId: `run-of-${runId}`, text: "Current request" }),
+      v2Message({ id: `${SANDBOX_NAME_PREFIX}-message-${runId}`, role: "user", runId: `run-of-${runId}`, text: "Current request" }),
       v2Message({ id: `assistant-${runId}`, runId: `run-of-${runId}`, text, createdAt: at(1) }),
     ],
     providerSessions: [v2Session()],
@@ -119,7 +120,7 @@ describe("T3 provider drivers", () => {
   test("re-resolves the accepted sandbox before every native lifecycle operation", async () => {
     const resolutions: unknown[][] = [];
     const { dependencies } = runtime(v2Snapshot(1), {
-      projects: [{ id: "skynet-project-thread-1" }],
+      projects: [{ id: `${SANDBOX_NAME_PREFIX}-project-thread-1` }],
       threads: [{ id: THREAD }],
     } as never);
     const driver = makeT3ProviderDriver("codex", {
@@ -327,7 +328,7 @@ describe("T3 provider drivers", () => {
 
   test("a fresh provider lifecycle can adopt an already-projected runtime thread", async () => {
     const { dependencies, requests, commands } = runtime(v2Snapshot(1), {
-      projects: [{ id: "skynet-project-thread-1" }],
+      projects: [{ id: `${SANDBOX_NAME_PREFIX}-project-thread-1` }],
       threads: [{ id: THREAD }],
     } as never);
     const driver = makeT3ProviderDriver("opencode", dependencies);
@@ -360,7 +361,7 @@ describe("T3 provider drivers", () => {
       ["POST", "/api/projects/mutate", "project.create"],
     ]);
     expect(commands).toEqual([expect.objectContaining({
-      type: "thread.create", threadId: THREAD, projectId: "skynet-project-thread-1", runtimeMode: "approval-required",
+      type: "thread.create", threadId: THREAD, projectId: `${SANDBOX_NAME_PREFIX}-project-thread-1`, runtimeMode: "approval-required",
     })]);
   });
 
@@ -373,8 +374,8 @@ describe("T3 provider drivers", () => {
     })).resolves.toEqual({ status: "ok" });
     expect(commands).toEqual([expect.objectContaining({
       type: "message.dispatch",
-      commandId: "skynet-turn-run-9",
-      messageId: "skynet-message-run-9",
+      commandId: `${SANDBOX_NAME_PREFIX}-turn-run-9`,
+      messageId: `${SANDBOX_NAME_PREFIX}-message-run-9`,
       text: "continue",
       modelSelection: { instanceId: "claudeAgent", model: "claude-opus-5", options: [{ id: "effort", value: "max" }] },
     })]);
@@ -467,7 +468,7 @@ describe("T3 provider drivers", () => {
 
   test("restart recovery completes compact from its exact request", async () => {
     const thread = v2Snapshot(9, v2Projection({
-      runs: [v2Run({ id: "prior", ordinal: 1 }), v2Run({ id: "compact", ordinal: 2, userMessageId: "skynet-message-run-compact", status: "running", completedAt: null })],
+      runs: [v2Run({ id: "prior", ordinal: 1 }), v2Run({ id: "compact", ordinal: 2, userMessageId: `${SANDBOX_NAME_PREFIX}-message-run-compact`, status: "running", completedAt: null })],
       turnItems: [v2Item({ id: "compaction-1", type: "compaction", runId: "compact", status: "completed" })],
     }));
     const { dependencies } = runtime(thread);
@@ -483,7 +484,7 @@ describe("T3 provider drivers", () => {
 
   test("restart recovery ignores unrelated compact completion", async () => {
     const thread = v2Snapshot(9, v2Projection({
-      runs: [v2Run({ id: "other", userMessageId: "skynet-message-other-run" })],
+      runs: [v2Run({ id: "other", userMessageId: `${SANDBOX_NAME_PREFIX}-message-other-run` })],
       turnItems: [v2Item({ id: "compaction-other", type: "compaction", runId: "other", status: "completed" })],
     }));
     const { dependencies } = runtime(thread);
@@ -495,7 +496,7 @@ describe("T3 provider drivers", () => {
 
   test("restart compact recovery fails with the compact run's own reason", async () => {
     const thread = v2Snapshot(9, v2Projection({
-      runs: [v2Run({ id: "compact", userMessageId: "skynet-message-run-compact", status: "failed" })],
+      runs: [v2Run({ id: "compact", userMessageId: `${SANDBOX_NAME_PREFIX}-message-run-compact`, status: "failed" })],
       turnItems: [v2Item({ id: "e1", type: "error", runId: "compact", failure: { class: "provider_error", message: "Context limit unavailable" } })],
     }));
     const { dependencies } = runtime(thread);
@@ -514,12 +515,12 @@ describe("T3 provider drivers", () => {
   });
 
   test("a continuation that is accepted but not yet answered leaves the run in progress", async () => {
-    const original = v2Run({ id: "run-a", ordinal: 1, userMessageId: "skynet-message-run-2" });
-    const continuation = v2Run({ id: "run-b", ordinal: 2, userMessageId: "skynet-message-run-2-continue-2", status: "queued", completedAt: null });
+    const original = v2Run({ id: "run-a", ordinal: 1, userMessageId: `${SANDBOX_NAME_PREFIX}-message-run-2` });
+    const continuation = v2Run({ id: "run-b", ordinal: 2, userMessageId: `${SANDBOX_NAME_PREFIX}-message-run-2-continue-2`, status: "queued", completedAt: null });
     const messages = [
-      v2Message({ id: "skynet-message-run-2", role: "user", runId: "run-a" }),
+      v2Message({ id: `${SANDBOX_NAME_PREFIX}-message-run-2`, role: "user", runId: "run-a" }),
       v2Message({ id: "assistant-a", runId: "run-a", text: "", createdAt: at(1) }),
-      v2Message({ id: "skynet-message-run-2-continue-2", role: "user", runId: "run-b", createdAt: at(2) }),
+      v2Message({ id: `${SANDBOX_NAME_PREFIX}-message-run-2-continue-2`, role: "user", runId: "run-b", createdAt: at(2) }),
     ];
     const pending = runtime(v2Snapshot(3, v2Projection({ runs: [original, continuation], messages })));
     expect((await reconcile(makeT3ProviderDriver("codex", pending.dependencies), "run-2")).status).toBe("in_progress");
@@ -535,9 +536,9 @@ describe("T3 provider drivers", () => {
   test("reconciles only the run's own turns through the live activity mapper", async () => {
     const secret = "sk-recovery-secret-1234567890";
     const thread = v2Snapshot(9, v2Projection({
-      runs: [v2Run({ id: "turn-1", ordinal: 1, userMessageId: "skynet-message-run-1" }), v2Run({ id: "turn-2", ordinal: 2, userMessageId: "skynet-message-run-2" })],
+      runs: [v2Run({ id: "turn-1", ordinal: 1, userMessageId: `${SANDBOX_NAME_PREFIX}-message-run-1` }), v2Run({ id: "turn-2", ordinal: 2, userMessageId: `${SANDBOX_NAME_PREFIX}-message-run-2` })],
       messages: [
-        v2Message({ id: "skynet-message-run-2", role: "user", runId: "turn-2", text: "Current request" }),
+        v2Message({ id: `${SANDBOX_NAME_PREFIX}-message-run-2`, role: "user", runId: "turn-2", text: "Current request" }),
         v2Message({ id: "assistant-2", runId: "turn-2", text: `Recovered with tail activity ${secret}`, createdAt: at(1) }),
       ],
       turnItems: [
@@ -579,8 +580,8 @@ describe("T3 provider drivers", () => {
 
   test("a running run exposes its current mapped activities", async () => {
     const thread = v2Snapshot(3, v2Projection({
-      runs: [v2Run({ id: "turn-live", userMessageId: "skynet-message-run-live", status: "running", completedAt: null })],
-      messages: [v2Message({ id: "skynet-message-run-live", role: "user", runId: "turn-live" })],
+      runs: [v2Run({ id: "turn-live", userMessageId: `${SANDBOX_NAME_PREFIX}-message-run-live`, status: "running", completedAt: null })],
+      messages: [v2Message({ id: `${SANDBOX_NAME_PREFIX}-message-run-live`, role: "user", runId: "turn-live" })],
       turnItems: [v2Item({ id: "call-live", type: "command_execution", runId: "turn-live", status: "running", input: "sleep 5" })],
     }));
     const { dependencies } = runtime(thread);
@@ -598,8 +599,8 @@ describe("T3 provider drivers", () => {
   test("returns redacted failure and interruption reasons with their terminal events", async () => {
     const secret = "sk-failed-turn-secret-1234567890";
     const failed = runtime(v2Snapshot(5, v2Projection({
-      runs: [v2Run({ id: "turn-error", userMessageId: "skynet-message-run-error", status: "failed" })],
-      messages: [v2Message({ id: "skynet-message-run-error", role: "user", runId: "turn-error" })],
+      runs: [v2Run({ id: "turn-error", userMessageId: `${SANDBOX_NAME_PREFIX}-message-run-error`, status: "failed" })],
+      messages: [v2Message({ id: `${SANDBOX_NAME_PREFIX}-message-run-error`, role: "user", runId: "turn-error" })],
       turnItems: [v2Item({ id: "terminal-error", type: "error", runId: "turn-error", failure: { class: "provider_error", message: `Provider error: ${secret}` } })],
     })));
     const failedResult = await reconcile(makeT3ProviderDriver("codex", failed.dependencies), "run-error", [secret]);
@@ -611,8 +612,8 @@ describe("T3 provider drivers", () => {
     expect(JSON.stringify(failedResult)).not.toContain(secret);
 
     const interrupted = runtime(v2Snapshot(6, v2Projection({
-      runs: [v2Run({ id: "turn-interrupted", userMessageId: "skynet-message-run-interrupted", status: "interrupted" })],
-      messages: [v2Message({ id: "skynet-message-run-interrupted", role: "user", runId: "turn-interrupted" })],
+      runs: [v2Run({ id: "turn-interrupted", userMessageId: `${SANDBOX_NAME_PREFIX}-message-run-interrupted`, status: "interrupted" })],
+      messages: [v2Message({ id: `${SANDBOX_NAME_PREFIX}-message-run-interrupted`, role: "user", runId: "turn-interrupted" })],
       turnItems: [v2Item({ id: "tool-cut", type: "command_execution", runId: "turn-interrupted", status: "interrupted", input: "make" })],
       providerSessions: [v2Session({ lastError: `Provider interrupted: ${secret}` })],
       providerThreads: [v2ProviderThread()],

@@ -660,7 +660,7 @@ describe("provider connections", () => {
       userId,
       session: {
         type: "managed_codex_app_server",
-        codexHome: "/srv/skynet/codex-home/user-a",
+        codexHome: "/srv/useagent/codex-home/user-a",
         email: "managed@example.com",
         planType: "plus",
         connectedAt: "2026-08-16T00:00:00.000Z",
@@ -682,7 +682,7 @@ describe("provider connections", () => {
       authEpoch: expect.stringMatching(/^[a-f0-9]{64}$/),
       authMethod: "chatgpt_oauth",
       mode: "managed_codex_app_server",
-      codexHome: "/srv/skynet/codex-home/user-a",
+      codexHome: "/srv/useagent/codex-home/user-a",
       metadata: { email: "managed@example.com", planType: "plus" },
     });
     await expect(
@@ -704,7 +704,7 @@ describe("provider connections", () => {
     const session = await createOrgSession("pc-managed-complete");
     const userId = await userIdForEmail(session.email);
     const appServer: ManagedCodexAppServerClient = {
-      codexHome: "/srv/skynet/codex-home/completed-user",
+      codexHome: "/srv/useagent/codex-home/completed-user",
       close: () => undefined,
       onNotification: () => () => undefined,
       request: async (method) => {
@@ -741,7 +741,7 @@ describe("provider connections", () => {
       authEpoch: expect.stringMatching(/^[a-f0-9]{64}$/),
       authMethod: "chatgpt_oauth",
       mode: "managed_codex_app_server",
-      codexHome: "/srv/skynet/codex-home/completed-user",
+      codexHome: "/srv/useagent/codex-home/completed-user",
       metadata: { email: "complete@example.com", planType: "team" },
     });
   });
@@ -754,7 +754,7 @@ describe("provider connections", () => {
       if (change.type === "provider_connection") changes.push(change.action);
     });
     const appServer: ManagedCodexAppServerClient = {
-      codexHome: "/srv/skynet/codex-home/status-user",
+      codexHome: "/srv/useagent/codex-home/status-user",
       close: () => undefined,
       onNotification: () => () => undefined,
       request: async (method) => {
@@ -807,7 +807,7 @@ describe("provider connections", () => {
     const session = await createOrgSession("pc-managed-reconnect");
     const userId = await userIdForEmail(session.email);
     const scope = { orgId: session.orgId, userId };
-    const codexHome = "/srv/skynet/codex-home/reconnected-user";
+    const codexHome = "/srv/useagent/codex-home/reconnected-user";
     const connectedAt = "2026-08-15T00:00:00.000Z";
     let account = {
       type: "chatgpt",
@@ -907,7 +907,7 @@ describe("provider connections", () => {
     const bothReadsStarted = Promise.withResolvers<void>();
     let readCount = 0;
     const appServer: ManagedCodexAppServerClient = {
-      codexHome: "/srv/skynet/codex-home/concurrent-status-user",
+      codexHome: "/srv/useagent/codex-home/concurrent-status-user",
       close: () => undefined,
       onNotification: () => () => undefined,
       request: async (method) => {
@@ -954,7 +954,7 @@ describe("provider connections", () => {
     const session = await createOrgSession("pc-managed-status-revoke-race");
     const userId = await userIdForEmail(session.email);
     const scope = { orgId: session.orgId, userId };
-    const codexHome = "/srv/skynet/codex-home/revoke-race-user";
+    const codexHome = "/srv/useagent/codex-home/revoke-race-user";
 
     await storeManagedCodexAppServerProviderConnection({
       ...scope,
@@ -1061,17 +1061,17 @@ describe("provider connections", () => {
     expect(isCodexAppServerAccountMethod("thread/start")).toBe(false);
     expect(isCodexAppServerAccountMethod("turn/start")).toBe(false);
 
-    const childEnv = codexAppServerChildEnvironment("/srv/skynet/codex-home/auth-only", {
+    const childEnv = codexAppServerChildEnvironment("/srv/useagent/codex-home/auth-only", {
       PATH: "/usr/local/bin:/usr/bin:/bin",
       LANG: "C.UTF-8",
-      TMPDIR: "/tmp/skynet",
+      TMPDIR: "/tmp/useagent",
       DATABASE_URL: "postgres://backend-secret",
       OPENAI_API_KEY: "backend-openai-secret",
       GOOGLE_APPLICATION_CREDENTIALS: "/run/secrets/google.json",
     });
     expect(childEnv).toEqual({
-      CODEX_HOME: "/srv/skynet/codex-home/auth-only",
-      HOME: "/srv/skynet/codex-home/auth-only",
+      CODEX_HOME: "/srv/useagent/codex-home/auth-only",
+      HOME: "/srv/useagent/codex-home/auth-only",
       PATH: "/usr/local/bin:/usr/bin:/bin",
     });
   });
@@ -1081,7 +1081,7 @@ describe("provider connections", () => {
     const userId = await userIdForEmail(session.email);
     let closeCalls = 0;
     const appServer: ManagedCodexAppServerClient = {
-      codexHome: "/srv/skynet/codex-home/revoked-user",
+      codexHome: "/srv/useagent/codex-home/revoked-user",
       close: () => {
         closeCalls += 1;
       },
@@ -1117,7 +1117,7 @@ describe("provider connections", () => {
     const userId = await userIdForEmail(session.email);
     let closeCalls = 0;
     const appServer: ManagedCodexAppServerClient = {
-      codexHome: "/srv/skynet/codex-home/revoke-failure-user",
+      codexHome: "/srv/useagent/codex-home/revoke-failure-user",
       close: () => {
         closeCalls += 1;
       },

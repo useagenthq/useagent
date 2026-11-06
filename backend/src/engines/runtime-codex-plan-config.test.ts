@@ -8,6 +8,7 @@ import {
   buildAcknowledgeCodexProviderConfigurationCommand,
   buildPendingCodexProviderConfigurationProbeCommand,
 } from "./runtime-codex-plan-config";
+import { SANDBOX_STATE_DIR } from "../sandboxes/sandbox-names";
 
 const revisionA = "a".repeat(64);
 const revisionB = "b".repeat(64);
@@ -117,9 +118,9 @@ describe("Codex provider configuration fence", () => {
 
   test("a stale acknowledgement cannot clear a newer pending revision", async () => {
     const home = await mkdtemp(join(tmpdir(), "useagent-codex-plan-fence-"));
-    const pending = join(home, ".skynet/t3/caches/useagent-codex-provider-config-pending");
+    const pending = join(home, `${SANDBOX_STATE_DIR}/t3/caches/useagent-codex-provider-config-pending`);
     try {
-      await mkdir(join(home, ".skynet/t3/caches"), { recursive: true });
+      await mkdir(join(home, `${SANDBOX_STATE_DIR}/t3/caches`), { recursive: true });
       expect(
         Bun.spawnSync(
           ["/bin/sh", "-c", buildPendingCodexProviderConfigurationProbeCommand(revisionB)],

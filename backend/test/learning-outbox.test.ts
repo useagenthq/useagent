@@ -19,9 +19,10 @@ import {
   processDueLearning,
   resetStuckLearning,
 } from "../src/learning/learning-outbox";
+import { DEV_ORG_ID } from "../src/dev-org";
 import "./helpers"; // side-effect: imports src/index -> migrate + seed
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 
 async function freshRun(
   prompt = "build something",

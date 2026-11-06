@@ -6,6 +6,7 @@ import {
   ensureDesktopCdpRelayFiles,
   resetDesktopCdpRelayTokensForTest,
 } from "./desktop-cdp-relay";
+import { SANDBOX_STATE_DIR } from "../sandboxes/sandbox-names";
 
 describe("authenticated desktop CDP relay", () => {
   test("limits the provider-facing surface and keeps raw CDP on loopback", () => {
@@ -50,8 +51,8 @@ describe("authenticated desktop CDP relay", () => {
     const token = await ensureDesktopCdpRelayFiles(sandbox, "/home/daytona");
 
     expect(token).toMatch(/^[a-f0-9]{64}$/);
-    expect(files.get("/home/daytona/.skynet/cdp-relay.token")?.toString()).toBe(`${token}\n`);
-    expect(files.has("/home/daytona/.skynet/cdp-relay.mjs")).toBe(true);
+    expect(files.get(`/home/daytona/${SANDBOX_STATE_DIR}/cdp-relay.token`)?.toString()).toBe(`${token}\n`);
+    expect(files.has(`/home/daytona/${SANDBOX_STATE_DIR}/cdp-relay.mjs`)).toBe(true);
     expect(commands.join("\n")).not.toContain(token);
     await expect(desktopCdpRelayToken(sandbox)).resolves.toBe(token);
   });

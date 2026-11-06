@@ -16,11 +16,33 @@
 /** Bump only with a migration: readers must tolerate older rows. */
 export const CANONICAL_SCHEMA_VERSION = 1 as const;
 
+/**
+ * Provider lanes the platform writes its own events under. Every stored
+ * provider event carries one in its `provider` column and readers match the
+ * exact value, so the lanes keep the product's first name: renaming one would
+ * hide every row written before the rename.
+ */
+export const PLATFORM_EVENT_LANES = {
+  platform: "skynet",
+  memory: "skynet-memory",
+  gateway: "skynet-gateway",
+  timing: "skynet-timing",
+  /** Written by older releases only; still read for the rows they left. */
+  knowledge: "skynet-knowledge",
+} as const;
+
+/** Tool server ids older sandboxes registered. Recorded tool calls and the
+ *  harness configs of retained sandboxes still carry them. */
+export const LEGACY_TOOL_SERVER_IDS = {
+  gateway: "skynet-knowledge",
+  browser: "skynet-browser",
+} as const;
+
 const TOOL_SERVER_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   useagent: "UseAgent",
   "useagent-browser": "UseAgent Browser",
-  "skynet-knowledge": "UseAgent",
-  "skynet-browser": "UseAgent Browser",
+  [LEGACY_TOOL_SERVER_IDS.gateway]: "UseAgent",
+  [LEGACY_TOOL_SERVER_IDS.browser]: "UseAgent Browser",
 };
 
 /** Keep transport server ids stable while removing internal ids from UI labels. */

@@ -15,6 +15,7 @@
  */
 import { FE, BE, launch, newPage, printResult, shot, verdictOf } from "./ui-sweep/harness";
 import type { Page } from "playwright-core";
+import { LEGACY_TOOL_SERVER_IDS } from "@useagent/agent-harness/canonical";
 
 const RUN_ID = process.env.RUN_ID;
 if (!RUN_ID) throw new Error("set RUN_ID to a settled OpenCode root run id");
@@ -43,7 +44,7 @@ async function expectedSurfaces() {
     hasSubagents: chip("subagent"),
     // skill.loaded / memory / knowledge markers appear as canonical marker rows OR
     // as skill/memory tool chips; treat either representation as "markers present".
-    hasMarkers: chip("skill") || chip("skynet-knowledge_memory_remember") || chip("knowledge"),
+    hasMarkers: chip("skill") || chip(`${LEGACY_TOOL_SERVER_IDS.gateway}_memory_remember`) || chip("knowledge"),
   };
 }
 

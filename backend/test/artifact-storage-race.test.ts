@@ -16,6 +16,7 @@ import { db } from "../src/db/client";
 import { artifacts, providerEvents, runs, userUploads } from "../src/db/schema";
 import { createUserUpload } from "../src/uploads/repo";
 import "./helpers";
+import { DEV_ORG_ID } from "../src/dev-org";
 
 const runIds = new Set<string>();
 const roots = new Set<string>();
@@ -46,7 +47,7 @@ async function createRun(runId: string): Promise<void> {
   runIds.add(runId);
   await db.insert(runs).values({
     id: runId,
-    orgId: "org-skynet-dev",
+    orgId: DEV_ORG_ID,
     userId: "user-artifact-race",
     prompt: "serialize artifact publication",
     model: "mock",
@@ -112,7 +113,7 @@ describe("artifact storage publication/reclamation serialization", () => {
     }, 1_024);
 
     const publisher = publishTrustedArtifact({
-      orgId: "org-skynet-dev",
+      orgId: DEV_ORG_ID,
       userId: "user-artifact-race",
       runId,
       provider: "codex",
@@ -174,7 +175,7 @@ describe("artifact storage publication/reclamation serialization", () => {
     });
     await locked;
     const publisher = publishTrustedArtifact({
-      orgId: "org-skynet-dev",
+      orgId: DEV_ORG_ID,
       userId: "user-artifact-race",
       runId,
       provider: "codex",
@@ -194,7 +195,7 @@ describe("artifact storage publication/reclamation serialization", () => {
     const storageKey = "d".repeat(64);
     await expect(withArtifactStorageKeyLock(storageKey, async (tx) => {
       await createUserUpload({
-        orgId: "org-skynet-dev",
+        orgId: DEV_ORG_ID,
         userId: "user-artifact-race",
         name: "rollback.txt",
         contentType: "text/plain",

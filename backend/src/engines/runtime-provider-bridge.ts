@@ -1,4 +1,5 @@
 import type { EngineId } from "../db/schema";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_DIR } from "../sandboxes/sandbox-names";
 import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
 import { sandboxPlugin } from "../sandboxes/plugins";
 import { executeSandboxCommandOnce, prefetchSandboxCommand } from "../sandboxes/command-prefetch";
@@ -44,7 +45,7 @@ import { buildCodexProviderConfigUpdateScript, codexProviderConfig, codexProvide
 export { openCodeModelLimitsChanged } from "./opencode-model-limit-refresh";
 
 const RUNTIME_SETTINGS_PATH = `${RUNTIME_ENVIRONMENT_HOME}/userdata/settings.json`;
-const RUNTIME_BIN_DIRECTORY = `${RUNTIME_ENVIRONMENT_HOME}/skynet-bin`;
+const RUNTIME_BIN_DIRECTORY = `${RUNTIME_ENVIRONMENT_HOME}/${SANDBOX_NAME_PREFIX}-bin`;
 const RUNTIME_CLAUDE_WRAPPER = `${RUNTIME_BIN_DIRECTORY}/claude`;
 const RUNTIME_CLAUDE_ACCESS_HELPER = `${RUNTIME_BIN_DIRECTORY}/prepare-claude-access`;
 const RUNTIME_CLAUDE_WRAPPER_PLACEHOLDER = "__USEAGENT_T3_CLAUDE_WRAPPER__";
@@ -279,7 +280,7 @@ export function buildRuntimeProviderBootstrapCommand(
   const safeAnthropicBaseUrl = anthropicBaseUrl;
   const safeClaudeConfigDir = claudeConfigDir!;
 
-  const attachmentsDir = `${layout.home}/.skynet/t3/userdata/attachments`;
+  const attachmentsDir = `${layout.home}/${SANDBOX_STATE_DIR}/t3/userdata/attachments`;
   const accessHelper = layout.runsAsRoot ? [
     "#!/bin/sh",
     "set -eu",
@@ -287,7 +288,7 @@ export function buildRuntimeProviderBootstrapCommand(
     `CLAUDE_GID=${CLAUDE_RUNTIME_GID}`,
     'CLAUDE_WORKDIR="${1:?Claude workspace is required}"',
     buildRootTraversalAccessCommand({
-      paths: ["/root", "/root/.skynet", "/root/.skynet/t3", "/root/.skynet/t3/userdata"],
+      paths: ["/root", `/root/${SANDBOX_STATE_DIR}`, `/root/${SANDBOX_STATE_DIR}/t3`, `/root/${SANDBOX_STATE_DIR}/t3/userdata`],
       uid: CLAUDE_RUNTIME_UID,
       gid: CLAUDE_RUNTIME_GID,
     }),

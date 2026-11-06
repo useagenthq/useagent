@@ -38,7 +38,7 @@ const ing = await ingestOne({
   org_id: org,
   user_id: "u-cli",
   meta: { source_type: "document", external_id: "cli-1", connector_instance_id: "cli:test", source_url: "https://ex/cli" },
-  text: `Runbook ${canary}: to restart the ingestion worker run 'skynet worker restart'. Unique fact ${canary}.`,
+  text: `Runbook ${canary}: to restart the ingestion worker run 'acme worker restart'. Unique fact ${canary}.`,
 });
 console.log(`seeded org=${org} record=${ing.id} canary=${canary}`);
 
@@ -63,7 +63,7 @@ console.log(`gateway at ${url}`);
 const transport = new StreamableHTTPClientTransport(new URL(url), {
   requestInit: { headers: { Authorization: `Bearer ${token}` } },
 });
-const client = new Client({ name: "skynet-proof", version: "1.0.0" });
+const client = new Client({ name: "useagent-proof", version: "1.0.0" });
 
 try {
   await client.connect(transport); // initialize handshake over the wire

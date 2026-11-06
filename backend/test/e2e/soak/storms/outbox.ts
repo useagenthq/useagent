@@ -27,7 +27,7 @@ const SEED = Number(process.env.SOAK_SEED ?? Date.now() % 2_000_000_000);
 const N_SLACK = Number(process.env.SOAK_OUTBOX_SLACK ?? 500);
 const N_MEM = Number(process.env.SOAK_OUTBOX_MEM ?? 500);
 const MEM_PORT = Number(process.env.SOAK_MEM_PORT ?? 3529);
-const DB = `skynet_soak_outbox_${MEM_PORT}`;
+const DB = `useagent_soak_outbox_${MEM_PORT}`;
 
 const rec = new Recorder("outbox");
 const rand = rng(SEED);
@@ -40,9 +40,9 @@ process.env.SLACK_SIGNING_SECRET = "soak";
 process.env.SLACK_API_URL = "http://localhost:1"; // never used — client is overridden
 process.env.MEMORY_API_URL = `http://localhost:${MEM_PORT}`;
 process.env.MEMORY_API_KEY = "soak";
-process.env.MEMORY_TEAM_ID = "skynet";
-process.env.MEMORY_AGENT_ID = "skynet-backend";
-process.env.MEMORY_USER_ID = "skynet";
+process.env.MEMORY_TEAM_ID = "useagent";
+process.env.MEMORY_AGENT_ID = "useagent-backend";
+process.env.MEMORY_USER_ID = "useagent";
 process.env.SLACK_OUTBOX_TICK_MS = "3600000";
 process.env.SLACK_OUTBOX_BASE_MS = "5";
 process.env.MEMORY_OUTBOX_TICK_MS = "3600000";
@@ -110,7 +110,7 @@ async function main(): Promise<void> {
       const hard = i % 12 === 0 ? "hardfail" : "ok";
       const runId = `soak-mem-${SEED}-${i}`;
       const prompt = `mem ${hard} ${runId}`;
-      await enqueueCapture(runId, { teamId: "skynet", agentId: "skynet-backend", userId: "skynet", actorUserId: "skynet", sessionId: `thr-${i}`, runId } as any, { prompt, summary: `sum ${i}` });
+      await enqueueCapture(runId, { teamId: "useagent", agentId: "useagent-backend", userId: "useagent", actorUserId: "useagent", sessionId: `thr-${i}`, runId } as any, { prompt, summary: `sum ${i}` });
     }
     rec.bump("enqueued_slack", N_SLACK);
     rec.bump("enqueued_mem", N_MEM);

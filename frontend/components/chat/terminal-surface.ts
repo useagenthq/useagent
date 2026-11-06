@@ -113,9 +113,9 @@ export function isIdleTerminalNotice(text: string): boolean {
   if (isTerminalUnavailableNotice(text)) return false;
   return (
     text.includes("no live sandbox") ||
-    /\[(?:skynet|useAgent)\][^\n]*\bno-sandbox\b/i.test(text) ||
-    /\[(?:skynet|useAgent)\][^\n]*not found/i.test(text) ||
-    /\[(?:skynet|useAgent)\][^\n]*sandbox is probably not running anymore/i.test(text)
+    /\[useAgent\][^\n]*\bno-sandbox\b/i.test(text) ||
+    /\[useAgent\][^\n]*not found/i.test(text) ||
+    /\[useAgent\][^\n]*sandbox is probably not running anymore/i.test(text)
   );
 }
 
@@ -125,7 +125,7 @@ export function isIdleTerminalNotice(text: string): boolean {
  * because retrying cannot change a declared capability gap.
  */
 export function isTerminalUnavailableNotice(text: string): boolean {
-  return /\[(?:skynet|useAgent)\] terminal unavailable:/i.test(text);
+  return /\[useAgent\] terminal unavailable:/i.test(text);
 }
 
 /** Whether the PTY needs a resize message: only on settled dimension change. */

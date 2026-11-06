@@ -284,11 +284,12 @@ function cubeState(state: SandboxInfo["state"]): string {
   return state === "running" ? "started" : state;
 }
 
+/** Retained sandboxes keep their live sessions under this directory; its name stays. */
 function sessionDirectory(sessionId: string): string {
   return `/tmp/skynet-cube-sessions/${Buffer.from(sessionId).toString("hex")}`;
 }
 
-/** Session id a live process was stamped with. Reads the legacy SKYNET_ name
+/** Session id a live process was stamped with. Reads the earlier env name
  *  too: processes started by the pre-rename release survive the cutover
  *  deploy, and matching only the new name would leak them past deleteSession
  *  and hide them from getSession. New processes are stamped USEAGENT_* only -

@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { commands, runs, scheduleFirings } from "../src/db/schema";
 import { subscribeOrg, type OrgChange } from "../src/runs/org-signals";
-import { cronMatches } from "../src/schedules/cron";
+import { cronMatches, nextOccurrence } from "../src/schedules/cron";
 import { fireSchedule, firingKey } from "../src/schedules/fire";
 import { getScheduleForOrg } from "../src/schedules/repo";
 import { fireScheduleForOrg } from "../src/schedules/service";
@@ -165,17 +165,15 @@ describe("timezone-aware cron evaluation", () => {
     expect(cronMatches("30 6 * * *", instant, "America/Los_Angeles")).toBe(true);
   });
 
-  test("an unknown timezone falls back to server local time, never throws", () => {
+  test("a zone the scheduler cannot read matches nothing and names no run, never the server's clock", () => {
     const instant = new Date("2026-01-15T14:30:00.000Z");
-    // Should not throw; result equals the no-timezone (server-local) evaluation.
-    const bad = cronMatches("* * * * *", instant, "Not/AZone");
-    const local = cronMatches("* * * * *", instant);
-    expect(bad).toBe(local);
+    expect(cronMatches("* * * * *", instant, "Not/AZone")).toBe(false);
+    expect(nextOccurrence("* * * * *", "Not/AZone", instant)).toBeNull();
   });
 });
 
 describe("timezone on the schedules API", () => {
-  test("create + patch round-trip a valid IANA zone; invalid is rejected", async () => {
+  test("create + patch round-trip a valid IANA zone; a schedule saved without one runs in UTC; a patch without one keeps it; invalid is rejected", async () => {
     const s = await createOrgSession("tz-api");
 
     const created = await json<any>("/api/schedules", {
@@ -200,16 +198,20 @@ describe("timezone on the schedules API", () => {
     });
     expect(bad.status).toBe(400);
 
-    // No timezone → null (server local).
-    const noneTz = await json<any>("/api/schedules", {
-      method: "POST",
-      cookies: s.cookies,
-      body: { name: "no tz", cron: "0 9 * * *", prompt: "x" },
-    });
-    expect(noneTz.status).toBe(201);
-    expect(noneTz.body.timezone).toBeNull();
+    // No timezone (an API client, an agent's tool call): UTC, stored and shown,
+    // never the server's own clock.
+    for (const timezone of [undefined, null, ""]) {
+      const noneTz = await json<any>("/api/schedules", {
+        method: "POST",
+        cookies: s.cookies,
+        body: { name: "no tz", cron: "0 9 * * *", prompt: "x", timezone },
+      });
+      expect(noneTz.status).toBe(201);
+      expect(noneTz.body.timezone).toBe("UTC");
+    }
 
-    // PATCH can change and clear the zone.
+    // PATCH changes the zone. None (null or "": a client still holding the
+    // schedule from before every schedule named one) leaves it as it is.
     const patched = await json<any>(`/api/schedules/${created.body.id}`, {
       method: "PATCH",
       cookies: s.cookies,
@@ -218,12 +220,22 @@ describe("timezone on the schedules API", () => {
     expect(patched.status).toBe(200);
     expect(patched.body.timezone).toBe("Europe/London");
 
-    const cleared = await json<any>(`/api/schedules/${created.body.id}`, {
+    for (const timezone of [null, ""]) {
+      const kept = await json<any>(`/api/schedules/${created.body.id}`, {
+        method: "PATCH",
+        cookies: s.cookies,
+        body: { timezone, prompt: "evening digest" },
+      });
+      expect(kept.status).toBe(200);
+      expect(kept.body.timezone).toBe("Europe/London");
+      expect(kept.body.prompt).toBe("evening digest");
+    }
+    const invalid = await json<any>(`/api/schedules/${created.body.id}`, {
       method: "PATCH",
       cookies: s.cookies,
-      body: { timezone: null },
+      body: { timezone: "Mars/Olympus" },
     });
-    expect(cleared.status).toBe(200);
-    expect(cleared.body.timezone).toBeNull();
+    expect(invalid.status).toBe(400);
+    expect((await getScheduleForOrg(s.orgId, created.body.id))?.timezone).toBe("Europe/London");
   });
 });

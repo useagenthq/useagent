@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { fetchApi, json, readSse, waitFor } from "./helpers";
 import { recordProviderEvent } from "../src/runs/provider-events";
 import { createRun, setRunStatus } from "../src/runs/repo";
+import { DEV_ORG_ID } from "../src/dev-org";
 
 // Contract test for the versioned native-frame SSE lane (north star "Canonical
 // Events"). All in-process against the app fetch handler; native events are
@@ -183,7 +184,7 @@ describe("native event SSE lane", () => {
       prompt: "live native",
       model: "claude-opus-5",
       engine: "mock",
-      orgId: "org-skynet-dev",
+      orgId: DEV_ORG_ID,
       userId: null,
       parentRunId: null,
       threadId: id,

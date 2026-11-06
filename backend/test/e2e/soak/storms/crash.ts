@@ -35,7 +35,7 @@ const rand = rng(SEED);
 const BOT = "U0SOAKBOT";
 
 const stack = new Stack({
-  db: `skynet_soak_crash_${PORT}`,
+  db: `useagent_soak_crash_${PORT}`,
   port: PORT,
   memPort: MEM_PORT,
   slackPort: SLACK_PORT,

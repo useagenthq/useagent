@@ -19,8 +19,9 @@ import {
 } from "./native-runtime-artifact";
 import { ORCHESTRATION_PROTOCOL_HEADER, ORCHESTRATION_PROTOCOL_VERSION } from "./runtime-v2-wire";
 import { recordRuntimeArtifactVerified, runtimeArtifactVerified } from "./runtime-artifact-verifications";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
-const RUNTIME_AUTH_DIRECTORY = `${RUNTIME_ENVIRONMENT_HOME}/skynet-auth`;
+const RUNTIME_AUTH_DIRECTORY = `${RUNTIME_ENVIRONMENT_HOME}/${SANDBOX_NAME_PREFIX}-auth`;
 export const RUNTIME_COOKIE_JAR = `${RUNTIME_AUTH_DIRECTORY}/session.cookies`;
 const RUNTIME_REQUEST_TIMEOUT_SECONDS = 15;
 /** The first shell request builds the runtime's state; the boot script gives it the same budget. */
@@ -186,7 +187,7 @@ export function buildRuntimeEnvironmentAuthenticationCommand(
     'COOKIE_TMP="$(mktemp "$AUTH_DIR/session.XXXXXX")"',
     'cleanup() { rm -f "$PAIRING" "$COOKIE_TMP"; }',
     "trap cleanup EXIT HUP INT TERM",
-    `${JSON.stringify(runtimeExecutable)} auth pairing create --base-dir "$RUNTIME_HOME" --ttl 24h --label skynet-control-plane --json >"$PAIRING"`,
+    `${JSON.stringify(runtimeExecutable)} auth pairing create --base-dir "$RUNTIME_HOME" --ttl 24h --label ${SANDBOX_NAME_PREFIX}-control-plane --json >"$PAIRING"`,
     [
       `node -e 'const fs=require("node:fs");const v=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(JSON.stringify({credential:v.credential}))' "$PAIRING"`,
       `curl -fsS -m 10 -c "$COOKIE_TMP" -H 'content-type: application/json' --data-binary @- ${runtimeLoopbackUrl("/api/auth/browser-session")} >/dev/null`,

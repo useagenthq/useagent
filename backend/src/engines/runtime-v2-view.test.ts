@@ -20,6 +20,7 @@ import { createSecretRedactor } from "../secrets/redact";
 import {
   v2Item, v2Message, v2Projection, v2ProviderThread, v2Run, v2Session, v2Snapshot, v2Turn,
 } from "./runtime-v2.test-support";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 const redact = createSecretRedactor([]);
 const ctx = { runId: "run-1", threadId: "thread-1" };
@@ -29,10 +30,10 @@ describe("protocol 2 thread view", () => {
     const view = runtimeThreadView(v2Turn({ sequence: 7, runId: "r2", status: "running", text: "Wor", ordinal: 2 }));
     expect(view.snapshotSequence).toBe(7);
     expect(view.thread.latestTurn).toMatchObject({
-      turnId: "r2", state: "running", assistantMessageId: "assistant-r2", userMessageId: "skynet-message-r2",
+      turnId: "r2", state: "running", assistantMessageId: "assistant-r2", userMessageId: `${SANDBOX_NAME_PREFIX}-message-r2`,
     });
     expect(view.thread.messages.map((message) => [message.id, message.role, message.turnId, message.streaming]))
-      .toEqual([["skynet-message-r2", "user", "r2", false], ["assistant-r2", "assistant", "r2", true]]);
+      .toEqual([[`${SANDBOX_NAME_PREFIX}-message-r2`, "user", "r2", false], ["assistant-r2", "assistant", "r2", true]]);
     expect(runtimeTurnSettled(view)).toBe(false);
   });
 
@@ -75,7 +76,7 @@ describe("protocol 2 thread view", () => {
     expect(doneView.thread.activities.map((activity) => [activity.id, activity.kind])).toEqual([["i1:completed", "tool.completed"]]);
     expect(hasOpenRuntimeToolCall(openView.thread.activities)).toBe(true);
     expect(hasOpenRuntimeToolCall(doneView.thread.activities)).toBe(false);
-    const step = activityStep(doneView.thread.activities[0]!, "skynet-thread-thread-1", "codex");
+    const step = activityStep(doneView.thread.activities[0]!, `${SANDBOX_NAME_PREFIX}-thread-thread-1`, "codex");
     expect(step).toMatchObject({ kind: "command", label: "Command run" });
     expect((step.code_json as Record<string, unknown>).input).toEqual({ command: "ls -la" });
     expect((step.code_json as Record<string, unknown>).error).toBe(false);
@@ -121,7 +122,7 @@ describe("protocol 2 thread view", () => {
     expect(view.thread.activities.map((entry) => entry.kind)).toEqual(["task.started", "task.progress"]);
     const activity = view.thread.activities[1]!;
     expect(activity.payload).toMatchObject({ taskId: "sa-1", agentKind: "agent", title: "Explorer", childSessionId: "sa-1" });
-    const event = runtimeActivityProviderEvent(ctx, "skynet-thread-thread-1", activity, redact);
+    const event = runtimeActivityProviderEvent(ctx, `${SANDBOX_NAME_PREFIX}-thread-thread-1`, activity, redact);
     expect(event).toMatchObject({ eventType: "t3.activity.task.progress", nativeSessionId: "sa-1", nativeCallId: "sa-1" });
     // The runtime's own record rides along, untouched.
     expect(activity.payload).toMatchObject({ v2: { id: "si-1", type: "subagent", subagentId: "sa-1" } });
@@ -163,11 +164,11 @@ describe("protocol 2 thread view", () => {
 
   test("a compaction names the message of the run that asked for it", () => {
     const view = runtimeThreadView(v2Snapshot(1, v2Projection({
-      runs: [v2Run({ id: "r9", userMessageId: "skynet-message-run-9" })],
+      runs: [v2Run({ id: "r9", userMessageId: `${SANDBOX_NAME_PREFIX}-message-run-9` })],
       turnItems: [v2Item({ id: "c1", type: "compaction", runId: "r9", status: "completed" })],
     })));
     expect(view.thread.activities[0]).toMatchObject({
-      kind: "context-compaction", payload: { state: "compacted", requestId: "skynet-message-run-9" },
+      kind: "context-compaction", payload: { state: "compacted", requestId: `${SANDBOX_NAME_PREFIX}-message-run-9` },
     });
   });
 

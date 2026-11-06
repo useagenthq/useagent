@@ -1,3 +1,4 @@
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import { getArtifact, toArtifactDescriptor } from "../../artifacts/repo";
 import { getRun } from "../../runs/repo";
 import { recordProviderEvent } from "../../runs/provider-events";
@@ -68,7 +69,7 @@ async function recordImmutableArtifactReceipt(row: ClaimedRow): Promise<boolean>
       ].join(":"),
       runId: deliveryRun.id,
       threadId: snapshot.artifactThreadId!,
-      provider: "skynet",
+      provider: PLATFORM_EVENT_LANES.platform,
       eventType: "artifact.delivered",
       payload: {
         id: snapshot.artifactId,
@@ -107,7 +108,7 @@ export async function recordArtifactDelivered(row: ClaimedRow): Promise<void> {
       id: `artifact.delivered:${artifact.runId}:${artifact.id}`,
       runId: artifact.runId,
       threadId: artifact.threadId,
-      provider: "skynet",
+      provider: PLATFORM_EVENT_LANES.platform,
       eventType: "artifact.delivered",
       payload: { ...toArtifactDescriptor(artifact), destination: "slack" },
     },

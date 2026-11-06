@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 import {
   assertNeverEvent,
   CANONICAL_SCHEMA_VERSION,
+  LEGACY_TOOL_SERVER_IDS,
   parseProviderSessionBinding,
   providerSessionBinding,
   type CanonicalAgentEvent,
@@ -69,8 +70,8 @@ describe("canonical event vocabulary", () => {
   test("keeps protocol ids internal while presenting the product name", () => {
     expect(toolServerDisplayName("useagent")).toBe("UseAgent");
     expect(toolServerDisplayName("useagent-browser")).toBe("UseAgent Browser");
-    expect(toolServerDisplayName("skynet-knowledge")).toBe("UseAgent");
-    expect(toolServerDisplayName("skynet-browser")).toBe("UseAgent Browser");
+    expect(toolServerDisplayName(LEGACY_TOOL_SERVER_IDS.gateway)).toBe("UseAgent");
+    expect(toolServerDisplayName(LEGACY_TOOL_SERVER_IDS.browser)).toBe("UseAgent Browser");
     expect(toolServerDisplayName("github")).toBe("github");
   });
 

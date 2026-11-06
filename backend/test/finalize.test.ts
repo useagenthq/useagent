@@ -20,6 +20,7 @@ import { sql } from "drizzle-orm";
 import { providerSessionBinding } from "@useagent/agent-harness/canonical";
 import { providerProtocolIdentity } from "@useagent/agent-harness/control";
 import { t3ProviderDrivers } from "../src/engines/t3-provider-driver";
+import { DEV_ORG_ID } from "../src/dev-org";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
 
 // Regression for GAP 2: a completed run could miss its memory capture. The
@@ -27,7 +28,7 @@ import "./helpers"; // side-effect: imports src/index → migrate + seed
 // the boot-reconcile + mock paths never enqueued at all. finalizeRun now commits
 // `completed` AND the capture row in ONE transaction, for EVERY completed run.
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 
 /** Run `fn` with team memory configured (identity resolves), then restore env. */
 async function withMemory<T>(fn: () => Promise<T>): Promise<T> {

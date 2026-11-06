@@ -13,6 +13,7 @@ import { getNativeFramesSince, subscribeNative } from "../src/runs/native-events
 import { createRun } from "../src/runs/repo";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import "./helpers";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
 test("root message revisions roll back together and retain their first ordering anchor", async () => {
   const runId = crypto.randomUUID();
@@ -191,7 +192,7 @@ test("immutable provider events fail required, repair on retry, and publish only
     id: `${runId}:artifact.created`,
     runId,
     threadId: runId,
-    provider: "skynet",
+    provider: PLATFORM_EVENT_LANES.platform,
     eventType: "artifact.created",
     payload: { revision: 1 },
   };
@@ -266,7 +267,7 @@ test("an aborted immutable event queued behind an earlier event never writes lat
     id: eventId,
     runId,
     threadId: runId,
-    provider: "skynet",
+    provider: PLATFORM_EVENT_LANES.platform,
     eventType: "artifact.created",
     payload: {},
   }, {
@@ -300,7 +301,7 @@ test("a valid immutable event fence records and publishes the event once", async
     id: eventId,
     runId,
     threadId: runId,
-    provider: "skynet",
+    provider: PLATFORM_EVENT_LANES.platform,
     eventType: "artifact.revised",
     payload: { revision: 1 },
   };

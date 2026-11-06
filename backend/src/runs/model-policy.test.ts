@@ -124,6 +124,9 @@ describe("paid model policy", () => {
     expect(isModelAllowedForEngine("codex", "gpt-5.6-terra", {})).toBe(true);
     expect(isModelAllowedForEngine("codex", "gpt-5.6-luna", {})).toBe(true);
     expect(isModelAllowedForEngine("codex", "gpt-6-astra", {})).toBe(true);
+    expect(isModelAllowedForEngine("codex", "gpt-6-luna", {})).toBe(true);
+    expect(isModelAllowedForEngine("codex", "gpt-6-sol", {})).toBe(true);
+    expect(isModelAllowedForEngine("codex", "gpt-6.1-sol", {})).toBe(true);
     expect(isModelAllowedForEngine("codex", "openai/gpt-5.6-sol", {})).toBe(false);
     expect(isModelAllowedForEngine("codex", "gpt-5", {})).toBe(false);
     expect(isModelAllowedForEngine("codex", "gpt-unlisted", {})).toBe(false);
@@ -140,6 +143,9 @@ describe("paid model policy", () => {
       "gpt-5.6-terra",
       "gpt-5.6-sol",
       "gpt-6-astra",
+      "gpt-6-luna",
+      "gpt-6-sol",
+      "gpt-6.1-sol",
     ]);
     expect(allowedModelsForEngine("codex", {})).toEqual(CODEX_ALLOWED_MODELS);
     expect(

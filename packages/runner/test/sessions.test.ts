@@ -15,7 +15,7 @@ describe("session scripts", () => {
     for (const bad of ["../x", "a/b", "", ".."]) {
       expect(() => sessionDir(bad)).toThrow(/plain identifier/);
     }
-    expect(sessionDir("skynet-t3.env_1")).toBe("/tmp/useagent/sessions/skynet-t3.env_1");
+    expect(sessionDir("useagent-t3.env_1")).toBe("/tmp/useagent/sessions/useagent-t3.env_1");
   });
 
   test("the kill script leaves alone a command that already recorded its exit", () => {

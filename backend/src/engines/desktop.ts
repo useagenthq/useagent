@@ -5,7 +5,8 @@ import {
   type RunStageTimer,
   type RunTimingOutcome,
 } from "../runs/run-timing";
-import { BROWSER_CDP_ENDPOINT, ensureResidentBrowserMcp, PLAYWRIGHT_MCP_VERSION } from "./browser-mcp";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_DIR, SANDBOX_STATE_HOME } from "../sandboxes/sandbox-names";
+import { BROWSER_CDP_ENDPOINT, BROWSER_MCP_PROCESS_SESSION, ensureResidentBrowserMcp, PLAYWRIGHT_MCP_VERSION } from "./browser-mcp";
 import {
   buildDesktopLaunchCommand,
   buildDesktopReadinessCommand,
@@ -28,8 +29,7 @@ export {
   DESKTOP_REQUIRED_BINARIES,
 } from "./desktop-workstation";
 
-const DESKTOP_PROCESS_SESSION = "skynet-desktop";
-const BROWSER_MCP_PROCESS_SESSION = "skynet-browser-mcp";
+const DESKTOP_PROCESS_SESSION = `${SANDBOX_NAME_PREFIX}-desktop`;
 const desktopViewOperations = new Map<string | SandboxHandle, Promise<SandboxDesktop>>();
 
 type TimingRecorder = Pick<RunStageTimer, "begin">;
@@ -110,14 +110,14 @@ async function provisionSandboxDesktopView(
       });
     }
     const probe = await sandbox.process.executeCommand(
-      "mkdir -p ~/work ~/.skynet; browser=$(command -v google-chrome 2>/dev/null || command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null || true); " +
+      `mkdir -p ~/work ~/${SANDBOX_STATE_DIR}; browser=$(command -v google-chrome 2>/dev/null || command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null || true); ` +
         `missing=""; for bin in ${DESKTOP_REQUIRED_BINARIES.join(" ")}; do command -v "$bin" >/dev/null 2>&1 || missing="$missing $bin"; done; ` +
         `vnc=0; curl -fsS -m 3 -o /dev/null http://127.0.0.1:${DESKTOP_PORT}/vnc.html && vnc=1; ` +
         `rfb=0; ${rfbProbeCommand()} && rfb=1; ` +
         `cdp=0; curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version && cdp=1; ` +
         `cdp_relay=0; ${desktopCdpRelayProbeCommand()} && ${providerCdpRelayProbeCommand()} && cdp_relay=1; ` +
         `session=0; ${desktopSessionProbeCommand()} && session=1; ` +
-        `boot=0; pid=$(cat "$HOME/.skynet/desktop.pid" 2>/dev/null); [ -e "$HOME/.skynet/${DESKTOP_BOOT_MARKER_NAME}" ] && { [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null; } && boot=1; ` +
+        `boot=0; pid=$(cat "${SANDBOX_STATE_HOME}/desktop.pid" 2>/dev/null); [ -e "${SANDBOX_STATE_HOME}/${DESKTOP_BOOT_MARKER_NAME}" ] && { [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null; } && boot=1; ` +
         'mcp=0; [ -x "$HOME/.local/bin/playwright-mcp" ] && mcp=1; ' +
         'printf "HOME=%s\\nBROWSER=%s\\nMISSING=%s\\nVNC=%s\\nRFB=%s\\nCDP=%s\\nCDP_RELAY=%s\\nSESSION=%s\\nMCP=%s\\nDESKTOP_BOOT=%s\\n" "$HOME" "$browser" "$missing" "$vnc" "$rfb" "$cdp" "$cdp_relay" "$session" "$mcp" "$boot"',
       undefined,

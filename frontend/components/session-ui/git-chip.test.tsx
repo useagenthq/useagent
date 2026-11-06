@@ -10,29 +10,29 @@ describe("runGitRefs (run row -> git identity)", () => {
   test("prefers repo_specs and carries the chosen branch", () => {
     expect(
       runGitRefs({
-        repo: "acme/skynet",
-        repos: ["acme/skynet", "acme/docs"],
+        repo: "acme/useagent",
+        repos: ["acme/useagent", "acme/docs"],
         repo_specs: [
-          { repo: "acme/skynet", branch: "feat/chips" },
+          { repo: "acme/useagent", branch: "feat/chips" },
           { repo: "acme/docs", branch: null },
         ],
       }),
     ).toEqual([
-      { repo: "acme/skynet", branch: "feat/chips" },
+      { repo: "acme/useagent", branch: "feat/chips" },
       { repo: "acme/docs", branch: null },
     ]);
   });
 
   test("falls back to repos[] with no branch", () => {
-    expect(runGitRefs({ repos: ["acme/skynet", "acme/docs"] })).toEqual([
-      { repo: "acme/skynet", branch: null },
+    expect(runGitRefs({ repos: ["acme/useagent", "acme/docs"] })).toEqual([
+      { repo: "acme/useagent", branch: null },
       { repo: "acme/docs", branch: null },
     ]);
   });
 
   test("falls back to the legacy single repo", () => {
-    expect(runGitRefs({ repo: "acme/skynet" })).toEqual([
-      { repo: "acme/skynet", branch: null },
+    expect(runGitRefs({ repo: "acme/useagent" })).toEqual([
+      { repo: "acme/useagent", branch: null },
     ]);
   });
 
@@ -40,11 +40,11 @@ describe("runGitRefs (run row -> git identity)", () => {
     expect(
       runGitRefs({
         repo_specs: [
-          { repo: "acme/skynet", branch: "main" },
-          { repo: "acme/skynet", branch: "feat/x" },
+          { repo: "acme/useagent", branch: "main" },
+          { repo: "acme/useagent", branch: "feat/x" },
         ],
       }),
-    ).toEqual([{ repo: "acme/skynet", branch: "main" }]);
+    ).toEqual([{ repo: "acme/useagent", branch: "main" }]);
   });
 
   test("skips malformed entries and empty branches", () => {
@@ -55,10 +55,10 @@ describe("runGitRefs (run row -> git identity)", () => {
           42,
           { repo: "" },
           { repo: 7, branch: "x" },
-          { repo: "acme/skynet", branch: "" },
+          { repo: "acme/useagent", branch: "" },
         ],
       }),
-    ).toEqual([{ repo: "acme/skynet", branch: null }]);
+    ).toEqual([{ repo: "acme/useagent", branch: null }]);
   });
 
   test("a bare-workdir run yields nothing", () => {
@@ -69,13 +69,13 @@ describe("runGitRefs (run row -> git identity)", () => {
 
 describe("shortname + title", () => {
   test("shortname drops the owner", () => {
-    expect(repoShortname("acme/skynet")).toBe("skynet");
+    expect(repoShortname("acme/useagent")).toBe("useagent");
     expect(repoShortname("bare-name")).toBe("bare-name");
   });
 
   test("title is the full ref in colon form", () => {
-    expect(gitRefTitle({ repo: "acme/skynet", branch: "feat/x" })).toBe("acme/skynet:feat/x");
-    expect(gitRefTitle({ repo: "acme/skynet", branch: null })).toBe("acme/skynet");
+    expect(gitRefTitle({ repo: "acme/useagent", branch: "feat/x" })).toBe("acme/useagent:feat/x");
+    expect(gitRefTitle({ repo: "acme/useagent", branch: null })).toBe("acme/useagent");
   });
 });
 
@@ -84,14 +84,14 @@ describe("GitChips rendering", () => {
     const html = renderToStaticMarkup(
       <GitChips
         refs={[
-          { repo: "acme/skynet", branch: "feat/chips" },
+          { repo: "acme/useagent", branch: "feat/chips" },
           { repo: "acme/docs", branch: null },
         ]}
       />,
     );
     expect(html).toContain('data-session-ui="git-chips"');
-    expect(html).toContain('title="acme/skynet:feat/chips"');
-    expect(html).toContain(">skynet:feat/chips<");
+    expect(html).toContain('title="acme/useagent:feat/chips"');
+    expect(html).toContain(">useagent:feat/chips<");
     expect(html).toContain('title="acme/docs"');
     expect(html).toContain(">docs<");
     expect(html).toContain("font-mono");
@@ -105,7 +105,7 @@ describe("GitChips rendering", () => {
 
   test("keeps to mono-label tones with no color noise", () => {
     const html = renderToStaticMarkup(
-      <GitChips refs={[{ repo: "acme/skynet", branch: null }]} />,
+      <GitChips refs={[{ repo: "acme/useagent", branch: null }]} />,
     );
     expect(html).toContain("text-text-tertiary");
     for (const loud of ["text-primary", "bg-blue", "text-blue", "text-success", "text-error"]) {

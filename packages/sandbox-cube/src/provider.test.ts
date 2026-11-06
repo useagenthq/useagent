@@ -27,7 +27,7 @@ function sandboxInfo(overrides: Partial<SandboxInfo> = {}): SandboxInfo {
     endAt: new Date(Date.now() + 60_000),
     envdVersion: "0.6.0",
     memoryMB: 8192,
-    metadata: { "skynet-run": "run-1" },
+    metadata: { "useagent-run": "run-1" },
     sandboxId: "cube-1",
     startedAt: new Date(),
     state: "running",
@@ -186,10 +186,10 @@ describe("Cube sandbox provider", () => {
     const handle = await cubeSandboxProvider("cube-key", ready).create({
       autoStopInterval: 15,
       envVars: {
-        BASH_ENV: "/tmp/skynet.env",
+        BASH_ENV: "/tmp/useagent.env",
         USEAGENT_PROVIDER_GATEWAY_URL: "http://gateway.internal",
       },
-      labels: { "skynet-run": "run-1" },
+      labels: { "useagent-run": "run-1" },
       snapshot: "agent-template",
     });
 
@@ -200,7 +200,7 @@ describe("Cube sandbox provider", () => {
         apiUrl: "http://127.0.0.1:3000",
         envs: { USEAGENT_PROVIDER_GATEWAY_URL: "http://gateway.internal" },
         lifecycle: { autoResume: true, onTimeout: "pause" },
-        metadata: { "skynet-run": "run-1" },
+        metadata: { "useagent-run": "run-1" },
         network: { allowPublicTraffic: false },
         secure: true,
         timeoutMs: 900_000,

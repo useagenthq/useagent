@@ -19,7 +19,7 @@ export function toolStep(
     const desc = String(input.description ?? title ?? "subagent");
     return {
       kind: "task",
-      label: `Subagent — ${truncate(desc, 50)}`,
+      label: `Subagent: ${truncate(desc, 50)}`,
       chip: "subagent",
       code_json: code,
     };

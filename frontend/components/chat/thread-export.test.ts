@@ -10,6 +10,7 @@ import {
 } from "./thread-export";
 import { createThreadStore, type ThreadSnapshot } from "./thread-store";
 import type { ApiRun, ApiStep } from "./types";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
 const ORIGIN = "https://app.example.test";
 
@@ -142,10 +143,10 @@ describe("thread Markdown export", () => {
       sha256: "a".repeat(64),
       content_type: "text/markdown",
     };
-    store.applyNative("r1", frame(3, "artifact.created", descriptor, "skynet"));
+    store.applyNative("r1", frame(3, "artifact.created", descriptor, PLATFORM_EVENT_LANES.platform));
     store.applyNative(
       "r1",
-      frame(4, "artifact.delivered", { ...descriptor, destination: "email" }, "skynet"),
+      frame(4, "artifact.delivered", { ...descriptor, destination: "email" }, PLATFORM_EVENT_LANES.platform),
     );
     const markdown = formatThreadMarkdown(data(store.getSnapshot()), ORIGIN);
     const html = marked.parse(markdown, { async: false });

@@ -7,12 +7,13 @@ import {
 } from "./runtime-question";
 import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
 import { createSecretRedactor } from "../secrets/redact";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 function snapshot(resolved = false): RuntimeThreadSnapshot {
   return {
     snapshotSequence: resolved ? 3 : 2,
     thread: {
-      id: "skynet-thread-thread-1",
+      id: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       latestTurn: { turnId: "turn-1", state: "running", assistantMessageId: null },
       messages: [],
       activities: [
@@ -87,7 +88,7 @@ describe("T3 native user input", () => {
   test("maps ordered UseAgent card answers to T3's native question ids", () => {
     expect(runtimeQuestionAnswers(
       snapshot(),
-      "skynet-thread-thread-1",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       "request-1",
       [["React"]],
     )).toEqual({ "Framework?": "React" });
@@ -96,7 +97,7 @@ describe("T3 native user input", () => {
   test("fails closed after the native request resolves", () => {
     expect(() => runtimeQuestionAnswers(
       snapshot(true),
-      "skynet-thread-thread-1",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       "request-1",
       [["React"]],
     )).toThrow(ProviderQuestionError);
@@ -108,7 +109,7 @@ describe("T3 native user input", () => {
       {
         runId: "run-1",
         threadId: "thread-1",
-        sessionId: "skynet-thread-thread-1",
+        sessionId: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
         questionId: "request-stable",
       },
       { [secret]: secret },
@@ -119,6 +120,6 @@ describe("T3 native user input", () => {
       requestID: "request-stable",
       answers: { "<redacted>": "<redacted>" },
     });
-    expect(event.nativeSessionId).toBe("skynet-thread-thread-1");
+    expect(event.nativeSessionId).toBe(`${SANDBOX_NAME_PREFIX}-thread-thread-1`);
   });
 });

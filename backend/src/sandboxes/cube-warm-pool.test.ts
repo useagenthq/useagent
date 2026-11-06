@@ -14,6 +14,8 @@ import type {
   SandboxProcess,
   SandboxProvider,
 } from "./provider";
+import { LEGACY_WARM_POOL_TEMPLATE_LABEL } from "./cube-warm-pool-reconcile";
+import { LEGACY_SANDBOX_RUN_LABEL } from "./label-compat";
 
 function deferred<T>(): {
   promise: Promise<T>;
@@ -127,7 +129,7 @@ describe("CubeWarmPool", () => {
     const pool = new CubeWarmPool({
       provider: fakeProvider,
       size: 1,
-      createOptions: { snapshot: "tpl-1", labels: { "skynet-run": "warm-pool" } },
+      createOptions: { snapshot: "tpl-1", labels: { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool" } },
       warmDesktop: async (sb) => {
         expect(sb).toBe(box);
         warmStages.push("desktop");
@@ -153,7 +155,7 @@ describe("CubeWarmPool", () => {
     expect(fakeProvider.creates[0]).toEqual({
       snapshot: "tpl-1",
       labels: {
-        "skynet-run": "warm-pool",
+        [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool",
         [USEAGENT_WARM_POOL_TEMPLATE_LABEL]: "tpl-1",
       },
     });
@@ -443,7 +445,7 @@ describe("CubeWarmPool", () => {
     const pool = new CubeWarmPool({
       provider: fakeProvider,
       size: 1,
-      createOptions: { snapshot: "tpl-1", labels: { "skynet-run": "warm-pool" } },
+      createOptions: { snapshot: "tpl-1", labels: { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool" } },
       warmDesktop: async () => {
         warmAttempts += 1;
         return warmAttempts < 3
@@ -646,11 +648,11 @@ describe("CubeWarmPool", () => {
     const fakeProvider = provider([], [first, second]);
     const warmed: string[] = [];
     first.labels = {
-      "skynet-run": "warm-pool:t3-v3",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool:t3-v3",
       "cube.master.appsnapshot.template.id": "tpl-t3",
     };
     second.labels = {
-      "skynet-run": "warm-pool:t3-v3",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool:t3-v3",
       "cube.master.appsnapshot.template.id": "tpl-t3",
     };
 
@@ -661,7 +663,7 @@ describe("CubeWarmPool", () => {
       requireDesktop: false,
       createOptions: {
         snapshot: "tpl-t3",
-        labels: { "skynet-run": "warm-pool:t3-v3" },
+        labels: { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool:t3-v3" },
       },
       warmRuntime: async (box) => {
         warmed.push(box.id);
@@ -681,11 +683,11 @@ describe("CubeWarmPool", () => {
     const oldTemplate = sandbox("cube-old-template");
     const currentTemplate = sandbox("cube-current-template");
     oldTemplate.labels = {
-      "skynet-run": "warm-pool:t3-v3",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool:t3-v3",
       "cube.master.appsnapshot.template.id": "tpl-old",
     };
     currentTemplate.labels = {
-      "skynet-run": "warm-pool:t3-v3",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool:t3-v3",
       "cube.master.appsnapshot.template.id": "tpl-new",
     };
 
@@ -696,7 +698,7 @@ describe("CubeWarmPool", () => {
       requireDesktop: false,
       createOptions: {
         snapshot: "tpl-new",
-        labels: { "skynet-run": "warm-pool:t3-v3" },
+        labels: { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool:t3-v3" },
       },
       protectedSandboxIds: async () => new Set(),
       logger: quietLogger,
@@ -712,12 +714,12 @@ describe("CubeWarmPool", () => {
     const conflictingTemplate = sandbox("cube-conflicting-template");
     const currentTemplate = sandbox("cube-current-template");
     conflictingTemplate.labels = {
-      "skynet-run": "warm-pool:t3-v3",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool:t3-v3",
       [USEAGENT_WARM_POOL_TEMPLATE_LABEL]: "tpl-old",
       "cube.master.appsnapshot.template.id": "tpl-new",
     };
     currentTemplate.labels = {
-      "skynet-run": "warm-pool:t3-v3",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool:t3-v3",
       [USEAGENT_WARM_POOL_TEMPLATE_LABEL]: "tpl-new",
     };
 
@@ -728,7 +730,7 @@ describe("CubeWarmPool", () => {
       requireDesktop: false,
       createOptions: {
         snapshot: "tpl-new",
-        labels: { "skynet-run": "warm-pool:t3-v3" },
+        labels: { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool:t3-v3" },
       },
       protectedSandboxIds: async () => new Set(),
       logger: quietLogger,
@@ -744,14 +746,14 @@ describe("CubeWarmPool", () => {
     const missingTemplate = sandbox("cube-missing-template");
     const fresh = sandbox("cube-fresh");
     const fakeProvider = provider([fresh], [missingTemplate]);
-    missingTemplate.labels = { "skynet-run": "warm-pool" };
+    missingTemplate.labels = { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool" };
 
     const pool = new CubeWarmPool({
       provider: fakeProvider,
       size: 1,
       createOptions: {
         snapshot: "tpl-opencode",
-        labels: { "skynet-run": "warm-pool" },
+        labels: { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool" },
       },
       warmDesktop: async () => ({
         available: true,
@@ -777,7 +779,7 @@ describe("CubeWarmPool", () => {
     const fakeProvider = provider([fresh], [oldTemplate]);
     let deleteAttempts = 0;
     oldTemplate.labels = {
-      "skynet-run": "warm-pool",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool",
       "cube.master.appsnapshot.template.id": "tpl-old",
     };
     oldTemplate.delete = async () => {
@@ -791,7 +793,7 @@ describe("CubeWarmPool", () => {
       size: 1,
       createOptions: {
         snapshot: "tpl-new",
-        labels: { "skynet-run": "warm-pool" },
+        labels: { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool" },
       },
       warmDesktop: async () => ({
         available: true,
@@ -823,11 +825,11 @@ describe("CubeWarmPool", () => {
     const fakeProvider = provider([], [adopted, surplus]);
     let deleteAttempts = 0;
     adopted.labels = {
-      "skynet-run": "warm-pool",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool",
       "cube.master.appsnapshot.template.id": "tpl-opencode",
     };
     surplus.labels = {
-      "skynet-run": "warm-pool",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool",
       "cube.master.appsnapshot.template.id": "tpl-opencode",
     };
     surplus.delete = async () => {
@@ -841,7 +843,7 @@ describe("CubeWarmPool", () => {
       size: 1,
       createOptions: {
         snapshot: "tpl-opencode",
-        labels: { "skynet-run": "warm-pool" },
+        labels: { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool" },
       },
       warmDesktop: async () => ({
         available: true,
@@ -873,11 +875,11 @@ describe("CubeWarmPool", () => {
     const keep = sandbox("cube-keep");
     const surplus = sandbox("cube-surplus");
     keep.labels = {
-      "skynet-run": "warm-pool",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool",
       "cube.master.appsnapshot.template.id": "tpl-opencode",
     };
     surplus.labels = {
-      "skynet-run": "warm-pool",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool",
       "cube.master.appsnapshot.template.id": "tpl-opencode",
     };
 
@@ -886,7 +888,7 @@ describe("CubeWarmPool", () => {
       size: 1,
       createOptions: {
         snapshot: "tpl-opencode",
-        labels: { "skynet-run": "warm-pool" },
+        labels: { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool" },
       },
       warmDesktop: async () => ({
         available: true,
@@ -908,9 +910,9 @@ describe("CubeWarmPool", () => {
   test("never adopts or deletes exact-pool candidates durably bound to runs or threads", async () => {
     const protectedBox = sandbox("cube-thread");
     const unbound = sandbox("cube-unbound");
-    protectedBox.labels = { "skynet-run": "warm-pool:t3-v3" };
+    protectedBox.labels = { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool:t3-v3" };
     unbound.labels = {
-      "skynet-run": "warm-pool:t3-v3",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool:t3-v3",
       "cube.master.appsnapshot.template.id": "tpl-t3",
     };
 
@@ -921,7 +923,7 @@ describe("CubeWarmPool", () => {
       requireDesktop: false,
       createOptions: {
         snapshot: "tpl-t3",
-        labels: { "skynet-run": "warm-pool:t3-v3" },
+        labels: { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool:t3-v3" },
       },
       protectedSandboxIds: async () => new Set(["cube-thread"]),
       logger: quietLogger,
@@ -939,15 +941,15 @@ describe("CubeWarmPool", () => {
     const templateConflict = sandbox("cube-conflicted-template");
     const warm = sandbox("cube-warm");
     const fakeProvider = provider([], [retained, conflicted, templateConflict, warm]);
-    retained.labels = { "skynet-run": "run-123" };
+    retained.labels = { [LEGACY_SANDBOX_RUN_LABEL]: "run-123" };
     conflicted.labels = {
-      "skynet-run": "warm-pool",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool",
       "useagent-run": "run-conflict",
       "useagent-warm-pool-template": "tpl-opencode",
     };
     templateConflict.labels = {
       "useagent-run": "warm-pool",
-      "skynet-warm-pool-template": "tpl-old",
+      [LEGACY_WARM_POOL_TEMPLATE_LABEL]: "tpl-old",
       "useagent-warm-pool-template": "tpl-opencode",
     };
     warm.labels = {
@@ -960,7 +962,7 @@ describe("CubeWarmPool", () => {
       size: 1,
       createOptions: {
         snapshot: "tpl-opencode",
-        labels: { "skynet-run": "warm-pool" },
+        labels: { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool" },
       },
       warmDesktop: async () => ({
         available: true,
@@ -985,7 +987,7 @@ describe("CubeWarmPool", () => {
     const gate = deferred<void>();
     const candidate = sandbox("cube-adopting");
     candidate.labels = {
-      "skynet-run": "warm-pool",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool",
       "cube.master.appsnapshot.template.id": "tpl-opencode",
     };
     let runtimeStarted = false;
@@ -996,7 +998,7 @@ describe("CubeWarmPool", () => {
       requireDesktop: false,
       createOptions: {
         snapshot: "tpl-opencode",
-        labels: { "skynet-run": "warm-pool" },
+        labels: { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool" },
       },
       warmRuntime: async () => {
         runtimeStarted = true;
@@ -1019,7 +1021,7 @@ describe("CubeWarmPool", () => {
     const fresh = sandbox("cube-fresh");
     const fakeProvider = provider([fresh], [stale]);
     stale.labels = {
-      "skynet-run": "warm-pool",
+      [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool",
       "cube.master.appsnapshot.template.id": "tpl-opencode",
     };
     let warmAttempts = 0;
@@ -1029,7 +1031,7 @@ describe("CubeWarmPool", () => {
       size: 1,
       createOptions: {
         snapshot: "tpl-opencode",
-        labels: { "skynet-run": "warm-pool" },
+        labels: { [LEGACY_SANDBOX_RUN_LABEL]: "warm-pool" },
       },
       warmDesktop: async () => {
         warmAttempts += 1;

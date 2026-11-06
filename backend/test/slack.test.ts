@@ -569,7 +569,7 @@ describe("slack event → run", () => {
     // Prompt is cleaned (mention stripped) and scoped to the dev org.
     const run = await waitFor(async () => findRunByPrompt(`build ${marker}`));
     expect(run.prompt).toBe(`build ${marker}`);
-    expect(run.org_id).toBe("org-skynet-dev");
+    expect(run.org_id).toBe(DEV_ORG_ID);
     expect(run.parent_run_id).toBeNull();
     expect(run.thread_id).toBe(run.id); // a root run threads under itself
     const [persisted] = await db
@@ -3069,7 +3069,7 @@ describe("slack socket-mode ingest shares the HTTP handler", () => {
 
     // Run created via the shared handler, scoped to the dev org.
     const run = await waitFor(async () => findRunByPrompt(`socket ${marker}`));
-    expect(run.org_id).toBe("org-skynet-dev");
+    expect(run.org_id).toBe(DEV_ORG_ID);
 
     // Delivery attached downstream: the 👀 ack + the thread card land, and the
     // settled answer arrives as its own message.
@@ -3736,6 +3736,28 @@ describe("slack workspace identity (fail closed)", () => {
       userId: DEV_USER_ID,
     });
     expect(await findSlackWorkspace("malformed-entry")).toBeNull();
+  });
+
+  test("a user binding whose workspace was disconnected is skipped, not a boot crash", async () => {
+    // Settings replaced the Slack workspace, the env still bound a user to the
+    // old team, and the foreign key error exited every backend at boot.
+    const gone = `T-GONE-${uid("t")}`;
+    const kept = `T-KEPT-${uid("t")}`;
+    const saved = process.env.SLACK_WORKSPACE_BINDINGS;
+    const savedUsers = process.env.SLACK_USER_BINDINGS;
+    process.env.SLACK_WORKSPACE_BINDINGS = `${kept}:${DEV_ORG_ID}:${DEV_USER_ID}`;
+    process.env.SLACK_USER_BINDINGS =
+      `${gone}:U-STALE:${DEV_ORG_ID}:${DEV_USER_ID},${kept}:U-LIVE:${DEV_ORG_ID}:${DEV_USER_ID}`;
+    try {
+      await syncSlackWorkspaceBindings();
+    } finally {
+      if (saved === undefined) delete process.env.SLACK_WORKSPACE_BINDINGS;
+      else process.env.SLACK_WORKSPACE_BINDINGS = saved;
+      if (savedUsers === undefined) delete process.env.SLACK_USER_BINDINGS;
+      else process.env.SLACK_USER_BINDINGS = savedUsers;
+    }
+    expect(await findSlackUser(gone, "U-STALE")).toBeNull();
+    expect(await findSlackUser(kept, "U-LIVE")).toEqual({ orgId: DEV_ORG_ID, userId: DEV_USER_ID });
   });
 });
 

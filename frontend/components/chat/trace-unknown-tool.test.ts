@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { type ApiStep, deriveTrace } from "./types";
+import { LEGACY_TOOL_SERVER_IDS } from "@useagent/agent-harness/canonical";
 
 // deriveTrace must render an uncatalogued tool (an MCP tool, `todowrite`, a future
 // provider extension) as a generic labelled row from its native payload — never
@@ -41,7 +42,7 @@ describe("deriveTrace — uncatalogued tool", () => {
     const step = commandStep("computer_screenshot", {});
     step.code_json = JSON.stringify({
       tool: "computer_screenshot",
-      server: "skynet-knowledge",
+      server: LEGACY_TOOL_SERVER_IDS.gateway,
       input: {},
       output: "done",
     });

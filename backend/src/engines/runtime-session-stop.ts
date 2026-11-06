@@ -5,6 +5,7 @@
 // thread and detaches only while preparing that turn, after reading the thread
 // idle, so no turn can start in between.
 import { setTimeout as delay } from "node:timers/promises";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 import type { SandboxHandle } from "../sandboxes/provider";
 import { requestRuntimeEnvironment } from "./runtime-environment-client";
 import { dispatchRuntimeCommand } from "./runtime-dispatch";
@@ -33,7 +34,7 @@ export function buildRuntimeSessionDetachCommand(
 ): RuntimeCommand & { readonly threadId: string } {
   return {
     ...buildV2ProviderSessionDetach({
-      commandId: stableRuntimeId("skynet-session-detach", `${revision}-${threadId}`),
+      commandId: stableRuntimeId(`${SANDBOX_NAME_PREFIX}-session-detach`, `${revision}-${threadId}`),
       threadId,
       providerSessionId,
       reason,

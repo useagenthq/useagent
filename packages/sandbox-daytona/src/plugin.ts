@@ -40,8 +40,8 @@ function isPrivateIpLiteral(rawHostname: string): boolean {
  * The product snapshot new sandboxes start from when the operator sets nothing.
  * This is the one place the pin lives: set `DAYTONA_SNAPSHOT` (the native
  * Codex, Claude, OpenCode, Pi, and CLI lanes; a root image) in the deployment
- * env to move off it. The default is active in the product org today;
- * `skynet-agent-v23` also exists there but
+ * env to move off it. The default is active in the product org today, under
+ * the name it was published with; the newer v23 snapshot also exists there but
  * lacks the desktop binaries the Browser surface needs. A snapshot that goes
  * unused for about two weeks is deactivated by Daytona; the provider reactivates
  * it on the next create (see `ensureTemplate`).

@@ -9,7 +9,8 @@ import {
 import {
   createScheduleForOrg,
   deleteScheduleForOrg,
-  fireScheduleForOrg,
+  previewNextRuns,
+  runScheduleNow,
   ScheduleServiceError,
   updateScheduleForOrg,
 } from "./service";
@@ -26,7 +27,18 @@ schedulesRoutes.get("/", async (c) => {
   return c.json({ automations, schedules: automations });
 });
 
-// Create a schedule. `enabled` is always FALSE on create (a peer tool's safety
+// The next runs a cron and zone would have, before anything is saved: an
+// editor's live preview, from the engine the scheduler fires by.
+schedulesRoutes.get("/preview", (c) => {
+  try {
+    return c.json({ next_runs: previewNextRuns({ cron: c.req.query("cron"), timezone: c.req.query("timezone") }) });
+  } catch (error) {
+    if (error instanceof ScheduleServiceError) return c.json(error.body, error.status);
+    throw error;
+  }
+});
+
+// Create a schedule. `enabled` is always FALSE on create (KiroCrew's safety
 // default) so a new schedule never auto-fires until explicitly enabled.
 schedulesRoutes.post("/", runCreateBodyLimit, async (c) => {
   let body: Record<string, unknown>;
@@ -59,7 +71,7 @@ schedulesRoutes.patch("/:id", runCreateBodyLimit, async (c) => {
   }
 
   try {
-    return c.json(await updateScheduleForOrg(c.get("orgId"), id, body));
+    return c.json(await updateScheduleForOrg(c.get("orgId"), id, body, c.get("userId") ?? null));
   } catch (error) {
     if (error instanceof ScheduleServiceError) return c.json(error.body, error.status);
     throw error;
@@ -71,7 +83,7 @@ schedulesRoutes.post("/:id/run-now", async (c) => {
   const schedule = await getScheduleForOrg(c.get("orgId"), c.req.param("id"));
   if (!schedule) return c.json({ error: "schedule not found" }, 404);
   try {
-    const runId = await fireScheduleForOrg(schedule, "manual");
+    const runId = await runScheduleNow(schedule, c.get("userId") ?? null);
     return c.json({ run_id: runId }, 201);
   } catch (error) {
     if (error instanceof ScheduleServiceError) return c.json(error.body, error.status);
@@ -90,7 +102,7 @@ schedulesRoutes.get("/:id/history", async (c) => {
 // remain in the durable run log.
 schedulesRoutes.delete("/:id", async (c) => {
   try {
-    await deleteScheduleForOrg(c.get("orgId"), c.req.param("id"));
+    await deleteScheduleForOrg(c.get("orgId"), c.req.param("id"), c.get("userId") ?? null);
     return c.body(null, 204);
   } catch (error) {
     if (error instanceof ScheduleServiceError) return c.json(error.body, error.status);

@@ -24,8 +24,10 @@ import {
 } from "./operation-registry";
 import type { ToolTokenClaims } from "./token";
 import "../../../test/helpers";
+import { DEV_ORG_ID } from "../../dev-org";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 const previousRollout = process.env.FINISHED_WORK_ROLLOUT;
 const previousEnforceEngines = process.env.FINISHED_WORK_ENFORCE_ENGINES;
 const previousEnforceRuns = process.env.FINISHED_WORK_ENFORCE_RUN_IDS;
@@ -713,7 +715,7 @@ describe("gateway FinishedWork producers", () => {
           id: eventId,
           runId,
           threadId: runId,
-          provider: "skynet",
+          provider: PLATFORM_EVENT_LANES.platform,
           eventType: "artifact.created",
           payload: { id: artifactId },
         });
@@ -726,7 +728,7 @@ describe("gateway FinishedWork producers", () => {
           id: eventId,
           runId,
           threadId: runId,
-          provider: "skynet",
+          provider: PLATFORM_EVENT_LANES.platform,
           eventType: "artifact.created",
           payload: {
             ...descriptor,
@@ -741,7 +743,7 @@ describe("gateway FinishedWork producers", () => {
           id: eventId,
           runId: foreign.runId,
           threadId: foreign.runId,
-          provider: "skynet",
+          provider: PLATFORM_EVENT_LANES.platform,
           eventType: "artifact.created",
           payload: toArtifactDescriptor(artifact),
         });

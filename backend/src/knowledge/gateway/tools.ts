@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { recordProviderEvent } from "../../runs/provider-events";
+import { recordProviderEventIfAbsent } from "../../runs/provider-events";
 import { embeddingsEnabled, embedOne } from "../embed";
 import { getRecord, searchRecords, type SearchHit } from "../store";
 import { TOOL_GATEWAY_SERVER_NAME, type ToolCallResult } from "./descriptor";
@@ -116,7 +116,7 @@ export async function recordKnowledgeRetrieval(
 ): Promise<void> {
   const target = await resolveAuthorizedToolRun(claims).catch(() => null);
   if (!target) return;
-  await recordProviderEvent({
+  await recordProviderEventIfAbsent({
     id: `kbret_${target.id}_${randomBytes(5).toString("hex")}`,
     runId: target.id,
     threadId: target.threadId,
@@ -136,7 +136,7 @@ export async function recordKnowledgeRetrieval(
       items,
       latencyMs,
     },
-  });
+  }).catch(() => false); // insert-only (the gateway role may not rewrite events); logged, non-fatal
 }
 
 // ---------------------------------------------------------------------------

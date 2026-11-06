@@ -1,3 +1,4 @@
+import { SANDBOX_NAME_PREFIX } from "../../sandboxes/sandbox-names";
 import { basename } from "node:path";
 import { publishSandboxArtifact } from "../../artifacts/publish";
 import type { ArtifactDescriptor } from "../../artifacts/repo";
@@ -78,7 +79,7 @@ export async function startRecordingInSandbox(
     throw new Error(desktop.reason ?? "desktop failed readiness");
   }
   const started = await sandbox.process.executeCommand(
-    `skynet-record-start '${recordingName}'`,
+    `${SANDBOX_NAME_PREFIX}-record-start '${recordingName}'`,
     undefined,
     { DISPLAY: sandbox.desktop?.display ?? ":1" },
     60,
@@ -94,7 +95,7 @@ export async function stopRecordingInSandbox(
   sandbox: SandboxHandle,
 ): Promise<RecordingMetadata> {
   const stopped = await sandbox.process.executeCommand(
-    "path=$(skynet-record-stop) || exit $?; " +
+    `path=$(${SANDBOX_NAME_PREFIX}-record-stop) || exit $?; ` +
       `printf '${PATH_MARKER}%s\\n' \"$path\"; ` +
       "ffprobe -v error -select_streams v:0 " +
       "-show_entries stream=codec_name,width,height -show_entries format=duration " +

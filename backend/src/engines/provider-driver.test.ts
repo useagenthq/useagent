@@ -12,6 +12,7 @@ import {
 } from "./index";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 import { RUNTIME_GENERATION } from "./runtime-environment";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 describe("production provider registry", () => {
   test("registers every engine on a native lifecycle driver", () => {
@@ -136,7 +137,7 @@ describe("production provider registry", () => {
     for (const engine of ["claude", "codex"] as const) {
       const capabilities = resolveHarness(engine)?.capabilities({
         provider: engine,
-        sessionId: "skynet-thread-thread-t3",
+        sessionId: `${SANDBOX_NAME_PREFIX}-thread-thread-t3`,
         sandboxId: "cube-t3",
         protocol: providerProtocolIdentity(t3ProviderDrivers[engine].descriptor.protocol),
         generation: T3_SESSION_GENERATION,
@@ -180,7 +181,7 @@ describe("production provider registry", () => {
       ]) {
         const handle = {
           provider: engine,
-          sessionId: "skynet-thread-stale",
+          sessionId: `${SANDBOX_NAME_PREFIX}-thread-stale`,
           sandboxId: "cube-stale",
           authEpoch: null,
           currentAuthEpoch: null,

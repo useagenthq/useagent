@@ -45,6 +45,7 @@ const LANGUAGE_LABEL: Record<string, string> = {
   html: "HTML",
   md: "Markdown",
   markdown: "Markdown",
+  mermaid: "Mermaid",
   py: "Python",
   python: "Python",
   rs: "Rust",
@@ -55,13 +56,17 @@ const LANGUAGE_LABEL: Record<string, string> = {
   yaml: "YAML",
   sql: "SQL",
   plaintext: "Text",
+  "c++": "C++",
+  "c#": "C#",
+  "objective-c": "Objective-C",
+  "f#": "F#",
 };
 
 function languageLabel(language: string): string {
   return LANGUAGE_LABEL[language.toLowerCase()] ?? language.toUpperCase();
 }
 
-function CopyButton({ code }: { code: string }) {
+export function CopyButton({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button

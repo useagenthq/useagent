@@ -24,12 +24,13 @@ import {
   CEREBRAS_GEMMA_MODEL,
   CEREBRAS_QWEN_MODEL,
 } from "../src/runs/model-policy";
+import { DEV_ORG_ID } from "../src/dev-org";
 
 // Mailbox primitives for the durable per-session command lane. These drive the
 // claim/settle CAS directly (no worker execution) so ordering, one-in-flight,
 // idempotency, and cross-thread independence are asserted deterministically.
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 
 /** Enqueue a run.create command (state queued, run queued) without dispatching. */
 async function enqueue(threadId: string, parentRunId: string | null): Promise<string> {

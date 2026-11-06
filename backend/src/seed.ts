@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "./db/client";
 import { member, organization, user } from "./db/schema";
+import { DEV_ORG_ID } from "./dev-org";
 import { allowDevOrg } from "./env";
 
 // ---------------------------------------------------------------------------
@@ -9,8 +10,8 @@ import { allowDevOrg } from "./env";
 // unauthenticated in local dev. Seeded idempotently at boot.
 // ---------------------------------------------------------------------------
 
-export const DEV_ORG_ID = "org-skynet-dev"; // documented legacy id - existing dev DBs depend on it
-export const DEV_ORG_SLUG = "skynet-dev";
+export { DEV_ORG_ID };
+export const DEV_ORG_SLUG = "useagent-dev";
 export const DEV_ORG_NAME = "UseAgent Dev";
 export const DEV_USER_ID = "user-useagent-dev";
 export const DEV_USER_EMAIL = "dev@useagent.local";

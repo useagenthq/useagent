@@ -10,6 +10,7 @@ import {
   setRunSandbox,
 } from "../src/runs/repo";
 import "./helpers";
+import { DEV_ORG_ID } from "../src/dev-org";
 
 test("provider session binding preserves old rows and constrains current authority", async () => {
   const runId = crypto.randomUUID();
@@ -18,7 +19,7 @@ test("provider session binding preserves old rows and constrains current authori
     prompt: "session binding",
     model: "claude-haiku-4-5",
     engine: "pi",
-    orgId: "org-skynet-dev",
+    orgId: DEV_ORG_ID,
     userId: null,
     parentRunId: null,
     threadId: runId,

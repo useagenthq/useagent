@@ -26,8 +26,8 @@ describe("repo-ref branch encoding", () => {
 
   test("round-trips for realistic repo + branch shapes", () => {
     const cases: Array<{ repo: string; branch: string | null }> = [
-      { repo: "upstream-org/skynet", branch: null },
-      { repo: "upstream-org/skynet", branch: "master" },
+      { repo: "upstream-org/useagent", branch: null },
+      { repo: "upstream-org/useagent", branch: "master" },
       { repo: "a.b_c-d/e.f_g-h", branch: "release/v1.2.3" },
       { repo: "owner/name", branch: "chore/next-16-1" },
     ];

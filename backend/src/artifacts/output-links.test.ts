@@ -55,6 +55,20 @@ describe("output links", () => {
     ]);
   });
 
+  test("leaves code citations with a line anchor alone; the file itself is still an output", () => {
+    // Review agents cited repo lines like this and every finished run failed delivery.
+    const markdown = [
+      "[deploy](/root/work/org/repo/infra/deploy-app.sh:118)",
+      "[guard](/root/work/org/repo/backend/src/db/single-backend.ts:17:3)",
+      "[range](file:///root/work/org/repo/README.md#L10-L20)",
+      "[anchor](<./src/index.ts#L5>)",
+      "[report](/root/work/review.md)",
+    ].join("\n");
+    expect(explicitOutputLinks(markdown, ROOT)).toEqual([
+      { path: "/root/work/review.md", image: false, href: "/root/work/review.md" },
+    ]);
+  });
+
   test("recognizes attached custom roots without treating the legacy root probe as the homepage", () => {
     expect(explicitOutputLinks("[home](/) [relative](output.any)", "/")).toEqual([
       { path: "/output.any", image: false, href: "output.any" },

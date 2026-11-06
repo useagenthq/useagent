@@ -1,4 +1,5 @@
 import type { PermissionMode } from "@useagent/agent-client/wire";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 import { resolvePreviewSandbox } from "../runs/preview-proxy";
 import { approvalDecisionAllowed, readOnlyRefusal } from "./permission-mode";
 import { resolveExpectedSandbox } from "../sandboxes/binding";
@@ -193,7 +194,7 @@ export async function replyToRuntimeApproval(input: {
   }
   await dispatch(sandbox, {
     ...buildV2RuntimeRequestRespond({
-      commandId: `skynet-approval-${crypto.randomUUID()}`,
+      commandId: `${SANDBOX_NAME_PREFIX}-approval-${crypto.randomUUID()}`,
       threadId: input.sessionId,
       requestId: input.requestId,
       decision,

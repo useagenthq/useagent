@@ -38,6 +38,7 @@ import { createOrgSession, fetchApi, json, type OrgSession, waitFor } from "./he
 import { InMemoryArtifactStorage } from "./in-memory-artifact-storage";
 import { db, type Executor } from "../src/db/client";
 import { artifacts, providerEvents } from "../src/db/schema";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_DIR } from "../src/sandboxes/sandbox-names";
 
 let sandboxBytes = new TextEncoder().encode("sandbox-to-browser\nexact bytes\n");
 const SOURCE_BYTES = sandboxBytes;
@@ -225,7 +226,7 @@ describe("durable artifacts", () => {
     });
     expect(first.record.sourcePath).toStartWith("/.useagent/provider-output/");
     await db.update(artifacts)
-      .set({ sourcePath: first.record.sourcePath.replace("/.useagent/", "/.skynet/") })
+      .set({ sourcePath: first.record.sourcePath.replace("/.useagent/", `/${SANDBOX_STATE_DIR}/`) })
       .where(eq(artifacts.id, first.record.id));
     const duplicate = await publishTrustedArtifact({
       orgId: owner.orgId,
@@ -241,7 +242,7 @@ describe("durable artifacts", () => {
     expect(duplicate.artifact.id).toBe(first.artifact.id);
     expect(await storage.read(first.record.storageKey)).toEqual(bytes);
     const record = await getArtifact(first.record.id);
-    expect(record?.sourcePath).toStartWith("/.skynet/provider-output/codex/");
+    expect(record?.sourcePath).toStartWith(`/${SANDBOX_STATE_DIR}/provider-output/codex/`);
     expect(record?.name).toBe("generated.png");
     expect(record?.sourcePath).not.toContain("/host/");
     expect(record?.sourcePath).not.toContain("generated");
@@ -480,7 +481,7 @@ describe("durable artifacts", () => {
     const runId = await createSandboxRun(owner);
 
     await expect(
-      publish(owner, runId, "/root/.skynet/secrets/skynet-env.sh"),
+      publish(owner, runId, `/root/${SANDBOX_STATE_DIR}/secrets/${SANDBOX_NAME_PREFIX}-env.sh`),
     ).rejects.toThrow("Protected secret paths and dotenv files");
     await expect(
       publish(owner, runId, "/root/work/output/.env.local"),
@@ -521,12 +522,12 @@ describe("durable artifacts", () => {
     });
     setSandboxPathResolverForTest(async (_sandboxId, path) =>
       path === "/root/work/output/dotenv-link"
-        ? "/root/.skynet/secrets/skynet-env.sh"
+        ? `/root/${SANDBOX_STATE_DIR}/secrets/${SANDBOX_NAME_PREFIX}-env.sh`
         : path,
     );
 
     try {
-      await expect(publish(owner, runId, ".skynet/secrets/skynet-env.sh")).rejects.toThrow(
+      await expect(publish(owner, runId, `${SANDBOX_STATE_DIR}/secrets/${SANDBOX_NAME_PREFIX}-env.sh`)).rejects.toThrow(
         "canonical path under /root/work",
       );
       await expect(

@@ -40,7 +40,7 @@ const dbName = journey === "phase8" ? `useagent_e2e_p8_${engine}` : `useagent_e2
 const dbUrl = `postgres://postgres@localhost:5432/${dbName}`;
 const backendDir = new URL("../..", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
-const gatewayLog = `${scratch}/skynet-provider-${engine}-gateway.log`;
+const gatewayLog = `${scratch}/useagent-provider-${engine}-gateway.log`;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const providerSigningSecret = `provider-live-${crypto.randomUUID()}-${crypto.randomUUID()}`;
 const toolSigningSecret = `tool-live-${crypto.randomUUID()}-${crypto.randomUUID()}`;
@@ -49,7 +49,7 @@ const secretsEncryptionKey = `encryption-live-${crypto.randomUUID()}-${crypto.ra
 type Child = ReturnType<typeof Bun.spawn>;
 
 function tunnelLog(provider: TunnelProvider): string {
-  return `${scratch}/skynet-provider-${engine}-${provider}-tunnel.log`;
+  return `${scratch}/useagent-provider-${engine}-${provider}-tunnel.log`;
 }
 
 async function waitForHealth(

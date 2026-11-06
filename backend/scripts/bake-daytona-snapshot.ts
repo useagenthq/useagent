@@ -4,7 +4,7 @@
 // org-scoped: the env key's org and every user connection in it can start from
 // it after the operator selects the verified snapshot on their connection.
 //
-//   bun run scripts/bake-daytona-snapshot.ts --image registry.example/skynet-agent:<name> [--force]
+//   bun run scripts/bake-daytona-snapshot.ts --image registry.example/useagent-agent:<name> [--force]
 //   bun run scripts/bake-daytona-snapshot.ts --check      # print the snapshot name
 //
 // Runs with the backend's env (DAYTONA_API_KEY, DAYTONA_API_URL).

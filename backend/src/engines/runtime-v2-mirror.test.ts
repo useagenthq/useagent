@@ -6,8 +6,9 @@
 import { describe, expect, test } from "bun:test";
 import { applyV2Event, applyV2StreamItem, type V2MirrorState } from "./runtime-v2-mirror";
 import type { V2Projection, V2ThreadStreamItem } from "./runtime-v2-wire";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
-const THREAD = "skynet-thread-1";
+const THREAD = `${SANDBOX_NAME_PREFIX}-thread-1`;
 
 function projection(overrides: Partial<V2Projection> = {}): V2Projection {
   return {
@@ -98,7 +99,7 @@ describe("runtime thread mirror", () => {
       payload: { id: THREAD, runtimeMode: "approval-required" },
     });
     expect(next.thread.runtimeMode).toBe("approval-required");
-    const runRecord = { id: "r1", ordinal: 1, userMessageId: "skynet-message-a", status: "running" };
+    const runRecord = { id: "r1", ordinal: 1, userMessageId: `${SANDBOX_NAME_PREFIX}-message-a`, status: "running" };
     next = applyV2Event(next, { type: "run.created", threadId: THREAD, payload: runRecord });
     next = applyV2Event(next, { type: "run.updated", threadId: THREAD, payload: { ...runRecord, status: "completed" } });
     expect(next.runs).toEqual([{ ...runRecord, status: "completed" } as never]);

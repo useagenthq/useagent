@@ -14,6 +14,7 @@ import {
   sandboxLogin,
   sandboxLoginOffered,
 } from "./sandbox-login";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 function fakeSandbox(answers: (command: string) => { exitCode: number; result?: string } = () => ({ exitCode: 0 })) {
   const commands: string[] = [];
@@ -113,12 +114,13 @@ describe("sandbox login", () => {
   test("Codex on its login names no model provider and keeps the tool gateway", () => {
     const config = codexLoginConfigToml("gpt-5.6-luna", { url: "https://plane.example/tools", bearerToken: "t" });
     expect(config).toContain('model = "gpt-5.6-luna"');
+    expect(config.split("\n[")[0]).toContain("features.goals = false");
     expect(config).not.toContain("model_provider");
     expect(config).not.toContain("model_providers");
     expect(config).toContain("[mcp_servers.");
     expect(config).toContain("https://plane.example/tools");
     expect(codexLoginConfigToml("gpt-5.6-luna")).not.toContain("mcp_servers");
-    expect(claudeLoginEnvironment()).toEqual({ CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config" });
+    expect(claudeLoginEnvironment()).toEqual({ CLAUDE_CONFIG_DIR: `/tmp/${SANDBOX_NAME_PREFIX}-claude-config` });
   });
 
   test("installing the Codex login copies it into place and writes only the login config", async () => {
@@ -138,11 +140,11 @@ describe("sandbox login", () => {
     const { sandbox, commands } = fakeSandbox();
     await installSandboxLogin(sandbox, ctx(), { engine: "claude", path: "/run/useagent/logins/claude/.credentials.json" }, { runsAsRoot: false });
     const joined = commands.join("\n");
-    expect(joined).toContain("/tmp/skynet-claude-config/.credentials.json");
+    expect(joined).toContain(`/tmp/${SANDBOX_NAME_PREFIX}-claude-config/.credentials.json`);
     expect(joined).not.toContain("apiKeyHelper");
     expect(joined).not.toContain("provider-anthropic");
     const root = fakeSandbox();
     await installSandboxLogin(root.sandbox, ctx(), { engine: "claude", path: "/run/useagent/logins/claude/.credentials.json" }, { runsAsRoot: true });
-    expect(root.commands.join("\n")).toContain("install -d -o 1000 -g 1000 -m 700 '/tmp/skynet-claude-config'");
+    expect(root.commands.join("\n")).toContain(`install -d -o 1000 -g 1000 -m 700 '/tmp/${SANDBOX_NAME_PREFIX}-claude-config'`);
   });
 });

@@ -1,6 +1,6 @@
 // Theme resolution: explicit prop → ancestor data-theme/theme class (watched
 // live) → prefers-color-scheme (subscribed live). `.aura`/`.harbor`/
-// `.phosphor`/`.slate`/`.sakura-night` are dark-scheme themes, so they
+// `.phosphor`/`.slate`/`.ember`/`.sakura-night` are dark-scheme themes, so they
 // resolve dark like `.dark`; `.sakura` and `.phosphor-light` are
 // light-scheme and resolve light like `.light`. (classList token matching is
 // exact, so `sakura` never matches a `sakura-night` class and vice versa.)
@@ -22,6 +22,7 @@ function ancestorTheme(el: Element | null): boolean | null {
     if (node.classList.contains('harbor')) return true;
     if (node.classList.contains('phosphor')) return true;
     if (node.classList.contains('slate')) return true;
+    if (node.classList.contains('ember')) return true;
     if (node.classList.contains('sakura-night')) return true;
     if (node.classList.contains('light')) return false;
     if (node.classList.contains('sakura')) return false;

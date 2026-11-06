@@ -11,36 +11,12 @@
 // this port is the standalone slim pill. The label is a plain prop (upstream
 // derives it from backgroundLiveness + fleet liveCount), the elapsed timer is
 // added from their MessagesTimeline WorkingTimer pattern (self-ticking text
-// node, no React commits - that component is private to working-indicator.tsx),
+// node, no React commits - that component now lives in elapsed-timer.tsx),
 // and Stop accepts the EXISTING cancel handler as a prop (session-view
 // handleStop posts the durable /cancel; no new API call here). Their
 // animate-status-pulse -> our ai-loading-pixel; tokens are our semantic tokens.
 
-import { useEffect, useRef } from "react";
-import { formatWorkingTimerNow } from "./work-entry";
-
-/** Self-ticking elapsed label; updates its own text node outside React commits. */
-export function ElapsedTimer({ startedAt }: { startedAt: string }) {
-  const textRef = useRef<HTMLSpanElement>(null);
-  const initialText = formatWorkingTimerNow(startedAt);
-
-  useEffect(() => {
-    const updateText = () => {
-      if (textRef.current) {
-        textRef.current.textContent = formatWorkingTimerNow(startedAt);
-      }
-    };
-    updateText();
-    const id = setInterval(updateText, 1000);
-    return () => clearInterval(id);
-  }, [startedAt]);
-
-  return (
-    <span ref={textRef} className="tabular-nums">
-      {initialText}
-    </span>
-  );
-}
+import { ElapsedTimer } from "./elapsed-timer";
 
 /**
  * Slim persistent status pill for a thread with live work: pulsing dot + status

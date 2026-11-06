@@ -41,6 +41,7 @@
  *                     E2E_PORT + 10 and + 11 (3517 / 3518)
  *   E2E_ENGINE        engine for the Slack-driven runs (default mock)
  */
+import { DEV_ORG_ID } from "../../src/dev-org";
 import { createHmac } from "node:crypto";
 import postgres from "postgres";
 
@@ -59,7 +60,7 @@ const BOT = "U0E2EBOT";
  *  with SLACK_WORKSPACE_BINDINGS / SLACK_USER_BINDINGS for exactly this team. */
 const TEAM = "T0E2ETEAM";
 const HUMAN = "U-HUMAN";
-const DEV_ORG = "org-skynet-dev";
+const DEV_ORG = DEV_ORG_ID;
 const DEV_USER = "user-useagent-dev";
 
 /** The database name is interpolated into DROP/CREATE DATABASE, so it must be a
@@ -126,9 +127,9 @@ async function startBackend(label: string): Promise<Proc> {
       FRONTEND_ORIGIN: "http://localhost:3400",
       MEMORY_API_URL: `http://localhost:${MEM_PORT}`,
       MEMORY_API_KEY: "e2e",
-      MEMORY_TEAM_ID: "skynet",
-      MEMORY_AGENT_ID: "skynet-backend",
-      MEMORY_USER_ID: "skynet",
+      MEMORY_TEAM_ID: "useagent",
+      MEMORY_AGENT_ID: "useagent-backend",
+      MEMORY_USER_ID: "useagent",
       MEMORY_OUTBOX_TICK_MS: "400",
       SLACK_BOT_TOKEN: "xoxb-e2e",
       SLACK_LEGACY_TEAM_ID: TEAM,
@@ -227,7 +228,7 @@ async function stage2_nativeReplay(): Promise<void> {
   // by native-reconnect.test.ts). Monotonic unique seqs, incl. one revision.
   const id = crypto.randomUUID();
   // org_id must match the org the SSE route authorizes against (dev org fallback).
-  await sql`insert into runs (id, org_id, prompt, model, engine, status, thread_id) values (${id}, 'org-skynet-dev', 'native e2e', 'm', 'mock', 'running', ${id})`;
+  await sql`insert into runs (id, org_id, prompt, model, engine, status, thread_id) values (${id}, ${DEV_ORG_ID}, 'native e2e', 'm', 'mock', 'running', ${id})`;
   const rows: [string, number][] = [];
   for (let i = 0; i < 20; i++) rows.push([`${id}::p${i}`, i]);
   rows.push([`${id}::p3`, 20]); // a revision of p3 → higher seq

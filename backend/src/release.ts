@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 export const USEAGENT_API_COMPAT = "run-events-v1";
 
-const RELEASE_COMMIT_FILE = "/opt/skynet/.release-commit";
+const RELEASE_COMMIT_FILE = "/opt/useagent/.release-commit";
 
 export interface ReleaseFingerprint {
   readonly apiCompat: typeof USEAGENT_API_COMPAT;

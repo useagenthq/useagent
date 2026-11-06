@@ -12,6 +12,7 @@ import {
   runtimeCommandCatalogCachePath,
 } from "./runtime-command-catalog";
 import { PROVIDER_INSTANCE, type RuntimeEngineId } from "./runtime-orchestration";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_DIR, SANDBOX_STATE_HOME } from "../sandboxes/sandbox-names";
 
 // Recorded from the pinned native runtime (source commit 90dc3ebbb74b) booted
 // locally with an isolated home: the identity and command fields of the status
@@ -25,7 +26,7 @@ const recorded = (engine: RuntimeEngineId): string =>
  *  temporary HOME so the probe reads the cache through its real path. */
 function sandboxWithCaches(caches: Partial<Record<RuntimeEngineId, string>>) {
   const home = mkdtempSync(join(tmpdir(), "runtime-command-catalog-"));
-  const cacheDir = join(home, ".skynet/t3/caches");
+  const cacheDir = join(home, `${SANDBOX_STATE_DIR}/t3/caches`);
   mkdirSync(cacheDir, { recursive: true });
   const writeCache = (engine: RuntimeEngineId, body: string): void => {
     writeFileSync(join(cacheDir, `${PROVIDER_INSTANCE[engine]}.json`), body);
@@ -66,14 +67,14 @@ const settles = (operation: Promise<unknown>, withinMs: number) =>
   Promise.race([operation.then(() => "settled"), Bun.sleep(withinMs).then(() => "still pending")]);
 
 const ctx = { runId: "run-1", threadId: "thread-1", signal: new AbortController().signal };
-const session = { nativeSessionId: "skynet-thread-thread-1" };
+const session = { nativeSessionId: `${SANDBOX_NAME_PREFIX}-thread-thread-1` };
 const COMPACT = "Summarize the conversation and reduce context usage";
 
 describe("runtime command catalog: the runtime's status cache becomes the session's recorded catalog", () => {
   test("the probe reads each engine's per-instance status cache through the runtime home", async () => {
-    expect(runtimeCommandCatalogCachePath("claude")).toBe("$HOME/.skynet/t3/caches/claudeAgent.json");
-    expect(runtimeCommandCatalogCachePath("codex")).toBe("$HOME/.skynet/t3/caches/codex.json");
-    expect(runtimeCommandCatalogCachePath("opencode")).toBe("$HOME/.skynet/t3/caches/opencode.json");
+    expect(runtimeCommandCatalogCachePath("claude")).toBe(`${SANDBOX_STATE_HOME}/t3/caches/claudeAgent.json`);
+    expect(runtimeCommandCatalogCachePath("codex")).toBe(`${SANDBOX_STATE_HOME}/t3/caches/codex.json`);
+    expect(runtimeCommandCatalogCachePath("opencode")).toBe(`${SANDBOX_STATE_HOME}/t3/caches/opencode.json`);
     const sandbox = sandboxWithCaches({ codex: recorded("codex"), claude: recorded("claude"), opencode: recorded("opencode") });
     for (const engine of ENGINES) {
       const probe = await sandbox.process.executeCommand(buildRuntimeCommandCatalogProbeCommand(engine));
@@ -142,7 +143,7 @@ describe("runtime command catalog: the runtime's status cache becomes the sessio
     expect(calls[0]!.row).toEqual({
       threadId: "thread-1",
       provider: engine,
-      nativeSessionId: "skynet-thread-thread-1",
+      nativeSessionId: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       commands: parseRuntimeCommandCatalog(recorded(engine), engine)!.commands,
     });
     // A root run with no thread id of its own is keyed by the run.

@@ -21,8 +21,10 @@ import {
   stopSlackOutboxRelay,
 } from "../src/slack/outbox";
 import { uid, waitFor } from "./helpers";
+import { DEV_ORG_ID } from "../src/dev-org";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 
 // Durable Slack outbox: transactional enqueue → delivery worker with idempotency,
 // bounded backoff, 429/Retry-After, and dead-letter. Each test builds its OWN
@@ -587,7 +589,7 @@ describe("durable slack outbox", () => {
       id: deployedEventId,
       runId,
       threadId: runId,
-      provider: "skynet",
+      provider: PLATFORM_EVENT_LANES.platform,
       eventType: "artifact.delivered",
       payload: {
         id: artifactId,

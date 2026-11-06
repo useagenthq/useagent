@@ -403,7 +403,7 @@ const TurnBlock = memo(function TurnBlock({
 
         {/* Hover copy and answer time on the settled answer; the durable summary IS the answer markdown on both render paths. */}
         {!live && summary && (
-          <div className="flex items-center gap-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/turn:opacity-100">
+          <div className="flex items-center gap-1.5 opacity-0 transition-opacity pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/turn:opacity-100">
             <MessageCopyButton text={summary} />
             <AnsweredAt iso={run.updated_at} />
           </div>

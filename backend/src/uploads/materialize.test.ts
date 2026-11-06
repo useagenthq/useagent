@@ -17,8 +17,8 @@ afterEach(() => setArtifactStorageForTest(null));
 describe("sandbox input materialization", () => {
   test("rebases stale Cube and Box paths to the actual acquired sandbox", async () => {
     for (const [provisional, actual, expectedRoot] of [
-      ["cube", "box", "/home/user/work/.skynet-inputs"],
-      ["box", "cube", "/root/work/.skynet-inputs"],
+      ["cube", "box", "/home/user/work/.useagent-inputs"],
+      ["box", "cube", "/root/work/.useagent-inputs"],
     ] as const) {
       const commands: string[] = [];
       const uploads: Array<{ readonly bytes: Buffer; readonly path: string }> = [];

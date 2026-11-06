@@ -87,7 +87,7 @@ beforeAll(async () => {
   ]).onConflictDoNothing();
 });
 
-describe("settled-run subagent usage (skynet_test)", () => {
+describe("settled-run subagent usage (useagent_test)", () => {
   test("finalize canonicalizes child.started + child.completed with summed usage from step-finish frames", async () => {
     await finalizeRun(RUN, "completed", "done", 100);
     const outbox = await drainCanonicalization(RUN);

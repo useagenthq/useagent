@@ -1,4 +1,5 @@
 import type { PermissionMode } from "@useagent/agent-client/wire";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 import { setTimeout as delay } from "node:timers/promises";
 import { threadHasSessionGrant } from "../runs/provider-events";
 import type { SandboxHandle } from "../sandboxes/provider";
@@ -48,7 +49,7 @@ export function buildRuntimeModeSetCommand(
   runtimeMode: RuntimeMode,
 ): RuntimeCommand & { readonly threadId: string } {
   return {
-    ...buildV2RuntimeModeSet({ commandId: `skynet-runtime-mode-${crypto.randomUUID()}`, threadId, runtimeMode }),
+    ...buildV2RuntimeModeSet({ commandId: `${SANDBOX_NAME_PREFIX}-runtime-mode-${crypto.randomUUID()}`, threadId, runtimeMode }),
     threadId,
   };
 }

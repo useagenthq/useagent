@@ -39,3 +39,25 @@ test("still loads the relationship for a normal thread after concurrent ownershi
   expect(view?.relationshipHint).toBe("legacy_or_off");
   expect(calls.at(-1)).toBe("/api/threads/thread-1/relationship");
 });
+
+test("a missing thread is null, so the page is a real 404", async () => {
+  const view = await loadThreadView("run-1", true, async (path) =>
+    path.endsWith("thread-outline") ? Response.json([]) : new Response(null, { status: 404 }));
+  expect(view).toBeNull();
+});
+
+test("a transient failure is retried once, never shown as not found", async () => {
+  let threadCalls = 0;
+  const view = await loadThreadView("run-1", false, async (path) => {
+    if (path.endsWith("thread-outline")) return Response.json([]);
+    threadCalls += 1;
+    return threadCalls === 1 ? new Response(null, { status: 502 }) : Response.json({ thread: [run] });
+  });
+  expect(threadCalls).toBe(2);
+  expect(view?.thread[0]?.id).toBe("run-1");
+});
+
+test("a failure that persists is thrown for the error page, not turned into a 404", async () => {
+  await expect(loadThreadView("run-1", false, async (path) =>
+    path.endsWith("thread-outline") ? Response.json([]) : new Response(null, { status: 503 }))).rejects.toThrow("503");
+});

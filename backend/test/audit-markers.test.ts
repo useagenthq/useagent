@@ -57,7 +57,7 @@ describe("audit markers are durable before the run settles", () => {
       org_id: org,
       user_id: "user-1",
       meta: { source_type: "document", external_id: "am-1", connector_instance_id: "am:test", source_url: "https://ex/am" },
-      text: `Runbook ${canary}: to deploy, run 'skynet deploy'. Unique fact ${canary}.`,
+      text: `Runbook ${canary}: to deploy, run 'acme deploy'. Unique fact ${canary}.`,
     });
 
     // A real running run so the ledger has an FK target and the active-run

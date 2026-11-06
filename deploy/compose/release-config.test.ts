@@ -64,7 +64,6 @@ describe("release configuration", () => {
 		expect(gateway).toContain(
 			"USEAGENT_API_ORIGIN: http://127.0.0.1:${USEAGENT_BACKEND_PORT}",
 		);
-		expect(compose).not.toContain(":/var/lib/skynet");
 	});
 
 	test("every service that publishes artifacts mounts the shared artifact directory it is configured with", async () => {

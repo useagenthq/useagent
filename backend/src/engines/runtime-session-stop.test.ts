@@ -9,8 +9,9 @@ import type { RuntimeEnvironmentRequest } from "./runtime-environment-client";
 import { reloadRetainedSession, type SessionReloadDependencies } from "./runtime-session-stop";
 import { RuntimeRpcError, type RuntimeCommand, type V2RunStatus } from "./runtime-v2-wire";
 import { v2Projection, v2ProviderThread, v2Run, v2Session, v2Snapshot } from "./runtime-v2.test-support";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
-const THREAD = "skynet-thread-thread-1";
+const THREAD = `${SANDBOX_NAME_PREFIX}-thread-thread-1`;
 const reloadCommandState = { change: "OpenCode model limits", changed: true, revision: "revision-1" } as const;
 
 /** A thread whose OpenCode session is `status` (none when null) after a run in `runStatus`. */
@@ -112,7 +113,7 @@ describe("retained session reload", () => {
     const landed = harness([thread("ready"), thread(null)]);
     await expect(reload(landed.dependencies)).resolves.toBe(true);
     const ids = [lost.commands[0]!.commandId, landed.commands[0]!.commandId];
-    for (const id of ids) expect(id).toMatch(/^skynet-session-detach-revision-1-[0-9a-f-]{36}-skynet-thread-thread-1$/);
+    for (const id of ids) expect(id).toMatch(new RegExp(`^${SANDBOX_NAME_PREFIX}-session-detach-revision-1-[0-9a-f-]{36}-${SANDBOX_NAME_PREFIX}-thread-thread-1$`));
     expect(ids[1]).not.toBe(ids[0]);
   });
 

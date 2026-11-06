@@ -1,4 +1,5 @@
 import { resolvePreviewSandbox } from "../runs/preview-proxy";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 import { resolveExpectedSandbox } from "../sandboxes/binding";
 import type { ExpectedSandboxBinding } from "../sandboxes/expected-binding";
 import {
@@ -135,7 +136,7 @@ export async function replyToRuntimeQuestion(input: {
   const answers = runtimeQuestionAnswers(snapshot, input.sessionId, input.questionId, input.answers);
   await dispatchRuntimeCommand(sandbox, {
     ...buildV2RuntimeRequestRespond({
-      commandId: `skynet-user-input-${crypto.randomUUID()}`,
+      commandId: `${SANDBOX_NAME_PREFIX}-user-input-${crypto.randomUUID()}`,
       threadId: input.sessionId,
       requestId: input.questionId,
       answers,

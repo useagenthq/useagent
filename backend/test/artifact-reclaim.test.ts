@@ -9,6 +9,7 @@ import { db } from "../src/db/client";
 import { artifacts, githubChangeSets, runs, userUploads } from "../src/db/schema";
 import { createUserUpload } from "../src/uploads/repo";
 import "./helpers";
+import { DEV_ORG_ID } from "../src/dev-org";
 
 const runIds = new Set<string>();
 const uploadIds = new Set<string>();
@@ -36,7 +37,7 @@ describe("artifact storage references", () => {
 
     await db.insert(runs).values({
       id: runId,
-      orgId: "org-skynet-dev",
+      orgId: DEV_ORG_ID,
       userId: "user-reclaim",
       prompt: "publish artifact",
       model: "mock",
@@ -45,7 +46,7 @@ describe("artifact storage references", () => {
       threadId: runId,
     });
     const artifact = await createArtifactRecord({
-      orgId: "org-skynet-dev",
+      orgId: DEV_ORG_ID,
       userId: "user-reclaim",
       runId,
       threadId: runId,
@@ -60,7 +61,7 @@ describe("artifact storage references", () => {
       .set({ previewStorageKey: previewKey })
       .where(eq(artifacts.id, artifact.row.id));
     const upload = await createUserUpload({
-      orgId: "org-skynet-dev",
+      orgId: DEV_ORG_ID,
       userId: "user-reclaim",
       name: "input.txt",
       contentType: "text/plain",
@@ -71,7 +72,7 @@ describe("artifact storage references", () => {
     });
     uploadIds.add(upload.id);
     await db.insert(githubChangeSets).values({
-      orgId: "org-skynet-dev",
+      orgId: DEV_ORG_ID,
       userId: "user-reclaim",
       runId,
       threadId: runId,

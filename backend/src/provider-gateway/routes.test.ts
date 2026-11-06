@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import { ProviderGatewayAdmissionError } from "./audit";
 import type { GatewayRun } from "./run-authorization";
@@ -104,6 +104,76 @@ describe("provider gateway routes", () => {
     expect(response.status).toBe(403);
   });
 
+  test("a request refused before its audit row logs the run, status, reason and auth scheme, never the capability", async () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const claudeClaims = { ...claims, engine: "claude" as const, provider: "anthropic" as const };
+      const claudeRun = { ...run, engine: "claude" as const, model: "claude-opus-5" };
+      const headers = { authorization: "Bearer capability-bytes-1", "x-api-key": "capability-bytes-1" };
+      const capped = await app({ token: claudeClaims, activeRun: claudeRun }).request("/api/provider/anthropic/v1/messages", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: "claude-opus-5", max_tokens: 128_000 }),
+      });
+      expect(capped.status).toBe(400);
+      const unbound =await app({ token: claudeClaims, activeRun: null }).request("/api/provider/anthropic/v1/messages", {
+        method: "POST",
+        headers: { "x-api-key": "capability-bytes-1" },
+        body: "{}",
+      });
+      expect(unbound.status).toBe(403);
+      const lines = warn.mock.calls.map((call) => call.join(" "));
+      expect(lines).toEqual([
+        "[provider-gateway] refused anthropic/v1/messages run run-a: 400 output_limit_exceeded (auth bearer+x-api-key)",
+        "[provider-gateway] refused anthropic/v1/messages run run-a: 403 forbidden_no_live_run (auth x-api-key)",
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test("a max_tokens past the ceiling is Anthropic's own 400, which ends the turn, never a 403 an engine retries as an auth failure", async () => {
+    const claudeClaims = { ...claims, engine: "claude" as const, provider: "anthropic" as const };
+    let upstream = 0;
+    const response = await app({
+      token: claudeClaims,
+      activeRun: { ...run, engine: "claude" as const, model: "claude-opus-5" },
+      fetchUpstream: async () => (upstream += 1, Response.json({})),
+    }).request("/api/provider/anthropic/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({ model: "claude-opus-5", max_tokens: 128_000, stream: true }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      type: "error",
+      error: { type: "invalid_request_error", message: "max_tokens 128000 is above this gateway's limit of 65536" },
+    });
+    expect(upstream).toBe(0);
+  });
+
+  test("a model the run does not use gets Anthropic's 400 on the Anthropic route, so Claude Code stops instead of retrying", async () => {
+    // A 403 reads to Claude Code as "authentication failed", which it retries.
+    const claudeClaims = { ...claims, engine: "claude" as const, provider: "anthropic" as const };
+    let upstreamCalls = 0;
+    const response = await app({
+      token: claudeClaims,
+      activeRun: { ...run, engine: "claude" as const, model: "claude-opus-5" },
+      fetchUpstream: async () => {
+        upstreamCalls += 1;
+        return Response.json({ ok: true });
+      },
+    }).request("/api/provider/anthropic/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: 1024 }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      type: "error",
+      error: { type: "invalid_request_error", message: "This task runs on claude-opus-5; other models are not available to it here." },
+    });
+    expect(upstreamCalls).toBe(0);
+  });
+
   test("OpenCode cannot spend the capability on a model other than the active run", async () => {
     const response = await app().request("/api/provider/openrouter/v1/chat/completions", {
       method: "POST",
@@ -138,7 +208,8 @@ describe("provider gateway routes", () => {
         body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 10 }),
       },
     );
-    expect(claude.status).toBe(403);
+    // Still refused before any upstream call; the Anthropic route answers in Anthropic's shape.
+    expect(claude.status).toBe(400);
 
     const codexClaims = { ...claims, engine: "codex" as const, provider: "openai" as const };
     const codexRun = { ...run, engine: "codex" as const, model: "gpt-5" };
@@ -666,6 +737,20 @@ describe("provider gateway routes", () => {
     );
     expect(unavailable.status).toBe(503);
     expect(await unavailable.json()).toEqual({ error: "audit_unavailable" });
+  });
+});
+
+describe("a body nested past the gateway's depth", () => {
+  test("is a plain 400 for every provider, never a stack overflow", async () => {
+    const deep = `${"[".repeat(100_000)}${"]".repeat(100_000)}`;
+    let upstream = 0;
+    const response = await app({ fetchUpstream: async () => (upstream += 1, Response.json({})) }).request("/api/provider/openrouter/v1/chat/completions", {
+      method: "POST",
+      body: `{"model":"${run.model}","messages":[{"role":"user","content":"hi"}],"tools":[{"type":"function","function":{"name":"x","parameters":${deep}}}]}`,
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "request_too_deep" });
+    expect(upstream).toBe(0);
   });
 });
 

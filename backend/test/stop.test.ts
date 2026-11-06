@@ -8,13 +8,14 @@ import { acceptProductChildBatch } from "../src/runs/child-thread-batch-service"
 import { enqueueReconcile } from "../src/runs/reconcile-queue";
 import { markRunStarted } from "../src/runs/run-state";
 import { stopRun } from "../src/runs/stop";
+import { DEV_ORG_ID } from "../src/dev-org";
 import { waitFor } from "./helpers"; // side-effect: imports src/index → migrate + seed
 
 // Stop reaches everything the stopped turn delegated and nothing else:
 // children and grandchildren still working are cancelled the durable way;
 // siblings, parents and threads an earlier turn delegated are left alone.
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 
 /** A queued run opening its own thread (root: runId === threadId), with the relationship the product records. */
 async function enqueue(threadRelationship?: { parentThreadId: string; familyThreadId: string }): Promise<string> {
@@ -88,8 +89,14 @@ describe("stop reaches delegated threads", () => {
     const later = await followUp(parent, parent);
 
     expect(await stopRun({ orgId: ORG, actorId: null, runId: later })).toEqual({ status: "cancelling", replay: false, children: 0 });
+    // The delegated thread is never touched. The Stop frees its own thread, so
+    // the earlier turn queued there starts; it must finish on its own, not stopped.
     expect((await record(child)).status).toBe("queued");
-    expect((await record(parent)).status).toBe("queued");
+    const settled = await waitFor(async () => {
+      const row = await record(parent);
+      return row.status === "queued" || row.status === "running" ? null : row;
+    });
+    expect(settled.status).toBe("completed");
   });
 
   test("a stopped turn cannot delegate afterwards, but a batch it created still replays", async () => {

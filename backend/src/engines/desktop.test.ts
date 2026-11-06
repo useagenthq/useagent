@@ -24,6 +24,7 @@ import {
   BROWSER_PRIVACY_FLAGS,
   buildBrowserLaunchScript,
 } from "./desktop-workstation";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_HOME } from "../sandboxes/sandbox-names";
 
 function relayFileSystem(): SandboxFileSystem {
   const files = new Map<string, Buffer>();
@@ -83,16 +84,16 @@ describe("shared sandbox desktop", () => {
     expect(command).toContain("pkill -x Xorg 2>/dev/null || true");
     expect(command).toContain("for name in websockify x11vnc budgie-panel budgie-wm budgie-daemon pcmanfm gsd-xsettings dbus-launch; do pkill -x $name");
     expect(command).toContain("$2 ~ /^(node|chrome|chromium)/ && /(cdp-relay\\.mjs|--remote-debugging-port=9222)/");
-    expect(command).toContain('echo $$ >"$HOME/.skynet/desktop.pid"');
+    expect(command).toContain(`echo $$ >"${SANDBOX_STATE_HOME}/desktop.pid"`);
     expect(command).toContain("rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true");
-    expect(command).toContain('dbus-launch --exit-with-session "$HOME/.skynet/desktop-session.sh"');
+    expect(command).toContain(`dbus-launch --exit-with-session "${SANDBOX_STATE_HOME}/desktop-session.sh"`);
     expect(command).toContain("budgie-wm >");
     expect(command).toContain("pcmanfm --desktop --profile useagent");
     expect(command).toContain("XDG_SESSION_TYPE=x11");
     expect(command).toContain("--start-maximized");
     expect(command).not.toContain("openbox");
     expect(command).toContain("--remote-debugging-address=127.0.0.1 --remote-debugging-port=9222");
-    expect(command).toContain('--user-data-dir="$HOME/.skynet/browser-profile"');
+    expect(command).toContain(`--user-data-dir="${SANDBOX_STATE_HOME}/browser-profile"`);
     expect(command).toContain("--restore-last-session");
     expect(command).toContain("--remote-debugging-pipe");
     expect(command).not.toContain("\nsleep 1\n");
@@ -108,12 +109,12 @@ describe("shared sandbox desktop", () => {
     expect(launchLines[legacyDrainProbeIndex + 2]).toContain("connect_ex(('127.0.0.1',9222))");
     expect(launchLines[legacyDrainProbeIndex + 3]).toStartWith("printf '%s' '#!/bin/sh");
     // Chrome starts once and comes back on demand through the relay; no restart loop.
-    expect(command).toContain('sh "$HOME/.skynet/browser-launch.sh" &');
+    expect(command).toContain(`sh "${SANDBOX_STATE_HOME}/browser-launch.sh" &`);
     expect(command).not.toContain("while true");
     expect(command).toContain("http://127.0.0.1:9222/json/version");
-    expect(command).toContain('node "$HOME/.skynet/cdp-relay.mjs"');
+    expect(command).toContain(`node "${SANDBOX_STATE_HOME}/cdp-relay.mjs"`);
     expect(command).toContain("--disable-gpu");
-    expect(command).toContain('>>"$HOME/.skynet/chrome.log" 2>&1');
+    expect(command).toContain(`>>"${SANDBOX_STATE_HOME}/chrome.log" 2>&1`);
     expect(command).toContain("x11vnc -display :1 -localhost -nopw -forever -shared -rfbport 5900");
     expect(command).toContain("socket.create_connection(('127.0.0.1',5900),1)");
     expect(command).toContain("s.recv(4)==b'RFB '");
@@ -288,8 +289,8 @@ describe("shared sandbox desktop", () => {
         expect(created).toEqual([]);
         continue;
       }
-      expect(deleted).toEqual(["skynet-browser-mcp", "skynet-desktop"]);
-      expect(created).toEqual(["skynet-desktop"]);
+      expect(deleted).toEqual([`${SANDBOX_NAME_PREFIX}-browser-mcp`, `${SANDBOX_NAME_PREFIX}-desktop`]);
+      expect(created).toEqual([`${SANDBOX_NAME_PREFIX}-desktop`]);
       expect(launched).toHaveLength(1);
       expect(launched[0]).toContain("Xorg :1");
       expect(healthChecks).toBe(1);
@@ -342,7 +343,7 @@ describe("shared sandbox desktop", () => {
                 "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=0\nRFB=0\nCDP=0\nCDP_RELAY=0\nSESSION=0\nMCP=0\n",
             };
           }
-          if (command.startsWith('chmod 700 "$HOME/.skynet"')) {
+          if (command.startsWith(`chmod 700 "${SANDBOX_STATE_HOME}"`)) {
             return { exitCode: 0, result: "" };
           }
           return { exitCode: launched ? 0 : 1, result: "" };
@@ -382,13 +383,13 @@ describe("shared sandbox desktop", () => {
                 : "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=0\nRFB=0\nCDP=0\nCDP_RELAY=0\nSESSION=0\nMCP=1\n",
             };
           }
-          if (command.includes("skynet-browser-guard-ping")) {
+          if (command.includes("useagent-browser-guard-ping")) {
             return { exitCode: 0, result: "" };
           }
           if (command.includes("localhost:8931/mcp")) {
             return { exitCode: 0, result: "400" };
           }
-          if (command.startsWith('chmod 700 "$HOME/.skynet"')) {
+          if (command.startsWith(`chmod 700 "${SANDBOX_STATE_HOME}"`)) {
             return { exitCode: 0, result: "" };
           }
           return { exitCode: desktopHealthy ? 0 : 1, result: "" };
@@ -396,7 +397,7 @@ describe("shared sandbox desktop", () => {
         deleteSession: async (name: string) => deleted.push(name),
         createSession: async (name: string) => created.push(name),
         executeSessionCommand: async (name: string) => {
-          if (name === "skynet-desktop") {
+          if (name === `${SANDBOX_NAME_PREFIX}-desktop`) {
             desktopLaunches += 1;
             desktopHealthy = true;
           }
@@ -413,8 +414,8 @@ describe("shared sandbox desktop", () => {
     expect(view.available).toBe(true);
     expect(tools).toMatchObject({ available: true, browserTools: true });
     expect(desktopLaunches).toBe(1);
-    expect(created.filter((name) => name === "skynet-desktop")).toHaveLength(1);
-    expect(deleted.filter((name) => name === "skynet-desktop")).toHaveLength(1);
+    expect(created.filter((name) => name === `${SANDBOX_NAME_PREFIX}-desktop`)).toHaveLength(1);
+    expect(deleted.filter((name) => name === `${SANDBOX_NAME_PREFIX}-desktop`)).toHaveLength(1);
   });
 });
 
@@ -431,6 +432,12 @@ describe("desktopUnavailableStep", () => {
       chip: "opencode",
       label: "Desktop and computer-use tools are not attached to this run",
     });
+  });
+});
+
+describe("desktop browser keyring", () => {
+  test("Chrome never uses the desktop keyring, whose system prompt dims the whole screen", () => {
+    expect(buildBrowserLaunchScript()).toContain("--password-store=basic");
   });
 });
 
@@ -461,7 +468,7 @@ describe("desktop browser background traffic", () => {
     const command = buildDesktopLaunchCommand();
     const policyAt = command.indexOf("/etc/chromium/policies/managed/useagent.json");
     expect(policyAt).toBeGreaterThan(-1);
-    expect(policyAt).toBeLessThan(command.indexOf('sh "$HOME/.skynet/browser-launch.sh" &'));
+    expect(policyAt).toBeLessThan(command.indexOf(`sh "${SANDBOX_STATE_HOME}/browser-launch.sh" &`));
     for (const directory of BROWSER_POLICY_DIRECTORIES) {
       const written = new RegExp(`printf '%s' '([^']+)' >${directory}/useagent\\.json`).exec(command);
       expect(written).not.toBeNull();

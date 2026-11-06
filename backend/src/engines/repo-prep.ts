@@ -5,6 +5,7 @@
 // inside the chosen repositories - never an empty workspace. One implementation,
 // one trust boundary; do not copy this per engine.
 // ---------------------------------------------------------------------------
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_DIR } from "../sandboxes/sandbox-names";
 import type { SandboxHandle, SandboxRuntimeLayout } from "../sandboxes/provider";
 import { createHash } from "node:crypto";
 import { resolveGithubSandboxToken } from "../github/auth";
@@ -29,8 +30,11 @@ const ROOT_RUNTIME_LAYOUT: SandboxRuntimeLayout = {
 };
 
 function repoStateRoot(layout: SandboxRuntimeLayout): string {
-  return `${layout.home}/.skynet`;
+  return `${layout.home}/${SANDBOX_STATE_DIR}`;
 }
+
+/** Marks a clone the plane made, inside its .git; retained repos carry it. */
+const REPO_OWNED_MARKER = `${SANDBOX_NAME_PREFIX}-owned`;
 
 export function runtimeUserOwnershipMarker(
   repoPath: string,
@@ -119,7 +123,7 @@ export async function ensureRepoClone(
     : `if [ "$O" = "$CURRENT_UID" ] && [ -f ${shq(runtimeOwnershipMarker)} ]; then echo state:reuse; else echo state:ownership; fi; ` +
       `elif [ "$O" = "$CURRENT_UID" ]; then echo state:branch; else echo state:agent-branch; fi; `;
   const staleOriginState = runtimeLayout.runsAsRoot
-    ? `elif [ "$O" = 0 ] && [ -f "$DIR/.git/skynet-owned" ]; then echo state:owned-stale; `
+    ? `elif [ "$O" = 0 ] && [ -f "$DIR/.git/${REPO_OWNED_MARKER}" ]; then echo state:owned-stale; `
     : "";
   const ownerProbe = runtimeLayout.runsAsRoot
     ? `O="$(stat -c %u "$DIR" 2>/dev/null)"; `
@@ -234,7 +238,7 @@ export async function ensureRepoClone(
     `else echo clone:failed; tail -c 1200 "$L"; rm -rf "$TMP" "$L"; exit 1; fi; fi; ` +
     `RU="$(git -C "$TMP" remote get-url origin 2>/dev/null)"; ` +
     `if [ "$RU" != ${shq(url)} ]; then echo clone:badorigin; rm -rf "$TMP" "$L"; exit 1; fi; ` +
-    `printf 'skynet-owned repo=%s\\n' ${shq(repo)} > "$TMP/.git/skynet-owned"; ` +
+    `printf '${REPO_OWNED_MARKER} repo=%s\\n' ${shq(repo)} > "$TMP/.git/${REPO_OWNED_MARKER}"; ` +
     // RACE-SAFE placement (no rm-then-mv TOCTOU, no nesting): if the destination exists and we
     // own it (or ALLOW=yes), move it ATOMICALLY aside to a unique backup first; then rename the
     // temp into place with `mv -T` (atomic, and it FAILS rather than nesting if the destination
@@ -322,12 +326,12 @@ export async function checkoutPullRequestResources(
         `then echo pr:ownership-check-failed; rm -f "$L"; exit 1; fi; ` +
         `if [ -n "$UNTRUSTED" ]; then echo pr:ownership-incomplete; rm -f "$L"; exit 1; fi; `
       : `CURRENT_UID="$(id -u)"; ` +
-        `if [ "$OWNER" != "$CURRENT_UID" ] || [ ! -f ${shq(runtimeOwnershipMarker)} ] || [ ! -f "$DIR/.git/skynet-owned" ]; ` +
+        `if [ "$OWNER" != "$CURRENT_UID" ] || [ ! -f ${shq(runtimeOwnershipMarker)} ] || [ ! -f "$DIR/.git/${REPO_OWNED_MARKER}" ]; ` +
         `then echo pr:ownership-untrusted; rm -f "$L"; exit 1; fi; ` +
         `ACTUAL="$(git -c safe.directory="$DIR" -C "$DIR" rev-parse HEAD 2>/dev/null)"; ` +
         `if [ -n "$EXPECTED" ] && [ "$ACTUAL" = "$EXPECTED" ]; then rm -f "$L"; echo "pr:reuse sha=$ACTUAL"; exit 0; fi; `;
     const remoteRef = `refs/pull/${number}/head`;
-    const localRef = `refs/skynet/pull/${number}/head`;
+    const localRef = `refs/useagent/pull/${number}/head`;
     const expected = revision ?? "";
     const script =
       `set -e; DIR=${shq(dir)}; EXPECTED=${shq(expected)}; L="$(mktemp)"; ` +

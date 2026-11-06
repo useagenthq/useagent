@@ -197,7 +197,7 @@ describe("deriveChildFidelity", () => {
       provider: "t3",
       eventType: `t3.activity.${kind}`,
       native: {
-        sessionId: "skynet-thread-1",
+        sessionId: "runtime-thread-1",
         parentSessionId: null,
         messageId: null,
         partId: eventId,
@@ -249,7 +249,7 @@ describe("deriveChildFidelity", () => {
       provider: "t3",
       eventType: `t3.activity.${kind}`,
       native: {
-        sessionId: "skynet-thread-1",
+        sessionId: "runtime-thread-1",
         parentSessionId: null,
         messageId: null,
         partId: eventId,
@@ -293,7 +293,7 @@ describe("deriveChildFidelity", () => {
         provider: "t3",
         eventType: "t3.activity.task.started",
         native: {
-          sessionId: "skynet-thread-1",
+          sessionId: "runtime-thread-1",
           parentSessionId: null,
           messageId: null,
           partId: "shell-start",
@@ -378,7 +378,7 @@ describe("deriveThreadContext", () => {
       seq: 3,
       provider: "t3",
       native: {
-        sessionId: "skynet-thread-thread-1",
+        sessionId: "runtime-thread-thread-1",
         parentSessionId: null,
         messageId: null,
         partId: "evt-usage-3",

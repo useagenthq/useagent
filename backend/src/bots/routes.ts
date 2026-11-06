@@ -23,14 +23,19 @@ import {
   parseBotInput,
   rowToInput,
   attachRoutine,
+  setBotArchived,
   updateBotRow,
 } from "./repo";
+import { botEditableBy } from "./owner";
+import type { BotRow } from "../db/schema";
+import { asOrgAdmin } from "../provider-connections/repo";
+import { memberDisplayNames } from "../team/member-names";
 import { botsEnabled } from "./rollout";
-import { listFirings, markFired } from "../schedules/repo";
+import { listFirings, markFired, nextRunAt } from "../schedules/repo";
 import {
   createScheduleForOrg,
   deleteScheduleForOrg,
-  fireScheduleForOrg,
+  runScheduleNow,
   ScheduleServiceError,
   updateScheduleForOrg,
 } from "../schedules/service";
@@ -75,6 +80,17 @@ async function readBody(c: { req: { json: () => Promise<unknown> } }): Promise<R
 
 type PresetProblem = { readonly status: 400 | 403 | 404; readonly body: Record<string, unknown> };
 
+/**
+ * A bot's setup is its creator's (botEditableBy): only they change it or give
+ * it routines, and a routine, like every automation, answers to its creator
+ * (the schedules service). Who may message it is the command door's call.
+ */
+async function ownerOnlyRefusal(row: BotRow, userId: string | null): Promise<Response | null> {
+  if (botEditableBy(row, userId)) return null;
+  const name = (row.createdBy ? (await memberDisplayNames(row.orgId, [row.createdBy])).get(row.createdBy) : undefined) ?? "the bot's creator";
+  return Response.json({ error: "bot_owner_only", reason: `Only ${name} can change this bot's setup.` }, { status: 403 });
+}
+
 /** Names are unique per org ignoring case; the message names the bot that holds it. */
 function nameTaken(name: string) {
   return { error: "invalid_bot", field: "name", reason: `A bot named ${name} already exists. Choose another name.` };
@@ -97,7 +113,7 @@ async function checkPreset(orgId: string, input: BotInput, userId: string | null
 
 botsRoutes.get("/", async (c) => {
   const rows = await listBotRows(c.get("orgId"));
-  return c.json({ bots: await describeBots(c.get("orgId"), rows) });
+  return c.json({ bots: await describeBots(c.get("orgId"), rows, c.get("userId") ?? null) });
 });
 
 botsRoutes.post("/", async (c) => {
@@ -117,7 +133,7 @@ botsRoutes.post("/", async (c) => {
   if (holder) return c.json(nameTaken(holder.name), 409);
   try {
     const row = await createBotRow(c.get("orgId"), parsed.input, c.get("userId"));
-    return c.json({ bot: await describeBot(c.get("orgId"), row) }, 201);
+    return c.json({ bot: await describeBot(c.get("orgId"), row, c.get("userId") ?? null) }, 201);
   } catch (error) {
     if (isUniqueViolation(error)) return c.json(nameTaken(parsed.input.name), 409);
     throw error;
@@ -129,7 +145,7 @@ botsRoutes.get("/:id", async (c) => {
   if (!id) return c.json({ error: "not_found" }, 404);
   const row = await getBotRow(c.get("orgId"), id);
   if (!row) return c.json({ error: "not_found" }, 404);
-  return c.json({ bot: await describeBot(c.get("orgId"), row) });
+  return c.json({ bot: await describeBot(c.get("orgId"), row, c.get("userId") ?? null) });
 });
 
 botsRoutes.patch("/:id", async (c) => {
@@ -148,6 +164,14 @@ botsRoutes.patch("/:id", async (c) => {
   if (archived !== undefined && typeof archived !== "boolean") {
     return c.json({ error: "invalid_bot", field: "archived", reason: "archived must be true or false" }, 400);
   }
+  // An org owner or admin may archive or restore any bot, which runs nothing as anyone.
+  const userId = c.get("userId") ?? null;
+  if (archived !== undefined && Object.keys(body).every((key) => key === "archived") && userId && !botEditableBy(row, userId)) {
+    const done = await asOrgAdmin(c.get("orgId"), userId, () => setBotArchived(c.get("orgId"), row.id, archived));
+    if (done) return done.value ? c.json({ bot: await describeBot(c.get("orgId"), done.value, userId) }) : c.json({ error: "not_found" }, 404);
+  }
+  const notOwner = await ownerOnlyRefusal(row, userId);
+  if (notOwner) return notOwner;
   // The home thread already runs on the stored preset; a changed engine would
   // 400 every follow-up and changed skills/repos/scope would silently not apply.
   const changed = changedPresetFields(base, parsed.input);
@@ -170,7 +194,7 @@ botsRoutes.patch("/:id", async (c) => {
   try {
     const updated = await updateBotRow(c.get("orgId"), row.id, parsed.input, archived);
     if (!updated) return c.json({ error: "not_found" }, 404);
-    return c.json({ bot: await describeBot(c.get("orgId"), updated) });
+    return c.json({ bot: await describeBot(c.get("orgId"), updated, userId) });
   } catch (error) {
     if (isUniqueViolation(error)) return c.json(nameTaken(parsed.input.name), 409);
     throw error;
@@ -241,7 +265,7 @@ function routineView(row: {
   id: string;
   name: string;
   cron: string;
-  timezone: string | null;
+  timezone: string;
   prompt: string;
   enabled: boolean;
   lastFiredAt: Date | null;
@@ -255,6 +279,8 @@ function routineView(row: {
     prompt: row.prompt,
     enabled: row.enabled,
     lastFiredAt: row.lastFiredAt ? row.lastFiredAt.toISOString() : null,
+    // The minute the scheduler fires it next (schedules/repo.ts nextRunAt).
+    nextDueAt: nextRunAt(row, new Date())?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -278,6 +304,8 @@ botsRoutes.post("/:id/routines", async (c) => {
   if (!id) return c.json({ error: "not_found" }, 404);
   const row = await getBotRow(orgId, id);
   if (!row) return c.json({ error: "not_found" }, 404);
+  const notOwner = await ownerOnlyRefusal(row, c.get("userId") ?? null);
+  if (notOwner) return notOwner;
   const body = await readBody(c);
   if (!body) return c.json({ error: "invalid_body" }, 400);
   const skillId = row.skillIds[0];
@@ -297,7 +325,7 @@ botsRoutes.post("/:id/routines", async (c) => {
     const created = await createScheduleForOrg({ orgId, userId: c.get("userId") }, draft);
     await attachRoutine(orgId, created.id, row.id);
     // Automations are created paused; a routine is on unless asked otherwise.
-    if (body.enabled !== false) await updateScheduleForOrg(orgId, created.id, { enabled: true });
+    if (body.enabled !== false) await updateScheduleForOrg(orgId, created.id, { enabled: true }, c.get("userId") ?? null);
     const routine = await getBotRoutine(orgId, row.id, created.id);
     if (!routine) return c.json({ error: "routine_not_attached" }, 500);
     return c.json({ routine: routineView(routine) }, 201);
@@ -318,7 +346,7 @@ botsRoutes.patch("/:id/routines/:routineId", async (c) => {
   const patch: Record<string, unknown> = {};
   for (const field of ROUTINE_PATCH_FIELDS) if (body[field] !== undefined) patch[field] = body[field];
   try {
-    await updateScheduleForOrg(orgId, routine.id, patch);
+    await updateScheduleForOrg(orgId, routine.id, patch, c.get("userId") ?? null);
     const updated = await getBotRoutine(orgId, id, routineId);
     return c.json({ routine: updated ? routineView(updated) : null });
   } catch (error) {
@@ -334,7 +362,7 @@ botsRoutes.delete("/:id/routines/:routineId", async (c) => {
   const routine = await getBotRoutine(orgId, id, routineId);
   if (!routine) return c.json({ error: "not_found" }, 404);
   try {
-    await deleteScheduleForOrg(orgId, routine.id);
+    await deleteScheduleForOrg(orgId, routine.id, c.get("userId") ?? null);
     return c.body(null, 204);
   } catch (error) {
     return scheduleError(error) ?? Promise.reject(error);
@@ -351,7 +379,7 @@ botsRoutes.post("/:id/routines/:routineId/run-now", async (c) => {
   const routine = await getBotRoutine(orgId, id, routineId);
   if (!routine) return c.json({ error: "not_found" }, 404);
   try {
-    const runId = await fireScheduleForOrg(routine, "manual");
+    const runId = await runScheduleNow(routine, c.get("userId") ?? null);
     // A test run is a firing too: the row's "last run" must show it, not wait for cron.
     await markFired(routine.id, new Date());
     const fired = (await getBotRoutine(orgId, id, routineId)) ?? routine;

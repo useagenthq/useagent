@@ -82,8 +82,8 @@ describe("removeMentionToken - best-effort text sync", () => {
 
 describe("mentionsToRunResources", () => {
   const mentions: Mention[] = [
-    prMention("useagenthq/skynet", 123, "Fix the composer"),
-    fileMention("useagenthq/skynet", "src/index.ts", "feature/mentions"),
+    prMention("useagenthq/useagent", 123, "Fix the composer"),
+    fileMention("useagenthq/useagent", "src/index.ts", "feature/mentions"),
     threadMention("abcd1234efgh", "Ship mentions"),
     skillMention("skill-1", "humanizer"),
   ];
@@ -95,7 +95,7 @@ describe("mentionsToRunResources", () => {
         provider: "github",
         locator: {
           type: "github.pull_request",
-          repository: "useagenthq/skynet",
+          repository: "useagenthq/useagent",
           number: 123,
           revision: null,
         },
@@ -105,7 +105,7 @@ describe("mentionsToRunResources", () => {
         provider: "github",
         locator: {
           type: "github.repository",
-          repository: "useagenthq/skynet",
+          repository: "useagenthq/useagent",
           revision: "feature/mentions",
         },
       },
@@ -119,8 +119,8 @@ describe("mentionsToRunResources", () => {
 });
 
 test("file browse sends the selected branch and directory", () => {
-  expect(repoTreeUrl("useagenthq/skynet", "feature/mentions", "src/app")).toBe(
-    "/api/repos/useagenthq/skynet/tree?ref=feature%2Fmentions&path=src%2Fapp",
+  expect(repoTreeUrl("useagenthq/useagent", "feature/mentions", "src/app")).toBe(
+    "/api/repos/useagenthq/useagent/tree?ref=feature%2Fmentions&path=src%2Fapp",
   );
 });
 

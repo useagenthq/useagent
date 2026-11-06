@@ -13,6 +13,8 @@
  * merge — is identical regardless of what emits the frames.
  */
 import postgres from "postgres";
+import { DEV_ORG_ID } from "../../src/dev-org";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
 const DB = "useagent_nativekill";
 const PORT = 3507;
@@ -92,11 +94,11 @@ async function readNative(url: string, onFrame: (f: Frame) => void, signal: Abor
 async function main(): Promise<void> {
   // 1) A live run + a "fanout" of native captures (concurrent batches + revisions).
   const id = crypto.randomUUID();
-  await createRun({ id, prompt: "native reconnect fanout", model: "claude-opus-5", engine: "mock", orgId: "org-skynet-dev", userId: null, parentRunId: null, threadId: id });
+  await createRun({ id, prompt: "native reconnect fanout", model: "claude-opus-5", engine: "mock", orgId: DEV_ORG_ID, userId: null, parentRunId: null, threadId: id });
   await setRunStatus(id, "running");
 
   // Retrieval-ledger-style frame first (the cross-emitter that used to collide on seq 0).
-  await recordProviderEvent({ id: `ctxret_${id}`, runId: id, threadId: id, provider: "skynet", eventType: "context.retrieved", payload: { items: 2 } });
+  await recordProviderEvent({ id: `ctxret_${id}`, runId: id, threadId: id, provider: PLATFORM_EVENT_LANES.platform, eventType: "context.retrieved", payload: { items: 2 } });
   // 30 part captures in 6 concurrent batches of 5 (out-of-order insert resolution),
   // then revise 4 of them (each mints a fresh higher seq).
   for (let b = 0; b < 6; b++) {

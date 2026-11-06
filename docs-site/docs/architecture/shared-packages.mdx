@@ -17,9 +17,24 @@ native state; the packages are the contract layer on top.
 | `@useagent/agent-harness` | Provider-neutral canonical event, capability, session, and `ProviderDriver` lifecycle types (the engine control contract), plus the protocol-boundary OpenCode frame parsers exported under `./opencode` and `./t3-tool`, the one place vendor names are permitted. |
 | `@useagent/artifact-formats` | Native DOCX, XLSX, PPTX, and PDF renderers, plus bounded Office text extraction. |
 | `@useagent/artifact-workspace` | Provider-neutral workpiece kinds, actions, and the native export capability matrix shared by backend and frontend. |
+| `@useagent/cli` | The `useagent` command line and its MCP server. It fans tasks out to your hosted org and collects the results. Depends on `agent-client` only. |
 | `@useagent/conformance` | Deterministic, framework-free contract tests for the client and harness packages. It does not run live providers. |
+| `@useagent/runner` | The per-machine runner that lends a developer's machine to the control plane as a sandbox provider, over one outbound WebSocket. Built into binaries. |
+| `@useagent/runner-protocol` | The wire between a runner and the control plane: one WebSocket split into RPC calls and byte streams. No dependencies. |
+| `@useagent/sandbox-box` | The Box sandbox provider, as a plugin behind the sandbox contract. |
+| `@useagent/sandbox-contract` | The provider-neutral sandbox contract (types only, no runtime) and its shared conformance suite. |
+| `@useagent/sandbox-cube` | The Cube (E2B-compatible) sandbox provider, as a plugin behind the sandbox contract. |
+| `@useagent/sandbox-daytona` | The Daytona sandbox provider, as a plugin behind the sandbox contract. |
+| `@useagent/sandbox-local` | A developer's own machine as a sandbox provider, as a plugin that talks to the runner through `runner-protocol`. |
 
-Both apps consume the packages as plain `file:../packages/...` dependencies in
+Three of these are shared by the frontend and the backend: `agent-client`,
+`agent-harness`, and `artifact-workspace`. The backend also uses `artifact-formats`,
+`runner-protocol`, `sandbox-contract`, and the four sandbox provider packages; the
+frontend does not import those. `cli` and `runner` are standalone tools that no app
+imports: `cli` is a `useagent` binary and `runner` is built into the per-machine runner.
+`conformance` is a test suite that runs on its own.
+
+The apps consume the packages as plain `file:../packages/...` dependencies in
 `backend/package.json` and `frontend/package.json`. There is no workspace or
 turbo root: each app installs with bun on its own, and the package exports point
 straight at TypeScript source, so both sides type-check the contract at build

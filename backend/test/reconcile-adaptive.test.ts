@@ -25,13 +25,15 @@ import { uid } from "./helpers";
 import { providerSessionBinding } from "@useagent/agent-harness/canonical";
 import { providerProtocolIdentity } from "@useagent/agent-harness/control";
 import { t3ProviderDrivers } from "../src/engines/t3-provider-driver";
+import { DEV_ORG_ID } from "../src/dev-org";
+import { SANDBOX_NAME_PREFIX } from "../src/sandboxes/sandbox-names";
 
 // The ADAPTIVE reconciler (#63): boot PARKS a transient run instead of honest-
 // failing it, and a background loop re-probes within a budget. Covers park-on-
 // boot (+ marker + thread stays reserved), reconcile-after-delay, fail-after-
 // budget, no-double-adopt, and survives-own-restart.
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 const transientProbe: ReconcileProbe = async () => ({ status: "unreachable" });
 const completedProbe: ReconcileProbe = async () => ({ status: "completed", summary: "adopted answer" });
 
@@ -756,7 +758,7 @@ describe("read-only refusal across a restart", () => {
       snapshotSequence: 1,
       projection: {
         thread: { id: "ses_x", runtimeMode: "approval-required", activeProviderThreadId: null },
-        runs: [{ id: "turn-1", ordinal: 1, userMessageId: "skynet-message-turn-1", status: "running", providerThreadId: null, requestedAt: "x", startedAt: null, completedAt: null }],
+        runs: [{ id: "turn-1", ordinal: 1, userMessageId: `${SANDBOX_NAME_PREFIX}-message-turn-1`, status: "running", providerThreadId: null, requestedAt: "x", startedAt: null, completedAt: null }],
         messages: [],
         turnItems: [{ id: "item-1", threadId: "ses_x", runId: "turn-1", type: "approval_request", status: "waiting", title: null, updatedAt: "x", ordinal: 1, requestId, requestKind: "file-change", prompt: "write build/out" }],
         providerSessions: [],

@@ -224,6 +224,14 @@ The important variables are:
   (needs `CONNECTOR_EMAIL_HOST` and `CONNECTOR_EMAIL_FROM`); `SIGNUP_ALLOWED_DOMAINS`
   and `SIGNUP_INVITE_CODE` narrow it.
 - `ENABLED_ENGINES` to opt extra engines into the backend picker.
+- `ENGINE_TIMEOUT_MS` and `ENGINE_MAX_MS` set optional time limits on a coding-engine
+  task. Both are in milliseconds and both are off by default, so a task runs until it
+  finishes or someone stops it. `ENGINE_TIMEOUT_MS` stops a task after that long with
+  no activity; each new step and each native frame starts the wait again. `ENGINE_MAX_MS`
+  is a hard cap on the whole task, however active it is. A value that is unset, empty,
+  not a number or not above zero turns that limit off, and a value above 2147483647
+  (about 24.8 days, the longest timer delay) is treated as that maximum. Neither limit
+  applies to Chat tasks yet.
 - `LAB_ACCOUNTS=owner@example.com,second@example.com` lists the accounts that may
   open the component lab (`/lab`) in production; unset, nobody can. Development
   mode keeps it open.

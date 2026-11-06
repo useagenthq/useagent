@@ -32,6 +32,7 @@ import { readSandboxRunLabel } from "../../src/sandboxes/label-compat";
 import { DEFAULT_CODEX_MODEL } from "../../src/runs/model-policy";
 import { shq } from "../../src/engines/repo-prep";
 import { SANDBOX_GENERATION } from "../../src/provider-gateway/sandbox-config";
+import { SANDBOX_STATE_HOME } from "../../src/sandboxes/sandbox-names";
 
 type Engine = "opencode" | "claude" | "codex";
 const ENGINE = (process.env.E2E_ENGINE ?? "opencode") as Engine;
@@ -55,7 +56,7 @@ const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 const BUDGET = Number(process.env.E2E_BOOT_BUDGET_S ?? 480);
 const backendDir = new URL("../..", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
-const beLogPath = `${scratch}/skynet-p8-${ENGINE}-backend.log`;
+const beLogPath = `${scratch}/useagent-p8-${ENGINE}-backend.log`;
 
 const LONG_PROMPT =
   "Use the shell/execute tool to run EXACTLY this one command and WAIT for it to fully finish " +
@@ -186,7 +187,7 @@ try {
     stderr: beLog,
   });
   const booted = await waitHttp(`${BE}/health`, 60_000);
-  pass("isolated backend booted (throwaway DB, no shared-skynet hazard)", booted, `${BE} db=${DB}`);
+  pass("isolated backend booted (throwaway DB, no shared-database hazard)", booted, `${BE} db=${DB}`);
   if (!booted) throw new Error("backend did not boot");
 
   // ── 1. author a real versioned useAgent skill (the user selects a skill they wrote) ──
@@ -268,7 +269,7 @@ try {
         rawProviderEnv.result?.trim() || "raw provider env absent",
       );
       const marker = await box.process.executeCommand(
-        `test "$(cat $HOME/.skynet/provider-gateway-generation 2>/dev/null)" = "${SANDBOX_GENERATION}"`,
+        `test "$(cat ${SANDBOX_STATE_HOME}/provider-gateway-generation 2>/dev/null)" = "${SANDBOX_GENERATION}"`,
         undefined,
         undefined,
         15,

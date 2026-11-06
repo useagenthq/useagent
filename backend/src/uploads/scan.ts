@@ -55,7 +55,7 @@ function shellQuote(value: string): string {
 }
 
 async function scanWithCommand(command: string, input: UploadScanInput): Promise<UploadScanResult> {
-  const directory = await mkdtemp(join(tmpdir(), "skynet-upload-scan-"));
+  const directory = await mkdtemp(join(tmpdir(), "useagent-upload-scan-"));
   const path = join(directory, "upload");
   try {
     await writeFile(path, input.bytes, { mode: 0o600 });

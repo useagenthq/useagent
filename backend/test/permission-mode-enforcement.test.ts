@@ -17,6 +17,7 @@ import type { V2ThreadSnapshot } from "../src/engines/runtime-v2-wire";
 import type { EmitStep, EngineRunContext } from "../src/engines/types";
 import type { SandboxHandle } from "../src/sandboxes/provider";
 import { createSecretRedactor } from "../src/secrets/redact";
+import { SANDBOX_NAME_PREFIX } from "../src/sandboxes/sandbox-names";
 
 // Enforcement per permission mode at the runtime adapter boundary, against a
 // real accepted run so the projector's provider-event record lands. The
@@ -48,7 +49,7 @@ function thread(
     snapshotSequence: sequence,
     projection: {
       thread: { id: threadId, runtimeMode: "approval-required", activeProviderThreadId: null },
-      runs: [{ id: runId, ordinal: runId === "turn-prior" ? 1 : 2, userMessageId: `skynet-message-${runId}`, status, providerThreadId: null, requestedAt: "2026-10-03T00:00:00.000Z", startedAt: null, completedAt: null }],
+      runs: [{ id: runId, ordinal: runId === "turn-prior" ? 1 : 2, userMessageId: `${SANDBOX_NAME_PREFIX}-message-${runId}`, status, providerThreadId: null, requestedAt: "2026-10-03T00:00:00.000Z", startedAt: null, completedAt: null }],
       messages: [{ id: "assistant-1", runId, role: "assistant", text: "Looked around.", streaming: status === "running", createdAt: "2026-10-03T00:00:01.000Z" }],
       turnItems: request
         ? [{ id: "item-approval-1", threadId, runId, type: "approval_request", status: request.status === "pending" ? "waiting" : "completed", title: null, updatedAt: "x", ordinal: 1, requestId: "approval-1", requestKind: request.kind, prompt: "rm -rf build" }]

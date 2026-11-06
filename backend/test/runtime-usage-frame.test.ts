@@ -15,6 +15,7 @@ import {
 } from "../src/engines/runtime-orchestration";
 import { activityRevisions, createTurnProjector } from "../src/engines/turn-projector";
 import type { EngineRunContext } from "../src/engines/types";
+import { SANDBOX_NAME_PREFIX } from "../src/sandboxes/sandbox-names";
 
 // A recorded Codex app-server transcript: the three thread/tokenUsage/updated
 // notifications the root thread received during one turn (codex-cli 0.145.0,
@@ -80,7 +81,7 @@ function snapshot(activities: readonly RuntimeActivity[], sequence: number): Run
   return {
     snapshotSequence: sequence,
     thread: {
-      id: "skynet-thread-thread-1",
+      id: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       latestTurn: { turnId: TURN_ID, state: "running", assistantMessageId: null },
       messages: [],
       activities,
@@ -93,7 +94,7 @@ describe("runtime usage frames", () => {
   test("the runtime's context-window activity becomes the usage frame the composer reads", () => {
     const event = runtimeActivityProviderEvent(
       { runId: "run-1", threadId: "thread-1" },
-      "skynet-thread-thread-1",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       contextWindowActivity(2),
       redact,
     );
@@ -105,7 +106,7 @@ describe("runtime usage frames", () => {
       threadId: "thread-1",
       provider: "t3",
       eventType: "part.step-finish",
-      nativeSessionId: "skynet-thread-thread-1",
+      nativeSessionId: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       nativeParentSessionId: null,
       nativeMessageId: null,
       nativePartId: "evt-usage-3",
@@ -122,13 +123,13 @@ describe("runtime usage frames", () => {
     const empty = contextWindowActivity(0);
     expect(runtimeActivityProviderEvent(
       { runId: "run-1", threadId: "thread-1" },
-      "skynet-thread-thread-1",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       { ...empty, payload: { ...(empty.payload as Record<string, unknown>), usedTokens: 0 } },
       redact,
     )).toMatchObject({ id: "pe_run-1_t3_evt-usage-1", eventType: "t3.activity.context-window.updated" });
     expect(runtimeActivityProviderEvent(
       { runId: "run-1", threadId: "thread-1" },
-      "skynet-thread-thread-1",
+      `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
       { ...empty, id: "evt-tool", kind: "tool.completed", summary: "Ran ls", payload: { toolCallId: "call-1", data: { toolName: "shell" } } },
       redact,
     )).toMatchObject({ id: "pe_run-1_t3_evt-tool", eventType: "t3.activity.tool.completed", nativeCallId: "call-1" });

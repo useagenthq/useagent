@@ -11,6 +11,7 @@ import { parseNativeFrame } from "./native-events";
 import { buildTimelineFromCanonical, type CanonicalEventLike } from "./canonical-timeline";
 import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "@useagent/agent-harness/opencode";
 import type { ApiStep } from "./types";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
 type F = OpenCodeFrame;
 type S = OpenCodeStep;
@@ -71,18 +72,18 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
     expect(canon).toEqual(legacy); // FULL deep equality (H3), not only kind+key
   });
 
-  test("skynet context markers lead the turn - FULL marker fidelity (every marker kind)", () => {
+  test("platform context markers lead the turn - FULL marker fidelity (every marker kind)", () => {
     // Exercise EVERY TimelineMarker variant the useAgent lane can emit, each with its full
     // field set (version/hash, source/itemCount/query, op/scope/failed/reconciled,
     // deadlineMs), and assert the canonical marker node is DEEP-EQUAL to legacy - proving
     // the reconstruction is lossless, never fabricated (H3, review issue #5).
     const frames: F[] = [
-      frame({ eventType: "skill.loaded", seq: 0, provider: "skynet", native: {}, payload: { kind: "playbook", name: "Deploy", version: 7, contentHash: "abc123" } }),
-      frame({ eventType: "context.retrieved", seq: 1, provider: "skynet", native: {}, payload: { source: "memory", itemCount: 3, query: "how to deploy" } }),
-      frame({ eventType: "knowledge.retrieved", seq: 2, provider: "skynet-knowledge", native: {}, payload: { itemCount: 5 } }),
-      frame({ eventType: "memory.l0_accepted", seq: 3, provider: "skynet-memory", native: {}, payload: { op: "remember", scope: "personal", reconciled: true } }),
-      frame({ eventType: "memory.failed", seq: 4, provider: "skynet-memory", native: {}, payload: { op: "correct", scope: "org" } }),
-      frame({ eventType: "run.reconciling", seq: 5, provider: "skynet", native: {}, payload: { reason: "boot-restart", sinceMs: 1000, deadlineMs: 9999 } }),
+      frame({ eventType: "skill.loaded", seq: 0, provider: PLATFORM_EVENT_LANES.platform, native: {}, payload: { kind: "playbook", name: "Deploy", version: 7, contentHash: "abc123" } }),
+      frame({ eventType: "context.retrieved", seq: 1, provider: PLATFORM_EVENT_LANES.platform, native: {}, payload: { source: "memory", itemCount: 3, query: "how to deploy" } }),
+      frame({ eventType: "knowledge.retrieved", seq: 2, provider: PLATFORM_EVENT_LANES.knowledge, native: {}, payload: { itemCount: 5 } }),
+      frame({ eventType: "memory.l0_accepted", seq: 3, provider: PLATFORM_EVENT_LANES.memory, native: {}, payload: { op: "remember", scope: "personal", reconciled: true } }),
+      frame({ eventType: "memory.failed", seq: 4, provider: PLATFORM_EVENT_LANES.memory, native: {}, payload: { op: "correct", scope: "org" } }),
+      frame({ eventType: "run.reconciling", seq: 5, provider: PLATFORM_EVENT_LANES.platform, native: {}, payload: { reason: "boot-restart", sinceMs: 1000, deadlineMs: 9999 } }),
       frame({ eventType: "part.step-start", seq: 6, native: { messageId: "m1", partId: "ps1" } }),
       frame({ eventType: "part.tool.completed", seq: 7, native: { messageId: "m1", partId: "pc1", callId: "c1" }, payload: { type: "tool", tool: "bash" } }),
       frame({ eventType: "part.step-finish", seq: 8, native: { messageId: "m1", partId: "pf1" } }),
@@ -108,28 +109,28 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
       frame({
         eventType: "artifact.created",
         seq: 0,
-        provider: "skynet",
+        provider: PLATFORM_EVENT_LANES.platform,
         native: {},
         payload: descriptor,
       }),
       frame({
         eventType: "artifact.delivered",
         seq: 1,
-        provider: "skynet",
+        provider: PLATFORM_EVENT_LANES.platform,
         native: {},
         payload: { ...descriptor, destination: "slack" },
       }),
       frame({
         eventType: "artifact.delivered",
         seq: 2,
-        provider: "skynet",
+        provider: PLATFORM_EVENT_LANES.platform,
         native: {},
         payload: { ...descriptor, destination: "email" },
       }),
       frame({
         eventType: "artifact.delivered",
         seq: 3,
-        provider: "skynet",
+        provider: PLATFORM_EVENT_LANES.platform,
         native: {},
         payload: { ...descriptor, destination: "slack" },
       }),
@@ -164,21 +165,21 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
       frame({
         eventType: "artifact.delivered",
         seq: 0,
-        provider: "skynet",
+        provider: PLATFORM_EVENT_LANES.platform,
         native: {},
         payload: { ...descriptor, destination: "slack" },
       }),
       frame({
         eventType: "artifact.created",
         seq: 1,
-        provider: "skynet",
+        provider: PLATFORM_EVENT_LANES.platform,
         native: {},
         payload: { ...descriptor, id: "artifact-2", name: "created-between.png" },
       }),
       frame({
         eventType: "artifact.created",
         seq: 2,
-        provider: "skynet",
+        provider: PLATFORM_EVENT_LANES.platform,
         native: {},
         payload: descriptor,
       }),

@@ -5,8 +5,9 @@
 // skill body (bounded-payload rule: markers carry references, not oversized
 // content). Mirrors memory/retrieval-ledger.ts.
 
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import type { SkillKind } from "../db/schema";
-import { recordProviderEvent } from "../runs/provider-events";
+import { recordProviderEventIfAbsent } from "../runs/provider-events";
 
 /** The native `eventType` for a skill-load marker. */
 export const SKILL_LOADED = "skill.loaded";
@@ -38,12 +39,14 @@ export async function recordSkillLoaded(
 ): Promise<void> {
   // Emitted at run START (before any provider part), so the shared per-run
   // sequencer mints an early seq and every opencode capture a strictly higher one.
-  await recordProviderEvent({
+  // Insert-only: the gateway role may add an event but never rewrite one, so an
+  // upsert is refused there. A failure is logged by the writer and stays non-fatal.
+  await recordProviderEventIfAbsent({
     id: `skillloaded_${runId}`,
     runId,
     threadId,
-    provider: "skynet",
+    provider: PLATFORM_EVENT_LANES.platform,
     eventType: SKILL_LOADED,
     payload: loaded,
-  });
+  }).catch(() => false);
 }

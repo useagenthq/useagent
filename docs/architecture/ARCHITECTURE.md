@@ -266,19 +266,13 @@ not advertise the pair until it passes.
 
 ## 10. Licensing inventory
 
-The repository does **not** contain an AGPL-core/Apache-packages licensing split. The checked-in
-inventory is:
-
 | Item | Checked-in evidence |
 |---|---|
-| Repository/project license grant | None at the root and no `license` field in the root, backend, frontend, docs-site, or package manifests. The root manifest is private (`package.json:L1-L4`). |
-| Vendored Beautiful UI | A complete MIT license is committed at `frontend/vendor/beautiful-ui/LICENSE:L1-L20`. |
-| Third-party attribution | `NOTICE:L1-L14` attributes a peer tool as Apache-2.0, QM as an adapted reference, and the listed UI foundations as vendored/ported MIT work. `NOTICE` is attribution, not a repository-wide license grant. |
-| Extracted packages | All seven `packages/*/package.json` manifests are private; external-package readiness is explicitly not claimed. |
+| Repository license | `LICENSE` is the GNU AGPL v3.0 text. The root, backend and frontend manifests say `"license": "AGPL-3.0-only"`; the docs-site, desktop and `packages/*` manifests have no `license` field. Every manifest is `private`. |
+| Contributions and commercial terms | `CLA.md` is the contributor agreement; `.github/workflows/cla.yml` asks for and records signatures. `COMMERCIAL-LICENSE.md` says a separate commercial license is available and names a contact; it carries no terms. `TRADEMARKS.md` covers the name and logo. |
+| Third-party code | `NOTICE` lists every ported or vendored source with its license. Their license texts are in `third_party/licenses/`, except Beautiful UI's, which stays with its snapshot in `frontend/vendor/beautiful-ui/`. |
 
-Therefore the accurate statement is: the repository has third-party license/notice obligations,
-including a vendored MIT license, but no checked-in license grant for the repository as a whole and
-no implemented AGPL/Apache package boundary.
+No package has a license of its own: there is no AGPL-core/Apache-packages split.
 
 ## 11. Operational constraints
 

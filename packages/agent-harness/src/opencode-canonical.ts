@@ -18,6 +18,7 @@
 import {
   ACP_COMMANDS_EVENT_TYPE,
   CANONICAL_SCHEMA_VERSION,
+  PLATFORM_EVENT_LANES,
   SESSION_STARTED_EVENT_TYPE,
   parseAcpCommandsFrame,
   parseSessionStartedFrame,
@@ -371,7 +372,7 @@ export function translateOpenCode(
       ensureChild(produced, f); // lossless child-session establishment
     }
 
-    if (f.provider === "useagent" || f.provider.startsWith("skynet")) {
+    if (f.provider === "useagent" || f.provider.startsWith(PLATFORM_EVENT_LANES.platform)) {
       const marker = markerFromUseAgent(et, p);
       if (marker) {
         // Carry the originating frame verbatim so the frontend reconstructs the FULL

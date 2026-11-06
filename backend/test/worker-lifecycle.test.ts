@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { beginEngineRun } from "../src/worker";
 import { createRun, getRunWithSteps } from "../src/runs/repo";
+import { DEV_ORG_ID } from "../src/dev-org";
 
-const ORG_ID = "org-skynet-dev";
+const ORG_ID = DEV_ORG_ID;
 
 describe("real engine lifecycle", () => {
   test("publishes a durable preparation row before adapter-owned work", async () => {

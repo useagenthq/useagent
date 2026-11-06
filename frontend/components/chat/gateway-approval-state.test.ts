@@ -14,6 +14,7 @@ import {
 } from "./gateway-approval-state";
 import type { NativeFrame } from "./native-events";
 import type { ApiStep } from "./types";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
 function step(id: string, chip: string | null, kind: ApiStep["kind"] = "task"): ApiStep {
   return {
@@ -77,7 +78,7 @@ describe("gateway approval timeline decision", () => {
 
   test("a non-native provider event containing approval signals the lane", () => {
     expect(
-      hasGatewayApprovalSignal([], [frame(1, "skynet", "gateway.approval.requested")]),
+      hasGatewayApprovalSignal([], [frame(1, PLATFORM_EVENT_LANES.platform, "gateway.approval.requested")]),
     ).toBe(true);
   });
 
@@ -95,13 +96,13 @@ describe("gateway approval timeline decision", () => {
   test("the signature changes when a resolution event re-projects (SSE revalidate)", () => {
     const before = gatewayApprovalSignature(
       [],
-      [frame(1, "skynet", "gateway.approval.requested")],
+      [frame(1, PLATFORM_EVENT_LANES.platform, "gateway.approval.requested")],
     );
     const after = gatewayApprovalSignature(
       [],
       [
-        frame(1, "skynet", "gateway.approval.requested"),
-        frame(2, "skynet", "gateway.approval.resolved"),
+        frame(1, PLATFORM_EVENT_LANES.platform, "gateway.approval.requested"),
+        frame(2, PLATFORM_EVENT_LANES.platform, "gateway.approval.resolved"),
       ],
     );
     expect(before).not.toBe("");

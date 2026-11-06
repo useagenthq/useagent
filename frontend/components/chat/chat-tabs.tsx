@@ -18,7 +18,10 @@ import { engineMarkFor } from "@/components/foundations/icons/vendor-marks";
 import { StatusDot } from "@/components/shared/status-dot";
 import { chatTitle } from "@/components/shell/chat-title";
 import { useSidebarThreads } from "@/components/shell/sidebar-threads-provider";
-import { effectiveThreadStatus, threadStatusPresentation } from "@/components/shell/thread-discovery";
+import {
+  effectiveThreadStatus,
+  threadStatusPresentation,
+} from "@/components/shell/thread-discovery";
 import { useSession } from "@/lib/auth";
 import { cx } from "@/utils/cx";
 
@@ -58,8 +61,12 @@ export function ChatTabStrip({
   onClose: (id: string) => void;
 }) {
   if (tabs.length === 0) return null;
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const links = Array.from(event.currentTarget.querySelectorAll<HTMLAnchorElement>('[role="tab"]'));
+  // Keyboard model: arrow keys move focus between tab links, Enter opens the
+  // focused one (native anchor), Delete/Backspace closes it. The handler lives
+  // on the nav row (the focused link's DOM ancestor); the only anchors inside
+  // the nav are the chat links - the New-chat action sits outside it.
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const links = Array.from(event.currentTarget.querySelectorAll<HTMLAnchorElement>("a[href]"));
     const index = links.indexOf(document.activeElement as HTMLAnchorElement);
     const action = tabKeyAction(event.key, index, links.length);
     if (!action) return;
@@ -68,61 +75,68 @@ export function ChatTabStrip({
     else links[action.focus]?.focus();
   };
   return (
-    <div
-      role="tablist"
-      aria-label="Open chats"
-      data-testid="chat-tabs"
-      onKeyDown={onKeyDown}
-      className="flex h-12 shrink-0 items-center gap-2 overflow-x-auto px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-    >
-      {tabs.map((tab) => {
-        const active = tab.id === activeId;
-        const Mark = engineMarkFor(tab.engine ?? "");
-        // No dot until the status is known (the rail list still loading, or a tab
-        // older than the list holds): an unknown state is not "done".
-        const status = tab.status ? threadStatusPresentation(tab.status) : null;
-        return (
-          <div
-            key={tab.id}
-            role="presentation"
-            data-active={active ? "" : undefined}
-            className={cx(
-              "group flex h-8 max-w-56 shrink-0 items-center gap-1.5 rounded-full pl-2.5 pr-1 transition-colors",
-              active
-                ? "bg-background-primary-default text-text-primary shadow-sm"
-                : "bg-text-primary/[0.06] text-text-secondary hover:bg-text-primary/10 hover:text-text-primary",
-            )}
-          >
-            <Mark className="size-3.5 shrink-0 text-foreground-icon-secondary" aria-hidden />
-            <Link
-              role="tab"
-              aria-selected={active}
-              aria-current={active ? "page" : undefined}
-              href={tab.href}
-              title={tab.title}
-              className="min-w-0 truncate rounded-sm text-body-2-medium outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
-            >
-              {tab.title}
-            </Link>
-            {status && (
-              <span role="img" aria-label={status.label} title={status.label}>
-                <StatusDot {...(status.dot ?? { tone: "neutral" })} />
-              </span>
-            )}
-            <button
-              type="button"
-              aria-label={`Close ${tab.title}`}
-              onClick={() => onClose(tab.id)}
+    <div className="flex h-12 shrink-0 items-center gap-2 px-2">
+      {/* The row is a nav of plain links, not a tablist: these tabs navigate
+          to threads, so the active one is marked aria-current="page" and no
+          tab roles exist - an empty sr-only tablist re-parenting the links via
+          aria-owns reads poorly in VoiceOver. A nav has no required-children
+          rule, so each capsule can carry its own close mark (a button beside
+          the link) without the nesting a tablist forbids. */}
+      <nav
+        aria-label="Open chats"
+        data-testid="chat-tabs"
+        data-chat-tabs-pills
+        onKeyDown={onKeyDown}
+        className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {tabs.map((tab) => {
+          const active = tab.id === activeId;
+          const Mark = engineMarkFor(tab.engine ?? "");
+          // No dot until the status is known (the rail list still loading, or a tab
+          // older than the list holds): an unknown state is not "done".
+          const status = tab.status ? threadStatusPresentation(tab.status) : null;
+          return (
+            <div
+              key={tab.id}
+              data-active={active ? "" : undefined}
               className={cx(
-                "flex size-5 shrink-0 items-center justify-center rounded-full text-text-tertiary transition-opacity hover:bg-background-tertiary-hover hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring group-hover:opacity-100",
-                active ? "opacity-100" : "opacity-0",
+                "group flex h-8 max-w-56 shrink-0 items-center gap-1.5 rounded-full pl-2.5 pr-1 transition-colors",
+                active
+                  ? "bg-background-primary-default text-text-primary shadow-sm"
+                  : "bg-text-primary/[0.06] text-text-secondary hover:bg-text-primary/10 hover:text-text-primary",
               )}
             >
-              <RiCloseLine className="size-3.5" aria-hidden />
-            </button>
-          </div>
-        );
-      })}
+              <Mark className="size-3.5 shrink-0 text-foreground-icon-secondary" aria-hidden />
+              <Link
+                aria-current={active ? "page" : undefined}
+                href={tab.href}
+                title={tab.title}
+                className="min-w-0 truncate rounded-sm text-body-2-medium outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+              >
+                {tab.title}
+              </Link>
+              {status && (
+                <span role="img" aria-label={status.label} title={status.label}>
+                  <StatusDot {...(status.dot ?? { tone: "neutral" })} />
+                </span>
+              )}
+              <button
+                type="button"
+                aria-label={`Close ${tab.title}`}
+                onClick={() => onClose(tab.id)}
+                className={cx(
+                  "flex size-5 shrink-0 items-center justify-center rounded-full text-text-tertiary transition-opacity hover:bg-background-tertiary-hover hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring group-hover:opacity-100",
+                  active ? "opacity-100" : "opacity-0",
+                )}
+              >
+                <RiCloseLine className="size-3.5" aria-hidden />
+              </button>
+            </div>
+          );
+        })}
+      </nav>
+      {/* An action, not a chat: kept outside the nav so "Open chats" lists
+          only the chats. */}
       <Link
         href={NEW_CHAT_HREF}
         aria-label="New chat"

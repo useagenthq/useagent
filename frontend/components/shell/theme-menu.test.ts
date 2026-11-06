@@ -13,6 +13,7 @@ test("orders Light and Dark first, then preserves the remaining theme order", ()
     "Light Red",
     "Dark Red",
     "Slate",
+    "Ember",
     "Neobrutal",
   ]);
 });

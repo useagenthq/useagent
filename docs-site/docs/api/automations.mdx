@@ -17,14 +17,30 @@ The router is mounted at both `/api/automations` (primary) and `/api/schedules`
 automation is always created disabled, so nothing auto-fires until it is
 explicitly enabled.
 
+Every firing runs as the member who created the automation: their keys, spend
+allowance, sandbox minutes and personal connections. So only the creator may
+edit it, enable it or run it now; an org owner or admin may also pause it
+(`PATCH {"enabled": false}`) or delete it. Anyone else gets `403
+automation_creator_only`, whose `message` names the creator. The same rule holds
+for a bot's routines and for an agent's automation tools, where the agent acts
+as its run's owner.
+
+Every automation runs its `cron` in a named IANA `timezone`. A create that sends
+none runs in `UTC` (the web app sends the creator's browser zone); a `PATCH` may
+change the zone, and one that names none leaves it as it is. `next_due_at` is the minute the
+scheduler fires it next, from the same occurrence rule it fires by,
+daylight-saving changes included; it is `null` while the automation is paused or
+when the cron names no date.
+
 | Method | Path | Description | Notes |
 | --- | --- | --- | --- |
 | GET | `/api/automations` | List the org's automations, newest first. | Returns `{automations, schedules}` (the same array under both keys for resumed clients). |
+| GET | `/api/automations/preview` | The next three runs a schedule would have, before it is saved: an editor's live preview, from the engine the scheduler fires by. | Query `cron` (five fields) and `timezone` (IANA, `UTC` when omitted). `200 {next_runs}` (ISO UTC, fewer when the cron names fewer dates); `400 {error}` for a cron or zone it cannot read. |
 | POST | `/api/automations` | Create an automation (created disabled). | JSON body validated by the service. `201` created object; `400` on invalid JSON. |
-| PATCH | `/api/automations/:id` | Update an automation (enable/disable or edit). | Partial JSON body. `200` updated object. |
-| POST | `/api/automations/:id/run-now` | Fire immediately: create a real run and record a manual firing. | `201 {run_id}`. `404 schedule not found`. |
+| PATCH | `/api/automations/:id` | Update an automation (enable/disable or edit). | Partial JSON body. `200` updated object. `403 automation_creator_only` for anyone but the creator (an admin may pause). |
+| POST | `/api/automations/:id/run-now` | Fire immediately: create a real run and record a manual firing. | `201 {run_id}`. `403 automation_creator_only` for anyone but the creator. `404 schedule not found`. |
 | GET | `/api/automations/:id/history` | Firing history, newest first. | `{firings}`. `404 schedule not found`. |
-| DELETE | `/api/automations/:id` | Delete an automation and its firing rows. | `204`. Runs from past firings remain in the durable run log. |
+| DELETE | `/api/automations/:id` | Delete an automation and its firing rows. | `204`. Runs from past firings remain in the durable run log. `403 automation_creator_only` for anyone but the creator or an admin. |
 
 ## Secrets
 

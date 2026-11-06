@@ -1,6 +1,7 @@
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import { randomUUID } from "node:crypto";
 import type { MemoryScope } from "../../db/schema";
-import { recordProviderEvent } from "../../runs/provider-events";
+import { recordProviderEventIfAbsent } from "../../runs/provider-events";
 import { resolveScopedMemory, type ScopedMemoryPlan } from "../../memory/scope";
 import {
   addExplicitMemoryL0,
@@ -164,7 +165,7 @@ function textResult(text: string, structured?: Record<string, unknown>, isError 
 }
 
 /** The provider string on every memory native frame (timeline parser gate). */
-export const MEMORY_PROVIDER = "skynet-memory";
+export const MEMORY_PROVIDER = PLATFORM_EVENT_LANES.memory;
 
 /** Emit a truthful memory event on the run's native lane (section 8). Attributed
  *  to the resolved run; fire-and-forget so it never fails the tool. Every payload
@@ -175,7 +176,7 @@ function recordMemoryEvent(
   eventType: string,
   payload: Record<string, unknown>,
 ): void {
-  void recordProviderEvent({
+  void recordProviderEventIfAbsent({
     id: `mem_${run.id}_${randomUUID().slice(0, 8)}`,
     runId: run.id,
     threadId: run.threadId,

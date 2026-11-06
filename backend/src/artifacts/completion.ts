@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, type DbTx } from "../db/client";
+import { sqlStateOf } from "../db/pg-errors";
 import { artifacts, finishedWorkObligations, runs } from "../db/schema";
 import { hasRunCancelIntent } from "../commands/cancel";
 import { absoluteArtifactPreviewUrl, absoluteArtifactUrl } from "../knowledge/gateway/artifact-links";
@@ -9,7 +10,7 @@ import { withFinishedWorkMaterializer } from "../runs/finished-work-materializat
 import { lockFinishedWorkRun } from "../runs/finished-work-lock";
 import { openFinishedWorkObligation, recordFinishedWorkMaterialization, recordFinishedWorkReceipt, resolveFinishedWorkObligation } from "../runs/finished-work-repo";
 import { resolveAttachedSandboxWorkspaceRoot } from "../sandboxes/workspace";
-import { discoverTurnOutputs } from "./harvest";
+import { discoverTurnOutputs, sandboxStillAnswers, TurnOutputListingUnavailable, type TurnOutputDiscovery } from "./harvest";
 import { publishSandboxArtifact } from "./publish";
 import { getArtifactForOrg, type ArtifactDescriptor } from "./repo";
 import { explicitOutputLinks, replaceOutputLinks } from "./output-links";
@@ -17,6 +18,16 @@ import { explicitOutputLinks, replaceOutputLinks } from "./output-links";
 type Run = typeof runs.$inferSelect;
 export const ARTIFACT_COMPLETION_FAILURE =
   "Artifact delivery failed: an output could not be published. The task is not complete. Retry the task or inspect its artifact details.";
+/** Said when automatic discovery left changed files out, so a summary never
+ *  implies every file the turn made was delivered. */
+export const WITHHELD_OUTPUTS_NOTE =
+  "\n\nOther files this turn changed were not delivered automatically (more than 20, empty, or over 50 MB). " +
+  "Ask for the ones you need.";
+/** Said when the sandbox would not list the turn's files even after retries
+ *  but still answers. The answer and every file the agent linked still
+ *  deliver; only automatic discovery is skipped, so the run finishes. */
+export const UNCOLLECTED_OUTPUTS_NOTE =
+  "\n\nFiles this turn changed could not be collected automatically. Ask for the ones you need.";
 const OUTPUT_BUDGET_MS = 90_000;
 const MAX_OUTPUTS = 20;
 
@@ -50,6 +61,14 @@ function outputGuard(run: Run, options: ArtifactCompletionOptions, signal: Abort
     }
     signal.throwIfAborted();
   };
+}
+
+/** The error's kind, SQLSTATE and sandbox RPC code only: its message can
+ *  carry query parameters with file contents. */
+function errorKind(error: unknown): string {
+  if (!(error instanceof Error)) return typeof error;
+  const rpcCode = /^(\d+): /.exec(error.message)?.[1];
+  return [error.name, sqlStateOf(error), rpcCode && `rpc ${rpcCode}`].filter(Boolean).join(" ");
 }
 
 function fileLinks(files: readonly ArtifactDescriptor[]): string {
@@ -88,9 +107,29 @@ export async function completeRunOutputs(
       links = explicitOutputLinks(summary, root);
     }
     const explicitPaths = new Set(links.map((link) => link.path));
-    const discovered = await discoverTurnOutputs(run, { signal });
-    const paths = [...new Set([...explicitPaths, ...discovered.map((file) => file.path)])];
-    if (paths.length > MAX_OUTPUTS) throw new Error("too many outputs");
+    // Linked outputs are required and count first; automatic ones fill what is left.
+    if (explicitPaths.size > MAX_OUTPUTS) throw new Error("too many outputs");
+    let discovery: TurnOutputDiscovery = { candidates: [], withheldPaths: [], truncated: false };
+    let uncollected = false;
+    try {
+      discovery = await discoverTurnOutputs(run, { signal });
+    } catch (error) {
+      // Only a dropped listing against a sandbox that is still bound and still
+      // answers is skipped. A wrong listing, a changed binding or a sandbox
+      // that is gone fails delivery as before.
+      if (!(error instanceof TurnOutputListingUnavailable) || signal.aborted) throw error;
+      await db.transaction(guard);
+      if (!await sandboxStillAnswers(run, signal)) throw error;
+      console.warn(`[artifacts] run ${run.id} output discovery failed:`, errorKind(error.cause));
+      uncollected = true;
+    }
+    const automaticPaths = discovery.candidates.map((file) => file.path).filter((path) => !explicitPaths.has(path));
+    const room = MAX_OUTPUTS - explicitPaths.size;
+    const paths = [...explicitPaths, ...automaticPaths.slice(0, room)];
+    // Left out: past the cap, or empty/oversized files nobody linked (a linked
+    // one is published or fails the run below).
+    const withheld = discovery.truncated || automaticPaths.length > room ||
+      discovery.withheldPaths.some((path) => !explicitPaths.has(path));
     const urls = new Map<string, { preview: string; download: string }>();
     for (const path of paths) {
       signal.throwIfAborted();
@@ -154,10 +193,15 @@ export async function completeRunOutputs(
     }
     const automatic = delivered.filter((file) => !explicitPaths.has(file.source_path));
     return {
-      status: "completed", summary: replaceOutputLinks(summary, links, urls) + fileLinks(automatic),
+      status: "completed",
+      summary: replaceOutputLinks(summary, links, urls) + fileLinks(automatic) + (withheld ? WITHHELD_OUTPUTS_NOTE : "") +
+        (uncollected ? UNCOLLECTED_OUTPUTS_NOTE : ""),
       artifactIds: [...new Set(delivered.map((file) => file.id))],
     };
   } catch (error) {
+    if (!(error instanceof LostPublicationClaim)) {
+      console.warn(`[artifacts] run ${run.id} output delivery failed:`, errorKind(error));
+    }
     return {
       status: error instanceof LostPublicationClaim ? "obsolete" : "failed",
       summary: ARTIFACT_COMPLETION_FAILURE + fileLinks(delivered),

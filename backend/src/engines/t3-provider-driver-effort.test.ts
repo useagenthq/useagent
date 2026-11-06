@@ -4,6 +4,7 @@ import { providerProtocolIdentity } from "@useagent/agent-harness/control";
 import type { SandboxHandle } from "../sandboxes/provider";
 import type { RuntimeEnvironmentRequest } from "./runtime-environment-client";
 import { makeT3ProviderDriver } from "./t3-provider-driver";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 // The effort accepted on the run reaches the runtime's dispatch payloads: the
 // thread the driver creates on start and every turn it steers.
@@ -37,7 +38,7 @@ function recordingDriver(engine: "codex" | "claude") {
   });
   const session: HarnessSession = {
     provider: driver.provider,
-    nativeSessionId: "skynet-thread-thread-1",
+    nativeSessionId: `${SANDBOX_NAME_PREFIX}-thread-thread-1`,
     runtime: { kind: "sandbox", id: "cube-t3-effort" },
     protocolVersion: providerProtocolIdentity(driver.descriptor.protocol),
     capabilities: driver.descriptor.capabilities,

@@ -26,10 +26,11 @@ import {
   buildCodexInstallIdentityProbeCommand,
   buildOpenCodeInstallIdentityProbeCommand,
 } from "./runtime-native-install";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_DIR, SANDBOX_STATE_HOME } from "../sandboxes/sandbox-names";
 
 const claudeEnvironment = {
   ANTHROPIC_BASE_URL: "https://gateway.example.test/provider/anthropic",
-  CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config",
+  CLAUDE_CONFIG_DIR: `/tmp/${SANDBOX_NAME_PREFIX}-claude-config`,
 };
 
 const previousGatewayUrl = process.env.PROVIDER_GATEWAY_PUBLIC_URL;
@@ -52,7 +53,7 @@ function isCodexConfigProbe(command: string): boolean {
 
 async function runColdClaudeBootstrap(
   binaryScript: (home: string) => string,
-  packageVersion = "2.1.285",
+  packageVersion = "2.1.296",
 ): Promise<{
   home: string;
   result: ReturnType<typeof Bun.spawnSync>;
@@ -101,7 +102,7 @@ async function runColdClaudeBootstrap(
 }
 
 async function runColdOpenCodeBootstrap(
-  packageVersion = "2.0.18",
+  packageVersion = "2.0.26",
   installedBinary: Uint8Array = nativeElfHeaderFixture,
 ): Promise<{
   home: string;
@@ -148,7 +149,7 @@ async function runColdOpenCodeBootstrap(
 async function installFakeClaudePackage(
   home: string,
   script: string,
-  version = "2.1.285",
+  version = "2.1.296",
 ): Promise<void> {
   const packageDirectory = join(
     home,
@@ -225,8 +226,18 @@ describe("T3 provider bridge", () => {
   });
 
   test("retains the limit reload revision across a post-config crash until acknowledged", async () => {
+    // The mock keeps one state slot for every model, so the Anthropic models start current.
+    const anthropic = (context: number) => ({ limit: { context, output: 64_000 } });
     let config = JSON.stringify({
       provider: {
+        anthropic: {
+          models: {
+            "claude-opus-5": anthropic(1_000_000),
+            "claude-sonnet-5": anthropic(1_000_000),
+            "claude-fable-5": anthropic(1_000_000),
+            "claude-haiku-4-5": anthropic(200_000),
+          },
+        },
         cerebras: {
           models: {
             "qwen-3.8-27b": { limit: { context: 65_536, output: 32_768 } },
@@ -369,11 +380,11 @@ describe("T3 provider bridge", () => {
     const accessHelper = Buffer.from(payloads[1]![1]!, "base64").toString("utf8");
 
     expect(command).toContain("userdata/settings.json");
-    expect(command).toContain("skynet-bin/claude");
+    expect(command).toContain(`${SANDBOX_NAME_PREFIX}-bin/claude`);
     expect(command).toContain('useagent-claude-bun.XXXXXX');
     expect(command).toContain('BUN_INSTALL_GLOBAL_DIR="$NATIVE_GLOBAL_DIR"');
     expect(command).toContain('BUN_INSTALL_BIN="$NATIVE_PREFIX/bin"');
-    expect(command).toContain('@anthropic-ai/claude-code@2.1.285');
+    expect(command).toContain('@anthropic-ai/claude-code@2.1.296');
     expect(command).toContain('node_modules/@anthropic-ai/claude-code');
     expect(command).toContain('manifest.version!==expectedVersion');
     expect(command).toContain('allowedRoots.some');
@@ -445,17 +456,17 @@ describe("T3 provider bridge", () => {
     const plane = wrapperOf(buildRuntimeProviderBootstrapCommand("claude", claudeEnvironment, layout));
     expect(plane).toContain("export ANTHROPIC_BASE_URL=");
     expect(plane).toBe(wrapperOf(buildRuntimeProviderBootstrapCommand("claude", claudeEnvironment, layout, "plane")));
-    const login = wrapperOf(buildRuntimeProviderBootstrapCommand("claude", { CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config" }, layout, "sandbox-login"));
+    const login = wrapperOf(buildRuntimeProviderBootstrapCommand("claude", { CLAUDE_CONFIG_DIR: `/tmp/${SANDBOX_NAME_PREFIX}-claude-config` }, layout, "sandbox-login"));
     expect(login).not.toContain("ANTHROPIC_BASE_URL");
-    expect(login).toContain('export CLAUDE_CONFIG_DIR="/tmp/skynet-claude-config"');
+    expect(login).toContain(`export CLAUDE_CONFIG_DIR="/tmp/${SANDBOX_NAME_PREFIX}-claude-config"`);
     expect(login).toContain('exec "/home/user/.local/bin/claude" "$@"');
-    const rootLogin = wrapperOf(buildRuntimeProviderBootstrapCommand("claude", { CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config" }, undefined, "sandbox-login"));
+    const rootLogin = wrapperOf(buildRuntimeProviderBootstrapCommand("claude", { CLAUDE_CONFIG_DIR: `/tmp/${SANDBOX_NAME_PREFIX}-claude-config` }, undefined, "sandbox-login"));
     expect(rootLogin).not.toContain("ANTHROPIC_BASE_URL");
     expect(rootLogin).toContain("export CLAUDE_CONFIG_DIR");
     // The plane's credential still needs the gateway address; the login still needs the managed config dir.
-    expect(() => buildRuntimeProviderBootstrapCommand("claude", { CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config" }, layout, "plane")).toThrow("incomplete");
+    expect(() => buildRuntimeProviderBootstrapCommand("claude", { CLAUDE_CONFIG_DIR: `/tmp/${SANDBOX_NAME_PREFIX}-claude-config` }, layout, "plane")).toThrow("incomplete");
     expect(() => buildRuntimeProviderBootstrapCommand("claude", {}, layout, "sandbox-login")).toThrow("incomplete");
-    expect(claudeProviderReadiness({ CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config" }).displayName).toMatch(/^UseAgent Claude login /);
+    expect(claudeProviderReadiness({ CLAUDE_CONFIG_DIR: `/tmp/${SANDBOX_NAME_PREFIX}-claude-config` }).displayName).toMatch(/^UseAgent Claude login /);
     expect(claudeProviderReadiness(claudeEnvironment).displayName).toMatch(/^UseAgent Claude gateway /);
   });
 
@@ -463,7 +474,7 @@ describe("T3 provider bridge", () => {
     expect(() =>
       buildRuntimeProviderBootstrapCommand("claude", {
         ANTHROPIC_BASE_URL: "file:///tmp/provider",
-        CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config",
+        CLAUDE_CONFIG_DIR: `/tmp/${SANDBOX_NAME_PREFIX}-claude-config`,
       }),
     ).toThrow("must use HTTP(S)");
   });
@@ -477,12 +488,12 @@ describe("T3 provider bridge", () => {
   });
 
   test("materializes an absolute executable path and preserves unrelated settings", async () => {
-    const home = await mkdtemp(join(tmpdir(), "skynet-t3-provider-"));
+    const home = await mkdtemp(join(tmpdir(), "useagent-t3-provider-"));
     try {
       const bin = join(home, ".local/bin");
       const workdir = join(home, "work");
-      const settingsPath = join(home, ".skynet/t3/userdata/settings.json");
-      await mkdir(join(home, ".skynet/t3/userdata"), { recursive: true });
+      const settingsPath = join(home, `${SANDBOX_STATE_DIR}/t3/userdata/settings.json`);
+      await mkdir(join(home, `${SANDBOX_STATE_DIR}/t3/userdata`), { recursive: true });
       await mkdir(workdir, { recursive: true });
       await installFakeClaudePackage(home, "#!/bin/sh\nexit 17\n");
       const existingCodex = { enabled: true, binaryPath: "/custom/codex" };
@@ -536,7 +547,7 @@ describe("T3 provider bridge", () => {
       expect(settings.providers.opencode).toEqual(existingOpenCode);
       expect(settings.providerInstances.codex).toEqual(existingInstance);
       expect(settings.providers.claudeAgent.binaryPath).toBe(
-        join(home, ".skynet/t3/skynet-bin/claude"),
+        join(home, `${SANDBOX_STATE_DIR}/t3/${SANDBOX_NAME_PREFIX}-bin/claude`),
       );
       expect(settings.providerInstances.claudeAgent).toEqual({
         driver: "claudeAgent",
@@ -544,7 +555,7 @@ describe("T3 provider bridge", () => {
         enabled: true,
         config: {
           enabled: true,
-          binaryPath: join(home, ".skynet/t3/skynet-bin/claude"),
+          binaryPath: join(home, `${SANDBOX_STATE_DIR}/t3/${SANDBOX_NAME_PREFIX}-bin/claude`),
           homePath: join(home, "claude-config"),
           customModels: [],
           launchArgs: "",
@@ -559,24 +570,24 @@ describe("T3 provider bridge", () => {
     const engines = [
       {
         id: "codex" as const,
-        package: "@openai/codex@0.159.3",
+        package: "@openai/codex@0.162.1",
         binary: "codex",
-        version: "codex-cli 0.159.3",
+        version: "codex-cli 0.162.1",
       },
       {
         id: "opencode" as const,
-        package: "@opencode/cli@2.0.18",
+        package: "@opencode/cli@2.0.26",
         binary: "opencode",
-        version: "2.0.18",
+        version: "2.0.26",
       },
     ];
     for (const engine of engines) {
       const home = await mkdtemp(join(tmpdir(), `useagent-${engine.id}-bootstrap-`));
       try {
         const bin = join(home, ".local/bin");
-        const settingsPath = join(home, ".skynet/t3/userdata/settings.json");
+        const settingsPath = join(home, `${SANDBOX_STATE_DIR}/t3/userdata/settings.json`);
         await mkdir(bin, { recursive: true });
-        await mkdir(join(home, ".skynet/t3/userdata"), { recursive: true });
+        await mkdir(join(home, `${SANDBOX_STATE_DIR}/t3/userdata`), { recursive: true });
         if (engine.id === "opencode") {
           const packageDir = join(
             home,
@@ -587,7 +598,7 @@ describe("T3 provider bridge", () => {
           await Bun.write(packageBin, nativeElfHeaderFixture);
           await Bun.write(join(packageDir, "package.json"), JSON.stringify({
             name: "@opencode/cli",
-            version: "2.0.18",
+            version: "2.0.26",
             bin: { opencode: "./bin/opencode.exe" },
           }));
           await Bun.$`chmod 700 ${packageBin}`;
@@ -611,13 +622,13 @@ describe("T3 provider bridge", () => {
           await Bun.write(packageBin, `#!/bin/sh\necho '${engine.version}'\n`);
           await Bun.write(join(packageDir, "package.json"), JSON.stringify({
             name: "@openai/codex",
-            version: "0.159.3",
+            version: "0.162.1",
             bin: { codex: "bin/codex.js" },
           }));
           await Bun.write(nativeBin, "native fixture");
           await Bun.write(join(platformDir, "package.json"), JSON.stringify({
             name: "@openai/codex",
-            version: `0.159.3-${platform.suffix}`,
+            version: `0.162.1-${platform.suffix}`,
           }));
           await Bun.$`chmod 700 ${packageBin} ${nativeBin}`;
           await symlink(packageBin, join(bin, engine.binary));
@@ -641,9 +652,9 @@ describe("T3 provider bridge", () => {
         expect(result.exitCode).toBe(0);
         expect(command).toContain(engine.package);
         for (const otherPackage of [
-          "@openai/codex@0.159.3",
-          "@anthropic-ai/claude-code@2.1.285",
-          "@opencode/cli@2.0.18",
+          "@openai/codex@0.162.1",
+          "@anthropic-ai/claude-code@2.1.296",
+          "@opencode/cli@2.0.26",
         ]) {
           if (otherPackage !== engine.package) expect(command).not.toContain(otherPackage);
         }
@@ -656,7 +667,7 @@ describe("T3 provider bridge", () => {
           const revision = codexProviderConfigurationRevision(layout);
           const pendingPath = join(
             home,
-            ".skynet/t3/caches/useagent-codex-provider-config-pending",
+            `${SANDBOX_STATE_DIR}/t3/caches/useagent-codex-provider-config-pending`,
           );
           expect(settings.providers.codex?.launchArgs).toBe(
             "-c tools.update_plan.enabled=true",
@@ -692,10 +703,10 @@ describe("T3 provider bridge", () => {
     try {
       const bin = join(home, ".local/bin");
       const fakeTools = join(home, "fake-tools");
-      const settingsPath = join(home, ".skynet/t3/userdata/settings.json");
+      const settingsPath = join(home, `${SANDBOX_STATE_DIR}/t3/userdata/settings.json`);
       await mkdir(bin, { recursive: true });
       await mkdir(fakeTools, { recursive: true });
-      await mkdir(join(home, ".skynet/t3/userdata"), { recursive: true });
+      await mkdir(join(home, `${SANDBOX_STATE_DIR}/t3/userdata`), { recursive: true });
       await Bun.write(join(bin, "codex"), "#!/bin/sh\necho 'codex-cli 0.1.0'\n");
       await Bun.write(join(fakeTools, "bun"), "#!/bin/sh\nexit 42\n");
       await Bun.$`chmod 700 ${join(bin, "codex")} ${join(fakeTools, "bun")}`;
@@ -754,7 +765,7 @@ exit 17
       expect(run.result.exitCode).toBe(1);
       const output = `${run.result.stdout?.toString() ?? ""}${run.result.stderr?.toString() ?? ""}`;
       expect(output).toContain(
-        "useagent-native-version-probe: install_identity_mismatch expected=2.0.18",
+        "useagent-native-version-probe: install_identity_mismatch expected=2.0.26",
       );
       expect(output.length).toBeLessThan(160);
     } finally {
@@ -763,11 +774,11 @@ exit 17
   });
 
   test("rejects the executable placeholder shipped before OpenCode postinstall", async () => {
-    const run = await runColdOpenCodeBootstrap("2.0.18", Buffer.from(openCodePostinstallPlaceholder));
+    const run = await runColdOpenCodeBootstrap("2.0.26", Buffer.from(openCodePostinstallPlaceholder));
     try {
       expect(Buffer.byteLength(openCodePostinstallPlaceholder)).toBe(229);
       expect(run.result.exitCode).toBe(1);
-      expect(run.result.stderr?.toString() ?? "").toContain("install_identity_mismatch expected=2.0.18");
+      expect(run.result.stderr?.toString() ?? "").toContain("install_identity_mismatch expected=2.0.26");
       expect(await Bun.file(run.launchMarker).exists()).toBe(false);
     } finally {
       await rm(run.home, { recursive: true, force: true });
@@ -809,7 +820,7 @@ exit 17
       expect(run.result.exitCode).toBe(1);
       const output = `${run.result.stdout?.toString() ?? ""}${run.result.stderr?.toString() ?? ""}`;
       expect(output).toContain(
-        "useagent-native-version-probe: install_identity_mismatch expected=2.1.285",
+        "useagent-native-version-probe: install_identity_mismatch expected=2.1.296",
       );
       expect(output.length).toBeLessThan(160);
     } finally {
@@ -821,7 +832,7 @@ exit 17
     const run = await runColdClaudeBootstrap(() => "#!/bin/sh\nexit 0\n");
     try {
       expect(run.result.exitCode).toBe(0);
-      const marker = join(run.home, ".skynet/t3/caches/useagent-claude-bootstrap");
+      const marker = join(run.home, `${SANDBOX_STATE_DIR}/t3/caches/useagent-claude-bootstrap`);
       const firstFence = Number(await readFile(marker, "utf8"));
       const launcher = join(run.home, ".local/bin/claude");
       await rm(launcher);
@@ -853,11 +864,11 @@ exit 17
   });
 
   test("accepts only fresh authoritative T3 Claude health", async () => {
-    const home = await mkdtemp(join(tmpdir(), "skynet-t3-claude-ready-"));
+    const home = await mkdtemp(join(tmpdir(), "useagent-t3-claude-ready-"));
     try {
-      const cachePath = join(home, ".skynet/t3/caches/claudeAgent.json");
-      const markerPath = join(home, ".skynet/t3/caches/useagent-claude-bootstrap");
-      await mkdir(join(home, ".skynet/t3/caches"), { recursive: true });
+      const cachePath = join(home, `${SANDBOX_STATE_DIR}/t3/caches/claudeAgent.json`);
+      const markerPath = join(home, `${SANDBOX_STATE_DIR}/t3/caches/useagent-claude-bootstrap`);
+      await mkdir(join(home, `${SANDBOX_STATE_DIR}/t3/caches`), { recursive: true });
       await Bun.write(markerPath, String(Date.parse("2026-09-05T00:00:10.000Z")));
       const readiness = claudeProviderReadiness(claudeEnvironment);
       const command = buildRuntimeProviderReadyProbeCommand(readiness);
@@ -870,7 +881,7 @@ exit 17
         displayName: readiness.displayName,
         enabled: true,
         installed: true,
-        version: "2.1.285",
+        version: "2.1.296",
         status: "ready",
         auth: { status: "authenticated" },
         checkedAt: "2026-09-05T00:00:11.000Z",
@@ -976,9 +987,9 @@ exit 17
 
     const bootstraps = commands.filter((command) => command.includes("NATIVE_PACKAGE="));
     expect(bootstraps).toHaveLength(3);
-    expect(bootstraps[0]).toContain("@openai/codex@0.159.3");
-    expect(bootstraps[1]).toContain("@anthropic-ai/claude-code@2.1.285");
-    expect(bootstraps[2]).toContain("@opencode/cli@2.0.18");
+    expect(bootstraps[0]).toContain("@openai/codex@0.162.1");
+    expect(bootstraps[1]).toContain("@anthropic-ai/claude-code@2.1.296");
+    expect(bootstraps[2]).toContain("@opencode/cli@2.0.26");
     // Only OpenCode trusts its package scripts: its postinstall places the native binary.
     expect(bootstraps[2]).toContain("add --global --exact --trust --no-progress");
     expect(bootstraps[0]).not.toContain("--trust");
@@ -1035,7 +1046,7 @@ exit 17
 
     const bootstraps = commands.filter((command) => command.includes("NATIVE_PACKAGE="));
     expect(bootstraps).toHaveLength(2);
-    expect(bootstraps[0]).toContain("@openai/codex@0.159.3");
+    expect(bootstraps[0]).toContain("@openai/codex@0.162.1");
     expect(bootstraps[0]).not.toContain("providerInstances");
     expect(commands.some((command) => command.includes("exec-server"))).toBe(false);
     expect(commands.some((command) => command.includes("codex-relay"))).toBe(false);
@@ -1149,7 +1160,7 @@ exit 17
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
-          if (command.includes('NATIVE_PACKAGE="@openai/codex@0.159.3"')) {
+          if (command.includes('NATIVE_PACKAGE="@openai/codex@0.162.1"')) {
             bootstraps += 1;
             identityValid = true;
             return { exitCode: 0, result: "" };
@@ -1257,7 +1268,7 @@ exit 17
       providerKind: "cube",
       process: {
         executeCommand: async (command: string) => {
-          if (command.includes('NATIVE_PACKAGE="@openai/codex@0.159.3"')) {
+          if (command.includes('NATIVE_PACKAGE="@openai/codex@0.162.1"')) {
             bootstraps += 1;
             return { exitCode: 0, result: "" };
           }
@@ -1325,7 +1336,7 @@ exit 17
       true,
     );
 
-    expect(commands.filter((command) => command.includes('NATIVE_PACKAGE="@opencode/cli@2.0.18"')))
+    expect(commands.filter((command) => command.includes('NATIVE_PACKAGE="@opencode/cli@2.0.26"')))
       .toHaveLength(1);
     expect(commands.filter((command) =>
       command.includes(buildOpenCodeInstallIdentityProbeCommand({
@@ -1356,8 +1367,8 @@ exit 17
       process: {
         executeCommand: async (command: string) => {
           const nativePackage = engine === "claude"
-            ? '@anthropic-ai/claude-code@2.1.285'
-            : '@opencode/cli@2.0.18';
+            ? '@anthropic-ai/claude-code@2.1.296'
+            : '@opencode/cli@2.0.26';
           if (command.includes(`NATIVE_PACKAGE="${nativePackage}"`)) {
             fullBootstraps += 1;
             if (!bootstrapSucceeds) return { exitCode: 1, result: "" };
@@ -1471,7 +1482,7 @@ exit 17
 
     expect(
       commands.filter((command) =>
-        command.startsWith("$HOME/.skynet/t3/skynet-bin/prepare-claude-access ")
+        command.startsWith(`${SANDBOX_STATE_HOME}/t3/${SANDBOX_NAME_PREFIX}-bin/prepare-claude-access `)
       ),
     ).toHaveLength(2);
     expect(commands.some((command) =>
@@ -1486,7 +1497,7 @@ exit 17
       id: "t3-provider-claude-concurrent",
       process: {
         executeCommand: async (command: string) => {
-          const tracked = command.startsWith("$HOME/.skynet/t3/skynet-bin/prepare-claude-access ") ||
+          const tracked = command.startsWith(`${SANDBOX_STATE_HOME}/t3/${SANDBOX_NAME_PREFIX}-bin/prepare-claude-access `) ||
             command.includes("/tmp/useagent-claude-capability") ||
             command.includes("provider-gateway-generation");
           if (tracked) {
@@ -1554,7 +1565,7 @@ exit 17
     expect(commands.some((command) => command.includes("chown 0:1000"))).toBe(false);
     expect(commands.some((command) => command.includes('export HOME="/home/user"'))).toBe(true);
     expect(commands.some((command) =>
-      command.startsWith("$HOME/.skynet/t3/skynet-bin/prepare-claude-access ") &&
+      command.startsWith(`${SANDBOX_STATE_HOME}/t3/${SANDBOX_NAME_PREFIX}-bin/prepare-claude-access `) &&
       command.includes('"/home/user/work"')
     )).toBe(true);
   });
@@ -1615,7 +1626,7 @@ exit 17
   test("does not materialize ChatGPT OAuth through sandbox bootstrap", () => {
     const command = buildRuntimeProviderBootstrapCommand("claude", {
       ANTHROPIC_BASE_URL: "https://gateway.example.test/provider/anthropic",
-      CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config",
+      CLAUDE_CONFIG_DIR: `/tmp/${SANDBOX_NAME_PREFIX}-claude-config`,
     });
 
     expect(command).not.toContain("chatgpt");

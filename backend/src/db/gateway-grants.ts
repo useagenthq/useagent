@@ -1,7 +1,8 @@
 import type { Sql } from "postgres";
 
 export const GATEWAY_DATABASE_ROLE = "useagent_gateway";
-const LEGACY_GATEWAY_DATABASE_ROLE = "skynet_gateway";
+/** The role databases created before the rename still carry. */
+export const LEGACY_GATEWAY_DATABASE_ROLE = "skynet_gateway";
 
 /**
  * Declarative grants for the RESTRICTED sandbox-gateway role, applied

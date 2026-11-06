@@ -463,15 +463,15 @@ async function s8_desktop(wf: string): Promise<Result> {
     checks.push({ name: "desktop: Desktop tab is a stable thread surface", ok: (await tab.count()) > 0 });
     await tab.click();
     await page.waitForTimeout(1500);
-    const iframe = page.locator('iframe[title="Sandbox desktop"]');
+    const iframe = page.locator('iframe[title="Browser"]');
     await iframe.waitFor({ state: "visible" });
     const src = (await iframe.getAttribute("src").catch(() => "")) ?? "";
     checks.push({ name: "desktop: pane renders the noVNC iframe (vnc.html via desktop-proxy)", ok: /\/api\/desktop-proxy\/.+\/vnc\.html/.test(src), note: src.slice(0, 80) });
     checks.push({ name: "desktop: iframe starts inert so it cannot steal composer input", ok: (await iframe.evaluate((node) => node.style.pointerEvents)) === "none" });
-    const control = page.getByRole("button", { name: "Control sandbox desktop" });
+    const control = page.getByRole("button", { name: "Take control" });
     await control.waitFor({ state: "visible" });
     await control.click();
-    await page.waitForFunction(() => document.querySelector<HTMLIFrameElement>('iframe[title="Sandbox desktop"]')?.style.pointerEvents === "auto");
+    await page.waitForFunction(() => document.querySelector<HTMLIFrameElement>('iframe[title="Browser"]')?.style.pointerEvents === "auto");
     checks.push({ name: "desktop: explicit control enables noVNC input", ok: (await iframe.evaluate((node) => node.style.pointerEvents)) === "auto" });
     const keyFramesBeforeDesktopInput = desktopKeyFrames;
     await page.keyboard.type(`DESKTOP_ONLY_${crypto.randomUUID().slice(0, 8)}`);
@@ -480,7 +480,7 @@ async function s8_desktop(wf: string): Promise<Result> {
 
     const composer = page.locator('textarea[placeholder="Reply to UseAgent…"]');
     await composer.click();
-    await page.waitForFunction(() => document.querySelector<HTMLIFrameElement>('iframe[title="Sandbox desktop"]')?.style.pointerEvents === "none");
+    await page.waitForFunction(() => document.querySelector<HTMLIFrameElement>('iframe[title="Browser"]')?.style.pointerEvents === "none");
     const keyFramesBeforeComposerInput = desktopKeyFrames;
     const sentinel = `COMPOSER_ONLY_${crypto.randomUUID().slice(0, 8)}`;
     await page.keyboard.type(sentinel);
@@ -592,9 +592,9 @@ async function s10_rail(wf: string): Promise<Result> {
     await page.mouse.move(box.x - 180, box.y + box.height / 2, { steps: 12 });
     await page.mouse.up();
     await page.waitForTimeout(500);
-    const stored = await page.evaluate(() => localStorage.getItem("skynet.rail-width"));
+    const stored = await page.evaluate(() => localStorage.getItem("useagent.rail-width"));
     const after = await widthOf();
-    checks.push({ name: "rail: drag changes width + persists to localStorage 'skynet.rail-width'", ok: !!stored && Math.abs(after - before) > 20, note: `before=${Math.round(before)} after=${Math.round(after)} stored=${stored}` });
+    checks.push({ name: "rail: drag changes width + persists to localStorage 'useagent.rail-width'", ok: !!stored && Math.abs(after - before) > 20, note: `before=${Math.round(before)} after=${Math.round(after)} stored=${stored}` });
     // Reload → width restored from localStorage.
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2000);

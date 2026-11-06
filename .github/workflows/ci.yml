@@ -108,6 +108,10 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
+      # Agent docs (CLAUDE.md, AGENTS.md) cite only paths, symbols and scripts
+      # that exist.
+      - name: Agent docs are current
+        run: bun test scripts/agent-docs.test.ts
       - name: Cache bun install store
         uses: actions/cache@v4
         with:

@@ -1,3 +1,4 @@
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import type { HarnessInterimEvent } from "../engines/types";
 import type { SecretRedactor } from "../secrets/redact";
 import type { ReconcileEntry } from "./reconcile-queue";
@@ -37,7 +38,7 @@ export function recordReconcilingMarker(
     id: `reconciling_${runId}`,
     runId,
     threadId,
-    provider: "skynet",
+    provider: PLATFORM_EVENT_LANES.platform,
     eventType: RUN_RECONCILING,
     payload,
   }, { fence: recoveryWriteFence(runId, fence), required: true }).catch(() => {});

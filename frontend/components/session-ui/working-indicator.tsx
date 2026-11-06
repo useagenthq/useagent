@@ -6,36 +6,13 @@
 // Source: apps/web/src/components/chat/MessagesTimeline.tsx (WorkingTimelineRow +
 // WorkingTimer): three staggered pulse dots, a SELF-TICKING "Working for Xs" label
 // (writes its own text node every second so elapsed time never causes a React
-// commit while streaming), and an optional current-step suffix.
+// commit while streaming), and an optional current-step suffix. The timer itself
+// now lives in elapsed-timer.tsx, shared with the background status pill.
 //
 // Port notes: their `animate-status-pulse` utility -> our `ai-loading-pixel`
 // stagger (globals.css, reduced-motion aware); tokens are our semantic tokens.
 
-import { useEffect, useRef } from "react";
-import { formatWorkingTimerNow } from "./work-entry";
-
-/** Live "Working for Xs" label; updates its own text node outside React commits. */
-function WorkingTimer({ createdAt }: { createdAt: string }) {
-  const textRef = useRef<HTMLSpanElement>(null);
-  const initialText = formatWorkingTimerNow(createdAt);
-
-  useEffect(() => {
-    const updateText = () => {
-      if (textRef.current) {
-        textRef.current.textContent = formatWorkingTimerNow(createdAt);
-      }
-    };
-    updateText();
-    const id = setInterval(updateText, 1000);
-    return () => clearInterval(id);
-  }, [createdAt]);
-
-  return (
-    <span ref={textRef} className="tabular-nums">
-      {initialText}
-    </span>
-  );
-}
+import { ElapsedTimer } from "./elapsed-timer";
 
 export function WorkingIndicator({
   createdAt,
@@ -59,7 +36,7 @@ export function WorkingIndicator({
         <span className="shrink-0">
           {createdAt ? (
             <>
-              Working for <WorkingTimer createdAt={createdAt} />
+              Working for <ElapsedTimer startedAt={createdAt} />
             </>
           ) : (
             "Working…"

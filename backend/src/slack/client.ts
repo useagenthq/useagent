@@ -70,9 +70,9 @@ export interface SlackClient {
    *  Slack will keep refusing (no scope, or no such channel) and nothing is owed. */
   channelInfo?(args: { channel: string; signal?: AbortSignal }): Promise<SlackChannelInfo | null>;
   /**
-   * Upload a file into a thread. Ported from the QM bot (files.uploadV2,
-   * a reference implementation src/slack/attachments.ts:189) and a reference bot (files_upload_v2,
-   * client.py:354) - both use the Slack SDK's uploadV2 helper. useAgent has NO
+   * Upload a file into a thread. Ported from QM (files.uploadV2,
+   * src/slack/attachments.ts:189) and KiroCrew (files_upload_v2,
+   * src/kiro_crew/slack/client.py:354) - both use the Slack SDK's uploadV2 helper. useAgent has NO
    * Slack SDK by design (thin fetch client), so we perform the identical
    * sequence uploadV2 wraps: files.getUploadURLExternal -> POST the bytes to the
    * returned URL -> files.completeUploadExternal (which shares it into

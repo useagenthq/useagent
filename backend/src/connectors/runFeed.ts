@@ -1,6 +1,9 @@
-// Ported from a peer tool (Apache-2.0): src/kiro_crew/messaging/renderer.py
+// Ported from KiroCrew (https://github.com/kirodotdev/KiroCrew), Apache-2.0:
+//   src/kiro_crew/messaging/renderer.py
+// Copyright Amazon.com, Inc. or its affiliates. Changed: rewritten in
+// TypeScript for this codebase. License and NOTICE: third_party/licenses/kirocrew/.
 //
-// The generic "attach a Renderer to a live turn" path. In a peer tool a TurnDriver
+// The generic "attach a Renderer to a live turn" path. In KiroCrew a TurnDriver
 // consumes a provider event stream and drives a Renderer's on_* callbacks; here
 // the source is useAgent's run bus + turn-stream instead of a provider stream, so
 // ANY connector surface renders a run without bespoke per-surface wiring (the
@@ -12,7 +15,7 @@ import { bus, channel as runChannel, type BusEvent } from "../worker";
 import { turnStream } from "../runs/turn-stream";
 import type { Renderer } from "./types";
 
-/** Map a durable step to a Renderer callback, mirroring how a peer tool's TurnDriver
+/** Map a durable step to a Renderer callback, mirroring how KiroCrew's TurnDriver
  *  classifies provider tool events: `command`/`file` are tool calls; `task` is a
  *  reasoning/analysis beat → onThinking. `done` is terminal and handled by the
  *  `end` event, not here. */

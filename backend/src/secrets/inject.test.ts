@@ -10,6 +10,7 @@ import {
   SECRET_DOTENV_PATH,
   SECRET_FILE_DIR,
 } from "./inject";
+import { SANDBOX_NAME_PREFIX, SANDBOX_STATE_DIR } from "../sandboxes/sandbox-names";
 
 const decrypted: DecryptedSecrets = {
   secrets: [
@@ -46,7 +47,7 @@ describe("injected secret path protection", () => {
   });
 
   test("protects canonical, legacy, and configured directories together", () => {
-    for (const namespace of [".useagent", ".skynet"]) {
+    for (const namespace of [".useagent", SANDBOX_STATE_DIR]) {
       for (const home of ["$HOME", "~", "/root", "/home/daytona"]) {
         const directory = `${home}/${namespace}/secrets`;
         expect(isProtectedInjectedSecretPath(directory)).toBe(true);
@@ -61,7 +62,7 @@ describe("injected secret path protection", () => {
   });
 
   test("keeps sibling directories and ordinary deliverables publishable", () => {
-    for (const namespace of [".useagent", ".skynet"]) {
+    for (const namespace of [".useagent", SANDBOX_STATE_DIR]) {
       expect(isProtectedInjectedSecretPath(`/root/${namespace}/secrets-backup/report.pdf`)).toBe(false);
       expect(isProtectedInjectedSecretPath(`/home/daytona/${namespace}/artifacts/report.pdf`)).toBe(false);
     }
@@ -129,7 +130,7 @@ describe("sandbox secret delivery mode", () => {
     });
 
     expect(injection.mode).toBe("compatibility");
-    expect(sandboxSecretSourceCommand(injection.mode)).toContain("skynet-env.sh");
+    expect(sandboxSecretSourceCommand(injection.mode)).toContain(`${SANDBOX_NAME_PREFIX}-env.sh`);
     expect(injection.createEnv).toEqual({ BASH_ENV: SECRET_DOTENV_PATH });
     expect(injection.names).toEqual(["CUSTOM_TOKEN", "CUSTOM_CERT"]);
     expect(injection.redactionValues).toEqual(["custom-secret-value", "custom-file-value"]);
@@ -151,7 +152,7 @@ describe("sandbox secret delivery mode", () => {
     }, injection);
     expect(result).toEqual({ changed: true });
     expect(commands).toHaveLength(1);
-    expect(commands[0]).toContain("skynet-env.sh");
+    expect(commands[0]).toContain(`${SANDBOX_NAME_PREFIX}-env.sh`);
     expect(commands[0]).not.toContain("custom-secret-value");
     expect(commands[0]).not.toContain("custom-file-value");
   });

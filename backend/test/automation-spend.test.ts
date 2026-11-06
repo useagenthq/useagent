@@ -31,7 +31,7 @@ test("automation_run_now for a capped owner returns the allowance refusal as a s
   const orgId = `org-spend-${crypto.randomUUID()}`;
   const userId = `user-spend-${crypto.randomUUID()}`;
   const schedule = await createSchedule({
-    orgId, userId, name: "nightly digest", cron: "0 0 * * *", timezone: null, prompt: "summarise the day",
+    orgId, userId, name: "nightly digest", cron: "0 0 * * *", timezone: "UTC", prompt: "summarise the day",
     engine: "mock", model: defaultModelForEngine("mock"), skillId: null, skillVersion: null,
     skillContentHash: null, repos: [], tags: [], delivery: null, notifications: null, runActorId: userId,
     concurrency: null, queue: null, costLimits: null, frequencyLimits: null, approvalPolicy: null,

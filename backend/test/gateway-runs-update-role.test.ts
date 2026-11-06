@@ -4,8 +4,9 @@ import { db } from "../src/db/client";
 import { GATEWAY_GRANTS } from "../src/db/gateway-grants";
 import { createRun } from "../src/runs/repo";
 import "./helpers";
+import { DEV_ORG_ID } from "../src/dev-org";
 
-const ORG = "org-skynet-dev";
+const ORG = DEV_ORG_ID;
 
 // The gateway's skill activation is a column-scoped UPDATE on runs. Every UPDATE
 // on runs fires trg_validate_batched_child_run_update, whose function runs as the

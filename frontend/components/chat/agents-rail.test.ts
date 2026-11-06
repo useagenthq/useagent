@@ -150,7 +150,7 @@ describe("agents rail rows", () => {
     expect(html).toContain("Checkout is healthy.");
     expect(html).toContain("Inspect the checkout flow");
     expect(html).toContain("Completed");
-    expect(html).toContain("Continue as session");
+    expect(html).toContain("Continue as thread");
     expect(html).not.toContain("Working");
     expect(html).toContain("cancel</span> unavailable: This child is no longer running.");
     expect(html).not.toContain("No activity recorded");

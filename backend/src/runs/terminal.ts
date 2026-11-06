@@ -93,7 +93,7 @@ terminalRoutes.get(
             // into replacement glyphs (the "gibberish on reattach" bug).
             const decodeChunk = createTerminalChunkDecoder();
             const handle = await sandbox.process.createPty({
-              id: `skynet-term-${run.id.slice(0, 8)}-${Math.random().toString(36).slice(2, 8)}`,
+              id: `useagent-term-${run.id.slice(0, 8)}-${Math.random().toString(36).slice(2, 8)}`,
               cols,
               rows,
               onData: (data: Uint8Array) => {
@@ -109,6 +109,16 @@ terminalRoutes.get(
               return;
             }
             unwatch = watchThreadSandbox(run.threadId);
+            // The shell ended (`exit`, or its sandbox was deleted or replaced):
+            // close the socket so the pane reconnects instead of freezing.
+            void handle.waitForTermination().then(() => {
+              if (closed) return;
+              try {
+                ws.close();
+              } catch {
+                /* already closed */
+              }
+            });
             send("\x1b[2m[UseAgent] connected to sandbox " + sandboxId.slice(0, 8) + "\x1b[0m\r\n");
             await pty.sendInput("cd ~/work 2>/dev/null || cd ~; printf '\\033[2J\\033[H'\n");
           } catch (err) {

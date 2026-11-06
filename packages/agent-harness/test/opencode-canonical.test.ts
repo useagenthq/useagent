@@ -8,7 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import heavy from "./fixtures/opencode-heavy.json";
 import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "../src/opencode-canonical";
-import { assertNeverEvent, type CanonicalAgentEvent } from "../src/canonical";
+import { assertNeverEvent, PLATFORM_EVENT_LANES, type CanonicalAgentEvent } from "../src/canonical";
 
 const frames = heavy as unknown as OpenCodeFrame[];
 const CTX = { runId: "run_test", threadId: "thread_test" };
@@ -1602,7 +1602,7 @@ describe("durable artifact translation", () => {
       {
         eventId: "artifact-created",
         seq: 1,
-        provider: "skynet",
+        provider: PLATFORM_EVENT_LANES.platform,
         eventType: "artifact.created",
         native: { sessionId: null, parentSessionId: null, messageId: null, partId: null, callId: null },
         payload: descriptor,
@@ -1610,7 +1610,7 @@ describe("durable artifact translation", () => {
       {
         eventId: "artifact-delivered",
         seq: 2,
-        provider: "skynet",
+        provider: PLATFORM_EVENT_LANES.platform,
         eventType: "artifact.delivered",
         native: { sessionId: null, parentSessionId: null, messageId: null, partId: null, callId: null },
         payload: { ...descriptor, destination: "slack" },
@@ -1642,7 +1642,7 @@ describe("durable artifact translation", () => {
     const result = translateOpenCode([{
       eventId: "delivery-failed",
       seq: 1,
-      provider: "skynet",
+      provider: PLATFORM_EVENT_LANES.platform,
       eventType: "delivery.failed",
       native: { sessionId: null, parentSessionId: null, messageId: null, partId: null, callId: null },
       payload: {
@@ -1667,7 +1667,7 @@ describe("run-timing diagnostics are suppressed, never timeline nodes (perf Phas
     {
       eventId: "run_test:timing:sandbox",
       seq: 1,
-      provider: "skynet-timing",
+      provider: PLATFORM_EVENT_LANES.timing,
       eventType: "timing.span",
       native: { sessionId: null, parentSessionId: null, messageId: null, partId: null, callId: null },
       payload: { stage: "sandbox", startedAt: 1000, endedAt: 1400, durMs: 400 },
@@ -1675,7 +1675,7 @@ describe("run-timing diagnostics are suppressed, never timeline nodes (perf Phas
     {
       eventId: "run_test:timing:dispatch",
       seq: 2,
-      provider: "skynet-timing",
+      provider: PLATFORM_EVENT_LANES.timing,
       eventType: "timing.mark",
       native: { sessionId: null, parentSessionId: null, messageId: null, partId: null, callId: null },
       payload: { stage: "dispatch", at: 1500 },

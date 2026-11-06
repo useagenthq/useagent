@@ -116,7 +116,7 @@ async function eventsFor(runId: string, type: string) {
 beforeEach(() => {
   process.env.MEMORY_API_URL = "http://memory.test:8420";
   process.env.MEMORY_API_KEY = "sk-mem-test";
-  process.env.MEMORY_TEAM_ID = "skynet";
+  process.env.MEMORY_TEAM_ID = "useagent";
 });
 afterEach(() => {
   globalThis.fetch = realFetch;

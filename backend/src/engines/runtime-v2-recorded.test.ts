@@ -7,6 +7,7 @@ import { applyV2StreamItem, type V2MirrorState } from "./runtime-v2-mirror";
 import { runtimeThreadView } from "./runtime-v2-view";
 import { decodeV2ThreadStreamItem, runtimeCommandRefused, runtimeRpcErrorFromExit } from "./runtime-v2-wire";
 import { createNoProgressWatchdog, NoProgressError } from "./turn-no-progress";
+import { SANDBOX_NAME_PREFIX } from "../sandboxes/sandbox-names";
 
 const values = recorded.subscribeThreadValues as unknown[];
 
@@ -66,7 +67,7 @@ describe("a recorded protocol 2 turn", () => {
     expect((recorded.dispatchReceiptFrame as { exit: { value: unknown } }).exit.value).toEqual({ sequence: expect.any(Number) });
     const error = runtimeRpcErrorFromExit("orchestration.dispatchCommand", recorded.dispatchRefusalFrame.exit);
     expect(runtimeCommandRefused(error)).toBe(true);
-    expect(error.detail).toBe("Provider session ps-nope does not belong to thread skynet-thread-probe.");
+    expect(error.detail).toBe(`Provider session ps-nope does not belong to thread ${SANDBOX_NAME_PREFIX}-thread-probe.`);
     expect(error.causeTags).toEqual(["Fail", "OrchestrationV2DispatchCommandError", "OrchestratorDispatchError"]);
   });
 });

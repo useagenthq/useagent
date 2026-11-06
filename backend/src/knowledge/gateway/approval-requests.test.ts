@@ -16,6 +16,7 @@ import {
 import { executeApprovalRequestToolLocal } from "./approval-request-tools";
 import { executeRegisteredGatewayTool } from "./operation-registry";
 import type { ToolTokenClaims } from "./token";
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 
 const BASE = "http://localhost:3211";
 const ORIGIN = "http://localhost:3200";
@@ -136,7 +137,7 @@ describe("gateway approval-request lane (#77)", () => {
         ),
       );
     expect(events).toHaveLength(1);
-    expect(events[0]?.provider).toBe("skynet-gateway");
+    expect(events[0]?.provider).toBe(PLATFORM_EVENT_LANES.gateway);
     expect(JSON.parse(events[0]?.payload ?? "{}")).toMatchObject({
       requestId,
       toolName: "automation_delete",

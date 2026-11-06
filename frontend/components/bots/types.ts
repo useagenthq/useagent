@@ -36,6 +36,11 @@ export interface ApiBot {
   /** Delegated threads opened for this bot by @mentions, and their root run ids. */
   handoffs: number;
   handoffThreadIds: string[];
+  /** Whether this viewer may change the bot's setup (only its creator may);
+   *  absent from an older backend, which let them. */
+  editable?: boolean;
+  /** The creator as the member directory names them. */
+  ownerName?: string | null;
 }
 
 /** Wire shape of GET /api/bots/:id/routines. */
@@ -43,10 +48,13 @@ export interface ApiRoutine {
   id: string;
   name: string;
   cron: string;
-  timezone: string | null;
+  /** Always set: a routine created without one runs in UTC. */
+  timezone: string;
   prompt: string;
   enabled: boolean;
   lastFiredAt: string | null;
+  /** When the scheduler fires it next, from the server; null while paused or when the cron names no date. */
+  nextDueAt: string | null;
   createdAt: string;
 }
 
@@ -55,6 +63,8 @@ export interface ApiFiring {
   run_id: string;
   fired_at: string;
   trigger: string;
+  /** "queued" until the run settles, then the run's terminal status. */
+  status: string;
   run_status: string | null;
   run_summary: string | null;
 }

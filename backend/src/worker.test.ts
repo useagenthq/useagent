@@ -20,7 +20,7 @@ afterEach(async () => {
 
 describe("worker run workdir", () => {
   test("initializes a missing git boundary once and skips the subprocess on resume", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-worker-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-worker-"));
     temporaryRoots.push(root);
     const workdir = join(root, "thread-1");
     let initializations = 0;
@@ -37,7 +37,7 @@ describe("worker run workdir", () => {
   });
 
   test("keeps git initialization best-effort and reports an unavailable boundary", async () => {
-    const root = await mkdtemp(join(tmpdir(), "skynet-worker-"));
+    const root = await mkdtemp(join(tmpdir(), "useagent-worker-"));
     temporaryRoots.push(root);
 
     expect(await ensureRunWorkdir(join(root, "thread-2"), async () => false)).toBe(

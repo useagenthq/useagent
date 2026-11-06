@@ -1,4 +1,5 @@
 import { sandboxRuntimeLayout, type SandboxHandle } from "../sandboxes/provider";
+import { SANDBOX_STATE_DIR } from "../sandboxes/sandbox-names";
 import type { SandboxBinding } from "../sandboxes/binding";
 import { acquireThreadSandbox } from "./thread-sandbox";
 import {
@@ -200,7 +201,7 @@ export async function prepareSandboxTurn<T>(
           return `printf 'uid=%s gid=%s\n' ${resourceUser.uid} ${resourceUser.gid} > ${marker} && chmod 600 ${marker}`;
         });
         const transferred = await stage("repo_owner", () => sandbox.process.executeCommand(
-          `install -d -m 700 /root/.skynet/repo-runtime-ownership && ` +
+          `install -d -m 700 /root/${SANDBOX_STATE_DIR}/repo-runtime-ownership && ` +
             `find ${changedRepoPaths.map(shq).join(" ")} -xdev -depth -exec chown -h ${resourceUser.uid}:${resourceUser.gid} -- {} + && ` +
             markers.join(" && "),
           undefined,

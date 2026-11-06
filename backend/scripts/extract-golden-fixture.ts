@@ -17,6 +17,7 @@
  * Run:  bun scripts/extract-golden-fixture.ts <runIdPrefix> <outPath>
  * (one-time generation; the OUTPUT fixture is committed, this script is the tool.)
  */
+import { PLATFORM_EVENT_LANES } from "@useagent/agent-harness/canonical";
 import postgres from "postgres";
 
 const runPrefix = process.argv[2] ?? "33fbc260";
@@ -205,7 +206,7 @@ const steps = stepRows.map((s, i) => ({
 // every length (no <6 exception): the exclusion set is provably controlled vocabulary,
 // so we no longer need a length heuristic to suppress structural-token false positives.
 const structural = new Set<string>([
-  "opencode", "skynet", "tool", "text", "completed", "error", "running", "pending",
+  "opencode", PLATFORM_EVENT_LANES.platform, "tool", "text", "completed", "error", "running", "pending",
   "REDACTED", "REDACTED_TEXT", "run_fixture", "2026-01-01T00:00:00.000Z",
   // synthetic id prefixes (remapped handles are `<prefix>_<n>`) + task markers
   "ses", "msg", "prt", "call", "evt", "step", "run", "task", "task_result",

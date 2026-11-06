@@ -50,7 +50,7 @@ export function classifySandboxForSweep(
   const state = sandbox.state ?? "unknown";
   if (keepIds.has(sandbox.id)) return { run, state, targeted: false, reason: "keep-listed (agent active)" };
   if (runLabel.conflict) return { run, state, targeted: false, reason: "conflicting run labels" };
-  if (!run || !existingRuns.has(run)) return { run, state, targeted: true, reason: "orphan (runId absent from skynet.runs)" };
+  if (!run || !existingRuns.has(run)) return { run, state, targeted: true, reason: "orphan (runId absent from the runs table)" };
   if (new Set(["stopped", "archived", "paused"]).has(state)) {
     return { run, state, targeted: true, reason: `stopped (${state})` };
   }
@@ -174,13 +174,13 @@ if (import.meta.main) {
     })}`);
     process.exit(res.failed.length === 0 ? 0 : 1);
   } else if (mode === "list") {
-    const skynet = await listUseAgent();
+    const ours = await listUseAgent();
     const all = await listAll();
     console.log(
       `DAYTONA_INVENTORY=${JSON.stringify({
         total: all.length,
-        skynetLabeled: skynet.length,
-        skynet: skynet.map((s) => ({ id: s.id.slice(0, 12), state: s.state, run: readSandboxRunLabel(s.labels).value?.slice(0, 8), createdAt: s.createdAt })),
+        labeled: ours.length,
+        sandboxes: ours.map((s) => ({ id: s.id.slice(0, 12), state: s.state, run: readSandboxRunLabel(s.labels).value?.slice(0, 8), createdAt: s.createdAt })),
       })}`,
     );
   } else if (mode === "delete") {

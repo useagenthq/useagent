@@ -9,7 +9,7 @@ import { DesktopTitlebar } from "@/components/shell/desktop-titlebar";
 /**
  * Client-side provider stack. Kept as a leaf so the root layout stays a
  * server component. `next-themes` drives the theme class (`dark` / `aura` /
- * `harbor` / `phosphor` / `slate` / `sakura-night` / `light` / `sakura` /
+ * `harbor` / `phosphor` / `slate` / `ember` / `sakura-night` / `light` / `sakura` /
  * `phosphor-light`) on <html>.
  *
  * `SubagentPane` is the single global instance of the subagent viewing pane -
@@ -36,6 +36,7 @@ export function Providers({ children, nonce }: { children: React.ReactNode; nonc
         "sakura",
         "sakura-night",
         "slate",
+        "ember",
         "neobrutal",
       ]}
     >
