@@ -18,6 +18,7 @@ import {
 } from "@/components/chat/canonical-timeline";
 import { chatCitationsFromSteps } from "@/components/chat/chat-citations";
 import type { ComposerSubmit } from "@/components/chat/composer";
+import type { ComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { GatewayApprovalCard } from "@/components/chat/gateway-approval-card";
 import { groupApprovalsByRun } from "@/components/chat/gateway-approval-state";
@@ -515,7 +516,7 @@ export const Conversation = memo(function Conversation({
   runStartedAt?: string | null;
   /** Externally seed the reply composer (e.g. "Ask agent to redo" on a conflicted
    *  proposal); each request carries a fresh nonce so repeats re-apply. */
-  prefill?: { readonly text: string; readonly nonce: number } | null;
+  prefill?: ComposerPrefill | null;
   repoRevisions?: Readonly<Record<string, string | null>>;
   resourceMentions?: boolean;
   composerLocked?: boolean;

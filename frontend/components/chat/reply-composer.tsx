@@ -7,6 +7,7 @@ import {
   type CommandCatalogState,
 } from "@/components/chat/canonical-timeline";
 import { Composer, type ComposerSubmit } from "@/components/chat/composer";
+import type { ComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { ModelKeysContext } from "@/components/chat/catalog-model-picker";
 import { StartFreePrompt, useStartFree } from "@/app/(workspace)/agent/new/start-free-prompt";
 import type { ReactNode } from "react";
@@ -75,7 +76,7 @@ export function ReplyComposer({
   /** Thread key for per-thread draft persistence (the root run id). */
   draftKey?: string | null;
   /** Externally seed the composer (conflicted-proposal "Ask agent to redo"). */
-  prefill?: { readonly text: string; readonly nonce: number } | null;
+  prefill?: ComposerPrefill | null;
   enableMentions?: boolean;
   enableUploads?: boolean;
   repoRevisions?: Readonly<Record<string, string | null>>;

@@ -183,6 +183,14 @@ describe("FileDiffView", () => {
     expect(html).toContain("Patch content not recorded for this change");
   });
 
+  test("diff lines take comments only when a reply can carry them", () => {
+    const review = { key: "thread-render", onSend: () => {} };
+    const html = render(<FileDiffView files={FILES} patches={PATCHES} review={review} />);
+    expect(html).toContain('aria-label="Removed: const a = 1;"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(render(<FileDiffView files={FILES} patches={PATCHES} />)).not.toContain("aria-pressed");
+  });
+
   test("renders nothing without changed files", () => {
     expect(render(<FileDiffView files={[]} patches={new Map()} />)).toBe("");
   });
