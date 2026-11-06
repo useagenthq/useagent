@@ -4,8 +4,19 @@ import { mockSkills } from "@/app/(library)/skills/skills-data";
 import { PlaybooksView } from "./playbooks-view";
 
 export const metadata: Metadata = {
-  title: "Playbooks",
+  title: "Playbooks - UseAgent",
   description: "Structured procedures UseAgent follows as guidance for repeatable work.",
+  openGraph: {
+    title: "Playbooks - UseAgent",
+    description: "Structured procedures UseAgent follows as guidance for repeatable work.",
+    images: [{ url: "/og/13-playbooks.png", width: 1600, height: 900, alt: "UseAgent Playbooks" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Playbooks - UseAgent",
+    description: "Structured procedures UseAgent follows as guidance for repeatable work.",
+    images: ["/og/13-playbooks.png"],
+  },
 };
 
 export default async function PlaybooksPage() {

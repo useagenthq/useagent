@@ -4,8 +4,19 @@ import { mockKnowledgeItems } from "./knowledge-data";
 import { KnowledgeGallery } from "./knowledge-gallery";
 
 export const metadata: Metadata = {
-  title: "Knowledge",
+  title: "Knowledge - UseAgent",
   description: "Facts and conventions UseAgent remembers across runs.",
+  openGraph: {
+    title: "Knowledge - UseAgent",
+    description: "Facts and conventions UseAgent remembers across runs.",
+    images: [{ url: "/og/11-knowledge.png", width: 1600, height: 900, alt: "UseAgent Knowledge" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Knowledge - UseAgent",
+    description: "Facts and conventions UseAgent remembers across runs.",
+    images: ["/og/11-knowledge.png"],
+  },
 };
 
 export default async function KnowledgePage() {

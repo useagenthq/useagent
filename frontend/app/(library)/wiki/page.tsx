@@ -10,8 +10,19 @@ import { fetchPublishedWikiDocuments, type WikiDoc } from "./wiki-data";
 import { relativeTime } from "@/utils/format";
 
 export const metadata: Metadata = {
-  title: "Wiki",
+  title: "Wiki - UseAgent",
   description: "Published knowledge documents for your organization.",
+  openGraph: {
+    title: "Wiki - UseAgent",
+    description: "Published knowledge documents for your organization.",
+    images: [{ url: "/og/18-wiki.png", width: 1600, height: 900, alt: "UseAgent Wiki" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Wiki - UseAgent",
+    description: "Published knowledge documents for your organization.",
+    images: ["/og/18-wiki.png"],
+  },
 };
 
 // The Wiki is a VIEW over published knowledge documents (mem_op.md 0.3): it lists

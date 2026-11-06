@@ -28,10 +28,56 @@ const fontDisplay = Inter_Tight({
   display: 'swap',
 });
 
-export const metadata: Metadata = {
-  title: 'UseAgent - one interface for every coding agent',
-  description: 'Run coding agents in isolated workspaces with durable context, automations, and audit trails.',
-};
+const defaultAppUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.useagent.org';
+
+/** Resolves the actual public origin at request time so og:image URLs point
+ *  to the real host — works for localhost, localtunnel, and production. */
+async function resolveBase(): Promise<URL> {
+  try {
+    const h = await headers();
+    const proto = h.get('x-forwarded-proto') ?? 'https';
+    const host = h.get('x-forwarded-host') ?? h.get('host');
+    if (host) return new URL(`${proto}://${host}`);
+  } catch {
+    // headers() throws outside a request context (e.g. static generation)
+  }
+  return new URL(defaultAppUrl);
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const base = await resolveBase();
+  const appUrl = base.origin;
+  return {
+    metadataBase: base,
+    title: 'UseAgent - one interface for every coding agent',
+    description:
+      'Run coding agents in isolated workspaces with durable context, automations, and audit trails.',
+    openGraph: {
+      title: 'UseAgent - one interface for every coding agent',
+      description:
+        'Run coding agents in isolated workspaces with durable context, automations, and audit trails.',
+      url: appUrl,
+      siteName: 'UseAgent',
+      locale: 'en_US',
+      type: 'website',
+      images: [
+        {
+          url: `${appUrl}/og/01-home.png`,
+          width: 1600,
+          height: 900,
+          alt: 'UseAgent - one interface for every coding agent',
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: 'UseAgent - one interface for every coding agent',
+      description:
+        'Run coding agents in isolated workspaces with durable context, automations, and audit trails.',
+      images: [`${appUrl}/og/01-home.png`],
+    },
+  };
+}
 
 // `viewportFit: 'cover'` makes iOS report real safe-area insets, so the pinned
 // session composer's `pb-[max(1rem,env(safe-area-inset-bottom))]` can clear the

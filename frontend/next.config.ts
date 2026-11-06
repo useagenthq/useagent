@@ -58,7 +58,7 @@ export default function nextConfig(phase: string): NextConfig {
     generateBuildId: async () => process.env.NEXT_PUBLIC_USEAGENT_RELEASE_COMMIT || null,
     // We maintain AGENTS.md by hand — stop Next 16 from regenerating it.
     agentRules: false,
-    allowedDevOrigins: ["127.0.0.1"],
+    allowedDevOrigins: ["127.0.0.1", "*.loca.lt"],
     // The port bridge (/api/port-proxy/<thread>/<port>/) needs its trailing
     // slash so a served app's relative links stay inside the bridge; Next's
     // default redirect strips it and loops against the backend's own redirect.

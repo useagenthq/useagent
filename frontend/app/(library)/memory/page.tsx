@@ -4,8 +4,19 @@ import type { BrowseResponse, CaptureRow, RecallLedgerRow } from "./memory-data"
 import { MemoryHub } from "./memory-hub";
 
 export const metadata: Metadata = {
-  title: "Memory",
+  title: "Memory - UseAgent",
   description: "The team memory UseAgent recalls, captures, and can correct.",
+  openGraph: {
+    title: "Memory - UseAgent",
+    description: "The team memory UseAgent recalls, captures, and can correct.",
+    images: [{ url: "/og/12-memory.png", width: 1600, height: 900, alt: "UseAgent Memory" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Memory - UseAgent",
+    description: "The team memory UseAgent recalls, captures, and can correct.",
+    images: ["/og/12-memory.png"],
+  },
 };
 
 export default async function MemoryPage() {
