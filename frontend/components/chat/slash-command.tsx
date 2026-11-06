@@ -124,7 +124,7 @@ export function SlashCommandPopover({
       <p className="text-mono-label text-text-tertiary px-2 pb-1 pt-1.5" id="slashcmd-label">
         {header}
       </p>
-      <div className="max-h-72 overflow-y-auto" role="listbox" aria-labelledby="slashcmd-label">
+      <div id="slashcmd-listbox" className="max-h-72 overflow-y-auto" role="listbox" aria-labelledby="slashcmd-label">
         {statusRow}
         {status === "ready" &&
           matches.map((c, i) => (
