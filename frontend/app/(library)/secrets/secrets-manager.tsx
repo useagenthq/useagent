@@ -16,7 +16,7 @@ import {
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { REVEAL_ON_HOVER } from "@/components/customize/list-row";
 import { cx } from "@/utils/cx";
-import { relTime } from "@/app/(workspace)/settings/relative-time";
+import { relativeTime } from "@/utils/format";
 import { invalidateCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { deleteSecret, fetchSecrets, putSecret } from "./secrets-api";
 import { isValidSecretName, SECRET_KINDS, type SecretKind, type SecretMeta } from "./secrets-data";
@@ -244,7 +244,7 @@ export function SecretsManager({
               </span>
               {mounted && (
                 <span className="hidden text-caption-1-regular text-text-tertiary sm:inline">
-                  Updated {relTime(s.updatedAt)}
+                  Updated {relativeTime(s.updatedAt)}
                 </span>
               )}
               {confirming === s.name ? (

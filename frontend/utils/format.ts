@@ -30,7 +30,12 @@ export function estimatedTokens(runCount: number): string {
   return compact.format(runCount * TOKENS_PER_RUN);
 }
 
-/** Relative timestamp: "just now" / "5m ago" / "3h ago" / "2d ago" / "4w ago". */
+/** Older than this and a relative label stops helping, so the local date is shown instead. */
+const DATE_FALLBACK_AFTER_DAYS = 30;
+
+/** Relative timestamp: "just now" / "5m ago" / "3h ago" / "2d ago" / "4w ago", and the
+ * local date once the value is older than a month. Every bucket floors, so 90 seconds
+ * reads "1m ago" rather than "2m ago" and no bucket ever overstates an age. */
 export function relativeTime(
   value?: string | number | null,
   now: number = Date.now(),
@@ -46,17 +51,20 @@ export function relativeTime(
   if (hr < 24) return `${hr}h ago`;
   const day = Math.floor(hr / 24);
   if (day < 7) return `${day}d ago`;
-  return `${Math.floor(day / 7)}w ago`;
+  if (day < DATE_FALLBACK_AFTER_DAYS) return `${Math.floor(day / 7)}w ago`;
+  return new Date(ms).toLocaleDateString();
 }
 
-/** Compact relative time for dense rails ("8h", "3d", "now") - same buckets as
- * `relativeTime`, without the " ago" suffix that eats sidebar row width. */
+/** Compact relative time for dense rails ("8h", "3d", "now"): the same buckets as
+ * `relativeTime`, without the " ago" suffix that eats sidebar row width. A date
+ * fallback carries no suffix and is returned as it is. */
 export function relativeTimeShort(
   value?: string | number | null,
   now: number = Date.now(),
 ): string {
   const long = relativeTime(value, now);
-  return long === "just now" ? "now" : long.replace(" ago", "");
+  if (long === "just now") return "now";
+  return long.endsWith(" ago") ? long.slice(0, -4) : long;
 }
 
 /** Precise elapsed time for a work log: "180ms", "4.3s", "1m 8.5s", "1h 2m". Null when

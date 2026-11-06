@@ -11,7 +11,7 @@ import {
   isActiveConnection,
   type ProviderConnectionMeta,
 } from "./provider-connections-data";
-import { relTime } from "./relative-time";
+import { relativeTime } from "@/utils/format";
 import { useCodexChatGptConnection } from "./use-codex-chatgpt-connection";
 
 /**
@@ -66,7 +66,7 @@ export function CodexChatGptPath({
             {connection ? (
               <>
                 <span className="text-text-tertiary">·</span>
-                <span>Updated {relTime(connection.updatedAt)}</span>
+                <span>Updated {relativeTime(connection.updatedAt)}</span>
               </>
             ) : null}
           </div>

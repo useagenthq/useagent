@@ -1,5 +1,6 @@
 import type { ApiBot, BotState } from "./types";
 import { botStatus } from "./bot-status";
+import { relativeTime as formatAgo, relativeTimeShort } from "@/utils/format";
 
 /** Roster order: what needs you first, then what is moving, then the rest. */
 const ORDER: readonly BotState[] = ["attention", "working", "idle"];
@@ -38,25 +39,26 @@ export function outcomeLine(
   if (outcome && outcome.length <= SHORT_OUTCOME_MAX && !outcome.includes("\n")) return outcome;
   if (bot.state === "working") return "Working on it";
   if (bot.lastAt) {
-    const ago = relativeTime(bot.lastAt, now);
+    const ago = agoText(bot.lastAt, now);
     if (!ago) return "Replied";
-    return ago === "now" ? "Replied just now" : `Replied ${ago} ago`;
+    return ago === "just now" ? "Replied just now" : `Replied ${ago}`;
   }
   return bot.homeThreadId ? "Finished, no summary yet" : "No conversations yet";
+}
+
+/** "4m ago", or the date once it is older than a month. "" until `now` is known, so the
+ * server render and the client agree. */
+function agoText(iso: string, now: number | null): string {
+  if (now === null) return "";
+  const then = Date.parse(iso);
+  return Number.isNaN(then) ? "" : formatAgo(then, now);
 }
 
 /** Compact relative time: now, 5m, 2h, 3d. "" until `now` is known (after mount). */
 export function relativeTime(iso: string | null, now: number | null): string {
   if (!iso || now === null) return "";
   const then = Date.parse(iso);
-  if (Number.isNaN(then)) return "";
-  const seconds = Math.max(0, Math.round((now - then) / 1000));
-  if (seconds < 60) return "now";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.round(hours / 24)}d`;
+  return Number.isNaN(then) ? "" : relativeTimeShort(then, now);
 }
 
 /** The full local date behind a relative time. "" until `now` is known, so server and client agree. */
