@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SessionRailTabs } from "./session-rail-tabs";
-import { railTabLabelFor } from "./surface-chooser";
+import { railPanelName, railTabLabelFor } from "./surface-chooser";
 
 describe("SessionRailTabs", () => {
   test("Details is a stable surface beside Files, Editor, Terminal and Browser", () => {
@@ -25,6 +25,12 @@ describe("SessionRailTabs", () => {
     expect(details).toContain('aria-pressed="true"');
     expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
     expect(railTabLabelFor("details")).toBe("Details");
+  });
+
+  test("the expand control names the open panel, or just the panel while none is chosen", () => {
+    expect(railPanelName("artifacts")).toBe("Files panel");
+    expect(railPanelName("desktop")).toBe("Browser panel");
+    expect(railPanelName(null)).toBe("panel");
   });
 
   test("Agents, Workspace and Diff appear only once the thread has them", () => {

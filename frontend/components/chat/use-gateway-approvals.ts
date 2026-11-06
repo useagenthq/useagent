@@ -43,11 +43,12 @@ export function useGatewayApprovals(
   threadId: string,
   turns: readonly Turn[],
 ): {
-  approvals: readonly GatewayApproval[];
+  /** Undefined until the first fetch answers, so "none yet" is not "none". */
+  approvals: readonly GatewayApproval[] | undefined;
   refresh: () => Promise<void>;
 } {
   const signals = useMemo(() => gatewayApprovalSignals(turns), [turns]);
-  const [approvals, setApprovals] = useState<readonly GatewayApproval[]>([]);
+  const [approvals, setApprovals] = useState<readonly GatewayApproval[] | undefined>(undefined);
   const generationRef = useRef(0);
 
   const key = signals.map((s) => `${s.runId}=${s.signature}`).join("|");

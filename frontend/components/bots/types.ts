@@ -48,10 +48,13 @@ export interface ApiRoutine {
   id: string;
   name: string;
   cron: string;
-  timezone: string | null;
+  /** Always set: a routine created without one runs in UTC. */
+  timezone: string;
   prompt: string;
   enabled: boolean;
   lastFiredAt: string | null;
+  /** When the scheduler fires it next, from the server; null while paused or when the cron names no date. */
+  nextDueAt: string | null;
   createdAt: string;
 }
 

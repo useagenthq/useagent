@@ -27,7 +27,7 @@ describe("Codex exec-server loopback bridge", () => {
     expect(bridge.url).not.toContain("preview-secret");
   });
 
-  test("rejects an invalid capability path and a second client", async () => {
+  test("rejects an invalid capability path and browser origins", async () => {
     const upstream = startHeaderProtectedEchoServer("preview-secret");
     closeables.push(upstream);
     const bridge = openCodexExecServerBridge({
@@ -40,12 +40,38 @@ describe("Codex exec-server loopback bridge", () => {
     const invalid = new URL(bridge.url);
     invalid.pathname = "/forged";
     await expect(webSocketOpened(invalid.toString())).rejects.toThrow();
+    const browser = new WebSocket(bridge.url, { headers: { origin: "https://evil.example" } } as never);
+    await expect(webSocketOpened(browser)).rejects.toThrow();
+  });
+
+  test("takes the app-server back after a dropped link, within its connection bound", async () => {
+    // Codex recovers an executor session by dialing the same URL again; a
+    // bridge that admitted one connection only turned any drop into a
+    // permanent "environment disconnected".
+    const upstream = startHeaderProtectedEchoServer("preview-secret");
+    closeables.push(upstream);
+    const bridge = openCodexExecServerBridge({
+      upstreamUrl: `ws://127.0.0.1:${upstream.port}/exec`,
+      expectedUpstreamHost: `127.0.0.1:${upstream.port}`,
+      headers: { "x-preview-token": "preview-secret" },
+    });
+    closeables.push({ stop: () => bridge.close() });
 
     const first = new WebSocket(bridge.url);
-    await webSocketOpened(first);
-    const second = new WebSocket(bridge.url);
-    await expect(webSocketOpened(second)).rejects.toThrow();
+    expect(await exchange(first, "one")).toBe("echo:one");
+    const firstClosed = webSocketClosed(first);
     first.close();
+    await firstClosed;
+    const reconnected = new WebSocket(bridge.url);
+    expect(await exchange(reconnected, "two")).toBe("echo:two");
+
+    const more = await Promise.all([1, 2, 3].map(() => webSocketOpened(bridge.url)));
+    await expect(webSocketOpened(bridge.url)).rejects.toThrow();
+
+    // Closing the bridge ends every connection it holds.
+    const ended = [reconnected, ...more].map(webSocketClosed);
+    bridge.close();
+    expect(await Promise.all(ended)).toHaveLength(4);
   });
 
   test("rejects a substituted upstream before forwarding preview credentials", () => {

@@ -36,7 +36,7 @@ const MODE_FOR_FACE: Record<ComposerPermission, PermissionMode> = {
 };
 
 const BYPASS_ONLY =
-  "This engine runs its tools itself and cannot ask first, so it works in Bypass all only.";
+  "This agent cannot stop to ask you first, so it always works without asking.";
 
 /** The line under the rows when the engine cannot honour anything below Bypass all. */
 function offeredHint(engine: string | undefined): string | undefined {
@@ -51,7 +51,7 @@ export function permissionModeOptions(engine: string | undefined): PermissionMen
   const titles: Record<ComposerPermission, string> = {
     auto: autoApplyEditsHint(engine),
     manual: "Asks before running a command or changing a file.",
-    plan: "Reads and answers; refuses every command and file change in the sandbox.",
+    plan: "Reads and answers; never runs commands or changes files.",
     bypass: "Runs commands and changes files without asking.",
   };
   return Object.values(COMPOSER_PERMISSIONS)

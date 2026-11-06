@@ -75,10 +75,7 @@ const SURFACES: readonly SurfaceOption[] = [
 
 /** Header label for the rail's ACTIVE tab: the chooser surfaces plus the
  *  non-chooser editor/workspace tabs (their labels live with the tab type). */
-export function railTabLabelFor(
-  railTab: SurfaceChoice | "editor" | "workspace" | null,
-): string {
-  if (railTab === null) return "Surface";
+export function railTabLabelFor(railTab: SurfaceChoice | "editor" | "workspace"): string {
   const labels = {
     agents: "Agents",
     artifacts: "Files",
@@ -86,10 +83,16 @@ export function railTabLabelFor(
     editor: "Editor",
     workspace: "Workspace",
     terminal: "Terminal",
-    desktop: "Desktop",
+    desktop: "Browser",
     details: "Details",
-  } satisfies Record<Exclude<SurfaceChoice | "editor" | "workspace", null>, string>;
+  } satisfies Record<SurfaceChoice | "editor" | "workspace", string>;
   return labels[railTab];
+}
+
+/** What the rail's expand/restore control calls the open panel: "Files panel",
+ *  or just "panel" while the chooser shows and no tab is picked. */
+export function railPanelName(railTab: SurfaceChoice | "editor" | "workspace" | null): string {
+  return railTab === null ? "panel" : `${railTabLabelFor(railTab)} panel`;
 }
 
 /** The rail's empty state: the thread's live facts as quiet chips, then the
@@ -114,7 +117,7 @@ export function SurfaceChooser({
   return (
     <div className="flex h-full justify-center overflow-y-auto px-6 py-10">
       <div className="w-full max-w-md">
-        <h2 className="sr-only">Open a surface</h2>
+        <h2 className="sr-only">Open a panel</h2>
         {facts.length > 0 && (
           <ul className="mb-6 flex flex-wrap gap-1.5" aria-label="This thread">
             {facts.map((fact) => (

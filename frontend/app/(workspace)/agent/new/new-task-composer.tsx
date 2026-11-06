@@ -47,7 +47,7 @@ import { PermissionModeChip } from "@/components/pro/permission-mode-chip";
 import { AgentThinking } from "@/components/application/agent-thinking/agent-thinking";
 import { ComposerLoader } from "@/components/application/composer-loader/composer-loader";
 import { Button } from "@/components/base/buttons/button";
-import { ComposerAttachmentRow } from "@/components/pro/composer-attachments";
+import { ComposerAttachmentRow, ComposerUploadNotice } from "@/components/pro/composer-attachments";
 import { ComposerAddButton } from "@/components/pro/composer-panel/composer-panel";
 import { ModelPicker } from "@/components/pro/model-picker";
 import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt-input";
@@ -600,6 +600,7 @@ export function NewTaskComposer({
                 </div>
               </div>
             ) : null}
+            <ComposerUploadNotice notice={runUploads.notice} className="px-3 pt-2" />
             {/* Structured "@" mentions render as removable chips above the input. */}
             {mentions.mentions.length > 0 ? <div className="px-3 pt-3">{mentions.chips}</div> : null}
             <PromptInputTextarea

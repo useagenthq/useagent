@@ -35,6 +35,7 @@ when the cron names no date.
 | Method | Path | Description | Notes |
 | --- | --- | --- | --- |
 | GET | `/api/automations` | List the org's automations, newest first. | Returns `{automations, schedules}` (the same array under both keys for resumed clients). |
+| GET | `/api/automations/preview` | The next three runs a schedule would have, before it is saved: an editor's live preview, from the engine the scheduler fires by. | Query `cron` (five fields) and `timezone` (IANA, `UTC` when omitted). `200 {next_runs}` (ISO UTC, fewer when the cron names fewer dates); `400 {error}` for a cron or zone it cannot read. |
 | POST | `/api/automations` | Create an automation (created disabled). | JSON body validated by the service. `201` created object; `400` on invalid JSON. |
 | PATCH | `/api/automations/:id` | Update an automation (enable/disable or edit). | Partial JSON body. `200` updated object. `403 automation_creator_only` for anyone but the creator (an admin may pause). |
 | POST | `/api/automations/:id/run-now` | Fire immediately: create a real run and record a manual firing. | `201 {run_id}`. `403 automation_creator_only` for anyone but the creator. `404 schedule not found`. |

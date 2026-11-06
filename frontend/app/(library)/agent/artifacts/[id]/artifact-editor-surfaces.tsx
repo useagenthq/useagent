@@ -39,6 +39,7 @@ import {
 import { type CSSProperties, type RefObject, useId, useState } from "react";
 import { Select, SelectItem } from "@/components/base/select/select";
 import type { WorkpieceEditorController } from "./artifact-editor-state";
+import { MarkdownWorkpieceSurface, SourceSurface } from "./artifact-editor-text-surfaces";
 import { sanitizeRichHtml } from "./artifact-editor-model";
 import { DeckSlideCanvas } from "./deck-canvas";
 import { SheetGridSurface } from "./sheet-grid";
@@ -923,33 +924,6 @@ export function DeckSurface({
   );
 }
 
-export function SourceSurface({
-  label,
-  loading,
-  value,
-  onChange,
-}: {
-  readonly label: string;
-  readonly loading: boolean;
-  readonly value: string;
-  readonly onChange: (value: string) => void;
-}) {
-  return (
-    <>
-      <label htmlFor="workpiece-source" className="text-body-2-medium text-text-primary">
-        {label}
-      </label>
-      <textarea
-        id="workpiece-source"
-        value={value}
-        onChange={(event) => onChange(event.currentTarget.value)}
-        disabled={loading}
-        className="mt-2 min-h-[420px] w-full flex-1 resize-y rounded-xl border border-border-button-default bg-background-primary-default p-4 font-mono text-body-2-regular text-text-primary outline-none focus:border-foreground-icon-primary focus:ring-2 focus:ring-border-button-default disabled:opacity-50"
-      />
-    </>
-  );
-}
-
 /** The default honest note for a byte-authoritative (published) PDF embed. */
 const PUBLISHED_PDF_NOTE =
   "Published PDF. Page reorder and delete are the supported revisions; the text and visual content are not editable here.";
@@ -1041,6 +1015,11 @@ export function WorkpieceSurfaces({
     ) : (
       <PdfEmbedSurface url={editor.pdfPreviewUrl} />
     );
+  }
+  // Markdown: Rendered shows the formatted document; Code holds the editable
+  // source, so the Rendered view never shows "##" or backticks.
+  if (editor.isMarkdown) {
+    return <MarkdownWorkpieceSurface editor={editor} viewMode={viewMode} />;
   }
   if (viewMode === "code") {
     return <WorkpieceCodeView label={editor.label} source={editor.canonicalSource()} />;

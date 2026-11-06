@@ -39,14 +39,15 @@ import { SessionRailTabs } from "@/components/chat/session-rail-tabs";
 import { SubagentChips } from "@/components/chat/subagent-pane";
 import {
   RAIL_ICON_BUTTON,
-  railTabLabelFor,
+  railPanelName,
   type SurfaceChoice,
   SurfaceChooser, threadFacts,
 } from "@/components/chat/surface-chooser";
 import { useAgentsRailDeepLink } from "@/components/chat/use-agents-rail-deep-link";
 import { terminalRunIdForThread } from "@/components/chat/terminal-run-state";
 import type { TimelineArtifact } from "@/components/chat/timeline";
-import { ComposerPrefillProvider } from "@/components/chat/composer-prefill-context";
+import { type ComposerPrefill, ComposerPrefillProvider, type PrefillComposer } from "@/components/chat/composer-prefill-context";
+import { ConversationAnnouncer } from "@/components/chat/conversation-announcer";
 import { SessionLatestRunProvider } from "@/components/chat/session-run-context";
 import { SessionThreadBreadcrumb } from "@/components/chat/session-thread-breadcrumb";
 import { SessionThreadActions } from "@/components/chat/session-thread-actions";
@@ -67,6 +68,7 @@ import {
 } from "@/components/chat/types";
 import { shouldRetireOptimistic, useThreadStream } from "@/components/chat/use-thread-stream";
 import { useReplyCommandCatalog } from "@/components/chat/use-reply-command-catalog";
+import { sheetDialogProps, useSheetDialog } from "@/components/chat/use-sheet-dialog";
 import { useWindowedThread } from "@/components/chat/use-windowed-thread";
 import type { ApiThreadOutlineTurn } from "@/components/chat/windowed-thread";
 import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
@@ -225,10 +227,8 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
     return null;
   }, [turns]);
 
-  // Gateway approvals (#77): the thread's durable requests, pending AND resolved
-  // (history survives reload), from GET /api/gateway/approvals. The turns' approval
-  // SIGNATURES (not a poll) drive revalidation: an approval event on the thread SSE
-  // re-projects the turn and triggers exactly one refetch (see use-gateway-approvals).
+  // Gateway approvals (#77): the thread's durable requests, pending and resolved; undefined
+  // until the first fetch answers. Turn approval signatures drive refetch (use-gateway-approvals).
   const { approvals: gatewayApprovals, refresh: refreshGatewayApprovals } =
     useGatewayApprovals(rootId, turns);
 
@@ -497,6 +497,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   const isMobile = useIsMobile();
   const bodyRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLElement>(null);
+  const surfaceOpenerRef = useRef<HTMLButtonElement>(null);
   // The sheet's md+ trigger is INSUFFICIENT WIDTH, not a second breakpoint: when the
   // split container cannot hold the conversation floor plus the rail minimum side by
   // side (SPLIT_MIN, e.g. the sidebar re-expanded on a tablet-width window), the same
@@ -505,6 +506,9 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   const splitTooNarrow = useSplitTooNarrow(bodyRef);
   const surfacesSheet = isMobile || splitTooNarrow;
   const sheetSurfacesOpen = railOverride ?? false;
+  const sheetDialogOpen = surfacesSheet && sheetSurfacesOpen;
+  const closeSheet = useCallback(() => setRailOverride(false), []);
+  useSheetDialog(sheetDialogOpen, railRef, surfaceOpenerRef, closeSheet);
   // Rail resize: a dragger between the conversation and the rail (side-by-side
   // only); the width state + zero-React drag mechanics live in rail-resizer.
   const { railWidth, resizeRailFromPointer, persistRailWidth, resetRailWidth, resizeRailWithKeyboard } =
@@ -526,12 +530,12 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   // Lets a rail surface (e.g. a conflicted workpiece proposal) seed the reply
   // composer. The nonce re-applies a repeat of the same text; SessionView owns it
   // and hands the setter to the rail via context.
-  const [composerPrefill, setComposerPrefill] = useState<{ text: string; nonce: number } | null>(
-    null,
-  );
-  const prefillComposer = useCallback((text: string) => {
-    setComposerPrefill((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }));
-  }, []);
+  const [composerPrefill, setComposerPrefill] = useState<ComposerPrefill | null>(null);
+  const prefillComposer = useCallback<PrefillComposer>((text, options) => {
+    setComposerPrefill((prev) => ({ text, append: options?.append, nonce: (prev?.nonce ?? 0) + 1 }));
+    // Uncover the composer behind an OPEN sheet; closing a closed one collapses the wide layout.
+    if (sheetDialogOpen) closeSheet();
+  }, [sheetDialogOpen, closeSheet]);
 
   // Default to whichever pane actually has content; an explicit pick wins.
   // A quiet thread starts on the provider-neutral surface chooser.
@@ -606,7 +610,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
     },
     [activeWorkpieceId, openWorkpieces, railTabOverride],
   );
-  const railTabLabel = railTabLabelFor(railTab);
+  const railPanel = railPanelName(railTab);
   const [desktopEverOpened, setDesktopEverOpened] = useState(false);
   const desktopActive = railTab === "desktop" && (!surfacesSheet || sheetSurfacesOpen);
   useEffect(() => {
@@ -629,15 +633,6 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   useEffect(() => {
     if (surfacesSheet && railExpanded) setRailExpanded(false);
   }, [surfacesSheet, railExpanded]);
-  // The sheet dismisses like the nav drawer: Close X, backdrop, or Escape.
-  useEffect(() => {
-    if (!surfacesSheet || !sheetSurfacesOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setRailOverride(false);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [surfacesSheet, sheetSurfacesOpen]);
 
   return (
     <WorkspaceOpenProvider value={openWorkpiece}>
@@ -648,9 +643,11 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
       <SessionLatestRunProvider value={newest.id}>
       {/* Conversation and full-height inspector share one responsive split. */}
       <div ref={bodyRef} className="flex h-full min-h-0 flex-col md:flex-row">
+        <ConversationAnnouncer running={runningTurn !== null} turns={turns} pendingApproval={activeApproval?.request ?? null} pendingQuestion={activeQuestion?.request ?? null} gatewayApprovals={gatewayApprovals} />
         {/* Conversation */}
         <section
           aria-hidden={railExpanded}
+          inert={sheetDialogOpen}
           className={cx(
             // min-h-0 pins the internal scroller/composer; md:min-w-80 protects the split.
             "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-w-80",
@@ -672,9 +669,10 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
             <SessionThreadActions
               runId={newest.id}
               exportData={{ threadId: rootId, turns, snapshot }}
-              showSurfaceOpener={hasRuntimeSurfaces && !sheetSurfacesOpen}
+              showSurfaceOpener={hasRuntimeSurfaces}
               splitTooNarrow={splitTooNarrow}
               onOpenSurfaces={openSurfacesSheet}
+              surfaceOpenerRef={surfaceOpenerRef}
             />
           </div>
 
@@ -730,7 +728,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
             )}
             resourceMentions={!isProductChild}
             composerLocked={composerRelationshipBlocked || readOnlyMessage !== undefined}
-            composerLockedMessage={readOnlyMessage ?? "Verifying child session…"}
+            composerLockedMessage={readOnlyMessage ?? "Verifying this thread…"}
             onTurnsNeeded={initialOutline ? handleTurnsNeeded : undefined}
             productChildren={productChildren}
             onOpenProductChild={openProductChild}
@@ -773,8 +771,9 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
         {railOpen && sheetSurfacesOpen && (
           <button
             type="button"
-            aria-label="Close surfaces panel"
-            onClick={() => setRailOverride(false)}
+            tabIndex={-1} aria-hidden
+            aria-label="Close side panel"
+            onClick={closeSheet}
             className={cx(
               "fixed inset-0 z-40 bg-black/50 backdrop-blur-sm",
               !splitTooNarrow && "md:hidden",
@@ -790,6 +789,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
             ref={railRef}
             inert={surfacesSheet && !sheetSurfacesOpen}
             aria-hidden={surfacesSheet && !sheetSurfacesOpen ? true : undefined}
+            {...sheetDialogProps(sheetDialogOpen, "Side panel")}
             style={
               railWidth !== null
                 ? ({ "--rail-w": `${railWidth}px` } as React.CSSProperties)
@@ -805,7 +805,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
               // two chrome panels read as one system in every theme - the old
               // primary-default card token diverged visibly in Midnight's
               // inverted dark ladder.
-              "bg-background-secondary-default flex min-h-0 min-w-0 flex-col overflow-hidden transition-[width] peer-data-[dragging=true]:transition-none",
+              "bg-background-secondary-default flex min-h-0 min-w-0 flex-col overflow-hidden outline-none transition-[width] peer-data-[dragging=true]:transition-none",
               // Below md this SAME panel is a bottom slide-over sheet (fixed,
               // safe-area padded, pill-tab header unchanged) with a translate-y
               // open/close transition per the subagent-pane mechanics.
@@ -847,11 +847,11 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
                 iconOnly
                 leadingIcon={railExpanded ? RiCollapseDiagonal2Line : RiExpandDiagonal2Line}
                 onClick={() => setRailExpanded((expanded) => !expanded)}
-                title={railExpanded ? "Restore panel" : `Expand ${railTabLabel}`}
+                title={railExpanded ? "Restore panel" : `Expand ${railPanel}`}
                 aria-label={
                   railExpanded
-                    ? `Restore ${railTabLabel} panel to side rail`
-                    : `Expand ${railTabLabel} panel to main canvas`
+                    ? `Restore ${railPanel} to side rail`
+                    : `Expand ${railPanel} to main canvas`
                 }
                 aria-pressed={railExpanded}
                 aria-keyshortcuts={railExpanded ? "Escape" : undefined}
@@ -873,8 +873,8 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
               {/* On the sheet a single Close X replaces Expand/Collapse. */}
               <CloseButton
                 size="md"
-                aria-label="Close surfaces panel"
-                onClick={() => setRailOverride(false)}
+                aria-label="Close side panel"
+                onClick={closeSheet}
                 className={cx(RAIL_ICON_BUTTON, !splitTooNarrow && "md:hidden")}
               />
             </div>
@@ -957,7 +957,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
                       steps={allSteps}
                       live={live}
                       engine={newest.engine}
-                      runId={terminalRunId}
+                      runId={terminalRunId} threadId={rootId}
                     />
                   )}
                 </div>

@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import type { PendingApproval } from "@/components/chat/approval-state";
 import type { CommandCatalogState } from "@/components/chat/canonical-timeline";
 import type { ComposerSubmit } from "@/components/chat/composer";
+import type { ComposerPrefill } from "@/components/chat/composer-prefill-context";
 import type { AssistantIdentity, Turn } from "@/components/chat/conversation";
 import { toGatewayChildSession } from "@/components/chat/gateway-children";
 import { latestThreadContext } from "@/components/chat/native-events";
@@ -115,7 +116,7 @@ export function ConversationComposer({
   onDismissHandoffNotice?: () => void;
   engineUnavailable?: boolean;
   engineUnavailableMessage?: string;
-  prefill?: { readonly text: string; readonly nonce: number } | null;
+  prefill?: ComposerPrefill | null;
   resourceMentions?: boolean;
   repoRevisions?: Readonly<Record<string, string | null>>;
 }) {

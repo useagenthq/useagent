@@ -229,6 +229,8 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         // a per-run instance, and Claude has its own marker barrier above. The
         // no-first-activity watchdog below remains the final safety net.
         if (providerBridgeLease?.authPath === "subscription" && !providerBridgeLease.sessionReused) {
+          const codexInstanceName = providerBridgeLease.codexInstanceName;
+          if (!codexInstanceName) throw new Error("Codex subscription instance name is missing");
           const endBarrier = ctx.timing?.begin("t3.prepare.runtime_barrier");
           try {
             // A sandbox whose runtime is down cannot publish the status cache,
@@ -243,7 +245,7 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
             // too. Fast path, no restart cost.
             if (
               !up ||
-              !(await awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS))
+              !(await awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS, codexInstanceName))
             ) {
               // (A) Fallback: the reconcile did not land in time. Bounce T3 so boot
               // reads the relay config synchronously and builds the remote instance
@@ -253,7 +255,7 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
               await restartRuntimeEnvironment(sandbox, ctx.signal, ctx.timing);
               invalidateRuntimeEnvironmentAccess(sandbox);
               if (
-                !(await awaitCodexProviderReady(sandbox, ctx.signal, CODEX_VERIFY_DEADLINE_MS))
+                !(await awaitCodexProviderReady(sandbox, ctx.signal, CODEX_VERIFY_DEADLINE_MS, codexInstanceName))
               ) {
                 throw new Error("Codex runtime did not become ready after restart");
               }

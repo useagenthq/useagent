@@ -10,7 +10,7 @@
 // receipt + stats with an explicit "patch content not recorded" note.
 
 import { RiArrowRightSLine } from "@remixicon/react";
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { stepFailed } from "@/components/chat/file-entries";
 import { FileKindBadge } from "@/components/chat/tool-step-row";
 import {
@@ -24,6 +24,8 @@ import {
 import { cx as cn } from "@/utils/cx";
 import { CHANGED_FILES_AUTO_EXPAND_FILE_LIMIT, type ChangedFile } from "./changed-files";
 import { ChangedFilesCard } from "./changed-files-tree";
+import { CommentableHunk, ReviewBar } from "./diff-line-comments";
+import { buildReviewMessage, type DiffComment, type DiffCommentDraft, useDiffComments } from "./diff-review";
 import { hasNonZeroStat, DiffStatLabel } from "./diff-stat-label";
 
 // ── Patch model (pure, exported for tests) ──────────────────────────────────
@@ -33,6 +35,11 @@ export type DiffLineTone = "add" | "del" | "context" | "meta";
 export interface DiffLine {
   readonly tone: DiffLineTone;
   readonly text: string;
+  /** 1-based line in the file before / after the change, set only when the
+   *  recorded payload says so (a numbered @@ header, a Write's whole body). An
+   *  Edit's old/new strings carry no position, so their lines stay unnumbered. */
+  readonly oldLine?: number;
+  readonly newLine?: number;
 }
 
 /** One contiguous recorded change (one Edit, one MultiEdit entry, one patch body). */
@@ -43,15 +50,36 @@ const str = (value: unknown): string | null =>
 
 const toLines = (text: string): string[] => text.replace(/\n$/, "").split("\n");
 
+const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+
 /** Classify a recorded unified-diff (or codex apply_patch) body into toned lines.
  *  Header/hunk rows (diff/index/---/+++/@@/***) are meta; +/- prefixes are
- *  stripped into the gutter marker the row renders. */
+ *  stripped into the gutter marker the row renders. A numbered @@ header
+ *  numbers the rows under it; an unnumbered one (apply_patch) leaves them bare. */
 export function parsePatchLines(patch: string): DiffLine[] {
+  let oldLine: number | undefined;
+  let newLine: number | undefined;
+  const take = (tone: DiffLineTone, text: string, old: boolean, next: boolean): DiffLine => {
+    const line: DiffLine = {
+      tone,
+      text,
+      ...(old && oldLine !== undefined && { oldLine }),
+      ...(next && newLine !== undefined && { newLine }),
+    };
+    if (old && oldLine !== undefined) oldLine += 1;
+    if (next && newLine !== undefined) newLine += 1;
+    return line;
+  };
   return toLines(patch).map((line): DiffLine => {
+    if (/^(diff |@@)/.test(line)) {
+      const header = HUNK_HEADER.exec(line);
+      oldLine = header ? Number(header[1]) : undefined;
+      newLine = header ? Number(header[2]) : undefined;
+    }
     if (/^(diff |index |--- |\+\+\+ |@@|\*\*\*)/.test(line)) return { tone: "meta", text: line };
-    if (line.startsWith("+")) return { tone: "add", text: line.slice(1) };
-    if (line.startsWith("-")) return { tone: "del", text: line.slice(1) };
-    return { tone: "context", text: line.startsWith(" ") ? line.slice(1) : line };
+    if (line.startsWith("+")) return take("add", line.slice(1), false, true);
+    if (line.startsWith("-")) return take("del", line.slice(1), true, false);
+    return take("context", line.startsWith(" ") ? line.slice(1) : line, true, true);
   });
 }
 
@@ -97,7 +125,9 @@ export function hunksFromStep(step: ApiStep): DiffHunk[] {
   if (patch) return [parsePatchLines(patch)];
 
   const content = str(input.content ?? input.code);
-  if (content) return [toLines(content).map((text): DiffLine => ({ tone: "add", text }))];
+  if (content) {
+    return [toLines(content).map((text, index): DiffLine => ({ tone: "add", text, newLine: index + 1 }))];
+  }
 
   return [];
 }
@@ -141,9 +171,17 @@ const MARKER_TONE: Record<DiffLineTone, string> = {
   meta: "text-text-tertiary",
 };
 
-function DiffLineRow({ line }: { line: DiffLine }) {
+const isNumbered = (lines: readonly DiffLine[]) =>
+  lines.some((line) => line.newLine !== undefined || line.oldLine !== undefined);
+
+function DiffLineRow({ line, numbered = false }: { line: DiffLine; numbered?: boolean }) {
   return (
     <div className={cn("flex gap-2 px-3 font-mono text-[11px] leading-5", LINE_TONE[line.tone])}>
+      {numbered && (
+        <span aria-hidden className="w-7 shrink-0 select-none text-right tabular-nums text-text-tertiary">
+          {line.newLine ?? line.oldLine}
+        </span>
+      )}
       <span aria-hidden className={cn("w-2.5 shrink-0 select-none", MARKER_TONE[line.tone])}>
         {MARKER[line.tone]}
       </span>
@@ -171,14 +209,24 @@ function badgeKind(kind: string | undefined): FileChangeKind {
   return kind === "add" || kind === "delete" ? kind : "edit";
 }
 
+/** The thread's draft review, when the surface can hand it to a reply. */
+interface SectionReview {
+  readonly comments: readonly DiffComment[];
+  readonly add: (draft: DiffCommentDraft) => void;
+  readonly remove: (id: string) => void;
+}
+
+const NO_COMMENTS: readonly DiffComment[] = [];
+
 const FileDiffSection = memo(function FileDiffSection(props: {
   file: ChangedFile;
   hunks: readonly DiffHunk[];
   expanded: boolean;
   onToggle: (path: string) => void;
   sectionRef: (path: string, element: HTMLElement | null) => void;
+  review: SectionReview | null;
 }) {
-  const { file, hunks, expanded, onToggle, sectionRef } = props;
+  const { file, hunks, expanded, onToggle, sectionRef, review } = props;
   const stat =
     typeof file.additions === "number" && typeof file.deletions === "number"
       ? { additions: file.additions, deletions: file.deletions }
@@ -219,13 +267,27 @@ const FileDiffSection = memo(function FileDiffSection(props: {
       {expanded &&
         (hunks.length > 0 ? (
           <div className="divide-y divide-border-button-default/60 border-t border-border-button-default">
-            {hunks.map((hunk, hunkIndex) => (
-              <div key={hunkIndex} className="py-1">
-                {hunk.map((line, lineIndex) => (
-                  <DiffLineRow key={lineIndex} line={line} />
-                ))}
-              </div>
-            ))}
+            {hunks.map((hunk, hunkIndex) => {
+              const numbered = isNumbered(hunk);
+              return review ? (
+                <CommentableHunk
+                  key={hunkIndex}
+                  path={file.path}
+                  hunk={hunkIndex}
+                  lines={hunk}
+                  comments={review.comments.filter((comment) => comment.hunk === hunkIndex)}
+                  onAdd={review.add}
+                  onRemove={review.remove}
+                  renderLine={(line) => <DiffLineRow line={line} numbered={numbered} />}
+                />
+              ) : (
+                <div key={hunkIndex} className="py-1">
+                  {hunk.map((line, lineIndex) => (
+                    <DiffLineRow key={lineIndex} line={line} numbered={numbered} />
+                  ))}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p
@@ -240,17 +302,27 @@ const FileDiffSection = memo(function FileDiffSection(props: {
   );
 });
 
+/** Where line comments go: drafts are kept under `key` (the thread) and the
+ *  finished review is handed to `onSend` as one follow-up message. */
+export interface DiffReviewTarget {
+  readonly key: string;
+  readonly onSend: (message: string) => void;
+}
+
 /**
  * The real Diff surface: the T3 changed-files card as the index over per-file
  * collapsible unified-diff sections. Feed `files` from changedFilesFromTimeline
- * (./adapter.ts) and `patches` from filePatchesFromSteps above.
+ * (./adapter.ts) and `patches` from filePatchesFromSteps above. With `review`,
+ * diff lines take comments that are sent back to the agent together.
  */
 export function FileDiffView({
   files,
   patches,
+  review = null,
 }: {
   files: ReadonlyArray<ChangedFile>;
   patches: ReadonlyMap<string, readonly DiffHunk[]>;
+  review?: DiffReviewTarget | null;
 }) {
   // Unlisted paths render expanded, so a small change set opens ready to read
   // while a big one starts folded (the perf rule: never O(all-files) DOM up
@@ -292,10 +364,29 @@ export function FileDiffView({
     [],
   );
 
+  const { comments, add, remove, clear } = useDiffComments(review?.key ?? "");
+  const reviewByPath = useMemo(() => {
+    const byPath = new Map<string, SectionReview>();
+    for (const file of files) {
+      const own = comments.filter((comment) => comment.path === file.path);
+      byPath.set(file.path, { comments: own.length > 0 ? own : NO_COMMENTS, add, remove });
+    }
+    return byPath;
+  }, [files, comments, add, remove]);
+  const onSend = review?.onSend;
+  const send = useCallback(() => {
+    if (!onSend || comments.length === 0) return;
+    onSend(buildReviewMessage(comments));
+    clear();
+  }, [onSend, comments, clear]);
+
   if (files.length === 0) return null;
 
   return (
     <div data-session-ui="file-diff-view" className="space-y-3 p-3 pt-0">
+      {review && comments.length > 0 && (
+        <ReviewBar comments={comments} onSend={send} onDiscard={clear} />
+      )}
       <ChangedFilesCard files={files} showCompactPreview={false} onOpenFile={openFile} />
       {files.map((file) => (
         <FileDiffSection
@@ -305,6 +396,7 @@ export function FileDiffView({
           expanded={!collapsedPaths.has(file.path)}
           onToggle={toggleSection}
           sectionRef={registerSection}
+          review={review ? (reviewByPath.get(file.path) ?? null) : null}
         />
       ))}
     </div>

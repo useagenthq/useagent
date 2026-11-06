@@ -43,6 +43,8 @@ const HOST_EXECUTION_FEATURES_OFF = [
   "apps", "plugins", "remote_plugin", "plugin_sharing", "tool_suggest", "skill_mcp_dependency_install",
   "hooks", "browser_use", "browser_use_external", "browser_use_full_cdp_access", "computer_use",
   "in_app_browser", "in_app_local_automation", "shell_snapshot",
+  // Native goals let Codex start turns on its own, outside admission and spend checks.
+  "goals",
 ].flatMap((feature) => ["-c", `features.${feature}=false`]);
 
 export interface CodexSubscriptionRelayBinding {

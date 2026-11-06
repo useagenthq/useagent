@@ -37,11 +37,12 @@ import {
   assertRunPromptLimit,
   RunPromptTooLargeError,
 } from "../commands/prompt-policy";
-import { isValidCron, isValidTimezone } from "./cron";
+import { isValidCron, isValidTimezone, nextOccurrence } from "./cron";
 import {
   createSchedule,
   deleteSchedule,
   getScheduleForOrg,
+  nextRunAt,
   updateSchedule,
   type ApiSchedule,
   type ScheduleRecord,
@@ -361,6 +362,35 @@ export async function createScheduleForOrg(
     tags: schedule.tags,
   });
   return schedule;
+}
+
+/** How many runs a schedule preview names. */
+const PREVIEW_RUNS = 3;
+/** Longer than any cron a person types (every minute listed is 170 characters):
+ *  the preview refuses more before parsing, as it answers while typing. */
+const PREVIEW_CRON_MAX_LENGTH = 512;
+
+/**
+ * The next runs a schedule with this cron and zone would have if enabled now,
+ * by the rule the scheduler fires by (repo.ts nextRunAt, then cron.ts
+ * nextOccurrence): what an editor shows while a person types a schedule,
+ * before anything is saved. The first is this minute when it is an
+ * occurrence, as the tick would still fire it. The zone defaults to UTC as a
+ * create's does; fewer runs (none) when the cron names fewer dates.
+ */
+export function previewNextRuns(query: { cron?: unknown; timezone?: unknown }, now: Date = new Date()): string[] {
+  const cron = typeof query.cron === "string" ? query.cron.trim() : "";
+  if (cron.length > PREVIEW_CRON_MAX_LENGTH || !isValidCron(cron)) {
+    throw new ScheduleServiceError(400, { error: "cron must be a valid 5-field expression" });
+  }
+  const timezone = parseTimezone(query.timezone) ?? "UTC";
+  const runs: string[] = [];
+  let next = nextRunAt({ cron, timezone, enabled: true, lastFiredAt: null }, now);
+  while (next && runs.length < PREVIEW_RUNS) {
+    runs.push(next.toISOString());
+    if (runs.length < PREVIEW_RUNS) next = nextOccurrence(cron, timezone, new Date(next.getTime() + 60_000));
+  }
+  return runs;
 }
 
 export function updateScheduleForOrg(

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { setArtifactStorageForTest } from "../src/artifacts/storage";
 import { db } from "../src/db/client";
 import { userUploads } from "../src/db/schema";
@@ -28,6 +28,14 @@ async function postUpload(session: OrgSession): Promise<{
     upload: { id: string; name: string; download_url: string };
   };
   return payload.upload;
+}
+
+async function uploadRows(session: OrgSession): Promise<number> {
+  const [row] = await db
+    .select({ rows: count() })
+    .from(userUploads)
+    .where(eq(userUploads.orgId, session.orgId));
+  return row?.rows ?? 0;
 }
 
 beforeAll(async () => {
@@ -98,6 +106,36 @@ describe("user upload API", () => {
     });
     expect(rejected.status).toBe(409);
     expect(rejected.body.error).toBe("upload_unavailable");
+  });
+
+  // Bun's multipart parser hands back a File with no name when the part is
+  // empty or its filename is "" (#412); both must answer 400, never 500.
+  test("refuses an empty or nameless file with its reason, storing nothing", async () => {
+    const rowsBefore = await uploadRows(owner);
+    const post = async (file: File) => {
+      const form = new FormData();
+      form.set("file", file);
+      const response = await fetchApi("/api/uploads", {
+        method: "POST",
+        cookies: owner.cookies,
+        body: form,
+      });
+      return { status: response.status, body: await response.json() };
+    };
+
+    expect(await post(new File([], "empty.txt", { type: "text/plain" }))).toEqual({
+      status: 400,
+      body: { error: "file is empty" },
+    });
+    expect(await post(new File(["quarter,revenue\n"], "", { type: "text/csv" }))).toEqual({
+      status: 400,
+      body: { error: "invalid file name" },
+    });
+    expect(await post(new File([], ""))).toEqual({
+      status: 400,
+      body: { error: "file is empty" },
+    });
+    expect(await uploadRows(owner)).toBe(rowsBefore);
   });
 
   test("hides an expired unclaimed upload from its owner", async () => {

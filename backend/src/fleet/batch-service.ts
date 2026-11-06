@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { ENGINE_IDS, type EngineId } from "../db/schema";
 import { insertCommandWithRun } from "../commands/repo";
+import { serializeRunCommandPayload } from "../commands/service";
 import { assertRunAdmissionOpen } from "../commands/admission";
 import { assertSpendAllowance } from "../runs/spend";
 import { assertSandboxMinutes } from "../runs/sandbox-minutes";
@@ -36,7 +37,6 @@ import type { Context } from "hono";
 import type { AppEnv } from "../http";
 
 const MAX_BATCH_ITEMS = 20;
-const MAX_COMMAND_PAYLOAD = 8_192;
 const TASK_KEYS = new Set(["prompt", "engine", "model", "repos"]);
 const BODY_KEYS = new Set(["tasks"]);
 
@@ -283,24 +283,19 @@ export async function acceptFleetBatch(input: {
     for (const [index, task] of input.tasks.entries()) {
       const run = acceptedRun(task, runIds[index]!);
       const intent = commandIntent(task);
-      const payload = JSON.stringify({
-        prompt: run.prompt,
-        model: run.model,
-        engine: run.engine,
-        parentRunId: null,
-        threadId: run.threadId,
-        repos: run.repos,
-        resolvedResources: run.resolvedResources,
-        attachmentIds: [],
-        memoryScope: run.memoryScope,
+      const payloadFingerprint = runIntentFingerprint(intent);
+      const payload = serializeRunCommandPayload(
+        { idempotencyKey: null, orgId: input.orgId, actorId: input.actorId, run, intent },
         intent,
-      }).slice(0, MAX_COMMAND_PAYLOAD);
+        payloadFingerprint,
+        null,
+      );
       await insertCommandWithRun({
         commandId: crypto.randomUUID(),
         idempotencyKey: null,
         orgId: input.orgId,
         actorId: input.actorId,
-        payloadFingerprint: runIntentFingerprint(intent),
+        payloadFingerprint,
         payload,
         run,
         origin: null,

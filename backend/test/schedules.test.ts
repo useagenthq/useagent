@@ -8,6 +8,7 @@ import { acceptRunCommand, type RunCommandIntent } from "../src/commands";
 import { fireScheduleWithOutcome, firingKey } from "../src/schedules/fire";
 import { getScheduleForOrg, nextRunAt } from "../src/schedules/repo";
 import { AUTOMATION_RUN_ORIGIN } from "../src/runs/origin";
+import { previewNextRuns } from "../src/schedules/service";
 import { db } from "../src/db/client";
 import { runs, skillRevisions } from "../src/db/schema";
 import { createOrgSession, json, waitFor } from "./helpers";
@@ -70,6 +71,52 @@ async function createSkill(cookies: string): Promise<ApiSkill> {
 }
 
 describe("schedules API", () => {
+  test("the preview names the next three runs a cron and zone would have, with plain errors for what it cannot read", async () => {
+    const s = await createOrgSession("sched-preview");
+    const preview = (route: string, query: Record<string, string>) =>
+      json<{ next_runs?: string[]; error?: string }>(`${route}/preview?${new URLSearchParams(query)}`, { cookies: s.cookies });
+    const before = Date.now();
+    const weekdays = await preview("/api/automations", { cron: "0 9 * * 1-5", timezone: "Asia/Kolkata" });
+    expect(weekdays.status).toBe(200);
+    const runs = weekdays.body.next_runs ?? [];
+    expect(runs).toHaveLength(3);
+    const kolkata = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+    for (const run of runs) expect(kolkata.format(new Date(run))).toMatch(/^(Mon|Tue|Wed|Thu|Fri) 09:00$/);
+    expect(Date.parse(runs[0]!)).toBeGreaterThanOrEqual(before - 60_000);
+    expect(new Set(runs).size).toBe(3);
+    expect(runs.toSorted()).toEqual(runs);
+    // The alias answers the same; no zone means UTC, as a create without one.
+    const utc = await preview("/api/schedules", { cron: "30 6 * * *" });
+    expect(utc.status).toBe(200);
+    for (const run of utc.body.next_runs ?? []) expect(run.slice(11, 16)).toBe("06:30");
+    // A cron that names no date has no runs.
+    const never = await preview("/api/automations", { cron: "0 0 31 2 *", timezone: "UTC" });
+    expect(never.status).toBe(200);
+    expect(never.body.next_runs).toEqual([]);
+    const badCron = await preview("/api/automations", { cron: "not cron", timezone: "UTC" });
+    expect(badCron.status).toBe(400);
+    expect(badCron.body.error).toBe("cron must be a valid 5-field expression");
+    expect((await preview("/api/automations", {})).status).toBe(400);
+    const badZone = await preview("/api/automations", { cron: "0 9 * * *", timezone: "Mars/Olympus" });
+    expect(badZone.status).toBe(400);
+    expect(badZone.body.error).toBe("timezone must be a valid IANA name");
+    // A cron no person types (a valid list run to 600 characters) is refused
+    // before anything parses it.
+    const long = await preview("/api/automations", { cron: `${"0,".repeat(300)}0 9 * * *`, timezone: "UTC" });
+    expect(long.status).toBe(400);
+    expect(long.body.error).toBe("cron must be a valid 5-field expression");
+  });
+
+  test("the preview starts in the current minute, as the tick would fire a schedule enabled now", () => {
+    expect(previewNextRuns({ cron: "0 9 * * *", timezone: "UTC" }, new Date("2026-10-18T09:00:10Z")))
+      .toEqual(["2026-10-18T09:00:00.000Z", "2026-10-19T09:00:00.000Z", "2026-10-20T09:00:00.000Z"]);
+  });
+
+  test("the preview follows the scheduler's rule: a fixed time once across Lord Howe's half-hour fall-back", () => {
+    expect(previewNextRuns({ cron: "45 1 * * *", timezone: "Australia/Lord_Howe" }, new Date("2026-04-04T14:00:00Z")))
+      .toEqual(["2026-04-04T14:45:00.000Z", "2026-04-05T15:15:00.000Z", "2026-04-06T15:15:00.000Z"]);
+  });
+
   test("canonical automations route creates and lists with the automation envelope", async () => {
     const s = await createOrgSession("automation-route");
 

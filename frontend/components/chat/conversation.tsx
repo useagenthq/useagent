@@ -18,6 +18,7 @@ import {
 } from "@/components/chat/canonical-timeline";
 import { chatCitationsFromSteps } from "@/components/chat/chat-citations";
 import type { ComposerSubmit } from "@/components/chat/composer";
+import type { ComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { GatewayApprovalCard } from "@/components/chat/gateway-approval-card";
 import { groupApprovalsByRun } from "@/components/chat/gateway-approval-state";
@@ -410,7 +411,7 @@ const TurnBlock = memo(function TurnBlock({
 
         {/* Hover copy, fork and answer time on the settled answer; the durable summary IS the answer markdown on both render paths. */}
         {!live && (
-          <div className="flex items-center gap-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/turn:opacity-100">
+          <div className="flex items-center gap-1.5 opacity-0 transition-opacity pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/turn:opacity-100">
             {summary && <MessageCopyButton text={summary} />}
             <ForkFromHereButton runId={run.id} onFork={onFork} />
             <AnsweredAt iso={run.updated_at} />
@@ -523,7 +524,7 @@ export const Conversation = memo(function Conversation({
   runStartedAt?: string | null;
   /** Externally seed the reply composer (e.g. "Ask agent to redo" on a conflicted
    *  proposal); each request carries a fresh nonce so repeats re-apply. */
-  prefill?: { readonly text: string; readonly nonce: number } | null;
+  prefill?: ComposerPrefill | null;
   repoRevisions?: Readonly<Record<string, string | null>>;
   resourceMentions?: boolean;
   composerLocked?: boolean;

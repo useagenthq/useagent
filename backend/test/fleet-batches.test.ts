@@ -112,6 +112,53 @@ describe("fleet batch API", () => {
       .where(eq(fleetBatches.orgId, org.orgId))).length).toBe(1);
   });
 
+  test("stores every task's command payload as valid JSON under the 8,192 byte cap", async () => {
+    const org = await createOrgSession("fleet-batch-payload");
+    const longPrompt = "l".repeat(10_000);
+    const mediumPrompt = "m".repeat(5_000);
+    const created = await post(org.cookies, uid("fleet-batch-payload"), {
+      tasks: [
+        { prompt: "short task", engine: "mock" },
+        { prompt: mediumPrompt, engine: "mock" },
+        { prompt: longPrompt, engine: "mock" },
+      ],
+    });
+    expect(created.status).toBe(201);
+    const runIds: string[] = created.body.runs.map((run: any) => run.run_id);
+
+    const rows = await db
+      .select({ runId: commands.runId, payload: commands.payload })
+      .from(commands)
+      .where(eq(commands.orgId, org.orgId));
+    expect(rows).toHaveLength(3);
+    const payloads = runIds.map((runId) => {
+      const payload = rows.find((row) => row.runId === runId)?.payload;
+      expect(typeof payload).toBe("string");
+      expect(new TextEncoder().encode(payload!).byteLength).toBeLessThanOrEqual(8_192);
+      return JSON.parse(payload!);
+    });
+
+    expect(payloads[0]).toMatchObject({
+      prompt: "short task",
+      engine: "mock",
+      threadId: runIds[0],
+      intent: { prompt: "short task" },
+    });
+    expect(payloads[0]._audit).toBeUndefined();
+
+    expect(payloads[1].prompt).toBe(mediumPrompt);
+    expect(payloads[1].intent.prompt).toBeUndefined();
+    expect(payloads[1]._audit).toEqual({ omitted: ["intent.prompt"] });
+
+    expect(payloads[2].prompt).toBeUndefined();
+    expect(payloads[2]).toMatchObject({ engine: "mock", threadId: runIds[2] });
+    expect(payloads[2]._audit).toMatchObject({
+      promptChars: 10_000,
+      promptBytes: 10_000,
+      promptSha256: new Bun.CryptoHasher("sha256").update(longPrompt).digest("hex"),
+    });
+  });
+
   test("concurrent exact retries create one batch and return one ordered run set", async () => {
     const org = await createOrgSession("fleet-batch-concurrent-replay");
     const key = uid("fleet-batch-concurrent-replay");

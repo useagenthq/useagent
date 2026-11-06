@@ -11,7 +11,7 @@ import { RiArrowDownSLine, RiStopFill } from "@remixicon/react";
 import { Dropdown, DropdownPopover, DropdownTrigger } from "@/components/base/dropdown/dropdown";
 import { StatusRow } from "@/components/pro/composer-status-bar";
 import type { RunningStatus } from "@/components/pro/running-phase";
-import { ElapsedTimer } from "@/components/session-ui/background-status-pill";
+import { ElapsedTimer } from "@/components/session-ui/elapsed-timer";
 
 export function RunningFooter({
   status,

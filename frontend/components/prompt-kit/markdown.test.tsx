@@ -58,6 +58,51 @@ describe("Markdown links", () => {
     }
   });
 
+  test("reads a typed chip label from a formatted link text", () => {
+    const bold = renderToStaticMarkup(
+      <Markdown>{"[**Quarterly** report](https://example.com/report.pdf)"}</Markdown>,
+    );
+    expect(bold).toContain('data-chip="true"');
+    expect(bold).toContain('<span class="max-w-56 truncate">Quarterly report</span>');
+    expect(bold).toContain(">Q<"); // round badge shows the label initial
+    expect(bold).not.toContain("[object Object]");
+    expect(bold).not.toContain(">Open<");
+
+    const code = renderToStaticMarkup(
+      <Markdown>{"[`data.csv`](https://example.com/data.csv)"}</Markdown>,
+    );
+    expect(code).toContain('data-chip="true"');
+    expect(code).toContain('<span class="max-w-56 truncate">data.csv</span>');
+    expect(code).toContain(">D<");
+    expect(code).not.toContain(">Open<");
+
+    const mixed = renderToStaticMarkup(
+      <Markdown>{"[**Quarterly** `data.csv` report](https://example.com/data.csv)"}</Markdown>,
+    );
+    expect(mixed).toContain("Quarterly data.csv report");
+    expect(mixed).toContain(">Q<");
+  });
+
+  test("keeps a link label when it is an image or spans lines", () => {
+    const image = renderToStaticMarkup(
+      <Markdown>
+        {"[![Chart legend](https://cdn.example.com/a.png)](https://example.com/a.pdf)"}
+      </Markdown>,
+    );
+    expect(image).toContain("Chart legend");
+
+    const broken = renderToStaticMarkup(
+      <Markdown>{"[Quarterly\nreport](https://example.com/report.pdf)"}</Markdown>,
+    );
+    expect(broken).toContain("Quarterly");
+    expect(broken).not.toContain("[object Object]");
+  });
+
+  test("falls back to Open when a link carries no readable text", () => {
+    const html = renderToStaticMarkup(<Markdown>{"[](https://example.com/report.pdf)"}</Markdown>);
+    expect(html).toContain('<span class="max-w-56 truncate">Open</span>');
+  });
+
   test("preserves formatted labels on inert local links", () => {
     const html = renderToStaticMarkup(
       <WorkspaceOpenProvider value={() => {}}>
@@ -236,6 +281,17 @@ describe("Markdown links", () => {
   });
 });
 
+describe("Markdown long words", () => {
+  test("wraps unbroken words in the column while tables keep natural widths", () => {
+    const html = renderToStaticMarkup(
+      <Markdown>{`https://example.com/${"a".repeat(200)}`}</Markdown>,
+    );
+
+    expect(html).toContain("[overflow-wrap:anywhere]");
+    expect(html).toContain("[&amp;_table]:[overflow-wrap:normal]");
+  });
+});
+
 describe("Markdown mermaid blocks", () => {
   const diagram = "```mermaid\ngraph TD\n  A[Start] --> B[End]\n```";
 
@@ -273,5 +329,18 @@ describe("Markdown mermaid blocks", () => {
 
     expect(html).toContain("const answer = 42;");
     expect(html).toContain(">TypeScript<");
+  });
+
+  test("keeps the full language name when it has symbols", () => {
+    const cases: [string, string][] = [
+      ["c++", "C++"],
+      ["c#", "C#"],
+      ["objective-c", "Objective-C"],
+      ["f#", "F#"],
+    ];
+    for (const [fence, label] of cases) {
+      const html = renderToStaticMarkup(<Markdown>{`\`\`\`${fence}\nint x = 1;\n\`\`\``}</Markdown>);
+      expect(html).toContain(`>${label}<`);
+    }
   });
 });

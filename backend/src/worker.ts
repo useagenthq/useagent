@@ -37,6 +37,7 @@ import { buildChatContext } from "./chat/context";
 import { chatFailure, chatTurnCredential, chatTurnStream } from "./chat/turn";
 import { subscribeNative } from "./runs/native-events";
 import { createSlidingInactivityWatchdog } from "./runs/inactivity-watchdog";
+import { readTurnTimeLimits, turnTimeoutText } from "./runs/turn-time-limits";
 import { runMock } from "./worker-mock.js";
 import { bus, channel, RUN_SPAWNED, type BusEvent } from "./worker-events.js";
 import { strictOrgSecretRedactor } from "./secrets/store";
@@ -173,6 +174,13 @@ async function runWorker(runId: string): Promise<void> {
   };
   const wasCancelled = (): string | null => cancelReason;
   cancellers.set(runId, requestCancel);
+  // The first time limit to fire is the one the done step and summary name.
+  let firedLimitMs: number | null = null;
+  const timeOutAfter = (limitMs: number) => (): void => {
+    firedLimitMs ??= limitMs;
+    ac.abort();
+  };
+  const timedOutAfter = (): number | null => firedLimitMs;
 
   // Perf Phase 0: per-run stage ledger (real engines only; mock keeps its exact
   // scripted fixture). Fire-and-forget diagnostics - never on the critical path.
@@ -243,7 +251,7 @@ async function runWorker(runId: string): Promise<void> {
     }
     if (run.engine === "chat") {
       const bot = run.commandName ? NO_BOT_TURN_CONTEXT : await botContextForTurn({ orgId: run.orgId, threadId: run.threadId, engine: run.engine });
-      await runChat(run, skillContext, bot.identity, ac.signal, wasCancelled);
+      await runChat(run, skillContext, bot.identity, ac.signal, wasCancelled, timedOutAfter);
       return;
     }
 
@@ -272,13 +280,16 @@ async function runWorker(runId: string): Promise<void> {
     // SLIDING INACTIVITY window, not wall-clock: an absolute cap killed a
     // healthy 45-tool demo-recording turn at 10min while events were streaming
     // (user-observed via Slack) — "busy" is not "hung". Every published run
-    // event resets the timer; the abort fires only after ADAPTER_TIMEOUT_MS of
-    // SILENCE, or at the ADAPTER_MAX_MS absolute ceiling (runaway safety).
+    // event resets the timer; the abort fires only after ENGINE_TIMEOUT_MS of
+    // SILENCE, or at the ENGINE_MAX_MS absolute ceiling (runaway safety).
+    const limits = readTurnTimeLimits(process.env);
     const activity = createSlidingInactivityWatchdog(
-      ADAPTER_TIMEOUT_MS,
-      () => ac.abort(),
+      limits.silenceMs,
+      timeOutAfter(limits.silenceMs),
     );
-    const ceiling = Number.isFinite(ADAPTER_MAX_MS) ? setTimeout(() => ac.abort(), ADAPTER_MAX_MS) : undefined;
+    const ceiling = Number.isFinite(limits.ceilingMs)
+      ? setTimeout(timeOutAfter(limits.ceilingMs), limits.ceilingMs)
+      : undefined;
     const onBusEvent = (event: BusEvent): void => {
       if (event.type === "step") activity.touch();
     };
@@ -305,6 +316,7 @@ async function runWorker(runId: string): Promise<void> {
         inputFiles,
         ac.signal,
         wasCancelled,
+        timedOutAfter,
         run.commandName ?? null, run.commandSessionId ?? null,
         run.commandProvider ?? null, run.commandCatalogRevision ?? null,
         firstEngineStep,
@@ -345,6 +357,7 @@ async function runChat(
   skillContext: string, botIdentity: string,
   signal: AbortSignal,
   wasCancelled: () => string | null,
+  timedOutAfter: () => number | null,
 ): Promise<void> {
   const startedAt = Date.now();
   if (!run.orgId) {
@@ -410,8 +423,8 @@ async function runChat(
     const cancelledReason = wasCancelled();
     const timedOut = signal.aborted && cancelledReason === null;
     const failure = chatFailure(error);
-    const label = cancelledReason ??
-      (timedOut ? `Timed out after ${ADAPTER_TIMEOUT_MS / 1000}s` : failure.label);
+    const timeout = turnTimeoutText(timedOutAfter());
+    const label = cancelledReason ?? (timedOut ? timeout.label : failure.label);
     const done = await insertStep({
       runId: run.id,
       idx: 1,
@@ -421,11 +434,7 @@ async function runChat(
       code: null,
     }).catch(() => null);
     if (done) bus.emit(channel(run.id), { type: "step", step: done } satisfies BusEvent);
-    const reason =
-      cancelledReason ??
-      (timedOut
-        ? `timed out after ${ADAPTER_TIMEOUT_MS / 1000}s`
-        : failure.reason);
+    const reason = cancelledReason ?? (timedOut ? timeout.summary : failure.reason);
     const finalized = await finalizeRun(run.id, "failed", reason, Date.now() - startedAt);
     await emitFinalizedEnd(run.id, finalized);
   } finally {
@@ -446,13 +455,8 @@ export const RUNS_ROOT =
 // ceiling by default. An operator who wants either sets ENGINE_TIMEOUT_MS (the
 // abort fires after that much SILENCE on the run's event channel; every
 // step/delta/native frame resets it) or ENGINE_MAX_MS (absolute, regardless of
-// activity). Unset, empty or non-positive means off.
-function operatorWindowMs(raw: string | undefined): number {
-  const parsed = Number(raw?.trim());
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : Number.POSITIVE_INFINITY;
-}
-const ADAPTER_TIMEOUT_MS = operatorWindowMs(process.env.ENGINE_TIMEOUT_MS);
-const ADAPTER_MAX_MS = operatorWindowMs(process.env.ENGINE_MAX_MS);
+// activity). runWorker reads both at the start of each turn through
+// readTurnTimeLimits (runs/turn-time-limits.ts).
 
 async function runEngine(
   runId: string,
@@ -476,6 +480,8 @@ async function runEngine(
   signal: AbortSignal,
   /** Non-null once a user cancel fired — distinguishes cancel from timeout. */
   wasCancelled: () => string | null,
+  /** The time limit, in ms, that aborted the turn; null if none fired. */
+  timedOutAfter: () => number | null,
   /** Validated native-command name (Phase 3); non-null => the prompt is delivered verbatim. */
   commandName: string | null,
   /** The native session the command was AUTHORIZED against (fail-closed C3): the adapter
@@ -652,13 +658,14 @@ async function runEngine(
         redactFailureText(errorMessage(err)),
       );
     }
+    const timeout = turnTimeoutText(timedOutAfter());
     // Terminal done step so the trace shows why it stopped.
     await emit({
       kind: "done",
       label: compactTermination ?? (cancelled
         ? cancelledReason
         : timedOut
-          ? `Timed out after ${ADAPTER_TIMEOUT_MS / 1000}s`
+          ? timeout.label
           : failure?.label ?? "Engine error"),
       chip: null,
     }).catch(() => {});
@@ -668,7 +675,7 @@ async function runEngine(
     const reason = compactTermination ?? (cancelled
       ? cancelledReason
       : timedOut
-        ? `timed out after ${ADAPTER_TIMEOUT_MS / 1000}s`
+        ? timeout.summary
         : failure?.summary ?? "engine error");
     const finalized = await finalizeRun(runId, "failed", reason, Date.now() - startedAt);
     await emitFinalizedEnd(runId, finalized);
