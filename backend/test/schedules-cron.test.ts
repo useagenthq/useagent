@@ -141,6 +141,14 @@ describe("cron matcher", () => {
       "*/0 * * * *", // zero step
       "5-1 * * * *", // reversed range
       "a * * * *", // non-numeric
+      "-5 * * * *", // empty range side
+      "/15 * * * *", // empty value before the slash
+      "0- * * * *", // empty range end
+      "0x1E 9 * * *", // hex
+      "1e1 * * * *", // exponent
+      "*/1e1 * * * *", // exponent step
+      "+5 * * * *", // explicit sign
+      "* * * * -1", // negative day-of-week
     ]) {
       expect(isValidCron(e)).toBe(false);
       expect(matches(e, at(2026, 8, 5, 0, 0))).toBe(false);
