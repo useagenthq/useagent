@@ -21,7 +21,7 @@ describe("composer action contract", () => {
   test("keeps an empty active-run draft on the separate stop action", () => {
     expect(getComposerAction({ running: true, hasDraft: false, canStop: true })).toEqual({
       kind: "stop",
-      label: "Stop this run",
+      label: "Stop this task",
     });
   });
 

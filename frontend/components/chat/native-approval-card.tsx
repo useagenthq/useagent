@@ -31,7 +31,7 @@ export function NativeApprovalCard({
   const respond = (decision: ApprovalDecision) => () => void onRespond(decision);
 
   const actions: ApprovalAction[] = [
-    { id: "cancel", label: "Cancel turn", tone: "ghost", onSelect: respond("cancel") },
+    { id: "cancel", label: "Stop task", tone: "ghost", onSelect: respond("cancel") },
     { id: "decline", label: "Decline", tone: "secondary", onSelect: respond("decline") },
     {
       id: "acceptForSession",

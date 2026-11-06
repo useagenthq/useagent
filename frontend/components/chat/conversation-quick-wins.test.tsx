@@ -200,7 +200,7 @@ test("a running thread renders the running footer above the composer with the el
   expect(html).not.toContain('data-session-ui="background-status-pill"');
   // The elapsed timer rendered from the provided start time (65s ago).
   expect(html).toContain("1m 5s");
-  expect(html).toContain('aria-label="Stop this run"');
+  expect(html).toContain('aria-label="Stop this task"');
   // The phase comes from the newest turn's data: a tool step is Working with its label.
   expect(html).toContain(">Working<");
 });
