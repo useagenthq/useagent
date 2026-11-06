@@ -1,0 +1,142 @@
+---
+title: Students and campus kit
+description: What useAgent is in plain words, how to sign up, three weekend-sized starter projects, and a 60-minute workshop outline for clubs and classrooms.
+sidebar:
+  order: 6
+---
+
+useAgent is a workspace where you hand a coding job to an agent that works in
+its own cloud computer. You describe the result in a sentence or two. The agent
+opens a terminal, edits files, and runs commands in an isolated sandbox while
+you watch every step in one durable thread. When it finishes, the files it made
+are yours to open, run, and keep.
+
+For a student club that means an idea can become a working project in one
+evening, and the whole process stays readable afterwards.
+
+## Sign up and start a task
+
+The hosted app at [app.useagent.org](https://app.useagent.org) is the quickest
+way in. Self-service sign-up is a deployment switch (`SIGNUP_OPEN`), and the
+hosted deployment currently has it open with no invite code and no domain
+restriction.
+
+<Steps>
+  <Step title="Create your account">
+    Open [app.useagent.org](https://app.useagent.org) and choose **New here?
+    Create an account** on the sign-in card. Enter your name, an email
+    address, and a password.
+  </Step>
+  <Step title="Confirm your email">
+    A confirmation mail arrives with a link. Open it, then sign in. Every
+    account lands in its own personal workspace.
+  </Step>
+  <Step title="Connect an engine credential">
+    A run needs a model credential. In **Settings → Connections**, either
+    connect a Codex account through the managed OAuth flow or paste an API
+    key for a supported provider such as OpenAI, Anthropic, or OpenRouter.
+    The credential is stored write-only on the backend and never enters a
+    sandbox.
+  </Step>
+  <Step title="Send your first task">
+    Open the composer at `/agent/new`, pick a ready engine and model,
+    describe the outcome, and send. The session view shows each step as it
+    happens, and the Files and Diff rails collect everything the agent
+    changed. `GET /api/capabilities` reports which engines and models are
+    ready for your account.
+  </Step>
+</Steps>
+
+If sign-up is closed on the deployment you landed on, accounts come from an
+administrator or an invitation. You can also skip accounts entirely: the
+[Quickstart](/getting-started/quickstart) runs the whole stack locally with
+Bun and Postgres, and in local dev every API works unauthenticated.
+
+## Three starter projects for a weekend
+
+Each project fits in a weekend and teaches a different part of the product.
+Paste the sample prompt into the composer, then adjust it to your own idea.
+
+### 1. A portfolio site
+
+The smallest useful task: a site made of plain files you can open the moment
+the run ends.
+
+```text
+Build a single-page portfolio site for a student. Use plain HTML, CSS, and a
+little JavaScript, with no build step and no dependencies. Include a hero
+section, an about section, a grid of three projects, and a contact footer.
+Make it responsive. Save every file so I can open index.html afterwards.
+```
+
+What to watch: the Files rail fills with real files, and the Diff rail shows
+each edit. Reply in the same thread to change a section, add a page, or restyle
+it. You will learn how to describe an outcome and how to review what the agent
+produced.
+
+### 2. A data-analysis notebook turned into a report
+
+Bring your own data. The composer accepts file uploads inline, so attach a CSV
+of anything you track: club attendance, survey answers, game stats.
+
+```text
+Here is a CSV of our club's event attendance this semester. Load it, chart the
+trends, find the best-attended and worst-attended events, and write a one-page
+report with two charts. Keep the analysis reproducible and cite the exact
+numbers you used.
+```
+
+What to watch: the agent runs its analysis in the sandbox terminal, then
+publishes the report as an artifact you can open from the thread or from
+`/artifacts`. You will learn how to hand the agent a file and how to ask for
+conclusions backed by numbers you can check.
+
+### 3. A small web app with tests
+
+The project that shows why agents and tests belong together: the agent writes
+the app and the tests, then runs them where you can see the output.
+
+```text
+Build a small to-do list web app: a REST API that can add, list, and complete
+items, a minimal front end that talks to it, and unit tests for the API. Run
+the tests and show me the output. Keep it small enough that I can read every
+file.
+```
+
+What to watch: the terminal steps run the test suite, the result is in the
+thread, and the Diff rail lets you review the code behind a green run. You will
+learn why a checked result beats a claimed one.
+
+## Run a 60-minute workshop
+
+This outline fits a club meeting or a class session. Everyone needs a laptop
+and an email address.
+
+| Time | Segment | What happens |
+| --- | --- | --- |
+| 0:00 - 0:10 | Demo | The facilitator sends one live task on the projector (the portfolio prompt works well) while the room watches the terminal, file edits, and the final artifact arrive. |
+| 0:10 - 0:25 | Setup | Everyone creates an account, confirms the email, and connects an engine credential. The facilitator circulates; this is the slow part. |
+| 0:25 - 0:50 | Build | Each attendee picks one starter project and runs it. Encourage one reply-level iteration: a restyle, another chart, one more test. |
+| 0:50 - 1:00 | Share | A few attendees show what their run produced and read out the prompt that got them there. Close with the links below. |
+
+Before the session:
+
+- Sign up yourself and run one project end to end, so you see the flow the
+  way attendees will.
+- Check that sign-up is open on your deployment, or pre-create accounts. A
+  self-hosted local stack works as a fallback; see
+  [Quickstart](/getting-started/quickstart).
+- Decide how attendees get a model credential: each person connects a Codex
+  account or provider API key, or a facilitator invites them to a prepared
+  workspace.
+- Have the slides ready: [workshop slides](/getting-started/students-workshop-slides).
+
+Ran the workshop with a real group? Tell us how it went on the issue - what
+prompts landed, where attendees stalled, and what they built.
+
+## Keep going
+
+- [Quickstart](/getting-started/quickstart) for a self-hosted stack.
+- [CLI and MCP](/getting-started/cli) to dispatch tasks from a terminal or a
+  local agent.
+- [Concepts](/concepts) for the vocabulary used across the product.
