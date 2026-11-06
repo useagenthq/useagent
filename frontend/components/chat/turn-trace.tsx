@@ -18,10 +18,18 @@
 // our semantic tokens.
 
 import { RiArrowDownSLine, RiCheckLine, RiCloseLine } from "@remixicon/react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PixelLoader } from "@/components/ai/loading-state";
 import { Thinking } from "@/components/ai/thinking";
 import { STEP_ICON } from "@/components/chat/step-icons";
+import {
+  anyStepExpanded,
+  applyAllSteps,
+  boundedErrorReveal,
+  extendRevealForward,
+  TraceControlsBar,
+  traceControlsModel,
+} from "@/components/chat/turn-trace-controls";
 import { useTurnUiState } from "@/components/chat/turn-ui-state";
 import { basename } from "@/components/chat/types";
 import { Markdown } from "@/components/prompt-kit/markdown";
@@ -114,9 +122,23 @@ const TraceNarrationLine = memo(function TraceNarrationLine({ row }: { row: Trac
 });
 
 /** One step as a short line. Shared with the subagent rows (./subagent-row), so
- *  a child's work reads exactly like its parent's. */
-export const TraceRowView = memo(function TraceRowView({ row }: { row: TraceStepRow }) {
-  const [expanded, setExpanded] = useState(false);
+ *  a child's work reads exactly like its parent's. The payload state is
+ *  controlled by the caller so Collapse/Expand-all can set every step of the
+ *  turn at once. */
+export const TraceRowView = memo(function TraceRowView({
+  row,
+  expanded,
+  onToggle,
+  highlighted,
+}: {
+  row: TraceStepRow;
+  /** Whether this row's payload is mounted. */
+  expanded: boolean;
+  /** Toggle this row's payload, keyed by the row (stable for memo). */
+  onToggle: (key: string) => void;
+  /** Brief highlight after Jump to error. */
+  highlighted: boolean;
+}) {
   const Icon = STEP_ICON[row.family];
   const expandable = row.body !== null;
   const elapsed = formatElapsed(row.durationMs);
@@ -179,21 +201,31 @@ export const TraceRowView = memo(function TraceRowView({ row }: { row: TraceStep
   const rowClass = "flex min-h-7 w-full items-center gap-2 rounded-md px-1.5 py-0.5 text-left";
 
   return (
-    <div data-testid="trace-row" data-status={row.status} data-family={row.family}>
+    <div
+      data-testid="trace-row"
+      data-status={row.status}
+      data-family={row.family}
+      data-row-key={row.key}
+      data-highlight={highlighted ? "true" : undefined}
+      // Programmatic focus target for Jump to error when the row has no button
+      // of its own (a failed step with no payload); not in tab order.
+      tabIndex={-1}
+    >
       {expandable ? (
         <button
           type="button"
           aria-expanded={expanded}
-          onClick={() => setExpanded((open) => !open)}
+          onClick={() => onToggle(row.key)}
           className={cn(
             rowClass,
             "cursor-pointer transition-colors duration-150 hover:bg-background-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring",
+            highlighted && "bg-background-primary-hover",
           )}
         >
           {head}
         </button>
       ) : (
-        <div className={rowClass}>{head}</div>
+        <div className={cn(rowClass, highlighted && "bg-background-primary-hover")}>{head}</div>
       )}
       {expanded && row.body && <TraceRowPayload body={row.body} />}
     </div>
@@ -256,6 +288,18 @@ export function TurnTrace({
 }) {
   const [open, setOpen] = useTurnUiState("trace", defaultOpen);
   const [showAll, setShowAll] = useTurnUiState("trace-all", false);
+  const [stepExpansion, setStepExpansion] = useTurnUiState<Record<string, boolean>>(
+    "trace-steps",
+    {},
+  );
+  // The bounded window Jump to error reveals around the failed row (null =
+  // the default newest-rows fold). Rows outside the window keep their Show N
+  // steps affordances, so one click can never mount a 10,000-row trace.
+  const [reveal, setReveal] = useState<{ from: number; to: number } | null>(null);
+  // Scopes the jump's row lookup to THIS trace: a failed row's key (e.g.
+  // "failure") is only unique within its own turn, so a document-wide
+  // querySelector can land on a different turn's failure.
+  const traceRef = useRef<HTMLElement | null>(null);
   // The trace folds itself when the turn settles, unless the reader took the
   // toggle into their own hands while it ran.
   const touched = useRef(false);
@@ -264,11 +308,87 @@ export function TurnTrace({
     if (wasLive.current && !live && !touched.current) setOpen(false);
     wasLive.current = live;
   }, [live, setOpen]);
-  const hidden = showAll ? 0 : Math.max(0, rows.length - MAX_VISIBLE_TRACE_ROWS);
-  const visible = hidden > 0 ? rows.slice(hidden) : rows;
+  // The highlight Jump to error paints on the failed row; it clears on its own.
+  const [highlightedKey, setHighlightedKey] = useState<string | null>(null);
+  const highlightTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
+    },
+    [],
+  );
+  const baseHidden = showAll ? 0 : Math.max(0, rows.length - MAX_VISIBLE_TRACE_ROWS);
+  // After a jump the view IS the bounded reveal window: the rows before it
+  // keep their earlier-steps affordance and the rows after it keep the
+  // later-steps one, which pages forward a bounded chunk per click. Nothing
+  // widens the view past the window on its own, so one click can never mount
+  // a 10,000-row trace (or hide the rows the current view already showed:
+  // jumping inside the newest rows keeps them).
+  const hidden = reveal ? Math.min(reveal.from, baseHidden) : baseHidden;
+  const shownTo = reveal ? reveal.to : rows.length;
+  const laterCount = rows.length - shownTo;
+  const visible = rows.slice(hidden, shownTo);
+  const controls = useMemo(() => traceControlsModel(rows), [rows]);
+  // The all-toggle acts on the rows the reader can see (the fold and any
+  // reveal window stay put), so its model is built from the visible slice.
+  const visibleControls = useMemo(() => traceControlsModel(visible), [visible]);
+  const anyExpanded = anyStepExpanded(stepExpansion, controls);
+  const toggleStep = useCallback(
+    (key: string) => {
+      setStepExpansion((current) => ({ ...current, [key]: !(current[key] ?? false) }));
+    },
+    [setStepExpansion],
+  );
+  const toggleAllSteps = useCallback(() => {
+    touched.current = true;
+    // Bounded by construction: expanding opens the payloads of the shown rows
+    // only (on a 10,000-step fold that is ~24 payload components, never
+    // 10,000), and it opens the trace itself so they are visible. The fold and
+    // any reveal window stay where they are — widening them is the reader's
+    // own next click. Collapse clears every step, hidden ones included: cheap,
+    // since nothing is mounted for them.
+    if (!anyExpanded) setOpen(true);
+    setStepExpansion((current) =>
+      applyAllSteps(current, anyExpanded ? controls : visibleControls, !anyExpanded),
+    );
+  }, [anyExpanded, controls, visibleControls, setOpen, setStepExpansion]);
+  const jumpToFirstError = useCallback(() => {
+    const failedKey = controls.firstFailedKey;
+    if (failedKey === null) return;
+    touched.current = true;
+    // Reveal the row even behind the fold, but only a bounded window around
+    // it: unbounding here (the old setShowAll(true)) meant one click on a
+    // 10,000-step trace mounted every row. Everything-all is an explicit
+    // reader choice, never a side effect of jumping.
+    setOpen(true);
+    if (!showAll) setReveal(boundedErrorReveal(rows, failedKey));
+    setStepExpansion((current) => ({ ...current, [failedKey]: true }));
+    setHighlightedKey(failedKey);
+    if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
+    highlightTimer.current = window.setTimeout(() => setHighlightedKey(null), 1600);
+    requestAnimationFrame(() => {
+      // Scoped to this trace's subtree: the row key ("failure") is only
+      // unique within one turn, so a document-wide lookup scrolls to the
+      // first turn's failure even when jumping from the second.
+      const row = traceRef.current?.querySelector<HTMLElement>(
+        `[data-row-key="${CSS.escape(failedKey)}"]`,
+      );
+      if (!row) return;
+      // Respect the reader's motion preference, and move focus to the error
+      // (its row button when the row has one) so keyboard and screen-reader
+      // readers land on it, not just the viewport.
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      row.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+      (row.querySelector<HTMLElement>("button") ?? row).focus?.({ preventScroll: true });
+    });
+  }, [controls, rows, showAll, setOpen, setStepExpansion]);
+  const canToggleAll = controls.expandableKeys.length > 0;
+  const canJump = controls.firstFailedKey !== null;
+  const showControls = canToggleAll || canJump;
 
   return (
     <section
+      ref={traceRef}
       data-testid="turn-trace"
       data-live={live ? "true" : undefined}
       aria-label={header.label}
@@ -284,10 +404,22 @@ export function TurnTrace({
           setOpen(next);
         }}
       >
+        {showControls && (
+          <TraceControlsBar
+            anyExpanded={anyExpanded}
+            canToggleAll={canToggleAll}
+            canJump={canJump}
+            onToggleAll={toggleAllSteps}
+            onJumpToError={jumpToFirstError}
+          />
+        )}
         {hidden > 0 && (
           <button
             type="button"
-            onClick={() => setShowAll(true)}
+            onClick={() => {
+              setShowAll(true);
+              setReveal(null);
+            }}
             className="flex min-h-7 w-fit items-center rounded-md px-1.5 py-0.5 text-[12px] text-text-tertiary transition-colors hover:bg-background-primary-hover hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring"
           >
             Show {hidden} earlier {hidden === 1 ? "step" : "steps"}
@@ -297,8 +429,27 @@ export function TurnTrace({
           row.kind === "narration" ? (
             <TraceNarrationLine key={row.key} row={row} />
           ) : (
-            <TraceRowView key={row.key} row={row} />
+            <TraceRowView
+              key={row.key}
+              row={row}
+              expanded={stepExpansion[row.key] ?? false}
+              onToggle={toggleStep}
+              highlighted={highlightedKey === row.key}
+            />
           ),
+        )}
+        {laterCount > 0 && (
+          <button
+            type="button"
+            onClick={() =>
+              setReveal((current) =>
+                extendRevealForward(current ?? { from: hidden, to: shownTo }, rows.length),
+              )
+            }
+            className="flex min-h-7 w-fit items-center rounded-md px-1.5 py-0.5 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-primary-hover hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring"
+          >
+            Show {laterCount} later {laterCount === 1 ? "step" : "steps"}
+          </button>
         )}
         {files.length > 0 && <ChangedFilesStrip files={files} />}
       </Thinking>

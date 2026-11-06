@@ -35,7 +35,7 @@ import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt
 import { BackgroundStatusPill } from "@/components/session-ui/background-status-pill";
 import { engineDisplayLabel, ProviderStatusBanner } from "@/components/session-ui/provider-status-banner";
 import { ThreadErrorBanner, type ThreadErrorResend } from "@/components/session-ui/thread-error-banner";
-import { ComposerAttachmentRow } from "@/components/pro/composer-attachments";
+import { ComposerAttachmentRow, ComposerUploadNotice } from "@/components/pro/composer-attachments";
 import { ComposerAddButton } from "@/components/pro/composer-panel/composer-panel";
 import { composerPlaceholder, getComposerAction } from "@/components/chat/composer-model";
 import { useIsMobile } from "@/hooks/use-is-mobile";
@@ -587,6 +587,7 @@ export function Composer({
               onRemove={(upload) => void runUploads.remove(upload)}
               className="px-3 pt-3"
             />
+            <ComposerUploadNotice notice={runUploads.notice} className="px-3 pt-2" />
           </>
         ) : null}
         {/* Structured "@" mentions render as removable chips above the input. */}

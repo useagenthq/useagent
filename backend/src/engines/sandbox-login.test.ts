@@ -114,6 +114,7 @@ describe("sandbox login", () => {
   test("Codex on its login names no model provider and keeps the tool gateway", () => {
     const config = codexLoginConfigToml("gpt-5.6-luna", { url: "https://plane.example/tools", bearerToken: "t" });
     expect(config).toContain('model = "gpt-5.6-luna"');
+    expect(config.split("\n[")[0]).toContain("features.goals = false");
     expect(config).not.toContain("model_provider");
     expect(config).not.toContain("model_providers");
     expect(config).toContain("[mcp_servers.");

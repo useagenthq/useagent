@@ -286,6 +286,16 @@ describe("rare expressions", () => {
     expect(next("0 0 29 2 *", "Asia/Kolkata", "2026-10-16T00:00:00.000Z")).toBe("2028-02-28T18:30:00.000Z");
   });
 
+  test("a clock that jumps across the date line or back over midnight is walked, not jumped", () => {
+    // Apia skipped 2011-12-30 (UTC-10 to UTC+14): midnight on the 31st is 10:00Z on the 30th.
+    expect(next("0 0 31 12 *", "Pacific/Apia", "2011-12-01T00:00:00.000Z")).toBe("2011-12-30T10:00:00.000Z");
+    expect(next("0 0 31 12 *", "Pacific/Kiritimati", "1994-12-01T00:00:00.000Z")).toBe("1994-12-31T10:00:00.000Z");
+    expect(next("0 12 21 8 *", "Pacific/Kwajalein", "1993-08-01T00:00:00.000Z")).toBe("1993-08-21T12:00:00.000Z");
+    expect(next("0 12 22 8 *", "Pacific/Kwajalein", "1993-08-01T00:00:00.000Z")).toBe("1993-08-22T00:00:00.000Z");
+    // Casey's 2010-03-05 change (UTC+11 to UTC+8 at 02:00) brought 23:00 on the 4th back.
+    expect(next("* 23 4 3 *", "Antarctica/Casey", "2010-03-04T13:00:00.000Z")).toBe("2010-03-04T15:00:00.000Z");
+  });
+
   test("one search costs calendar arithmetic, not a minute walk through nine years", () => {
     const started = performance.now();
     for (let i = 0; i < 300; i++) expect(nextOccurrence("0 0 31 2 *", "America/New_York", new Date(Date.UTC(2026, 9, 18, 0, i)))).toBeNull();

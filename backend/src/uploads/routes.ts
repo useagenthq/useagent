@@ -10,7 +10,7 @@ import {
   toUserUploadDescriptor,
 } from "./repo";
 import { UploadScanError } from "./scan";
-import { validateUploadName } from "./validate";
+import { multipartFileName, validateUploadName } from "./validate";
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_UPLOADS_OVERHEAD = 1024 * 1024;
@@ -45,9 +45,10 @@ uploadRoutes.post("/", async (c) => {
     return c.json({ error: "invalid multipart form" }, 400);
   }
   if (!(value instanceof File)) return c.json({ error: "file is required" }, 400);
-  const name = validateUploadName(value.name);
-  if (!name) return c.json({ error: "invalid file name" }, 400);
+  // Size before name: an empty part arrives with no name (see multipartFileName).
   if (value.size <= 0) return c.json({ error: "file is empty" }, 400);
+  const name = validateUploadName(multipartFileName(value));
+  if (!name) return c.json({ error: "invalid file name" }, 400);
   if (value.size > MAX_UPLOAD_BYTES) return c.json({ error: "file exceeds 25 MB limit" }, 413);
 
   const bytes = new Uint8Array(await value.arrayBuffer());

@@ -9,6 +9,7 @@ import {
 import {
   createScheduleForOrg,
   deleteScheduleForOrg,
+  previewNextRuns,
   runScheduleNow,
   ScheduleServiceError,
   updateScheduleForOrg,
@@ -24,6 +25,17 @@ schedulesRoutes.use("*", orgScope);
 schedulesRoutes.get("/", async (c) => {
   const automations = await listSchedules(c.get("orgId"));
   return c.json({ automations, schedules: automations });
+});
+
+// The next runs a cron and zone would have, before anything is saved: an
+// editor's live preview, from the engine the scheduler fires by.
+schedulesRoutes.get("/preview", (c) => {
+  try {
+    return c.json({ next_runs: previewNextRuns({ cron: c.req.query("cron"), timezone: c.req.query("timezone") }) });
+  } catch (error) {
+    if (error instanceof ScheduleServiceError) return c.json(error.body, error.status);
+    throw error;
+  }
 });
 
 // Create a schedule. `enabled` is always FALSE on create (KiroCrew's safety

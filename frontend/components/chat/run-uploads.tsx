@@ -26,13 +26,79 @@ export type RunUpload = {
   readonly previewUrl: string | null;
   /** Bytes sent so far, 0 to 100: the tile's ring while the upload is in flight. */
   readonly progress: number;
+  /** Why a failed upload did not land, worded to follow its name
+   *  ("report.pdf is over the 25 MB limit"); see `uploadFailureReason`. */
+  readonly error?: string;
 };
 
 type UploadResponse = {
   upload?: { id?: unknown; name?: unknown; size_bytes?: unknown };
 };
 
-const MAX_FILES = 10;
+/** The most files one message carries. */
+export const MAX_FILES = 10;
+/** The backend's per-file cap (`MAX_UPLOAD_BYTES` in backend/src/uploads/routes.ts). */
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
+const DID_NOT_UPLOAD = "did not upload";
+
+/**
+ * Why an upload did not land, worded to follow the file's name. `status` is
+ * the HTTP status, or null when the request never got a response; `serverError`
+ * is the `error` field of the backend's reply (backend/src/uploads/routes.ts).
+ */
+export function uploadFailureReason(status: number | null, serverError?: unknown): string {
+  if (status === null) return "did not upload because the server could not be reached";
+  if (serverError === "file exceeds 25 MB limit" || status === 413)
+    return "is over the 25 MB limit";
+  if (serverError === "file is empty") return "is empty";
+  if (serverError === "invalid file name") return "has a name that cannot be uploaded";
+  if (serverError === "upload_scan_failed" || status === 422) return "did not pass the upload scan";
+  if (status === 401) return "did not upload because you are signed out";
+  return DID_NOT_UPLOAD;
+}
+
+/** The reason a file fails before it is sent, or null when it may go. */
+export function preflightFailure(file: Pick<File, "size">): string | null {
+  if (file.size <= 0) return uploadFailureReason(400, "file is empty");
+  if (file.size > MAX_UPLOAD_BYTES) return uploadFailureReason(413);
+  return null;
+}
+
+/** What the composer says about its files: an error blocks Send, info does not. */
+export type UploadNotice = { readonly tone: "error" | "info"; readonly text: string };
+
+/**
+ * The line under the attachment tiles. A failed file blocks Send, so it comes
+ * first and says what to do; files cut by the 10-file cap come next.
+ */
+export function uploadNotice(
+  uploads: readonly Pick<RunUpload, "name" | "status" | "error">[],
+  leftOut: number,
+): UploadNotice | null {
+  const failed = uploads.filter((upload) => upload.status === "error");
+  if (failed.length === 1) {
+    const [only] = failed;
+    return {
+      tone: "error",
+      text: `Remove ${only.name} to send. It ${only.error ?? DID_NOT_UPLOAD}.`,
+    };
+  }
+  if (failed.length > 1) {
+    return {
+      tone: "error",
+      text: `Remove the ${failed.length} failed files to send. ${failed[0].name} ${failed[0].error ?? DID_NOT_UPLOAD}.`,
+    };
+  }
+  if (leftOut > 0) {
+    const files = leftOut === 1 ? "1 file was" : `${leftOut} files were`;
+    return {
+      tone: "info",
+      text: `${files} left out. A message can carry up to ${MAX_FILES} files.`,
+    };
+  }
+  return null;
+}
 
 const EXTENSIONS: Record<Exclude<AttachmentKind, "file">, string> = {
   image: "png jpg jpeg gif webp svg heic heif avif bmp tif tiff",
@@ -105,6 +171,8 @@ export function attachmentIntake(addFiles: (files: FileSource) => unknown, accep
 
 export function useRunUploads() {
   const [uploads, setUploads] = useState<RunUpload[]>([]);
+  // Files the last pick, drop or paste could not add past the 10-file cap.
+  const [leftOut, setLeftOut] = useState(0);
   // The committed list, for the callbacks that run after an await and for the
   // thumbnails still held when the composer unmounts (a thread switch).
   const live = useRef<readonly RunUpload[]>([]);
@@ -120,37 +188,52 @@ export function useRunUploads() {
 
   const addFiles = async (files: FileSource) => {
     const available = Math.max(0, MAX_FILES - uploads.length);
-    const selected = Array.from(files).slice(0, available);
+    const all = Array.from(files);
+    const selected = all.slice(0, available);
+    setLeftOut(all.length - selected.length);
     const pending = selected.map((file) => {
       const kind = attachmentKind(file.name, file.type);
+      const error = preflightFailure(file);
       return {
         localId: crypto.randomUUID(),
         id: null,
         name: file.name,
         sizeBytes: file.size,
-        status: "uploading" as const,
+        status: error ? ("error" as const) : ("uploading" as const),
         kind,
         previewUrl: kind === "image" ? URL.createObjectURL(file) : null,
         progress: 0,
+        ...(error ? { error } : {}),
         file,
       };
     });
     setUploads((current) => [...current, ...pending.map(({ file: _file, ...item }) => item)]);
     await Promise.all(
       pending.map(async ({ file, ...item }) => {
+        // Too big or empty: the backend would refuse it, so it is never sent.
+        if (item.status === "error") return;
+        let response: Response;
         try {
           const form = new FormData();
           form.set("file", file);
-          const response = await backendUpload("/api/uploads", form, (progress) =>
+          response = await backendUpload("/api/uploads", form, (progress) =>
             patch(item.localId, { progress }),
           );
-          if (!response.ok) throw new Error(`upload failed (${response.status})`);
-          const body = (await response.json()) as UploadResponse;
-          const uploadId = body.upload?.id;
-          if (typeof uploadId !== "string") throw new Error("upload id missing");
-          patch(item.localId, { id: uploadId, status: "ready", progress: 100 });
         } catch {
-          patch(item.localId, { status: "error" });
+          patch(item.localId, { status: "error", error: uploadFailureReason(null) });
+          return;
+        }
+        const body = (await response.json().catch(() => null)) as
+          | (UploadResponse & { error?: unknown })
+          | null;
+        const uploadId = body?.upload?.id;
+        if (response.ok && typeof uploadId === "string") {
+          patch(item.localId, { id: uploadId, status: "ready", progress: 100 });
+        } else {
+          patch(item.localId, {
+            status: "error",
+            error: uploadFailureReason(response.status, body?.error),
+          });
         }
       }),
     );
@@ -158,6 +241,7 @@ export function useRunUploads() {
 
   const remove = async (upload: RunUpload) => {
     releasePreview(upload);
+    setLeftOut(0);
     setUploads((current) => current.filter((item) => item.localId !== upload.localId));
     if (upload.id) {
       await backendFetch(`/api/uploads/${upload.id}`, { method: "DELETE" }).catch(() => {});
@@ -170,6 +254,8 @@ export function useRunUploads() {
       upload.status === "ready" && upload.id ? [upload.id] : [],
     ),
     blocked: uploads.some((upload) => upload.status !== "ready"),
+    /** What the composer says about its files, or null when there is nothing to say. */
+    notice: uploadNotice(uploads, leftOut),
     addFiles,
     remove,
     /** Drops the uploads a send carried; anything added since stays for the next message. */
@@ -177,6 +263,7 @@ export function useRunUploads() {
       for (const upload of live.current) {
         if (upload.id && sent.includes(upload.id)) releasePreview(upload);
       }
+      setLeftOut(0);
       setUploads((current) => withoutSent(current, sent));
     },
   };

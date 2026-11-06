@@ -88,10 +88,22 @@ export async function fanCommand(client: FleetClient, args: FanArgs, io: Command
         answer: settled.answer,
         url: settled.url,
       };
-      if (!args.qc) return base;
+      // Only finished work is judged: a reply to a run that failed or is still
+      // going would queue a verifier turn behind it and judge nothing finished.
+      if (!args.qc || settled.status !== "completed") return base;
       // QC is a real reply run recorded in the SAME thread as the work it judges.
       try {
         const verified = await client.verify(outcome.run.runId, args.qc);
+        // A verifier run that failed or ran out of time judged nothing, whatever
+        // its partial answer says.
+        if (verified.status !== "completed") {
+          return {
+            ...base,
+            status: "verification_error",
+            verdict: "unknown",
+            error: `verifier run ${verified.runId} did not complete (${verified.status})`,
+          };
+        }
         return { ...base, verdict: verified.verdict };
       } catch (error) {
         return {
@@ -114,8 +126,9 @@ export async function fanCommand(client: FleetClient, args: FanArgs, io: Command
   io.err("");
   io.err(formatFanSummary(results));
 
+  // With --qc only a PASS verdict counts: "unknown" means no verifier said yes.
   const allGood = results.every(
-    (r) => r.status === "completed" && r.error === undefined && r.verdict !== "fail",
+    (r) => r.status === "completed" && r.error === undefined && (r.verdict === undefined || r.verdict === "pass"),
   );
   return allGood ? 0 : 1;
 }

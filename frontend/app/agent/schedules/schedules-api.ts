@@ -91,3 +91,21 @@ export async function fetchHistory(id: string, signal?: AbortSignal): Promise<Fi
   if (!res.ok) throw new Error(`history ${res.status}`);
   return envelope(await res.json(), "firings") as FiringRecord[];
 }
+
+/**
+ * The next runs a cron and zone would have if enabled now, from the
+ * scheduler itself (`GET /api/automations/preview`): what an editor shows
+ * while a schedule is typed, before anything is saved. Up to three ISO
+ * UTC times, fewer when the cron names fewer dates. Throws on a non-2xx,
+ * including the 400 for a cron or zone the scheduler cannot read.
+ */
+export async function fetchSchedulePreview(cron: string, timezone: string, signal?: AbortSignal): Promise<string[]> {
+  const query = new URLSearchParams({ cron, timezone });
+  const res = await backendFetch(`/api/automations/preview?${query}`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!res.ok) throw new Error(`schedule preview ${res.status}`);
+  const body = (await res.json()) as { next_runs?: string[] };
+  return body.next_runs ?? [];
+}

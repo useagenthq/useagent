@@ -236,6 +236,17 @@ describe("Markdown links", () => {
   });
 });
 
+describe("Markdown long words", () => {
+  test("wraps unbroken words in the column while tables keep natural widths", () => {
+    const html = renderToStaticMarkup(
+      <Markdown>{`https://example.com/${"a".repeat(200)}`}</Markdown>,
+    );
+
+    expect(html).toContain("[overflow-wrap:anywhere]");
+    expect(html).toContain("[&amp;_table]:[overflow-wrap:normal]");
+  });
+});
+
 describe("Markdown mermaid blocks", () => {
   const diagram = "```mermaid\ngraph TD\n  A[Start] --> B[End]\n```";
 
@@ -273,5 +284,18 @@ describe("Markdown mermaid blocks", () => {
 
     expect(html).toContain("const answer = 42;");
     expect(html).toContain(">TypeScript<");
+  });
+
+  test("keeps the full language name when it has symbols", () => {
+    const cases: [string, string][] = [
+      ["c++", "C++"],
+      ["c#", "C#"],
+      ["objective-c", "Objective-C"],
+      ["f#", "F#"],
+    ];
+    for (const [fence, label] of cases) {
+      const html = renderToStaticMarkup(<Markdown>{`\`\`\`${fence}\nint x = 1;\n\`\`\``}</Markdown>);
+      expect(html).toContain(`>${label}<`);
+    }
   });
 });

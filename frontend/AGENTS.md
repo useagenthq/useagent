@@ -127,8 +127,12 @@ Search the code and `/lab` first. The kit and its homes:
 - Native approvals, questions, child turns, cancel and reconnect render through
   the shared session components for every engine; never a per-engine copy.
   Engine pickers and engine-specific UI read `GET /api/config` engines and
-  capability flags, never `engine === "..."`. Gateway approval cards:
-  `components/chat/gateway-approval-card.tsx` over `components/ai/approval-card.tsx`.
+  capability flags, never `engine === "..."`. Every human approval (gateway and
+  provider-native) renders through one card, `components/ai/approval-card.tsx`,
+  which owns the presentation, focus and Escape / Cmd-Enter shortcuts; the lane
+  wrappers `components/chat/gateway-approval-card.tsx` and
+  `components/chat/native-approval-card.tsx` own their decision semantics, never
+  a second layout.
 - A thread has one stream: the thread-scoped events endpoint through
   `use-thread-stream.ts` into the shared store and timeline builder. Never a
   second reducer, stream controller or poll.

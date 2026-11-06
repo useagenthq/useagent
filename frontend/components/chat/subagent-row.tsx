@@ -8,7 +8,7 @@
 // and folds once it settled; the reader's toggle wins afterwards.
 
 import { RiArrowDownSLine } from "@remixicon/react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   childElapsedMs,
   childStatusLabel,
@@ -92,6 +92,12 @@ export function SubagentRow({
   );
   const [toggled, setToggled] = useTurnUiState<boolean | null>(`subagent:${card.id}`, null);
   const open = toggled ?? defaultOpen ?? active;
+  // The child's own step payloads open through the same controlled shape as the
+  // parent trace's rows (a Collapse/Expand-all sweep is a parent-trace control).
+  const [stepExpansion, setStepExpansion] = useTurnUiState<Record<string, boolean>>(
+    `subagent-steps:${card.id}`,
+    {},
+  );
   const rows = useMemo(() => {
     const nodes = turnNodesFromSteps(
       steps,
@@ -100,6 +106,15 @@ export function SubagentRow({
     );
     return traceRowsFromWork(nodes, active).filter((row) => row.kind === "step");
   }, [steps, active, status]);
+  // One stable callback per child fold (not per row per render): TraceRowView
+  // is memoized, and a fresh inline arrow would defeat that memo on every
+  // render of a live child.
+  const toggleStep = useCallback(
+    (key: string) => {
+      setStepExpansion((current) => ({ ...current, [key]: !(current[key] ?? false) }));
+    },
+    [setStepExpansion],
+  );
   const meta = [
     formatChildEngineModel(null, fidelity?.model),
     fidelity?.usage ? `${formatSubagentTokenCount(fidelity.usage.totalTokens)} tok` : null,
@@ -161,7 +176,13 @@ export function SubagentRow({
             <p className={cn(CHILD_META_CLASS, "px-1.5 py-0.5")}>{meta.join(" · ")}</p>
           )}
           {rows.map((row) => (
-            <TraceRowView key={row.key} row={row} />
+            <TraceRowView
+              key={row.key}
+              row={row}
+              expanded={stepExpansion[row.key] ?? false}
+              onToggle={toggleStep}
+              highlighted={false}
+            />
           ))}
           {rows.length === 0 && progress && (
             <p className="px-1.5 py-0.5 text-[12.5px] leading-5 text-text-tertiary">{progress}</p>

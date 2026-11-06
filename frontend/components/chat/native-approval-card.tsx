@@ -1,8 +1,21 @@
 "use client";
 
-import { RiShieldCheckLine } from "@remixicon/react";
-import { Button } from "@/components/base/buttons/button";
+// Provider-native approval container (unified in #351): the human side of the
+// engine-native approval lane (OpenCode/Codex/Pi `approval.*` frames). It
+// supplies the request context to the shared ApprovalCard and wires the four
+// native decisions - Approve once, Always allow this session, Decline, Cancel
+// turn - to the session's onRespond. These cards carry no status: the lane
+// removes them on resolution (see approval-state.selectPendingApproval).
+
+import { type ApprovalAction, ApprovalCard } from "@/components/ai/approval-card";
 import type { ApprovalDecision, PendingApproval } from "./approval-state";
+
+const ACTION_PHRASE: Record<PendingApproval["requestKind"], string> = {
+  command: "run a command",
+  "file-read": "read a file",
+  "file-change": "change files",
+  other: "use a tool",
+};
 
 export function NativeApprovalCard({
   request,
@@ -15,67 +28,43 @@ export function NativeApprovalCard({
   error: string | null;
   onRespond: (decision: ApprovalDecision) => void | Promise<void>;
 }) {
-  const action =
-    request.requestKind === "command"
-      ? "run a command"
-      : request.requestKind === "file-read"
-        ? "read a file"
-        : request.requestKind === "file-change"
-          ? "change files"
-          : "use a tool";
+  const respond = (decision: ApprovalDecision) => () => void onRespond(decision);
+
+  const actions: ApprovalAction[] = [
+    { id: "cancel", label: "Cancel turn", tone: "ghost", onSelect: respond("cancel") },
+    { id: "decline", label: "Decline", tone: "secondary", onSelect: respond("decline") },
+    {
+      id: "acceptForSession",
+      label: "Always allow this session",
+      tone: "secondary",
+      onSelect: respond("acceptForSession"),
+    },
+    {
+      id: "accept",
+      label: submitting ? "Responding…" : "Approve once",
+      tone: "primary",
+      onSelect: respond("accept"),
+    },
+  ];
+
   return (
-    <section
-      className="border-border-button-default bg-background-secondary-default space-y-3 rounded-2xl border p-4"
-      data-testid="native-approval-card"
-    >
-      <div className="flex items-start gap-2">
-        <span className="bg-warning-lighter text-warning-base flex size-7 shrink-0 items-center justify-center rounded-full">
-          <RiShieldCheckLine className="size-4" aria-hidden />
-        </span>
-        <div className="min-w-0">
-          <p className="text-body-2-medium text-text-primary">Approval required to {action}</p>
-          {request.detail && (
-            <pre className="text-caption-1-regular text-text-secondary mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words">
-              {request.detail}
-            </pre>
-          )}
-        </div>
-      </div>
-      {error && <p className="text-caption-1-regular text-text-error-primary">{error}</p>}
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button
-          variant="ghost"
-          size="small"
-          disabled={submitting}
-          onClick={() => void onRespond("cancel")}
-        >
-          Cancel turn
-        </Button>
-        <Button
-          variant="secondary"
-          size="small"
-          disabled={submitting}
-          onClick={() => void onRespond("decline")}
-        >
-          Decline
-        </Button>
-        <Button
-          variant="secondary"
-          size="small"
-          disabled={submitting}
-          onClick={() => void onRespond("acceptForSession")}
-        >
-          Always allow this session
-        </Button>
-        <Button
-          variant="primary"
-          size="small"
-          disabled={submitting}
-          onClick={() => void onRespond("accept")}
-        >
-          {submitting ? "Responding…" : "Approve once"}
-        </Button>
-      </div>
-    </section>
+    <ApprovalCard
+      testId="native-approval-card"
+      ariaLabel={`Approval required to ${ACTION_PHRASE[request.requestKind]}`}
+      title={`Approval required to ${ACTION_PHRASE[request.requestKind]}`}
+      autoFocus
+      busy={submitting}
+      approveActionId="accept"
+      rejectActionId="decline"
+      actions={actions}
+      error={error}
+      body={
+        request.detail ? (
+          <pre className="text-caption-1-regular text-text-secondary max-h-32 overflow-auto whitespace-pre-wrap break-words">
+            {request.detail}
+          </pre>
+        ) : undefined
+      }
+    />
   );
 }

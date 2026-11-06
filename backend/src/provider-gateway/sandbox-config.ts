@@ -423,6 +423,8 @@ export function codexProviderConfigToml(
     // Daytona and grants no access to the trusted useAgent host/control plane.
     'sandbox_mode = "danger-full-access"',
     'approval_policy = "never"',
+    // Native goals let Codex start turns on its own, outside admission and spend checks.
+    "features.goals = false",
     "",
     `[model_providers.${CODEX_MODEL_PROVIDER_ID}]`,
     'name = "UseAgent provider gateway"',

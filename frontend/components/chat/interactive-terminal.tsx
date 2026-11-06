@@ -21,6 +21,15 @@ import {
  * same filesystem the agent works in. Mounted only while the Shell tab is
  * active; the socket and PTY die with unmount.
  *
+ * One connection per mount, not per run: the PTY lives only as long as its
+ * socket, so reconnecting when a new turn takes over `runId` would replace the
+ * viewer's shell (its directory, scrollback and running command) with a fresh
+ * one in ~/work. Every run of a thread reaches the same thread sandbox, so the
+ * open socket stays put and only a reconnect reads the newest run. A new run
+ * while no shell is open (no sandbox yet, or one that was unavailable) is a
+ * reason to try again at once. The parent keys this component by thread, so
+ * another thread always gets its own shell.
+ *
  * The ~400KB WASM ships INLINED in the ghostty-web bundle as a base64 data URL,
  * so it loads in-process with no separate asset or public-path wiring.
  * Each mounted pane owns its WASM instance: freed pages from an old terminal
@@ -30,6 +39,10 @@ import {
  * notify, full ANSI palette) follows T3 Code's ghostty surface layer; the pure
  * pieces live in `terminal-surface.ts`.
  */
+
+/** Where the pane loads ghostty-web from. Tests swap in a stand-in here and put
+ * it back: bun's mock.module is process-wide and cannot be undone. */
+export const terminalLibrary = { load: () => import("ghostty-web") };
 
 const TERMINAL_FONT_SIZE = 13;
 /** The PTY only hears settled dimensions: notifying every drag step makes the
@@ -74,6 +87,15 @@ async function ensureTerminalFontsLoaded(family: string): Promise<void> {
 
 export function InteractiveTerminal({ runId }: { runId: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const runIdRef = useRef(runId);
+  // Set by the connection below: reconnects now if no shell is open.
+  const retryNowRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (runIdRef.current === runId) return;
+    runIdRef.current = runId;
+    retryNowRef.current?.();
+  }, [runId]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -90,6 +112,8 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
     let dprMedia: MediaQueryList | null = null;
     let onDprChange: (() => void) | null = null;
     let onFontsLoaded: (() => void) | null = null;
+    // Removes the listeners that keep phone keyboard input on ghostty's textarea.
+    let detachInput: (() => void) | null = null;
     // Show the "waiting for sandbox" notice ONCE per idle stretch, not on every
     // reconnect cycle (the loop otherwise spams "no live sandbox" / "disconnected"
     // back-to-back). Reset when real PTY output resumes so a later drop re-notifies.
@@ -100,7 +124,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
     let unavailable = false;
 
     void (async () => {
-      const { Ghostty, Terminal, FitAddon } = await import("ghostty-web");
+      const { Ghostty, Terminal, FitAddon } = await terminalLibrary.load();
       // Load isolated parser memory and wait for
       // the web fonts so glyph metrics are measured against JetBrains Mono, not
       // a fallback (otherwise the grid misaligns until the font swaps in).
@@ -133,11 +157,51 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.open(host);
+      // ghostty-web reads a phone keyboard's text (`beforeinput`) only from its
+      // hidden textarea, but it focuses the pane element itself (in `open()` and
+      // `focus()`), as does a tap on the padding around the canvas. Typing there
+      // is dropped (#422), so hand that focus on to the textarea. A laptop
+      // keyboard works from either, since keydown bubbles to the pane.
+      const input = term.textarea;
+      if (input) {
+        const onHostFocus = (event: FocusEvent) => {
+          if (event.target === host) input.focus({ preventScroll: true });
+        };
+        // A word the phone keyboard finishes (composition) is sent on
+        // compositionend but stays in the textarea; ghostty-web never clears it.
+        // The keyboard reads that text as the word before the cursor and can
+        // reopen it for correction, which sends the old word again. Empty the
+        // textarea once the word is sent, unless a new word has already begun.
+        let composing = false;
+        let clearTimer: ReturnType<typeof setTimeout> | null = null;
+        const onCompositionStart = () => {
+          composing = true;
+        };
+        const onCompositionEnd = () => {
+          composing = false;
+          if (clearTimer !== null) clearTimeout(clearTimer);
+          clearTimer = setTimeout(() => {
+            clearTimer = null;
+            if (!composing) input.value = "";
+          }, 0);
+        };
+        host.addEventListener("focus", onHostFocus);
+        input.addEventListener("compositionstart", onCompositionStart);
+        input.addEventListener("compositionend", onCompositionEnd);
+        detachInput = () => {
+          if (clearTimer !== null) clearTimeout(clearTimer);
+          host.removeEventListener("focus", onHostFocus);
+          input.removeEventListener("compositionstart", onCompositionStart);
+          input.removeEventListener("compositionend", onCompositionEnd);
+        };
+      }
       // ghostty-web 0.4.0 reuses uncleared WASM pages across disposed terminals.
       // Clear the new viewport before any connection output, never on reconnect.
       term.clear();
       fit.fit();
-      term.focus();
+      // `open()` already focused the pane, before the hand-off above existed.
+      if (input) input.focus({ preventScroll: true });
+      else term.focus();
 
       // A face that finishes loading after the initial measurement changes
       // glyph advances; re-measure and refit so the grid matches what renders.
@@ -176,7 +240,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
         if (disposed || !term) return;
         notifiedGrid = { cols: term.cols, rows: term.rows };
         const sock = new WebSocket(
-          `${proto}://${location.host}/api/runs/${runId}/terminal?cols=${term.cols}&rows=${term.rows}`,
+          `${proto}://${location.host}/api/runs/${runIdRef.current}/terminal?cols=${term.cols}&rows=${term.rows}`,
         );
         ws = sock;
         // `disposed` guards: a buffered message or OUR OWN close event can
@@ -185,7 +249,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
           reconnectDelay = 3000;
         };
         sock.onmessage = (e) => {
-          if (disposed) return;
+          if (disposed || sock !== ws) return;
           const text = String(e.data);
           // Swallow the backend's repeated idle notices - we show a single calm
           // waiting line (below) instead of letting them spam each reconnect.
@@ -205,21 +269,35 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
           term?.write(text);
         };
         sock.onclose = () => {
-          if (disposed || unavailable) return;
+          // A socket replaced by an early retry must not schedule another.
+          if (disposed || unavailable || sock !== ws) return;
           // One friendly line per idle stretch, not a disconnect message every retry.
           if (!waitingShown) {
             waitingShown = true;
             term?.write(
               idleNoticeSeen
-                ? "\r\n\x1b[2m• no active sandbox - send a message to start one…\x1b[0m\r\n"
-                : "\r\n\x1b[2m• reconnecting to sandbox…\x1b[0m\r\n",
+                ? "\r\n\x1b[2m• nothing is running - send a message to start one…\x1b[0m\r\n"
+                : "\r\n\x1b[2m• reconnecting…\x1b[0m\r\n",
             );
           }
-          reconnectTimer = setTimeout(connect, reconnectDelay);
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            // An early retry already replaced this socket.
+            if (sock === ws) connect();
+          }, reconnectDelay);
           reconnectDelay = Math.min(reconnectDelay * 2, 15000);
         };
       };
       connect();
+      retryNowRef.current = () => {
+        if (disposed || !term) return;
+        if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+        unavailable = false;
+        reconnectDelay = 3000;
+        connect();
+      };
       term.onData((data) => {
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "input", data }));
@@ -262,12 +340,14 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
 
     return () => {
       disposed = true;
+      retryNowRef.current = null;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (resizeNotifyTimer) clearTimeout(resizeNotifyTimer);
       if (refitTimer) clearTimeout(refitTimer);
       observer?.disconnect();
       if (dprMedia && onDprChange) dprMedia.removeEventListener("change", onDprChange);
       if (onFontsLoaded) document.fonts?.removeEventListener("loadingdone", onFontsLoaded);
+      detachInput?.();
       // Detach handlers BEFORE close/dispose — close() fires onclose
       // synchronously-ish with a disposed terminal otherwise.
       if (ws) {
@@ -278,7 +358,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
       term?.dispose();
       term = null;
     };
-  }, [runId]);
+  }, []);
 
   // `relative` makes this the positioning context for ghostty's absolutely-
   // positioned hidden input textarea (`position:absolute; left:0; top:0`).

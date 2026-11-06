@@ -8,8 +8,10 @@
 // Activity ids are `<item id>:<phase>` (started, updated, completed): each
 // lifecycle phase is its own ledger row, and a later revision of the same
 // phase replaces its row (the ledger upserts by id). Every payload carries the
-// runtime's own record under `v2`. Command output and file diffs never reach
-// the plane: the runtime strips them from its wire copy.
+// runtime's own record under `v2`. File diffs never reach the plane: the
+// runtime strips them from its wire copy. Command output does, whole up to the
+// runtime's wire limit (a longer one comes as `outputOmitted`, without text);
+// the record bounds it like any other string (boundedV2Record).
 //
 // The view keeps every value whole. Only a record point cuts long values
 // (recordedRuntimeActivity), and a string is redacted whole before it is cut:

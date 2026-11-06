@@ -663,13 +663,13 @@ describe("T3 run adapter gate", () => {
     expect(source).toContain('providerBridgeLease?.authPath === "subscription" && !providerBridgeLease.sessionReused');
     // (B) Content barrier is attempted first (fast path, no restart cost).
     expect(source).toContain(
-      "awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS)",
+      "awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS, codexInstanceName)",
     );
     // (A) Deterministic restart is the fallback, then a single verify.
     expect(source).toContain("restartRuntimeEnvironment(sandbox, ctx.signal, ctx.timing)");
     expect(source).toContain("invalidateRuntimeEnvironmentAccess(sandbox)");
     expect(source).toContain(
-      "awaitCodexProviderReady(sandbox, ctx.signal, CODEX_VERIFY_DEADLINE_MS)",
+      "awaitCodexProviderReady(sandbox, ctx.signal, CODEX_VERIFY_DEADLINE_MS, codexInstanceName)",
     );
     expect(source).toContain(
       "Codex runtime did not become ready after restart",
@@ -680,7 +680,7 @@ describe("T3 run adapter gate", () => {
     // barrier; both before the provider session is established / the turn is steered.
     const bridgeIdx = source.indexOf("return await prepareRuntimeProviderBridge(");
     const barrierIdx = source.indexOf(
-      "awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS)",
+      "awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS, codexInstanceName)",
     );
     const restartIdx = source.indexOf(
       "restartRuntimeEnvironment(sandbox, ctx.signal, ctx.timing)",

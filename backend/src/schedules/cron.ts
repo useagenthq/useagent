@@ -236,14 +236,18 @@ function skippedWallTimeMatches(p: ParsedCron, last: WallClock, gap: number): bo
   return false;
 }
 
+/** Whether the day fields match the calendar date `days` after the wall-clock
+ *  date of `wc` (before it when negative), by calendar arithmetic alone: a
+ *  date's weekday is the same in every zone. */
+function matchesDateFrom(p: ParsedCron, wc: WallClock, days: number): boolean {
+  const date = new Date(Date.UTC(wc.year, wc.month - 1, wc.dom + days));
+  return dayMatches(p, { dom: date.getUTCDate(), month: date.getUTCMonth() + 1, dow: date.getUTCDay() });
+}
+
 /** Days from the wall-clock date of `wc` to the next date whose day fields
- *  match, by calendar arithmetic alone (a date's weekday is the same in every
- *  zone); null when none comes within `maxDays`. */
+ *  match; null when none comes within `maxDays`. */
 function daysToMatchingDate(p: ParsedCron, wc: WallClock, maxDays: number): number | null {
-  for (let ahead = 1; ahead <= maxDays; ahead++) {
-    const date = new Date(Date.UTC(wc.year, wc.month - 1, wc.dom + ahead));
-    if (dayMatches(p, { dom: date.getUTCDate(), month: date.getUTCMonth() + 1, dow: date.getUTCDay() })) return ahead;
-  }
+  for (let ahead = 1; ahead <= maxDays; ahead++) if (matchesDateFrom(p, wc, ahead)) return ahead;
   return null;
 }
 
@@ -286,16 +290,24 @@ export function nextOccurrence(expr: string, timeZone: string, from: Date): Date
   while (at <= end) {
     if (occursAt(p, zone, at, wc, previousOffset)) return new Date(at);
     // A run of days the day fields rule out is passed by calendar arithmetic:
-    // the walk resumes at noon on the day before the next date they name, a
-    // time no offset change moves off that (still unmatched) day.
-    if (!dayMatches(p, wc)) {
+    // the walk resumes at noon on the day before the next date they name. It
+    // jumps only where a day-by-day walk would see the same dates: not while
+    // one of the two dates before this one matches (a clock set back past
+    // midnight can bring it back), and only when it lands on that day before
+    // (otherwise an offset change of half a day or more, the date line, lies
+    // between). Where it does not jump, the walk below takes the next day.
+    if (!dayMatches(p, wc) && !matchesDateFrom(p, wc, -1) && !matchesDateFrom(p, wc, -2)) {
       const ahead = daysToMatchingDate(p, wc, Math.ceil((end - at) / (MINUTES_PER_DAY * MINUTE_MS)) + 1);
       if (ahead === null) return null;
       if (ahead > 1) {
-        at = Date.UTC(wc.year, wc.month - 1, wc.dom + ahead - 1, 12) - wc.offset * MINUTE_MS;
-        previousOffset = wallClock(at - MINUTE_MS, zone).offset;
-        wc = wallClock(at, zone);
-        continue;
+        const target = Date.UTC(wc.year, wc.month - 1, wc.dom + ahead - 1, 12) - wc.offset * MINUTE_MS;
+        const landed = wallClock(target, zone);
+        if (target > at && Date.UTC(landed.year, landed.month - 1, landed.dom) === Date.UTC(wc.year, wc.month - 1, wc.dom + ahead - 1)) {
+          at = target;
+          previousOffset = wallClock(at - MINUTE_MS, zone).offset;
+          wc = landed;
+          continue;
+        }
       }
     }
     // Skip to the next wall-clock midnight or hour when this day or hour cannot

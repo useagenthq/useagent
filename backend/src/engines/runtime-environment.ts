@@ -58,7 +58,8 @@ export const RUNTIME_BOOT_MARKER = `${RUNTIME_ENVIRONMENT_HOME}/.useagent-runtim
 export function runtimeEnvironmentFlags(): string {
   return "mcp=off,continuations=off,instructions=off,telemetry=off";
 }
-/** Pins the runtime settings that would let it start runs by itself (both default off today). */
+/** Pins the runtime settings that would let it start runs by itself. Since 0.1.0 the runtime
+ *  continues interrupted threads after a restart by default, so this pin is what keeps it off. */
 const RUNTIME_SETTINGS_PINS_SCRIPT =
   'const fs=require("node:fs");const p=process.argv[1];let c={};try{c=JSON.parse(fs.readFileSync(p,"utf8"))}catch{}' +
   ';c.continueThreadsAfterServerUpdate=false;c.autoResumeLimitedThreads=false' +
