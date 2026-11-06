@@ -88,14 +88,14 @@ export function SessionDetailsRail({
       <Section title="Environment">
         <dl className="flex flex-col gap-1.5 rounded-2xl bg-background-secondary-default px-3 py-2.5">
           <Row label="Project">{project || "No repository"}</Row>
-          <Row label="Runtime">
+          <Row label="Model">
             <span className="flex min-w-0 items-center justify-end gap-2">
               {/* The model is the one the plane asked the runtime for (the run
                   row); no runtime reports back which model answered, so the
                   rail says so instead of presenting the request as a fact. */}
               <span
                 className="truncate"
-                title="The model this run asked for. The runtime does not report which model answered."
+                title="The model this task asked for. We are not told which model actually answered."
               >
                 {engineDisplayLabel(newest.engine)} · {modelLabel(newest.model, newest.engine)}{" "}
                 <span data-testid="runtime-model-requested" className="text-text-tertiary">

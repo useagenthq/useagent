@@ -46,7 +46,7 @@ test("renders every ported session-ui piece from mock canonical nodes", () => {
 
   // Queued pill: honest FIFO copy, Send now only on the head message.
   expect(html).toContain('data-session-ui="queued-message-pill"');
-  expect(html).toContain("Queued - sends after the current run");
+  expect(html).toContain("Queued - sends after the current reply");
   expect(html).toContain("Send now");
   expect(html).toContain("Queued #2 - 1 reply ahead");
 

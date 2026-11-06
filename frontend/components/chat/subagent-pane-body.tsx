@@ -65,7 +65,7 @@ export default function SubagentPaneBody({
     return (
       <PaneStub childSession={childSession}>
         <p className="text-body-2-regular text-text-secondary text-center">
-          Couldn&apos;t load this run.
+          Couldn&apos;t load this task.
         </p>
       </PaneStub>
     );
@@ -73,7 +73,7 @@ export default function SubagentPaneBody({
   if (!run) {
     return (
       <PaneStub childSession={childSession}>
-        <LoadingState label="Loading run" />
+        <LoadingState label="Loading task" />
       </PaneStub>
     );
   }

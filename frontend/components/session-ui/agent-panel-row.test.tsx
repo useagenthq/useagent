@@ -212,14 +212,14 @@ describe("AgentPanelRow kind caption", () => {
     expect(html).not.toContain("text-[.65rem]");
   });
 
-  test("gateway rows read as spawned sessions", () => {
+  test("gateway rows read as helper agents, in the shared plain words", () => {
     const html = renderToStaticMarkup(
       <AgentPanelRow
         agent={{ ...base, lane: "gateway", kind: "spawned_session", engine: "claude" }}
         href="/session/child-1"
       />,
     );
-    expect(html).toContain("spawned session · Running");
-    expect(html).toContain('aria-label="Open spawned session: Research checkout"');
+    expect(html).toContain("helper agent · Running");
+    expect(html).toContain('aria-label="Open helper agent: Research checkout"');
   });
 });

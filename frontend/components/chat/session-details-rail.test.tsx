@@ -106,7 +106,7 @@ describe("SessionDetailsRail", () => {
     expect(html).not.toContain("not reported");
   });
 
-  test("the runtime line presents the model as the one requested, not as the one that answered", () => {
+  test("the model line presents the model as the one requested, not as the one that answered", () => {
     // runs.model is what the plane asked the runtime for; no runtime reports
     // the model that answered, so the rail must not read as a fact.
     const html = renderToStaticMarkup(
@@ -115,7 +115,10 @@ describe("SessionDetailsRail", () => {
     expect(html).toContain("Codex");
     expect(html).toContain('data-testid="runtime-model-requested"');
     expect(html).toContain(">requested<");
-    expect(html).toContain("does not report which model answered");
+    expect(html).toContain("We are not told which model actually answered");
+    // Plain words for people (#339): no run, turn, session or runtime in the row or its tooltip.
+    expect(html).toContain("<dt class=\"shrink-0 text-text-tertiary\">Model</dt>");
+    expect(html).not.toContain("Runtime</dt>");
   });
 
   test("a thread with unloaded outline turns says its plan and totals are partial", () => {

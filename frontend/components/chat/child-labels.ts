@@ -10,7 +10,7 @@ const SINGULAR: Record<ChildKind, string> = {
   subagent: "subagent",
   bot_thread: "bot thread",
   child_thread: "child thread",
-  spawned_session: "spawned session",
+  spawned_session: "helper agent",
 };
 
 const ORDER: readonly ChildKind[] = ["subagent", "bot_thread", "child_thread", "spawned_session"];
