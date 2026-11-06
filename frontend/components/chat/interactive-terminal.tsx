@@ -112,6 +112,8 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
     let dprMedia: MediaQueryList | null = null;
     let onDprChange: (() => void) | null = null;
     let onFontsLoaded: (() => void) | null = null;
+    // Removes the listeners that keep phone keyboard input on ghostty's textarea.
+    let detachInput: (() => void) | null = null;
     // Show the "waiting for sandbox" notice ONCE per idle stretch, not on every
     // reconnect cycle (the loop otherwise spams "no live sandbox" / "disconnected"
     // back-to-back). Reset when real PTY output resumes so a later drop re-notifies.
@@ -155,11 +157,51 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.open(host);
+      // ghostty-web reads a phone keyboard's text (`beforeinput`) only from its
+      // hidden textarea, but it focuses the pane element itself (in `open()` and
+      // `focus()`), as does a tap on the padding around the canvas. Typing there
+      // is dropped (#422), so hand that focus on to the textarea. A laptop
+      // keyboard works from either, since keydown bubbles to the pane.
+      const input = term.textarea;
+      if (input) {
+        const onHostFocus = (event: FocusEvent) => {
+          if (event.target === host) input.focus({ preventScroll: true });
+        };
+        // A word the phone keyboard finishes (composition) is sent on
+        // compositionend but stays in the textarea; ghostty-web never clears it.
+        // The keyboard reads that text as the word before the cursor and can
+        // reopen it for correction, which sends the old word again. Empty the
+        // textarea once the word is sent, unless a new word has already begun.
+        let composing = false;
+        let clearTimer: ReturnType<typeof setTimeout> | null = null;
+        const onCompositionStart = () => {
+          composing = true;
+        };
+        const onCompositionEnd = () => {
+          composing = false;
+          if (clearTimer !== null) clearTimeout(clearTimer);
+          clearTimer = setTimeout(() => {
+            clearTimer = null;
+            if (!composing) input.value = "";
+          }, 0);
+        };
+        host.addEventListener("focus", onHostFocus);
+        input.addEventListener("compositionstart", onCompositionStart);
+        input.addEventListener("compositionend", onCompositionEnd);
+        detachInput = () => {
+          if (clearTimer !== null) clearTimeout(clearTimer);
+          host.removeEventListener("focus", onHostFocus);
+          input.removeEventListener("compositionstart", onCompositionStart);
+          input.removeEventListener("compositionend", onCompositionEnd);
+        };
+      }
       // ghostty-web 0.4.0 reuses uncleared WASM pages across disposed terminals.
       // Clear the new viewport before any connection output, never on reconnect.
       term.clear();
       fit.fit();
-      term.focus();
+      // `open()` already focused the pane, before the hand-off above existed.
+      if (input) input.focus({ preventScroll: true });
+      else term.focus();
 
       // A face that finishes loading after the initial measurement changes
       // glyph advances; re-measure and refit so the grid matches what renders.
@@ -305,6 +347,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
       observer?.disconnect();
       if (dprMedia && onDprChange) dprMedia.removeEventListener("change", onDprChange);
       if (onFontsLoaded) document.fonts?.removeEventListener("loadingdone", onFontsLoaded);
+      detachInput?.();
       // Detach handlers BEFORE close/dispose — close() fires onclose
       // synchronously-ish with a disposed terminal otherwise.
       if (ws) {
