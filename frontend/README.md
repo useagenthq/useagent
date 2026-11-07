@@ -87,7 +87,7 @@ The composer action label is stateful:
 
 - `Send` appears when there is no live run to steer.
 - `Steer` appears when a run is live and the draft will become the next reply in the same thread.
-- `Stop this run` appears when a run is live and the composer can issue the durable cancel action instead of submitting a new reply.
+- `Stop this task` appears when a run is live and the composer can issue the durable cancel action instead of submitting a new reply.
 
 The important detail is that `Steer` does not change the backend route. It is still a threaded reply. The label exists so the UI makes the live-state intent obvious to the user.
 

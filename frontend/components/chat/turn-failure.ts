@@ -23,7 +23,7 @@ export function turnFailure(turn: {
 }): TurnFailure | null {
   if (turn.status !== "failed" || !turn.summary || isUserStopSummary(turn.summary)) return null;
   const done = turn.steps.findLast((step) => step.kind === "done");
-  return { label: done?.label ?? "Run failed", reason: turn.summary };
+  return { label: done?.label ?? "Task failed", reason: turn.summary };
 }
 
 /** The trace's terminal row for a failed run: an x, the category, the reason
