@@ -700,6 +700,48 @@ describe("artifact native formats", () => {
     expect(Object.values(contents).toSorted()).toEqual(names.map((_, index) => String(index)).toSorted());
   });
 
+  const utf8Length = (name: string) => new TextEncoder().encode(name).byteLength;
+
+  test("shortens a name past 255 bytes, keeping whole characters and the extension", async () => {
+    // 176 three-byte characters plus `.txt` is 532 bytes, within the 180
+    // character artifact name cap but too long for most file systems.
+    const name = `${"文".repeat(176)}.txt`;
+    const [entry, ...rest] = Object.keys(await bundledContents([name]));
+    expect(rest).toEqual([]);
+    expect(utf8Length(entry!)).toBeLessThanOrEqual(255);
+    expect(entry).toBe(`${"文".repeat(83)}.txt`);
+  });
+
+  test("never cuts a four-byte character in half", async () => {
+    const [entry] = Object.keys(await bundledContents([`${"a".repeat(250)}😀😀.md`]));
+    expect(entry).toBe(`${"a".repeat(250)}.md`);
+  });
+
+  test("keeps names that shorten to the same text apart, with the suffix inside the limit", async () => {
+    const stem = "名".repeat(170);
+    const contents = await bundledContents([`${stem}一.pdf`, `${stem}二.pdf`, `${stem}三.pdf`]);
+    expect(contents).toEqual({
+      [`${"名".repeat(83)}.pdf`]: "0",
+      [`${"名".repeat(82)} (2).pdf`]: "1",
+      [`${"名".repeat(82)} (3).pdf`]: "2",
+    });
+    for (const entry of Object.keys(contents)) expect(utf8Length(entry)).toBeLessThanOrEqual(255);
+  });
+
+  test("shortens a name whose extension is too long to keep as a whole", async () => {
+    const contents = await bundledContents([`a.${"é".repeat(150)}`, `a.${"é".repeat(150)}`]);
+    const entries = Object.keys(contents);
+    expect(Object.values(contents).toSorted()).toEqual(["0", "1"]);
+    expect(entries[0]).toBe(`a.${"é".repeat(126)}`);
+    expect(entries[1]).toBe(`a.${"é".repeat(124)} (2)`);
+    for (const entry of entries) expect(utf8Length(entry)).toBeLessThanOrEqual(255);
+  });
+
+  test("keeps a name of exactly 255 bytes as it is", async () => {
+    const name = `${"b".repeat(251)}.txt`;
+    expect(await bundledContents([name])).toEqual({ [name]: "0" });
+  });
+
   test("keeps every entry when names sanitize to the same fallback", async () => {
     expect(await bundledContents(["..", "/", "artifact", "artifact (2)"])).toEqual({
       artifact: "0",
