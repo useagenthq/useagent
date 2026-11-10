@@ -5,6 +5,7 @@ import { isMemoryScope, type MemoryScope } from "../memory/scope";
 import { providerCredentialMissingMessage } from "../engines/provider-credential-gate";
 import { credentialWaitSignal, resolveChatProviderCredential } from "../provider-gateway/credentials";
 import { awaitWithSignal } from "../util/abortable-operation";
+import { sseResponse } from "../util/sse";
 import {
   buildResourceAccessSnapshot,
   formatResourceAccessContext,
@@ -66,9 +67,9 @@ chatRoutes.get("/models", async (c) => {
 // Emits `event: context` (citations) once, then a burst of `event: delta` text
 // tokens, then `event: done`. A failure surfaces as `event: error`. NO sandbox.
 //
-// Built as a raw ReadableStream (not hono streamSSE) so we own every header -
-// `no-transform` + `X-Accel-Buffering: no` stop proxies buffering the stream
-// (the same SSE-hygiene the runs `/events` route relies on).
+// Served through `sseResponse` (util/sse.ts), the same stream helper the runs
+// `/events` route relies on for headers, heartbeat and teardown when the client
+// aborts, cancels the body or a write to it fails.
 chatRoutes.post("/", async (c) => {
   if (!chatLlmEnabled()) return c.json({ error: "chat is turned off" }, 503);
   let body: { messages?: unknown; model?: unknown; memoryScope?: unknown };
@@ -127,101 +128,58 @@ chatRoutes.post("/", async (c) => {
   const query = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const threadId = `chat:${orgId}`;
 
-  const encoder = new TextEncoder();
   const signal = c.req.raw.signal;
 
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      let closed = false;
-      const send = (frame: string): void => {
-        if (closed) return;
-        try {
-          controller.enqueue(encoder.encode(frame));
-        } catch {
-          /* controller already closed (client gone) */
+  return sseResponse({ signal }, (stream) => {
+    void (async () => {
+      try {
+        // Read-only retrieval first (best-effort, never throws) so the UI can
+        // show honest Sources before the answer streams.
+        const [context, resourceSnapshot] = await Promise.all([
+          retrieveChatContext({ orgId, userId, query, memoryScope, threadId }),
+          userId
+            ? buildResourceAccessSnapshot(
+                {
+                  orgId,
+                  userId,
+                  runId: threadId,
+                  resources: [],
+                  repos: [],
+                },
+                undefined,
+                { inlineLimit: 500, exactInventoryTool: null },
+              )
+            : Promise.resolve(null),
+        ]);
+        if (stream.closed) return;
+        stream.sendEvent("context", { citations: context.citations });
+
+        const system = [
+          CHAT_SYSTEM_PROMPT,
+          resourceSnapshot ? formatResourceAccessContext(resourceSnapshot) : "",
+          context.block,
+        ].filter(Boolean).join("\n\n");
+        const llmMessages: ChatMessage[] = [{ role: "system", content: system }, ...messages];
+        let answer = "";
+        for await (const delta of chatTurnStream({ model, orgId, userId }, llmMessages, resolved, signal)) {
+          if (stream.closed) return;
+          answer += delta;
+          stream.sendEvent("delta", { delta });
         }
-      };
-      const sendEvent = (event: string, data: unknown): void =>
-        send(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-
-      // Prime headers/first bytes, then heartbeat idle streams.
-      send(": open\n\n");
-      const heartbeat = setInterval(() => send(": ping\n\n"), 25_000);
-      heartbeat.unref?.();
-
-      const cleanup = (): void => {
-        if (closed) return;
-        closed = true;
-        clearInterval(heartbeat);
-        signal.removeEventListener("abort", cleanup);
-        try {
-          controller.close();
-        } catch {
-          /* already closed */
+        if (!stream.closed) {
+          stream.sendEvent("done", {});
+          // Governed capture parity (item 7): a COMPLETED exchange (never an
+          // aborted stream) enqueues through the same outbox + salience gate
+          // as runs, marked with the chat origin. Best-effort by contract —
+          // captureChatExchange never throws into the stream.
+          void captureChatExchange({ orgId, userId, memoryScope, prompt: query, summary: answer, model });
         }
-      };
-      if (signal.aborted) return cleanup();
-      signal.addEventListener("abort", cleanup);
-
-      void (async () => {
-        try {
-          // Read-only retrieval first (best-effort, never throws) so the UI can
-          // show honest Sources before the answer streams.
-          const [context, resourceSnapshot] = await Promise.all([
-            retrieveChatContext({ orgId, userId, query, memoryScope, threadId }),
-            userId
-              ? buildResourceAccessSnapshot(
-                  {
-                    orgId,
-                    userId,
-                    runId: threadId,
-                    resources: [],
-                    repos: [],
-                  },
-                  undefined,
-                  { inlineLimit: 500, exactInventoryTool: null },
-                )
-              : Promise.resolve(null),
-          ]);
-          if (closed) return;
-          sendEvent("context", { citations: context.citations });
-
-          const system = [
-            CHAT_SYSTEM_PROMPT,
-            resourceSnapshot ? formatResourceAccessContext(resourceSnapshot) : "",
-            context.block,
-          ].filter(Boolean).join("\n\n");
-          const llmMessages: ChatMessage[] = [{ role: "system", content: system }, ...messages];
-          let answer = "";
-          for await (const delta of chatTurnStream({ model, orgId, userId }, llmMessages, resolved, signal)) {
-            if (closed) return;
-            answer += delta;
-            sendEvent("delta", { delta });
-          }
-          if (!closed) {
-            sendEvent("done", {});
-            // Governed capture parity (item 7): a COMPLETED exchange (never an
-            // aborted stream) enqueues through the same outbox + salience gate
-            // as runs, marked with the chat origin. Best-effort by contract —
-            // captureChatExchange never throws into the stream.
-            void captureChatExchange({ orgId, userId, memoryScope, prompt: query, summary: answer, model });
-          }
-        } catch (error) {
-          if (!closed) sendEvent("error", { error: chatFailure(error).reason });
-        } finally {
-          cleanup();
-        }
-      })();
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
+      } catch (error) {
+        if (!stream.closed) stream.sendEvent("error", { error: chatFailure(error).reason });
+      } finally {
+        stream.close();
+      }
+    })();
   });
 });
 
