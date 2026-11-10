@@ -30,6 +30,7 @@ import {
   applyArtifactPdfPageRevision,
   getArtifactForOrg,
   listArtifactsForOrg,
+  listRunArtifactFilesForOrg,
   seedArtifactWorkpieceStateIfMissing,
   toArtifactDescriptor,
   updateArtifactWorkpiece,
@@ -108,10 +109,9 @@ function contentHeaders(
   return headers;
 }
 
-// A run's artifacts are packaged in-memory before streaming, so both the count
-// and the summed byte size are bounded. The count cap matches the artifact list
-// page size; a run with more artifacts archives its most recent ones.
-const ARCHIVE_MAX_ARTIFACTS = 100;
+// A run's artifacts are packaged in-memory before streaming, so their summed
+// byte size is bounded. Every artifact of the run goes in, or the request is
+// refused: an archive never leaves a file out without saying so.
 const ARCHIVE_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
 
 export const artifactRoutes = new Hono<AppEnv>();
@@ -127,12 +127,12 @@ artifactRoutes.get("/", async (c) => {
 });
 
 // Download every published artifact of a run as one ZIP. Org-scoped like every
-// other read; bounded in count and total size so the bundle is built safely in
-// memory before streaming.
+// other read; bounded in total size so the bundle is built safely in memory
+// before streaming.
 artifactRoutes.get("/runs/:runId/archive", async (c) => {
   const orgId = c.get("orgId");
   const runId = c.req.param("runId");
-  const rows = await listArtifactsForOrg({ orgId, runId, limit: ARCHIVE_MAX_ARTIFACTS });
+  const rows = await listRunArtifactFilesForOrg({ orgId, runId });
   if (rows.length === 0) return c.json({ error: "no artifacts to archive" }, 404);
 
   const totalBytes = rows.reduce((sum, row) => sum + row.sizeBytes, 0);

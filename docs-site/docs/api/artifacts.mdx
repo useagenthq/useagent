@@ -27,7 +27,7 @@ immutable bytes and authorization. All routes are org-session scoped. See
 | GET | `/api/artifacts/:id/proposals` | List agent-proposed workpiece revisions. | Query `status=all` returns every status; otherwise `pending`. `{proposals}`. |
 | POST | `/api/artifacts/:id/proposals/:proposalId/accept` | Fold a pending proposal into mainline as a new revision. | `{workpiece, state, proposal}`. `409 proposal already resolved` / `revision conflict`. |
 | POST | `/api/artifacts/:id/proposals/:proposalId/dismiss` | Drop a pending proposal, recording the dismissal. | `{proposal}`. `409 proposal already resolved`. |
-| GET | `/api/artifacts/runs/:runId/archive` | Download every published artifact of a run as one ZIP. | Capped at 100 artifacts / 100 MiB. `404 no artifacts to archive`, `413` over the size limit, `410` when bytes are unavailable. |
+| GET | `/api/artifacts/runs/:runId/archive` | Download every published artifact of a run as one ZIP. | Includes every artifact of the run, up to 100 MiB in total. `404 no artifacts to archive`, `413` over the size limit (no partial ZIP), `410` when bytes are unavailable. |
 
 :::note
 Workpiece proposals are agent-authored (written through the gateway) and
