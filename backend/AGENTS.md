@@ -42,6 +42,7 @@ below are relative to `backend/`.
 | Untrusted text in prompts | `src/bots/prompt-safe.ts` `promptSafeJson` |
 | Secrets in text | `src/secrets/redact.ts` |
 | Messaging channels | `src/connectors/types.ts` (`Transport`, `Renderer`), `src/connectors/email/` as the worked example |
+| An event stream to the browser | `src/util/sse.ts` `sseResponse`: headers, opening comment, heartbeat and teardown on disconnect; the route only writes frames |
 
 The guard tests: `test/ratchet.test.ts` (an 800-line file cap with shrink-only
 baselines, the dependency law, the product-name ratchet) and
