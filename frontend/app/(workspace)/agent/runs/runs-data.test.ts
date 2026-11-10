@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import * as backend from "@/lib/backend-fetch";
-import { fetchSidebarRuns } from "./runs-data";
+import { fetchRunsPage, fetchSidebarRuns } from "./runs-data";
 
 function summary(id: string, status = "running") {
   return {
@@ -148,5 +148,35 @@ describe("fetchSidebarRuns", () => {
         latest_updated_at: legacySummary.updated_at,
       },
     ]);
+  });
+});
+
+describe("fetchRunsPage", () => {
+  test("asks for the first page with active threads and a later page by its cursor", async () => {
+    const request = spyOn(backend, "backendFetch").mockImplementation(async () =>
+      new Response(JSON.stringify({ runs: [summary("run-1")], has_more: true, next_cursor: "a/b+c" })),
+    );
+
+    expect(await fetchRunsPage()).toEqual({ runs: [summary("run-1")], nextCursor: "a/b+c" });
+    await fetchRunsPage({ cursor: "a/b+c" });
+
+    expect(request.mock.calls.map(([path]) => path)).toEqual([
+      "/api/runs?view=summary&limit=100&include_active=1",
+      "/api/runs?view=summary&limit=100&cursor=a%2Fb%2Bc",
+    ]);
+  });
+
+  test("reads the last page from has_more, not a leftover cursor", async () => {
+    spyOn(backend, "backendFetch").mockResolvedValue(
+      new Response(JSON.stringify({ runs: [], has_more: false, next_cursor: "stale" })),
+    );
+    expect(await fetchRunsPage()).toEqual({ runs: [], nextCursor: null });
+  });
+
+  test("treats a backend without paging as one page", async () => {
+    spyOn(backend, "backendFetch").mockResolvedValue(
+      new Response(JSON.stringify({ runs: [summary("run-1")] })),
+    );
+    expect(await fetchRunsPage()).toEqual({ runs: [summary("run-1")], nextCursor: null });
   });
 });

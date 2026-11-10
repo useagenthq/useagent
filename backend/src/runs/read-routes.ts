@@ -8,19 +8,77 @@ import {
   getThreadForRun,
   getThreadOutlineForRun,
   getThreadRunsByIds,
-  listRunSummaries,
   listRunsWithSteps,
 } from "./repo.js";
+import { listRunSummaries, type RunSummaryCursor } from "./run-summaries.js";
 import { getRunTimingTable } from "./run-timing.js";
 
 /** Bound on ids per windowed turns fetch: keeps one island's payload and query
  * plan small. The frontend chunks larger windows into multiple requests. */
 const MAX_TURN_FETCH_IDS = 30;
 
+/** Microseconds at 9999-12-31T23:59:59.999999Z, the last instant Postgres
+ * prints as a four-digit year. */
+const MAX_CURSOR_MICROSECONDS = 253_402_300_799_999_999n;
+
+type SummaryView = "threads" | "all";
+
+/** Opaque `next_cursor` for a summary page. It names the org and the view so a
+ * cursor is only ever read back against the list it came from. */
+function summaryCursor(orgId: string, view: SummaryView, next: RunSummaryCursor | null): string | null {
+  if (!next) return null;
+  return Buffer.from(
+    JSON.stringify([
+      orgId,
+      view,
+      next.latestUpdatedAtMicros,
+      next.latestCreatedAtMicros,
+      next.latestRunId,
+      next.createdAtMicros,
+      next.id,
+    ]),
+  ).toString("base64url");
+}
+
+function isCursorMicros(value: unknown): value is string {
+  return typeof value === "string" &&
+    /^[0-9]{1,20}$/.test(value) &&
+    BigInt(value) <= MAX_CURSOR_MICROSECONDS;
+}
+
+function parseSummaryCursor(
+  orgId: string,
+  view: SummaryView,
+  value: string | undefined,
+): RunSummaryCursor | null | "invalid" {
+  if (!value) return null;
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+  } catch {
+    return "invalid";
+  }
+  if (!Array.isArray(decoded) || decoded.length !== 7) return "invalid";
+  const [cursorOrg, cursorView, latestUpdatedAtMicros, latestCreatedAtMicros, latestRunId, createdAtMicros, id] =
+    decoded as unknown[];
+  if (cursorOrg !== orgId || cursorView !== view) return "invalid";
+  if (
+    !isCursorMicros(latestUpdatedAtMicros) ||
+    !isCursorMicros(latestCreatedAtMicros) ||
+    !isCursorMicros(createdAtMicros) ||
+    typeof latestRunId !== "string" ||
+    !latestRunId ||
+    typeof id !== "string" ||
+    !id
+  ) return "invalid";
+  return { latestUpdatedAtMicros, latestCreatedAtMicros, latestRunId, createdAtMicros, id };
+}
+
 export function registerRunReadRoutes(routes: Hono<AppEnv>): void {
   // List runs (newest first) with their steps, scoped to the active org. By
   // default only thread roots (one entry per conversation); `?all=1` returns every
-  // run in every thread.
+  // run in every thread. The summary view pages: pass a page's `next_cursor`
+  // back as `?cursor=` for the rows after it.
   routes.get("/", async (c) => {
     const all = c.req.query("all") === "1";
     const requestedLimit = Number.parseInt(c.req.query("limit") ?? "100", 10);
@@ -28,13 +86,21 @@ export function registerRunReadRoutes(routes: Hono<AppEnv>): void {
       ? Math.min(c.req.query("view") === "summary" ? 1_000 : 100, Math.max(1, requestedLimit))
       : 100;
     if (c.req.query("view") === "summary") {
+      const orgId = c.get("orgId");
+      const view: SummaryView = all ? "all" : "threads";
+      const after = parseSummaryCursor(orgId, view, c.req.query("cursor"));
+      if (after === "invalid") return c.json({ error: "cursor is invalid" }, 400);
+      const page = await listRunSummaries(orgId, {
+        all,
+        limit,
+        includeActive: c.req.query("include_active") === "1",
+        includeNativeChildren: c.req.query("include_native_children") === "1",
+        after,
+      });
       return c.json({
-        runs: await listRunSummaries(c.get("orgId"), {
-          all,
-          limit,
-          includeActive: c.req.query("include_active") === "1",
-          includeNativeChildren: c.req.query("include_native_children") === "1",
-        }),
+        runs: page.runs,
+        has_more: page.hasMore,
+        next_cursor: summaryCursor(orgId, view, page.next),
       });
     }
     return c.json({ runs: await listRunsWithSteps(c.get("orgId"), { all, limit }) });

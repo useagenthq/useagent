@@ -747,6 +747,188 @@ describe("runs", () => {
     }
   });
 
+  test("summary view pages reach every thread once, through tied and sub-millisecond times", async () => {
+    const session = await createOrgSession("summary-pages");
+    const base = new Date(Date.now() - 60 * 60_000).toISOString();
+    // Microsecond offsets from `base`: a JS Date would round most of these
+    // apart-by-7µs groups into one millisecond.
+    const at = (micros: number) =>
+      sql`${base}::timestamptz + ${micros}::bigint * interval '1 microsecond'`;
+    const rows: Array<Omit<typeof runs.$inferInsert, "createdAt" | "updatedAt"> & {
+      createdAt: SQL;
+      updatedAt: SQL;
+    }> = [];
+    for (let index = 0; index < 150; index += 1) {
+      const rootId = crypto.randomUUID();
+      // Threads come in groups of three that share their latest activity time.
+      const activity = -Math.floor(index / 3) * 7;
+      const withReply = index % 5 === 0;
+      rows.push({
+        id: rootId,
+        orgId: session.orgId,
+        userId: null,
+        prompt: `paged thread ${index}`,
+        model: "test-model",
+        engine: "mock",
+        status: "completed",
+        threadId: rootId,
+        createdAt: at(-1_000_000 - index),
+        updatedAt: withReply ? at(-500_000 - index) : at(activity),
+      });
+      if (withReply) {
+        rows.push({
+          id: crypto.randomUUID(),
+          orgId: session.orgId,
+          userId: null,
+          prompt: `paged reply ${index}`,
+          model: "test-model",
+          engine: "mock",
+          status: "completed",
+          parentRunId: rootId,
+          threadId: rootId,
+          createdAt: at(activity - 1),
+          updatedAt: at(activity),
+        });
+      }
+    }
+    await db.insert(runs).values(rows);
+
+    for (const view of ["", "&all=1"]) {
+      const whole = await json<{ runs: any[]; has_more: boolean; next_cursor: string | null }>(
+        `/api/runs?view=summary${view}&limit=1000`,
+        { cookies: session.cookies },
+      );
+      expect(whole.status).toBe(200);
+      expect(whole.body.runs).toHaveLength(view ? 180 : 150);
+      expect(whole.body.has_more).toBe(false);
+      expect(whole.body.next_cursor).toBeNull();
+
+      const paged: string[] = [];
+      const sizes: number[] = [];
+      let cursor: string | null = null;
+      do {
+        const query: string = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+        const page = await json<{ runs: any[]; has_more: boolean; next_cursor: string | null }>(
+          `/api/runs?view=summary${view}&limit=40${query}`,
+          { cookies: session.cookies },
+        );
+        expect(page.status).toBe(200);
+        expect(page.body.has_more).toBe(page.body.next_cursor !== null);
+        paged.push(...page.body.runs.map((run) => run.id));
+        sizes.push(page.body.runs.length);
+        cursor = page.body.next_cursor;
+      } while (cursor);
+
+      expect(sizes).toEqual(view ? [40, 40, 40, 40, 20] : [40, 40, 40, 30]);
+      expect(new Set(paged).size).toBe(paged.length);
+      expect(paged).toEqual(whole.body.runs.map((run) => run.id));
+    }
+  });
+
+  test("summary pages after the first leave out the active overflow", async () => {
+    const session = await createOrgSession("summary-pages-active");
+    const now = Date.now();
+    const completed = Array.from({ length: 101 }, (_, index) => {
+      const id = crypto.randomUUID();
+      return {
+        id,
+        orgId: session.orgId,
+        userId: null,
+        prompt: `completed ${index}`,
+        model: "test-model",
+        engine: "mock" as const,
+        status: "completed" as const,
+        threadId: id,
+        createdAt: new Date(now - index * 1_000),
+        updatedAt: new Date(now - index * 1_000),
+      };
+    });
+    const activeId = crypto.randomUUID();
+    await db.insert(runs).values([
+      ...completed,
+      {
+        id: activeId,
+        orgId: session.orgId,
+        userId: null,
+        prompt: "older active root",
+        model: "test-model",
+        engine: "mock",
+        status: "running",
+        threadId: activeId,
+        createdAt: new Date(now - 200_000),
+        updatedAt: new Date(now - 200_000),
+      },
+    ]);
+
+    const first = await json<{ runs: any[]; has_more: boolean; next_cursor: string | null }>(
+      "/api/runs?view=summary&limit=50&include_active=1",
+      { cookies: session.cookies },
+    );
+    expect(first.body.runs).toHaveLength(51);
+    expect(first.body.runs.at(-1).id).toBe(activeId);
+    expect(first.body.has_more).toBe(true);
+
+    // The cursor marks the 50th row in order, not the active row riding along.
+    const second = await json<{ runs: any[]; has_more: boolean; next_cursor: string | null }>(
+      `/api/runs?view=summary&limit=50&include_active=1&cursor=${first.body.next_cursor}`,
+      { cookies: session.cookies },
+    );
+    expect(second.status).toBe(200);
+    expect(second.body.runs.map((run) => run.id)).toEqual(
+      completed.slice(50, 100).map((run) => run.id),
+    );
+    expect(second.body.has_more).toBe(true);
+
+    const third = await json<{ runs: any[]; has_more: boolean; next_cursor: string | null }>(
+      `/api/runs?view=summary&limit=50&include_active=1&cursor=${second.body.next_cursor}`,
+      { cookies: session.cookies },
+    );
+    expect(third.body.runs.map((run) => run.id)).toEqual([completed[100].id, activeId]);
+    expect(third.body.has_more).toBe(false);
+    expect(third.body.next_cursor).toBeNull();
+  });
+
+  test("summary view refuses a cursor from another org, another view or nowhere", async () => {
+    const mine = await createOrgSession("summary-cursor-mine");
+    const other = await createOrgSession("summary-cursor-other");
+    for (const session of [mine, other]) {
+      await db.insert(runs).values(
+        Array.from({ length: 2 }, (_, index) => {
+          const id = crypto.randomUUID();
+          return {
+            id,
+            orgId: session.orgId,
+            userId: null,
+            prompt: `cursor thread ${index}`,
+            model: "test-model",
+            engine: "mock" as const,
+            status: "completed" as const,
+            threadId: id,
+          };
+        }),
+      );
+    }
+    const page = await json<{ next_cursor: string }>("/api/runs?view=summary&limit=1", {
+      cookies: mine.cookies,
+    });
+    const cursor = page.body.next_cursor;
+    expect(typeof cursor).toBe("string");
+
+    const forged = Buffer.from(
+      JSON.stringify([mine.orgId, "threads", "1", "1.5", crypto.randomUUID(), "1", crypto.randomUUID()]),
+    ).toString("base64url");
+    for (const [query, session] of [
+      [`/api/runs?view=summary&limit=1&cursor=${cursor}`, other],
+      [`/api/runs?view=summary&all=1&limit=1&cursor=${cursor}`, mine],
+      ["/api/runs?view=summary&limit=1&cursor=not-a-cursor", mine],
+      [`/api/runs?view=summary&limit=1&cursor=${forged}`, mine],
+    ] as const) {
+      const refused = await json<{ error: string }>(query, { cookies: session.cookies });
+      expect(refused.status).toBe(400);
+      expect(refused.body.error).toBe("cursor is invalid");
+    }
+  });
+
   test("GET /api/runs/:id carries sandbox_id (null for a sandbox-less run)", async () => {
     const created = await json<{ id: string }>("/api/runs", {
       method: "POST",

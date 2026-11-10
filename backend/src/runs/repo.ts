@@ -5,7 +5,6 @@ import type {
   ApiStep,
   ApiThreadOutlineTurn,
   PermissionMode,
-  RunConnector,
   RunLocation,
 } from "@useagent/agent-client/wire";
 import {
@@ -33,8 +32,6 @@ import {
   type RunStatus,
   type StepKind,
 } from "../db/schema";
-import { sidebarNativeChildren } from "./native-children-projection";
-import { executionGraphEnabled } from "./execution-graph-switch";
 import { parseRepoRef } from "../github/repo-ref";
 import type { RunResource } from "../resources/types";
 import { ensureProject } from "../projects/repo";
@@ -502,157 +499,6 @@ export async function listRunsWithSteps(
     .orderBy(desc(runs.createdAt), desc(runs.id))
     .limit(opts.limit ?? 100);
   return withSteps(runRows);
-}
-
-/** Compact projection for navigation/dashboard surfaces. Heavy steps,
- * uploads, resources, and provider session state stay off this wire. */
-export async function listRunSummaries(
-  orgId: string,
-  opts: {
-    all?: boolean;
-    limit?: number;
-    includeActive?: boolean;
-    includeNativeChildren?: boolean;
-  } = {},
-): Promise<ApiRunSummary[]> {
-  const limit = opts.limit ?? 100;
-  const rootFilter = opts.all ? sql`` : sql`and root.parent_run_id is null`;
-  const activeFilter = !opts.includeActive
-    ? sql`false`
-    : opts.all
-      ? sql`status in ('queued', 'running')`
-      : sql`latest_status in ('queued', 'running')`;
-  const listOrder = opts.all
-    ? sql`root.created_at desc, root.id desc`
-    : sql`latest.updated_at desc, latest.created_at desc, latest.id desc,
-        root.created_at desc, root.id desc`;
-  const outputOrder = opts.all
-    ? sql`created_at desc, id desc`
-    : sql`latest_updated_at desc, latest_created_at desc, latest_run_id desc,
-        created_at desc, id desc`;
-  const rows = await db.execute(sql`
-    with latest_thread_runs as (
-      select
-        candidate.id,
-        candidate.org_id,
-        candidate.thread_id,
-        candidate.status,
-        exists (
-          select 1 from commands cancel_command
-          where cancel_command.run_id = candidate.id
-            and cancel_command.org_id = candidate.org_id
-            and cancel_command.kind = 'run.cancel'
-        ) as cancelled,
-        candidate.created_at,
-        candidate.updated_at,
-        row_number() over (
-          partition by candidate.org_id, candidate.thread_id
-          order by candidate.created_at desc, candidate.id desc
-        ) as thread_rank
-      from runs candidate
-      where candidate.org_id = ${orgId}
-        and candidate.origin is null
-    ), summary_rows as (
-      select
-        root.id,
-        root.prompt,
-        root.model,
-        root.engine,
-        root.status,
-        root.summary,
-        root.duration_ms,
-        root.project_id,
-        root.repo,
-        root.repos,
-        root.connector,
-        root.created_at,
-        root.updated_at,
-        latest.id as latest_run_id,
-        latest.status as latest_status,
-        latest.cancelled as latest_cancelled,
-        latest.created_at as latest_created_at,
-        latest.updated_at as latest_updated_at,
-        row_number() over (
-          order by ${listOrder}
-        ) as list_rank
-      from runs root
-      inner join latest_thread_runs latest
-        on latest.org_id = root.org_id
-        and latest.thread_id = root.thread_id
-        and latest.thread_rank = 1
-      where root.org_id = ${orgId}
-        and root.origin is null
-        ${rootFilter}
-    ), bounded_rows as (
-      select *
-      from summary_rows
-      where list_rank <= ${limit}
-    ), active_rows as (
-      select *
-      from summary_rows
-      where ${activeFilter}
-      order by list_rank
-      limit ${limit}
-    ), selected_rows as (
-      select * from bounded_rows
-      union
-      select * from active_rows
-    )
-    select
-      id, prompt, model, engine, status, summary, duration_ms, project_id,
-      repo, repos, connector, created_at, updated_at,
-      latest_run_id, latest_status, latest_cancelled, latest_created_at, latest_updated_at
-    from selected_rows
-    order by ${outputOrder}
-  `);
-
-  const summaries = rows.map((row) => {
-    const repoRefs = row.repos as string[];
-    const specs = repoRefs.map(parseRepoRef);
-    return {
-      id: row.id as string,
-      prompt: row.prompt as string,
-      model: row.model as string,
-      engine: row.engine as EngineId,
-      status: row.status as RunStatus,
-      summary: row.summary as string | null,
-      duration_ms: row.duration_ms as number | null,
-      project_id: row.project_id as string | null,
-      repo: row.repo ? parseRepoRef(row.repo as string).repo : null,
-      repos: specs.map((spec) => spec.repo),
-      repo_specs: specs,
-      connector: (row.connector as RunConnector | null) ?? null,
-      created_at: new Date(row.created_at as string | Date).toISOString(),
-      updated_at: new Date(row.updated_at as string | Date).toISOString(),
-      latest_run_id: row.latest_run_id as string,
-      latest_status: row.latest_status as RunStatus,
-      latest_cancelled: row.latest_cancelled as boolean,
-      latest_created_at: new Date(row.latest_created_at as string | Date).toISOString(),
-      latest_updated_at: new Date(row.latest_updated_at as string | Date).toISOString(),
-    } satisfies ApiRunSummary;
-  });
-  // Native-children projection only decorates the THREAD view (each row is a
-  // root whose id IS its thread id); the `all` flat view keeps its shape.
-  if (
-    opts.all ||
-    !opts.includeNativeChildren ||
-    !executionGraphEnabled() ||
-    summaries.length === 0
-  ) return summaries;
-  const childrenByThread = await sidebarNativeChildren(
-    orgId,
-    summaries.map((summary) => summary.id),
-  );
-  if (childrenByThread.size === 0) return summaries;
-  return summaries.map((summary) => {
-    const projection = childrenByThread.get(summary.id);
-    if (!projection) return summary;
-    return {
-      ...summary,
-      native_children: projection.children,
-      native_children_total: projection.total,
-    };
-  });
 }
 
 /** Every run in the thread that `id` belongs to, oldest→newest, with steps.

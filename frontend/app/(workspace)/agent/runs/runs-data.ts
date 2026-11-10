@@ -8,8 +8,8 @@
  * origin directly and forwards the session cookie; on the client it uses a
  * relative `/api/...` path proxied by the next.config rewrite.
  *
- * Wire shape from the existing backend `GET /api/runs`:
- *   { runs: [{ id, prompt, status, summary, duration_ms, engine, steps: [...] }] }
+ * Wire shape from the backend `GET /api/runs?view=summary`:
+ *   { runs: [{ id, prompt, status, summary, latest_status, ... }], has_more, next_cursor }
  */
 
 import type { DotTone } from '@/components/shared/status-dot';
@@ -22,6 +22,13 @@ import {
 
 export type Run = ApiRunSummary;
 
+/** One page of All threads, newest activity first. `nextCursor` asks the
+ * backend for the threads after this page; null once there are none. */
+export interface RunsPage {
+  runs: Run[];
+  nextCursor: string | null;
+}
+
 function decodeRunsEnvelope(value: unknown): Run[] {
   if (!value || typeof value !== 'object') return [];
   const rows = (value as { runs?: unknown }).runs;
@@ -29,13 +36,30 @@ function decodeRunsEnvelope(value: unknown): Run[] {
   return rows.map(decodeApiRunSummary).filter((run): run is Run => run !== null);
 }
 
-export async function fetchRuns(signal?: AbortSignal): Promise<Run[]> {
-  const res = await backendFetch('/api/runs?view=summary&limit=100&include_active=1', {
+function decodeRunsPage(value: unknown): RunsPage {
+  const envelope = value && typeof value === 'object'
+    ? (value as { has_more?: unknown; next_cursor?: unknown })
+    : {};
+  const nextCursor = envelope.has_more === true && typeof envelope.next_cursor === 'string' && envelope.next_cursor
+    ? envelope.next_cursor
+    : null;
+  return { runs: decodeRunsEnvelope(value), nextCursor };
+}
+
+/** The first page also carries active threads past its 100 rows; a later page
+ * (`cursor` from the page before) is a plain slice of the order. */
+export async function fetchRunsPage(
+  options: { cursor?: string | null; signal?: AbortSignal } = {},
+): Promise<RunsPage> {
+  const query = options.cursor
+    ? `cursor=${encodeURIComponent(options.cursor)}`
+    : 'include_active=1';
+  const res = await backendFetch(`/api/runs?view=summary&limit=100&${query}`, {
     cache: 'no-store',
-    signal,
+    signal: options.signal,
   });
   if (!res.ok) throw new Error(`runs request failed: ${res.status}`);
-  return decodeRunsEnvelope(await res.json());
+  return decodeRunsPage(await res.json());
 }
 
 let sidebarRequest: Promise<Run[]> | null = null;

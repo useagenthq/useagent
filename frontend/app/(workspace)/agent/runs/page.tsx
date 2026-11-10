@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { fetchRuns, type Run } from "./runs-data";
+import { fetchRunsPage, type RunsPage } from "./runs-data";
 import { RunsList } from "./runs-list";
 
 export const metadata: Metadata = {
@@ -11,16 +11,20 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AgentRunsPage() {
-  let initialRuns: Run[] = [];
+  let initialPage: RunsPage = { runs: [], nextCursor: null };
   let initialError = false;
 
   try {
-    initialRuns = await fetchRuns();
+    initialPage = await fetchRunsPage();
   } catch {
     initialError = true;
   }
 
   return (
-    <RunsList initialRuns={initialRuns} initialError={initialError} />
+    <RunsList
+      initialRuns={initialPage.runs}
+      initialNextCursor={initialPage.nextCursor}
+      initialError={initialError}
+    />
   );
 }

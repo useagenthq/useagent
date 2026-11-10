@@ -21,6 +21,7 @@ import {
   type StatusChipColor,
 } from '@/components/application/data-table/cells';
 import { Chip } from '@/components/base/badges/chip';
+import { Button } from '@/components/base/buttons/button';
 import { runTitle } from '@/components/chat/types';
 import { InputBase } from '@/components/base/input/input';
 import { Pagination } from '@/components/base/pagination/pagination';
@@ -42,7 +43,7 @@ import { StatusDot } from '@/components/shared/status-dot';
 import { useOrgChanges } from '@/hooks/use-org-changes';
 import { cx } from '@/utils/cx';
 import { formatDuration, relativeTime } from '@/utils/format';
-import { type Run, type RunTone, TONE_TO_DOT, fetchRuns, statusTone } from './runs-data';
+import { type Run, type RunTone, TONE_TO_DOT, fetchRunsPage, statusTone } from './runs-data';
 
 const POLL_MS = 15_000;
 const PER_PAGE = 10;
@@ -74,6 +75,23 @@ export function matchesRunStatus(run: Run, filter: FilterValue): boolean {
 
 export function validEngineFilter(selected: string, engines: readonly string[]): string {
   return selected === 'all' || engines.includes(selected) ? selected : 'all';
+}
+
+/** `first` followed by every row of `rest` that `first` does not already hold,
+ * so a thread is listed once and the copy in `first` wins. */
+export function mergeRuns(first: readonly Run[], rest: readonly Run[]): Run[] {
+  const ids = new Set(first.map((run) => run.id));
+  return [...first, ...rest.filter((run) => !ids.has(run.id))];
+}
+
+/** What the table holds: the loaded threads and where the next older page
+ * starts. Once the viewer asks for older threads, `paged` keeps every loaded
+ * row through refreshes, which only bring the first page up to date: a thread
+ * that slides past the first page must not drop out of the list. */
+interface LoadedRuns {
+  runs: Run[];
+  nextCursor: string | null;
+  paged: boolean;
 }
 
 /**
@@ -220,13 +238,22 @@ function ErrorState() {
 
 export function RunsList({
   initialRuns,
+  initialNextCursor = null,
   initialError,
 }: {
   initialRuns: Run[];
+  initialNextCursor?: string | null;
   initialError: boolean;
 }) {
   const router = useRouter();
-  const [runs, setRuns] = React.useState<Run[]>(initialRuns);
+  const [loaded, setLoaded] = React.useState<LoadedRuns>({
+    runs: initialRuns,
+    nextCursor: initialNextCursor,
+    paged: false,
+  });
+  const runs = loaded.runs;
+  const [loadingOlder, setLoadingOlder] = React.useState(false);
+  const [olderFailed, setOlderFailed] = React.useState(false);
   const [errored, setErrored] = React.useState(initialError);
   const [filter, setFilter] = React.useState<FilterValue>('all');
   const [engineFilter, setEngineFilter] = React.useState('all');
@@ -244,8 +271,12 @@ export function RunsList({
 
   const load = React.useCallback(async (signal?: AbortSignal) => {
       try {
-        const next = await fetchRuns(signal);
-        setRuns(next);
+        const page = await fetchRunsPage({ signal });
+        setLoaded((current) =>
+          current.paged
+            ? { ...current, runs: mergeRuns(page.runs, current.runs) }
+            : { runs: page.runs, nextCursor: page.nextCursor, paged: false },
+        );
         setErrored(false);
       } catch {
         if (signal?.aborted) return;
@@ -304,13 +335,20 @@ export function RunsList({
     [runs, filter, engineFilter, q],
   );
 
+  // A refresh or an older page changes the rows but not the page the viewer
+  // is on, so the table never resets it on its own; the index is only held
+  // inside the pages that exist.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  const pageIndex = Math.min(pagination.pageIndex, pageCount - 1);
+
   const table = useReactTable({
     data: filtered,
     columns: COLUMNS,
     getRowId: (run) => run.id,
-    state: { sorting, pagination },
+    state: { sorting, pagination: { ...pagination, pageIndex } },
     onSortingChange: setSorting,
     onPaginationChange: setPagination,
+    autoResetPageIndex: false,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -319,6 +357,32 @@ export function RunsList({
   const headers = table.getHeaderGroups()[0].headers;
   const rows = table.getRowModel().rows;
   const totalPages = table.getPageCount();
+  const onLastPage = pageIndex >= totalPages - 1;
+
+  // Append the next older page and move to the page its first thread lands on
+  // under the default newest-first sort: right after the rows already shown.
+  const loadOlder = async () => {
+    const cursor = loaded.nextCursor;
+    if (!cursor || loadingOlder) return;
+    const firstNewPage = Math.floor(filtered.length / PER_PAGE);
+    setLoadingOlder(true);
+    setOlderFailed(false);
+    setLoaded((current) => ({ ...current, paged: true }));
+    try {
+      const page = await fetchRunsPage({ cursor });
+      setLoaded((current) => ({
+        runs: mergeRuns(current.runs, page.runs),
+        nextCursor: page.nextCursor,
+        paged: true,
+      }));
+      setPagination((current) => ({ ...current, pageIndex: firstNewPage }));
+    } catch {
+      setOlderFailed(true);
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
   const activeSort = sorting[0] ?? { id: 'started', desc: true };
   const sortDescriptor: SortDescriptor = {
     column: activeSort.id,
@@ -410,8 +474,8 @@ export function RunsList({
               )}
 
               <InputBase
-                aria-label='Search runs'
-                placeholder='Search'
+                aria-label={loaded.nextCursor ? 'Search loaded threads' : 'Search runs'}
+                placeholder={loaded.nextCursor ? 'Search loaded threads' : 'Search'}
                 leadingIcon={RiSearch2Line}
                 value={query}
                 onChange={(e) => {
@@ -436,6 +500,7 @@ export function RunsList({
                     desc: descriptor.direction === 'descending',
                   },
                 ]);
+                resetPage();
               }}
               onRowAction={(key) => router.push(`/session/${String(key)}`)}
             >
@@ -492,10 +557,28 @@ export function RunsList({
           {totalPages > 1 && (
             <div className='px-3 pt-3'>
               <Pagination
-                page={pagination.pageIndex + 1}
+                page={pageIndex + 1}
                 totalPages={totalPages}
                 onChange={(p) => table.setPageIndex(p - 1)}
               />
+            </div>
+          )}
+
+          {loaded.nextCursor && onLastPage && (
+            <div className='flex flex-col items-center gap-2 px-3 py-3'>
+              <Button
+                variant='secondary'
+                size='small'
+                disabled={loadingOlder}
+                onClick={() => void loadOlder()}
+              >
+                {loadingOlder ? 'Loading older threads…' : 'Show older threads'}
+              </Button>
+              {olderFailed && (
+                <p role='alert' className='text-caption-1-regular text-text-error-primary'>
+                  Couldn&apos;t load older threads. Try again.
+                </p>
+              )}
             </div>
           )}
         </section>

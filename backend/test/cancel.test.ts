@@ -9,9 +9,9 @@ import { subscribeOrg, type OrgChange } from "../src/runs/org-signals";
 import {
   completeRun,
   getCustomerRunLifecycle,
-  listRunSummaries,
   setRunStatus,
 } from "../src/runs/repo";
+import { listRunSummaries } from "../src/runs/run-summaries";
 import { terminalOnReturn } from "../src/worker";
 import { DEV_ORG_ID } from "../src/dev-org";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
@@ -95,7 +95,7 @@ describe("durable run cancellation", () => {
     expect(await cmdState(runId, "run.create")).toBe("completed");
     expect(await cmdState(runId, "run.cancel")).toBe("completed");
     expect((await getCustomerRunLifecycle(ORG, runId))?.cancelled).toBe(true);
-    expect((await listRunSummaries(ORG)).find((run) => run.id === runId)?.latest_cancelled)
+    expect((await listRunSummaries(ORG)).runs.find((run) => run.id === runId)?.latest_cancelled)
       .toBe(true);
 
     // A cancelled queued run can NEVER be dispatched (its command is completed),
