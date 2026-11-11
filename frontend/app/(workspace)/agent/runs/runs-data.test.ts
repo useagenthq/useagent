@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import * as backend from "@/lib/backend-fetch";
-import { fetchSidebarRuns } from "./runs-data";
+import { fetchRuns, fetchSidebarRuns, mergeRunPages, type Run } from "./runs-data";
 
 function summary(id: string, status = "running") {
   return {
@@ -147,6 +147,56 @@ describe("fetchSidebarRuns", () => {
         latest_created_at: legacySummary.created_at,
         latest_updated_at: legacySummary.updated_at,
       },
+    ]);
+  });
+});
+
+describe("fetchRuns", () => {
+  test("asks for the newest page, then the page after a cursor, with the same filters", async () => {
+    const request = spyOn(backend, "backendFetch").mockImplementation(async () =>
+      new Response(JSON.stringify({ runs: [summary("run-1")], has_more: true, next_cursor: "eyJ2IjoxfQ" })),
+    );
+
+    expect(await fetchRuns()).toEqual({ runs: [summary("run-1")], nextCursor: "eyJ2IjoxfQ" });
+    await fetchRuns({ cursor: "a+b/c=" });
+
+    expect(request.mock.calls.map(([path]) => path)).toEqual([
+      "/api/runs?view=summary&limit=100&include_active=1",
+      "/api/runs?view=summary&limit=100&include_active=1&cursor=a%2Bb%2Fc%3D",
+    ]);
+  });
+
+  test("reads a missing or malformed next_cursor as the last page", async () => {
+    const request = spyOn(backend, "backendFetch");
+    for (const body of [
+      { runs: [summary("run-1")] },
+      { runs: [summary("run-1")], has_more: false, next_cursor: null },
+      { runs: [summary("run-1")], next_cursor: 42 },
+      { runs: [summary("run-1")], next_cursor: "" },
+    ]) {
+      request.mockResolvedValueOnce(new Response(JSON.stringify(body)));
+      expect((await fetchRuns()).nextCursor).toBeNull();
+    }
+  });
+
+  test("throws on a failed page so the caller can offer a retry", async () => {
+    spyOn(backend, "backendFetch").mockResolvedValue(new Response("{}", { status: 503 }));
+    await expect(fetchRuns({ cursor: "next" })).rejects.toThrow("runs request failed: 503");
+  });
+});
+
+describe("mergeRunPages", () => {
+  test("appends older threads after the newest page and keeps the newest copy of a moved thread", () => {
+    const moved = { ...summary("moved", "running") } as Run;
+    const stale = { ...summary("moved", "completed") } as Run;
+    const newest = [summary("run-1"), moved] as Run[];
+    const older = [summary("run-2"), stale, summary("run-3"), summary("run-2")] as Run[];
+
+    expect(mergeRunPages(newest, older).map((run) => [run.id, run.status])).toEqual([
+      ["run-1", "running"],
+      ["moved", "running"],
+      ["run-2", "running"],
+      ["run-3", "running"],
     ]);
   });
 });

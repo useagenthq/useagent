@@ -79,3 +79,22 @@ test('treats a queued latest turn as live', () => {
   expect(runTone(queuedThread)).toBe('live');
   expect(matchesRunStatus(queuedThread, 'live')).toBe(true);
 });
+
+test('offers older threads only when the backend sent a next cursor', () => {
+  const render = (initialNextCursor?: string | null) =>
+    renderToStaticMarkup(
+      createElement(
+        AppRouterContext.Provider,
+        { value: router },
+        createElement(RunsList, {
+          initialRuns: [run('completed', 'completed')],
+          initialNextCursor,
+          initialError: false,
+        }),
+      ),
+    );
+
+  expect(render('next-page')).toContain('Show older threads');
+  expect(render(null)).not.toContain('Show older threads');
+  expect(render()).not.toContain('Show older threads');
+});
