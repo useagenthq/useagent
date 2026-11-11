@@ -15,7 +15,8 @@ format conversion.
 `renderArtifactExport` is the sole public rendering entry point; format-specific
 render helpers remain internal implementation details. `buildArtifactBundle`
 packages multiple artifacts' bytes into a single ZIP (colliding names are
-disambiguated) for run-level "download all".
+disambiguated, and names are shortened to 255 UTF-8 bytes, keeping the
+extension) for run-level "download all".
 
 ## Current Contract
 
