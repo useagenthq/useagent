@@ -332,3 +332,21 @@ export async function listArtifactsForOrg(input: {
     .orderBy(desc(artifacts.createdAt))
     .limit(Math.max(1, Math.min(input.limit ?? 100, 100)));
 }
+
+/** Every artifact of one run, newest first, with only the columns an archive
+ * reads. Not capped: the archive bounds the total bytes it will read, so no
+ * file is left out silently. */
+export async function listRunArtifactFilesForOrg(input: {
+  readonly orgId: string;
+  readonly runId: string;
+}): Promise<Pick<ArtifactRecord, "name" | "sizeBytes" | "storageKey">[]> {
+  return db
+    .select({
+      name: artifacts.name,
+      sizeBytes: artifacts.sizeBytes,
+      storageKey: artifacts.storageKey,
+    })
+    .from(artifacts)
+    .where(and(eq(artifacts.orgId, input.orgId), eq(artifacts.runId, input.runId)))
+    .orderBy(desc(artifacts.createdAt));
+}

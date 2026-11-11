@@ -1964,6 +1964,72 @@ describe("durable artifacts", () => {
     expect(outside.status).toBe(404);
   });
 
+  // Stores `count` small text artifacts on a run, `file-0.txt` first.
+  async function storeTextArtifacts(runId: string, count: number): Promise<void> {
+    for (let index = 0; index < count; index += 1) {
+      const bytes = new TextEncoder().encode(`file ${index}`);
+      const digest = createHash("sha256").update(bytes).digest("hex");
+      await storage.put(digest, bytes);
+      await createArtifactRecord({
+        orgId: owner.orgId,
+        userId: owner.email,
+        runId,
+        threadId: runId,
+        sourcePath: `/root/work/file-${index}.txt`,
+        name: `file-${index}.txt`,
+        contentType: "text/plain",
+        sizeBytes: bytes.byteLength,
+        sha256: digest,
+        storageKey: digest,
+      });
+    }
+  }
+
+  test("archives every artifact of a run with more than 100", async () => {
+    const runId = await createSandboxRun(owner);
+    await storeTextArtifacts(runId, 101);
+
+    const archive = await fetchApi(`/api/artifacts/runs/${runId}/archive`, {
+      cookies: owner.cookies,
+    });
+    expect(archive.status).toBe(200);
+    const zip = await JSZip.loadAsync(new Uint8Array(await archive.arrayBuffer()));
+    expect(Object.keys(zip.files)).toHaveLength(101);
+    // The oldest file is the one a newest-100 cap would have left out.
+    expect(await zip.file("file-0.txt")?.async("string")).toBe("file 0");
+    expect(await zip.file("file-100.txt")?.async("string")).toBe("file 100");
+  });
+
+  test("refuses the archive when an older artifact puts the run over the size limit", async () => {
+    const runId = await createSandboxRun(owner);
+    const bytes = new TextEncoder().encode("large");
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    await storage.put(digest, bytes);
+    // Only the recorded size counts toward the limit, so the stored bytes stay small.
+    const large = await createArtifactRecord({
+      orgId: owner.orgId,
+      userId: owner.email,
+      runId,
+      threadId: runId,
+      sourcePath: "/root/work/large.bin",
+      name: "large.bin",
+      contentType: "application/octet-stream",
+      sizeBytes: 100 * 1024 * 1024,
+      sha256: digest,
+      storageKey: digest,
+    });
+    await db.update(artifacts).set({ createdAt: new Date(0) })
+      .where(eq(artifacts.id, large.row.id));
+    await storeTextArtifacts(runId, 100);
+
+    const archive = await fetchApi(`/api/artifacts/runs/${runId}/archive`, {
+      cookies: owner.cookies,
+    });
+    expect(archive.status).toBe(413);
+    expect(archive.headers.get("content-type")).toContain("application/json");
+    expect(await archive.json()).toEqual({ error: "run artifacts exceed the archive size limit" });
+  });
+
   test("encodes non-ASCII and reserved filename characters safely", async () => {
     const runId = await createSandboxRun(owner);
     const published = await publish(owner, runId, "/root/work/report (final)' é.txt");
