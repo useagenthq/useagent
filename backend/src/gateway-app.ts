@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono";
 import { artifactStorageHealth } from "./artifacts/storage";
+import { installJsonErrorHandlers } from "./http-errors";
 import { knowledgeMcpRoutes } from "./knowledge/gateway/mcp";
 import { providerGatewayRoutes } from "./provider-gateway/routes";
 import { currentReleaseFingerprint } from "./release";
@@ -11,6 +12,7 @@ import { currentReleaseFingerprint } from "./release";
  */
 export function createGatewayApp(): Hono {
   const app = new Hono();
+  installJsonErrorHandlers(app, "gateway");
   // Health includes the artifact store: the gateway is the process every
   // harness publishes through, so "listening" without a writable store is down.
   const health = async (c: Context) => {

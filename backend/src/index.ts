@@ -9,6 +9,7 @@ import { internalArtifactChangeRoutes } from "./artifacts/internal-change-routes
 import { startEmailConnector } from "./connectors/email";
 import { client, db } from "./db/client";
 import type { AppEnv } from "./http";
+import { installJsonErrorHandlers } from "./http-errors";
 import {
   allowDevOrg,
   connectorEmailConfig,
@@ -272,6 +273,7 @@ if (learningReset > 0)
   console.log(`[boot] learning recovery — ${learningReset} stuck rows re-armed`);
 
 const app = new Hono<AppEnv>();
+installJsonErrorHandlers(app, "api");
 
 // CORS for the frontend, with credentials so cookie sessions flow when the
 // browser calls the backend directly (the Next dev proxy is same-origin). A
