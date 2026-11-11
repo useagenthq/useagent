@@ -12,7 +12,7 @@ import {
   type ArtifactWorkpieceKind,
 } from "@useagent/artifact-workspace";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   artifactViewFor,
   extractArtifactResult,
@@ -42,8 +42,6 @@ const FILTERS: readonly { id: Filter; label: string }[] = [
   { id: "docs", label: "Docs" },
   { id: "media", label: "Media" },
 ];
-
-const REFRESH_MS = 5_000;
 
 function uniqueRuns(artifacts: readonly ArtifactDescriptor[], initialRunId?: string) {
   const byRun = new Map<string, { runId: string; label: string }>();
@@ -240,7 +238,12 @@ function UnavailableState({ onRetry }: { onRetry: () => void }) {
 }
 
 /** Durable artifact browser. Metadata refreshes independently of run history;
- * every card links to the authenticated content endpoint for its exact bytes. */
+ * every card links to the authenticated content endpoint for its exact bytes.
+ *
+ * The list re-reads on artifact changes from the org stream, never on a timer.
+ * Changes missed while the stream was down are covered by a read each time it
+ * opens (which also covers the gap after the server-rendered snapshot), and
+ * changes made in another tab by a read when this one comes back to view. */
 export function LiveArtifacts({
   initialArtifacts,
   initialAvailable,
@@ -256,8 +259,7 @@ export function LiveArtifacts({
   const [refreshing, setRefreshing] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setRefreshing(true);
+  const fetchSnapshot = useCallback(async (signal?: AbortSignal) => {
     try {
       const response = await backendFetch("/api/artifacts", { signal, cache: "no-store" });
       if (!response.ok) {
@@ -274,21 +276,60 @@ export function LiveArtifacts({
     } catch {
       // Keep the last known durable snapshot across transient reconnects.
       if (!signal?.aborted) setAvailable(false);
-    } finally {
-      if (!signal?.aborted) setRefreshing(false);
     }
   }, []);
 
-  useOrgChanges((change) => {
-    if (change.type === "artifact") void load();
-  });
+  // One read at a time: a burst of changes while a read is in flight queues a
+  // single follow-up read instead of one request per change.
+  const request = useRef<Promise<void> | null>(null);
+  const stale = useRef(false);
+  const lifetime = useRef<AbortController | null>(null);
+
+  const load = useCallback(
+    ({ manual = false }: { manual?: boolean } = {}) => {
+      // Only a click spins the icon; reads the page starts on its own are quiet.
+      if (manual) setRefreshing(true);
+      if (request.current) {
+        stale.current = true;
+        return request.current;
+      }
+      const signal = lifetime.current?.signal;
+      const read = (async () => {
+        do {
+          stale.current = false;
+          await fetchSnapshot(signal);
+        } while (stale.current && !signal?.aborted);
+      })().finally(() => {
+        request.current = null;
+        if (!signal?.aborted) setRefreshing(false);
+      });
+      request.current = read;
+      return read;
+    },
+    [fetchSnapshot],
+  );
+
+  useOrgChanges(
+    (change) => {
+      if (change.type === "artifact") void load();
+    },
+    () => void load(),
+  );
 
   useEffect(() => {
     const controller = new AbortController();
-    const interval = setInterval(() => void load(controller.signal), REFRESH_MS);
+    lifetime.current = controller;
+    const reload = () => void load();
+    const reloadWhenVisible = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    window.addEventListener("focus", reload);
+    document.addEventListener("visibilitychange", reloadWhenVisible);
     return () => {
       controller.abort();
-      clearInterval(interval);
+      lifetime.current = null;
+      window.removeEventListener("focus", reload);
+      document.removeEventListener("visibilitychange", reloadWhenVisible);
     };
   }, [load]);
 
@@ -372,7 +413,7 @@ export function LiveArtifacts({
           )}
           <button
             type="button"
-            onClick={() => void load()}
+            onClick={() => void load({ manual: true })}
             aria-label="Refresh artifacts"
             title="Refresh"
             disabled={refreshing}
@@ -408,7 +449,7 @@ export function LiveArtifacts({
       )}
 
       {!available && artifacts.length === 0 ? (
-        <UnavailableState onRetry={() => void load()} />
+        <UnavailableState onRetry={() => void load({ manual: true })} />
       ) : artifacts.length === 0 ? (
         <EmptyState />
       ) : visible.length > 0 ? (
