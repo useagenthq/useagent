@@ -27,6 +27,7 @@ import {
   type Session,
   type Workspace,
   listWorkspaces,
+  onWorkspacesChanged,
   signOut,
   switchOrganization,
   useSession,
@@ -58,6 +59,10 @@ export function UserMenu(props: UserMenuProps = {}) {
   const [workspaces, setWorkspaces] = useState<readonly WorkspaceEntry[] | undefined>();
   const [setupPending, setSetupPending] = useState(false);
   const [workspaceSwitchError, setWorkspaceSwitchError] = useState<string | null>(null);
+  /** Bumped when a page here changes the list (a rename in Settings), so the menu reads it again. */
+  const [workspacesVersion, setWorkspacesVersion] = useState(0);
+
+  useEffect(() => onWorkspacesChanged(() => setWorkspacesVersion((version) => version + 1)), []);
 
   useEffect(() => {
     if (loading || !session) {
@@ -79,7 +84,7 @@ export function UserMenu(props: UserMenuProps = {}) {
     return () => {
       cancelled = true;
     };
-  }, [loading, session]);
+  }, [loading, session, workspacesVersion]);
 
   const profile = sessionUserProfile(session, loading);
   return (
