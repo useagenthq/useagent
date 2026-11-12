@@ -127,6 +127,22 @@ export async function listWorkspaces(
   }));
 }
 
+const workspaceListeners = new Set<() => void>();
+
+/** Something here changed what the workspace list says (a rename): every open
+ *  reader of it, such as the user menu, reads it again. */
+export function workspacesChanged(): void {
+  for (const listener of workspaceListeners) listener();
+}
+
+/** Called after each `workspacesChanged`; returns the unsubscribe. */
+export function onWorkspacesChanged(listener: () => void): () => void {
+  workspaceListeners.add(listener);
+  return () => {
+    workspaceListeners.delete(listener);
+  };
+}
+
 export async function switchOrganization(
   organizationId: string,
   fetcher: typeof backendFetch = backendFetch,

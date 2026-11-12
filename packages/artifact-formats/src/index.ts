@@ -970,6 +970,49 @@ function bundleNameKey(name: string): string {
   return name.normalize("NFC").toLowerCase();
 }
 
+/** Most file systems cap one file name at 255 bytes, and a character outside
+ * ASCII takes up to 4 bytes in UTF-8, so a name within the artifact length cap
+ * can still be too long to unzip. */
+const BUNDLE_NAME_MAX_BYTES = 255;
+
+/** Bytes kept free beside an extension for a copy suffix such as ` (2)`. */
+const BUNDLE_SUFFIX_MAX_BYTES = 32;
+
+function utf8Length(text: string): number {
+  return encoder.encode(text).byteLength;
+}
+
+/** The longest start of `text` that fits in `maxBytes` of UTF-8, never ending
+ * inside a character. */
+function cutToUtf8Bytes(text: string, maxBytes: number): string {
+  let bytes = 0;
+  let end = 0;
+  for (const character of text) {
+    bytes += utf8Length(character);
+    if (bytes > maxBytes) break;
+    end += character.length;
+  }
+  return text.slice(0, end);
+}
+
+/** A name split before its last extension. An extension too long to keep with
+ * a copy suffix counts as part of the stem, so a shortened name can always
+ * still be told apart by its suffix. */
+function splitBundleName(name: string): { stem: string; extension: string } {
+  const dot = name.lastIndexOf(".");
+  const extension = dot > 0 ? name.slice(dot) : "";
+  if (!extension || utf8Length(extension) > BUNDLE_NAME_MAX_BYTES - BUNDLE_SUFFIX_MAX_BYTES) {
+    return { stem: name, extension: "" };
+  }
+  return { stem: name.slice(0, dot), extension };
+}
+
+/** `stem` followed by `tail`, with the stem shortened so the whole name fits in
+ * the file name limit. */
+function fitBundleName(stem: string, tail: string): string {
+  return cutToUtf8Bytes(stem, BUNDLE_NAME_MAX_BYTES - utf8Length(tail)) + tail;
+}
+
 /** The first file with a name keeps it. A later one takes the lowest free suffix,
  * which `taken` marks once used. */
 function uniqueBundleName(taken: Set<string>, kept: Set<string>, base: string): string {
@@ -978,11 +1021,9 @@ function uniqueBundleName(taken: Set<string>, kept: Set<string>, base: string): 
     kept.add(key);
     return base;
   }
-  const dot = base.lastIndexOf(".");
-  const stem = dot > 0 ? base.slice(0, dot) : base;
-  const extension = dot > 0 ? base.slice(dot) : "";
+  const { stem, extension } = splitBundleName(base);
   for (let copy = 2; ; copy += 1) {
-    const candidate = `${stem} (${copy})${extension}`;
+    const candidate = fitBundleName(stem, ` (${copy})${extension}`);
     const candidateKey = bundleNameKey(candidate);
     if (taken.has(candidateKey)) continue;
     taken.add(candidateKey);
@@ -991,17 +1032,18 @@ function uniqueBundleName(taken: Set<string>, kept: Set<string>, base: string): 
 }
 
 /** Package multiple artifacts' bytes into one ZIP. Colliding filenames are
- * disambiguated with a numeric suffix so every entry survives the bundle. Every
+ * disambiguated with a numeric suffix so every entry survives the bundle, and a
+ * name too long to unzip is shortened, keeping its extension. Every
  * real name is reserved up front, so a suffix never takes one, wherever that
  * file sits in the list. */
 export async function buildArtifactBundle(
   entries: readonly ArtifactBundleEntry[],
 ): Promise<FormatExport> {
   const zip = new JSZip();
-  const files = entries.map((entry) => ({
-    base: sanitizeBundleName(entry.name),
-    bytes: entry.bytes,
-  }));
+  const files = entries.map((entry) => {
+    const { stem, extension } = splitBundleName(sanitizeBundleName(entry.name));
+    return { base: fitBundleName(stem, extension), bytes: entry.bytes };
+  });
   const taken = new Set(files.map((file) => bundleNameKey(file.base)));
   const kept = new Set<string>();
   for (const file of files) {

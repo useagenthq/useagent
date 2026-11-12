@@ -79,6 +79,10 @@ product reference.
 - **Server-owned fields.** Tenant identity and provenance (`org_id`, `user_id`,
   `origin`) are set server-side. `POST /api/runs` rejects a client-supplied
   `origin` with `400`.
+- **JSON errors.** Errors are JSON with an `error` field. A path no route
+  serves is `404 {"error": "not_found"}`, and an error no route handled is
+  `500 {"error": "internal_error"}`, logged on the server with its method and
+  path. The sandbox gateway answers the same way.
 
 ## Streaming
 
