@@ -265,6 +265,16 @@ export async function setBotArchived(orgId: string, id: string, archived: boolea
   return row ?? null;
 }
 
+/** Remove a bot that never opened a home thread: an import that could not finish
+ *  takes its half-made bot back. A bot with a thread is never deleted here. */
+export async function deleteBotWithoutThread(orgId: string, id: string): Promise<boolean> {
+  const rows = await db
+    .delete(bots)
+    .where(and(eq(bots.orgId, orgId), eq(bots.id, id), isNull(bots.homeThreadId)))
+    .returning({ id: bots.id });
+  return rows.length > 0;
+}
+
 /** The bot (archived or not) whose name matches ignoring case, other than `exceptId`. */
 export async function findBotByName(orgId: string, name: string, exceptId?: string): Promise<BotRow | null> {
   const rows = await db
