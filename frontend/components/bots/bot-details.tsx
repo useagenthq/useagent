@@ -13,6 +13,7 @@ import { backendFetch } from "@/lib/backend-fetch";
 import { cx } from "@/utils/cx";
 import { ArchiveBotButton } from "./archive-bot";
 import { AvatarMark, StateBadge } from "./avatar-mark";
+import { ExportBotSection } from "./bot-file-actions";
 import { PresetSection } from "./bot-preset";
 import { BotRepositories } from "./bot-repositories";
 import { RoutinesSection } from "./routines-section";
@@ -221,6 +222,8 @@ export function BotThreadHeader({ bot, threadModel }: { bot: ApiBot; threadModel
                 )}
               </p>
             </section>
+
+            <ExportBotSection bot={bot} />
 
             <ArchiveBotButton bot={bot} />
           </Drawer.Body>

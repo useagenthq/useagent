@@ -22,9 +22,52 @@ thread through the API-key lane, use the allowed `POST /api/runs` route with
 | GET | `/api/bots/:id` | Read one preset and its current status. |
 | PATCH | `/api/bots/:id` | Update allowed fields or archive/restore the bot. Execution-preset fields lock after the home thread exists. Only the bot's creator changes it (`403 bot_owner_only` names them); an org owner or admin may archive or restore it. Every view carries `editable` and `ownerName` for the viewer. |
 | POST | `/api/bots/:id/messages` | Send `{"text":"..."}`. The first message creates the home thread; later messages reply to its current head. |
+| GET | `/api/bots/:id/export` | Download the bot as a bot file (see below). Any member who can see the bot may export it. |
+| POST | `/api/bots/import` | Create a new bot from a bot file, set up by the caller. Answers `201` with `bot`, the number of `routines` created, and `skipped`: the `repos` this workspace can't reach and the `model` it doesn't offer (or `null`), which were left out. |
 
 An archived bot stays readable but rejects new messages with `409 bot_archived`.
 Bot names are unique within the org, case-insensitively.
+
+## Bot files
+
+A bot file is JSON that carries what a bot is and when it works, and nothing
+tied to the workspace it came from:
+
+```json
+{
+  "format": "useagent.bot",
+  "version": 1,
+  "bot": {
+    "name": "Ledger",
+    "title": "Data analyst",
+    "rules": "Numbers come from the warehouse.",
+    "engine": "opencode",
+    "model": null,
+    "repos": ["acme/app"],
+    "memoryScope": "org",
+    "avatarTone": "violet",
+    "avatarIcon": "code"
+  },
+  "routines": [
+    { "name": "Weekly metrics", "cron": "0 7 * * 1", "timezone": "Europe/Berlin", "prompt": "Build the weekly metrics workbook." }
+  ]
+}
+```
+
+The file never holds ids, the bot's creator, its threads or its pinned skill.
+On import:
+
+- The bot fields get the same checks as `POST /api/bots`; a taken name answers
+  `409` with `field: "name"`, and the bot limit applies.
+- The file can be up to 256 KB; a bigger one answers `413 request_too_large`.
+- Fields the file does not know are ignored. A missing or wrong `format` or
+  `version`, or a known field with a bad value, answers `400 invalid_bot_file`
+  with the `field` and a `reason`, and nothing is created.
+- Routines (up to 20) come in turned off. Each becomes an automation of the
+  person importing, with the bot's engine, model and repositories. If one
+  can't be saved, the bot and the routines before it are removed again.
+- A repository the workspace's GitHub listing doesn't offer, and a model not
+  offered for the engine, are left out and listed under `skipped`.
 
 ## Routines
 
