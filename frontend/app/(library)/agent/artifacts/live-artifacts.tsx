@@ -268,7 +268,7 @@ export function LiveArtifacts({
   const [nextCursor, setNextCursor] = useState(initialNextCursor);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [olderFailed, setOlderFailed] = useState(false);
-  // Set once an older page is loaded: a refresh then keeps it and its cursor.
+  // Set once an older page is requested: a refresh then keeps what is loaded and its cursor.
   const pagedOlder = useRef(false);
   // One older page at a time, even for a second click before the button disables.
   const loadingOlderRef = useRef(false);
@@ -335,6 +335,8 @@ export function LiveArtifacts({
   const loadOlder = async () => {
     if (!nextCursor || loadingOlderRef.current) return;
     loadingOlderRef.current = true;
+    // Mark it before the fetch: a refresh landing meanwhile must keep the loaded files.
+    pagedOlder.current = true;
     setLoadingOlder(true);
     setOlderFailed(false);
     try {
@@ -347,7 +349,6 @@ export function LiveArtifacts({
         setOlderFailed(true);
         return;
       }
-      pagedOlder.current = true;
       setArtifacts((current) => appendOlderPage(current, page.artifacts));
       setNextCursor(page.nextCursor);
     } catch {

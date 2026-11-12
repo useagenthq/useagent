@@ -57,6 +57,8 @@ let reads: Array<(artifacts: ArtifactDescriptor[], nextCursor?: string | null) =
 /** Older pages by cursor; a missing cursor answers 503. */
 let olderPages: Record<string, { artifacts: ArtifactDescriptor[]; next_cursor: string | null }> = {};
 let requested: string[] = [];
+/** When set, older pages wait for it before answering. */
+let olderGate: Promise<void> | null = null;
 let intervals: number[] = [];
 let root: ReturnType<typeof createRoot> | null = null;
 let container: HTMLElement | null = null;
@@ -66,12 +68,14 @@ beforeEach(() => {
   intervals = [];
   olderPages = {};
   requested = [];
+  olderGate = null;
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = String(input);
     requested.push(path);
     if (path.startsWith("/api/artifacts?cursor=")) {
       const page = olderPages[decodeURIComponent(path.slice("/api/artifacts?cursor=".length))];
-      return Promise.resolve(page ? Response.json(page) : Response.json({ error: "unavailable" }, { status: 503 }));
+      const response = page ? Response.json(page) : Response.json({ error: "unavailable" }, { status: 503 });
+      return olderGate ? olderGate.then(() => response) : Promise.resolve(response);
     }
     if (path !== "/api/artifacts") {
       return Promise.resolve(new Response("{}", { status: 404 }));
@@ -312,6 +316,29 @@ describe("LiveArtifacts older pages", () => {
     await click("Show older files");
     expect(requested.at(-1)).toBe("/api/artifacts?cursor=c2");
     expect(names()).toEqual(["zero.txt", "first.txt", "second.txt", "third.txt"]);
+  });
+
+  test("a refresh that lands while an older page loads keeps the files already shown", async () => {
+    olderPages.c1 = { artifacts: [artifact("a3", "third.txt")], next_cursor: null };
+    let release: () => void = () => {};
+    olderGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await mount([artifact("a1", "first.txt"), artifact("a2", "second.txt")], "c1");
+    await click("Show older files");
+
+    // The newest page moves on and no longer holds second.txt.
+    await artifactChange("a0");
+    await answer([artifact("a0", "zero.txt"), artifact("a1", "first.txt")], "fresh-cursor");
+    expect(names()).toEqual(["zero.txt", "first.txt", "second.txt"]);
+
+    await act(async () => {
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(requested).toEqual(["/api/artifacts?cursor=c1", "/api/artifacts"]);
+    expect(names()).toEqual(["zero.txt", "first.txt", "second.txt", "third.txt"]);
+    expect(button("Show older files")).toBeNull();
   });
 
   test("a refresh before any older page is loaded takes the newest page's cursor", async () => {
