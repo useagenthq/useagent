@@ -40,6 +40,22 @@ export interface RunSummaryPage {
 const MAX_CURSOR_LENGTH = 1_024;
 const POSTGRES_TIMESTAMP_RE =
   /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,6})?[+-]\d{2}(?::?\d{2})?$/;
+
+/** Postgres rejects a calendar date or clock time that does not exist (and
+ * `Date.parse` may roll it over), so check the parts before the query does. */
+function isRealTimestamp(value: string): boolean {
+  const [year, month, day, hour, minute, second] = value.split(/[- :.+]/, 6).map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day!));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month! - 1 &&
+    date.getUTCDate() === day &&
+    hour! <= 23 &&
+    minute! <= 59 &&
+    second! <= 59
+  );
+}
+
 const CURSOR_KEYS = {
   threads: ["v", "view", "latest_updated_at", "latest_created_at", "latest_run_id", "created_at", "id"],
   runs: ["v", "view", "created_at", "id"],
@@ -104,7 +120,7 @@ export function parseRunSummaryCursor(value: string, view: RunSummaryCursor["vie
     if (typeof field !== "string" || field.length === 0) throw new InvalidRunSummaryCursorError();
     if (
       CURSOR_TIMESTAMP_KEYS.has(key) &&
-      (!POSTGRES_TIMESTAMP_RE.test(field) || !Number.isFinite(Date.parse(field)))
+      (!POSTGRES_TIMESTAMP_RE.test(field) || !isRealTimestamp(field) || !Number.isFinite(Date.parse(field)))
     ) {
       throw new InvalidRunSummaryCursorError();
     }

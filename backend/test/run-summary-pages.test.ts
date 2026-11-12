@@ -182,6 +182,9 @@ describe("run summary pages", () => {
     const forged = Buffer.from(
       JSON.stringify({ v: 1, view: "runs", created_at: "yesterday", id: "x" }),
     ).toString("base64url");
+    const impossibleDate = Buffer.from(
+      JSON.stringify({ v: 1, view: "runs", created_at: "2026-02-30 10:00:00.000000+00", id: "x" }),
+    ).toString("base64url");
 
     for (const query of [
       "/api/runs?view=summary&cursor=not%20a%20cursor",
@@ -189,6 +192,7 @@ describe("run summary pages", () => {
       `/api/runs?view=summary&cursor=${Buffer.from("{}").toString("base64url")}`,
       `/api/runs?view=summary&all=1&cursor=${threadCursor}`,
       `/api/runs?view=summary&all=1&cursor=${forged}`,
+      `/api/runs?view=summary&all=1&cursor=${impossibleDate}`,
     ]) {
       const response = await json(query, { cookies: session.cookies });
       expect(response.status, query).toBe(400);

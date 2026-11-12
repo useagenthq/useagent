@@ -186,6 +186,23 @@ describe("Show older threads", () => {
     expect(button("Show older threads")).toBeNull();
   });
 
+  test("keeps a thread that slides out of the newest page when a new thread arrives", async () => {
+    pages[`${NEWEST}&cursor=c1`] = () =>
+      Response.json({ runs: [thread("c")], has_more: false, next_cursor: null });
+    await mount();
+    await click("Show older threads");
+    expect(loaded()).toBe("3 of 3 runs");
+
+    // A new thread n arrives, so b is now past the newest page's limit.
+    pages[NEWEST] = () =>
+      Response.json({ runs: [thread("n"), thread("a")], has_more: true, next_cursor: "c9" });
+    await act(async () => announceRunChange());
+    await flush();
+
+    expect(loaded()).toBe("4 of 4 runs");
+    expect(container?.textContent).toContain("Thread b");
+  });
+
   test("says a page failed and tries the same cursor again", async () => {
     let fail = true;
     pages[`${NEWEST}&cursor=c1`] = () =>

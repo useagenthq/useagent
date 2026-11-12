@@ -244,6 +244,7 @@ export function RunsList({
   const [loadingOlder, setLoadingOlder] = React.useState(false);
   const [olderFailed, setOlderFailed] = React.useState(false);
   const olderRequest = React.useRef<AbortController | null>(null);
+  const olderLoaded = React.useRef(false);
   const [errored, setErrored] = React.useState(initialError);
   const [filter, setFilter] = React.useState<FilterValue>('all');
   const [engineFilter, setEngineFilter] = React.useState('all');
@@ -262,7 +263,10 @@ export function RunsList({
   const load = React.useCallback(async (signal?: AbortSignal) => {
       try {
         const page = await fetchRuns({ signal });
-        setNewest(page.runs);
+        // Once older pages are loaded their cursor starts after the original
+        // newest page, so a row pushed out of the top page by newer threads
+        // must stay in the list or it would sit in neither.
+        setNewest((prev) => (olderLoaded.current ? mergeRunPages(page.runs, prev) : page.runs));
         setNewestCursor(page.nextCursor);
         setErrored(false);
       } catch {
@@ -303,6 +307,7 @@ export function RunsList({
     setOlderFailed(false);
     try {
       const page = await fetchRuns({ cursor: nextCursor, signal: controller.signal });
+      olderLoaded.current = true;
       setOlder((current) => ({
         runs: [...(current?.runs ?? []), ...page.runs],
         cursor: page.nextCursor,
