@@ -203,6 +203,37 @@ describe("Show older threads", () => {
     expect(container?.textContent).toContain("Thread b");
   });
 
+  test("keeps a thread that slides out while the older page is still loading", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requested.push(url);
+      if (url === `${NEWEST}&cursor=c1`) {
+        await gate;
+        return Response.json({ runs: [thread("c")], has_more: false, next_cursor: null });
+      }
+      const page = pages[url];
+      return page ? page() : new Response("{}", { status: 404 });
+    }) as typeof fetch;
+    await mount();
+    await click("Show older threads");
+
+    // A new thread n arrives while the older request is held.
+    pages[NEWEST] = () =>
+      Response.json({ runs: [thread("n"), thread("a")], has_more: true, next_cursor: "c9" });
+    await act(async () => announceRunChange());
+    await flush();
+
+    release();
+    await flush();
+
+    expect(loaded()).toBe("4 of 4 runs");
+    expect(container?.textContent).toContain("Thread b");
+  });
+
   test("says a page failed and tries the same cursor again", async () => {
     let fail = true;
     pages[`${NEWEST}&cursor=c1`] = () =>

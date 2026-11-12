@@ -305,9 +305,11 @@ export function RunsList({
     olderRequest.current = controller;
     setLoadingOlder(true);
     setOlderFailed(false);
+    // Set before the request so a refresh that lands while it is in flight
+    // already keeps the rows the older page will start after.
+    olderLoaded.current = true;
     try {
       const page = await fetchRuns({ cursor: nextCursor, signal: controller.signal });
-      olderLoaded.current = true;
       setOlder((current) => ({
         runs: [...(current?.runs ?? []), ...page.runs],
         cursor: page.nextCursor,
