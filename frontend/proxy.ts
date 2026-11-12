@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { safeAuthRedirect } from "@/components/auth/safe-redirect";
 
 const SESSION_COOKIES = [
   "__Secure-better-auth.session_token",
@@ -33,13 +34,14 @@ export function proxy(request: NextRequest): NextResponse {
   const hasSession = SESSION_COOKIES.some((name) => request.cookies.has(name));
   const preview = process.env.NODE_ENV !== "production" && process.env.USEAGENT_PREVIEW_OPEN === "1";
   if (!preview && !hasSession && !isPublicPage(request.nextUrl.pathname)) {
-    // An invitation link must survive the sign-in it triggers.
-    if (request.nextUrl.pathname.startsWith("/accept-invitation/")) {
-      const login = new URL("/login", request.url);
-      login.searchParams.set("redirect_url", request.nextUrl.pathname);
-      return NextResponse.redirect(login);
-    }
-    return NextResponse.redirect(new URL("/login", request.url));
+    // The page that was opened, its link included (a drafted prompt, a repo, a
+    // filter), survives the sign-in it triggers. The home page is where a
+    // sign-in lands anyway, and anything that is not a plain path on this site
+    // becomes the home page too.
+    const login = new URL("/login", request.url);
+    const back = safeAuthRedirect(`${request.nextUrl.pathname}${request.nextUrl.search}`);
+    if (back !== "/") login.searchParams.set("redirect_url", back);
+    return NextResponse.redirect(login);
   }
 
   const headers = new Headers(request.headers);

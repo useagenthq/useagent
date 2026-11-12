@@ -92,10 +92,37 @@ describe("authentication proxy", () => {
     },
   );
 
-  test("redirects anonymous navigation to login", () => {
-    const response = proxy(new NextRequest("https://useagent.example.com/agent/new"));
-    expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe("https://useagent.example.com/login");
+  test("sends an anonymous visitor through sign-in and back to the page they opened, link included", () => {
+    for (const [path, location] of [
+      ["/agent/new", "/login?redirect_url=%2Fagent%2Fnew"],
+      [
+        "/agent/new?prompt=Make%20a%20to-do%20app",
+        "/login?redirect_url=%2Fagent%2Fnew%3Fprompt%3DMake%2520a%2520to-do%2520app",
+      ],
+      ["/session/run-1", "/login?redirect_url=%2Fsession%2Frun-1"],
+      ["/agent/runs?status=failed&q=deploy", "/login?redirect_url=%2Fagent%2Fruns%3Fstatus%3Dfailed%26q%3Ddeploy"],
+    ]) {
+      const response = proxy(new NextRequest(`https://useagent.example.com${path}`));
+      expect([path, response.status, response.headers.get("location")]).toEqual([
+        path,
+        307,
+        `https://useagent.example.com${location}`,
+      ]);
+    }
+  });
+
+  test("sends the home page and anything that is not a plain path on this site to plain sign-in", () => {
+    for (const url of [
+      "https://useagent.example.com/",
+      "https://useagent.example.com//attacker.example/agent/new",
+    ]) {
+      const response = proxy(new NextRequest(url));
+      expect([url, response.status, response.headers.get("location")]).toEqual([
+        url,
+        307,
+        "https://useagent.example.com/login",
+      ]);
+    }
   });
 
   test("sends an anonymous invitation link through sign-in and back", () => {

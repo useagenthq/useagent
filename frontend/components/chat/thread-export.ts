@@ -1,3 +1,4 @@
+import { downloadTextFile } from "@/lib/download-file";
 import { buildTimelineFromCanonical, shouldUseCanonicalTimeline } from "./canonical-timeline";
 import type { Turn } from "./conversation";
 import type { ThreadSnapshot } from "./thread-store";
@@ -149,16 +150,5 @@ export function downloadThreadExport(
   const extension = format === "markdown" ? "md" : "json";
   const type =
     format === "markdown" ? "text/markdown;charset=utf-8" : "application/json;charset=utf-8";
-  const url = URL.createObjectURL(new Blob([content], { type }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `thread-${threadId}.${extension}`;
-  document.body.append(link);
-  try {
-    link.click();
-  } finally {
-    link.remove();
-    // Give the browser a task to start the download before releasing the blob.
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
+  downloadTextFile(content, `thread-${threadId}.${extension}`, type);
 }

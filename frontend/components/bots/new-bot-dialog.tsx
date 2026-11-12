@@ -12,6 +12,8 @@ import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cx } from "@/utils/cx";
 import { AvatarMark, botOrb } from "./avatar-mark";
+import type { BotFileDraft } from "./bot-file";
+import { ImportBotPanel, ImportFromFileButton } from "./bot-file-actions";
 import { BotRepositories } from "./bot-repositories";
 import { BOT_SUGGESTIONS, type BotSuggestion } from "./suggestions";
 import {
@@ -23,6 +25,7 @@ import {
   OFFLINE_MESSAGE,
 } from "./types";
 
+const PANEL = "max-w-[440px] rounded-2xl border border-border-button-default bg-background-primary-default shadow-dropdown";
 const FOCUS_RING = "ring-2 ring-border-focus-ring ring-offset-2 ring-offset-background-primary-default";
 
 /** What the chosen engine gives the bot, said before the bot exists. */
@@ -45,6 +48,8 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const { catalog, loaded } = useCapabilityCatalog();
   const engines = (catalog?.engines ?? []).filter((engine) => engine.ready);
   const nameRef = useRef<HTMLInputElement>(null);
+  // A chosen bot file turns the dialog into its import step.
+  const [draft, setDraft] = useState<BotFileDraft | null>(null);
   const [name, setName] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -69,6 +74,11 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     setRules("");
     setRepos([]);
     setError(null);
+  };
+
+  const change = (next: boolean) => {
+    if (!next) setDraft(null);
+    onOpenChange(next);
   };
 
   const pick = (suggestion: BotSuggestion) => {
@@ -113,10 +123,20 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     }
   };
 
+  if (draft) {
+    return (
+      <Modal.Root open={open} onOpenChange={change}>
+        <Modal.Content className={PANEL}>
+          <ImportBotPanel draft={draft} onBack={() => setDraft(null)} onClose={() => change(false)} />
+        </Modal.Content>
+      </Modal.Root>
+    );
+  }
+
   return (
-    <Modal.Root open={open} onOpenChange={onOpenChange}>
+    <Modal.Root open={open} onOpenChange={change}>
       <Modal.Content
-        className="max-w-[440px] rounded-2xl border border-border-button-default bg-background-primary-default shadow-dropdown"
+        className={PANEL}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           nameRef.current?.focus();
@@ -230,14 +250,23 @@ export function NewBotDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           )}
         </Modal.Body>
         <Modal.Footer>
-          <Modal.Close asChild>
-            <Button variant="secondary" size="small">
-              Cancel
+          <ImportFromFileButton
+            onOpen={(opened) => {
+              setError(null);
+              setDraft(opened);
+            }}
+            onError={setError}
+          />
+          <div className="flex items-center gap-2">
+            <Modal.Close asChild>
+              <Button variant="secondary" size="small">
+                Cancel
+              </Button>
+            </Modal.Close>
+            <Button variant="primary" size="small" onClick={() => void submit()}>
+              {busy ? "Creating…" : "Create bot"}
             </Button>
-          </Modal.Close>
-          <Button variant="primary" size="small" onClick={() => void submit()}>
-            {busy ? "Creating…" : "Create bot"}
-          </Button>
+          </div>
         </Modal.Footer>
       </Modal.Content>
     </Modal.Root>

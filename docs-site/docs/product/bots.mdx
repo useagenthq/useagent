@@ -62,6 +62,21 @@ You can:
 Expected outcome: a scheduled or manual firing creates a normal run in the home
 thread and updates the routine's last-run time.
 
+## Share a bot with another workspace
+
+In the bot details drawer, select **Export bot** to download the bot as a
+`.bot.json` file: its name, look, job, standing rules, engine, model,
+repositories, memory scope and routines. Its threads, the people in the
+workspace and its pinned skill stay behind.
+
+To bring it in, open **New bot**, select **Import from file** and choose the
+file. Check the name, which you can change if a bot here already has it, then
+select **Import bot**. The new bot is yours, and its routines arrive turned off
+so nothing runs until you switch one on. A repository this workspace can't
+reach, or a model it doesn't offer, is left out, and the dialog says which
+before it opens the bot. You can add repositories in Bot details until the bot's
+first message.
+
 ## Mention a bot from another thread
 
 Type `@` in the composer, choose a bot, and send the message. The visible token

@@ -14,6 +14,7 @@ import {
   createBotRow,
   describeBot,
   describeBots,
+  deleteBotWithoutThread,
   findBotByName,
   getBotRoutine,
   getBotRow,
@@ -27,9 +28,11 @@ import {
   updateBotRow,
 } from "./repo";
 import { botEditableBy } from "./owner";
+import { botFile, parseBotFile } from "./transfer";
 import type { BotRow } from "../db/schema";
 import { asOrgAdmin } from "../provider-connections/repo";
 import { memberDisplayNames } from "../team/member-names";
+import { unknownRepos } from "../github/repos";
 import { botsEnabled } from "./rollout";
 import { listFirings, markFired, nextRunAt } from "../schedules/repo";
 import {
@@ -96,11 +99,16 @@ function nameTaken(name: string) {
   return { error: "invalid_bot", field: "name", reason: `A bot named ${name} already exists. Choose another name.` };
 }
 
+/** Whether the preset's model, if it names one, is offered for its engine to this person. */
+async function modelOffered(input: BotInput, userId: string | null | undefined): Promise<boolean> {
+  return !input.model || (isModelAllowedForEngine(input.engine, input.model) && (await modelOfferedToUser(input.engine, input.model, userId)));
+}
+
 /** Live-config checks a structurally valid preset still has to pass. */
 async function checkPreset(orgId: string, input: BotInput, userId: string | null | undefined): Promise<PresetProblem | null> {
   const engine = resolveAcceptedEngine(input.engine);
   if (!engine.ok) return { status: engine.status, body: { ...engineResolutionErrorBody(engine), field: "engine" } };
-  if (input.model && (!isModelAllowedForEngine(input.engine, input.model) || !(await modelOfferedToUser(input.engine, input.model, userId)))) {
+  if (!(await modelOffered(input, userId))) {
     return { status: 400, body: { error: "model_not_allowed", field: "model", reason: `${input.model} is not offered for ${input.engine}` } };
   }
   const skillId = input.skillIds[0];
@@ -109,6 +117,15 @@ async function checkPreset(orgId: string, input: BotInput, userId: string | null
     if (!pinned) return { status: 404, body: { error: "skill_not_found", field: "skillIds", reason: `skill ${skillId} not found` } };
   }
   return null;
+}
+
+/** The answer when the workspace already holds its ceiling of active bots. */
+async function botLimitRefusal(orgId: string): Promise<Response | null> {
+  if ((await listBotRows(orgId)).length < MAX_BOTS_PER_ORG) return null;
+  return Response.json(
+    { error: "bot_limit", limit: MAX_BOTS_PER_ORG, reason: `This workspace already has ${MAX_BOTS_PER_ORG} bots. Archive one before creating another.` },
+    { status: 409 },
+  );
 }
 
 botsRoutes.get("/", async (c) => {
@@ -121,12 +138,8 @@ botsRoutes.post("/", async (c) => {
   if (!body) return c.json({ error: "invalid_body" }, 400);
   const parsed = parseBotInput(body, null);
   if ("error" in parsed) return c.json({ error: "invalid_bot", ...parsed.error }, 400);
-  if ((await listBotRows(c.get("orgId"))).length >= MAX_BOTS_PER_ORG) {
-    return c.json(
-      { error: "bot_limit", limit: MAX_BOTS_PER_ORG, reason: `This workspace already has ${MAX_BOTS_PER_ORG} bots. Archive one before creating another.` },
-      409,
-    );
-  }
+  const full = await botLimitRefusal(c.get("orgId"));
+  if (full) return full;
   const problem = await checkPreset(c.get("orgId"), parsed.input, c.get("userId"));
   if (problem) return c.json(problem.body, problem.status);
   const holder = await findBotByName(c.get("orgId"), parsed.input.name);
@@ -140,12 +153,94 @@ botsRoutes.post("/", async (c) => {
   }
 });
 
+/**
+ * Import a bot file (transfer.ts) as a new bot of this workspace, set up by the
+ * person importing it, with the same checks a new bot gets. Its routines come
+ * in turned off, so nothing fires until someone switches one on. A repository
+ * this workspace can't reach, or a model it doesn't offer this person, is left
+ * out and named under `skipped` rather than failing the import. Routines are
+ * automations made one at a time, so if one fails, the ones before it and the
+ * new bot are taken back and nothing is left behind.
+ */
+botsRoutes.post("/import", async (c) => {
+  const orgId = c.get("orgId");
+  const userId = c.get("userId") ?? null;
+  const body = await readBody(c);
+  if (!body) return c.json({ error: "invalid_bot_file", field: "file", reason: "The file is not a bot file." }, 400);
+  const parsed = parseBotFile(body);
+  if ("error" in parsed) return c.json({ error: "invalid_bot_file", ...parsed.error }, 400);
+  const full = await botLimitRefusal(orgId);
+  if (full) return full;
+
+  let input = parsed.file.input;
+  const skippedModel = (await modelOffered(input, userId)) ? null : input.model;
+  if (skippedModel) input = { ...input, model: null };
+  const problem = await checkPreset(orgId, input, userId);
+  if (problem) return c.json(problem.body, problem.status);
+  const holder = await findBotByName(orgId, input.name);
+  if (holder) return c.json(nameTaken(holder.name), 409);
+
+  // Checked as an automation's repositories are (unknownRepos): one this
+  // workspace's GitHub listing doesn't offer is left out. The bot's repositories
+  // stay editable in its details until its first message.
+  const unreachable = new Set(input.repos.length > 0 ? await unknownRepos(input.repos, orgId) : []);
+  const skippedRepos = input.repos.filter((repo) => unreachable.has(repo));
+  if (skippedRepos.length > 0) input = { ...input, repos: input.repos.filter((repo) => !unreachable.has(repo)) };
+
+  let row: BotRow;
+  try {
+    row = await createBotRow(orgId, input, userId);
+  } catch (error) {
+    if (isUniqueViolation(error)) return c.json(nameTaken(input.name), 409);
+    throw error;
+  }
+  const created: string[] = [];
+  try {
+    for (const routine of parsed.file.routines) {
+      // The routine carries the bot's preset, as one added on the bot page does.
+      const schedule = await createScheduleForOrg({ orgId, userId }, {
+        ...routine,
+        engine: row.engine,
+        ...(row.model ? { model: row.model } : {}),
+        ...(row.repos.length > 0 ? { repos: [...row.repos] } : {}),
+      });
+      created.push(schedule.id);
+      await attachRoutine(orgId, schedule.id, row.id);
+    }
+  } catch (error) {
+    for (const scheduleId of created) {
+      await deleteScheduleForOrg(orgId, scheduleId, userId).catch((cleanup: unknown) => {
+        console.error(`[bots] import could not remove routine ${scheduleId}:`, cleanup);
+      });
+    }
+    await deleteBotWithoutThread(orgId, row.id);
+    return scheduleError(error) ?? Promise.reject(error);
+  }
+  return c.json(
+    {
+      bot: await describeBot(orgId, row, userId),
+      routines: created.length,
+      skipped: { repos: skippedRepos, model: skippedModel },
+    },
+    201,
+  );
+});
+
 botsRoutes.get("/:id", async (c) => {
   const id = botId(c.req.param("id"));
   if (!id) return c.json({ error: "not_found" }, 404);
   const row = await getBotRow(c.get("orgId"), id);
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json({ bot: await describeBot(c.get("orgId"), row, c.get("userId") ?? null) });
+});
+
+/** The bot as a file (transfer.ts) for anyone who can see it: what it is and its routines, no ids, people or threads. */
+botsRoutes.get("/:id/export", async (c) => {
+  const id = botId(c.req.param("id"));
+  if (!id) return c.json({ error: "not_found" }, 404);
+  const row = await getBotRow(c.get("orgId"), id);
+  if (!row) return c.json({ error: "not_found" }, 404);
+  return c.json(botFile(row, await listBotRoutines(c.get("orgId"), row.id)));
 });
 
 botsRoutes.patch("/:id", async (c) => {
