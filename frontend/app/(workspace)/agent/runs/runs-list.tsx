@@ -21,6 +21,7 @@ import {
   type StatusChipColor,
 } from '@/components/application/data-table/cells';
 import { Chip } from '@/components/base/badges/chip';
+import { Button } from '@/components/base/buttons/button';
 import { runTitle } from '@/components/chat/types';
 import { InputBase } from '@/components/base/input/input';
 import { Pagination } from '@/components/base/pagination/pagination';
@@ -42,7 +43,14 @@ import { StatusDot } from '@/components/shared/status-dot';
 import { useOrgChanges } from '@/hooks/use-org-changes';
 import { cx } from '@/utils/cx';
 import { formatDuration, relativeTime } from '@/utils/format';
-import { type Run, type RunTone, TONE_TO_DOT, fetchRuns, statusTone } from './runs-data';
+import {
+  type Run,
+  type RunTone,
+  TONE_TO_DOT,
+  fetchRuns,
+  mergeRunPages,
+  statusTone,
+} from './runs-data';
 
 const POLL_MS = 15_000;
 const PER_PAGE = 10;
@@ -220,13 +228,23 @@ function ErrorState() {
 
 export function RunsList({
   initialRuns,
+  initialNextCursor = null,
   initialError,
 }: {
   initialRuns: Run[];
+  initialNextCursor?: string | null;
   initialError: boolean;
 }) {
   const router = useRouter();
-  const [runs, setRuns] = React.useState<Run[]>(initialRuns);
+  // The newest page is refreshed live; older pages are added on request and
+  // kept, with the cursor that follows the last one.
+  const [newest, setNewest] = React.useState<Run[]>(initialRuns);
+  const [newestCursor, setNewestCursor] = React.useState(initialNextCursor);
+  const [older, setOlder] = React.useState<{ runs: Run[]; cursor: string | null } | null>(null);
+  const [loadingOlder, setLoadingOlder] = React.useState(false);
+  const [olderFailed, setOlderFailed] = React.useState(false);
+  const olderRequest = React.useRef<AbortController | null>(null);
+  const olderLoaded = React.useRef(false);
   const [errored, setErrored] = React.useState(initialError);
   const [filter, setFilter] = React.useState<FilterValue>('all');
   const [engineFilter, setEngineFilter] = React.useState('all');
@@ -244,8 +262,12 @@ export function RunsList({
 
   const load = React.useCallback(async (signal?: AbortSignal) => {
       try {
-        const next = await fetchRuns(signal);
-        setRuns(next);
+        const page = await fetchRuns({ signal });
+        // Once older pages are loaded their cursor starts after the original
+        // newest page, so a row pushed out of the top page by newer threads
+        // must stay in the list or it would sit in neither.
+        setNewest((prev) => (olderLoaded.current ? mergeRunPages(page.runs, prev) : page.runs));
+        setNewestCursor(page.nextCursor);
         setErrored(false);
       } catch {
         if (signal?.aborted) return;
@@ -268,6 +290,43 @@ export function RunsList({
       clearInterval(id);
     };
   }, [load]);
+
+  React.useEffect(() => () => olderRequest.current?.abort(), []);
+
+  const runs = React.useMemo(
+    () => mergeRunPages(newest, older?.runs ?? []),
+    [newest, older],
+  );
+  const nextCursor = older ? older.cursor : newestCursor;
+
+  const loadOlder = async () => {
+    if (!nextCursor || olderRequest.current) return;
+    const controller = new AbortController();
+    olderRequest.current = controller;
+    setLoadingOlder(true);
+    setOlderFailed(false);
+    // Set before the request so a refresh that lands while it is in flight
+    // already keeps the rows the older page will start after.
+    olderLoaded.current = true;
+    try {
+      const page = await fetchRuns({ cursor: nextCursor, signal: controller.signal });
+      setOlder((current) => ({
+        runs: [...(current?.runs ?? []), ...page.runs],
+        cursor: page.nextCursor,
+      }));
+    } catch {
+      if (!controller.signal.aborted) setOlderFailed(true);
+    } finally {
+      if (!controller.signal.aborted) {
+        olderRequest.current = null;
+        setLoadingOlder(false);
+      }
+    }
+  };
+
+  let olderLabel = 'Show older threads';
+  if (loadingOlder) olderLabel = 'Loading older threads';
+  else if (olderFailed) olderLabel = 'Try again';
 
   // Keep the last good list on transient failures; only surface the error
   // panel when a poll failed and we have nothing to show.
@@ -355,7 +414,7 @@ export function RunsList({
         <section
           className={cx(
             'mt-6 flex w-full flex-col rounded-2xl border border-border-table pt-2',
-            totalPages > 1 ? 'pb-3' : 'pb-0',
+            totalPages > 1 || nextCursor ? 'pb-3' : 'pb-0',
           )}
         >
           {/* Toolbar inside the card (data-table block recipe): result count on
@@ -410,8 +469,8 @@ export function RunsList({
               )}
 
               <InputBase
-                aria-label='Search runs'
-                placeholder='Search'
+                aria-label='Search loaded threads'
+                placeholder='Search loaded threads'
                 leadingIcon={RiSearch2Line}
                 value={query}
                 onChange={(e) => {
@@ -496,6 +555,24 @@ export function RunsList({
                 totalPages={totalPages}
                 onChange={(p) => table.setPageIndex(p - 1)}
               />
+            </div>
+          )}
+
+          {nextCursor && (
+            <div className='flex items-center justify-center gap-2 px-3 pt-3'>
+              {olderFailed && (
+                <p role='alert' className='text-caption-1-regular text-text-tertiary'>
+                  Couldn&apos;t load older threads.
+                </p>
+              )}
+              <Button
+                variant='secondary'
+                size='small'
+                disabled={loadingOlder}
+                onClick={() => void loadOlder()}
+              >
+                {olderLabel}
+              </Button>
             </div>
           )}
         </section>

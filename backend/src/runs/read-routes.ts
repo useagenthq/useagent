@@ -8,9 +8,14 @@ import {
   getThreadForRun,
   getThreadOutlineForRun,
   getThreadRunsByIds,
-  listRunSummaries,
   listRunsWithSteps,
 } from "./repo.js";
+import {
+  InvalidRunSummaryCursorError,
+  listRunSummaries,
+  parseRunSummaryCursor,
+  type RunSummaryCursor,
+} from "./run-summaries.js";
 import { getRunTimingTable } from "./run-timing.js";
 
 /** Bound on ids per windowed turns fetch: keeps one island's payload and query
@@ -20,7 +25,8 @@ const MAX_TURN_FETCH_IDS = 30;
 export function registerRunReadRoutes(routes: Hono<AppEnv>): void {
   // List runs (newest first) with their steps, scoped to the active org. By
   // default only thread roots (one entry per conversation); `?all=1` returns every
-  // run in every thread.
+  // run in every thread. The summary view pages: pass `next_cursor` back as
+  // `?cursor=` with the same filters and limit for the next page.
   routes.get("/", async (c) => {
     const all = c.req.query("all") === "1";
     const requestedLimit = Number.parseInt(c.req.query("limit") ?? "100", 10);
@@ -28,13 +34,29 @@ export function registerRunReadRoutes(routes: Hono<AppEnv>): void {
       ? Math.min(c.req.query("view") === "summary" ? 1_000 : 100, Math.max(1, requestedLimit))
       : 100;
     if (c.req.query("view") === "summary") {
+      const rawCursor = c.req.query("cursor");
+      let cursor: RunSummaryCursor | null = null;
+      if (rawCursor !== undefined) {
+        try {
+          cursor = parseRunSummaryCursor(rawCursor, all ? "runs" : "threads");
+        } catch (error) {
+          if (error instanceof InvalidRunSummaryCursorError) {
+            return c.json({ error: error.message }, 400);
+          }
+          throw error;
+        }
+      }
+      const page = await listRunSummaries(c.get("orgId"), {
+        all,
+        limit,
+        cursor,
+        includeActive: c.req.query("include_active") === "1",
+        includeNativeChildren: c.req.query("include_native_children") === "1",
+      });
       return c.json({
-        runs: await listRunSummaries(c.get("orgId"), {
-          all,
-          limit,
-          includeActive: c.req.query("include_active") === "1",
-          includeNativeChildren: c.req.query("include_native_children") === "1",
-        }),
+        runs: page.runs,
+        has_more: page.nextCursor !== null,
+        next_cursor: page.nextCursor,
       });
     }
     return c.json({ runs: await listRunsWithSteps(c.get("orgId"), { all, limit }) });

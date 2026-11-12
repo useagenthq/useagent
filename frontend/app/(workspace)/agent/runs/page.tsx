@@ -12,15 +12,22 @@ export const dynamic = "force-dynamic";
 
 export default async function AgentRunsPage() {
   let initialRuns: Run[] = [];
+  let initialNextCursor: string | null = null;
   let initialError = false;
 
   try {
-    initialRuns = await fetchRuns();
+    const page = await fetchRuns();
+    initialRuns = page.runs;
+    initialNextCursor = page.nextCursor;
   } catch {
     initialError = true;
   }
 
   return (
-    <RunsList initialRuns={initialRuns} initialError={initialError} />
+    <RunsList
+      initialRuns={initialRuns}
+      initialNextCursor={initialNextCursor}
+      initialError={initialError}
+    />
   );
 }
