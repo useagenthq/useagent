@@ -16,7 +16,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   artifactViewFor,
   extractArtifactResult,
-  extractArtifacts,
   type ArtifactCategory,
   type ArtifactDescriptor,
 } from "@/components/artifacts/model";
@@ -32,6 +31,12 @@ import {
 import { Select, SelectItem } from "@/components/base/select/select";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";
+import {
+  appendOlderPage,
+  artifactPagePath,
+  mergeNewestPage,
+  readArtifactPage,
+} from "@/lib/fetch-artifacts";
 import { ArtifactCard, ArtifactRow } from "./artifact-card";
 
 type Filter = "all" | ArtifactCategory;
@@ -243,17 +248,30 @@ function UnavailableState({ onRetry }: { onRetry: () => void }) {
  * The list re-reads on artifact changes from the org stream, never on a timer.
  * Changes missed while the stream was down are covered by a read each time it
  * opens (which also covers the gap after the server-rendered snapshot), and
- * changes made in another tab by a read when this one comes back to view. */
+ * changes made in another tab by a read when this one comes back to view.
+ *
+ * Files past the newest page load on request, a page at a time. Those older
+ * pages stay loaded while the newest page refreshes, which then never moves
+ * the cursor of the next older page. */
 export function LiveArtifacts({
   initialArtifacts,
+  initialNextCursor = null,
   initialAvailable,
   initialRunId,
 }: {
   initialArtifacts: ArtifactDescriptor[];
+  initialNextCursor?: string | null;
   initialAvailable: boolean;
   initialRunId?: string;
 }) {
   const [artifacts, setArtifacts] = useState(initialArtifacts);
+  const [nextCursor, setNextCursor] = useState(initialNextCursor);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [olderFailed, setOlderFailed] = useState(false);
+  // Set once an older page is requested: a refresh then keeps what is loaded and its cursor.
+  const pagedOlder = useRef(false);
+  // One older page at a time, even for a second click before the button disables.
+  const loadingOlderRef = useRef(false);
   const [available, setAvailable] = useState(initialAvailable);
   const [filter, setFilter] = useState<Filter>("all");
   const [refreshing, setRefreshing] = useState(false);
@@ -261,14 +279,19 @@ export function LiveArtifacts({
 
   const fetchSnapshot = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await backendFetch("/api/artifacts", { signal, cache: "no-store" });
+      const response = await backendFetch(artifactPagePath(), { signal, cache: "no-store" });
       if (!response.ok) {
         setAvailable(false);
         return;
       }
-      const parsed = extractArtifacts(await response.json());
-      if (parsed) {
-        setArtifacts(parsed);
+      const page = readArtifactPage(await response.json());
+      if (page) {
+        if (pagedOlder.current) {
+          setArtifacts((current) => mergeNewestPage(page.artifacts, current));
+        } else {
+          setArtifacts(page.artifacts);
+          setNextCursor(page.nextCursor);
+        }
         setAvailable(true);
       } else {
         setAvailable(false);
@@ -308,6 +331,33 @@ export function LiveArtifacts({
     },
     [fetchSnapshot],
   );
+
+  const loadOlder = async () => {
+    if (!nextCursor || loadingOlderRef.current) return;
+    loadingOlderRef.current = true;
+    // Mark it before the fetch: a refresh landing meanwhile must keep the loaded files.
+    pagedOlder.current = true;
+    setLoadingOlder(true);
+    setOlderFailed(false);
+    try {
+      const response = await backendFetch(artifactPagePath(nextCursor), {
+        signal: lifetime.current?.signal,
+        cache: "no-store",
+      });
+      const page = response.ok ? readArtifactPage(await response.json()) : null;
+      if (!page) {
+        setOlderFailed(true);
+        return;
+      }
+      setArtifacts((current) => appendOlderPage(current, page.artifacts));
+      setNextCursor(page.nextCursor);
+    } catch {
+      if (!lifetime.current?.signal.aborted) setOlderFailed(true);
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  };
 
   useOrgChanges(
     (change) => {
@@ -471,8 +521,27 @@ export function LiveArtifacts({
         </>
       ) : (
         <p className="mt-10 text-body-2-regular text-text-secondary">
-          No {FILTERS.find((item) => item.id === filter)?.label.toLowerCase()} artifacts yet.
+          No {FILTERS.find((item) => item.id === filter)?.label.toLowerCase()} artifacts{" "}
+          {nextCursor ? "among the loaded files." : "yet."}
         </p>
+      )}
+
+      {artifacts.length > 0 && nextCursor && (
+        <div className="mt-6 flex flex-col items-center gap-2">
+          {olderFailed && (
+            <p role="alert" className="text-caption-1-regular text-text-error-primary">
+              Couldn't load older files.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => void loadOlder()}
+            disabled={loadingOlder}
+            className="inline-flex h-9 items-center rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-secondary outline-none hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring disabled:opacity-50"
+          >
+            {loadingOlder ? "Loading older files…" : olderFailed ? "Try again" : "Show older files"}
+          </button>
+        </div>
       )}
     </div>
   );

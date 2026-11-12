@@ -25,11 +25,12 @@ import {
   exportWorkpieceState,
   stateFromNativeArtifact,
 } from "./authoring";
+import { type ArtifactListCursor, InvalidArtifactCursorError, parseArtifactCursor } from "./list-cursor";
 import { canPreviewInline } from "./mime";
 import {
   applyArtifactPdfPageRevision,
   getArtifactForOrg,
-  listArtifactsForOrg,
+  listArtifactPageForOrg,
   listRunArtifactFilesForOrg,
   seedArtifactWorkpieceStateIfMissing,
   toArtifactDescriptor,
@@ -117,13 +118,33 @@ const ARCHIVE_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
 export const artifactRoutes = new Hono<AppEnv>();
 artifactRoutes.use("*", orgScope);
 
+// Newest first, `limit` (1 to 100, default 100) at a time. `next_cursor` goes
+// back as `?cursor=`, with the same filters and limit, for the page after it.
 artifactRoutes.get("/", async (c) => {
-  const rows = await listArtifactsForOrg({
+  const requestedLimit = Number.parseInt(c.req.query("limit") ?? "100", 10);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, requestedLimit)) : 100;
+  const rawCursor = c.req.query("cursor");
+  let cursor: ArtifactListCursor | null = null;
+  if (rawCursor !== undefined) {
+    try {
+      cursor = parseArtifactCursor(rawCursor);
+    } catch (error) {
+      if (error instanceof InvalidArtifactCursorError) return c.json({ error: error.message }, 400);
+      throw error;
+    }
+  }
+  const page = await listArtifactPageForOrg({
     orgId: c.get("orgId"),
     runId: c.req.query("run_id") || undefined,
     threadId: c.req.query("thread_id") || undefined,
+    limit,
+    cursor,
   });
-  return c.json({ artifacts: rows.map(toArtifactDescriptor) });
+  return c.json({
+    artifacts: page.artifacts.map(toArtifactDescriptor),
+    has_more: page.nextCursor !== null,
+    next_cursor: page.nextCursor,
+  });
 });
 
 // Download every published artifact of a run as one ZIP. Org-scoped like every
