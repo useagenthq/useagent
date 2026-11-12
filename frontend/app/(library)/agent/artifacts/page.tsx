@@ -20,6 +20,7 @@ export default async function LiveArtifactsPage({
   return (
     <LiveArtifacts
         initialArtifacts={snapshot.artifacts}
+        initialNextCursor={snapshot.nextCursor}
         initialAvailable={snapshot.available}
         initialRunId={initialRunId}
       />

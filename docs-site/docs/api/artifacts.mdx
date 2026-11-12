@@ -14,7 +14,7 @@ immutable bytes and authorization. All routes are org-session scoped. See
 
 | Method | Path | Description | Notes |
 | --- | --- | --- | --- |
-| GET | `/api/artifacts` | List artifacts for the org, optionally filtered. | Query `run_id`, `thread_id`. Returns `{artifacts}`. |
+| GET | `/api/artifacts` | List artifacts for the org, newest first, optionally filtered. | Query `run_id`, `thread_id`, `limit` (1 to 100, default 100), `cursor`. Returns `{artifacts, has_more, next_cursor}`; see [Paging](#paging). `400 cursor is invalid` for a cursor this route did not hand out. |
 | POST | `/api/artifacts` | Create an authored artifact. | Body: `run_id` (required), `thread_id`, `kind` (`document`/`spreadsheet`/`presentation`/`pdf`), `name`, `upload_id`, `state`. `201` created or `200` existing; `409` on upload-claim conflict. |
 | GET | `/api/artifacts/:id` | Fetch an artifact descriptor. | `{artifact}`. `404 not found`. |
 | GET | `/api/artifacts/:id/content` | Stream artifact bytes (range-capable). | Query `download=1` forces attachment. Honors `Range`; `200` or `206`, `416` on a bad range, `410` when bytes are unavailable. `HEAD` is also served (headers only). |
@@ -28,6 +28,15 @@ immutable bytes and authorization. All routes are org-session scoped. See
 | POST | `/api/artifacts/:id/proposals/:proposalId/accept` | Fold a pending proposal into mainline as a new revision. | `{workpiece, state, proposal}`. `409 proposal already resolved` / `revision conflict`. |
 | POST | `/api/artifacts/:id/proposals/:proposalId/dismiss` | Drop a pending proposal, recording the dismissal. | `{proposal}`. `409 proposal already resolved`. |
 | GET | `/api/artifacts/runs/:runId/archive` | Download every published artifact of a run as one ZIP. | Includes every artifact of the run, up to 100 MiB in total. `404 no artifacts to archive`, `413` over the size limit (no partial ZIP), `410` when bytes are unavailable. |
+
+### Paging
+
+`GET /api/artifacts` answers one page at a time. When `has_more` is true, send
+`next_cursor` back as `cursor`, with the same `run_id`, `thread_id` and `limit`,
+to get the artifacts that come after the page; on the last page `next_cursor`
+is `null`. The cursor holds the last artifact's creation time and id, so an
+artifact published while you page shows up on the newest page and never shifts
+the later ones. Treat it as opaque.
 
 :::note
 Workpiece proposals are agent-authored (written through the gateway) and

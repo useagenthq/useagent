@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import {
   ARTIFACT_LEGACY_WORKPIECE_ACTIONS,
@@ -10,6 +10,7 @@ import {
 } from "@useagent/artifact-workspace";
 import { artifacts } from "../db/schema";
 import { stableJson } from "../github/publication-repo-input";
+import { type ArtifactListCursor, encodeArtifactCursor } from "./list-cursor";
 import { inferWorkpieceKind } from "./workpiece";
 
 export type ArtifactRecord = typeof artifacts.$inferSelect;
@@ -331,6 +332,47 @@ export async function listArtifactsForOrg(input: {
     .where(and(...filters))
     .orderBy(desc(artifacts.createdAt))
     .limit(Math.max(1, Math.min(input.limit ?? 100, 100)));
+}
+
+export interface ArtifactListPage {
+  readonly artifacts: ArtifactRecord[];
+  /** Pass back as `cursor` for the next page; null on the last page. */
+  readonly nextCursor: string | null;
+}
+
+/**
+ * One page of the org's artifacts (optionally one run's or one thread's),
+ * newest first with the id breaking ties, starting after `cursor`. A keyset
+ * page: an artifact published while someone pages lands on the newest page and
+ * never shifts the later ones. One row past `limit` is read to know whether
+ * another page follows.
+ */
+export async function listArtifactPageForOrg(input: {
+  readonly orgId: string;
+  readonly runId?: string;
+  readonly threadId?: string;
+  readonly limit: number;
+  readonly cursor: ArtifactListCursor | null;
+}): Promise<ArtifactListPage> {
+  const limit = Math.max(1, Math.min(input.limit, 100));
+  const filters = [eq(artifacts.orgId, input.orgId)];
+  if (input.runId) filters.push(eq(artifacts.runId, input.runId));
+  if (input.threadId) filters.push(eq(artifacts.threadId, input.threadId));
+  if (input.cursor) {
+    filters.push(sql`(${artifacts.createdAt}, ${artifacts.id}) < (${input.cursor.createdAt}::timestamptz, ${input.cursor.id}::uuid)`);
+  }
+  const rows = await db
+    .select({ ...getTableColumns(artifacts), cursorCreatedAt: sql<string>`${artifacts.createdAt}::text` })
+    .from(artifacts)
+    .where(and(...filters))
+    .orderBy(desc(artifacts.createdAt), desc(artifacts.id))
+    .limit(limit + 1);
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    artifacts: page.map(({ cursorCreatedAt: _cursorCreatedAt, ...row }) => row),
+    nextCursor: rows.length > limit && last ? encodeArtifactCursor({ createdAt: last.cursorCreatedAt, id: last.id }) : null,
+  };
 }
 
 /** Every artifact of one run, newest first, with only the columns an archive

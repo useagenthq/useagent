@@ -15,6 +15,11 @@ also stream into the [session view](/product/session-view).
 streams them live filtered to a run. Opening one at `/agent/artifacts/:id` shows
 its detail and, for a workpiece, an inline editor.
 
+The hub shows the newest 100 files first. **Show older files** under the list
+loads the next 100, as many times as there are more. Older files stay listed
+while new ones arrive at the top, and the type filter applies to every file
+loaded so far.
+
 | Operation | Endpoint |
 | --- | --- |
 | List, create | `GET`, `POST /api/artifacts` |

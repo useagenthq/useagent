@@ -12,6 +12,10 @@ export default async function ArtifactsPage() {
   const snapshot = await fetchArtifactSnapshot();
 
   return (
-    <LiveArtifacts initialArtifacts={snapshot.artifacts} initialAvailable={snapshot.available} />
+    <LiveArtifacts
+      initialArtifacts={snapshot.artifacts}
+      initialNextCursor={snapshot.nextCursor}
+      initialAvailable={snapshot.available}
+    />
   );
 }
