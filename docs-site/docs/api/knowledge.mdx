@@ -14,7 +14,7 @@ wiki](/product/knowledge-and-wiki).
 
 | Method | Path | Description | Notes |
 | --- | --- | --- | --- |
-| GET | `/api/knowledge` | List org records, pinned first, newest first. | Query `q` (optional keyword filter). Returns `{records, embeddings}` (`embeddings` reflects whether embeddings are enabled). |
+| GET | `/api/knowledge` | List org records, pinned first, newest first. | Query `q` (optional keyword filter), `limit` (1-500, default 200), `cursor`. Returns `{records, has_more, next_cursor, embeddings, search_note}` (`embeddings` reflects whether embeddings are enabled). Send `next_cursor` back as `cursor`, with the same `q` and `limit`, for the next page; it is `null` on the last page. `400 cursor is invalid`. |
 | POST | `/api/knowledge/search` | Hybrid (tsvector + pgvector) retrieval. | Body: `query` (required), `k` (default 8). Returns `{results, mode}` where `mode` is `"hybrid"` or `"keyword"` (falls back to keyword when no embedding is produced). |
 | POST | `/api/knowledge/ingest` | The ingestion contract. | Body: `meta`, `text`. `org_id`/`user_id` injected server-side. `400` on validation error. |
 | PATCH | `/api/knowledge/:id` | Pin or unpin a record. | Body: `pinned` (boolean, required). `404 record not found`. |

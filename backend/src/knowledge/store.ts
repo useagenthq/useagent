@@ -274,18 +274,60 @@ const ROW_COLS = sql`
   visibility, created_at, updated_at
 `;
 
-/** List org records, newest first, pinned first; optional tsvector keyword filter. */
-export async function listRecords(opts: { orgId: string; q?: string; limit?: number }): Promise<KnowledgeRow[]> {
+/** Where a page of the record list stopped: the last row's full sort key. The
+ *  creation time is whole microseconds since the epoch (a decimal string), the
+ *  precision Postgres stores, so records created in the same millisecond are
+ *  neither repeated nor skipped. */
+export interface RecordPageCursor {
+  readonly pinned: boolean;
+  readonly createdAtMicros: string;
+  readonly id: string;
+}
+
+export interface RecordPage {
+  readonly rows: KnowledgeRow[];
+  /** Pass back as `cursor` for the next page; null on the last page. */
+  readonly nextCursor: RecordPageCursor | null;
+}
+
+/** One page of org records, pinned first, then newest first (id breaks ties),
+ *  after `cursor` when given; optional tsvector keyword filter. */
+export async function listRecordPage(opts: {
+  orgId: string;
+  q?: string;
+  limit?: number;
+  cursor?: RecordPageCursor | null;
+}): Promise<RecordPage> {
   await ready();
   const limit = Math.max(1, Math.min(opts.limit ?? 200, 500));
   const q = opts.q?.trim();
-  return sql<KnowledgeRow[]>`
-    SELECT ${ROW_COLS} FROM knowledge_records
+  const cursor = opts.cursor ?? null;
+  // Every key sorts descending, so "after the cursor" is a row-value less-than.
+  const rows = await sql<(KnowledgeRow & { cursor_created_at_micros: string })[]>`
+    SELECT ${ROW_COLS},
+      ((extract(epoch from created_at) * 1000000)::bigint)::text AS cursor_created_at_micros
+    FROM knowledge_records
     WHERE org_id = ${opts.orgId}
     ${q ? sql`AND tsv @@ ${tsQuery(q)}` : sql``}
-    ORDER BY pinned DESC, created_at DESC
-    LIMIT ${limit}
+    ${cursor
+      ? sql`AND (pinned, created_at, id) < (
+          ${cursor.pinned},
+          'epoch'::timestamptz + ${cursor.createdAtMicros}::bigint * interval '1 microsecond',
+          ${cursor.id}::uuid
+        )`
+      : sql``}
+    ORDER BY pinned DESC, created_at DESC, id DESC
+    LIMIT ${limit + 1}
   `;
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    rows: page.map(({ cursor_created_at_micros: _key, ...row }) => row),
+    nextCursor:
+      rows.length > limit && last
+        ? { pinned: last.pinned, createdAtMicros: last.cursor_created_at_micros, id: last.id }
+        : null,
+  };
 }
 
 export async function getRecord(orgId: string, id: string): Promise<KnowledgeRow | null> {

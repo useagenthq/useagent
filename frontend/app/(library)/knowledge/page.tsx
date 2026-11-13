@@ -14,12 +14,14 @@ export default async function KnowledgePage() {
   // empty seed, so an outage never reads as "no knowledge yet".
   let initialItems = mockKnowledgeItems;
   let initialSearchNote: string | null = null;
+  let initialNextCursor: string | null = null;
   let initialLive = false;
   let initialError = false;
   try {
     const index = await fetchKnowledge();
     initialItems = index.items;
     initialSearchNote = index.searchNote;
+    initialNextCursor = index.nextCursor;
     initialLive = true;
   } catch {
     initialError = true;
@@ -29,6 +31,7 @@ export default async function KnowledgePage() {
     <KnowledgeGallery
         initialItems={initialItems}
         initialSearchNote={initialSearchNote}
+        initialNextCursor={initialNextCursor}
         initialLive={initialLive}
         initialError={initialError}
       />

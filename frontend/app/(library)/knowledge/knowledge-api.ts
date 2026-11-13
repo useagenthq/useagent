@@ -19,16 +19,49 @@ export interface KnowledgeIndex {
   items: KnowledgeItem[];
   /** Backend explanation when search runs keyword-only (embeddings off or failing); null when hybrid. */
   searchNote: string | null;
+  /** Cursor for the page after this one; null on the last page, or from a backend that does not page. */
+  nextCursor: string | null;
 }
 
-export async function fetchKnowledge(): Promise<KnowledgeIndex> {
-  const res = await backendFetch("/api/knowledge", { cache: "no-store" });
+/** One page of the org's records: the newest page (pinned first), or the one after `cursor`. */
+export async function fetchKnowledge(
+  cursor: string | null = null,
+  fetcher: typeof backendFetch = backendFetch,
+): Promise<KnowledgeIndex> {
+  const path = cursor ? `/api/knowledge?cursor=${encodeURIComponent(cursor)}` : "/api/knowledge";
+  const res = await fetcher(path, { cache: "no-store" });
   if (!res.ok) throw new Error(`knowledge ${res.status}`);
-  const data = (await res.json()) as { records?: KnowledgeRecord[]; search_note?: unknown };
+  const data = (await res.json()) as {
+    records?: KnowledgeRecord[];
+    search_note?: unknown;
+    next_cursor?: unknown;
+  };
   return {
     items: (data.records ?? []).map(recordToItem),
     searchNote: typeof data.search_note === "string" ? data.search_note : null,
+    nextCursor:
+      typeof data.next_cursor === "string" && data.next_cursor.length > 0 ? data.next_cursor : null,
   };
+}
+
+/** Put a refreshed newest page in front of what is already loaded, without
+ *  repeating a record; loaded records the page no longer holds follow in
+ *  their order, so none drops out of view. */
+export function mergeNewestPage(
+  newest: readonly KnowledgeItem[],
+  loaded: readonly KnowledgeItem[],
+): KnowledgeItem[] {
+  const ids = new Set(newest.map((item) => item.id));
+  return [...newest, ...loaded.filter((item) => !ids.has(item.id))];
+}
+
+/** Add an older page after what is loaded, without repeating a record already shown. */
+export function appendOlderPage(
+  loaded: readonly KnowledgeItem[],
+  older: readonly KnowledgeItem[],
+): KnowledgeItem[] {
+  const ids = new Set(loaded.map((item) => item.id));
+  return [...loaded, ...older.filter((item) => !ids.has(item.id))];
 }
 
 export interface IngestInput {
