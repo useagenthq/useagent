@@ -21,8 +21,8 @@ import {
   t3TaskDisplayTitle,
 } from "@useagent/agent-harness";
 import { toolServerDisplayName } from "@useagent/agent-harness/canonical";
-import { runtimeStepIo } from "./runtime-step-io";
-import { recordedRuntimeActivity } from "./runtime-v2-view";
+import { runtimeStepIo, stepActivityPayload } from "./runtime-step-io";
+import { ledgerRuntimeActivity } from "./runtime-v2-view";
 import {
   buildV2MessageDispatch,
   buildV2ProjectCreate,
@@ -609,7 +609,7 @@ export function activityStep(activity: RuntimeActivity, rootSessionId?: string, 
           parentSessionID: attributedParentId ?? undefined,
           callID: toolCallId ?? activity.id,
           childSessionID: childSessionId ?? undefined,
-          activity: activity.payload,
+          activity: stepActivityPayload(itemType, input, activity.payload),
         },
       },
     };
@@ -717,7 +717,7 @@ export function runtimeActivityProviderEvent(
   source: RuntimeActivity,
   redact: Pick<SecretRedactor, "text" | "unknown">,
 ): ProviderEventInput {
-  const activity = recordedRuntimeActivity(source, redact);
+  const activity = ledgerRuntimeActivity(source, redact);
   const question = runtimeQuestionRequest(activity, sessionId);
   const approval = runtimeApprovalRequest(activity, sessionId);
   const payload = record(activity.payload);

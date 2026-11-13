@@ -74,6 +74,27 @@ const STATS_ONLY = step("file", "opaque.ts", {
   input: { filePath: "src/opaque.ts" },
 });
 
+// The step the backend records for a runtime file change
+// (backend/src/engines/runtime-v2-view.ts): the paths, and next to them the
+// string the edit replaced and the string it wrote when the runtime sent them.
+function runtimeFileStep(path: string, text: Record<string, string>): ApiStep {
+  return {
+    ...step("file", `Changed ${path}`, {
+      source: "t3",
+      activityId: "f1:completed",
+      activityKind: "tool.completed",
+      tool: "edit",
+      input: { files: [{ path }], ...text, file_path: path },
+      error: false,
+      native: {
+        callID: "f1",
+        activity: { toolCallId: "f1", status: "completed", itemType: "file_change", data: { files: [{ path }] } },
+      },
+    }),
+    chip: "tool.completed",
+  };
+}
+
 describe("patch recovery (pure)", () => {
   test("parsePatchLines classifies unified-diff rows and strips the +/- gutter", () => {
     const lines = parsePatchLines(
@@ -205,6 +226,32 @@ describe("DiffPane", () => {
     expect(html).toContain('data-diff-file="src/app.ts"');
     expect(html).toContain('data-diff-file="src/opaque.ts"');
     expect(html).toContain("bg-lime-500/10");
+  });
+
+  test("reads the strings a runtime file change carries, and says so when it carries none", () => {
+    const steps = [
+      runtimeFileStep("/w/src/a.ts", { old_string: "return null;", new_string: "return retry();" }),
+      // A whole file written has nothing it replaced.
+      runtimeFileStep("/w/docs/notes.md", { new_string: "# Notes\n\nHello\n" }),
+      runtimeFileStep("/w/src/c.ts", {}),
+    ];
+    const patches = filePatchesFromSteps(steps);
+    expect([...patches.keys()]).toEqual(["/w/src/a.ts", "/w/docs/notes.md"]);
+    expect(patches.get("/w/src/a.ts")).toEqual([[
+      { tone: "del", text: "return null;" },
+      { tone: "add", text: "return retry();" },
+    ]]);
+    expect(patches.get("/w/docs/notes.md")).toEqual([[
+      { tone: "add", text: "# Notes" },
+      { tone: "add", text: "" },
+      { tone: "add", text: "Hello" },
+    ]]);
+    const html = render(<DiffPane turns={[{ steps, live: false }]} />);
+    const section = (path: string) => html.slice(html.indexOf(`data-diff-file="${path}"`)).split("</section>")[0] ?? "";
+    expect(section("/w/src/a.ts")).toContain("return retry();");
+    expect(section("/w/src/a.ts")).not.toContain('data-testid="diff-no-patch"');
+    expect(section("/w/docs/notes.md")).toContain("# Notes");
+    expect(section("/w/src/c.ts")).toContain('data-testid="diff-no-patch"');
   });
 
   test("shows an honest empty state before any file change exists", () => {

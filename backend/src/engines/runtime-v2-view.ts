@@ -8,16 +8,21 @@
 // Activity ids are `<item id>:<phase>` (started, updated, completed): each
 // lifecycle phase is its own ledger row, and a later revision of the same
 // phase replaces its row (the ledger upserts by id). Every payload carries the
-// runtime's own record under `v2`. File diffs never reach the plane: the
-// runtime strips them from its wire copy. Command output does, whole up to the
-// runtime's wire limit (a longer one comes as `outputOmitted`, without text);
-// the record bounds it like any other string (boundedV2Record).
+// runtime's own record under `v2`. The runtime strips a file change's text
+// from its wire copy today (all but a failed change's `diffStr`), so the Diff
+// pane has none to show. When a runtime sends the strings an edit replaced and
+// wrote, a completed change to one file carries them to its step and nowhere
+// else (fileChangeText, recordedRuntimeActivity, ledgerRuntimeActivity).
+// Command output does reach the plane, whole up to the runtime's wire limit (a
+// longer one comes as `outputOmitted`, without text); the record bounds it
+// like any other string (boundedV2Record).
 //
 // The view keeps every value whole. Only a record point cuts long values
 // (recordedRuntimeActivity), and a string is redacted whole before it is cut:
 // a cut first could leave part of a secret the redactor no longer recognizes.
 import type { SecretRedactor } from "../secrets/redact";
 import type { RuntimeActivity, RuntimeMessage, RuntimeThreadSnapshot } from "./runtime-orchestration";
+import { fileChangeTextBytes, withoutFileChangeText } from "./runtime-step-io";
 import { v2RunSettled, type V2Projection, type V2Run, type V2ThreadSnapshot, type V2TurnItem } from "./runtime-v2-wire";
 
 type Rec = Readonly<Record<string, unknown>>;
@@ -30,6 +35,10 @@ const RECORD_STRING_LIMIT = 1_000;
 const RECORD_ARRAY_LIMIT = 50;
 const RECORD_DEPTH_LIMIT = 6;
 const RECORD_BYTE_LIMIT = 8_192;
+/** The most text of one file change the plane takes into its step: the two
+ *  strings together as the runtime sent them, in UTF-8 bytes. Redaction can
+ *  make what the step stores longer. */
+const FILE_CHANGE_TEXT_BYTE_LIMIT = 16_384;
 /** Message context and attachments stay with the runtime: the record keeps what the work was, not what was sent. */
 const RECORD_OMITTED_KEYS = new Set(["context", "attachments", "attachmentsByQuestionId", "questionAnswer"]);
 
@@ -75,17 +84,40 @@ export function boundedV2Record(value: Rec, redact: Redact): Rec {
 /** The tool input a step shows (arguments, a command): every string within the detail limit. */
 const BOUNDED_DATA_KEYS = new Set(["arguments", "input", "item"]);
 
+const ITEM_TEXT_KEYS = new Set(["oldStr", "newStr", "diffStr"]);
+
+/**
+ * The runtime's record of a file change without the change's text. A bounded
+ * record would keep the piece it cut from that text; the whole of it belongs
+ * to the step (recordedRuntimeActivity) or to nothing. A failed change keeps
+ * its `diffStr`: the runtime sends it then, and it may be the tool's error.
+ */
+function withoutItemText(v2: Rec): Rec {
+  if (v2.type !== "file_change") return v2;
+  return Object.fromEntries(Object.entries(v2).filter(([key]) =>
+    !ITEM_TEXT_KEYS.has(key) || (key === "diffStr" && v2.status === "failed")));
+}
+
+function withoutChangeText(activity: RuntimeActivity): RuntimeActivity {
+  const payload = withoutFileChangeText(activity.payload);
+  return payload === activity.payload ? activity : { ...activity, payload };
+}
+
 /**
  * An activity as the plane records it (ledger event and step): details and
  * tool input within the detail limit, the runtime's record bounded
  * (boundedV2Record). Everything else is left for the record's own redaction.
+ * A file change's text is for its step. It stays when it is within
+ * FILE_CHANGE_TEXT_BYTE_LIMIT and is left out whole when it is longer, never
+ * cut: a piece of a change reads as the whole change. The ledger takes the
+ * activity without it (ledgerRuntimeActivity).
  */
 export function recordedRuntimeActivity(activity: RuntimeActivity, redact: Redact): RuntimeActivity {
   const payload = record(activity.payload);
   if (!payload) return activity;
   const data = record(payload.data);
   const v2 = record(payload.v2);
-  return {
+  const recorded: RuntimeActivity = {
     ...activity,
     payload: {
       ...payload,
@@ -95,9 +127,20 @@ export function recordedRuntimeActivity(activity: RuntimeActivity, redact: Redac
         data: Object.fromEntries(Object.entries(data).map(([key, value]) =>
           [key, BOUNDED_DATA_KEYS.has(key) ? boundedValue(value, 0, DETAIL_LIMIT, redact) : value])),
       } : {}),
-      ...(v2 ? { v2: boundedV2Record(v2, redact) } : {}),
+      ...(v2 ? { v2: boundedV2Record(withoutItemText(v2), redact) } : {}),
     },
   };
+  return fileChangeTextBytes(data) <= FILE_CHANGE_TEXT_BYTE_LIMIT ? recorded : withoutChangeText(recorded);
+}
+
+/**
+ * The recorded activity as the ledger holds it: without a file change's text.
+ * Only the step is read for that text, and redaction can lengthen it, so in
+ * the ledger it could push an event over the byte limit that replaces a
+ * payload whole (PROVIDER_PAYLOAD_CAP_BYTES in runs/provider-events.ts).
+ */
+export function ledgerRuntimeActivity(activity: RuntimeActivity, redact: Redact): RuntimeActivity {
+  return withoutChangeText(recordedRuntimeActivity(activity, redact));
 }
 
 /** The thread's latest run: the turn a V1 reader called `latestTurn`. */
@@ -181,6 +224,27 @@ export function v2ToolIdentity(toolName: string | undefined): { server: string |
 
 const FAILED_ITEM_STATUSES = new Set(["failed"]);
 
+/**
+ * The text of a change, under the keys the Diff pane reads (runtime-step-io.ts):
+ * the string the edit replaced and the string it put there. A whole file
+ * written has only the second. Empty when the runtime sent neither.
+ *
+ * The runtime's `diffStr` is not carried. The redactor reads text as it was
+ * written, and a diff puts a marker in front of every line: a removed line
+ * that starts with `p` then reads as a `-p<password>` flag and is rewritten,
+ * and a secret of several lines no longer matches its value. The two strings
+ * are the file's own text and are redacted like any other tool input: a
+ * registered secret is caught wherever it sits, and a pattern that needs its
+ * key (`password = ...`) sees one only when the edit's strings include the
+ * key. (For one engine `diffStr` is the tool's reply, not a diff at all.)
+ */
+function fileChangeText(item: V2TurnItem): Rec {
+  return {
+    ...(typeof item.oldStr === "string" && item.oldStr ? { old_string: item.oldStr } : {}),
+    ...(typeof item.newStr === "string" && item.newStr ? { new_string: item.newStr } : {}),
+  };
+}
+
 /** What the item did, for its row: the runtime's own title, else a plain name for its type. */
 function summaryOf(item: V2TurnItem, payload: Rec): string {
   const title = text(item.title) ?? text(payload.title);
@@ -230,10 +294,15 @@ function toolActivity(item: V2TurnItem): RuntimeActivity | null {
       const files = changes.length > 0
         ? changes.map((change) => ({ path: change.path, kind: change.operation }))
         : text(item.fileName) ? [{ path: item.fileName }] : [];
+      // The text is what a finished change did to its one file. A change that
+      // failed or was stopped may not have been made, and a step that names
+      // several files cannot show one text against one of them.
+      const changed = item.status === "completed" && !failed && files.length === 1;
       return activity(item, `tool.${phase}`, phase, {
         ...base, itemType: "file_change",
         data: { files, ...(typeof item.additions === "number" ? { additions: item.additions } : {}),
-          ...(typeof item.deletions === "number" ? { deletions: item.deletions } : {}) },
+          ...(typeof item.deletions === "number" ? { deletions: item.deletions } : {}),
+          ...(changed ? fileChangeText(item) : {}) },
       }, tone);
     }
     case "web_search":
