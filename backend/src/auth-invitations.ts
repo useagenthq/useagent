@@ -3,7 +3,7 @@ import { and, eq, gt, isNotNull } from "drizzle-orm";
 import { sendSmtp } from "./connectors/email/smtp";
 import { db, type Executor } from "./db/client";
 import { account, invitation, user } from "./db/auth-schema";
-import { env, googleAuthEnabled, type InvitationMailConfig, invitationMailConfig, sameSecret, selfSignupEnabled } from "./env";
+import { env, type InvitationMailConfig, invitationMailConfig, providerSignInEnabled, sameSecret, selfSignupEnabled } from "./env";
 
 /**
  * Organisation invitations, and the sign-up verification mail that shares
@@ -296,13 +296,14 @@ export async function deliverVerification(
 }
 
 export const NO_WAY_IN =
-  "That address has no account with a password here, and this deployment cannot create one. Set up Google sign-in, or invite an address that already signs in with a password.";
+  "That address has no account with a password here, and this deployment cannot create one. Set up Google or OpenID Connect sign-in, or invite an address that already signs in with a password.";
 
 /** Whether an invitation to this address can ever be used. Any deployment that
  *  creates accounts says yes; a closed one needs an account with a password,
- *  since a Google-only account from a time when Google was on has no way in. */
+ *  since an account a provider created (Google or OpenID Connect) from a time
+ *  when that provider was on has no way in. */
 export async function canSignIn(email: string): Promise<boolean> {
-  if (selfSignupEnabled() || googleAuthEnabled()) return true;
+  if (selfSignupEnabled() || providerSignInEnabled()) return true;
   const [known] = await db
     .select({ id: user.id })
     .from(user)

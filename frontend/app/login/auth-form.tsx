@@ -7,6 +7,7 @@ import { AuthScreen } from "@/components/auth/auth-screen";
 import { CheckYourEmail, type MailStatus } from "@/components/auth/check-your-email";
 import { DesktopSignIn } from "@/components/auth/desktop-sign-in";
 import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
+import { OidcSignInButton } from "@/components/auth/oidc-sign-in-button";
 import type { VerificationNotice } from "@/components/auth/verification-notice";
 import { Button } from "@/components/base/buttons/button";
 import { Divider } from "@/components/base/divider/divider";
@@ -46,6 +47,7 @@ const COPY = {
 export function AuthForm({
   callbackURL = "/",
   googleAction,
+  oidcAction,
   initialDesktopBridge,
   initialAuthConfig,
   initialMode = "signin",
@@ -53,6 +55,7 @@ export function AuthForm({
 }: {
   callbackURL?: string;
   googleAction?: () => Promise<void>;
+  oidcAction?: () => Promise<void>;
   initialDesktopBridge?: DesktopBridge | null;
   /** The server's answer when already known (tests); otherwise fetched on mount. */
   initialAuthConfig?: AuthConfig | null;
@@ -84,6 +87,8 @@ export function AuthForm({
   const signup = authConfig?.emailPassword ? authConfig.signup : null;
   const kind: AuthMode = signup && mode === "signup" ? "signup" : "signin";
   const copy = COPY[kind];
+  // The identity providers this deployment offers, shown above the password form.
+  const providers = kind === "signin" && Boolean(authConfig?.google || authConfig?.oidc);
 
   /** One attempt of either kind: the card is now waiting for mail (and what
    *  the server said about it), or a problem to show, or null once signed in. */
@@ -163,13 +168,16 @@ export function AuthForm({
           </p>
         )}
 
-        {authConfig?.google && kind === "signin" && (
-          <div className="mt-8">
-            <GoogleSignInButton enabled callbackURL={callbackURL} action={googleAction} />
+        {providers && (
+          <div className="mt-8 flex flex-col gap-3">
+            {authConfig?.oidc && (
+              <OidcSignInButton label={authConfig.oidc.label} callbackURL={callbackURL} action={oidcAction} />
+            )}
+            {authConfig?.google && <GoogleSignInButton enabled callbackURL={callbackURL} action={googleAction} />}
           </div>
         )}
 
-        {authConfig?.google && authConfig.emailPassword && kind === "signin" && (
+        {providers && authConfig?.emailPassword && (
           <Divider
             aria-hidden
             className="my-6"
@@ -181,7 +189,7 @@ export function AuthForm({
 
         {authConfig?.emailPassword && (
           <form
-            className={`flex flex-col gap-4 ${authConfig.google && kind === "signin" ? "" : "mt-8"}`}
+            className={`flex flex-col gap-4 ${providers ? "" : "mt-8"}`}
             onSubmit={handleSubmit}
             noValidate
           >
@@ -266,7 +274,7 @@ export function AuthForm({
           </div>
         )}
 
-        {authConfig && !authConfig.google && !authConfig.emailPassword && (
+        {authConfig && !authConfig.google && !authConfig.oidc && !authConfig.emailPassword && (
           <p role="alert" className="mt-8 text-body-2-regular text-text-error-primary">
             Sign-in is unavailable on this server.
           </p>

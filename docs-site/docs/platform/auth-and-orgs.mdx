@@ -14,15 +14,17 @@ backend, not trusted from the client.
 `/login` and `/signup` go through the better-auth surface mounted at
 `/api/auth/*` (`GET` and `POST`), which owns sessions, email/password sign-in,
 and the organization plugin. Google social sign-in is env-gated: it is offered
-only when both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set.
-`GET /api/config` advertises which methods are enabled
-(`auth: { google, emailPassword }`), so the UI renders the right affordances
-without probing.
+only when both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set. Sign-in
+through your own OpenID Connect provider is gated the same way (see
+[Single sign-on with OpenID Connect](#single-sign-on-with-openid-connect)).
+`GET /api/auth/provider-config` advertises which methods are enabled
+(`google`, `oidc: { label }` or `null`, `emailPassword`), so the UI renders the
+right affordances without probing.
 
-Self-service account creation is closed by default. Signup is refused for both
-email/password and Google whenever verified dev mode is off, and the check
-always fails closed when `NODE_ENV=production`, even if a dev-mode flag was
-accidentally left on. Production users are administratively provisioned or
+Self-service account creation is closed by default. Signup is refused for
+email/password, Google and OpenID Connect whenever verified dev mode is off,
+and the check always fails closed when `NODE_ENV=production`, even if a
+dev-mode flag was accidentally left on. Production users are administratively provisioned or
 invited.
 
 A deployment opens sign-up with `SIGNUP_OPEN=1`. Anyone can then create an
@@ -57,6 +59,96 @@ runs one backend. Every account has a personal organization: a provisioned or
 invited one from creation, an open sign-up once its address is confirmed, a
 taken-over claim once the identity links, whether or not another organisation
 (a Slack workspace, say) admitted it first.
+
+## Single sign-on with OpenID Connect
+
+A self-hosted install can let people sign in with the identity provider they
+already use (Okta, Microsoft Entra ID, Keycloak, Authentik or any other
+OpenID Connect provider) instead of a separate password. Set these on the
+backend:
+
+| Variable | Value |
+|---|---|
+| `OIDC_ISSUER` | The provider's issuer URL. Its endpoints are read from `<OIDC_ISSUER>/.well-known/openid-configuration`. |
+| `OIDC_CLIENT_ID` | The client id the provider gave UseAgent. |
+| `OIDC_CLIENT_SECRET` | That client's secret. |
+| `OIDC_BUTTON_LABEL` | Optional. The button reads "Sign in with `<label>`"; the default is "SSO". |
+
+All three of the first settings must be set, or none: anything in between, or
+an issuer that is not an http(s) URL, leaves OpenID Connect off with a warning
+at boot. When none is set nothing changes. The settings are read when the
+backend starts.
+
+In the provider, create a confidential client that uses the authorization code
+flow, and allow this redirect URI:
+
+```text
+<BETTER_AUTH_URL>/api/auth/oauth2/callback/oidc
+```
+
+UseAgent asks for the `openid`, `email` and `profile` scopes and uses PKCE. The
+sign-in button shows on the web sign-in card and on the desktop app's browser
+sign-in.
+
+New people follow the same rules as Google sign-in, so OpenID Connect never
+opens a way around invitations:
+
+- An address with a pending invitation gets an account, but only when the
+  provider says the address is verified (the `email_verified` claim is `true`).
+- Anyone else gets an account only when `SIGNUP_OPEN` admits them, narrowed by
+  `SIGNUP_ALLOWED_DOMAINS`. A provider sign-in carries no invite code, so with
+  `SIGNUP_INVITE_CODE` set only invited addresses get in this way.
+- An existing account with the same address is linked on the first sign-in
+  when the provider says the address is verified, so a person who used a
+  password before keeps their account and workspaces.
+
+A refused sign-in in the browser returns to the sign-in card, which says why.
+The account's name comes from the `name` claim, else the given and family
+names, else the username, else the address.
+
+### Try it with Keycloak
+
+This sets up a local Keycloak in Docker for a backend reached at
+`http://localhost:3400` (`BETTER_AUTH_URL`):
+
+```bash
+docker run -d --name keycloak -p 8080:8080 \
+  -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+  quay.io/keycloak/keycloak:26.4 start-dev
+
+# Once http://localhost:8080 answers:
+kc() { docker exec keycloak /opt/keycloak/bin/kcadm.sh "$@"; }
+kc config credentials --server http://localhost:8080 --realm master --user admin --password admin
+kc create realms -s realm=acme -s enabled=true
+kc create clients -r acme -s clientId=useagent -s publicClient=false \
+  -s secret=change-me -s standardFlowEnabled=true \
+  -s 'redirectUris=["http://localhost:3400/api/auth/oauth2/callback/oidc"]'
+kc create users -r acme -s username=grace -s email=grace@acme.test \
+  -s emailVerified=true -s firstName=Grace -s lastName=Hopper -s enabled=true
+kc set-password -r acme --username grace --new-password change-me-too
+```
+
+Then start the backend with:
+
+```bash
+OIDC_ISSUER=http://localhost:8080/realms/acme
+OIDC_CLIENT_ID=useagent
+OIDC_CLIENT_SECRET=change-me
+OIDC_BUTTON_LABEL="Acme Keycloak"
+```
+
+`/login` now shows **Sign in with Acme Keycloak**. Invite `grace@acme.test` to
+a workspace (or open sign-up) and sign in as `grace`: the account is created as
+Grace Hopper and lands in the app. Without an invitation on a closed
+deployment, the card says the server did not create an account for that
+address.
+
+:::note
+The backend and the browser must both reach the issuer at the same URL, since
+the issuer the provider reports is checked on the way back. With Keycloak in
+Docker next to a containerized backend, set Keycloak's hostname (`KC_HOSTNAME`)
+to an address both can use.
+:::
 
 ## Organization scoping
 

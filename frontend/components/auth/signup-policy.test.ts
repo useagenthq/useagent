@@ -13,7 +13,7 @@ const router = { push() {}, replace() {}, refresh() {}, back() {}, forward() {},
 const renderToStaticMarkup = (node: ReactElement) =>
   renderMarkup(createElement(AppRouterContext.Provider, { value: router }, node));
 
-const CLOSED: AuthConfig = { google: false, emailPassword: true, allowDevOrg: false, invitationEmail: null, signup: null };
+const CLOSED: AuthConfig = { google: false, oidc: null, emailPassword: true, allowDevOrg: false, invitationEmail: null, signup: null };
 const OPEN: AuthConfig = { ...CLOSED, signup: { inviteCode: true, domains: ["acme.com"] } };
 const card = (config: AuthConfig, initialMode?: AuthMode) =>
   renderToStaticMarkup(createElement(AuthForm, { initialDesktopBridge: null, initialAuthConfig: config, initialMode }));
@@ -83,6 +83,29 @@ describe("self-service signup UI policy", () => {
     expect(plain).toContain("Create your account");
     expect(plain).not.toContain("Invite code");
     expect(plain).not.toContain("addresses can sign up");
+  });
+
+  test("the card offers each identity provider the server names, above the password form", () => {
+    const sso = card({ ...CLOSED, oidc: { label: "Acme SSO" } });
+    expect(sso).toContain("Sign in with Acme SSO");
+    expect(sso).not.toContain("Continue with Google");
+    expect(sso.indexOf("Sign in with Acme SSO")).toBeLessThan(sso.indexOf('type="password"'));
+    expect(sso).toContain(">or<");
+
+    const both = card({ ...CLOSED, google: true, oidc: { label: "Acme SSO" } });
+    expect(both).toContain("Sign in with Acme SSO");
+    expect(both).toContain("Continue with Google");
+
+    const only = card({ ...CLOSED, emailPassword: false, oidc: { label: "Acme SSO" } });
+    expect(only).toContain("Sign in with Acme SSO");
+    expect(only).not.toContain('type="password"');
+    expect(only).not.toContain(">or<");
+    expect(only).not.toContain("Sign-in is unavailable on this server.");
+
+    expect(card(CLOSED)).not.toContain("Sign in with");
+    expect(card({ ...CLOSED, emailPassword: false })).toContain("Sign-in is unavailable on this server.");
+    // The sign-up card is for a password: the providers stay on the sign-in card.
+    expect(card({ ...OPEN, oidc: { label: "Acme SSO" } }, "signup")).not.toContain("Sign in with Acme SSO");
   });
 
   test("the login page turns the confirmation landing into a notice on the card", async () => {

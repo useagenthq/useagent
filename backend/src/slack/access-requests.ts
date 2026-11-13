@@ -18,7 +18,7 @@ import { sendSmtp } from "../connectors/email/smtp";
 import { db, type Executor } from "../db/client";
 import { invitation, member, organization, user } from "../db/auth-schema";
 import { slackAccessRequests, slackUsers, slackWorkspaces } from "../db/schema";
-import { env, googleAuthEnabled, invitationMailConfig } from "../env";
+import { env, invitationMailConfig, providerSignInEnabled } from "../env";
 import { withOrgLock } from "../org-lock";
 import type { SlackClient } from "./client";
 import { kickSlackOutbox } from "./outbox/delivery";
@@ -582,12 +582,13 @@ async function provenIdentity(tx: Executor, row: Request): Promise<string | null
   return null; // lost every turn to creations landing in between; the admin can decide again
 }
 
-/** Best effort, and only when the web has a way for them in: a Google sign-in
- *  with this address links the account. Self sign-up cannot, the address is
- *  taken. The person can already work from Slack either way. */
+/** Best effort, and only when the web has a way for them in: a Google or
+ *  OpenID Connect sign-in with this address links the account. Self sign-up
+ *  cannot, the address is taken. The person can already work from Slack
+ *  either way. */
 async function welcome(orgId: string, requestId: string): Promise<void> {
   const config = invitationMailConfig();
-  if (!config || !googleAuthEnabled()) return;
+  if (!config || !providerSignInEnabled()) return;
   const [row] = await db
     .select({ email: slackAccessRequests.email, userId: slackUsers.userId })
     .from(slackAccessRequests)
