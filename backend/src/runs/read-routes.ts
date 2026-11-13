@@ -17,6 +17,13 @@ import {
   type RunSummaryCursor,
 } from "./run-summaries.js";
 import { getRunTimingTable } from "./run-timing.js";
+import {
+  MESSAGE_SEARCH_DEFAULT_LIMIT,
+  MESSAGE_SEARCH_MAX_LIMIT,
+  MESSAGE_SEARCH_MAX_QUERY_CHARS,
+  MessageSearchTimeoutError,
+  searchThreadMessages,
+} from "./message-search.js";
 
 /** Bound on ids per windowed turns fetch: keeps one island's payload and query
  * plan small. The frontend chunks larger windows into multiple requests. */
@@ -60,6 +67,39 @@ export function registerRunReadRoutes(routes: Hono<AppEnv>): void {
       });
     }
     return c.json({ runs: await listRunsWithSteps(c.get("orgId"), { all, limit }) });
+  });
+
+  // Message search (the ⌘K palette): the newest message in each thread that
+  // holds every word of `q`, in the prompts people typed and the agent's
+  // replies. Registered before `/:id`, which would otherwise take "search".
+  routes.get("/search", async (c) => {
+    const q = (c.req.query("q") ?? "").trim();
+    if (!q) return c.json({ error: "q is required" }, 400);
+    if (q.length > MESSAGE_SEARCH_MAX_QUERY_CHARS) {
+      return c.json({ error: `q must be at most ${MESSAGE_SEARCH_MAX_QUERY_CHARS} characters` }, 400);
+    }
+    const requestedLimit = Number.parseInt(c.req.query("limit") ?? "", 10);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(MESSAGE_SEARCH_MAX_LIMIT, Math.max(1, requestedLimit))
+      : MESSAGE_SEARCH_DEFAULT_LIMIT;
+    try {
+      const matches = await searchThreadMessages(c.get("orgId"), q, limit);
+      return c.json({
+        matches: matches.map((match) => ({
+          thread_id: match.threadId,
+          run_id: match.runId,
+          thread_prompt: match.threadPrompt,
+          role: match.role,
+          snippet: match.snippet,
+          created_at: match.createdAt.toISOString(),
+        })),
+      });
+    } catch (error) {
+      if (error instanceof MessageSearchTimeoutError) {
+        return c.json({ error: "Searching messages took too long. Try again." }, 503);
+      }
+      throw error;
+    }
   });
 
   // Single run + steps (scoped to the active org - cross-org id -> 404).

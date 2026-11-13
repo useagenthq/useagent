@@ -94,7 +94,7 @@ import { deriveRunningStartedAt } from "@/components/pro/running-phase";
  * A reply starts a child run in the same thread and arrives on the open stream -
  * never navigating away, never reconnecting.
  */
-export function SessionView({ initialThread, initialOutline = null, initialRelationshipHint = "legacy_or_off", assistantIdentity, readOnlyMessage, onNewestTurnChange, railDefaultOpen = true }: {
+export function SessionView({ initialThread, initialOutline = null, initialRelationshipHint = "legacy_or_off", assistantIdentity, readOnlyMessage, onNewestTurnChange, railDefaultOpen = true, focusRunId = null }: {
   initialThread: ApiRun[];
   /** Windowed initial loading (long threads): the WHOLE thread's per-turn
    *  skeleton, while `initialThread` carries only the root + the fully-loaded
@@ -107,8 +107,8 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
   /** The thread's newest run as the live stream sees it, for a header that
    *  renders outside this view (a bot header's per-turn model label). */
   onNewestTurnChange?: (run: ApiRun) => void;
-  /** Whether the runtime rail starts open on md+; a bot thread starts on its conversation. */
-  railDefaultOpen?: boolean;
+  /** Whether the runtime rail starts open on md+ (a bot thread starts on its conversation); `focusRunId` opens at that turn (`?message=`, from ⌘K). */
+  railDefaultOpen?: boolean; focusRunId?: string | null;
 }) {
   const root = initialThread[0];
   if (!root) throw new Error("SessionView requires a non-empty thread");
@@ -734,7 +734,7 @@ export function SessionView({ initialThread, initialOutline = null, initialRelat
             onOpenProductChild={openProductChild}
             handoffReceipts={handoffs.byRun}
             handoffNotice={handoffs.notice}
-            onDismissHandoffNotice={dismissHandoffNotice}
+            onDismissHandoffNotice={dismissHandoffNotice} focusRunId={focusRunId}
           />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the
               moment the first step streams in (Thinking block takes over).

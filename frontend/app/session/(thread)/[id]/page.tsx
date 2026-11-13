@@ -7,8 +7,16 @@ import { SessionView } from "@/components/chat/session-view";
 // Always render fresh: a session is a live run (cookies + streaming state).
 export const dynamic = "force-dynamic";
 
-export default async function SessionPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function SessionPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ message?: string | string[] }>;
+}) {
   const { id } = await params;
+  // `?message=<run id>`: a ⌘K message match opens the thread at that turn.
+  const { message } = await searchParams;
   // A thread a bot owns (delegated to it by an @mention) answers as that bot;
   // the roster is optional context, so its failure never blocks the thread.
   const botsPromise = loadBots().catch(() => null);
@@ -25,6 +33,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
       initialOutline={view.outline}
       initialRelationshipHint={view.relationshipHint}
       assistantIdentity={bot ? botAssistantIdentity(bot) : undefined}
+      focusRunId={typeof message === "string" ? message : null}
     />
   );
 }

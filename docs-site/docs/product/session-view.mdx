@@ -9,6 +9,9 @@ The session view at `/session/:id` is where you watch and steer a run. It render
 the canonical event log through a consistent visual grammar, and hosts the panes
 that show the run's environment.
 
+A thread opens at its newest turn. `/session/:id?message=:runId` opens it at
+that turn instead; picking a message match in the Cmd K search goes there.
+
 ## The timeline grammar
 
 Nothing in the timeline is raw JSON. Every step renders as a purpose-built card or

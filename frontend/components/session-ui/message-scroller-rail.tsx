@@ -53,6 +53,43 @@ export function jumpToTurn(
   container.scrollTop += turn.getBoundingClientRect().top - container.getBoundingClientRect().top - 8;
 }
 
+/** Jump to the turn of run `runId` inside the conversation's scroll container.
+ *  False when no turn of that run is rendered there. */
+export function jumpToRunTurn(container: HTMLElement, runId: string): boolean {
+  const turn = container.querySelector<HTMLElement>(`[data-run-id="${CSS.escape(runId)}"]`);
+  if (!turn) return false;
+  jumpToTurn(container, turn);
+  return true;
+}
+
+/** Reader input anywhere on the page (the rail and the scroll-to-end pill
+ *  included) takes the scroll back from a held turn. */
+const READER_INPUT_EVENTS = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+
+/**
+ * Keep the turn of run `runId` where `jumpToRunTurn` put it while the thread
+ * settles around it: a long thread's window fills turns in from sized
+ * placeholders and can drop the turn back to one, and rendered content (code,
+ * images) changes height after the first paint. Whenever a turn in the
+ * container resizes, the turn is jumped to again, until the reader scrolls,
+ * clicks or types. Returns the release, for effect cleanup.
+ */
+export function holdRunTurn(container: HTMLElement, runId: string): () => void {
+  if (typeof ResizeObserver === "undefined") return () => {};
+  const observer = new ResizeObserver(() => {
+    jumpToRunTurn(container, runId);
+  });
+  function release() {
+    observer.disconnect();
+    for (const type of READER_INPUT_EVENTS) window.removeEventListener(type, release, true);
+  }
+  for (const turn of container.querySelectorAll<HTMLElement>("[data-run-id]")) observer.observe(turn);
+  for (const type of READER_INPUT_EVENTS) {
+    window.addEventListener(type, release, { capture: true, passive: true });
+  }
+  return release;
+}
+
 /**
  * The turn-jump rail. Renders nothing under MIN_TURNS_FOR_SCROLLER turns, and is
  * hidden on narrow viewports via a responsive class (no value on small screens).
@@ -108,9 +145,7 @@ export function MessageScrollerRail({
     const container = scrollRef.current;
     const id = idsRef.current[index];
     if (!container || id === undefined) return;
-    const el = container.querySelector<HTMLElement>(`[data-run-id="${CSS.escape(id)}"]`);
-    if (!el) return;
-    jumpToTurn(container, el);
+    jumpToRunTurn(container, id);
   };
 
   return (
