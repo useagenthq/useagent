@@ -5,10 +5,11 @@ import { orgScope } from "../middleware/org";
 import {
   createTask,
   deleteTask,
-  listTasksForOrg,
+  listTaskPageForOrg,
   updateTask,
   type TaskRecord,
 } from "./repo";
+import { encodeTaskPageCursor, parseTaskPageCursor } from "./page-cursor";
 
 export const tasksRoutes = new Hono<AppEnv>();
 
@@ -38,22 +39,35 @@ function isTaskStatus(v: unknown): v is TaskStatus {
   return typeof v === "string" && (TASK_STATUSES as readonly string[]).includes(v);
 }
 
-// List tasks for the active org. `?project=<key>` or `?project_id=<uuid>` scopes
-// to one project; the default is unfiled, and `?scope=all` is the explicit
-// bounded cross-project read.
+// List tasks for the active org in board order. `?project=<key>` or
+// `?project_id=<uuid>` scopes to one project; the default is unfiled, and
+// `?scope=all` is the explicit cross-project read. Pages: pass `next_cursor`
+// back as `?cursor=` with the same filters and limit for the next page.
+// `?exclude_archived=1` leaves archived tasks out (the board shows none).
 tasksRoutes.get("/", async (c) => {
   const project = c.req.query("project");
   const projectId = c.req.query("project_id");
   const rawLimit = Number(c.req.query("limit") ?? 100);
   const limit = Number.isFinite(rawLimit) ? Math.trunc(rawLimit) : 100;
+  const rawCursor = c.req.query("cursor");
+  const cursor = rawCursor === undefined ? null : parseTaskPageCursor(rawCursor);
+  if (rawCursor !== undefined && !cursor) return c.json({ error: "cursor is invalid" }, 400);
   const selection =
     c.req.query("scope") === "all"
       ? ({ scope: "all" } as const)
       : projectId
         ? ({ projectId } as const)
         : ({ projectKey: project ?? null } as const);
-  const rows = await listTasksForOrg(c.get("orgId"), selection, limit);
-  return c.json({ tasks: rows.map(toTask) });
+  const page = await listTaskPageForOrg(c.get("orgId"), selection, {
+    limit,
+    cursor,
+    excludeArchived: c.req.query("exclude_archived") === "1",
+  });
+  return c.json({
+    tasks: page.tasks.map(toTask),
+    has_more: page.nextCursor !== null,
+    next_cursor: page.nextCursor ? encodeTaskPageCursor(page.nextCursor) : null,
+  });
 });
 
 // Create a task (org-scoped). `title` is required; `status` defaults to "todo".

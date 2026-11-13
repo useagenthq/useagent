@@ -1,11 +1,11 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { tasks, type TaskStatus } from "../db/schema";
 import { ensureProject, getProjectForOrg } from "../projects/repo";
 
 // ---------------------------------------------------------------------------
 // Tasks data access. Every function is ORG-SCOPED and fail-closed: a cross-org
-// (or missing) id resolves to null. The board reads through `listTasksForOrg`
+// (or missing) id resolves to null. The board pages through `listTaskPageForOrg`
 // (optionally filtered to one project); the gateway tools and REST routes share
 // this one module so there is a single place tenancy is enforced.
 // ---------------------------------------------------------------------------
@@ -96,7 +96,38 @@ export async function listTasksForOrg(
   selection: TaskListScope = { projectKey: null },
   requestedLimit = 100,
 ): Promise<TaskRecord[]> {
-  const limit = Math.min(Math.max(requestedLimit, 1), 500);
+  return (await listTaskPageForOrg(orgId, selection, { limit: requestedLimit })).tasks;
+}
+
+/** Where a page of the task list stopped: the last row's full sort key. The
+ *  creation time is whole microseconds since the epoch (a decimal string), the
+ *  precision Postgres stores, so tasks created in the same millisecond are
+ *  neither repeated nor skipped. */
+export interface TaskPageCursor {
+  readonly orderKey: number;
+  readonly createdAtMicros: string;
+  readonly id: string;
+}
+
+export interface TaskPage {
+  readonly tasks: TaskRecord[];
+  /** Pass back as `cursor` for the next page; null on the last page. */
+  readonly nextCursor: TaskPageCursor | null;
+}
+
+/** One page of org-scoped tasks in board order (column position, then newest
+ *  first), after `cursor` when given. `excludeArchived` leaves archived tasks
+ *  out, so they never take a place on a page of the board. */
+export async function listTaskPageForOrg(
+  orgId: string,
+  selection: TaskListScope = { projectKey: null },
+  options: {
+    limit?: number;
+    cursor?: TaskPageCursor | null;
+    excludeArchived?: boolean;
+  } = {},
+): Promise<TaskPage> {
+  const limit = Math.min(Math.max(options.limit ?? 100, 1), 500);
   const projectScope =
     "scope" in selection
       ? undefined
@@ -105,15 +136,41 @@ export async function listTasksForOrg(
         : selection.projectKey === null || selection.projectKey === ""
           ? sql`${tasks.projectId} is null`
           : eq(tasks.projectKey, selection.projectKey);
-  const scope = projectScope
-    ? and(eq(tasks.orgId, orgId), projectScope)
-    : eq(tasks.orgId, orgId);
-  return db
-    .select()
+  const cursor = options.cursor ?? null;
+  // order_key sorts up and the rest down, so "after the cursor" is a later
+  // position, or the same position and an older (created_at, id).
+  const afterCursor = cursor
+    ? sql`(${tasks.orderKey} > ${cursor.orderKey}::double precision
+        or (${tasks.orderKey} = ${cursor.orderKey}::double precision
+          and (${tasks.createdAt}, ${tasks.id})
+            < ('epoch'::timestamptz + ${cursor.createdAtMicros}::bigint * interval '1 microsecond',
+              ${cursor.id}::uuid)))`
+    : undefined;
+  const rows = await db
+    .select({
+      task: tasks,
+      createdAtMicros: sql<string>`((extract(epoch from ${tasks.createdAt}) * 1000000)::bigint)::text`,
+    })
     .from(tasks)
-    .where(scope)
+    .where(
+      and(
+        eq(tasks.orgId, orgId),
+        projectScope,
+        options.excludeArchived ? ne(tasks.status, "archived") : undefined,
+        afterCursor,
+      ),
+    )
     .orderBy(asc(tasks.orderKey), desc(tasks.createdAt), desc(tasks.id))
-    .limit(limit);
+    .limit(limit + 1);
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    tasks: page.map((row) => row.task),
+    nextCursor:
+      rows.length > limit && last
+        ? { orderKey: last.task.orderKey, createdAtMicros: last.createdAtMicros, id: last.task.id }
+        : null,
+  };
 }
 
 /** Org-scoped fetch - a cross-org (or missing) id resolves to null. */

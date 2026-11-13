@@ -10,13 +10,35 @@ import type { Task, TaskStatus } from "./tasks-data";
 
 const jsonHeaders = { "content-type": "application/json" } as const;
 
-/** List org tasks, optionally scoped to one project key. */
-export async function fetchTasks(project?: string): Promise<Task[]> {
-  const qs = project ? `?project=${encodeURIComponent(project)}` : "?scope=all";
-  const res = await backendFetch(`/api/tasks${qs}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`tasks ${res.status}`);
-  const data = (await res.json()) as { tasks?: Task[] };
-  return data.tasks ?? [];
+/** The most tasks one request asks for; the backend caps a page at 500. */
+const TASKS_PAGE_LIMIT = 500;
+
+/** List org tasks, optionally scoped to one project key: every page, so the
+ *  board and its column counts hold every open task. Archived tasks have no
+ *  column and are left out by the backend. */
+export async function fetchTasks(
+  project?: string,
+  fetcher: typeof backendFetch = backendFetch,
+): Promise<Task[]> {
+  const scope = project ? `project=${encodeURIComponent(project)}` : "scope=all";
+  const base = `/api/tasks?${scope}&exclude_archived=1&limit=${TASKS_PAGE_LIMIT}`;
+  const tasks = new Map<string, Task>();
+  const cursors = new Set<string>();
+  let cursor: string | null = null;
+  do {
+    const path: string = cursor ? `${base}&cursor=${encodeURIComponent(cursor)}` : base;
+    const res = await fetcher(path, { cache: "no-store" });
+    if (!res.ok) throw new Error(`tasks ${res.status}`);
+    const data = (await res.json()) as { tasks?: Task[]; next_cursor?: string | null };
+    // A card moved while the pages are read can come back on a later page;
+    // the board shows it once, where it was first read.
+    for (const task of data.tasks ?? []) if (!tasks.has(task.id)) tasks.set(task.id, task);
+    cursor = typeof data.next_cursor === "string" ? data.next_cursor : null;
+    // A cursor answered twice would never end the loop.
+    if (cursor !== null && cursors.has(cursor)) throw new Error("tasks: cursor repeated");
+    if (cursor !== null) cursors.add(cursor);
+  } while (cursor !== null);
+  return [...tasks.values()];
 }
 
 /** The org's durable project identities, used as board filter options. A failed
