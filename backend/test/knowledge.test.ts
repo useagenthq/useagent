@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, beforeAll, describe, expect, test } from "bun:test";
 import { createOrgSession, json, uid, type OrgSession } from "./helpers";
 import { ingestOne } from "../src/knowledge/ingest";
-import { findExisting, listRecords } from "../src/knowledge/store";
+import { findExisting, listRecordPage } from "../src/knowledge/store";
 
 // Isolate this suite in its own authenticated org (real session, NOT a forged
 // x-org-id header) so the boot seed / other suites never collide with our
@@ -223,7 +223,7 @@ describe("distill grounding + salience (mocked LLM)", () => {
     expect(res.stub).toBe(false);
     expect(res.grounding).toEqual({ refsDropped: 1, signalsDropped: 1 });
 
-    const rows = await listRecords({ orgId: org });
+    const { rows } = await listRecordPage({ orgId: org });
     const row = rows.find((r) => r.external_id === "g-1");
     expect(row).toBeDefined();
     expect(row!.refs).toEqual(["PR #482"]); // invented PR #999 never persisted

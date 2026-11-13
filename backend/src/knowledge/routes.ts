@@ -12,9 +12,10 @@ import {
   type ExtractedDocument,
 } from "./extract-text";
 import { ingestOne, IngestValidationError } from "./ingest";
+import { encodeRecordPageCursor, parseRecordPageCursor } from "./list-cursor";
 import {
   deleteRecord,
-  listRecords,
+  listRecordPage,
   searchRecords,
   setPinned,
   type KnowledgeRow,
@@ -165,15 +166,24 @@ knowledgeRoutes.post("/upload", knowledgeUploadBodyLimit, async (c) => {
 });
 
 // GET /api/knowledge — org records, pinned first, newest first; optional ?q= keyword filter.
+// Pages: `limit` (1-500, default 200), and `next_cursor` sent back as `?cursor=`
+// with the same `q` and `limit` for the next page.
 knowledgeRoutes.get("/", async (c) => {
   const q = c.req.query("q");
+  const requestedLimit = Number.parseInt(c.req.query("limit") ?? "", 10);
+  const limit = Number.isFinite(requestedLimit) ? requestedLimit : undefined;
+  const rawCursor = c.req.query("cursor");
+  const cursor = rawCursor === undefined ? null : parseRecordPageCursor(rawCursor);
+  if (rawCursor !== undefined && !cursor) return c.json({ error: "cursor is invalid" }, 400);
   try {
-    const rows = await listRecords({ orgId: c.get("orgId"), q });
+    const page = await listRecordPage({ orgId: c.get("orgId"), q, limit, cursor });
     // `embeddings` is the observed truth (key present AND the provider answered
     // last time); `search_note` explains a keyword-only state to the page.
     const unavailable = embeddingsUnavailableReason();
     return c.json({
-      records: rows.map(toApi),
+      records: page.rows.map(toApi),
+      has_more: page.nextCursor !== null,
+      next_cursor: page.nextCursor ? encodeRecordPageCursor(page.nextCursor) : null,
       embeddings: unavailable === null,
       search_note: unavailable === null ? null : `Search is keyword-only: ${unavailable}.`,
     });

@@ -7,7 +7,7 @@ import {
   RiSearchLine,
   RiStarFill,
 } from "@remixicon/react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Chip } from "@/components/base/badges/chip";
 import { Input } from "@/components/base/input/input";
@@ -21,8 +21,10 @@ import { ContextCardStack } from "./context-card";
 import { KnowledgeRow } from "./knowledge-rows";
 import { KnowledgeUploadDrop } from "./knowledge-upload";
 import {
+  appendOlderPage,
   deleteKnowledge,
   fetchKnowledge,
+  mergeNewestPage,
   searchKnowledge,
   setKnowledgePinned,
 } from "./knowledge-api";
@@ -52,12 +54,15 @@ function RowList({ children }: { children: ReactNode }) {
 export function KnowledgeGallery({
   initialItems,
   initialSearchNote = null,
+  initialNextCursor = null,
   initialLive,
   initialError,
 }: {
   initialItems: KnowledgeItem[];
   /** Backend note when search is keyword-only (no embeddings); null when hybrid. */
   initialSearchNote?: string | null;
+  /** Cursor for the records past the server-rendered page; null when it held them all. */
+  initialNextCursor?: string | null;
   initialLive: boolean;
   initialError: boolean;
 }) {
@@ -73,11 +78,26 @@ export function KnowledgeGallery({
   const [searchFailed, setSearchFailed] = useState(false);
   const [activeFolder, setActiveFolder] = useState("all");
   const [showAll, setShowAll] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [olderFailed, setOlderFailed] = useState(false);
+  // Refs, not state: a second click before the re-render must not send a second
+  // request, and a refresh landing mid-load must see that older pages count.
+  const loadingOlderRef = useRef(false);
+  const pagedOlderRef = useRef(false);
 
   const refetch = useCallback(async () => {
     try {
       const fresh = await fetchKnowledge();
-      setItems(fresh.items);
+      // Once older pages are loaded, the refreshed newest page goes in front
+      // and they stay, with the cursor past them; before that it replaces the
+      // list and brings its own cursor.
+      if (pagedOlderRef.current) {
+        setItems((loaded) => mergeNewestPage(fresh.items, loaded));
+      } else {
+        setItems(fresh.items);
+        setNextCursor(fresh.nextCursor);
+      }
       setSearchNote(fresh.searchNote);
       setLive(true);
       setError(false);
@@ -141,6 +161,26 @@ export function KnowledgeGallery({
     },
     [live],
   );
+
+  const loadOlder = async () => {
+    if (!nextCursor || loadingOlderRef.current) return;
+    loadingOlderRef.current = true;
+    pagedOlderRef.current = true;
+    setLoadingOlder(true);
+    setOlderFailed(false);
+    try {
+      const page = await fetchKnowledge(nextCursor);
+      setItems((loaded) => appendOlderPage(loaded, page.items));
+      setNextCursor(page.nextCursor);
+      // The older records land after every loaded row, so show them all.
+      setShowAll(true);
+    } catch {
+      setOlderFailed(true);
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  };
 
   const removeItem = useCallback(
     (item: KnowledgeItem) => {
@@ -307,7 +347,8 @@ export function KnowledgeGallery({
           )
         ) : (
           <p className="mt-10 text-body-2-regular text-text-secondary">
-            Nothing in {knowledgeFolderLabel(folderFilter)} yet.
+            Nothing in {knowledgeFolderLabel(folderFilter)}{" "}
+            {nextCursor ? "among the loaded records." : "yet."}
           </p>
         )
       ) : (
@@ -359,6 +400,25 @@ export function KnowledgeGallery({
             </section>
           )}
         </>
+      )}
+
+      {/* Older records, past the loaded pages: offered once every loaded row shows. */}
+      {!isSearchMode && items.length > 0 && nextCursor && (overflowCount <= 0 || showAll) && (
+        <div className="mt-6 flex flex-col items-center gap-2">
+          {olderFailed && (
+            <p role="alert" className="text-caption-1-regular text-text-error-primary">
+              Couldn't load older knowledge.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => void loadOlder()}
+            disabled={loadingOlder}
+            className="inline-flex h-9 items-center rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-secondary outline-none hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring disabled:opacity-50"
+          >
+            {loadingOlder ? "Loading older knowledge…" : olderFailed ? "Try again" : "Show older knowledge"}
+          </button>
+        </div>
       )}
     </div>
   );

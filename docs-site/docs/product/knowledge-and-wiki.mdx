@@ -22,6 +22,10 @@ searchable and revisioned:
 | Documents | `GET`, `POST`, `PATCH /api/knowledge/documents` |
 | Publish, archive, revisions | `.../documents/:id/publish`, `/archive`, `/revisions` |
 
+The list shows pinned records first, then the newest. It loads 200 records at a
+time: once every loaded row is showing, **Show older knowledge** adds the next
+ones.
+
 An agent reaches the same material in a run through the knowledge gateway tools.
 
 ## Wiki
