@@ -25,12 +25,16 @@ const CommandDialog = ({
   className,
   overlayClassName,
   instant,
+  shouldFilter,
   ...rest
 }: DialogProps & {
   className?: string;
   overlayClassName?: string;
   /** The palette was opened from the keyboard: no enter or exit animation. */
   instant?: boolean;
+  /** false when the caller filters and orders the items itself: cmdk then
+   *  shows them as rendered instead of scoring them against the input. */
+  shouldFilter?: boolean;
 }) => {
   return (
     <Modal.Root {...rest}>
@@ -41,6 +45,7 @@ const CommandDialog = ({
         className={cx("flex max-h-full max-w-[600px] flex-col overflow-hidden rounded-2xl", className)}
       >
         <Command
+          shouldFilter={shouldFilter}
           className={cx(
             "divide-y divide-border-button-default",
             "grid min-h-0 auto-cols-auto grid-flow-row",
@@ -88,7 +93,10 @@ const CommandList = React.forwardRef<
     <Command.List
       ref={forwardedRef}
       className={cx(
-        "flex max-h-min min-h-0 flex-1 flex-col",
+        // min-w-0: as a grid item the list would otherwise grow the palette's
+        // column to its widest row's unwrapped text, pushing truncated rows
+        // and their right-hand meta past the dialog's edge.
+        "flex max-h-min min-h-0 min-w-0 flex-1 flex-col",
         "[&>[cmdk-list-sizer]]:divide-y [&>[cmdk-list-sizer]]:divide-border-button-default",
         "[&>[cmdk-list-sizer]]:overflow-auto",
         className,

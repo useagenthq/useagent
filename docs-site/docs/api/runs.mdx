@@ -17,6 +17,7 @@ scoped unless noted.
 | --- | --- | --- | --- |
 | POST | `/api/runs` | Create a run (root or reply). | Body: `prompt` (required), `model`, `engine` (one of the engine ids), `parent_run_id`, `repo`, `repos[]`, `branches` (`{"owner/name": branch}`), `memory_scope`, `skill` (`{id, version}`), `command` (`{name, args, provider, sessionId, catalogRevision}`), `attachments[]` (at most 10 upload ids), `resources[]`. Header `Idempotency-Key`. `origin` is server-owned and rejected. `201 {id, status, queue}` on create, `200 {id}` on idempotent replay. |
 | GET | `/api/runs` | List runs, newest first, roots-only by default. | Query `all=1` (every run), `limit` (1-100; 1-1000 in summary), `view=summary`, `include_active=1`, `cursor`. Returns `{runs}`; the summary view also returns `has_more` and `next_cursor` (see below). `400 cursor is invalid`. |
+| GET | `/api/runs/search` | Search what was said in the workspace's threads (the Cmd K palette). | Query `q` (required, at most 200 characters), `limit` (1-25, default 10). Returns `{matches: [{thread_id, run_id, thread_prompt, role, snippet, created_at}]}` (see below). `400 q is required`, `503` when the search runs past its 5 second bound. |
 | GET | `/api/runs/:id` | Fetch a run with its steps, or the whole thread. | Query `thread=1` returns `{thread}` (oldest to newest); otherwise `{...run, steps}`. `404 run not found`. |
 | POST | `/api/runs/:id/cancel` | Durable Stop: record `run.cancel`, fail queued work, signal the live actor. | No body. `202 {status:"cancelling"}` accepted, `200` when already settled or replayed. `404 run not found`. |
 | POST | `/api/runs/:id/questions/:questionId/reply` | Answer a native provider question inside the running turn. | Body: `answers`. Rejects `resources`/`attachments` (`400`). `409 question_session_not_active`, `409 questions_not_supported`, `502 question_reply_failed`. |
@@ -33,6 +34,16 @@ and `has_more` is `false` on the last page. With `include_active=1` the first
 page also carries up to `limit` queued or running threads that sort after it,
 and later pages leave those out, so no thread is listed twice. A cursor from
 the roots-only list is refused with `all=1`, and the other way round.
+
+Message search looks in the prompts people typed (`role: "user"`) and the
+agent's replies (`role: "agent"`) of the threads the thread list shows. A
+message matches when it holds every word of `q`, in any order, each word
+matched from its start (`deplo stag` finds "Deploy to staging"); case and
+punctuation are ignored and no language's stemming applies. Each thread is
+listed once, with its newest matching message, newest thread first;
+`thread_prompt` is the thread's first prompt, its title, and `snippet` a short
+part of the message around the match. Open `/session/:thread_id?message=:run_id`
+to land on that turn.
 
 `POST /api/runs` failure codes worth knowing: `400` for invalid body, missing
 `prompt`, a client-supplied `origin`, a bad `engine`/`memory_scope`,

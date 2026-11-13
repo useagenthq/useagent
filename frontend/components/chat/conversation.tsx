@@ -78,7 +78,7 @@ import {
 import { Markdown } from "@/components/prompt-kit/markdown";
 import { AnsweredAt } from "@/components/session-ui/answered-at";
 import { MessageCopyButton } from "@/components/session-ui/message-copy-button";
-import { MessageScrollerRail } from "@/components/session-ui/message-scroller-rail";
+import { holdRunTurn, jumpToRunTurn, MessageScrollerRail } from "@/components/session-ui/message-scroller-rail";
 import { unavailableEngineLabel } from "@/components/session-ui/provider-status-banner";
 import { ScrollToEndPill } from "@/components/session-ui/scroll-to-end-pill";
 import {
@@ -462,6 +462,7 @@ export const Conversation = memo(function Conversation({
   handoffReceipts,
   handoffNotice,
   onDismissHandoffNotice,
+  focusRunId = null,
   assistantIdentity,
   canonicalTimeline = process.env.NEXT_PUBLIC_CANONICAL_TIMELINE === "1",
 }: {
@@ -533,6 +534,8 @@ export const Conversation = memo(function Conversation({
   /** Composer notice for a reply whose bots did not all get the message. */
   handoffNotice?: string | null;
   onDismissHandoffNotice?: () => void;
+  /** Open at this turn instead of the newest (a message picked in ⌘K search). */
+  focusRunId?: string | null;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
   // stream, but ONLY while the user is already near the bottom — scrolling up
@@ -555,6 +558,17 @@ export const Conversation = memo(function Conversation({
     productChildSignature,
     turns.length,
   ]);
+
+  // Opened at one message: bring its turn to the top, hold it there while the
+  // thread settles around it (until the reader takes over), and stop following
+  // the bottom so streamed output does not scroll it away. Declared after the
+  // follow effect above, so it runs after that first jump to the end.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !focusRunId || !jumpToRunTurn(el, focusRunId)) return;
+    stickRef.current = false;
+    return holdRunTurn(el, focusRunId);
+  }, [focusRunId]);
 
   const composerCanAnswerQuestion =
     pendingQuestion?.questions.length === 1 && pendingQuestion.questions[0]?.custom === true;
