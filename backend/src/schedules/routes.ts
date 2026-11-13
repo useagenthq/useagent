@@ -3,7 +3,7 @@ import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import {
   getScheduleForOrg,
-  listFirings,
+  listFiringPage,
   listSchedules,
 } from "./repo";
 import {
@@ -15,6 +15,7 @@ import {
   updateScheduleForOrg,
 } from "./service";
 import { runCreateBodyLimit } from "../runs/run-create-policy";
+import { firingPageBody, firingPageRequest } from "./history-page";
 
 export const schedulesRoutes = new Hono<AppEnv>();
 
@@ -91,11 +92,15 @@ schedulesRoutes.post("/:id/run-now", async (c) => {
   }
 });
 
-// Firing history for a schedule (org-scoped), newest first.
+// Firing history for a schedule (org-scoped), newest first, `limit` (1 to 200,
+// default 50) at a time. `next_cursor` goes back as `?cursor=`, with the same
+// limit, for the older firings.
 schedulesRoutes.get("/:id/history", async (c) => {
   const schedule = await getScheduleForOrg(c.get("orgId"), c.req.param("id"));
   if (!schedule) return c.json({ error: "schedule not found" }, 404);
-  return c.json({ firings: await listFirings(schedule.id) });
+  const page = firingPageRequest(c.req.query("limit"), c.req.query("cursor"));
+  if ("error" in page) return c.json({ error: page.error }, 400);
+  return c.json(firingPageBody(await listFiringPage(schedule.id, page)));
 });
 
 // Delete a schedule and its firing projection rows. Runs created by old firings

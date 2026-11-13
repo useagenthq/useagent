@@ -121,12 +121,12 @@ describe("Automations API client", () => {
   });
 
   test("loads Automation history with the caller's abort signal", async () => {
-    responses.push(Response.json({ firings: [firing] }));
+    responses.push(Response.json({ firings: [firing], has_more: true, next_cursor: "older-1" }));
     const controller = new AbortController();
 
-    const result = await fetchHistory(automation.id, controller.signal);
+    const result = await fetchHistory(automation.id, null, controller.signal);
 
-    expect(result).toEqual([firing]);
+    expect(result).toEqual({ firings: [firing], nextCursor: "older-1" });
     expect(normalizedCalls()).toEqual([
       {
         input: `/api/automations/${automation.id}/history`,
@@ -139,6 +139,17 @@ describe("Automations API client", () => {
           signal: controller.signal,
         },
       },
+    ]);
+  });
+
+  test("asks for older Automation history with the cursor, and reads an older backend's answer as one page", async () => {
+    responses.push(Response.json({ firings: [firing] }));
+
+    const result = await fetchHistory(automation.id, "older/1+=");
+
+    expect(result).toEqual({ firings: [firing], nextCursor: null });
+    expect(normalizedCalls().map((call) => call.input)).toEqual([
+      `/api/automations/${automation.id}/history?cursor=older%2F1%2B%3D`,
     ]);
   });
 

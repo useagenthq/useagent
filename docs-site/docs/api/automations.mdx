@@ -39,7 +39,7 @@ when the cron names no date.
 | POST | `/api/automations` | Create an automation (created disabled). | JSON body validated by the service. `201` created object; `400` on invalid JSON. |
 | PATCH | `/api/automations/:id` | Update an automation (enable/disable or edit). | Partial JSON body. `200` updated object. `403 automation_creator_only` for anyone but the creator (an admin may pause). |
 | POST | `/api/automations/:id/run-now` | Fire immediately: create a real run and record a manual firing. | `201 {run_id}`. `403 automation_creator_only` for anyone but the creator. `404 schedule not found`. |
-| GET | `/api/automations/:id/history` | Firing history, newest first. | `{firings}`. `404 schedule not found`. |
+| GET | `/api/automations/:id/history` | Firing history, newest first, a page at a time. | Query `limit` (1 to 200, default 50) and `cursor` (the `next_cursor` of the page before, with the same `limit`). `{firings, has_more, next_cursor}`; `next_cursor` is `null` on the oldest page. `400 cursor is invalid`. `404 schedule not found`. |
 | DELETE | `/api/automations/:id` | Delete an automation and its firing rows. | `204`. Runs from past firings remain in the durable run log. `403 automation_creator_only` for anyone but the creator or an admin. |
 
 ## Secrets

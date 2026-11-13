@@ -1,4 +1,5 @@
 import { backendFetch } from "@/lib/backend-fetch";
+import { decodeFiringPage, type FiringPage, firingPagePath } from "@/app/agent/schedules/firing-history";
 import { type ApiFiring, type ApiRoutine, apiErrorText, OFFLINE_MESSAGE } from "./types";
 
 const jsonHeaders = { "content-type": "application/json" } as const;
@@ -59,10 +60,16 @@ export async function runRoutineNow(botId: string, routineId: string): Promise<{
   );
 }
 
-export async function fetchRoutineHistory(botId: string, routineId: string): Promise<ApiFiring[]> {
-  const data = await expectOk<{ firings?: ApiFiring[] }>(
-    await request(`/api/bots/${botId}/routines/${routineId}/history`),
+/** One page of a routine's runs, newest first: `cursor` null for the newest
+ *  page, else a `nextCursor` from the page before. */
+export async function fetchRoutineHistory(
+  botId: string,
+  routineId: string,
+  cursor: string | null = null,
+): Promise<FiringPage<ApiFiring>> {
+  const data = await expectOk<unknown>(
+    await request(firingPagePath(`/api/bots/${botId}/routines/${routineId}/history`, cursor)),
     "Unable to load the routine history. Try again.",
   );
-  return data.firings ?? [];
+  return decodeFiringPage<ApiFiring>(data);
 }
