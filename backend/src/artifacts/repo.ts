@@ -10,7 +10,7 @@ import {
 } from "@useagent/artifact-workspace";
 import { artifacts } from "../db/schema";
 import { stableJson } from "../github/publication-repo-input";
-import { type ArtifactListCursor, encodeArtifactCursor } from "./list-cursor";
+import { encodeListCursor, type ListCursor } from "../db/list-cursor";
 import { inferWorkpieceKind } from "./workpiece";
 
 export type ArtifactRecord = typeof artifacts.$inferSelect;
@@ -352,7 +352,7 @@ export async function listArtifactPageForOrg(input: {
   readonly runId?: string;
   readonly threadId?: string;
   readonly limit: number;
-  readonly cursor: ArtifactListCursor | null;
+  readonly cursor: ListCursor | null;
 }): Promise<ArtifactListPage> {
   const limit = Math.max(1, Math.min(input.limit, 100));
   const filters = [eq(artifacts.orgId, input.orgId)];
@@ -371,7 +371,7 @@ export async function listArtifactPageForOrg(input: {
   const last = page.at(-1);
   return {
     artifacts: page.map(({ cursorCreatedAt: _cursorCreatedAt, ...row }) => row),
-    nextCursor: rows.length > limit && last ? encodeArtifactCursor({ createdAt: last.cursorCreatedAt, id: last.id }) : null,
+    nextCursor: rows.length > limit && last ? encodeListCursor({ createdAt: last.cursorCreatedAt, id: last.id }) : null,
   };
 }
 

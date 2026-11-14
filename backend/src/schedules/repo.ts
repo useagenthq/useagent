@@ -1,5 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
+import { encodeListCursor, type ListCursor } from "../db/list-cursor";
 import {
   runs,
   scheduleFirings,
@@ -341,25 +342,29 @@ export async function settleFiring(
     .where(eq(scheduleFirings.runId, runId));
 }
 
-/** A schedule's firing history, newest first, enriched with the run's live status. */
-export async function listFirings(scheduleId: string): Promise<ApiFiring[]> {
-  const rows = await db
-    .select({
-      id: scheduleFirings.id,
-      scheduleId: scheduleFirings.scheduleId,
-      runId: scheduleFirings.runId,
-      firedAt: scheduleFirings.firedAt,
-      trigger: scheduleFirings.trigger,
-      status: scheduleFirings.status,
-      runStatus: runs.status,
-      runSummary: runs.summary,
-    })
-    .from(scheduleFirings)
-    .leftJoin(runs, eq(scheduleFirings.runId, runs.id))
-    .where(eq(scheduleFirings.scheduleId, scheduleId))
-    .orderBy(desc(scheduleFirings.firedAt), desc(scheduleFirings.id));
+/** The columns a history row reads: the firing, and its run's live status. */
+const FIRING_COLUMNS = {
+  id: scheduleFirings.id,
+  scheduleId: scheduleFirings.scheduleId,
+  runId: scheduleFirings.runId,
+  firedAt: scheduleFirings.firedAt,
+  trigger: scheduleFirings.trigger,
+  status: scheduleFirings.status,
+  runStatus: runs.status,
+  runSummary: runs.summary,
+};
 
-  return rows.map((r) => ({
+function toApiFiring(r: {
+  id: string;
+  scheduleId: string;
+  runId: string;
+  firedAt: Date;
+  trigger: ScheduleTrigger;
+  status: string;
+  runStatus: string | null;
+  runSummary: string | null;
+}): ApiFiring {
+  return {
     id: r.id,
     schedule_id: r.scheduleId,
     run_id: r.runId,
@@ -368,5 +373,60 @@ export async function listFirings(scheduleId: string): Promise<ApiFiring[]> {
     status: r.status,
     run_status: r.runStatus ?? null,
     run_summary: r.runSummary ?? null,
-  }));
+  };
+}
+
+/** A schedule's whole firing history, newest first, enriched with the run's
+ *  live status. The history routes read it a page at a time
+ *  ({@link listFiringPage}). */
+export async function listFirings(scheduleId: string): Promise<ApiFiring[]> {
+  const rows = await db
+    .select(FIRING_COLUMNS)
+    .from(scheduleFirings)
+    .leftJoin(runs, eq(scheduleFirings.runId, runs.id))
+    .where(eq(scheduleFirings.scheduleId, scheduleId))
+    .orderBy(desc(scheduleFirings.firedAt), desc(scheduleFirings.id));
+  return rows.map(toApiFiring);
+}
+
+export const FIRING_PAGE_DEFAULT = 50;
+export const FIRING_PAGE_MAX = 200;
+
+export interface FiringPage {
+  readonly firings: ApiFiring[];
+  /** Pass back as `cursor` for the older firings; null on the last page. */
+  readonly nextCursor: string | null;
+}
+
+/**
+ * One page of a schedule's firing history, newest first with the id breaking
+ * ties, starting after `cursor` (a firing older than every row already shown).
+ * A keyset page along `idx_firings_schedule`, so a page reads a page's worth of
+ * firings however many the automation has; one extra row is read to know
+ * whether an older page follows.
+ */
+export async function listFiringPage(
+  scheduleId: string,
+  page: { readonly limit: number; readonly cursor: ListCursor | null },
+): Promise<FiringPage> {
+  const limit = Math.min(FIRING_PAGE_MAX, Math.max(1, Math.trunc(page.limit)));
+  const filters = [eq(scheduleFirings.scheduleId, scheduleId)];
+  if (page.cursor) {
+    filters.push(
+      sql`(${scheduleFirings.firedAt}, ${scheduleFirings.id}) < (${page.cursor.createdAt}::timestamptz, ${page.cursor.id}::uuid)`,
+    );
+  }
+  const rows = await db
+    .select({ ...FIRING_COLUMNS, cursorFiredAt: sql<string>`${scheduleFirings.firedAt}::text` })
+    .from(scheduleFirings)
+    .leftJoin(runs, eq(scheduleFirings.runId, runs.id))
+    .where(and(...filters))
+    .orderBy(desc(scheduleFirings.firedAt), desc(scheduleFirings.id))
+    .limit(limit + 1);
+  const shown = rows.slice(0, limit);
+  const last = shown.at(-1);
+  return {
+    firings: shown.map(toApiFiring),
+    nextCursor: rows.length > limit && last ? encodeListCursor({ createdAt: last.cursorFiredAt, id: last.id }) : null,
+  };
 }

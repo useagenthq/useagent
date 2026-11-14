@@ -2,13 +2,15 @@
 
 import { RiArrowRightUpLine } from "@remixicon/react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
+import { firingCountLabel, OlderFirings } from "@/app/agent/schedules/older-firings";
 import { cadenceLabel } from "@/app/agent/schedules/schedules-data";
+import { useFiringHistory } from "@/app/agent/schedules/use-firing-history";
 import { Chip, type ChipProps } from "@/components/base/badges/chip";
 import * as Drawer from "@/components/base/drawer/drawer";
 import { fetchRoutineHistory } from "./routines-api";
 import { absoluteTime, relativeTime } from "./roster-model";
-import { type ApiBot, type ApiFiring, type ApiRoutine, OFFLINE_MESSAGE } from "./types";
+import type { ApiBot, ApiFiring, ApiRoutine } from "./types";
 import { useNow } from "./use-now";
 
 /** Real run status to chip color; the label always shows the raw status. */
@@ -86,25 +88,20 @@ export function RoutineHistoryDrawer({
   onClose: () => void;
 }) {
   const now = useNow();
-  const [firings, setFirings] = useState<ApiFiring[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setFirings(await fetchRoutineHistory(bot.id, routine.id));
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : OFFLINE_MESSAGE);
-    }
-  }, [bot.id, routine.id]);
+  const fetchPage = useCallback(
+    (cursor: string | null) => fetchRoutineHistory(bot.id, routine.id, cursor),
+    [bot.id, routine.id],
+  );
+  const { history, error, older, refresh, loadOlder, reset } = useFiringHistory<ApiFiring>(fetchPage);
+  const firings = history?.firings ?? null;
+  const hasMore = Boolean(history?.nextCursor);
 
   // Refetch on every open; on close keep the list so the slide-out does not flash a skeleton.
   useEffect(() => {
     if (!open) return;
-    setFirings(null);
-    setError(null);
-    void load();
-  }, [open, load]);
+    reset();
+    void refresh();
+  }, [open, reset, refresh]);
 
   return (
     <Drawer.Root open={open} onOpenChange={(next) => !next && onClose()}>
@@ -122,14 +119,14 @@ export function RoutineHistoryDrawer({
           <div className="flex items-baseline justify-between">
             <h2 className="text-body-2-medium text-text-primary">Runs</h2>
             {firings && firings.length > 0 && (
-              <span className="text-caption-1-medium text-text-tertiary">{firings.length} recorded</span>
+              <span className="text-caption-1-medium text-text-tertiary">{firingCountLabel(firings.length, hasMore)}</span>
             )}
           </div>
 
           {error && firings === null ? (
             <div className="mt-4 rounded-xl bg-background-tertiary-error p-4">
               <p className="text-body-2-regular text-text-secondary">{error}</p>
-              <button type="button" onClick={() => void load()} className="mt-2 text-body-2-medium text-text-error-primary">
+              <button type="button" onClick={() => void refresh()} className="mt-2 text-body-2-medium text-text-error-primary">
                 Try again
               </button>
             </div>
@@ -140,7 +137,10 @@ export function RoutineHistoryDrawer({
               ))}
             </div>
           ) : (
-            <RoutineHistoryList firings={firings} now={now} />
+            <>
+              <RoutineHistoryList firings={firings} now={now} />
+              {firings.length > 0 && <OlderFirings hasMore={hasMore} state={older} onLoad={() => void loadOlder()} />}
+            </>
           )}
         </Drawer.Body>
       </Drawer.Content>
