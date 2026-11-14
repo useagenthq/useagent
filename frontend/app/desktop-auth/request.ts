@@ -1,3 +1,4 @@
+import { OIDC_PROVIDER_ID } from "@/lib/auth";
 import { desktopAuthClient } from "@/lib/desktop-auth-client";
 
 export type DesktopAuthRequest = {
@@ -24,6 +25,16 @@ export async function startDesktopGoogleSignIn(
 ): Promise<void> {
   const result = await social({ provider: "google", callbackURL: request.url, fetchOptions: { query: request.query } });
   if (result.error) throw new Error("Could not start Google sign-in.");
+}
+
+/** The same hand-off through the deployment's OpenID Connect provider. */
+export async function startDesktopOidcSignIn(
+  request: DesktopAuthRequest,
+  oauth2: (input: { providerId: string; callbackURL: string; fetchOptions: { query: Record<string, string> } }) => Promise<{ error: unknown }>
+    = (input) => desktopAuthClient.signIn.oauth2(input),
+): Promise<void> {
+  const result = await oauth2({ providerId: OIDC_PROVIDER_ID, callbackURL: request.url, fetchOptions: { query: request.query } });
+  if (result.error) throw new Error("Could not start single sign-on.");
 }
 
 export function restartElectronRedirect(

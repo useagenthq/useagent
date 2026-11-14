@@ -2,7 +2,7 @@ import { electron } from "@better-auth/electron";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError } from "better-auth/api";
-import { organization } from "better-auth/plugins";
+import { genericOAuth, organization } from "better-auth/plugins";
 import { and, eq } from "drizzle-orm";
 import { ensurePersonalOrgForUser, hasCredential, unverifiedClaim } from "./auth-hooks";
 import { organizationLimitReached } from "./auth/organization-limit";
@@ -20,6 +20,8 @@ import {
   betterAuthTrustedOrigins,
   env,
   googleAuthConfig,
+  OIDC_PROVIDER_ID,
+  oidcAuthConfig,
   openSignupConfig,
   selfSignupEnabled,
   signupRefusal,
@@ -31,15 +33,27 @@ import {
  *  limiter and the sign-up limiter then both see the address the edge saw. */
 const TRUSTED_PROXIES = ["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"];
 
+/** The display name an OpenID Connect identity gets: the `name` claim, else the
+ *  given and family names, else the username, else the address. Many providers
+ *  send `name` only once a person has filled in their names, and the library
+ *  refuses a sign-in without one. */
+export function oidcDisplayName(profile: Record<string, unknown>): string | undefined {
+  const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+  const given = [text(profile.given_name), text(profile.family_name)].filter(Boolean).join(" ");
+  return text(profile.name) || given || text(profile.preferred_username) || text(profile.email) || undefined;
+}
+
 /**
- * Better Auth server with Google, existing-account password sign-in, and
- * organizations. A closed deployment creates no accounts on its own: a verified
- * Google identity links to an existing local user, or creates one only when a
- * pending organisation invitation names that email. SIGNUP_OPEN (env.ts) opens
- * email-and-password sign-up behind mail verification.
+ * Better Auth server with Google, OpenID Connect, existing-account password
+ * sign-in, and organizations. A closed deployment creates no accounts on its
+ * own: a verified Google or OpenID Connect identity links to an existing local
+ * user, or creates one only when a pending organisation invitation names that
+ * email. SIGNUP_OPEN (env.ts) opens email-and-password sign-up behind mail
+ * verification.
  */
 export function createAuthServer() {
   const google = googleAuthConfig();
+  const oidc = oidcAuthConfig();
   const allowSignup = selfSignupEnabled();
   const open = openSignupConfig();
   if (signupSwitchOn() && !open) {
@@ -110,6 +124,30 @@ export function createAuthServer() {
         },
       }),
       electron(),
+      // Each new identity answers to the same user-create hook as Google below:
+      // invited with a verified address, or admitted by the sign-up policy.
+      ...(oidc
+        ? [
+            genericOAuth({
+              config: [
+                {
+                  providerId: OIDC_PROVIDER_ID,
+                  discoveryUrl: oidc.discoveryUrl,
+                  clientId: oidc.clientId,
+                  clientSecret: oidc.clientSecret,
+                  scopes: ["openid", "email", "profile"],
+                  pkce: true,
+                  mapProfileToUser: (profile) => ({
+                    name: oidcDisplayName(profile),
+                    // Only a literal `email_verified: true` vouches for the
+                    // address; a missing claim or a string does not.
+                    emailVerified: profile.email_verified === true,
+                  }),
+                },
+              ],
+            }),
+          ]
+        : []),
     ],
     trustedOrigins: betterAuthTrustedOrigins(),
     databaseHooks: {
