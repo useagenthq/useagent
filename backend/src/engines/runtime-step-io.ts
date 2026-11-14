@@ -19,6 +19,38 @@ function stringField(value: unknown, key: string): string | null {
 
 const FILE_PATH_KEYS = ["file_path", "filePath", "path", "filename", "notebook_path"] as const;
 
+/** Where a file change's input holds its text: the string an edit replaced and
+ * the string it put there (a whole file written has only the second). These
+ * are two of the forms the Diff pane builds a file's diff from. */
+const FILE_CHANGE_TEXT_KEYS: readonly string[] = ["old_string", "new_string"];
+const utf8 = new TextEncoder();
+
+/** The UTF-8 size of the text a file change's input, or the `data` it is read
+ * from, holds; 0 when it holds none. */
+export function fileChangeTextBytes(value: unknown): number {
+  const holder = asRecord(value);
+  if (!holder) return 0;
+  return FILE_CHANGE_TEXT_KEYS.reduce((bytes, key) => {
+    const text = holder[key];
+    return typeof text === "string" ? bytes + utf8.encode(text).byteLength : bytes;
+  }, 0);
+}
+
+/** A file change's payload without the text in its `data`. */
+export function withoutFileChangeText<Payload>(payload: Payload): Payload {
+  const whole = asRecord(payload);
+  const data = asRecord(whole?.data);
+  if (!whole || !data || !FILE_CHANGE_TEXT_KEYS.some((key) => key in data)) return payload;
+  const rest = Object.fromEntries(Object.entries(data).filter(([key]) => !FILE_CHANGE_TEXT_KEYS.includes(key)));
+  return { ...whole, data: rest } as Payload;
+}
+
+/** The copy of a tool activity's payload its step keeps next to `input`. A
+ * file change's text is in the input, so this copy leaves it out. */
+export function stepActivityPayload(itemType: string | null, input: unknown, payload: unknown): unknown {
+  return itemType === "file_change" && fileChangeTextBytes(input) > 0 ? withoutFileChangeText(payload) : payload;
+}
+
 /**
  * Every path a projected file change names. The runtime's activity projection
  * rewrites file tool inputs to `files:[{path}]` and its collector does not know
@@ -50,7 +82,8 @@ export function runtimeFilePaths(input: unknown, detail: string | undefined): st
 
 /** File-change input with one uniform shape for the UI: `file_path` names the
  * first file and `files` lists every one (the runtime's own entries kept when
- * present, since they may carry a change kind). */
+ * present, since they may carry a change kind). The change's text, when the
+ * runtime sent it, stays under its own keys (FILE_CHANGE_TEXT_KEYS). */
 function fileChangeInput(input: unknown, detail: string | undefined): unknown {
   const paths = runtimeFilePaths(input, detail);
   if (paths.length === 0) return input;
