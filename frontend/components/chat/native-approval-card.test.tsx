@@ -48,12 +48,12 @@ describe("NativeApprovalCard", () => {
     expect(html).toContain('data-testid="native-approval-card"');
     expect(html).toContain("Approval required to run a command");
     expect(html).toContain("git status");
-    expect(html).toContain(">Cancel turn<");
+    expect(html).toContain(">Stop task<");
     expect(html).toContain(">Decline<");
     expect(html).toContain(">Always allow this session<");
     expect(html).toContain(">Approve once<");
     // Order: cancel, decline, session, approve (primary last).
-    expect(html.indexOf("Cancel turn")).toBeLessThan(html.indexOf("Decline"));
+    expect(html.indexOf("Stop task")).toBeLessThan(html.indexOf("Decline"));
     expect(html.indexOf("Decline")).toBeLessThan(html.indexOf("Always allow this session"));
     expect(html.indexOf("Always allow this session")).toBeLessThan(html.indexOf("Approve once"));
   });

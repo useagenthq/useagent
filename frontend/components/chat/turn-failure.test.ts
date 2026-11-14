@@ -49,7 +49,7 @@ describe("turnFailure", () => {
   test("a failed run whose done step never landed still names the failure", () => {
     expect(
       turnFailure({ status: "failed", summary: REASON, steps: BOOT_FAILURE_STEPS.slice(0, 4) }),
-    ).toEqual({ label: "Run failed", reason: REASON });
+    ).toEqual({ label: "Task failed", reason: REASON });
   });
 
   test("completed, live, reasonless and user-stopped runs carry no failure", () => {

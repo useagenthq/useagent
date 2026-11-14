@@ -37,7 +37,7 @@ export function RunningFooter({
     >
       <Dropdown>
         <DropdownTrigger
-          aria-label={`${status.label}. Run details`}
+          aria-label={`${status.label}. Task details`}
           className="flex shrink-0 items-center gap-1 rounded-[40px] bg-background-tertiary-default py-1 pr-1.5 pl-2 hover:bg-background-tertiary-hover"
         >
           <span className="ai-loading-pixel size-1.5 shrink-0 rounded-full bg-success-base" aria-hidden />
@@ -46,11 +46,11 @@ export function RunningFooter({
           </span>
           <RiArrowDownSLine className="size-4 shrink-0 text-text-tertiary" aria-hidden />
         </DropdownTrigger>
-        <DropdownPopover aria-label="Run details" placement="top start" className="w-[280px]">
-          <div className="px-2 pt-1 pb-1.5 text-body-medium text-text-primary">Run details</div>
+        <DropdownPopover aria-label="Task details" placement="top start" className="w-[280px]">
+          <div className="px-2 pt-1 pb-1.5 text-body-medium text-text-primary">Task details</div>
           <StatusRow label="Model" value={model} />
           {elapsed && <StatusRow label="Elapsed" value={elapsed} />}
-          <StatusRow label="Tool calls" value={String(status.toolCalls)} />
+          <StatusRow label="Tool actions" value={String(status.toolCalls)} />
           <StatusRow
             label="Agents"
             value={`${status.agentsRunning} running, ${status.agentsDone} done`}
@@ -66,8 +66,8 @@ export function RunningFooter({
       {onStop && (
         <button
           type="button"
-          aria-label={stopping ? "Stopping this run" : "Stop this run"}
-          title={stopping ? "Stopping..." : "Stop this run"}
+          aria-label={stopping ? "Stopping this task" : "Stop this task"}
+          title={stopping ? "Stopping..." : "Stop this task"}
           disabled={stopping}
           onClick={onStop}
           className="flex size-6 shrink-0 items-center justify-center rounded-md border border-border-button-default text-text-secondary transition-colors hover:bg-background-tertiary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring disabled:cursor-not-allowed disabled:opacity-60"
