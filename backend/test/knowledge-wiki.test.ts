@@ -62,7 +62,7 @@ describe("wiki-over-knowledge document lifecycle", () => {
     const pub = await json<any>("/api/knowledge/documents", H);
     const shown = pub.body.documents.find((d: any) => d.id === docId);
     expect(shown).toBeDefined();
-    expect(shown.content).toContain(canary1);
+    expect(shown.excerpt).toContain(canary1);
 
     // Now the published revision is in knowledge_records → search finds it.
     expect(await searchFinds(session.cookies, canary1, TITLE)).toBe(true);

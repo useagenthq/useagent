@@ -25,11 +25,3 @@ export function wikiContentSegments(content: string): WikiContentSegment[] {
   if (after.trim()) segments.push({ kind: "markdown", content: after });
   return segments;
 }
-
-export function wikiContentPreview(content: string, title: string): string {
-  return wikiContentSegments(content)
-    .filter((segment) => segment.kind === "markdown")
-    .flatMap((segment) => segment.content.split("\n"))
-    .map((line) => line.replace(/^#+\s*/, "").trim())
-    .find((line) => line.length > 0 && line !== title) ?? "";
-}

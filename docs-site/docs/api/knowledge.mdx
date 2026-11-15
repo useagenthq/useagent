@@ -19,9 +19,10 @@ wiki](/product/knowledge-and-wiki).
 | POST | `/api/knowledge/ingest` | The ingestion contract. | Body: `meta`, `text`. `org_id`/`user_id` injected server-side. `400` on validation error. |
 | PATCH | `/api/knowledge/:id` | Pin or unpin a record. | Body: `pinned` (boolean, required). `404 record not found`. |
 | DELETE | `/api/knowledge/:id` | Delete a record. | `{deleted: true}`. `404 record not found`. |
-| GET | `/api/knowledge/documents` | List wiki documents by status. | Query `status` (`draft`/`published`/`archived`/`all`; default `published`). Returns `{documents}`. |
+| GET | `/api/knowledge/documents` | List wiki documents by status, newest update first. | Query `status` (`draft`/`published`/`archived`/`all`; default `published`), `limit` (1-200, default 50), `cursor`. Returns `{documents, has_more, next_cursor}`. Each document carries `excerpt`, its first line of prose, instead of `content`; fetch one document for its content. Send `next_cursor` back as `cursor`, with the same `status` and `limit`, for the next page; it is `null` on the last page. `400 cursor is invalid`. |
 | POST | `/api/knowledge/documents` | Create a draft document plus its first revision. | Body: `title` (required), `content` (required), `collection`, `slug`, `source`. Returns `{document}`. |
-| GET | `/api/knowledge/documents/:id` | Fetch one document and its revisions. | `{document, revisions}`. `404 document not found`. |
+| GET | `/api/knowledge/documents/:id` | Fetch one document with its content, and its newest revisions. | `{document, revisions, revisions_has_more, revisions_next_cursor}`: at most 20 revisions, newest first. Send `revisions_next_cursor` as `cursor` to `GET .../documents/:id/revisions` for the rest. `404 document not found`. |
+| GET | `/api/knowledge/documents/:id/revisions` | Page through a document's revisions, newest first. | Query `limit` (1-100, default 20), `cursor`. Returns `{revisions, has_more, next_cursor}`. `400 cursor is invalid`, `404 document not found`. |
 | POST | `/api/knowledge/documents/:id/revisions` | Append an immutable revision. | Body: `content` (required), `source`. Returns `{revisionId}`. `404 document not found`. |
 | POST | `/api/knowledge/documents/:id/publish` | Publish a revision so it becomes searchable. | Body (optional): `revisionId`. `404 document or revision not found`. |
 | POST | `/api/knowledge/documents/:id/archive` | Unpublish and drop from retrieval. | `{document}`. `404 document not found`. |

@@ -12,6 +12,8 @@
 const UNIQUE_VIOLATION = "23505";
 /** SQLSTATE 55P03 — a lock was not acquired within lock_timeout. */
 const LOCK_NOT_AVAILABLE = "55P03";
+/** SQLSTATE 22P02 — a value could not be read as its type (a malformed uuid). */
+const INVALID_TEXT_REPRESENTATION = "22P02";
 
 export function sqlStateOf(err: unknown): string | undefined {
   // Walk the cause chain: drizzle wraps the driver error (DrizzleQueryError,
@@ -50,6 +52,12 @@ export function dbErrorDetail(err: unknown): string {
  *  lost the race for an idempotency key). */
 export function isUniqueViolation(err: unknown): boolean {
   return sqlStateOf(err) === UNIQUE_VIOLATION;
+}
+
+/** A parameter could not be read as its column's type, such as a URL id that
+ *  is not a uuid: the row it names cannot exist. */
+export function isInvalidTextRepresentation(err: unknown): boolean {
+  return sqlStateOf(err) === INVALID_TEXT_REPRESENTATION;
 }
 
 /** True when `err` is a lock wait cut short by the transaction's lock_timeout. */
