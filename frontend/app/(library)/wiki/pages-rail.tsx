@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { cx } from "@/utils/cx";
 import type { WikiDoc } from "./wiki-data";
@@ -7,14 +8,16 @@ import type { WikiDoc } from "./wiki-data";
  * Left "PAGES" rail: every published document links to its own dedicated page
  * (/wiki/[id]); the current one is highlighted. Replaces the old scroll-anchor
  * table of contents - with 100+ imported documents, one giant concatenated
- * page was unreadable (user report).
+ * page was unreadable (user report). `children` follow the list.
  */
 export function PagesRail({
   docs,
   activeId,
+  children,
 }: {
   docs: WikiDoc[];
   activeId?: string;
+  children?: ReactNode;
 }) {
   if (docs.length === 0) return null;
   return (
@@ -41,6 +44,7 @@ export function PagesRail({
           </li>
         ))}
       </ul>
+      {children}
     </nav>
   );
 }

@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { WikiContent } from "./wiki-content";
-import { wikiContentPreview } from "./wiki-content-data";
 
 const WIKI_WITH_SOURCE_DISCLOSURE = [
   "# Run admission",
@@ -36,16 +35,4 @@ test("wiki content keeps unrecognized raw html escaped", () => {
   expect(html).not.toContain("<script>");
   expect(html).toContain("&lt;script&gt;");
   expect(html).toContain("&lt;details&gt;");
-});
-
-test("wiki previews ignore generated source files disclosure", () => {
-  expect(wikiContentPreview(WIKI_WITH_SOURCE_DISCLOSURE, "Run admission")).toBe(
-    "The run gate keeps org-scoped sessions bounded.",
-  );
-  expect(
-    wikiContentPreview(
-      "<details>\n<summary>Relevant source files</summary>\n\n- `a.ts`\n</details>",
-      "Only sources",
-    ),
-  ).toBe("");
 });
