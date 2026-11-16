@@ -120,4 +120,53 @@ describe("tasks CRUD (org-scoped) + project filter", () => {
     const del = await json(`/api/tasks/${missing}`, { method: "DELETE" });
     expect(del.status).toBe(404);
   });
+
+  test("pages past 100 tasks with next_cursor, and leaves archived tasks out on request", async () => {
+    const session = await createOrgSession("tasks-pages");
+    const created: string[] = [];
+    for (let index = 0; index < 103; index += 1) {
+      const task = await json<any>("/api/tasks", {
+        method: "POST",
+        cookies: session.cookies,
+        body: { title: `Task ${index}`, status: index < 2 ? "archived" : "todo" },
+      });
+      expect(task.status).toBe(201);
+      created.push(task.body.id);
+    }
+    const newest = created.at(-1);
+
+    const first = await json<any>("/api/tasks?scope=all", { cookies: session.cookies });
+    expect(first.body.tasks).toHaveLength(100);
+    expect(first.body.tasks.map((task: any) => task.id)).not.toContain(newest);
+    expect(first.body.has_more).toBe(true);
+    expect(typeof first.body.next_cursor).toBe("string");
+    const second = await json<any>(
+      `/api/tasks?scope=all&cursor=${encodeURIComponent(first.body.next_cursor)}`,
+      { cookies: session.cookies },
+    );
+    expect(second.body.tasks.map((task: any) => task.title)).toEqual(["Task 100", "Task 101", "Task 102"]);
+    expect(second.body).toMatchObject({ has_more: false, next_cursor: null });
+
+    // Without the two archived tasks, the board's 101 open tasks still need two pages.
+    const board = await json<any>("/api/tasks?scope=all&exclude_archived=1", { cookies: session.cookies });
+    expect(board.body.tasks[0].title).toBe("Task 2");
+    expect(board.body.tasks.every((task: any) => task.status !== "archived")).toBe(true);
+    const boardRest = await json<any>(
+      `/api/tasks?scope=all&exclude_archived=1&cursor=${encodeURIComponent(board.body.next_cursor)}`,
+      { cookies: session.cookies },
+    );
+    expect(boardRest.body.tasks.map((task: any) => task.id)).toEqual([newest]);
+    expect(boardRest.body.has_more).toBe(false);
+  });
+
+  test("an invalid cursor is a 400", async () => {
+    const session = await createOrgSession("tasks-cursor");
+    for (const cursor of ["", "nope!", Buffer.from("[1]").toString("base64url")]) {
+      const response = await json<any>(`/api/tasks?scope=all&cursor=${encodeURIComponent(cursor)}`, {
+        cookies: session.cookies,
+      });
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe("cursor is invalid");
+    }
+  });
 });

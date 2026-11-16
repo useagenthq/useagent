@@ -55,7 +55,7 @@ composer](/product/task-composer).
 
 | Method | Path | Description | Notes |
 | --- | --- | --- | --- |
-| GET | `/api/tasks` | List org tasks, scoped by project or all. | Query `project` (key), `project_id` (uuid), `scope=all` (cross-project), `limit` (default 100). Returns `{tasks}`. |
+| GET | `/api/tasks` | List org tasks in board order (column position, then newest first), scoped by project or all. | Query `project` (key), `project_id` (uuid), `scope=all` (cross-project), `limit` (1-500, default 100), `exclude_archived=1`, `cursor`. Returns `{tasks, has_more, next_cursor}`: send `next_cursor` back as `cursor`, with the same other query, for the next page; it is `null` on the last page. `400 cursor is invalid`. |
 | POST | `/api/tasks` | Create a task. | Body: `title` (required), `status` (default `todo`), `project_id`, `project_key`, `body`, `priority`. `201`. `404 project not found`. |
 | PATCH | `/api/tasks/:id` | Partial update. | Body (any subset): `title`, `body`, `status`, `priority`, `order`. `404 task not found`. |
 | DELETE | `/api/tasks/:id` | Delete a task. | `{deleted: true, id}`. `404 task not found`. |
