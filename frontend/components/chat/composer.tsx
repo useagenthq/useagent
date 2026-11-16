@@ -570,7 +570,7 @@ export function Composer({
           the card edge and must not be clipped. */}
       <div
         className={cn(
-          "border-border-button-default bg-background-primary-default border",
+          "border-border-button-default bg-background-primary-default border focus-within:border-border-focus-ring focus-within:ring-border-focus-ring focus-within:ring-1",
           hero ? "rounded-3xl shadow-md" : "rounded-[20px]",
         )}
       >
@@ -641,7 +641,7 @@ export function Composer({
               aria-autocomplete="list"
               aria-expanded={mentions.open || cmdActive}
               aria-controls={
-                mentions.open ? mentions.listboxId : cmdActive ? "slashcmd-label" : undefined
+                mentions.open ? mentions.listboxId : cmdActive ? "slashcmd-listbox" : undefined
               }
               aria-activedescendant={
                 mentions.open
