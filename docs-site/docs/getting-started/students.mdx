@@ -1,0 +1,142 @@
+---
+title: Student and campus kit
+description: Run a one-hour useAgent workshop or club session with a plain-words intro, a sign-up path, three weekend starter projects, a timed outline, and a Markdown slide deck.
+sidebar:
+  order: 4
+---
+
+This page is a kit for running a one-hour useAgent session at a school, club,
+or hackathon. It explains the product in plain words, walks attendees through
+sign-up, and ends with three projects sized for a weekend.
+
+## What useAgent is, in plain words
+
+You describe a task in plain words. useAgent runs a coding agent - Claude
+Code, Codex, OpenCode, or Pi - on an isolated cloud computer that has its own
+terminal, browser, and file system. You watch the agent work, answer it when
+it asks, and keep the files it makes.
+
+Three ideas carry the whole session:
+
+- **The thread is durable.** Every step lands in a recorded log, so closing
+  the tab loses nothing and a run survives a restart.
+- **Work happens in a sandbox.** The agent's computer is a disposable cloud
+  workspace, not your laptop. It only sees the files and repositories you
+  attach to the task.
+- **You stay in charge.** You approve sensitive actions, review what
+  changed, and decide what to keep.
+
+## Sign up
+
+The hosted app needs no install and no credit card.
+
+<Steps>
+  <Step title="Create an account">
+    Open [app.useagent.org](https://app.useagent.org/login?ref=hacktoberfest)
+    and sign up with an email address and a password.
+  </Step>
+  <Step title="Confirm the mail">
+    The app mails a confirmation link. Open it, then sign in. New accounts
+    get starter model credits and cloud sandbox time, and the Free list in
+    the model menu works regardless - nobody needs a paid plan to join in.
+  </Step>
+  <Step title="Start a thread">
+    From the home page, describe what you want done, pick a ready engine and
+    model, and send.
+  </Step>
+</Steps>
+
+:::note
+Self-service sign-up is a deployment switch. The hosted deployment has it
+open today; a self-hosted deployment opens it with `SIGNUP_OPEN`, and
+otherwise accounts come from invitations. If your campus runs its own
+deployment, the facilitator provisions accounts before the session. See
+[Auth and organisations](/platform/auth-and-orgs).
+:::
+
+## Three starter projects
+
+Each project fits an evening and leaves a real artifact behind. Paste the
+prompt into a thread as-is, then keep talking to the agent in the same thread
+until the "done when" list checks out.
+
+### A portfolio site
+
+The classic first build: one page, your name, and links to your work.
+
+```text
+Build me a personal portfolio site as a single folder of plain HTML and CSS:
+a header with my name, a short bio section, three project cards, and a
+contact section. Keep it readable on a phone screen. Here is my bio: ...
+```
+
+Done when: the site opens from a preview artifact, the layout holds on a
+narrow window, and every link goes somewhere real. Teaches: describing an
+outcome, reviewing a workpiece, asking for changes in the same thread.
+
+### A data-analysis report
+
+Turn a small CSV into something you could hand in. Bring a dataset you care
+about - sports stats, survey results, spending - or use one the facilitator
+prepared.
+
+```text
+I attached a CSV. Explore it in a notebook, find three things worth saying,
+make a chart for each, and turn the result into a one-page report with the
+charts embedded.
+```
+
+Done when: the notebook runs top to bottom, each chart is labelled, and the
+report reads in one sitting. Teaches: attaching files, watching the agent
+use a terminal, publishing an artifact.
+
+### A small web app with tests
+
+A taste of real engineering: a todo app with a test suite that has to pass.
+
+```text
+Build a small todo web app - add, list, check off, and delete items - with a
+test suite that covers the behaviour. Run the tests, fix whatever fails, and
+write a README that says how to start the app and run the tests.
+```
+
+Done when: the tests pass, the README's commands work in the sandbox, and
+the app survives a refresh. Teaches: asking for verification, reading a run
+that found and fixed its own bugs.
+
+## The 60-minute workshop
+
+The outline assumes one facilitator, a projector, and attendees with laptops
+and email access.
+
+| Time | Segment | What happens |
+|---|---|---|
+| 0-5 | Welcome | [Slides](/getting-started/students-workshop-slides) one to three: what useAgent is and what a run looks like. |
+| 5-15 | Sign in | Everyone creates an account, confirms the mail, and picks a free model. |
+| 15-25 | Live demo | The facilitator runs one starter project start to finish on the projector, thinking out loud. |
+| 25-50 | Build | Attendees pick a project, paste the prompt, and steer their own run. Facilitator walks the room. |
+| 50-58 | Show and tell | Two or three volunteers show what their run produced. |
+| 58-60 | Wrap | Point at the projects above as homework and at the issue below for feedback. |
+
+Before the room: run the sign-up flow yourself that day, confirm a free
+model is ready, prepare one sample CSV, and keep one spare prompt per
+project in case an attendee draws a blank.
+
+:::tip
+When things stall, shrink the moment, not the session. If confirmation mail
+is slow, run the demo on your own account and pair attendees up. If a model
+is busy, switch to another entry on the Free list. If a sandbox is slow to
+start, have the room write their prompt while it boots.
+:::
+
+## Slides
+
+The deck lives at [Workshop slides](/getting-started/students-workshop-slides).
+It is plain Markdown: every `---` line starts a new slide in Marp, Reveal.js,
+or Slidev, and it reads fine as a page if you never convert it.
+
+## Tell us how it went
+
+The kit improves every time a real group runs it. After your session, leave
+a note on [issue #51](https://github.com/useagenthq/useagent/issues/51) -
+what worked, what stalled, and what the room asked for next.
