@@ -5,9 +5,22 @@ import { fetchDrafts, fetchProposals } from "./learnings-api";
 import type { KnowledgeDraft, SkillProposal } from "./learnings-api";
 
 export const metadata: Metadata = {
-  title: "Learnings",
+  title: "Learnings - UseAgent",
   description:
     "Review proposed knowledge drafts and skill revisions before they go live.",
+  openGraph: {
+    title: "Learnings - UseAgent",
+    description:
+      "Review proposed knowledge drafts and skill revisions before they go live.",
+    images: [{ url: "/og/17-learnings.png", width: 1600, height: 900, alt: "UseAgent Learnings" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Learnings - UseAgent",
+    description:
+      "Review proposed knowledge drafts and skill revisions before they go live.",
+    images: ["/og/17-learnings.png"],
+  },
 };
 
 export default async function LearningsPage() {

@@ -5,8 +5,19 @@ import type { SecretMeta } from "./secrets-data";
 import { SecretsManager } from "./secrets-manager";
 
 export const metadata: Metadata = {
-  title: "Secrets",
+  title: "Secrets - UseAgent",
   description: "Encrypted org secrets injected into every sandbox this workspace boots.",
+  openGraph: {
+    title: "Secrets - UseAgent",
+    description: "Encrypted org secrets injected into every sandbox this workspace boots.",
+    images: [{ url: "/og/08-customize.png", width: 1600, height: 900, alt: "UseAgent Secrets" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Secrets - UseAgent",
+    description: "Encrypted org secrets injected into every sandbox this workspace boots.",
+    images: ["/og/08-customize.png"],
+  },
 };
 
 export default async function SecretsPage() {

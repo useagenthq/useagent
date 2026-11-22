@@ -10,8 +10,19 @@ import { fetchPublishedWikiDocuments, type WikiDoc } from "../wiki-data";
 import { relativeTime } from "@/utils/format";
 
 export const metadata: Metadata = {
-  title: "Wiki",
+  title: "Wiki - UseAgent",
   description: "A published knowledge document.",
+  openGraph: {
+    title: "Wiki - UseAgent",
+    description: "A published knowledge document.",
+    images: [{ url: "/og/18-wiki.png", width: 1600, height: 900, alt: "UseAgent Wiki" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Wiki - UseAgent",
+    description: "A published knowledge document.",
+    images: ["/og/18-wiki.png"],
+  },
 };
 
 /** Dedicated page per published document; the rail lists siblings for

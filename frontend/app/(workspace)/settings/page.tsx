@@ -27,6 +27,15 @@ import { ProviderConnectionsProvider } from "./use-provider-connections";
 export const metadata: Metadata = {
   title: "Settings",
   description: "Manage your workspace, providers, infrastructure, usage, secrets, and team.",
+  openGraph: {
+    title: "Settings - UseAgent",
+    description: "Manage your workspace, providers, infrastructure, usage, secrets, and team.",
+    images: [{ url: "/og/08-customize.png", width: 1600, height: 900, alt: "UseAgent Settings" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    images: ["/og/08-customize.png"],
+  },
 };
 
 /* -------------------------------------------------------------------------- */
