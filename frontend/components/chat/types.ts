@@ -16,6 +16,7 @@ import {
   type RunUpload,
   type StepKind,
 } from "@useagent/agent-client/wire";
+import { stripForkWrapper } from "./fork-prompt";
 import { providerDisplayName } from "./provider-display";
 
 export type { ApiRun, ApiStep, EngineId, MemoryScope, PermissionMode, RunStatus, RunUpload, StepKind };
@@ -50,7 +51,7 @@ export function toThread(data: unknown): ApiRun[] {
  * plumbing leaks into the conversation.
  */
 export function cleanPrompt(prompt: string): string {
-  return stripBotPreamble(stripFollowupWrapper(prompt)).trim();
+  return stripBotPreamble(stripFollowupWrapper(stripForkWrapper(prompt))).trim();
 }
 
 function stripFollowupWrapper(prompt: string): string {
