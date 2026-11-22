@@ -1,5 +1,6 @@
 import { backendFetch } from "@/lib/backend-fetch";
 import { envelope } from "@/lib/runs";
+import { decodeFiringPage, type FiringPage, firingPagePath } from "./firing-history";
 import type { FiringRecord, ScheduleRecord } from "./schedules-data";
 
 /**
@@ -83,13 +84,19 @@ export async function deleteSchedule(id: string): Promise<void> {
   if (!res.ok) throw await failure(res, "delete automation");
 }
 
-export async function fetchHistory(id: string, signal?: AbortSignal): Promise<FiringRecord[]> {
-  const res = await backendFetch(`/api/automations/${id}/history`, {
+/** One page of an automation's history, newest first: `cursor` null for the
+ *  newest page, else a `nextCursor` from the page before. */
+export async function fetchHistory(
+  id: string,
+  cursor: string | null,
+  signal?: AbortSignal,
+): Promise<FiringPage<FiringRecord>> {
+  const res = await backendFetch(firingPagePath(`/api/automations/${id}/history`, cursor), {
     cache: "no-store",
     signal,
   });
   if (!res.ok) throw new Error(`history ${res.status}`);
-  return envelope(await res.json(), "firings") as FiringRecord[];
+  return decodeFiringPage<FiringRecord>(await res.json());
 }
 
 /**

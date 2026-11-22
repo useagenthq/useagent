@@ -78,7 +78,7 @@ On import:
 | PATCH | `/api/bots/:id/routines/:routineId` | Update name, cron, timezone, prompt, or enabled state. |
 | DELETE | `/api/bots/:id/routines/:routineId` | Delete the routine. Returns `204`. |
 | POST | `/api/bots/:id/routines/:routineId/run-now` | Fire immediately. Returns `202` with `runId` and the updated routine. |
-| GET | `/api/bots/:id/routines/:routineId/history` | List recorded firings. |
+| GET | `/api/bots/:id/routines/:routineId/history` | List recorded firings, newest first, a page at a time: `limit` (1 to 200, default 50) and `cursor` (the page before's `next_cursor`). Returns `{firings, has_more, next_cursor}`, the same as an automation's history; `400` for a cursor it did not hand out. |
 
 ## Mention handoffs
 

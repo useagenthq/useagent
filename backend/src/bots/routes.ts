@@ -34,7 +34,8 @@ import { asOrgAdmin } from "../provider-connections/repo";
 import { memberDisplayNames } from "../team/member-names";
 import { unknownRepos } from "../github/repos";
 import { botsEnabled } from "./rollout";
-import { listFirings, markFired, nextRunAt } from "../schedules/repo";
+import { firingPageBody, firingPageRequest } from "../schedules/history-page";
+import { listFiringPage, markFired, nextRunAt } from "../schedules/repo";
 import {
   createScheduleForOrg,
   deleteScheduleForOrg,
@@ -491,5 +492,8 @@ botsRoutes.get("/:id/routines/:routineId/history", async (c) => {
   if (!id || !routineId) return c.json({ error: "not_found" }, 404);
   const routine = await getBotRoutine(orgId, id, routineId);
   if (!routine) return c.json({ error: "not_found" }, 404);
-  return c.json({ firings: await listFirings(routine.id) });
+  // Paged like an automation's history (schedules/history-page.ts).
+  const page = firingPageRequest(c.req.query("limit"), c.req.query("cursor"));
+  if ("error" in page) return c.json({ error: page.error }, 400);
+  return c.json(firingPageBody(await listFiringPage(routine.id, page)));
 });

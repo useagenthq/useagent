@@ -2,15 +2,18 @@
 
 import { RiArrowRightUpLine, RiPlayLine } from "@remixicon/react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { Chip, type ChipProps } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
 import * as Drawer from "@/components/base/drawer/drawer";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { relativeTime } from "@/utils/format";
+import type { FiringPage } from "./firing-history";
+import { firingCountLabel, OlderFirings } from "./older-firings";
 import { fetchHistory } from "./schedules-api";
 import { cadenceLabel, engineLabel, type FiringRecord, type ScheduleRecord } from "./schedules-data";
 import { useAutomationRecovery } from "./use-automation-recovery";
+import { useFiringHistory } from "./use-firing-history";
 
 /** Real run status → chip color; the label always shows the raw status. */
 function statusChipColor(status: string): NonNullable<ChipProps["color"]> {
@@ -32,23 +35,26 @@ export function AutomationHistoryDrawer({
   onClose: () => void;
   onRunNow: (id: string) => void;
 }) {
-  const [firings, setFirings] = useState<FiringRecord[] | null>(null);
-  const [error, setError] = useState(false);
+  const scheduleId = schedule?.id ?? null;
+  const fetchPage = useCallback(
+    async (cursor: string | null, signal?: AbortSignal): Promise<FiringPage<FiringRecord>> =>
+      scheduleId ? fetchHistory(scheduleId, cursor, signal) : { firings: [], nextCursor: null },
+    [scheduleId],
+  );
+  const { history, error, older, refresh, loadOlder, reset } = useFiringHistory(fetchPage);
+  const firings = history?.firings ?? null;
+  const hasMore = Boolean(history?.nextCursor);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    if (!schedule) return;
-    try {
-      setFirings(await fetchHistory(schedule.id, signal));
-      setError(false);
-    } catch {
-      if (signal?.aborted) return;
-      setError(true);
-    }
-  }, [schedule]);
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      if (scheduleId) await refresh(signal);
+    },
+    [scheduleId, refresh],
+  );
 
   useEffect(() => {
-    setFirings(null);
-  }, [schedule?.id]);
+    reset();
+  }, [scheduleId, reset]);
 
   useAutomationRecovery(load, schedule?.id ?? null);
 
@@ -100,11 +106,11 @@ export function AutomationHistoryDrawer({
           <div className="mt-6 flex items-baseline justify-between">
             <h2 className="text-body-2-medium text-text-primary">Executions</h2>
             {firings && firings.length > 0 && (
-              <span className="text-caption-1-medium text-text-tertiary">{firings.length} recorded</span>
+              <span className="text-caption-1-medium text-text-tertiary">{firingCountLabel(firings.length, hasMore)}</span>
             )}
           </div>
 
-          {error && firings === null ? (
+          {error !== null && firings === null ? (
             <div className="mt-4 rounded-xl bg-background-tertiary-error p-4">
               <p className="text-body-2-regular text-text-secondary">Couldn’t load execution history.</p>
               <button
@@ -163,6 +169,9 @@ export function AutomationHistoryDrawer({
                 );
               })}
             </ol>
+          )}
+          {firings && firings.length > 0 && (
+            <OlderFirings hasMore={hasMore} state={older} onLoad={() => void loadOlder()} />
           )}
         </Drawer.Body>
       </Drawer.Content>

@@ -25,7 +25,7 @@ import {
   exportWorkpieceState,
   stateFromNativeArtifact,
 } from "./authoring";
-import { type ArtifactListCursor, InvalidArtifactCursorError, parseArtifactCursor } from "./list-cursor";
+import { InvalidListCursorError, type ListCursor, parseListCursor } from "../db/list-cursor";
 import { canPreviewInline } from "./mime";
 import {
   applyArtifactPdfPageRevision,
@@ -124,12 +124,12 @@ artifactRoutes.get("/", async (c) => {
   const requestedLimit = Number.parseInt(c.req.query("limit") ?? "100", 10);
   const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, requestedLimit)) : 100;
   const rawCursor = c.req.query("cursor");
-  let cursor: ArtifactListCursor | null = null;
+  let cursor: ListCursor | null = null;
   if (rawCursor !== undefined) {
     try {
-      cursor = parseArtifactCursor(rawCursor);
+      cursor = parseListCursor(rawCursor);
     } catch (error) {
-      if (error instanceof InvalidArtifactCursorError) return c.json({ error: error.message }, 400);
+      if (error instanceof InvalidListCursorError) return c.json({ error: error.message }, 400);
       throw error;
     }
   }
