@@ -35,6 +35,7 @@ import { memberDisplayNames } from "../team/member-names";
 import { unknownRepos } from "../github/repos";
 import { botsEnabled } from "./rollout";
 import { listFirings, markFired, nextRunAt } from "../schedules/repo";
+import { firingHistoryPage, InvalidFiringCursorError } from "../schedules/firing-cursor";
 import {
   createScheduleForOrg,
   deleteScheduleForOrg,
@@ -484,6 +485,8 @@ botsRoutes.post("/:id/routines/:routineId/run-now", async (c) => {
   }
 });
 
+// A routine's firing history, newest first; the same `limit`/`before` paging
+// as the automation history route (it reads the same firing log).
 botsRoutes.get("/:id/routines/:routineId/history", async (c) => {
   const orgId = c.get("orgId");
   const id = botId(c.req.param("id"));
@@ -491,5 +494,17 @@ botsRoutes.get("/:id/routines/:routineId/history", async (c) => {
   if (!id || !routineId) return c.json({ error: "not_found" }, 404);
   const routine = await getBotRoutine(orgId, id, routineId);
   if (!routine) return c.json({ error: "not_found" }, 404);
-  return c.json({ firings: await listFirings(routine.id) });
+  let pageInput: ReturnType<typeof firingHistoryPage>;
+  try {
+    pageInput = firingHistoryPage(c.req.query("limit"), c.req.query("before"));
+  } catch (error) {
+    if (error instanceof InvalidFiringCursorError) return c.json({ error: error.message }, 400);
+    throw error;
+  }
+  const page = await listFirings(routine.id, pageInput);
+  return c.json({
+    firings: page.firings,
+    has_more: page.nextCursor !== null,
+    next_cursor: page.nextCursor,
+  });
 });

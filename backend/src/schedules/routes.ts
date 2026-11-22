@@ -14,6 +14,7 @@ import {
   ScheduleServiceError,
   updateScheduleForOrg,
 } from "./service";
+import { firingHistoryPage, InvalidFiringCursorError } from "./firing-cursor";
 import { runCreateBodyLimit } from "../runs/run-create-policy";
 
 export const schedulesRoutes = new Hono<AppEnv>();
@@ -91,11 +92,25 @@ schedulesRoutes.post("/:id/run-now", async (c) => {
   }
 });
 
-// Firing history for a schedule (org-scoped), newest first.
+// Firing history for a schedule (org-scoped), newest first. `limit` (1 to
+// 200, default 50) bounds the page; `next_cursor` goes back as `?before=` for
+// the page of older firings after it.
 schedulesRoutes.get("/:id/history", async (c) => {
   const schedule = await getScheduleForOrg(c.get("orgId"), c.req.param("id"));
   if (!schedule) return c.json({ error: "schedule not found" }, 404);
-  return c.json({ firings: await listFirings(schedule.id) });
+  let pageInput: ReturnType<typeof firingHistoryPage>;
+  try {
+    pageInput = firingHistoryPage(c.req.query("limit"), c.req.query("before"));
+  } catch (error) {
+    if (error instanceof InvalidFiringCursorError) return c.json({ error: error.message }, 400);
+    throw error;
+  }
+  const page = await listFirings(schedule.id, pageInput);
+  return c.json({
+    firings: page.firings,
+    has_more: page.nextCursor !== null,
+    next_cursor: page.nextCursor,
+  });
 });
 
 // Delete a schedule and its firing projection rows. Runs created by old firings

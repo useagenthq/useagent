@@ -9,6 +9,12 @@ import {
   type ScheduleTrigger,
 } from "../db/schema";
 import { nextOccurrence } from "./cron";
+import {
+  encodeFiringCursor,
+  FIRING_HISTORY_DEFAULT_LIMIT,
+  FIRING_HISTORY_MAX_LIMIT,
+  type FiringCursor,
+} from "./firing-cursor";
 
 // ---------------------------------------------------------------------------
 // API serialization — snake_case wire contract, matching the runs/skills style.
@@ -341,14 +347,38 @@ export async function settleFiring(
     .where(eq(scheduleFirings.runId, runId));
 }
 
-/** A schedule's firing history, newest first, enriched with the run's live status. */
-export async function listFirings(scheduleId: string): Promise<ApiFiring[]> {
+export interface FiringPage {
+  readonly firings: ApiFiring[];
+  /** Pass back as `before` for the next page of older firings; null on the last page. */
+  readonly nextCursor: string | null;
+}
+
+/** A schedule's firing history, newest first, enriched with the run's live
+ *  status. A keyset page: `before` carries the (fired_at, id) sort key of the
+ *  last firing of the page before it, so a firing recorded while someone pages
+ *  lands on the newest page instead of shifting the later ones. One row past
+ *  `limit` is read to know whether another page follows. */
+export async function listFirings(
+  scheduleId: string,
+  opts: { limit?: number; before?: FiringCursor | null } = {},
+): Promise<FiringPage> {
+  const limit = Math.max(
+    1,
+    Math.min(opts.limit ?? FIRING_HISTORY_DEFAULT_LIMIT, FIRING_HISTORY_MAX_LIMIT),
+  );
+  const filters = [eq(scheduleFirings.scheduleId, scheduleId)];
+  if (opts.before) {
+    filters.push(
+      sql`(${scheduleFirings.firedAt}, ${scheduleFirings.id}) < (${opts.before.firedAt}::timestamptz, ${opts.before.id}::uuid)`,
+    );
+  }
   const rows = await db
     .select({
       id: scheduleFirings.id,
       scheduleId: scheduleFirings.scheduleId,
       runId: scheduleFirings.runId,
       firedAt: scheduleFirings.firedAt,
+      cursorFiredAt: sql<string>`${scheduleFirings.firedAt}::text`,
       trigger: scheduleFirings.trigger,
       status: scheduleFirings.status,
       runStatus: runs.status,
@@ -356,17 +386,26 @@ export async function listFirings(scheduleId: string): Promise<ApiFiring[]> {
     })
     .from(scheduleFirings)
     .leftJoin(runs, eq(scheduleFirings.runId, runs.id))
-    .where(eq(scheduleFirings.scheduleId, scheduleId))
-    .orderBy(desc(scheduleFirings.firedAt), desc(scheduleFirings.id));
+    .where(and(...filters))
+    .orderBy(desc(scheduleFirings.firedAt), desc(scheduleFirings.id))
+    .limit(limit + 1);
 
-  return rows.map((r) => ({
-    id: r.id,
-    schedule_id: r.scheduleId,
-    run_id: r.runId,
-    fired_at: r.firedAt.toISOString(),
-    trigger: r.trigger,
-    status: r.status,
-    run_status: r.runStatus ?? null,
-    run_summary: r.runSummary ?? null,
-  }));
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    firings: page.map((r) => ({
+      id: r.id,
+      schedule_id: r.scheduleId,
+      run_id: r.runId,
+      fired_at: r.firedAt.toISOString(),
+      trigger: r.trigger,
+      status: r.status,
+      run_status: r.runStatus ?? null,
+      run_summary: r.runSummary ?? null,
+    })),
+    nextCursor:
+      rows.length > limit && last
+        ? encodeFiringCursor({ firedAt: last.cursorFiredAt, id: last.id })
+        : null,
+  };
 }

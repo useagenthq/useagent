@@ -267,10 +267,15 @@ async function automationHistory(
   if (!id) return errorResult("automation_history requires an automation id.");
   const schedule = await getScheduleForOrg(claims.orgId, id);
   if (!schedule) return automationNotFound();
-  const firings = await listFirings(schedule.id);
+  const page = await listFirings(schedule.id);
   return textResult(
-    formatAutomationHistoryText(schedule, firings),
-    { automation_id: schedule.id, firings },
+    formatAutomationHistoryText(schedule, page.firings),
+    {
+      automation_id: schedule.id,
+      firings: page.firings,
+      has_more: page.nextCursor !== null,
+      next_cursor: page.nextCursor,
+    },
   );
 }
 
