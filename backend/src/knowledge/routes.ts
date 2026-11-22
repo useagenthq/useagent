@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { isInvalidTextRepresentation } from "../db/pg-errors";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import { multipartFileName } from "../uploads/validate";
@@ -12,7 +13,14 @@ import {
   type ExtractedDocument,
 } from "./extract-text";
 import { ingestOne, IngestValidationError } from "./ingest";
-import { encodeRecordPageCursor, parseRecordPageCursor } from "./list-cursor";
+import {
+  encodeDocumentPageCursor,
+  encodeRecordPageCursor,
+  encodeRevisionPageCursor,
+  parseDocumentPageCursor,
+  parseRecordPageCursor,
+  parseRevisionPageCursor,
+} from "./list-cursor";
 import {
   deleteRecord,
   listRecordPage,
@@ -25,8 +33,8 @@ import {
   archiveDocument,
   createDocument,
   getDocument,
-  listDocuments,
-  listRevisions,
+  listDocumentPage,
+  listRevisionPage,
   publishDocument,
   type DocStatus,
 } from "./wiki";
@@ -47,6 +55,13 @@ const knowledgeUploadBodyLimit = bodyLimit({
   maxSize: KNOWLEDGE_UPLOAD_MAX_BYTES + UPLOAD_FORM_OVERHEAD,
   onError: (c) => c.json({ error: "file_too_large", message: uploadTooLarge }, 413),
 });
+
+/** A list's `?limit=` as a number, or undefined to take the list's default.
+ *  Each list clamps it to its own range. */
+function queryLimit(raw: string | undefined): number | undefined {
+  const limit = Number.parseInt(raw ?? "", 10);
+  return Number.isFinite(limit) ? limit : undefined;
+}
 
 /** Shape a stored row for the read API (flattens the useful distilled meta). */
 function toApi(row: KnowledgeRow) {
@@ -170,8 +185,7 @@ knowledgeRoutes.post("/upload", knowledgeUploadBodyLimit, async (c) => {
 // with the same `q` and `limit` for the next page.
 knowledgeRoutes.get("/", async (c) => {
   const q = c.req.query("q");
-  const requestedLimit = Number.parseInt(c.req.query("limit") ?? "", 10);
-  const limit = Number.isFinite(requestedLimit) ? requestedLimit : undefined;
+  const limit = queryLimit(c.req.query("limit"));
   const rawCursor = c.req.query("cursor");
   const cursor = rawCursor === undefined ? null : parseRecordPageCursor(rawCursor);
   if (rawCursor !== undefined && !cursor) return c.json({ error: "cursor is invalid" }, 400);
@@ -233,14 +247,29 @@ knowledgeRoutes.post("/search", async (c) => {
 const DOC_STATUSES: DocStatus[] = ["draft", "published", "archived"];
 
 // GET /api/knowledge/documents?status=published|draft|archived|all — default
-// PUBLISHED (the Wiki view). Content is the published (or latest) revision.
+// PUBLISHED (the Wiki view), newest update first. Each document carries an
+// `excerpt` of the published (or latest) revision, not its content; read one
+// document for that. Pages: `limit` (1-200, default 50), and `next_cursor`
+// sent back as `?cursor=` with the same `status` and `limit` for the next page.
 knowledgeRoutes.get("/documents", async (c) => {
   const raw = c.req.query("status");
   const status =
     raw === "all" ? undefined : DOC_STATUSES.includes(raw as DocStatus) ? (raw as DocStatus) : "published";
+  const rawCursor = c.req.query("cursor");
+  const cursor = rawCursor === undefined ? null : parseDocumentPageCursor(rawCursor);
+  if (rawCursor !== undefined && !cursor) return c.json({ error: "cursor is invalid" }, 400);
   try {
-    const documents = await listDocuments(c.get("orgId"), status);
-    return c.json({ documents });
+    const page = await listDocumentPage({
+      orgId: c.get("orgId"),
+      status,
+      limit: queryLimit(c.req.query("limit")),
+      cursor,
+    });
+    return c.json({
+      documents: page.documents,
+      has_more: page.nextCursor !== null,
+      next_cursor: page.nextCursor ? encodeDocumentPageCursor(page.nextCursor) : null,
+    });
   } catch (e) {
     console.error("[knowledge] documents list error:", (e as Error).message);
     return c.json({ error: "list failed" }, 500);
@@ -276,16 +305,53 @@ knowledgeRoutes.post("/documents", async (c) => {
   }
 });
 
-// GET /api/knowledge/documents/:id — one document (+ its revisions).
+// GET /api/knowledge/documents/:id — one document with its content, and the
+// first page of its revisions, newest first; `revisions_next_cursor` continues
+// them on GET /documents/:id/revisions.
 knowledgeRoutes.get("/documents/:id", async (c) => {
   try {
     const document = await getDocument(c.get("orgId"), c.req.param("id"));
     if (!document) return c.json({ error: "document not found" }, 404);
-    const revisions = await listRevisions(c.get("orgId"), document.id);
-    return c.json({ document, revisions });
+    const page = await listRevisionPage({ orgId: c.get("orgId"), documentId: document.id });
+    return c.json({
+      document,
+      revisions: page.revisions,
+      revisions_has_more: page.nextCursor !== null,
+      revisions_next_cursor: page.nextCursor ? encodeRevisionPageCursor(page.nextCursor) : null,
+    });
   } catch (e) {
+    // An id that is not a uuid names no document.
+    if (isInvalidTextRepresentation(e)) return c.json({ error: "document not found" }, 404);
     console.error("[knowledge] document get error:", (e as Error).message);
     return c.json({ error: "get failed" }, 500);
+  }
+});
+
+// GET /api/knowledge/documents/:id/revisions — a document's revisions, newest
+// first. Pages: `limit` (1-100, default 20), and `next_cursor` sent back as
+// `?cursor=` with the same `limit` for the next page.
+knowledgeRoutes.get("/documents/:id/revisions", async (c) => {
+  const rawCursor = c.req.query("cursor");
+  const cursor = rawCursor === undefined ? null : parseRevisionPageCursor(rawCursor);
+  if (rawCursor !== undefined && !cursor) return c.json({ error: "cursor is invalid" }, 400);
+  try {
+    const document = await getDocument(c.get("orgId"), c.req.param("id"));
+    if (!document) return c.json({ error: "document not found" }, 404);
+    const page = await listRevisionPage({
+      orgId: c.get("orgId"),
+      documentId: document.id,
+      limit: queryLimit(c.req.query("limit")),
+      cursor,
+    });
+    return c.json({
+      revisions: page.revisions,
+      has_more: page.nextCursor !== null,
+      next_cursor: page.nextCursor ? encodeRevisionPageCursor(page.nextCursor) : null,
+    });
+  } catch (e) {
+    if (isInvalidTextRepresentation(e)) return c.json({ error: "document not found" }, 404);
+    console.error("[knowledge] revisions list error:", (e as Error).message);
+    return c.json({ error: "list failed" }, 500);
   }
 });
 

@@ -4,9 +4,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { AskRepoBar } from "../ask-repo-bar";
-import { PagesRail } from "../pages-rail";
 import { WikiContent } from "../wiki-content";
-import { fetchPublishedWikiDocuments, type WikiDoc } from "../wiki-data";
+import {
+  fetchPublishedWikiDocument,
+  fetchPublishedWikiDocuments,
+  type WikiDocDetail,
+  type WikiDocListPage,
+} from "../wiki-data";
+import { WikiDocRail } from "../wiki-doc-rail";
 import { relativeTime } from "@/utils/format";
 
 export const metadata: Metadata = {
@@ -14,19 +19,21 @@ export const metadata: Metadata = {
   description: "A published knowledge document.",
 };
 
-/** Dedicated page per published document; the rail lists siblings for
- *  navigation. Content is the same store the agent searches. */
+/** Dedicated page per published document, read directly so one past the first
+ *  list page opens too; the rail lists siblings for navigation. Content is the
+ *  same store the agent searches. */
 export default async function WikiDocPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  let docs: WikiDoc[] = [];
-  let failed = false;
-  try {
-    docs = await fetchPublishedWikiDocuments();
-  } catch {
-    failed = true;
-  }
-  const doc = docs.find((d) => d.id === id);
+  const [docResult, railResult] = await Promise.allSettled([
+    fetchPublishedWikiDocument(id),
+    fetchPublishedWikiDocuments(),
+  ]);
+  const failed = docResult.status === "rejected";
+  const doc: WikiDocDetail | null = docResult.status === "fulfilled" ? docResult.value : null;
   if (!failed && !doc) notFound();
+  // The rail is navigation only: when its list fails, the document still shows.
+  const rail: WikiDocListPage =
+    railResult.status === "fulfilled" ? railResult.value : { docs: [], nextCursor: null };
 
   return (
     <div className="mx-auto w-full max-w-6xl p-6 pb-24 lg:p-8 lg:pb-24">
@@ -39,7 +46,7 @@ export default async function WikiDocPage({ params }: { params: Promise<{ id: st
         </Link>
 
         <div className="mt-6 flex flex-col gap-8 lg:flex-row lg:gap-10">
-          <PagesRail docs={docs} activeId={id} />
+          <WikiDocRail initialDocs={rail.docs} initialNextCursor={rail.nextCursor} activeId={id} />
 
           <article className="min-w-0 flex-1">
             {failed ? (

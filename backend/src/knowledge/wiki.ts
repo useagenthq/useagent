@@ -11,6 +11,7 @@ import {
   sql,
   upsertRecord,
 } from "./store";
+import { WIKI_EXCERPT_SOURCE_CHARS, wikiDocumentExcerpt } from "./wiki-excerpt";
 
 // ---------------------------------------------------------------------------
 // Wiki-over-Knowledge (mem_op.md 0.3). The human-facing document lifecycle over
@@ -98,6 +99,91 @@ export async function listDocuments(orgId: string, status?: DocStatus): Promise<
   return rows.map(toApi);
 }
 
+/** A wiki document as the paged list sends it: the document without its
+ *  content, plus a short preview of it (see ./wiki-excerpt). */
+export type WikiDocumentSummary = Omit<WikiDocument, "content"> & { excerpt: string };
+
+/** Where a page of the document list stopped: the last row's full sort key,
+ *  with update and creation times as whole microseconds since the epoch. */
+export interface DocumentPageCursor {
+  readonly updatedAtMicros: string;
+  readonly createdAtMicros: string;
+  readonly id: string;
+}
+
+export interface DocumentPage {
+  readonly documents: WikiDocumentSummary[];
+  /** Pass back as `cursor` for the next page; null on the last page. */
+  readonly nextCursor: DocumentPageCursor | null;
+}
+
+export const DOCUMENT_PAGE_DEFAULT_LIMIT = 50;
+export const DOCUMENT_PAGE_MAX_LIMIT = 200;
+
+/** One page of an org's documents (optionally filtered by status), newest
+ *  update first (creation time, then id, break ties), after `cursor` when
+ *  given. Each carries an excerpt read from the start of its content, never
+ *  the whole text. A document updated while someone pages moves ahead of
+ *  their cursor: a fresh first page shows it, and no later page repeats it. */
+export async function listDocumentPage(opts: {
+  orgId: string;
+  status?: DocStatus;
+  limit?: number;
+  cursor?: DocumentPageCursor | null;
+}): Promise<DocumentPage> {
+  await ready();
+  const limit = Math.max(1, Math.min(opts.limit ?? DOCUMENT_PAGE_DEFAULT_LIMIT, DOCUMENT_PAGE_MAX_LIMIT));
+  const cursor = opts.cursor ?? null;
+  // Every key sorts descending, so "after the cursor" is a row-value less-than.
+  const rows = await sql<
+    (Omit<DocRow, "content"> & {
+      content_head: string | null;
+      cursor_updated_at_micros: string;
+      cursor_created_at_micros: string;
+    })[]
+  >`
+    SELECT d.id, d.org_id, d.user_id, d.collection, d.title, d.slug, d.parent_id,
+           d.status, d.published_revision_id,
+           left(COALESCE(pr.content, lr.content), ${WIKI_EXCERPT_SOURCE_CHARS}) AS content_head,
+           COALESCE(pr.id, lr.id) AS revision_id,
+           d.created_at, d.updated_at,
+           ((extract(epoch from d.updated_at) * 1000000)::bigint)::text AS cursor_updated_at_micros,
+           ((extract(epoch from d.created_at) * 1000000)::bigint)::text AS cursor_created_at_micros
+    FROM knowledge_documents d
+    LEFT JOIN knowledge_revisions pr ON pr.id = d.published_revision_id
+    LEFT JOIN LATERAL (
+      SELECT id, content FROM knowledge_revisions r
+      WHERE r.document_id = d.id ORDER BY created_at DESC LIMIT 1
+    ) lr ON true
+    WHERE d.org_id = ${opts.orgId} ${opts.status ? sql`AND d.status = ${opts.status}` : sql``}
+    ${cursor
+      ? sql`AND (d.updated_at, d.created_at, d.id) < (
+          'epoch'::timestamptz + ${cursor.updatedAtMicros}::bigint * interval '1 microsecond',
+          'epoch'::timestamptz + ${cursor.createdAtMicros}::bigint * interval '1 microsecond',
+          ${cursor.id}::uuid
+        )`
+      : sql``}
+    ORDER BY d.updated_at DESC, d.created_at DESC, d.id DESC
+    LIMIT ${limit + 1}
+  `;
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    documents: page.map((row) => {
+      const { content: _content, ...document } = toApi({ ...row, content: null });
+      return { ...document, excerpt: wikiDocumentExcerpt(row.content_head ?? "", row.title) };
+    }),
+    nextCursor:
+      rows.length > limit && last
+        ? {
+            updatedAtMicros: last.cursor_updated_at_micros,
+            createdAtMicros: last.cursor_created_at_micros,
+            id: last.id,
+          }
+        : null,
+  };
+}
+
 /** Fetch one document (org-scoped) with resolved content, or null. */
 export async function getDocument(orgId: string, id: string): Promise<WikiDocument | null> {
   await ready();
@@ -109,18 +195,75 @@ export async function getDocument(orgId: string, id: string): Promise<WikiDocume
   return rows[0] ? toApi(rows[0]) : null;
 }
 
+export interface WikiRevision {
+  id: string;
+  content: string;
+  source: string | null;
+  author: string | null;
+  created_at: string;
+}
+
 /** Full immutable revision history for a document (org-scoped), newest first. */
-export async function listRevisions(
-  orgId: string,
-  documentId: string,
-): Promise<{ id: string; content: string; source: string | null; author: string | null; created_at: string }[]> {
+export async function listRevisions(orgId: string, documentId: string): Promise<WikiRevision[]> {
   await ready();
-  return sql`
+  return sql<WikiRevision[]>`
     SELECT id, content, source, author, created_at
     FROM knowledge_revisions
     WHERE org_id = ${orgId} AND document_id = ${documentId}
     ORDER BY created_at DESC
-  ` as Promise<{ id: string; content: string; source: string | null; author: string | null; created_at: string }[]>;
+  `;
+}
+
+/** Where a page of a document's revisions stopped: the last revision's
+ *  creation time, in whole microseconds since the epoch, and id. */
+export interface RevisionPageCursor {
+  readonly createdAtMicros: string;
+  readonly id: string;
+}
+
+export interface RevisionPage {
+  readonly revisions: WikiRevision[];
+  /** Pass back as `cursor` for the next page; null on the last page. */
+  readonly nextCursor: RevisionPageCursor | null;
+}
+
+export const REVISION_PAGE_DEFAULT_LIMIT = 20;
+export const REVISION_PAGE_MAX_LIMIT = 100;
+
+/** One page of a document's immutable revisions (org-scoped), newest first (id
+ *  breaks ties), after `cursor` when given. */
+export async function listRevisionPage(opts: {
+  orgId: string;
+  documentId: string;
+  limit?: number;
+  cursor?: RevisionPageCursor | null;
+}): Promise<RevisionPage> {
+  await ready();
+  const limit = Math.max(1, Math.min(opts.limit ?? REVISION_PAGE_DEFAULT_LIMIT, REVISION_PAGE_MAX_LIMIT));
+  const cursor = opts.cursor ?? null;
+  const rows = await sql<(WikiRevision & { cursor_created_at_micros: string })[]>`
+    SELECT id, content, source, author, created_at,
+      ((extract(epoch from created_at) * 1000000)::bigint)::text AS cursor_created_at_micros
+    FROM knowledge_revisions
+    WHERE org_id = ${opts.orgId} AND document_id = ${opts.documentId}
+    ${cursor
+      ? sql`AND (created_at, id) < (
+          'epoch'::timestamptz + ${cursor.createdAtMicros}::bigint * interval '1 microsecond',
+          ${cursor.id}::uuid
+        )`
+      : sql``}
+    ORDER BY created_at DESC, id DESC
+    LIMIT ${limit + 1}
+  `;
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    revisions: page.map(({ cursor_created_at_micros: _key, ...revision }) => revision),
+    nextCursor:
+      rows.length > limit && last
+        ? { createdAtMicros: last.cursor_created_at_micros, id: last.id }
+        : null,
+  };
 }
 
 export interface CreateDocumentInput {
