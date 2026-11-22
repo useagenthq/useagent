@@ -65,12 +65,12 @@ surface they drive:
 | Tools | `tool.started`, `tool.progress`, `tool.completed` |
 | Files and artifacts | `file.changed`, `artifact.created`, `artifact.delivered` |
 | Terminal | `terminal.output` |
-| Child sessions | `child.started`, `child.updated`, `child.completed` |
+| Child sessions | `child.started`, `child.updated`, `child.completed`, `delegation.control` (wait, send, resume, close, gather) |
 | Approvals | `approval.requested`, `approval.resolved` |
 | Questions | `question.requested`, `question.resolved` |
 | Commands and mode | `commands.updated`, `mode.updated` |
 | Usage | `usage.updated` |
-| Context markers | `context.marker` (memory, knowledge, skill, playbook, rule, reconciling) |
+| Context markers | `context.marker` (memory, knowledge, skill, playbook, rule, reconciling, approval) |
 | Harness diagnostics | `harness.warning`, `harness.error` (with a `fatal` flag) |
 
 Three design rules keep the union honest:
@@ -93,11 +93,16 @@ declared or negotiated by the native driver and persisted with the session:
 | Area | Flags |
 | --- | --- |
 | Streaming and structure | `streamingText`, `reasoning`, `plans`, `toolProgress`, `fileDiffs` |
-| Delegation | `childSessions` |
+| Delegation | `nativeChildProjection`, `gatewayChildSessions` |
 | Interaction | `approvals`, `questions`, `commands` |
 | Accounting and choice | `usage`, `modelSelection` |
 | Session lifecycle | `resume`, `load`, `close`, `stop`, `reconcile` |
 | Runtime surfaces | `directTerminal`, `desktop`, `nativeEmbed`, `knowledgeTools` |
+
+The two delegation flags are independent:
+
+- `nativeChildProjection`: the engine's own subagent or task fan-out is translated into `child.started` / `child.updated` / `child.completed`. It is only real where the provider actually emits child sessions (the OpenCode protocol and the canonical runtime adapter).
+- `gatewayChildSessions`: the product's child-session tools are available. Their durable thread lifecycle does not change the parent engine's protocol.
 
 The UI gates every surface on this map and never on an engine name. A missing
 or non-boolean flag normalizes to `false`
