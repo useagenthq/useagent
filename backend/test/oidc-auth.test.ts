@@ -288,6 +288,16 @@ describe("new accounts follow the Google rules", () => {
     expect(admitted.location).toBe("/");
     expect(await usersWith(inside)).toHaveLength(1);
   });
+
+  test("open sign-up refuses an address the provider did not verify, and creates nothing", async () => {
+    const open = { SIGNUP_OPEN: "1", CONNECTOR_EMAIL_HOST: "127.0.0.1", CONNECTOR_EMAIL_FROM: "hello@example.test", SIGNUP_ALLOWED_DOMAINS: "example.test" };
+    const email = address("open-unverified");
+    const refused = await inProduction(() => signInAs({ sub: "open-unverified", email, email_verified: false, name: "Claimer" }), open);
+    expect(refused.location).toContain("/api/auth/error?error=Sign-up_needs_an_address_your_provider_has_verified");
+    expect(refused.cookies).not.toContain("session_token");
+    expect(await usersWith(email)).toEqual([]);
+    expect(await db.select().from(account).where(eq(account.accountId, "open-unverified"))).toEqual([]);
+  });
 });
 
 describe("existing accounts", () => {
@@ -305,6 +315,17 @@ describe("existing accounts", () => {
     expect(linked.location).toBe("/");
     expect(await db.select({ providerId: account.providerId }).from(account).where(eq(account.userId, id))).toEqual([{ providerId: "oidc" }]);
     expect(await db.select().from(session).where(eq(session.userId, id))).toHaveLength(1);
+  });
+
+  test("a verified identity taking over an unconfirmed account drops every sign-in attached before", async () => {
+    const email = address("claimed");
+    const id = `user_${crypto.randomUUID()}`;
+    await db.insert(user).values({ id, name: "Claimed", email, emailVerified: false });
+    await db.insert(account).values({ id: `acct_${crypto.randomUUID()}`, userId: id, providerId: "oidc", accountId: "claimer", createdAt: new Date(), updatedAt: new Date() });
+
+    const owner = await inProduction(() => signInAs({ sub: "claimed-owner", email, email_verified: true, name: "Owner" }));
+    expect(owner.location).toBe("/");
+    expect(await db.select({ accountId: account.accountId }).from(account).where(eq(account.userId, id))).toEqual([{ accountId: "claimed-owner" }]);
   });
 
   test("an invitation to an address without a password can be used once OpenID Connect is on", async () => {

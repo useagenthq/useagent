@@ -3,7 +3,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError } from "better-auth/api";
 import { genericOAuth, organization } from "better-auth/plugins";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { ensurePersonalOrgForUser, hasCredential, unverifiedClaim } from "./auth-hooks";
 import { organizationLimitReached } from "./auth/organization-limit";
 import {
@@ -168,6 +168,13 @@ export function createAuthServer() {
             // body; a Google identity presents none.
             const refusal = signupRefusal(user.email, context?.body?.inviteCode, process.env, pending);
             if (refusal) throw APIError.from("FORBIDDEN", { code: "SIGNUP_DISABLED", message: refusal });
+            // A provider identity creates an account only for an address the
+            // provider verified: an unverified claim could name anyone's address,
+            // and its account row would outlive the real owner's takeover. Email
+            // sign-up confirms the address by mail instead.
+            if (context?.path !== "/sign-up/email" && user.emailVerified !== true) {
+              throw APIError.from("FORBIDDEN", { code: "SIGNUP_DISABLED", message: "Sign-up needs an address your provider has verified" });
+            }
           },
           after: async (user) => {
             // An open sign-up gets its organisation once the address is confirmed
@@ -206,13 +213,14 @@ export function createAuthServer() {
         create: {
           before: async (account) => {
             // A provider identity that verified the address (the library links no
-            // other) outranks a password nobody confirmed: linking to a claim (an
-            // account that never confirmed its address and belongs nowhere) drops
-            // the claim's password, and the account is that person's; the library
+            // other) outranks everything attached to an account nobody confirmed:
+            // linking to a claim (an account that never confirmed its address and
+            // belongs nowhere) drops the claim's password and any other sign-in
+            // attached before, and the account is that person's; the library
             // marks the address confirmed right after the link. Invited or not,
             // open or closed: the account already exists, no door is opened.
             if (account.providerId !== "credential" && (await unverifiedClaim(account.userId))) {
-              await db.delete(schema.account).where(and(eq(schema.account.userId, account.userId), eq(schema.account.providerId, "credential")));
+              await db.delete(schema.account).where(eq(schema.account.userId, account.userId));
             }
           },
           after: async (account) => {
