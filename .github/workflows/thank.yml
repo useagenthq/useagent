@@ -1,5 +1,7 @@
 # Posts a maintainer note on a pull request as github-actions[bot], so routine
 # notes (thanks after a merge, superseded closes) never come from a personal account.
+# The CLA bot locks merged pull requests, so a locked one is unlocked for the note
+# and locked again afterwards.
 name: maintainer-note
 on:
   workflow_dispatch:
@@ -11,6 +13,7 @@ on:
         description: Comment text
         required: true
 permissions:
+  issues: write
   pull-requests: write
 jobs:
   note:
@@ -20,4 +23,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ inputs.pr }}
           MESSAGE: ${{ inputs.message }}
-        run: gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "$MESSAGE"
+        run: |
+          locked=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR" --jq .locked)
+          [ "$locked" = true ] && gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/lock"
+          status=0
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "$MESSAGE" || status=$?
+          [ "$locked" = true ] && gh api -X PUT "repos/$GITHUB_REPOSITORY/issues/$PR/lock" -f lock_reason=resolved
+          exit $status
