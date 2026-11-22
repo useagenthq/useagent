@@ -1,0 +1,23 @@
+# Posts a maintainer note on a pull request as github-actions[bot], so routine
+# notes (thanks after a merge, superseded closes) never come from a personal account.
+name: maintainer-note
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+      message:
+        description: Comment text
+        required: true
+permissions:
+  pull-requests: write
+jobs:
+  note:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+          MESSAGE: ${{ inputs.message }}
+        run: gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "$MESSAGE"
