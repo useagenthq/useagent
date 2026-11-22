@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { desktopAuthRequest, restartElectronRedirect, startDesktopGoogleSignIn } from "./request";
+import { desktopAuthRequest, restartElectronRedirect, startDesktopGoogleSignIn, startDesktopOidcSignIn } from "./request";
 import { desktopAuthClient } from "@/lib/desktop-auth-client";
 
 const valid = `https://plane.example/desktop-auth?client_id=electron&state=${"A".repeat(16)}&code_challenge=${"B".repeat(43)}&code_challenge_method=S256`;
@@ -34,4 +34,15 @@ test("desktop Google sign-in returns OAuth to the desktop-auth page that polls f
   expect(calls).toEqual([{ provider: "google", callbackURL: request.url, fetchOptions: { query: request.query } }]);
   await expect(startDesktopGoogleSignIn(request, async () => ({ error: { message: "denied" } })))
     .rejects.toThrow("Could not start Google sign-in.");
+});
+
+test("desktop OpenID Connect sign-in returns to the same desktop-auth page", async () => {
+  expect(typeof desktopAuthClient.signIn.oauth2).toBe("function");
+  const request = desktopAuthRequest(valid);
+  if (!request) throw new Error("the valid desktop request was refused");
+  const calls: unknown[] = [];
+  await startDesktopOidcSignIn(request, async (input) => { calls.push(input); return { error: null }; });
+  expect(calls).toEqual([{ providerId: "oidc", callbackURL: request.url, fetchOptions: { query: request.query } }]);
+  await expect(startDesktopOidcSignIn(request, async () => ({ error: { message: "denied" } })))
+    .rejects.toThrow("Could not start single sign-on.");
 });

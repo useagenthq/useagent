@@ -5,7 +5,7 @@ import { INVITATION_EXPIRES_IN_SECONDS, NO_WAY_IN, canSignIn, deliverInvitation 
 import { acceptLinkedInvitationAsMember, bindInvitedSlackSender, linkedSlackSenders, reopenInvitedRequest } from "../slack/access-requests";
 import { db } from "../db/client";
 import { invitation, member, organization, user } from "../db/auth-schema";
-import { allowDevOrg, betterAuthTrustedOrigins, googleAuthEnabled, invitationMailEnabled, openSignupConfig } from "../env";
+import { allowDevOrg, betterAuthTrustedOrigins, googleAuthEnabled, invitationMailEnabled, oidcAuthConfig, openSignupConfig } from "../env";
 import type { AppEnv } from "../http";
 import { operatorAccessAllowed } from "../operator/access";
 import { withOrgLock } from "../org-lock";
@@ -33,8 +33,12 @@ async function redactSessionTokens(response: Response): Promise<Response> {
 const routes = new Hono<AppEnv>();
 routes.get("/api/auth/provider-config", (c) => {
   const open = openSignupConfig();
+  const oidc = oidcAuthConfig();
   return c.json({
     google: googleAuthEnabled(),
+    // OpenID Connect sign-in: only the button's label; the issuer and client
+    // stay on the server.
+    oidc: oidc ? { label: oidc.label } : null,
     emailPassword: true,
     allowDevOrg: allowDevOrg(),
     invitationEmail: invitationMailEnabled(),

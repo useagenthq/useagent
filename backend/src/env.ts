@@ -321,6 +321,73 @@ export function googleAuthEnabled(): boolean {
   return googleAuthConfig() !== null;
 }
 
+/** The provider id better-auth registers for OpenID Connect sign-in. It names
+ *  the callback path the identity provider must allow and the `providerId` of
+ *  every account the provider vouches for, so it never changes. */
+export const OIDC_PROVIDER_ID = "oidc";
+
+const DEFAULT_OIDC_BUTTON_LABEL = "SSO";
+
+/**
+ * OpenID Connect sign-in for a self-hosted install (src/auth.ts), set up like
+ * {@link googleAuthConfig}: read per call, and `OIDC_ISSUER`, `OIDC_CLIENT_ID`
+ * and `OIDC_CLIENT_SECRET` must all be set or the provider is off. Anything in
+ * between, or an issuer that is not an http(s) URL, is a misconfiguration:
+ * warn and stay off rather than half-enable. `OIDC_BUTTON_LABEL` names the
+ * provider on the sign-in button ("Sign in with <label>").
+ *
+ * The endpoints come from the issuer's discovery document
+ * (`<OIDC_ISSUER>/.well-known/openid-configuration`). The redirect URI the
+ * provider must allow is `<BETTER_AUTH_URL>/api/auth/oauth2/callback/oidc`.
+ */
+export interface OidcAuthConfig {
+  readonly discoveryUrl: string;
+  readonly clientId: string;
+  readonly clientSecret: string;
+  readonly label: string;
+}
+
+export function oidcAuthConfig(
+  source: Record<string, string | undefined> = process.env,
+): OidcAuthConfig | null {
+  const issuer = source.OIDC_ISSUER?.trim();
+  const clientId = source.OIDC_CLIENT_ID?.trim();
+  const clientSecret = source.OIDC_CLIENT_SECRET?.trim();
+  if (!issuer && !clientId && !clientSecret) return null; // unset → silently off
+  if (!issuer || !clientId || !clientSecret) {
+    console.warn(
+      "[auth] OIDC_ISSUER, OIDC_CLIENT_ID and OIDC_CLIENT_SECRET are only partially set: " +
+        "OpenID Connect sign-in disabled. Set all three or none.",
+    );
+    return null;
+  }
+  const url = URL.canParse(issuer) ? new URL(issuer) : null;
+  if (!url || (url.protocol !== "https:" && url.protocol !== "http:") || url.search || url.hash) {
+    console.warn("[auth] OIDC_ISSUER is not an http(s) URL without a query: OpenID Connect sign-in disabled.");
+    return null;
+  }
+  return {
+    // OpenID Connect Discovery 1.0, section 4: drop a trailing slash, then
+    // append the well-known path, so an issuer with a path keeps it.
+    discoveryUrl: `${issuer.replace(/\/+$/, "")}/.well-known/openid-configuration`,
+    clientId,
+    clientSecret,
+    label: source.OIDC_BUTTON_LABEL?.trim() || DEFAULT_OIDC_BUTTON_LABEL,
+  };
+}
+
+/** True when OpenID Connect sign-in is fully configured. */
+export function oidcAuthEnabled(): boolean {
+  return oidcAuthConfig() !== null;
+}
+
+/** True when a provider that vouches for an email address (Google or OpenID
+ *  Connect) can sign people in: such a sign-in links an existing account with
+ *  that verified address, so an account without a password still has a way in. */
+export function providerSignInEnabled(): boolean {
+  return googleAuthEnabled() || oidcAuthEnabled();
+}
+
 /**
  * GitHub config for real repository selection (src/github/*). Backend-only: the
  * token NEVER reaches React — it authenticates the repo listing here and rides

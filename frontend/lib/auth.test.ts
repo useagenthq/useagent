@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createSessionRequest, getAuthConfig, listWorkspaces, switchOrganization } from "./auth";
+import { createSessionRequest, getAuthConfig, listWorkspaces, providerErrorURL, switchOrganization } from "./auth";
 
 function countingFetcher(responses: (() => Response)[] = []) {
   const seen: string[] = [];
@@ -64,6 +64,7 @@ test("provider config uses the dedicated route and fails closed", async () => {
     seen.push(path);
     return Response.json({
       google: true,
+      oidc: { label: " Acme SSO " },
       emailPassword: false,
       allowDevOrg: false,
       signup: { inviteCode: true, domains: ["acme.com", 3] },
@@ -72,6 +73,7 @@ test("provider config uses the dedicated route and fails closed", async () => {
 
   expect(await getAuthConfig(fetcher)).toEqual({
     google: true,
+    oidc: { label: "Acme SSO" },
     emailPassword: false,
     allowDevOrg: false,
     invitationEmail: null, // the server did not say
@@ -84,11 +86,17 @@ test("provider config uses the dedicated route and fails closed", async () => {
   >[0];
   expect(await getAuthConfig(unavailable)).toEqual({
     google: false,
+    oidc: null,
     emailPassword: false,
     allowDevOrg: false,
     invitationEmail: null,
     signup: null,
   });
+});
+
+test("a failed provider sign-in returns to the login card, still headed for the page asked for", () => {
+  expect(providerErrorURL("/")).toBe("/login?via=provider");
+  expect(providerErrorURL("/agent/new?desktop=1")).toBe("/login?via=provider&redirect_url=%2Fagent%2Fnew%3Fdesktop%3D1");
 });
 
 test("a workspace row without an id or a name fails validation instead of becoming a blank selected workspace", async () => {

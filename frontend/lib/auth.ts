@@ -79,15 +79,41 @@ export function invalidateSession(): void {
   for (const listener of sessionListeners) listener();
 }
 
+/** Where a provider sign-in that failed lands: the login card, which says why
+ *  (`via=provider`; better-auth appends `error`), still headed for the page
+ *  the person asked for. Without it the library shows its own error page. */
+export function providerErrorURL(callbackURL: string): string {
+  const params = new URLSearchParams({ via: "provider" });
+  if (callbackURL !== "/") params.set("redirect_url", callbackURL);
+  return `/login?${params}`;
+}
+
 /** Begin the Google OAuth flow: better-auth returns the provider URL to visit,
  *  and we hand the browser off to it. Throws if Google isn't configured. */
 export async function signInWithGoogle(callbackURL = "/"): Promise<void> {
   const res = await backendFetch("/api/auth/sign-in/social", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ provider: "google", callbackURL }),
+    body: JSON.stringify({ provider: "google", callbackURL, errorCallbackURL: providerErrorURL(callbackURL) }),
   });
   if (!res.ok) throw new Error(`Google sign-in unavailable (${res.status})`);
+  const data = (await res.json()) as { url?: string };
+  if (!data.url) throw new Error("No redirect URL returned");
+  window.location.href = data.url;
+}
+
+/** The provider id the backend registers for OpenID Connect sign-in. */
+export const OIDC_PROVIDER_ID = "oidc";
+
+/** Begin the OpenID Connect flow (the deployment's own identity provider), the
+ *  same way: better-auth answers the provider URL. Throws if it isn't set up. */
+export async function signInWithOidc(callbackURL = "/"): Promise<void> {
+  const res = await backendFetch("/api/auth/sign-in/oauth2", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ providerId: OIDC_PROVIDER_ID, callbackURL, errorCallbackURL: providerErrorURL(callbackURL) }),
+  });
+  if (!res.ok) throw new Error(`Single sign-on unavailable (${res.status})`);
   const data = (await res.json()) as { url?: string };
   if (!data.url) throw new Error("No redirect URL returned");
   window.location.href = data.url;
@@ -165,6 +191,9 @@ export async function switchOrganization(
 export interface AuthConfig {
   /** Google provider configured (GOOGLE_CLIENT_ID/SECRET both present). */
   google: boolean;
+  /** OpenID Connect sign-in (OIDC_ISSUER, OIDC_CLIENT_ID and OIDC_CLIENT_SECRET
+   *  set): the name the button shows. Null when it is off. */
+  oidc: { label: string } | null;
   emailPassword: boolean;
   /** Unauthenticated dev-org access currently open (ALLOW_DEV_ORG). */
   allowDevOrg: boolean;
@@ -178,6 +207,7 @@ export interface AuthConfig {
 
 const FALLBACK_CONFIG: AuthConfig = {
   google: false,
+  oidc: null,
   emailPassword: false,
   allowDevOrg: false,
   invitationEmail: null,
@@ -193,8 +223,10 @@ export async function getAuthConfig(
     if (!res.ok) return FALLBACK_CONFIG;
     const data = (await res.json()) as Partial<AuthConfig>;
     const signup = data.signup && typeof data.signup === "object" ? data.signup : null;
+    const oidcLabel = data.oidc && typeof data.oidc === "object" ? data.oidc.label : null;
     return {
       google: Boolean(data.google),
+      oidc: typeof oidcLabel === "string" && oidcLabel.trim() ? { label: oidcLabel.trim() } : null,
       emailPassword: data.emailPassword === true,
       allowDevOrg: Boolean(data.allowDevOrg),
       invitationEmail: typeof data.invitationEmail === "boolean" ? data.invitationEmail : null,

@@ -7,7 +7,13 @@ import { Button } from "@/components/base/buttons/button";
 import { useSession } from "@/lib/auth";
 import { desktopAuthClient } from "@/lib/desktop-auth-client";
 
-import { desktopAuthRequest, restartElectronRedirect, startDesktopGoogleSignIn, type DesktopAuthRequest } from "./request";
+import {
+  desktopAuthRequest,
+  restartElectronRedirect,
+  startDesktopGoogleSignIn,
+  startDesktopOidcSignIn,
+  type DesktopAuthRequest,
+} from "./request";
 
 export default function DesktopAuthPage() {
   const { session, loading } = useSession();
@@ -49,7 +55,11 @@ export default function DesktopAuthPage() {
     </AuthScreen>
   );
   if (!loading && !session) return (
-    <AuthForm callbackURL={request.url} googleAction={() => startDesktopGoogleSignIn(request)} />
+    <AuthForm
+      callbackURL={request.url}
+      googleAction={() => startDesktopGoogleSignIn(request)}
+      oidcAction={() => startDesktopOidcSignIn(request)}
+    />
   );
   return (
     <AuthScreen>
