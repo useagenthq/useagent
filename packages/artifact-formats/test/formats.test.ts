@@ -678,6 +678,37 @@ describe("artifact native formats", () => {
     });
   });
 
+  test("treats a trailing dot as the same Windows file name", async () => {
+    expect(await bundledContents(["report", "report."])).toEqual({
+      report: "0",
+      "report (2).": "1",
+    });
+  });
+
+  test("treats Windows-invalid characters as the same file name", async () => {
+    expect(await bundledContents(["a:b.txt", "a?b.txt"])).toEqual({
+      "a:b.txt": "0",
+      "a?b (2).txt": "1",
+    });
+  });
+
+  test("treats every Windows-invalid character like a real underscore", async () => {
+    for (const character of '<>:"|?*') {
+      expect(await bundledContents(["a_b.txt", `a${character}b.txt`])).toEqual({
+        "a_b.txt": "0",
+        [`a${character}b (2).txt`]: "1",
+      });
+    }
+  });
+
+  test("treats a trailing space after shortening as the same Windows file name", async () => {
+    const stem = "a".repeat(254);
+    expect(await bundledContents([stem, `${stem} b`])).toEqual({
+      [stem]: "0",
+      [`${"a".repeat(251)} (2)`]: "1",
+    });
+  });
+
   test("suffixes names with no extension and dotfiles at the end", async () => {
     expect(await bundledContents(["notes", "notes", ".env", ".env"])).toEqual({
       notes: "0",

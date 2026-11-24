@@ -964,10 +964,10 @@ function sanitizeBundleName(name: string): string {
   return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : "artifact";
 }
 
-/** How a name is compared: unzipping on macOS or Windows folds case, and macOS
- * also treats the composed and decomposed forms of a letter as one file. */
+/** How a name is compared: unzipping folds case and Unicode forms, while Windows
+ * also replaces invalid characters and ignores trailing dots and spaces. */
 function bundleNameKey(name: string): string {
-  return name.normalize("NFC").toLowerCase();
+  return name.normalize("NFC").toLowerCase().replace(/[<>:"|?*]/g, "_").replace(/[. ]+$/, "");
 }
 
 /** Most file systems cap one file name at 255 bytes, and a character outside
