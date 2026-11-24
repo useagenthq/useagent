@@ -4,7 +4,7 @@ export function awaitRuntimeOperation<T>(
   cleanup: () => Promise<void>,
 ): Promise<T> {
   if (signal.aborted) {
-    void cleanup();
+    void cleanup().catch(() => {});
     void operation.then(
       () => cleanup().catch(() => {}),
       () => cleanup().catch(() => {}),
@@ -15,7 +15,7 @@ export function awaitRuntimeOperation<T>(
     let aborted = false;
     const onAbort = () => {
       aborted = true;
-      void cleanup();
+      void cleanup().catch(() => {});
       reject(signal.reason);
     };
     signal.addEventListener("abort", onAbort, { once: true });
@@ -23,7 +23,7 @@ export function awaitRuntimeOperation<T>(
       (value) => {
         signal.removeEventListener("abort", onAbort);
         if (aborted) {
-          void cleanup();
+          void cleanup().catch(() => {});
           return;
         }
         resolve(value);
@@ -31,7 +31,7 @@ export function awaitRuntimeOperation<T>(
       (error) => {
         signal.removeEventListener("abort", onAbort);
         if (aborted) {
-          void cleanup();
+          void cleanup().catch(() => {});
           return;
         }
         reject(error);
