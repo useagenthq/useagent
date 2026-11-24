@@ -6,11 +6,14 @@
 // dependency; here they are reimplemented as a dependency-free 5-field matcher
 // with the same semantics (standard Vixie cron, including the dom/dow OR rule).
 
+const DIGITS = /^\d+$/;
+
 /**
  * Expand one cron field into the set of matching integers within [min, max].
  * Supports `*`, `*​/n`, `a`, `a-b`, `a-b/n`, `a/n` (a→max step n), and comma
- * lists of any of those. Returns `null` on any syntax error (out-of-range,
- * malformed, reversed range, non-positive step).
+ * lists of any of those. Values, range ends, and steps use plain digits.
+ * Returns `null` on any syntax error (out-of-range, malformed, reversed range,
+ * non-positive step).
  */
 function expandField(field: string, min: number, max: number): Set<number> | null {
   if (field === "") return null;
@@ -25,8 +28,10 @@ function expandField(field: string, min: number, max: number): Set<number> | nul
     const slash = part.indexOf("/");
     if (slash !== -1) {
       range = part.slice(0, slash);
-      step = Number(part.slice(slash + 1));
-      if (!Number.isInteger(step) || step <= 0) return null;
+      const stepText = part.slice(slash + 1);
+      if (!DIGITS.test(stepText)) return null;
+      step = Number(stepText);
+      if (step <= 0) return null;
     }
 
     let lo: number;
@@ -36,13 +41,12 @@ function expandField(field: string, min: number, max: number): Set<number> | nul
       hi = max;
     } else if (range.includes("-")) {
       const bounds = range.split("-");
-      if (bounds.length !== 2) return null;
+      if (bounds.length !== 2 || !bounds.every((bound) => DIGITS.test(bound))) return null;
       lo = Number(bounds[0]);
       hi = Number(bounds[1]);
-      if (!Number.isInteger(lo) || !Number.isInteger(hi)) return null;
     } else {
+      if (!DIGITS.test(range)) return null;
       lo = Number(range);
-      if (!Number.isInteger(lo)) return null;
       // A bare value with a step ("5/10") means "from 5 to max, every 10".
       hi = slash !== -1 ? max : lo;
     }

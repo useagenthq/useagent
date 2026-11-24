@@ -141,6 +141,17 @@ describe("cron matcher", () => {
       "*/0 * * * *", // zero step
       "5-1 * * * *", // reversed range
       "a * * * *", // non-numeric
+      "-5 * * * *", // empty lower range bound
+      "/15 * * * *", // empty value before slash
+      "0- * * * *", // empty upper range bound
+      "0x1E 9 * * *", // hexadecimal value
+      "1e1 * * * *", // exponent value
+      "*/1e1 * * * *", // exponent step
+      "+5 * * * *", // signed value
+      "* * * * -1", // empty lower range bound in day of week
+      "*/+5 * * * *", // signed step
+      "1.0 * * * *", // decimal value
+      "1,0x2 * * * *", // hexadecimal value in a comma list
     ]) {
       expect(isValidCron(e)).toBe(false);
       expect(matches(e, at(2026, 8, 5, 0, 0))).toBe(false);
