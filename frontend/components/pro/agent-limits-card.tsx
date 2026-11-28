@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useId, useState } from "react";
 import { EASE_OUT } from "@/lib/motion";
 import { cx } from "@/utils/cx";
-import { compactNumber } from "@/utils/format";
+import { formatTokens } from "@/utils/format";
 
 export type ContextSegment = {
   label: string;
@@ -60,10 +60,8 @@ export interface AgentLimitsCardProps {
 const PALETTE = [6, 1, 5, 4, 3, 8, 7, 2].map((n) => `var(--color-chart-${n})`);
 const DEFAULT_LIMITS: UsageLimit[] = [];
 
-/** 314, 96k, 1.3M. */
-export function formatTokens(n: number) {
-  return compactNumber(n).replace("K", "k");
-}
+/** Kept as an export: the private edition's card exports it too. */
+export { formatTokens };
 
 /** A 0-1 share as a whole percent, clamped to 0-100. */
 const percent = (share: number) => `${Math.round(Math.min(1, Math.max(0, share)) * 100)}%`;

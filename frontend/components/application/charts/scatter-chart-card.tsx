@@ -23,6 +23,7 @@ import {
   type ChartRange,
 } from "@/components/application/charts/chart-card";
 import { cx } from "@/utils/cx";
+import { compactNumber } from "@/utils/format";
 
 /**
  * Scatter / bubble chart card on Recharts `ScatterChart` - the correlation
@@ -145,9 +146,6 @@ const DEFAULT_RANGES: ScatterRange[] = [
   { id: "q2", label: "Last quarter", series: scaleSeries(DEFAULT_SERIES, 0.82), delta: 0.041 },
   { id: "year", label: "This year", series: scaleSeries(DEFAULT_SERIES, 3.6), delta: -0.019 },
 ];
-
-const compactNumber = (n: number) =>
-  n >= 1000 ? `${Math.round(n / 100) / 10}K`.replace(".0K", "K") : String(Math.round(n));
 
 /** Bubble area range, px². Big enough to read, small enough not to collide. */
 const BUBBLE_RANGE: [number, number] = [90, 620];

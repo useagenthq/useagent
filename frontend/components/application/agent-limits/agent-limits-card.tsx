@@ -5,6 +5,7 @@ import { RiArrowDownSLine, RiArrowRightLine, RiArrowRightSLine } from "@remixico
 import { AnimatePresence, motion } from "motion/react";
 import { resolveTone } from "@/components/application/charts/chart-card";
 import { cx } from "@/utils/cx";
+import { formatTokens } from "@/utils/format";
 import { EASE_OUT } from "@/lib/motion";
 
 /**
@@ -116,14 +117,6 @@ const DEFAULT_LIMITS: UsageLimit[] = [
   { label: "Weekly · all models", used: 0.03, resets: "Resets Tue 3:00 PM" },
   { label: "Weekly · Pro", used: 0.05, resets: "Resets Tue 3:00 PM" },
 ];
-
-/** 482_800 → "482.8k", 96_000 → "96k", 1_000_000 → "1M", 314 → "314". */
-export function formatTokens(n: number) {
-  const short = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
-  if (n >= 1_000_000) return `${short(n / 1_000_000)}M`;
-  if (n >= 1_000) return `${short(n / 1_000)}k`;
-  return String(n);
-}
 
 const EASE = EASE_OUT;
 

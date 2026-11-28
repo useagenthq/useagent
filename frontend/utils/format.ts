@@ -17,9 +17,16 @@ const compact = new Intl.NumberFormat("en", {
   maximumFractionDigits: 1,
 });
 
-/** Compact number: 12480 → "12.5K", 1_200_000 → "1.2M". */
+/** Compact number: 12480 → "12.5K", 1_200_000 → "1.2M". Rounding carries into the next
+ *  unit, so 999_950 is "1M", never "1000K". Chart axes and usage totals use this. */
 export function compactNumber(n: number): string {
   return compact.format(n);
+}
+
+/** Token count: the compact number with a lowercase thousands mark, as token labels read:
+ *  314 → "314", 96_000 → "96k", 999_950 → "1M", 1_250_000 → "1.3M". */
+export function formatTokens(n: number): string {
+  return compactNumber(n).replace("K", "k");
 }
 
 /** Rough per-run token cost for the clearly-estimated "tokens" headline. */

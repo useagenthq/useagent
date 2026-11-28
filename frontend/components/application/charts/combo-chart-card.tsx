@@ -23,6 +23,7 @@ import {
   type ChartRange,
 } from "@/components/application/charts/chart-card";
 import { cx } from "@/utils/cx";
+import { compactNumber } from "@/utils/format";
 
 /**
  * Combo chart card on Recharts `ComposedChart`: a bar series on the left axis
@@ -90,9 +91,6 @@ const DEFAULT_DATA = rowsOf(
   [4200, 4800, 5600, 5200, 6400, 7100, 6800, 7600, 8400, 8100, 9200, 9800],
   [2.4, 2.6, 3.1, 2.9, 3.4, 3.8, 3.6, 4.1, 4.4, 4.2, 4.8, 5.2],
 );
-
-const compactNumber = (n: number) =>
-  n >= 1000 ? `${Math.round(n / 100) / 10}K`.replace(".0K", "K") : String(Math.round(n));
 
 const percent = (n: number) => `${Math.round(n * 10) / 10}%`;
 
