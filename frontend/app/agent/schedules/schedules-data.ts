@@ -1,4 +1,4 @@
-import { ENGINES } from "@/components/chat/types";
+import { ENGINES, engineLabel } from "@/components/chat/types";
 import type { DotTone } from "@/components/shared/status-dot";
 
 /**
@@ -6,18 +6,6 @@ import type { DotTone } from "@/components/shared/status-dot";
  * React, no "use client") so both the server page and the client view can
  * import it. Fetching lives in `schedules-api.ts`.
  */
-
-/** Legacy display metadata only. These ids must never become picker options. */
-const LEGACY_ENGINE_LABEL: Record<string, string> = {
-  "claude-sdk": "Claude SDK",
-  daytona: "Cloud",
-  mock: "Mock",
-  acp: "ACP",
-};
-
-export function engineLabel(engine: string): string {
-  return ENGINES.find(({ id }) => id === engine)?.label ?? LEGACY_ENGINE_LABEL[engine] ?? engine;
-}
 
 export interface AutomationEngineOption {
   id: string;

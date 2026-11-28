@@ -3,12 +3,12 @@ import {
   automationEditorEngineOptions,
   automationEngineOptions,
   cadenceLabel,
-  engineLabel,
   isValidCron,
   nextRunLabelAt,
   reconcileAutomationEngine,
   scheduleZone,
 } from "@/app/agent/schedules/schedules-data";
+import { engineLabel } from "@/components/chat/types";
 
 describe("automation presentation", () => {
   test("explains supported cadence patterns without hiding cron semantics", () => {

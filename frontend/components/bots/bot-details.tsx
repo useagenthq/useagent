@@ -9,6 +9,7 @@ import { Button } from "@/components/base/buttons/button";
 import * as Drawer from "@/components/base/drawer/drawer";
 import { Input } from "@/components/base/input/input";
 import * as Textarea from "@/components/base/textarea/textarea";
+import { engineLabel } from "@/components/chat/types";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cx } from "@/utils/cx";
 import { ArchiveBotButton } from "./archive-bot";
@@ -17,7 +18,7 @@ import { ExportBotSection } from "./bot-file-actions";
 import { PresetSection } from "./bot-preset";
 import { BotRepositories } from "./bot-repositories";
 import { RoutinesSection } from "./routines-section";
-import { type ApiBot, apiErrorText, engineHasComputer, engineLabel, OFFLINE_MESSAGE } from "./types";
+import { type ApiBot, apiErrorText, engineHasComputer, OFFLINE_MESSAGE } from "./types";
 
 /**
  * Header over the bot's thread plus the details drawer behind the info

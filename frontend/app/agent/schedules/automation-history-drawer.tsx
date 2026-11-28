@@ -6,12 +6,13 @@ import { useCallback, useEffect } from "react";
 import { Chip, type ChipProps } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
 import * as Drawer from "@/components/base/drawer/drawer";
+import { engineLabel } from "@/components/chat/types";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { relativeTime } from "@/utils/format";
 import type { FiringPage } from "./firing-history";
 import { firingCountLabel, OlderFirings } from "./older-firings";
 import { fetchHistory } from "./schedules-api";
-import { cadenceLabel, engineLabel, type FiringRecord, type ScheduleRecord } from "./schedules-data";
+import { cadenceLabel, type FiringRecord, type ScheduleRecord } from "./schedules-data";
 import { useAutomationRecovery } from "./use-automation-recovery";
 import { useFiringHistory } from "./use-firing-history";
 

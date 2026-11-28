@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
 import * as Modal from "@/components/base/modal/modal";
+import { engineLabel } from "@/components/chat/types";
 import { AvatarMark } from "./avatar-mark";
 import {
   type BotFileDraft,
@@ -15,7 +16,7 @@ import {
   importNotes,
   readBotFile,
 } from "./bot-file";
-import { type ApiBot, engineLabel } from "./types";
+import type { ApiBot } from "./types";
 
 /** In the details drawer: download the bot as a file another workspace can import. */
 export function ExportBotSection({ bot }: { bot: ApiBot }) {
