@@ -20,6 +20,7 @@ import {
   DropdownTrigger,
 } from "@/components/base/dropdown/dropdown";
 import { Switch } from "@/components/base/switch/switch";
+import { engineLabel } from "@/components/chat/types";
 import { REVEAL_ON_HOVER } from "@/components/customize/list-row";
 import { cx } from "@/utils/cx";
 import { InlineDeleteConfirm } from "@/components/shared/inline-delete-confirm";
@@ -27,7 +28,6 @@ import { relativeTime } from "@/utils/format";
 import {
   cadenceLabel,
   lastRunAt,
-  engineLabel,
   scheduleZone,
   type ScheduleRecord,
 } from "./schedules-data";

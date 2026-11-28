@@ -11,8 +11,9 @@ import { loadBots } from "@/components/bots/load";
 import { NewBotDialog } from "@/components/bots/new-bot-dialog";
 import { orderRoster, outcomeLine } from "@/components/bots/roster-model";
 import { RosterResizer, useRosterWidth } from "@/components/bots/roster-resizer";
-import { type ApiBot, engineLabel } from "@/components/bots/types";
+import type { ApiBot } from "@/components/bots/types";
 import { useNow } from "@/components/bots/use-now";
+import { engineLabel } from "@/components/chat/types";
 import {
   Sidebar,
   SidebarContent,

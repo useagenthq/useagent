@@ -69,19 +69,6 @@ export interface ApiFiring {
   run_summary: string | null;
 }
 
-const ENGINE_LABELS: Record<string, string> = {
-  opencode: "OpenCode",
-  claude: "Claude Code",
-  codex: "Codex",
-  pi: "Pi",
-  chat: "Chat",
-  mock: "Mock",
-};
-
-export function engineLabel(id: string): string {
-  return ENGINE_LABELS[id] ?? id;
-}
-
 /** Only the chat engine answers from context alone; every other engine runs in its own sandbox. */
 export function engineHasComputer(id: string): boolean {
   return id !== "chat";

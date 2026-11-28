@@ -95,8 +95,20 @@ export const ENGINES: { id: EngineId; label: string }[] = [
   { id: "pi", label: "Pi" },
 ];
 
-export function engineLabel(id: EngineId): string {
-  return ENGINES.find((e) => e.id === id)?.label ?? id;
+// Display names for retired engine ids that old bots, automations and runs still
+// carry. Display only: these ids are never in ENGINES, so they never become a choice.
+const LEGACY_ENGINE_LABELS: ReadonlyMap<string, string> = new Map([
+  ["claude-sdk", "Claude SDK"],
+  // Reads as a place, never as the vendor the id was named after.
+  ["daytona", "Cloud"],
+  ["mock", "Mock"],
+  ["acp", "ACP"],
+]);
+
+/** The one display name for an engine id on every surface: the catalog's label, a
+ *  retired id's legacy label, else the id as stored. */
+export function engineLabel(id: string): string {
+  return ENGINES.find((e) => e.id === id)?.label ?? LEGACY_ENGINE_LABELS.get(id) ?? id;
 }
 
 // The model catalog (paid per-engine sets + the Free lane) lives in

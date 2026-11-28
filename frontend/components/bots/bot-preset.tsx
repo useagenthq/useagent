@@ -1,8 +1,9 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
+import { engineLabel } from "@/components/chat/types";
 import { backendFetch } from "@/lib/backend-fetch";
-import { type ApiBot, engineLabel, memoryScopeLabel } from "./types";
+import { type ApiBot, memoryScopeLabel } from "./types";
 
 /**
  * The preset as labelled pairs: what the home thread was opened with and

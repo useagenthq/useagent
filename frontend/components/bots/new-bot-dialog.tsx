@@ -8,6 +8,7 @@ import { Input } from "@/components/base/input/input";
 import * as Modal from "@/components/base/modal/modal";
 import { Orb } from "@/components/base/orb/orb";
 import { Select, SelectItem } from "@/components/base/select/select";
+import { engineLabel } from "@/components/chat/types";
 import { useCapabilityCatalog } from "@/hooks/use-capability-catalog";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cx } from "@/utils/cx";
@@ -21,7 +22,6 @@ import {
   apiErrorText,
   BOT_AVATAR_TONES,
   engineHasComputer,
-  engineLabel,
   OFFLINE_MESSAGE,
 } from "./types";
 
