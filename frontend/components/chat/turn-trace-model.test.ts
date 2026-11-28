@@ -310,17 +310,70 @@ describe("trace rows", () => {
     ];
     const settled = stepRows(traceRowsFromWork([...steps, GIT_LOG], false));
     expect(settled.map((row) => [row.family, row.label, row.detail, row.status])).toEqual([
-      ["boot", "Sandbox ready in 6s", "4 CPU / 8 GiB", "done"],
+      ["boot", "Ready in 6s", "4 CPU / 8 GiB", "done"],
       ["shell", "Run", null, "done"],
     ]);
-    // Still booting: the latest stage, running, without its trailing ellipsis.
+    // Still booting: the latest stage, running, in plain words.
     const booting = traceRowsFromWork(steps.slice(0, 2), true);
     expect(booting).toHaveLength(1);
     expect(booting[0]).toMatchObject({
       family: "boot",
-      label: "Provisioning cloud sandbox",
+      label: "Starting a computer for this task",
       status: "running",
     });
+  });
+
+  test("each setup stage reads in plain words while it runs", () => {
+    const stage = (label: string, chip = "codex") =>
+      stepRows(
+        traceRowsFromWork(
+          [
+            {
+              kind: "tool" as const,
+              key: "b0",
+              step: {
+                id: "b0",
+                run_id: "run-1",
+                idx: 0,
+                kind: "task" as const,
+                label,
+                chip,
+                code_json: null,
+                created_at: "2030-01-01T00:00:00Z",
+              },
+            },
+          ],
+          true,
+        ),
+      )[0]?.label;
+    expect(stage("Preparing context and runtime…", "boot")).toBe("Getting ready");
+    expect(stage("Preparing chat context...", "chat")).toBe("Getting ready");
+    expect(stage("Provisioning cloud sandbox…")).toBe("Starting a computer for this task");
+    expect(stage("Resuming thread sandbox 1a2b3c4d…")).toBe("Waking up this task's computer");
+    expect(stage("Activating sandbox image, this can take a few minutes…")).toBe(
+      "Getting the computer ready, this can take a few minutes",
+    );
+    expect(stage("Preparing browser, tools, and integrations…")).toBe("Setting up tools");
+    expect(stage("Preparing Pi runtime and integrations…", "pi")).toBe("Setting up tools");
+    // A stage with no plain form is shown as the server wrote it.
+    expect(stage("Running Codex…")).toBe("Running Codex");
+  });
+
+  test("a task picked up after a restart says so in a plain sentence", () => {
+    const reconciling = (running: boolean) =>
+      traceRowsFromWork(
+        [{ kind: "marker", key: "r", marker: { kind: "reconciling", deadlineMs: null } }],
+        running,
+      )[0];
+    expect(reconciling(true)).toMatchObject({
+      family: "boot",
+      label: "Picking this task back up after a server restart",
+      detail: "it may still be finishing",
+      status: "running",
+    });
+    expect(reconciling(false)).toMatchObject({ status: "done" });
+    const words = `${reconciling(true)?.label} ${reconciling(true)?.detail}`;
+    expect(words).not.toMatch(/reconcil|turn/i);
   });
 
   test("reasoning folds into its row: the prose is the payload, its first line the chip", () => {
@@ -645,7 +698,7 @@ describe("turnNodesFromSteps (the lane without native frames)", () => {
     ];
     expect(turnNodesFromSteps(chat, false, "completed")).toEqual([]);
     expect(traceRowsFromWork(turnNodesFromSteps(chat, true, "running"), true)).toMatchObject([
-      { family: "boot", label: "Preparing chat context", status: "running" },
+      { family: "boot", label: "Getting ready", status: "running" },
     ]);
   });
 });
