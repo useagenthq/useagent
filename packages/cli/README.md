@@ -33,6 +33,11 @@ The key is sent verbatim as `Authorization: Bearer <key>` on every request. The 
 hosted origin lives in one place - the `DEFAULT_BASE_URL` constant - so run `useagent
 --help` to see the current value.
 
+Keys are made in the web app under Settings, API keys (`<base url>/settings#apikeys`).
+When the key is missing, or the server answers 401, the CLI prints that link and exits 1.
+A 403 means the server accepted the key but refused the request, so check the key's
+workspace instead of replacing it. The MCP tools return the same messages.
+
 ## Commands
 
 ### `useagent run "<prompt>"`

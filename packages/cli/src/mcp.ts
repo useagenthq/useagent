@@ -18,6 +18,7 @@ import {
   MAX_FLEET_TASKS,
   type FleetClient,
 } from "@useagent/agent-client/fleet";
+import { toCliError } from "./errors";
 import { coerceTask } from "./task";
 
 const TASK_SHAPE: Tool["inputSchema"] = {
@@ -237,6 +238,12 @@ export async function handleToolCall(
   }
 }
 
+/** A tool call that threw, as an error result. A refused key reaches the local agent
+ *  with the next step, not just a status code. */
+export function toolFailure(client: FleetClient, name: string, error: unknown): CallToolResult {
+  return errorResult(`tool ${name} failed: ${toCliError(error, client.baseUrl).message}`);
+}
+
 export function createFleetMcpServer(client: FleetClient): Server {
   const server = new Server(
     { name: "useagent-fleet", version: "0.0.0" },
@@ -247,7 +254,7 @@ export function createFleetMcpServer(client: FleetClient): Server {
     try {
       return await handleToolCall(client, request.params.name, request.params.arguments ?? {});
     } catch (e) {
-      return errorResult(`tool ${request.params.name} failed: ${e instanceof Error ? e.message : String(e)}`);
+      return toolFailure(client, request.params.name, e);
     }
   });
   return server;

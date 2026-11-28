@@ -48,10 +48,12 @@ export interface DispatchedRun {
   readonly url: string;
 }
 
-/** Per-task result of a fan-out: never throws, so one bad task cannot sink the batch. */
+/** Per-task result of a fan-out: never throws, so one bad task cannot sink the batch.
+ *  A failure carries the HTTP status when the server answered, so a caller can tell a
+ *  rejected key (401) from a bad task without reading the message. */
 export type DispatchOutcome =
   | { readonly ok: true; readonly task: FleetTask; readonly run: DispatchedRun }
-  | { readonly ok: false; readonly task: FleetTask; readonly error: string };
+  | { readonly ok: false; readonly task: FleetTask; readonly error: string; readonly status?: number };
 
 export interface DispatchManyOptions {
   /** Max in-flight dispatches (default 4). Clamped to >= 1. */
@@ -333,7 +335,8 @@ export function createFleetClient(config: FleetClientConfig): FleetClient {
       try {
         return { ok: true, task: keyed, run: await dispatch(keyed) } as const;
       } catch (e) {
-        return { ok: false, task: keyed, error: errorMessage(e) } as const;
+        const status = e instanceof AgentClientError ? e.status : undefined;
+        return { ok: false, task: keyed, error: errorMessage(e), ...(status === undefined ? {} : { status }) } as const;
       }
     });
   }

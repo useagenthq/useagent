@@ -7,6 +7,7 @@ import type { FanArgs, RunArgs, StatusArgs } from "./args";
 import { serializeResults, type FanResultLine } from "./jsonl";
 import { parseTasksJsonl } from "./jsonl";
 import { formatFanSummary } from "./format";
+import { apiKeyFailure } from "./errors";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -63,6 +64,13 @@ export async function fanCommand(client: FleetClient, args: FanArgs, io: Command
   io.err(`dispatching ${tasks.length} task(s), parallelism ${args.parallel}${args.qc ? ", QC on" : ""}...`);
 
   const outcomes = await client.dispatchMany(tasks, { concurrency: args.parallel });
+  // A refused key fails every dispatch the same way: say so once, with the next step,
+  // instead of writing one result line per task.
+  const failures = outcomes.flatMap((outcome) => (outcome.ok ? [] : [outcome]));
+  if (failures.length === outcomes.length) {
+    const refused = failures.map((failure) => apiKeyFailure(failure.status, client.baseUrl)).find(Boolean);
+    if (refused) throw refused;
+  }
   const results: FanResultLine[] = await Promise.all(
     outcomes.map(async (outcome): Promise<FanResultLine> => {
       if (!outcome.ok) {
