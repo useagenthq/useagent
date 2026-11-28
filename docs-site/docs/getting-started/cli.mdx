@@ -13,7 +13,7 @@ request.
 ## Prerequisites
 
 - Bun installed locally.
-- An org API key created in Settings.
+- An org API key created in Settings, API keys (`/settings#apikeys` on the web app).
 - The hosted base URL for the environment you intend to use.
 
 Keep the key in the environment. Do not put it in a JSONL task file, command
@@ -23,6 +23,11 @@ argument, or repository.
 export USEAGENT_API_KEY="uak_example_replace_me"
 export USEAGENT_BASE_URL="https://useagent.example.com"
 ```
+
+If `USEAGENT_API_KEY` is missing, or the server does not accept it (HTTP 401), the
+CLI exits 1 with a link to Settings, API keys on the server it called. Create a key
+there and export it. An HTTP 403 means the key was accepted but its account cannot
+reach that workspace, so a new key will not help.
 
 ## Run one task
 

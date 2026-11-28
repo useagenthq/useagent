@@ -4,7 +4,8 @@ import {
   MAX_FLEET_CONCURRENCY,
   MAX_FLEET_TASKS,
 } from "@useagent/agent-client/fleet";
-import { FLEET_TOOLS, handleToolCall } from "../src/mcp";
+import { AgentClientError } from "@useagent/agent-client/api";
+import { FLEET_TOOLS, handleToolCall, toolFailure } from "../src/mcp";
 import { fakeClient, makeSummary } from "./fake-client";
 
 function payload(result: { content: Array<{ type: string; text?: string }> }): unknown {
@@ -165,5 +166,26 @@ describe("handleToolCall", () => {
 
   test("an unknown tool is a tool error, not a throw", async () => {
     expect((await handleToolCall(fakeClient(), "nope", {})).isError).toBe(true);
+  });
+});
+
+describe("toolFailure", () => {
+  const text = (result: { content: Array<{ type: string; text?: string }> }) => result.content[0]?.text ?? "";
+
+  test("tells the local agent where to make a key when the server refused it", () => {
+    const result = toolFailure(
+      fakeClient(),
+      "dispatch_task",
+      new AgentClientError("http_error", "POST /api/runs -> HTTP 401", 401),
+    );
+    expect(result.isError).toBe(true);
+    expect(text(result)).toStartWith("tool dispatch_task failed: https://fleet.test did not accept USEAGENT_API_KEY");
+    expect(text(result)).toContain("Settings, API keys (https://fleet.test/settings#apikeys)");
+  });
+
+  test("keeps any other failure's own message", () => {
+    const result = toolFailure(fakeClient(), "get_run_result", new AgentClientError("http_error", "GET /x -> HTTP 500", 500));
+    expect(text(result)).toBe("tool get_run_result failed: GET /x -> HTTP 500");
+    expect(text(toolFailure(fakeClient(), "list_recent_runs", "boom"))).toBe("tool list_recent_runs failed: boom");
   });
 });

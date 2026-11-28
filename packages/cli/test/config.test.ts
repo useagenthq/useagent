@@ -21,4 +21,13 @@ describe("resolveConfig", () => {
     expect(() => resolveConfig({})).toThrow("USEAGENT_API_KEY is not set");
     expect(() => resolveConfig({ USEAGENT_API_KEY: "   " })).toThrow("USEAGENT_API_KEY is not set");
   });
+
+  test("says where to make a key, on the server the CLI talks to", () => {
+    expect(() => resolveConfig({})).toThrow(
+      `USEAGENT_API_KEY is not set. Create a key in Settings, API keys (${DEFAULT_BASE_URL}/settings#apikeys), then export USEAGENT_API_KEY=<key>`,
+    );
+    expect(() => resolveConfig({ USEAGENT_BASE_URL: "https://agents.acme.dev/" })).toThrow(
+      "Settings, API keys (https://agents.acme.dev/settings#apikeys)",
+    );
+  });
 });

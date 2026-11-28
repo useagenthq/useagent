@@ -5,9 +5,9 @@
 
 import process from "node:process";
 import { readFile, writeFile } from "node:fs/promises";
-import { CliError } from "./errors";
+import { toCliError } from "./errors";
 import { USAGE, parseFanArgs, parseRunArgs, parseStatusArgs } from "./args";
-import { clientFromEnv } from "./config";
+import { clientFromEnv, resolveBaseUrl } from "./config";
 import { fanCommand, runCommand, statusCommand, type CommandIO } from "./commands";
 import { runMcpServer } from "./mcp";
 
@@ -49,10 +49,7 @@ async function main(argv: readonly string[]): Promise<number> {
 main(process.argv.slice(2))
   .then((code) => process.exit(code))
   .catch((error: unknown) => {
-    if (error instanceof CliError) {
-      process.stderr.write(`error: ${error.message}\n`);
-      process.exit(error.exitCode);
-    }
-    process.stderr.write(`error: ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exit(1);
+    const failure = toCliError(error, resolveBaseUrl(process.env));
+    process.stderr.write(`error: ${failure.message}\n`);
+    process.exit(failure.exitCode);
   });

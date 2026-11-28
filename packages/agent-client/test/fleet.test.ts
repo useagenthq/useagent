@@ -142,9 +142,24 @@ describe("createFleetClient.dispatchMany", () => {
     expect(out.map((o) => o.ok)).toEqual([true, false, true]);
     const failed = out[1] as Extract<DispatchOutcome, { ok: false }>;
     expect(failed.error).toContain("HTTP 500");
+    expect(failed.status).toBe(500);
     expect(failed.task.prompt).toBe("boom");
     const first = out[0] as Extract<DispatchOutcome, { ok: true }>;
     expect(first.run.runId).toBe("ok_a");
+  });
+
+  test("leaves the status off a failure that never reached the server", async () => {
+    const client = createFleetClient({
+      ...CONFIG,
+      fetch: async () => {
+        throw new Error("connection refused");
+      },
+    });
+    const [failed] = (await client.dispatchMany([{ prompt: "a" }])) as Extract<DispatchOutcome, { ok: false }>[];
+
+    expect(failed!.ok).toBe(false);
+    expect(failed!.error).toContain("connection refused");
+    expect(failed!.status).toBeUndefined();
   });
 
   test("applies idempotencyPrefix per index but never overrides an explicit key", async () => {

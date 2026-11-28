@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { AgentClientError } from "@useagent/agent-client/api";
 import { fanCommand, runCommand, statusCommand, type CommandIO } from "../src/commands";
+import { CliError, toCliError } from "../src/errors";
 import { fakeClient, makeApiRun } from "./fake-client";
 
 function captureIO(files: Record<string, string> = {}): CommandIO & { stdout: string[]; stderr: string[]; written: Record<string, string> } {
@@ -44,6 +46,50 @@ describe("runCommand", () => {
     expect(io.stderr).toContain("... running");
     expect(io.stderr).toContain("status: completed");
     expect(io.stdout).toContain("the answer");
+  });
+});
+
+describe("a refused API key", () => {
+  const rejected = (status: number) => async () => {
+    throw new AgentClientError("http_error", `POST /api/runs -> HTTP ${status}`, status);
+  };
+
+  test("run fails with the rejected-key message and exit 1 on a 401", async () => {
+    const io = captureIO();
+    const error = await runCommand(fakeClient({ dispatch: rejected(401) }), { prompt: "hi", repos: [], watch: false }, io).catch(
+      (e: unknown) => e,
+    );
+    const failure = toCliError(error, "https://fleet.test");
+
+    expect(failure.exitCode).toBe(1);
+    expect(failure.message).toContain("did not accept USEAGENT_API_KEY (HTTP 401)");
+    expect(failure.message).toContain("Settings, API keys (https://fleet.test/settings#apikeys)");
+    expect(io.stdout).toEqual([]);
+  });
+
+  test("status reports a 403 as refused access, not a bad key", async () => {
+    const error = await statusCommand(fakeClient({ getRun: rejected(403) }), { runId: "run_7" }, captureIO()).catch(
+      (e: unknown) => e,
+    );
+    const failure = toCliError(error, "https://fleet.test");
+
+    expect(failure.exitCode).toBe(1);
+    expect(failure.message).toContain("accepted USEAGENT_API_KEY but refused the request (HTTP 403)");
+    expect(failure.message).not.toContain("Create a key");
+  });
+
+  test("fan fails once with the rejected-key message when every dispatch got a 401", async () => {
+    const io = captureIO({ "tasks.jsonl": '{"prompt":"a"}\n{"prompt":"b"}\n' });
+    const client = fakeClient({
+      dispatchMany: async (tasks) =>
+        tasks.map((task) => ({ ok: false as const, task, error: "POST /api/runs -> HTTP 401", status: 401 })),
+    });
+    const error = await fanCommand(client, { file: "tasks.jsonl", parallel: 2 }, io).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(CliError);
+    expect((error as CliError).exitCode).toBe(1);
+    expect((error as CliError).message).toContain("Settings, API keys (https://fleet.test/settings#apikeys)");
+    expect(io.stdout).toEqual([]);
   });
 });
 
@@ -98,6 +144,20 @@ describe("fanCommand", () => {
     expect(code).toBe(1);
     const printed = io.stdout.join("\n").trimEnd().split("\n");
     expect(JSON.parse(printed[1]!)).toMatchObject({ status: "dispatch_error", error: "GET /api/runs -> HTTP 500" });
+  });
+
+  test("keeps the results of a batch where only some dispatches got a 401", async () => {
+    const io = captureIO(tasksFile);
+    const client = fakeClient({
+      dispatchMany: async (tasks) => [
+        { ok: true, task: tasks[0]!, run: { runId: "run_0", status: "queued", url: "u0" } },
+        { ok: false, task: tasks[1]!, error: "POST /api/runs -> HTTP 401", status: 401 },
+      ],
+    });
+    const code = await fanCommand(client, { file: "tasks.jsonl", parallel: 2 }, io);
+    expect(code).toBe(1);
+    const rows = io.stdout.join("\n").trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(rows.map((row) => row.status)).toEqual(["completed", "dispatch_error"]);
   });
 
   test("preserves every result when one settle call fails", async () => {
