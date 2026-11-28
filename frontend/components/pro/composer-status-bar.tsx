@@ -4,12 +4,12 @@
 
 import { RiFolder2Line, RiGitMergeLine, RiInfinityLine } from "@remixicon/react";
 import type { ReactNode } from "react";
-import { formatTokens } from "@/components/application/agent-limits/agent-limits-card";
 import { Dropdown, DropdownPopover, DropdownTrigger } from "@/components/base/dropdown/dropdown";
 import { UsageCard } from "@/components/pro/usage-card";
 import { type LocatedRun, RunLocation } from "@/components/runners/run-location";
 import { spendCapped, spendLabel, type SpendSnapshot } from "@/lib/spend";
 import { cx } from "@/utils/cx";
+import { formatTokens } from "@/utils/format";
 
 export { formatTokens };
 

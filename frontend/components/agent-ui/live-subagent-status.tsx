@@ -8,6 +8,7 @@ import {
 } from "@remixicon/react";
 import type { CanonicalChildModel } from "@/components/chat/canonical-children";
 import type { ChildStatus } from "@/components/chat/native-events";
+import { formatTokens } from "@/utils/format";
 
 export interface LiveSubagentStatusProps {
   readonly model: CanonicalChildModel;
@@ -40,12 +41,6 @@ function StatusIcon({ status }: { readonly status: ChildStatus }) {
     return <RiPauseCircleLine className="size-4 text-orange-600" aria-hidden />;
   }
   return <RiTimeLine className="size-4 text-text-tertiary" aria-hidden />;
-}
-
-function formatTokens(tokens: number): string {
-  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(
-    tokens,
-  );
 }
 
 export function LiveSubagentStatus({

@@ -14,6 +14,7 @@ import {
   type ChartRange,
 } from "@/components/application/charts/chart-card";
 import { cx } from "@/utils/cx";
+import { compactNumber } from "@/utils/format";
 
 /**
  * Multi-series area chart card on Recharts `AreaChart` - the composition-over-
@@ -125,9 +126,6 @@ const DEFAULT_RANGES: AreaRange[] = [
     delta: -0.036,
   },
 ];
-
-const compactNumber = (n: number) =>
-  n >= 1000 ? `${Math.round(n / 100) / 10}K`.replace(".0K", "K") : String(Math.round(n));
 
 export function AreaChartCard({
   variant = "stacked",

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { relativeTime, relativeTimeShort } from "@/utils/format";
+import { compactNumber, formatTokens, relativeTime, relativeTimeShort } from "@/utils/format";
 
 /** A fixed clock, so every bucket is a pure function of the age under test. */
 const NOW = Date.parse("2026-09-30T12:00:00.000Z");
@@ -81,5 +81,30 @@ describe("relativeTime input handling", () => {
 
     expect(old).not.toMatch(/w ago$/);
     expect(old).toBe(new Date(NOW - 400 * DAY).toLocaleDateString());
+  });
+});
+
+/**
+ * One row per edge of the compact formatters. The 999,950 and 1,234,567 rows are the point:
+ * a hand-rolled divide-and-round printed them as "1000.0k" and "1234.6K", because rounding
+ * up never moved the number into the next unit.
+ */
+const COMPACT: Array<[n: number, number: string, tokens: string]> = [
+  [0, "0", "0"],
+  [314, "314", "314"],
+  [999, "999", "999"],
+  [1000, "1K", "1k"],
+  [1500, "1.5K", "1.5k"],
+  [96_000, "96K", "96k"],
+  [482_800, "482.8K", "482.8k"],
+  [999_950, "1M", "1M"],
+  [1_234_567, "1.2M", "1.2M"],
+  [1_250_000, "1.3M", "1.3M"],
+];
+
+describe("compact numbers", () => {
+  test.each(COMPACT)("shortens %d for chart axes and token labels", (n, number, tokens) => {
+    expect(compactNumber(n)).toBe(number);
+    expect(formatTokens(n)).toBe(tokens);
   });
 });

@@ -195,7 +195,7 @@ describe("agent UI accessibility contracts", () => {
     expect(toolHtml).toContain("400 ms");
     expect(subagentHtml).toContain('aria-live="polite"');
     expect(subagentHtml).toContain("Completed");
-    expect(subagentHtml).toContain("1.3K tokens");
+    expect(subagentHtml).toContain("1.3k tokens");
   });
 
   test("gives artifact preview and download controls distinct accessible names", () => {
