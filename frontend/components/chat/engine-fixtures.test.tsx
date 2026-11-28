@@ -145,7 +145,7 @@ describe("what each engine's fixture proves", () => {
     expect(html).toContain('data-testid="chat-sources"');
     // Live, its context preparation is one boot line, never a Thinking row.
     const live = renderLive(chat as EngineFixture);
-    expect(live).toContain(">Preparing chat context<");
+    expect(live).toContain(">Getting ready<");
     expect(live.match(/data-testid="trace-row"/g)).toHaveLength(1);
   });
 

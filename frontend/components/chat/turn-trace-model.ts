@@ -243,9 +243,24 @@ function toolRow(
   };
 }
 
+/** The setup stages the server records, in the words a person would use. They are
+ *  mapped when shown, so turns recorded earlier read the same way; a stage not
+ *  listed here (such as "Running Codex") is shown as the server wrote it. */
+const SETUP_STAGES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^Preparing (?:context and runtime|chat context)\b/u, "Getting ready"],
+  [/^Provisioning (?:cloud )?sandbox\b/u, "Starting a computer for this task"],
+  [/^Resuming thread sandbox\b/u, "Waking up this task's computer"],
+  [/^Activating sandbox image\b/u, "Getting the computer ready, this can take a few minutes"],
+  [/^Preparing .*\bintegrations\b/u, "Setting up tools"],
+];
+
+function plainSetupLabel(label: string): string {
+  return SETUP_STAGES.find(([pattern]) => pattern.test(label))?.[1] ?? label;
+}
+
 /** Five lifecycle rows ("Preparing context", "Provisioning cloud sandbox",
- *  "Sandbox bx_x ready in 6s (4 CPU / 8 GiB)", ...) fold into ONE line: the
- *  ready line once the sandbox is up, else the latest stage while it boots. */
+ *  "Sandbox bx_x ready in 6s (4 CPU / 8 GiB)", ...) fold into ONE line: "Ready
+ *  in 6s" once the computer is up, else the latest stage in plain words. */
 function bootRow(
   nodes: readonly Extract<TimelineNode, { kind: "tool" }>[],
   running: boolean,
@@ -254,11 +269,12 @@ function bootRow(
   const ready = labels
     .map((label) => /^Sandbox\s+\S+\s+ready in (\S+)(?:\s*\((.*)\))?/.exec(label))
     .findLast(Boolean);
+  const latest = labels.at(-1);
   return {
     kind: "step",
     key: nodes[0]?.key ?? "boot",
     family: "boot",
-    label: ready ? `Sandbox ready in ${ready[1]}` : (labels.at(-1) ?? "Preparing"),
+    label: ready ? `Ready in ${ready[1]}` : latest ? plainSetupLabel(latest) : "Getting ready",
     chip: null,
     detail: ready?.[2] ?? null,
     durationMs: null,
@@ -312,8 +328,8 @@ function markerRow(key: string, marker: TimelineMarker, running: boolean): Trace
       return {
         ...base,
         family: "boot",
-        label: "Reconciling after a restart",
-        detail: "the turn may still be completing",
+        label: "Picking this task back up after a server restart",
+        detail: "it may still be finishing",
         status: running ? "running" : "done",
       };
     case "memory": {
